@@ -15,44 +15,46 @@ parser.add_argument("--do-generation", action="store_true")
 
 def _validate_compatibility(model):
     if not hasattr(model.config, "quantization_config"):
-        raise ValueError(
-            "Must be a quantized model to convert to Marlin Format")
+        raise ValueError("Must be a quantized model to convert to Marlin Format")
     quantization_config = model.config.quantization_config
     if quantization_config.quant_method != "gptq":
         raise ValueError(
             "Only GPTQ models can be converted to Marlin format. You passed a "
-            f"model with quant_method={quantization_config.quant_method}")
+            f"model with quant_method={quantization_config.quant_method}"
+        )
     if quantization_config.bits != 4:
         raise ValueError(
             "Only 4 bit quantized models can be converted to Marlin format. "
-            f"You passed a model with bits={quantization_config.bits}")
+            f"You passed a model with bits={quantization_config.bits}"
+        )
     if quantization_config.group_size != 128:
         raise ValueError(
             "Only group size 128 models can be converted to Marlin format. You "
-            f"passed a model with group_size={quantization_config.group_size}")
+            f"passed a model with group_size={quantization_config.group_size}"
+        )
     if not quantization_config.sym:
         raise ValueError(
             "Only models with symmetric quantization can be converted to "
             "Marlin Format. You passed a model with sym="
-            f"{quantization_config.sym}")
+            f"{quantization_config.sym}"
+        )
     if quantization_config.desc_act:
         raise ValueError(
             "Models with act order quantization cannot be converted to "
             "Marlin Format. You passed a model with desc_act="
-            f"{quantization_config.desc_act}")
+            f"{quantization_config.desc_act}"
+        )
 
 
 @torch.no_grad()
 def unpack_4bit_to_32bit_signed(qweight, qzeros):
     # Unpack 4-bit values and interpret them as signed integers
-    unpacked_weights = torch.zeros((qweight.shape[0] * 8, qweight.shape[1]),
-                                   dtype=torch.int8,
-                                   device=qweight.device,
-                                   requires_grad=False)
-    unpacked_zeros = torch.zeros((qzeros.shape[0], qzeros.shape[1] * 8),
-                                 dtype=torch.int8,
-                                 device=qzeros.device,
-                                 requires_grad=False)
+    unpacked_weights = torch.zeros(
+        (qweight.shape[0] * 8, qweight.shape[1]), dtype=torch.int8, device=qweight.device, requires_grad=False
+    )
+    unpacked_zeros = torch.zeros(
+        (qzeros.shape[0], qzeros.shape[1] * 8), dtype=torch.int8, device=qzeros.device, requires_grad=False
+    )
 
     for row in range(unpacked_weights.shape[0]):
         i = row % 8
@@ -68,8 +70,7 @@ def unpack_4bit_to_32bit_signed(qweight, qzeros):
 @torch.no_grad()
 def dequantize_weight(layer):
     qweight, qzeros, scales = layer.qweight, layer.qzeros, layer.scales
-    unpacked_qweight, unpacked_qzeros = unpack_4bit_to_32bit_signed(
-        qweight, qzeros)
+    unpacked_qweight, unpacked_qzeros = unpack_4bit_to_32bit_signed(qweight, qzeros)
     group_size = unpacked_qweight.shape[0] // scales.shape[0]
     scales = scales.repeat_interleave(group_size, dim=0)
     unpacked_qzeros = unpacked_qzeros.repeat_interleave(group_size, dim=0)
@@ -87,7 +88,7 @@ def convert_model(model, verbose=True):
         if verbose:
             print(f"--- Converting Module: {name}")
         parent_name = ".".join(name.split(".")[:-1])
-        layer_name = name[len(parent_name) + 1:]
+        layer_name = name[len(parent_name) + 1 :]
 
         # Dequantize the weight.
         dequantized_weight = dequantize_weight(module).to(torch.float16)
@@ -96,16 +97,17 @@ def convert_model(model, verbose=True):
             out_features=dequantized_weight.shape[0],
             bias=False,
             dtype=torch.float16,
-            device="cuda")
+            device="cuda",
+        )
         linear_module.weight.data.copy_(dequantized_weight)
 
         # Create new linear method and copy to model.
         new_module = MarlinLayer(
             infeatures=linear_module.in_features,
             outfeatures=linear_module.out_features,
-            groupsize=model.config.quantization_config.group_size)
-        new_module.pack(linear_module,
-                        scales=copy.deepcopy(module.scales.data.t()))
+            groupsize=model.config.quantization_config.group_size,
+        )
+        new_module.pack(linear_module, scales=copy.deepcopy(module.scales.data.t()))
 
         # Save to parent.
         parent_module = model.get_submodule(parent_name)
@@ -128,7 +130,7 @@ def dequantize_model(model, verbose=True):
         if verbose:
             print(f"--- Dequantizing Module: {name}")
         parent_name = ".".join(name.split(".")[:-1])
-        layer_name = name[len(parent_name) + 1:]
+        layer_name = name[len(parent_name) + 1 :]
 
         # Dequantize the weight.
         dequantized_weight = dequantize_weight(module)
@@ -139,10 +141,10 @@ def dequantize_model(model, verbose=True):
             in_features=dequantized_weight_cpu.shape[1],
             out_features=dequantized_weight_cpu.shape[0],
             bias=False,
-            dtype=torch.float16)
+            dtype=torch.float16,
+        )
         new_module.weight.data.copy_(dequantized_weight_cpu)
-        new_module.scales = torch.nn.Parameter(
-            copy.deepcopy(module.scales.data))
+        new_module.scales = torch.nn.Parameter(copy.deepcopy(module.scales.data))
 
         # Save to parent.
         parent_module = model.get_submodule(parent_name)
@@ -177,7 +179,7 @@ if __name__ == "__main__":
     print("Saving marlin model...")
     model.config.quantization_config = {
         "group_size": model.config.quantization_config.group_size,
-        "quant_method": "marlin"
+        "quant_method": "marlin",
     }
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)

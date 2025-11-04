@@ -7,11 +7,18 @@ from typing import Annotated, Literal
 import pytest
 
 from aphrodite.config import CompilationConfig, config
-from aphrodite.engine.args_tools import (EngineArgs, contains_type, get_kwargs,
-                                         get_type, get_type_hints,
-                                         is_not_builtin, is_type,
-                                         literal_to_kwargs, optional_type,
-                                         parse_type)
+from aphrodite.engine.args_tools import (
+    EngineArgs,
+    contains_type,
+    get_kwargs,
+    get_type,
+    get_type_hints,
+    is_not_builtin,
+    is_type,
+    literal_to_kwargs,
+    optional_type,
+    parse_type,
+)
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 
@@ -239,8 +246,7 @@ def test_compilation_config():
     args = parser.parse_args(
         [
             "-O",
-            '{"mode": 3, "cudagraph_capture_sizes": [1, 2, 4, 8], '
-            '"use_inductor": false}',
+            '{"mode": 3, "cudagraph_capture_sizes": [1, 2, 4, 8], "use_inductor": false}',
         ]
     )
     assert (
@@ -252,9 +258,7 @@ def test_compilation_config():
     # set to string form of a dict
     args = parser.parse_args(
         [
-            "--compilation-config="
-            '{"mode": 3, "cudagraph_capture_sizes": [1, 2, 4, 8], '
-            '"use_inductor": true}',
+            '--compilation-config={"mode": 3, "cudagraph_capture_sizes": [1, 2, 4, 8], "use_inductor": true}',
         ]
     )
     assert (

@@ -10,8 +10,7 @@ import aphrodite.envs as envs
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import AphroditeConfig, ParallelConfig
-from aphrodite.distributed import (
-    stateless_destroy_torch_distributed_process_group)
+from aphrodite.distributed import stateless_destroy_torch_distributed_process_group
 from aphrodite.distributed.parallel_state import get_dp_group
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.protocol import Device
@@ -23,8 +22,7 @@ from aphrodite.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.plugins.io_processors import get_io_processor
 from aphrodite.tasks import SupportedTask
 from aphrodite.tracing import init_tracer
-from aphrodite.transformers_utils.tokenizer import (
-    AnyTokenizer, init_tokenizer_from_configs)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, init_tokenizer_from_configs
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.core_client import EngineCoreClient
@@ -80,17 +78,10 @@ class LLMEngine:
 
         executor_backend = self.aphrodite_config.parallel_config.distributed_executor_backend
         parallel_config = aphrodite_config.parallel_config
-        self.external_launcher_dp = (
-            parallel_config.data_parallel_size > 1
-            and executor_backend == "external_launcher"
-        )
+        self.external_launcher_dp = parallel_config.data_parallel_size > 1 and executor_backend == "external_launcher"
         # important: init dp group before init the engine_core
         # In the decoupled engine case this is handled in EngineCoreProc.
-        if (
-            not multiprocess_mode
-            and parallel_config.data_parallel_size > 1
-            and not self.external_launcher_dp
-        ):
+        if not multiprocess_mode and parallel_config.data_parallel_size > 1 and not self.external_launcher_dp:
             self.dp_group = parallel_config.stateless_init_dp_group()
         else:
             self.dp_group = None
@@ -108,9 +99,7 @@ class LLMEngine:
         )
 
         # OutputProcessor (convert EngineCoreOutputs --> RequestOutput).
-        self.output_processor = OutputProcessor(
-            self.tokenizer, log_stats=self.log_stats
-        )
+        self.output_processor = OutputProcessor(self.tokenizer, log_stats=self.log_stats)
         endpoint = self.observability_config.otlp_traces_endpoint
         if endpoint is not None:
             tracer = init_tracer("aphrodite.llm_engine", endpoint)
@@ -202,9 +191,7 @@ class LLMEngine:
         return self.has_unfinished_requests_dp(has_unfinished)
 
     def has_unfinished_requests_dp(self, has_unfinished: bool) -> bool:
-        aggregated_has_unfinished = ParallelConfig.has_unfinished_dp(
-            self.dp_group, has_unfinished
-        )
+        aggregated_has_unfinished = ParallelConfig.has_unfinished_dp(self.dp_group, has_unfinished)
         if not has_unfinished and aggregated_has_unfinished:
             self.should_execute_dummy_batch = True
         return aggregated_has_unfinished
@@ -243,10 +230,7 @@ class LLMEngine:
             request = prompt
         else:
             assert prompt_text is None
-            logger.warning_once(
-                "Processor has been moved under LLM and will "
-                "be removed from LLMEngine in v0.13."
-            )
+            logger.warning_once("Processor has been moved under LLM and will be removed from LLMEngine in v0.13.")
             request = self.processor.process_inputs(
                 request_id,
                 prompt,
@@ -280,9 +264,7 @@ class LLMEngine:
             child_request.sampling_params = params
 
             # Make a new RequestState and queue.
-            self.output_processor.add_request(
-                child_request, prompt_text, parent_req, idx
-            )
+            self.output_processor.add_request(child_request, prompt_text, parent_req, idx)
             # Add the request to EngineCore.
             self.engine_core.add_request(child_request)
 
@@ -359,9 +341,7 @@ class LLMEngine:
 
     def get_tokenizer(self) -> AnyTokenizer:
         if self.tokenizer is None:
-            raise ValueError(
-                "Unable to get tokenizer because skip_tokenizer_init is True"
-            )
+            raise ValueError("Unable to get tokenizer because skip_tokenizer_init is True")
 
         return self.tokenizer
 
@@ -408,8 +388,5 @@ class LLMEngine:
         return self.collective_rpc("apply_model", args=(func,))
 
     def __del__(self):
-        if (
-            dp_group := getattr(self, "dp_group", None)
-            and not self.external_launcher_dp
-        ):
+        if dp_group := getattr(self, "dp_group", None) and not self.external_launcher_dp:
             stateless_destroy_torch_distributed_process_group(dp_group)

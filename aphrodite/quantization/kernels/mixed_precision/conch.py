@@ -3,8 +3,7 @@ from typing import Final
 
 import torch
 
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          permute_param_layout_)
+from aphrodite.modeling.parameter import BaseAphroditeParameter, permute_param_layout_
 from aphrodite.scalar_type import scalar_types
 
 from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig

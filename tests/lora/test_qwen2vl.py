@@ -80,9 +80,7 @@ class Qwen2VLTester:
 
         # Validate outputs
         for generated, expected in zip(generated_texts, expected_outputs):
-            assert expected.startswith(generated), (
-                f"Generated text {generated} doesn't "
-            )
+            assert expected.startswith(generated), f"Generated text {generated} doesn't "
             f"match expected pattern {expected}"
 
     def run_beam_search_test(
@@ -94,9 +92,7 @@ class Qwen2VLTester:
         beam_width: int = 2,
         max_tokens: int = 5,
     ):
-        beam_search_params = BeamSearchParams(
-            beam_width=beam_width, max_tokens=max_tokens, temperature=temperature
-        )
+        beam_search_params = BeamSearchParams(beam_width=beam_width, max_tokens=max_tokens, temperature=temperature)
 
         inputs = [
             {
@@ -107,9 +103,7 @@ class Qwen2VLTester:
         ]
 
         lora_request = LoRARequest(str(lora_id), lora_id, self.config.lora_path)
-        outputs = self.llm.beam_search(
-            inputs, beam_search_params, lora_request=lora_request
-        )
+        outputs = self.llm.beam_search(inputs, beam_search_params, lora_request=lora_request)
 
         for output_obj, expected_outs in zip(outputs, expected_outputs):
             output_texts = [seq.text for seq in output_obj.sequences]

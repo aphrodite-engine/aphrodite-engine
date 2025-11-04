@@ -85,9 +85,7 @@ def start_service_discovery(hostname, port):
     poller = zmq.Poller()
     poller.register(router_socket, zmq.POLLIN)
 
-    _listener_thread = threading.Thread(
-        target=_listen_for_register, args=[poller, router_socket], daemon=True
-    )
+    _listener_thread = threading.Thread(target=_listen_for_register, args=[poller, router_socket], daemon=True)
     _listener_thread.start()
     return _listener_thread
 
@@ -137,6 +135,7 @@ async def handle_request():
             if len(prefill_list) == 0:
                 print("❌ No prefill instances available")
                 from quart import Response
+
                 return Response(
                     response=b'{"error": "No prefill instances available"}',
                     status=503,
@@ -152,6 +151,7 @@ async def handle_request():
             if len(decode_list) == 0:
                 print("❌ No decode instances available")
                 from quart import Response
+
                 return Response(
                     response=b'{"error": "No decode instances available"}',
                     status=503,
@@ -167,21 +167,14 @@ async def handle_request():
         )
         count += 1
 
-        request_id = (
-            f"___prefill_addr_{prefill_zmq_addr}___decode_addr_"
-            f"{decode_zmq_addr}_{random_uuid()}"
-        )
+        request_id = f"___prefill_addr_{prefill_zmq_addr}___decode_addr_{decode_zmq_addr}_{random_uuid()}"
 
         # finish prefill
-        async for _ in forward_request(
-            f"http://{prefill_addr}{request.path}", prefill_request, request_id
-        ):
+        async for _ in forward_request(f"http://{prefill_addr}{request.path}", prefill_request, request_id):
             continue
 
         # return decode
-        generator = forward_request(
-            f"http://{decode_addr}{request.path}", original_request_data, request_id
-        )
+        generator = forward_request(f"http://{decode_addr}{request.path}", original_request_data, request_id)
         response = await make_response(generator)
         response.timeout = None
 
@@ -190,13 +183,14 @@ async def handle_request():
     except Exception as e:
         import sys
         import traceback
+
         from quart import Response
 
         exc_info = sys.exc_info()
         print("Error occurred in disagg prefill proxy server")
         print(e)
         print("".join(traceback.format_exception(*exc_info)))
-        
+
         return Response(
             response=b'{"error": "Internal server error"}',
             status=500,
@@ -206,45 +200,38 @@ async def handle_request():
 
 @app.route("/health", methods=["GET"])
 async def health():
-    from quart import Response
     import json
-    
+
+    from quart import Response
+
     global prefill_instances
     global decode_instances
-    
+
     # Check if we have at least one instance of each type
     has_prefill = len(prefill_instances) > 0
     has_decode = len(decode_instances) > 0
-    
+
     if has_prefill and has_decode:
         status = {
             "status": "ok",
             "prefill_instances": len(prefill_instances),
-            "decode_instances": len(decode_instances)
+            "decode_instances": len(decode_instances),
         }
-        return Response(
-            response=json.dumps(status).encode(),
-            status=200,
-            content_type="application/json"
-        )
+        return Response(response=json.dumps(status).encode(), status=200, content_type="application/json")
     else:
         status = {
             "status": "waiting_for_instances",
             "prefill_instances": len(prefill_instances),
-            "decode_instances": len(decode_instances)
+            "decode_instances": len(decode_instances),
         }
-        return Response(
-            response=json.dumps(status).encode(),
-            status=503,
-            content_type="application/json"
-        )
+        return Response(response=json.dumps(status).encode(), status=503, content_type="application/json")
 
 
 @app.route("/v1/models", methods=["GET"])
 async def handle_models():
     """Forward /v1/models requests to first prefill instance."""
     from quart import Response
-    
+
     global prefill_instances
     with prefill_cv:
         prefill_list = list(prefill_instances.items())
@@ -255,17 +242,18 @@ async def handle_models():
                 content_type="application/json",
             )
         prefill_addr = prefill_list[0][0]
-    
+
     try:
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session, session.get(
-            url=f"http://{prefill_addr}/v1/models"
-        ) as response:
-                content = await response.read()
-                return Response(
-                    response=content,
-                    status=response.status,
-                    content_type=response.content_type,
-                )
+        async with (
+            aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session,
+            session.get(url=f"http://{prefill_addr}/v1/models") as response,
+        ):
+            content = await response.read()
+            return Response(
+                response=content,
+                status=response.status,
+                content_type=response.content_type,
+            )
     except Exception as e:
         print(f"Error forwarding /v1/models request: {e}")
         return Response(
@@ -279,7 +267,7 @@ async def handle_models():
 async def handle_tokenize():
     """Forward /v1/tokenize requests to first prefill instance."""
     from quart import Response
-    
+
     global prefill_instances
     with prefill_cv:
         prefill_list = list(prefill_instances.items())
@@ -290,13 +278,16 @@ async def handle_tokenize():
                 content_type="application/json",
             )
         prefill_addr = prefill_list[0][0]
-    
+
     try:
         request_data = await request.get_json()
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session, session.post(
-            url=f"http://{prefill_addr}/v1/tokenize",
-            json=request_data,
-        ) as response:
+        async with (
+            aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session,
+            session.post(
+                url=f"http://{prefill_addr}/v1/tokenize",
+                json=request_data,
+            ) as response,
+        ):
             content = await response.read()
             return Response(
                 response=content,
@@ -314,11 +305,11 @@ async def handle_tokenize():
 
 if __name__ == "__main__":
     import sys
-    
+
     # Get ports from command line or use defaults
     proxy_port = int(sys.argv[1]) if len(sys.argv) > 1 else 30001
     api_port = int(sys.argv[2]) if len(sys.argv) > 2 else 10001
-    
+
     print("=" * 80)
     print("Starting P2P NCCL Disaggregated Proxy Server")
     print("=" * 80)
@@ -327,8 +318,9 @@ if __name__ == "__main__":
     print()
     print("Waiting for prefill and decode instances to register...")
     print("=" * 80)
-    
+
     t = start_service_discovery("0.0.0.0", proxy_port)
-    
+
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=api_port, backlog=8192, log_level="info")

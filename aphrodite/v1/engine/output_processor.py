@@ -6,19 +6,15 @@ from typing import Any, cast
 import torch
 
 from aphrodite.common.sampling_params import RequestOutputKind
-from aphrodite.outputs import (CompletionOutput, PoolingOutput,
-                               PoolingRequestOutput, RequestOutput)
-from aphrodite.tracing import (SpanAttributes, SpanKind, Tracer,
-                               extract_trace_context)
+from aphrodite.outputs import CompletionOutput, PoolingOutput, PoolingRequestOutput, RequestOutput
+from aphrodite.tracing import SpanAttributes, SpanKind, Tracer, extract_trace_context
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
-from aphrodite.v1.engine import (EngineCoreOutput, EngineCoreRequest,
-                                 FinishReason)
+from aphrodite.v1.engine import EngineCoreOutput, EngineCoreRequest, FinishReason
 from aphrodite.v1.engine.detokenizer import IncrementalDetokenizer
 from aphrodite.v1.engine.logprobs import LogprobsProcessor
 from aphrodite.v1.engine.parallel_sampling import ParentRequest
-from aphrodite.v1.metrics.stats import (IterationStats, LoRARequestStates,
-                                        RequestStateStats)
+from aphrodite.v1.metrics.stats import IterationStats, LoRARequestStates, RequestStateStats
 
 
 class RequestOutputCollector:
@@ -40,15 +36,11 @@ class RequestOutputCollector:
         if self.output is None or isinstance(output, Exception):
             self.output = output
             self.ready.set()
-        elif isinstance(self.output, RequestOutput) and isinstance(
-            output, RequestOutput
-        ):
+        elif isinstance(self.output, RequestOutput) and isinstance(output, RequestOutput):
             # This ensures that request outputs with different request indexes
             # (if n > 1) do not override each other.
             self.output.add(output, aggregate=self.aggregate)
-        elif isinstance(self.output, PoolingRequestOutput) and isinstance(
-            output, PoolingRequestOutput
-        ):
+        elif isinstance(self.output, PoolingRequestOutput) and isinstance(output, PoolingRequestOutput):
             self.output = output
 
     async def get(self) -> RequestOutput | PoolingRequestOutput:
@@ -107,9 +99,7 @@ class RequestState:
         self.prompt = prompt
         self.prompt_token_ids = prompt_token_ids
         self.prompt_embeds = prompt_embeds
-        self.prompt_len = length_from_prompt_token_ids_or_embeds(
-            self.prompt_token_ids, self.prompt_embeds
-        )
+        self.prompt_len = length_from_prompt_token_ids_or_embeds(self.prompt_token_ids, self.prompt_embeds)
         self.logprobs_processor = logprobs_processor
         self.detokenizer = detokenizer
         self.max_tokens_param = max_tokens_param
@@ -163,9 +153,7 @@ class RequestState:
             request_id=request.request_id,
             parent_req=parent_req,
             request_index=request_index,
-            lora_name=(
-                request.lora_request.name if request.lora_request is not None else None
-            ),
+            lora_name=(request.lora_request.name if request.lora_request is not None else None),
             output_kind=output_kind,
             prompt=prompt,
             prompt_token_ids=request.prompt_token_ids,
@@ -198,24 +186,18 @@ class RequestState:
 
         request_id = self.request_id
         if pooling_output is not None:
-            return self._new_request_output(
-                request_id, [self._new_pooling_output(pooling_output)], finished
-            )
+            return self._new_request_output(request_id, [self._new_pooling_output(pooling_output)], finished)
 
         output = self._new_completion_output(new_token_ids, finish_reason, stop_reason)
 
         if self.parent_req is None:
             outputs = [output]
         else:
-            request_id, outputs, finished = self.parent_req.get_outputs(
-                request_id, output
-            )
+            request_id, outputs, finished = self.parent_req.get_outputs(request_id, output)
             if not outputs:
                 return None
 
-        return self._new_request_output(
-            request_id, outputs, finished, kv_transfer_params
-        )
+        return self._new_request_output(request_id, outputs, finished, kv_transfer_params)
 
     def _new_request_output(
         self,
@@ -338,9 +320,7 @@ class OutputProcessor:
                         new_token_ids=[],
                         # Set pooling_output is not None to
                         # correctly enter the abort pooling branch
-                        pooling_output=torch.randn(0, device="cpu")
-                        if req_state.detokenizer is None
-                        else None,
+                        pooling_output=torch.randn(0, device="cpu") if req_state.detokenizer is None else None,
                         finish_reason=FinishReason.ABORT,
                         stop_reason=None,
                         kv_transfer_params=None,
@@ -420,9 +400,7 @@ class OutputProcessor:
                 continue
 
             # 1) Compute stats for this iteration.
-            self._update_stats_from_output(
-                req_state, engine_core_output, engine_core_timestamp, iteration_stats
-            )
+            self._update_stats_from_output(req_state, engine_core_output, engine_core_timestamp, iteration_stats)
 
             new_token_ids = engine_core_output.new_token_ids
             pooling_output = engine_core_output.pooling_output
@@ -436,9 +414,7 @@ class OutputProcessor:
                 assert req_state.detokenizer is not None
                 assert req_state.logprobs_processor is not None
                 # 2) Detokenize the token ids into text and perform stop checks.
-                stop_string = req_state.detokenizer.update(
-                    new_token_ids, finish_reason == FinishReason.STOP
-                )
+                stop_string = req_state.detokenizer.update(new_token_ids, finish_reason == FinishReason.STOP)
                 if stop_string:
                     finish_reason = FinishReason.STOP
                     stop_reason = stop_string
@@ -475,9 +451,7 @@ class OutputProcessor:
                     reqs_to_abort.append(req_id)
 
                 # Track per-request stats
-                self._update_stats_from_finished(
-                    req_state, finish_reason, iteration_stats
-                )
+                self._update_stats_from_finished(req_state, finish_reason, iteration_stats)
                 if self.tracer:
                     self.do_tracing(engine_core_output, req_state, iteration_stats)
         self.lora_states.update_iteration_stats(iteration_stats)
@@ -499,9 +473,7 @@ class OutputProcessor:
 
         arrival_time_nano_seconds = int(req_state.stats.arrival_time * 1e9)
         trace_context = extract_trace_context(engine_core_output.trace_headers)
-        prompt_length = length_from_prompt_token_ids_or_embeds(
-            req_state.prompt_token_ids, req_state.prompt_embeds
-        )
+        prompt_length = length_from_prompt_token_ids_or_embeds(req_state.prompt_token_ids, req_state.prompt_embeds)
         with self.tracer.start_as_current_span(
             "llm_request",
             kind=SpanKind.SERVER,
@@ -525,28 +497,18 @@ class OutputProcessor:
                 SpanAttributes.GEN_AI_USAGE_COMPLETION_TOKENS,
                 metrics.num_generation_tokens,
             )
-            span.set_attribute(
-                SpanAttributes.GEN_AI_LATENCY_TIME_IN_MODEL_PREFILL, prefill_time
-            )
-            span.set_attribute(
-                SpanAttributes.GEN_AI_LATENCY_TIME_IN_MODEL_DECODE, decode_time
-            )
-            span.set_attribute(
-                SpanAttributes.GEN_AI_LATENCY_TIME_IN_MODEL_INFERENCE, inference_time
-            )
+            span.set_attribute(SpanAttributes.GEN_AI_LATENCY_TIME_IN_MODEL_PREFILL, prefill_time)
+            span.set_attribute(SpanAttributes.GEN_AI_LATENCY_TIME_IN_MODEL_DECODE, decode_time)
+            span.set_attribute(SpanAttributes.GEN_AI_LATENCY_TIME_IN_MODEL_INFERENCE, inference_time)
 
             # meta
             span.set_attribute(SpanAttributes.GEN_AI_REQUEST_ID, req_state.request_id)
             if req_state.top_p:
                 span.set_attribute(SpanAttributes.GEN_AI_REQUEST_TOP_P, req_state.top_p)
             if req_state.max_tokens_param:
-                span.set_attribute(
-                    SpanAttributes.GEN_AI_REQUEST_MAX_TOKENS, req_state.max_tokens_param
-                )
+                span.set_attribute(SpanAttributes.GEN_AI_REQUEST_MAX_TOKENS, req_state.max_tokens_param)
             if req_state.temperature:
-                span.set_attribute(
-                    SpanAttributes.GEN_AI_REQUEST_TEMPERATURE, req_state.temperature
-                )
+                span.set_attribute(SpanAttributes.GEN_AI_REQUEST_TEMPERATURE, req_state.temperature)
             if req_state.n:
                 span.set_attribute(SpanAttributes.GEN_AI_REQUEST_N, req_state.n)
 

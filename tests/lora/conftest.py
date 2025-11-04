@@ -7,12 +7,8 @@ import torch
 import torch.nn as nn
 from huggingface_hub import snapshot_download
 
-from aphrodite.distributed import (cleanup_dist_env_and_memory,
-                                   init_distributed_environment,
-                                   initialize_model_parallel)
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.distributed import cleanup_dist_env_and_memory, init_distributed_environment, initialize_model_parallel
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.models.interfaces import SupportsLoRA
@@ -65,9 +61,7 @@ def dist_init_torch_only():
         backend = "gloo"
 
     temp_file = tempfile.mkstemp()[1]
-    torch.distributed.init_process_group(
-        world_size=1, rank=0, init_method=f"file://{temp_file}", backend=backend
-    )
+    torch.distributed.init_process_group(world_size=1, rank=0, init_method=f"file://{temp_file}", backend=backend)
 
 
 class DummyLoRAModel(nn.Sequential, SupportsLoRA):

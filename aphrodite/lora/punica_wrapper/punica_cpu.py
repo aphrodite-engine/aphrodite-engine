@@ -2,9 +2,14 @@ from collections.abc import Callable
 
 import torch
 
-from aphrodite.lora.ops.torch_ops import (bgmv_expand, bgmv_expand_slice,
-                                          bgmv_shrink, sgmv_expand,
-                                          sgmv_expand_slice, sgmv_shrink)
+from aphrodite.lora.ops.torch_ops import (
+    bgmv_expand,
+    bgmv_expand_slice,
+    bgmv_shrink,
+    sgmv_expand,
+    sgmv_expand_slice,
+    sgmv_shrink,
+)
 
 from .punica_base import PunicaWrapperBase
 
@@ -112,9 +117,7 @@ class PunicaWrapperCPU(PunicaWrapperBase):
         y_slice_size: int,
         add_inputs: bool,
     ):
-        bgmv_expand_slice(
-            x, w_t_all, y, self.token_lora_indices, y_offset, y_slice_size, add_inputs
-        )
+        bgmv_expand_slice(x, w_t_all, y, self.token_lora_indices, y_offset, y_slice_size, add_inputs)
 
     def _apply_expand(
         self,
@@ -131,14 +134,10 @@ class PunicaWrapperCPU(PunicaWrapperBase):
         GEMM of lora'b.
         """
 
-        expand_slice_fun: Callable = (
-            self._expand_slice_prefill if self.is_prefill else self._expand_slice_decode
-        )
+        expand_slice_fun: Callable = self._expand_slice_prefill if self.is_prefill else self._expand_slice_decode
         expand_slice_fun(y, x, w_t_all, y_offset, y_slice_size, add_inputs)
 
-    def _apply_shrink(
-        self, y: torch.Tensor, x: torch.Tensor, w_t_all: torch.Tensor, scale: float
-    ):
+    def _apply_shrink(self, y: torch.Tensor, x: torch.Tensor, w_t_all: torch.Tensor, scale: float):
         """
         Perform the ` y+=x@w_t_all` computation, which is suitable for the
         GEMM of lora'a.
@@ -149,9 +148,7 @@ class PunicaWrapperCPU(PunicaWrapperBase):
         """
         y_org = y
         y = y.view(-1, y.shape[-1])
-        shrink_fun: Callable = (
-            self._shrink_prefill if self.is_prefill else self._shrink_decode
-        )
+        shrink_fun: Callable = self._shrink_prefill if self.is_prefill else self._shrink_decode
         shrink_fun(y, x, w_t_all, scale)
         y = y.view_as(y_org)
 
@@ -249,9 +246,7 @@ class PunicaWrapperCPU(PunicaWrapperBase):
         """
 
         # Embedding layer only need expand op
-        expand_fun: Callable = (
-            self._expand_prefill if self.is_prefill else self._expand_decode
-        )
+        expand_fun: Callable = self._expand_prefill if self.is_prefill else self._expand_decode
         expand_fun(y, x, lora_b_stacked, add_inputs)
 
     def add_lora_linear(
@@ -295,13 +290,10 @@ class PunicaWrapperCPU(PunicaWrapperBase):
             # We set the buffer to be float32 by default, consistent with the
             # triton op
             buffer = tuple(
-                torch.zeros((x.size(0), r), dtype=torch.float32, device=x.device)
-                for _ in range(len(output_slices))
+                torch.zeros((x.size(0), r), dtype=torch.float32, device=x.device) for _ in range(len(output_slices))
             )
         self.add_shrink(buffer, x, lora_a_stacked, scale, **kwargs)
-        self.add_expand(
-            y, buffer, lora_b_stacked, output_slices, add_inputs=True, **kwargs
-        )
+        self.add_expand(y, buffer, lora_b_stacked, output_slices, add_inputs=True, **kwargs)
 
     def add_lora_logits(
         self,

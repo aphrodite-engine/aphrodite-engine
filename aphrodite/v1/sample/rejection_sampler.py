@@ -103,9 +103,7 @@ class RejectionSampler(nn.Module):
             predict_bonus_token=True,
             # Override the logprobs mode to return logits because they are
             # needed later to compute the accepted token logprobs.
-            logprobs_mode_override="processed_logits"
-            if self.is_processed_logprobs_mode
-            else "raw_logits",
+            logprobs_mode_override="processed_logits" if self.is_processed_logprobs_mode else "raw_logits",
         )
         bonus_token_ids = bonus_sampler_output.sampled_token_ids
 
@@ -115,9 +113,7 @@ class RejectionSampler(nn.Module):
         raw_target_logits = logits[target_logits_indices]
         # Use float32 for the target_logits.
         raw_target_logits = raw_target_logits.to(torch.float32)
-        target_logits = self.apply_logits_processors(
-            raw_target_logits, sampling_metadata, metadata
-        )
+        target_logits = self.apply_logits_processors(raw_target_logits, sampling_metadata, metadata)
         # [num_tokens, vocab_size]
         # NOTE(woosuk): `target_logits` can be updated in place inside the
         # `apply_sampling_constraints` function.
@@ -179,16 +175,12 @@ class RejectionSampler(nn.Module):
         accepted_mask = sampled_token_ids != PLACEHOLDER_TOKEN_ID
         num_accepted_tokens = accepted_mask.sum(dim=-1)
         accepted_logit_indices = accepted_mask.nonzero(as_tuple=True)[1]
-        accepted_logit_indices += cu_num_sampled_tokens.repeat_interleave(
-            num_accepted_tokens
-        )
+        accepted_logit_indices += cu_num_sampled_tokens.repeat_interleave(num_accepted_tokens)
 
         # Compute logprobs for accepted tokens.
         accepted_logits = final_logits[accepted_logit_indices]
         accepted_logprobs = (
-            accepted_logits
-            if self.is_logits_logprobs_mode
-            else self.sampler.compute_logprobs(accepted_logits)
+            accepted_logits if self.is_logits_logprobs_mode else self.sampler.compute_logprobs(accepted_logits)
         )
         accepted_tokens = sampled_token_ids[accepted_mask]
         return self.sampler.gather_logprobs(
@@ -214,12 +206,8 @@ class RejectionSampler(nn.Module):
         """
         output_token_ids_np = output_token_ids.cpu().numpy()
         # Create mask for valid tokens.
-        valid_mask = (output_token_ids_np != PLACEHOLDER_TOKEN_ID) & (
-            output_token_ids_np < vocab_size
-        )
-        outputs = [
-            row[valid_mask[i]].tolist() for i, row in enumerate(output_token_ids_np)
-        ]
+        valid_mask = (output_token_ids_np != PLACEHOLDER_TOKEN_ID) & (output_token_ids_np < vocab_size)
+        outputs = [row[valid_mask[i]].tolist() for i, row in enumerate(output_token_ids_np)]
         return outputs
 
     def apply_logits_processors(
@@ -229,9 +217,7 @@ class RejectionSampler(nn.Module):
         metadata: SpecDecodeMetadata,
     ) -> torch.Tensor:
         has_penalties = not sampling_metadata.no_penalties
-        any_penalties_or_bad_words = (
-            sampling_metadata.bad_words_token_ids or has_penalties
-        )
+        any_penalties_or_bad_words = sampling_metadata.bad_words_token_ids or has_penalties
 
         output_token_ids = sampling_metadata.output_token_ids
         if any_penalties_or_bad_words:
@@ -246,12 +232,8 @@ class RejectionSampler(nn.Module):
             num_draft_tokens = torch.tensor(metadata.num_draft_tokens, device="cpu")
             original_indices = torch.arange(num_requests, device="cpu")
             repeat_indices_cpu = original_indices.repeat_interleave(num_draft_tokens)
-            repeat_indices = repeat_indices_cpu.to(
-                device=logits.device, non_blocking=True
-            )
-            logits = self.apply_penalties(
-                logits, sampling_metadata, metadata, repeat_indices, output_token_ids
-            )
+            repeat_indices = repeat_indices_cpu.to(device=logits.device, non_blocking=True)
+            logits = self.apply_penalties(logits, sampling_metadata, metadata, repeat_indices, output_token_ids)
 
             # Apply allowed token ids.
             if sampling_metadata.allowed_token_ids_mask is not None:
@@ -260,9 +242,7 @@ class RejectionSampler(nn.Module):
 
         # Apply bad words exclusion.
         if bad_words_token_ids := sampling_metadata.bad_words_token_ids:
-            apply_bad_words_with_drafts(
-                logits, bad_words_token_ids, output_token_ids, metadata.num_draft_tokens
-            )
+            apply_bad_words_with_drafts(logits, bad_words_token_ids, output_token_ids, metadata.num_draft_tokens)
 
         return logits
 
@@ -685,12 +665,8 @@ def rejection_random_sample_kernel(
             if NO_DRAFT_PROBS:
                 draft_prob = 1
             else:
-                draft_prob = tl.load(
-                    draft_probs_ptr + (start_idx + pos) * vocab_size + draft_token_id
-                )
-            target_prob = tl.load(
-                target_probs_ptr + (start_idx + pos) * vocab_size + draft_token_id
-            )
+                draft_prob = tl.load(draft_probs_ptr + (start_idx + pos) * vocab_size + draft_token_id)
+            target_prob = tl.load(target_probs_ptr + (start_idx + pos) * vocab_size + draft_token_id)
             uniform_prob = tl.load(uniform_probs_ptr + start_idx + pos)
             # NOTE(woosuk): While the draft probability should never be 0,
             # we check it to avoid NaNs. If it happens to be 0, we reject.
@@ -701,9 +677,7 @@ def rejection_random_sample_kernel(
                 # Reject. Use recovered token.
                 rejected = True
                 token_id = tl.load(recovered_token_ids_ptr + start_idx + pos)
-            tl.store(
-                output_token_ids_ptr + req_idx * (max_spec_len + 1) + pos, token_id
-            )
+            tl.store(output_token_ids_ptr + req_idx * (max_spec_len + 1) + pos, token_id)
 
     if not rejected:
         # If all tokens are accepted, append the bonus token.

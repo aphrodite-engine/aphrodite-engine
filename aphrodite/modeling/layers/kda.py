@@ -4,10 +4,8 @@ from torch import nn
 
 from aphrodite.attention import AttentionBackend
 from aphrodite.attention.backends.abstract import AttentionMetadata
-from aphrodite.config import (CacheConfig, ModelConfig,
-                              get_current_aphrodite_config)
-from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.config import CacheConfig, ModelConfig, get_current_aphrodite_config
+from aphrodite.distributed import divide, get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.weight_utils import sharded_weight_loader
@@ -16,12 +14,10 @@ from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.utils.torch_utils import direct_register_custom_op
 from aphrodite.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 
-from .fla.ops.kda import (FusedRMSNormGated, chunk_kda, fused_kda_gate,
-                          fused_recurrent_kda)
+from .fla.ops.kda import FusedRMSNormGated, chunk_kda, fused_kda_gate, fused_recurrent_kda
 from .linear import ColumnParallelLinear, ReplicatedLinear, RowParallelLinear
 from .mamba.abstract import MambaBase
-from .mamba.mamba_utils import (MambaStateDtypeCalculator,
-                                MambaStateShapeCalculator)
+from .mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from .mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
 
 logger = init_logger(__name__)
@@ -59,8 +55,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
         return "linear_attention"
 
     def get_attn_backend(self) -> type["AttentionBackend"]:
-        from aphrodite.v1.attention.backends.gdn_attn import (
-            GDNAttentionBackend)
+        from aphrodite.v1.attention.backends.gdn_attn import GDNAttentionBackend
 
         return GDNAttentionBackend
 
@@ -69,9 +64,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
     ) -> tuple[torch.dtype, torch.dtype, torch.dtype, torch.dtype]:
         if self.model_config is None or self.cache_config is None:
             raise ValueError("model_config and cache_config must be set")
-        return MambaStateDtypeCalculator.kda_state_dtype(
-            self.model_config.dtype, self.cache_config.mamba_cache_dtype
-        )
+        return MambaStateDtypeCalculator.kda_state_dtype(self.model_config.dtype, self.cache_config.mamba_cache_dtype)
 
     def get_state_shape(
         self,
@@ -147,9 +140,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
             quant_config=quant_config,
             prefix=f"{prefix}.f_b_proj",
         )
-        self.dt_bias = nn.Parameter(
-            torch.empty(divide(projection_size, self.tp_size), dtype=torch.float32)
-        )
+        self.dt_bias = nn.Parameter(torch.empty(divide(projection_size, self.tp_size), dtype=torch.float32))
 
         set_weight_attrs(self.dt_bias, {"weight_loader": sharded_weight_loader(0)})
 
@@ -190,9 +181,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
         self.k_conv1d.weight.data = self.k_conv1d.weight.data.unsqueeze(1)
         self.v_conv1d.weight.data = self.v_conv1d.weight.data.unsqueeze(1)
 
-        self.A_log = nn.Parameter(
-            torch.empty(1, 1, self.local_num_heads, 1, dtype=torch.float32)
-        )
+        self.A_log = nn.Parameter(torch.empty(1, 1, self.local_num_heads, 1, dtype=torch.float32))
         set_weight_attrs(self.A_log, {"weight_loader": sharded_weight_loader(2)})
 
         self.g_a_proj = ReplicatedLinear(
@@ -209,9 +198,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
             quant_config=quant_config,
             prefix=f"{prefix}.g_b_proj",
         )
-        self.o_norm = FusedRMSNormGated(
-            self.head_dim, eps=rms_norm_eps, activation="sigmoid"
-        )
+        self.o_norm = FusedRMSNormGated(self.head_dim, eps=rms_norm_eps, activation="sigmoid")
         self.o_proj = RowParallelLinear(
             projection_size,
             self.hidden_size,
@@ -257,9 +244,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 self.head_dim,
                 dtype=torch.float32,
             )
-            beta = torch.empty(
-                hidden_states.size(0), self.local_num_heads, dtype=torch.float32
-            )
+            beta = torch.empty(hidden_states.size(0), self.local_num_heads, dtype=torch.float32)
             core_attn_out = torch.empty_like(hidden_states)
             return
 
@@ -281,15 +266,9 @@ class KimiDeltaAttention(nn.Module, MambaBase):
         k_proj_states = self.k_proj(hidden_states)[0]
         v_proj_states = self.v_proj(hidden_states)[0]
 
-        q_conv_weights = self.q_conv1d.weight.view(
-            self.q_conv1d.weight.size(0), self.q_conv1d.weight.size(2)
-        )
-        k_conv_weights = self.k_conv1d.weight.view(
-            self.k_conv1d.weight.size(0), self.k_conv1d.weight.size(2)
-        )
-        v_conv_weights = self.v_conv1d.weight.view(
-            self.v_conv1d.weight.size(0), self.v_conv1d.weight.size(2)
-        )
+        q_conv_weights = self.q_conv1d.weight.view(self.q_conv1d.weight.size(0), self.q_conv1d.weight.size(2))
+        k_conv_weights = self.k_conv1d.weight.view(self.k_conv1d.weight.size(0), self.k_conv1d.weight.size(2))
+        v_conv_weights = self.v_conv1d.weight.view(self.v_conv1d.weight.size(0), self.v_conv1d.weight.size(2))
         if attn_metadata.num_prefills > 0:
             q_proj_states = q_proj_states.transpose(0, 1)
             k_proj_states = k_proj_states.transpose(0, 1)
@@ -328,9 +307,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 metadata=attn_metadata,
             ).transpose(0, 1)
         else:
-            decode_conv_indices = non_spec_state_indices_tensor[
-                : attn_metadata.num_decodes
-            ]
+            decode_conv_indices = non_spec_state_indices_tensor[: attn_metadata.num_decodes]
             q = causal_conv1d_update(
                 q_proj_states,
                 conv_state_q,
@@ -359,9 +336,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 validate_data=True,
             )
 
-        q, k, v = map(
-            lambda x: rearrange(x, "n (h d) -> 1 n h d", d=self.head_dim), (q, k, v)
-        )
+        q, k, v = map(lambda x: rearrange(x, "n (h d) -> 1 n h d", d=self.head_dim), (q, k, v))
 
         beta = self.b_proj(hidden_states)[0].float().sigmoid()
 

@@ -66,14 +66,15 @@ __global__ void merge_attn_states_kernel(
     for (uint i = 0; i < pack_size; ++i) {
       // Always use float for FMA to keep high precision.
       // half(uint16_t), bfloat16, float -> float.
-      const float p_out_f =
-          aphrodite::to_float(reinterpret_cast<const scalar_t*>(&p_out_pack)[i]);
-      const float s_out_f =
-          aphrodite::to_float(reinterpret_cast<const scalar_t*>(&s_out_pack)[i]);
+      const float p_out_f = aphrodite::to_float(
+          reinterpret_cast<const scalar_t*>(&p_out_pack)[i]);
+      const float s_out_f = aphrodite::to_float(
+          reinterpret_cast<const scalar_t*>(&s_out_pack)[i]);
       // fma: a * b + c = p_out_f * p_scale + (s_out_f * s_scale)
       const float o_out_f = p_out_f * p_scale + (s_out_f * s_scale);
       // float -> half(uint16_t), bfloat16, float.
-      aphrodite::from_float(reinterpret_cast<scalar_t*>(&o_out_pack)[i], o_out_f);
+      aphrodite::from_float(reinterpret_cast<scalar_t*>(&o_out_pack)[i],
+                            o_out_f);
     }
 
     // Pack 128b storage
@@ -107,7 +108,7 @@ __global__ void merge_attn_states_kernel(
 
 #define LAUNCH_MERGE_ATTN_STATES(scalar_t, NUM_THREADS)                     \
   {                                                                         \
-    aphrodite::merge_attn_states_kernel<scalar_t, NUM_THREADS>                   \
+    aphrodite::merge_attn_states_kernel<scalar_t, NUM_THREADS>              \
         <<<grid, block, 0, stream>>>(                                       \
             reinterpret_cast<scalar_t*>(output.data_ptr()), output_lse_ptr, \
             reinterpret_cast<scalar_t*>(prefix_output.data_ptr()),          \

@@ -4,25 +4,32 @@ import pytest
 import torch
 
 from aphrodite.attention.backends.registry import _Backend
-from aphrodite.config import (AphroditeConfig, CacheConfig, DeviceConfig,
-                              ModelConfig, ParallelConfig, SchedulerConfig,
-                              SpeculativeConfig)
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    DeviceConfig,
+    ModelConfig,
+    ParallelConfig,
+    SchedulerConfig,
+    SpeculativeConfig,
+)
 from aphrodite.config.load import LoadConfig
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.platforms import current_platform
 from aphrodite.v1.spec_decode.eagle import EagleProposer
-from tests.v1.attention.utils import (BatchSpec, create_common_attn_metadata,
-                                      create_standard_kv_cache_spec,
-                                      try_get_attention_backend)
+from tests.v1.attention.utils import (
+    BatchSpec,
+    create_common_attn_metadata,
+    create_standard_kv_cache_spec,
+    try_get_attention_backend,
+)
 
 mimo_7b_dir = "XiaomiMiMo/MiMo-7B-Base"
 
 
 def _create_mtp_proposer(num_speculative_tokens: int) -> EagleProposer:
     """Create an MTP proposer with unified model configuration."""
-    model_config = ModelConfig(
-        model=mimo_7b_dir, runner="generate", max_model_len=100, trust_remote_code=True
-    )
+    model_config = ModelConfig(model=mimo_7b_dir, runner="generate", max_model_len=100, trust_remote_code=True)
 
     speculative_config = SpeculativeConfig(
         target_model_config=model_config,
@@ -132,13 +139,10 @@ def test_mtp_propose(num_speculative_tokens, monkeypatch):
         return logits
 
     if num_speculative_tokens == 1:
-        model_mock.compute_logits.return_value = create_deterministic_logits(
-            batch_size, vocab_size, 42
-        )
+        model_mock.compute_logits.return_value = create_deterministic_logits(batch_size, vocab_size, 42)
     else:
         logits_returns = [
-            create_deterministic_logits(batch_size, vocab_size, 42 + i)
-            for i in range(num_speculative_tokens)
+            create_deterministic_logits(batch_size, vocab_size, 42 + i) for i in range(num_speculative_tokens)
         ]
         model_mock.compute_logits.side_effect = logits_returns
 
@@ -147,9 +151,7 @@ def test_mtp_propose(num_speculative_tokens, monkeypatch):
 
     # Prepare inputs
     batch_spec = BatchSpec(seq_lens=seq_lens, query_lens=seq_lens)
-    common_attn_metadata = create_common_attn_metadata(
-        batch_spec, block_size=16, device=device
-    )
+    common_attn_metadata = create_common_attn_metadata(batch_spec, block_size=16, device=device)
 
     target_token_ids = torch.randint(0, vocab_size, (total_tokens,), device=device)
     target_positions = torch.cat(
@@ -159,9 +161,7 @@ def test_mtp_propose(num_speculative_tokens, monkeypatch):
         ]
     )
     target_hidden_states = torch.randn(total_tokens, hidden_size, device=device)
-    next_token_ids = torch.randint(
-        0, vocab_size, (batch_size,), dtype=torch.int32, device=device
-    )
+    next_token_ids = torch.randint(0, vocab_size, (batch_size,), dtype=torch.int32, device=device)
     sampling_metadata = mock.MagicMock()
 
     # Setup attention metadata

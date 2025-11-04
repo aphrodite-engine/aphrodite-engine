@@ -6,11 +6,7 @@ from aphrodite.utils.torch_utils import direct_register_custom_op
 
 
 def is_rocm_triton_rotary_embedding_enabled() -> bool:
-    return (
-        current_platform.is_rocm()
-        and envs.APHRODITE_ROCM_USE_AITER
-        and envs.APHRODITE_ROCM_USE_TRITON_ROPE
-    )
+    return current_platform.is_rocm() and envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_TRITON_ROPE
 
 
 def rocm_aiter_rotary_emb_with_key_forward_triton_impl(

@@ -1,18 +1,20 @@
 import torch
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import (AphroditeConfig, CacheConfig, KVTransferConfig,
-                              ModelConfig, SchedulerConfig, SpeculativeConfig)
-from aphrodite.multimodal.inputs import (MultiModalFeatureSpec,
-                                         MultiModalKwargsItem,
-                                         PlaceholderRange)
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    KVTransferConfig,
+    ModelConfig,
+    SchedulerConfig,
+    SpeculativeConfig,
+)
+from aphrodite.multimodal.inputs import MultiModalFeatureSpec, MultiModalKwargsItem, PlaceholderRange
 from aphrodite.utils.hashing import sha256
-from aphrodite.v1.core.kv_cache_utils import (get_request_block_hasher,
-                                              init_none_hash)
+from aphrodite.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash
 from aphrodite.v1.core.sched.async_scheduler import AsyncScheduler
 from aphrodite.v1.core.sched.scheduler import Scheduler
-from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheGroupSpec)
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheGroupSpec
 from aphrodite.v1.request import Request
 from aphrodite.v1.structured_output import StructuredOutputManager
 
@@ -68,11 +70,7 @@ def create_scheduler(
         skip_tokenizer_init=skip_tokenizer_init,
     )
     # Cache config, optionally force APC
-    kwargs_cache = (
-        {}
-        if enable_prefix_caching is None
-        else {"enable_prefix_caching": enable_prefix_caching}
-    )
+    kwargs_cache = {} if enable_prefix_caching is None else {"enable_prefix_caching": enable_prefix_caching}
     cache_config = CacheConfig(
         block_size=block_size,
         gpu_memory_utilization=0.9,
@@ -92,9 +90,7 @@ def create_scheduler(
 
     speculative_config: SpeculativeConfig | None = None
     if num_speculative_tokens is not None:
-        speculative_config = SpeculativeConfig(
-            model="ngram", num_speculative_tokens=num_speculative_tokens
-        )
+        speculative_config = SpeculativeConfig(model="ngram", num_speculative_tokens=num_speculative_tokens)
 
     aphrodite_config = AphroditeConfig(
         scheduler_config=scheduler_config,
@@ -106,11 +102,7 @@ def create_scheduler(
     kv_cache_config = KVCacheConfig(
         num_blocks=num_blocks,  # A large number of blocks to hold all requests
         kv_cache_tensors=[],
-        kv_cache_groups=[
-            KVCacheGroupSpec(
-                ["layer"], FullAttentionSpec(block_size, 1, 1, torch.float32, False)
-            )
-        ],
+        kv_cache_groups=[KVCacheGroupSpec(["layer"], FullAttentionSpec(block_size, 1, 1, torch.float32, False))],
     )
     cache_config.num_gpu_blocks = num_blocks
     scheduler_cls = AsyncScheduler if async_scheduling else Scheduler

@@ -3,8 +3,7 @@ import copy
 import pytest
 import torch
 
-from aphrodite.compilation.inductor_pass import (CallableInductorPass,
-                                                 InductorPass)
+from aphrodite.compilation.inductor_pass import CallableInductorPass, InductorPass
 from aphrodite.compilation.pass_manager import PostGradPassManager
 from aphrodite.config import AphroditeConfig, ModelConfig
 
@@ -63,9 +62,7 @@ def test_pass_manager_uuid(callable):
 
     # UUID should be different due to config change
     config2 = copy.deepcopy(config)
-    config2.compilation_config.pass_config.enable_fusion = (
-        not config2.compilation_config.pass_config.enable_fusion
-    )
+    config2.compilation_config.pass_config.enable_fusion = not config2.compilation_config.pass_config.enable_fusion
     pass_manager3 = PostGradPassManager()
     pass_manager3.configure(config2)
     pass_manager3.add(callable)

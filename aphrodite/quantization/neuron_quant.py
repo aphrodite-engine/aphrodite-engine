@@ -1,17 +1,16 @@
 import os
 from importlib.util import find_spec
-from typing import Any, Optional
+from typing import Any
 
 from torch.nn import Module
 
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
-SUPPORTED_QUANT_DTYPE_LIST = ['s8', 'f8e4m3fn']
+SUPPORTED_QUANT_DTYPE_LIST = ["s8", "f8e4m3fn"]
 
 
 class AlwaysSupportedDtypes(list):
-
     def __contains__(self, item):
         return True
 
@@ -30,7 +29,8 @@ class NeuronQuantConfig(QuantizationConfig):
             raise ValueError(
                 f"Neuron quantization datatype {self.quant_dtype} is not valid,"
                 f" the quantization datatype should match one of the below "
-                f"types {SUPPORTED_QUANT_DTYPE_LIST}")
+                f"types {SUPPORTED_QUANT_DTYPE_LIST}"
+            )
         self.dequant_dtype = dequant_dtype
         self.quantize_method = quantize_method
 
@@ -43,8 +43,7 @@ class NeuronQuantConfig(QuantizationConfig):
 
     @classmethod
     def get_min_capability(cls) -> int:
-        raise NotImplementedError(
-            "This function should not be called with Neuron Backend")
+        raise NotImplementedError("This function should not be called with Neuron Backend")
 
     @staticmethod
     def get_config_filenames() -> list[str]:
@@ -54,19 +53,17 @@ class NeuronQuantConfig(QuantizationConfig):
     def from_config(cls, config: dict[str, Any]) -> "NeuronQuantConfig":
         quantize_method = cls.get_from_keys(config, ["quantize_method"])
         dequant_dtype = cls.get_from_keys(config, ["dequant_dtype"])
-        return cls(dequant_dtype=dequant_dtype,
-                   quantize_method=quantize_method)
+        return cls(dequant_dtype=dequant_dtype, quantize_method=quantize_method)
 
-    def get_quant_method(self, layer: Module, prefix: str) -> Optional[Any]:
+    def get_quant_method(self, layer: Module, prefix: str) -> Any | None:
         if find_spec("transformers_neuronx") is not None:
             return self.get_quantization_config()
         else:
-            raise NotImplementedError(
-                "Neuron Quantization is only supported through"
-                " transformers_neuronx.")
+            raise NotImplementedError("Neuron Quantization is only supported through transformers_neuronx.")
 
     def get_quantization_config(self):
         from transformers_neuronx.config import QuantizationConfig
-        return QuantizationConfig(quant_dtype=self.quant_dtype,
-                                  dequant_dtype=self.dequant_dtype,
-                                  quantize_method=self.quantize_method)
+
+        return QuantizationConfig(
+            quant_dtype=self.quant_dtype, dequant_dtype=self.dequant_dtype, quantize_method=self.quantize_method
+        )

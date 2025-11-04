@@ -25,8 +25,7 @@ class KVCacheQuantSchema(BaseModel):
     @model_validator(mode="after")
     def check_is_fp8(self) -> "KVCacheQuantSchema":
         assert self.dtype == "float8_e4m3fn", (
-            "Loaded scaling factors intended for KV cache dtype = "
-            f"{self.dtype} rather than float8_e4m3fn!"
+            f"Loaded scaling factors intended for KV cache dtype = {self.dtype} rather than float8_e4m3fn!"
         )
         return self
 
@@ -47,9 +46,7 @@ class KVCacheQuantSchema(BaseModel):
                     f"{len(layer_maps)}."
                 )
             for i in range(tp_size):
-                assert i in self.scaling_factor, (
-                    f"KV cache scales map for TP rank {i} not found."
-                )
+                assert i in self.scaling_factor, f"KV cache scales map for TP rank {i} not found."
         return self
 
     @model_validator(mode="after")
@@ -60,10 +57,7 @@ class KVCacheQuantSchema(BaseModel):
             num_hidden_layers = context["num_hidden_layers"]
             layer_scales_map = self.scaling_factor[tp_rank]
             for i in range(num_hidden_layers):
-                assert i in layer_scales_map, (
-                    f"Could not find KV cache scales for layer {i} in "
-                    f"TP rank {tp_rank}."
-                )
+                assert i in layer_scales_map, f"Could not find KV cache scales for layer {i} in TP rank {tp_rank}."
         return self
 
 

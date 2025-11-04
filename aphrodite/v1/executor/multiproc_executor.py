@@ -23,22 +23,16 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import (destroy_distributed_environment,
-                                   destroy_model_parallel)
-from aphrodite.distributed.device_communicators.shm_broadcast import (
-    Handle, MessageQueue)
-from aphrodite.distributed.parallel_state import (get_dp_group, get_ep_group,
-                                                  get_pp_group, get_tp_group)
+from aphrodite.distributed import destroy_distributed_environment, destroy_model_parallel
+from aphrodite.distributed.device_communicators.shm_broadcast import Handle, MessageQueue
+from aphrodite.distributed.parallel_state import get_dp_group, get_ep_group, get_pp_group, get_tp_group
 from aphrodite.envs import enable_envs_cache
 from aphrodite.logger import init_logger
-from aphrodite.utils.network_utils import (get_distributed_init_method,
-                                           get_loopback_ip, get_open_port)
-from aphrodite.utils.system_utils import (_maybe_force_spawn, decorate_logs,
-                                          get_mp_context, set_process_title)
+from aphrodite.utils.network_utils import get_distributed_init_method, get_loopback_ip, get_open_port
+from aphrodite.utils.system_utils import _maybe_force_spawn, decorate_logs, get_mp_context, set_process_title
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.executor.abstract import Executor, FailureCallback
-from aphrodite.v1.outputs import (AsyncModelRunnerOutput, DraftTokenIds,
-                                  ModelRunnerOutput)
+from aphrodite.v1.outputs import AsyncModelRunnerOutput, DraftTokenIds, ModelRunnerOutput
 from aphrodite.v1.worker.worker_base import WorkerWrapperBase
 
 logger = init_logger(__name__)
@@ -71,16 +65,12 @@ class MultiprocExecutor(Executor):
         # Multiprocessing-based executor does not support multi-node setting.
         # Since it only works for single node, we can use the loopback address
         # get_loopback_ip() for communication.
-        distributed_init_method = get_distributed_init_method(
-            get_loopback_ip(), get_open_port()
-        )
+        distributed_init_method = get_distributed_init_method(get_loopback_ip(), get_open_port())
 
         # Initialize worker and set up message queues for SchedulerOutputs
         # and ModelRunnerOutputs
         max_chunk_bytes = envs.APHRODITE_MQ_MAX_CHUNK_BYTES_MB * 1024 * 1024
-        self.rpc_broadcast_mq = MessageQueue(
-            self.world_size, self.world_size, max_chunk_bytes=max_chunk_bytes
-        )
+        self.rpc_broadcast_mq = MessageQueue(self.world_size, self.world_size, max_chunk_bytes=max_chunk_bytes)
         scheduler_output_handle = self.rpc_broadcast_mq.export_handle()
 
         # Create workers
@@ -128,9 +118,7 @@ class MultiprocExecutor(Executor):
             # Note: must use only 1 IO thread to keep dequeue sequence
             # from the response queue
             # _async_aggregate_workers_output also assumes a single IO thread
-            self.io_thread_pool = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="mp_exec_io"
-            )
+            self.io_thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mp_exec_io")
 
         self.output_rank = self._get_output_rank()
         self.has_connector = self.aphrodite_config.kv_transfer_config is not None
@@ -150,18 +138,14 @@ class MultiprocExecutor(Executor):
                 return
             _self.is_failed = True
             proc_name = next(h.proc.name for h in workers if h.proc.sentinel == died[0])
-            logger.error(
-                "Worker proc %s died unexpectedly, shutting down executor.", proc_name
-            )
+            logger.error("Worker proc %s died unexpectedly, shutting down executor.", proc_name)
             _self.shutdown()
             callback = _self.failure_callback
             if callback is not None:
                 _self.failure_callback = None
                 callback()
 
-        Thread(
-            target=monitor_workers, daemon=True, name="MultiprocWorkerMonitor"
-        ).start()
+        Thread(target=monitor_workers, daemon=True, name="MultiprocWorkerMonitor").start()
 
     def register_failure_callback(self, callback: FailureCallback):
         if self.is_failed:
@@ -204,9 +188,7 @@ class MultiprocExecutor(Executor):
 
     def take_draft_token_ids(self) -> DraftTokenIds | None:
         # OPTIMIZATION: Get output only from a single worker (output_rank)
-        outputs = self.collective_rpc(
-            "take_draft_token_ids", unique_reply_rank=self.output_rank
-        )
+        outputs = self.collective_rpc("take_draft_token_ids", unique_reply_rank=self.output_rank)
         return outputs[0]
 
     def collective_rpc(
@@ -231,18 +213,10 @@ class MultiprocExecutor(Executor):
             if isinstance(method, str):
                 send_method = method
             else:
-                send_method = cloudpickle.dumps(
-                    method, protocol=pickle.HIGHEST_PROTOCOL
-                )
-            self.rpc_broadcast_mq.enqueue(
-                (send_method, args, kwargs, unique_reply_rank)
-            )
+                send_method = cloudpickle.dumps(method, protocol=pickle.HIGHEST_PROTOCOL)
+            self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, unique_reply_rank))
 
-            workers = (
-                (self.workers[unique_reply_rank],)
-                if unique_reply_rank is not None
-                else self.workers
-            )
+            workers = (self.workers[unique_reply_rank],) if unique_reply_rank is not None else self.workers
             responses = []
 
             def get_response(
@@ -250,21 +224,16 @@ class MultiprocExecutor(Executor):
                 dequeue_timeout: float | None = None,
                 cancel_event: threading.Event | None = None,
             ):
-                status, result = w.worker_response_mq.dequeue(
-                    timeout=dequeue_timeout, cancel=cancel_event
-                )
+                status, result = w.worker_response_mq.dequeue(timeout=dequeue_timeout, cancel=cancel_event)
 
                 if status != WorkerProc.ResponseStatus.SUCCESS:
                     raise RuntimeError(
-                        f"Worker failed with error '{result}', please check the"
-                        " stack trace above for the root cause"
+                        f"Worker failed with error '{result}', please check the stack trace above for the root cause"
                     )
                 return result
 
             for w in workers:
-                dequeue_timeout = (
-                    None if deadline is None else (deadline - time.monotonic())
-                )
+                dequeue_timeout = None if deadline is None else (deadline - time.monotonic())
 
                 if self.io_thread_pool is not None:
                     # We must consume worker_response_mq from a single thread.
@@ -276,9 +245,7 @@ class MultiprocExecutor(Executor):
                 elif not non_block:
                     result = get_response(w, dequeue_timeout, self.shutdown_event)
                 else:
-                    raise RuntimeError(
-                        "non_block can only be used when max_concurrent_batches > 1"
-                    )
+                    raise RuntimeError("non_block can only be used when max_concurrent_batches > 1")
                 responses.append(result)
 
             return responses
@@ -404,9 +371,7 @@ class WorkerProc:
         self.rank = rank
         wrapper = WorkerWrapperBase(aphrodite_config=aphrodite_config, rpc_rank=rank)
         # TODO: move `init_worker` to executor level as a collective rpc call
-        all_kwargs: list[dict] = [
-            {} for _ in range(aphrodite_config.parallel_config.world_size)
-        ]
+        all_kwargs: list[dict] = [{} for _ in range(aphrodite_config.parallel_config.world_size)]
         is_driver_worker = rank % aphrodite_config.parallel_config.tensor_parallel_size == 0
         all_kwargs[rank] = {
             "aphrodite_config": aphrodite_config,
@@ -420,9 +385,7 @@ class WorkerProc:
         self.worker = wrapper
 
         # Initialize MessageQueue for receiving SchedulerOutput
-        self.rpc_broadcast_mq = MessageQueue.create_from_handle(
-            input_shm_handle, self.worker.rank
-        )
+        self.rpc_broadcast_mq = MessageQueue.create_from_handle(input_shm_handle, self.worker.rank)
 
         # Initializes a message queue for sending the model output
         self.worker_response_mq = MessageQueue(1, 1)
@@ -442,9 +405,7 @@ class WorkerProc:
         self.worker.init_device()
 
         # Set process title and log prefix
-        self.setup_proc_title_and_log_prefix(
-            enable_ep=aphrodite_config.parallel_config.enable_expert_parallel
-        )
+        self.setup_proc_title_and_log_prefix(enable_ep=aphrodite_config.parallel_config.enable_expert_parallel)
 
         # Load model
         self.worker.load_model()
@@ -504,9 +465,7 @@ class WorkerProc:
         )
 
         pipes = {handle.ready_pipe: handle for handle in unready_proc_handles}
-        ready_proc_handles: list[WorkerProcHandle | None] = [None] * len(
-            unready_proc_handles
-        )
+        ready_proc_handles: list[WorkerProcHandle | None] = [None] * len(unready_proc_handles)
         while pipes:
             ready = multiprocessing.connection.wait(pipes.keys())
             for pipe in ready:
@@ -519,13 +478,9 @@ class WorkerProc:
                         raise e
 
                     # Extract the message queue handle.
-                    worker_response_mq = MessageQueue.create_from_handle(
-                        response["handle"], 0
-                    )
-                    ready_proc_handles[unready_proc_handle.rank] = (
-                        WorkerProcHandle.from_unready_handle(
-                            unready_proc_handle, worker_response_mq
-                        )
+                    worker_response_mq = MessageQueue.create_from_handle(response["handle"], 0)
+                    ready_proc_handles[unready_proc_handle.rank] = WorkerProcHandle.from_unready_handle(
+                        unready_proc_handle, worker_response_mq
                     )
 
                 except EOFError:
@@ -585,9 +540,7 @@ class WorkerProc:
                 except Exception as e:
                     logger.warning("Death monitoring error: %s", e)
 
-            death_monitor = Thread(
-                target=monitor_parent_death, daemon=True, name="WorkerDeathMonitor"
-            )
+            death_monitor = Thread(target=monitor_parent_death, daemon=True, name="WorkerDeathMonitor")
             death_monitor.start()
 
         try:
@@ -676,9 +629,7 @@ class WorkerProc:
     def worker_busy_loop(self, cancel: threading.Event | None = None):
         """Main busy loop for Multiprocessing Workers"""
         while True:
-            method, args, kwargs, output_rank = self.rpc_broadcast_mq.dequeue(
-                cancel=cancel, indefinite=True
-            )
+            method, args, kwargs, output_rank = self.rpc_broadcast_mq.dequeue(cancel=cancel, indefinite=True)
             try:
                 if isinstance(method, str):
                     func = getattr(self.worker, method)

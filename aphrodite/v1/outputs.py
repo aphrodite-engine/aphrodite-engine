@@ -5,8 +5,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import torch
 
 if TYPE_CHECKING:
-    from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
-        KVConnectorStats)
+    from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 else:
     KVConnectorStats = object
 
@@ -35,9 +34,7 @@ class LogprobsLists(NamedTuple):
             self.logprob_token_ids[start:end],
             self.logprobs[start:end],
             self.sampled_token_ranks[start:end],
-            self.cu_num_generated_tokens[start_req_idx:end_req_idx]
-            if self.cu_num_generated_tokens
-            else None,
+            self.cu_num_generated_tokens[start_req_idx:end_req_idx] if self.cu_num_generated_tokens else None,
         )
 
 
@@ -67,18 +64,12 @@ class LogprobsTensors(NamedTuple):
         )
 
     @staticmethod
-    def empty_cpu(
-        num_positions: int, num_tokens_per_position: int
-    ) -> "LogprobsTensors":
+    def empty_cpu(num_positions: int, num_tokens_per_position: int) -> "LogprobsTensors":
         """Create empty LogprobsTensors on CPU."""
 
-        logprob_token_ids = torch.empty(
-            (num_positions, num_tokens_per_position), dtype=torch.int32, device="cpu"
-        )
+        logprob_token_ids = torch.empty((num_positions, num_tokens_per_position), dtype=torch.int32, device="cpu")
         logprobs = torch.empty_like(logprob_token_ids, dtype=torch.float32)
-        selected_token_ranks = torch.empty(
-            num_positions, dtype=torch.int32, device="cpu"
-        )
+        selected_token_ranks = torch.empty(num_positions, dtype=torch.int32, device="cpu")
         return LogprobsTensors(
             logprob_token_ids=logprob_token_ids,
             logprobs=logprobs,

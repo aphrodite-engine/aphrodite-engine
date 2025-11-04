@@ -9,8 +9,7 @@ from PIL import Image
 from aphrodite.assets.base import get_aphrodite_public_assets
 from aphrodite.assets.video import video_to_ndarrays, video_to_pil_images_list
 from aphrodite.multimodal.image import ImageMediaIO
-from aphrodite.multimodal.video import (VIDEO_LOADER_REGISTRY, VideoLoader,
-                                        VideoMediaIO)
+from aphrodite.multimodal.video import VIDEO_LOADER_REGISTRY, VideoLoader, VideoMediaIO
 
 from .utils import cosine_similarity, create_video_from_image, normalize_image
 
@@ -53,9 +52,7 @@ def test_video_loader_type_doesnt_exist():
 @VIDEO_LOADER_REGISTRY.register("assert_10_frames_1_fps")
 class Assert10Frames1FPSVideoLoader(VideoLoader):
     @classmethod
-    def load_bytes(
-        cls, data: bytes, num_frames: int = -1, fps: float = -1.0, **kwargs
-    ) -> npt.NDArray:
+    def load_bytes(cls, data: bytes, num_frames: int = -1, fps: float = -1.0, **kwargs) -> npt.NDArray:
         assert num_frames == 10, "bad num_frames"
         assert fps == 1.0, "bad fps"
         return FAKE_OUTPUT_2
@@ -70,9 +67,7 @@ def test_video_media_io_kwargs(monkeypatch: pytest.MonkeyPatch):
         videoio = VideoMediaIO(imageio, **{"num_frames": 10, "fps": 1.0})
         _ = videoio.load_bytes(b"test")
 
-        videoio = VideoMediaIO(
-            imageio, **{"num_frames": 10, "fps": 1.0, "not_used": "not_used"}
-        )
+        videoio = VideoMediaIO(imageio, **{"num_frames": 10, "fps": 1.0, "not_used": "not_used"})
         _ = videoio.load_bytes(b"test")
 
         with pytest.raises(AssertionError, match="bad num_frames"):
@@ -95,9 +90,7 @@ def test_opencv_video_io_colorspace(is_color: bool, fourcc: str, ext: str):
     Test all functions that use OpenCV for video I/O return RGB format.
     Both RGB and grayscale videos are tested.
     """
-    image_path = get_aphrodite_public_assets(
-        filename="stop_sign.jpg", s3_prefix="vision_model_images"
-    )
+    image_path = get_aphrodite_public_assets(filename="stop_sign.jpg", s3_prefix="vision_model_images")
     image = Image.open(image_path)
     with tempfile.TemporaryDirectory() as tmpdir:
         if not is_color:
@@ -117,24 +110,18 @@ def test_opencv_video_io_colorspace(is_color: bool, fourcc: str, ext: str):
 
         frames = video_to_ndarrays(video_path)
         for frame in frames:
-            sim = cosine_similarity(
-                normalize_image(np.array(frame)), normalize_image(np.array(image))
-            )
+            sim = cosine_similarity(normalize_image(np.array(frame)), normalize_image(np.array(image)))
             assert np.sum(np.isnan(sim)) / sim.size < 0.001
             assert np.nanmean(sim) > 0.99
 
         pil_frames = video_to_pil_images_list(video_path)
         for frame in pil_frames:
-            sim = cosine_similarity(
-                normalize_image(np.array(frame)), normalize_image(np.array(image))
-            )
+            sim = cosine_similarity(normalize_image(np.array(frame)), normalize_image(np.array(image)))
             assert np.sum(np.isnan(sim)) / sim.size < 0.001
             assert np.nanmean(sim) > 0.99
 
         io_frames, _ = VideoMediaIO(ImageMediaIO()).load_file(Path(video_path))
         for frame in io_frames:
-            sim = cosine_similarity(
-                normalize_image(np.array(frame)), normalize_image(np.array(image))
-            )
+            sim = cosine_similarity(normalize_image(np.array(frame)), normalize_image(np.array(image)))
             assert np.sum(np.isnan(sim)) / sim.size < 0.001
             assert np.nanmean(sim) > 0.99

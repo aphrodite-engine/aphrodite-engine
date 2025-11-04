@@ -8,7 +8,9 @@ from torch.distributed import ProcessGroup
 import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite.distributed.device_communicators.all_reduce_utils import (
-    CUSTOM_ALL_REDUCE_MAX_SIZES, gpu_p2p_access_check)
+    CUSTOM_ALL_REDUCE_MAX_SIZES,
+    gpu_p2p_access_check,
+)
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
@@ -38,8 +40,7 @@ def _can_p2p(rank: int, world_size: int) -> bool:
 
 def is_weak_contiguous(inp: torch.Tensor):
     return inp.is_contiguous() or (
-        inp.storage().nbytes() - inp.storage_offset() * inp.element_size()
-        == inp.numel() * inp.element_size()
+        inp.storage().nbytes() - inp.storage_offset() * inp.element_size() == inp.numel() * inp.element_size()
     )
 
 
@@ -70,26 +71,20 @@ class CustomAllreduce:
         if not custom_ar:
             # disable because of missing custom allreduce library
             # e.g. in a non-GPU environment
-            logger.info_once(
-                "Custom allreduce is disabled because "
-                "of missing custom allreduce library",
-                scope="global"
-            )
+            logger.info_once("Custom allreduce is disabled because of missing custom allreduce library", scope="global")
             return
 
         self.group = group
 
-        assert dist.get_backend(group) != dist.Backend.NCCL, (
-            "CustomAllreduce should be attached to a non-NCCL group."
-        )
+        assert dist.get_backend(group) != dist.Backend.NCCL, "CustomAllreduce should be attached to a non-NCCL group."
 
         if not all(in_the_same_node_as(group, source_rank=0)):
             # No need to initialize custom allreduce for multi-node case.
-            logger.warning_once(
-                "Custom allreduce is disabled because this process group"
-                " spans across nodes.",
-                scope="global"
-            ),
+            (
+                logger.warning_once(
+                    "Custom allreduce is disabled because this process group spans across nodes.", scope="global"
+                ),
+            )
             return
 
         rank = dist.get_rank(group=self.group)
@@ -106,7 +101,7 @@ class CustomAllreduce:
                 "warning, specify disable_custom_all_reduce=True explicitly.",
                 world_size,
                 str(CustomAllreduce._SUPPORTED_WORLD_SIZES),
-                scope="global"
+                scope="global",
             )
             return
 
@@ -118,11 +113,7 @@ class CustomAllreduce:
         assert isinstance(device, torch.device)
         self.device = device
         device_capability = current_platform.get_device_capability()
-        if (
-            current_platform.is_cuda()
-            and symm_mem_enabled
-            and device_capability is not None
-        ):
+        if current_platform.is_cuda() and symm_mem_enabled and device_capability is not None:
             device_capability_str = device_capability.as_version_str()
             if device_capability_str in CUSTOM_ALL_REDUCE_MAX_SIZES:
                 max_size = min(
@@ -137,9 +128,7 @@ class CustomAllreduce:
 
         physical_device_id = device_ids[device.index]
         tensor = torch.tensor([physical_device_id], dtype=torch.int, device="cpu")
-        gather_list = [
-            torch.tensor([0], dtype=torch.int, device="cpu") for _ in range(world_size)
-        ]
+        gather_list = [torch.tensor([0], dtype=torch.int, device="cpu") for _ in range(world_size)]
         dist.all_gather(gather_list, tensor, group=self.group)
         physical_device_ids = [t.item() for t in gather_list]
 
@@ -153,7 +142,7 @@ class CustomAllreduce:
                 "Custom allreduce is disabled because it's not supported on"
                 " more than two PCIe-only GPUs. To silence this warning, "
                 "specify disable_custom_all_reduce=True explicitly.",
-                scope="global"
+                scope="global",
             )
             return
         # test P2P capability, this checks software/cudaruntime support
@@ -165,7 +154,7 @@ class CustomAllreduce:
                 "Custom allreduce is disabled because your platform lacks "
                 "GPU P2P capability or P2P test failed. To silence this "
                 "warning, specify disable_custom_all_reduce=True explicitly.",
-                scope="global"
+                scope="global",
             )
             return
 
@@ -173,9 +162,7 @@ class CustomAllreduce:
         # Buffers memory are owned by this Python class and passed to C++.
         # Metadata composes of two parts: metadata for synchronization and a
         # temporary buffer for storing intermediate allreduce results.
-        self.meta_ptrs = self.create_shared_buffer(
-            ops.meta_size() + max_size, group=group, uncached=True
-        )
+        self.meta_ptrs = self.create_shared_buffer(ops.meta_size() + max_size, group=group, uncached=True)
         # This is a pre-registered IPC buffer. In eager mode, input tensors
         # are first copied into this buffer before allreduce is performed
         self.buffer_ptrs = self.create_shared_buffer(max_size, group=group)
@@ -184,16 +171,12 @@ class CustomAllreduce:
         # 8*world_size bytes where world_size is at most 8. Allocating 8MB
         # is enough for 131072 such tuples. The largest model I've seen only
         # needs less than 10000 of registered tuples.
-        self.rank_data = torch.empty(
-            8 * 1024 * 1024, dtype=torch.uint8, device=self.device
-        )
+        self.rank_data = torch.empty(8 * 1024 * 1024, dtype=torch.uint8, device=self.device)
         self.max_size = max_size
         self.rank = rank
         self.world_size = world_size
         self.fully_connected = fully_connected
-        self._ptr = ops.init_custom_ar(
-            self.meta_ptrs, self.rank_data, rank, self.fully_connected
-        )
+        self._ptr = ops.init_custom_ar(self.meta_ptrs, self.rank_data, rank, self.fully_connected)
         ops.register_buffer(self._ptr, self.buffer_ptrs)
 
     @contextmanager
@@ -222,9 +205,7 @@ class CustomAllreduce:
         all_data[self.rank] = [handle, offset]
         ranks = sorted(dist.get_process_group_ranks(group=self.group))
         for i, rank in enumerate(ranks):
-            dist.broadcast_object_list(
-                all_data[i], src=rank, group=self.group, device="cpu"
-            )
+            dist.broadcast_object_list(all_data[i], src=rank, group=self.group, device="cpu")
         # Unpack list of tuples to tuple of lists.
         handles = cast(list[list[int]], [d[0] for d in all_data])
         offsets = cast(list[list[int]], [d[1] for d in all_data])
@@ -245,9 +226,7 @@ class CustomAllreduce:
             return inp_size < self.max_size
         return False
 
-    def all_reduce(
-        self, inp: torch.Tensor, *, out: torch.Tensor = None, registered: bool = False
-    ):
+    def all_reduce(self, inp: torch.Tensor, *, out: torch.Tensor = None, registered: bool = False):
         """Performs an out-of-place all reduce.
 
         If registered is True, this assumes inp's pointer is already
@@ -259,9 +238,7 @@ class CustomAllreduce:
         if registered:
             ops.all_reduce(self._ptr, inp, out, 0, 0)
         else:
-            ops.all_reduce(
-                self._ptr, inp, out, self.buffer_ptrs[self.rank], self.max_size
-            )
+            ops.all_reduce(self._ptr, inp, out, self.buffer_ptrs[self.rank], self.max_size)
         return out
 
     def custom_all_reduce(self, input: torch.Tensor) -> torch.Tensor | None:

@@ -10,16 +10,18 @@ from typing_extensions import assert_never
 
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (ErrorResponse,
-                                                 IOProcessorRequest,
-                                                 IOProcessorResponse,
-                                                 PoolingBytesResponse,
-                                                 PoolingChatRequest,
-                                                 PoolingCompletionRequest,
-                                                 PoolingRequest,
-                                                 PoolingResponse,
-                                                 PoolingResponseData,
-                                                 UsageInfo)
+from aphrodite.endpoints.openai.protocol import (
+    ErrorResponse,
+    IOProcessorRequest,
+    IOProcessorResponse,
+    PoolingBytesResponse,
+    PoolingChatRequest,
+    PoolingCompletionRequest,
+    PoolingRequest,
+    PoolingResponse,
+    PoolingResponseData,
+    UsageInfo,
+)
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.renderer import RenderConfig
@@ -29,9 +31,13 @@ from aphrodite.logger import init_logger
 from aphrodite.outputs import PoolingRequestOutput
 from aphrodite.tasks import PoolingTask, SupportedTask
 from aphrodite.utils.async_utils import merge_async_iterators
-from aphrodite.utils.serial_utils import (EmbedDType, EncodingFormat,
-                                          Endianness, encode_pooling_bytes,
-                                          encode_pooling_output)
+from aphrodite.utils.serial_utils import (
+    EmbedDType,
+    EncodingFormat,
+    Endianness,
+    encode_pooling_bytes,
+    encode_pooling_output,
+)
 
 logger = init_logger(__name__)
 
@@ -87,7 +93,7 @@ class OpenAIServingPooling(OpenAIServing):
 
             # Look up the correct engine_client from registry for multi-model support
             engine_client, _ = self._get_model_info(request.model, raw_request)
-            
+
             if self.model_config.skip_tokenizer_init:
                 tokenizer = None
             else:
@@ -95,14 +101,10 @@ class OpenAIServingPooling(OpenAIServing):
             renderer = self._get_renderer(tokenizer)
 
             if getattr(request, "dimensions", None) is not None:
-                return self.create_error_response(
-                    "dimensions is currently not supported"
-                )
+                return self.create_error_response("dimensions is currently not supported")
 
             truncate_prompt_tokens = getattr(request, "truncate_prompt_tokens", None)
-            truncate_prompt_tokens = _validate_truncation_size(
-                self.max_model_len, truncate_prompt_tokens
-            )
+            truncate_prompt_tokens = _validate_truncation_size(self.max_model_len, truncate_prompt_tokens)
 
             if is_io_processor_request:
                 if self.io_processor is None:
@@ -158,9 +160,7 @@ class OpenAIServingPooling(OpenAIServing):
         generators: list[AsyncGenerator[PoolingRequestOutput, None]] = []
         try:
             if is_io_processor_request:
-                assert self.io_processor is not None and isinstance(
-                    request, IOProcessorRequest
-                )
+                assert self.io_processor is not None and isinstance(request, IOProcessorRequest)
                 pooling_params = self.io_processor.validate_or_generate_params()
             else:
                 pooling_params = request.to_pooling_params()
@@ -174,16 +174,13 @@ class OpenAIServingPooling(OpenAIServing):
                 elif "plugin" in self.supported_tasks:
                     pooling_task = "plugin"
                 else:
-                    return self.create_error_response(
-                        f"pooling_task must be one of {self.supported_tasks}."
-                    )
+                    return self.create_error_response(f"pooling_task must be one of {self.supported_tasks}.")
             else:
                 pooling_task = request.task
 
             if pooling_task not in self.supported_tasks:
                 return self.create_error_response(
-                    f"Task {pooling_task} is not supported, it"
-                    f" must be one of {self.supported_tasks}."
+                    f"Task {pooling_task} is not supported, it must be one of {self.supported_tasks}."
                 )
 
             try:
@@ -201,11 +198,7 @@ class OpenAIServingPooling(OpenAIServing):
                     lora_request=lora_request,
                 )
 
-                trace_headers = (
-                    None
-                    if raw_request is None
-                    else await self._get_trace_headers(raw_request.headers)
-                )
+                trace_headers = None if raw_request is None else await self._get_trace_headers(raw_request.headers)
 
                 # Use engine_client from registry lookup (set earlier in try block)
                 generator = engine_client.encode(

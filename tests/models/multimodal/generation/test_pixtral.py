@@ -127,10 +127,7 @@ def _dump_outputs_w_logprobs(
         (
             tokens,
             text,
-            [
-                {k: asdict(v) for k, v in token_logprobs.items()}
-                for token_logprobs in (logprobs or [])
-            ],
+            [{k: asdict(v) for k, v in token_logprobs.items()} for token_logprobs in (logprobs or [])],
         )
         for tokens, text, logprobs in outputs
     ]
@@ -147,10 +144,7 @@ def load_outputs_w_logprobs(filename: "StrPath") -> OutputsLogprobs:
         (
             tokens,
             text,
-            [
-                {int(k): Logprob(**v) for k, v in token_logprobs.items()}
-                for token_logprobs in logprobs
-            ],
+            [{int(k): Logprob(**v) for k, v in token_logprobs.items()} for token_logprobs in logprobs],
         )
         for tokens, text, logprobs in json_data
     ]
@@ -160,9 +154,7 @@ def load_outputs_w_logprobs(filename: "StrPath") -> OutputsLogprobs:
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("max_model_len", MAX_MODEL_LEN)
 @pytest.mark.parametrize("dtype", ["bfloat16"])
-def test_chat(
-    aphrodite_runner, max_model_len: int, model: str, dtype: str, local_asset_server
-) -> None:
+def test_chat(aphrodite_runner, max_model_len: int, model: str, dtype: str, local_asset_server) -> None:
     EXPECTED_CHAT_LOGPROBS = load_outputs_w_logprobs(FIXTURE_LOGPROBS_CHAT[model])
     with aphrodite_runner(
         model,

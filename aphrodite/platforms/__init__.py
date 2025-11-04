@@ -68,16 +68,11 @@ def cuda_platform_plugin() -> str | None:
             # we need to check if aphrodite is built with cpu too.
             # Otherwise, aphrodite will always activate cuda plugin
             # on a GPU machine, even if in a cpu build.
-            is_cuda = (
-                pynvml.nvmlDeviceGetCount() > 0
-                and not aphrodite_version_matches_substr("cpu")
-            )
+            is_cuda = pynvml.nvmlDeviceGetCount() > 0 and not aphrodite_version_matches_substr("cpu")
             if pynvml.nvmlDeviceGetCount() <= 0:
                 logger.debug("CUDA platform is not available because no GPU is found.")
             if aphrodite_version_matches_substr("cpu"):
-                logger.debug(
-                    "CUDA platform is not available because Aphrodite is built with CPU."
-                )
+                logger.debug("CUDA platform is not available because Aphrodite is built with CPU.")
             if is_cuda:
                 logger.debug("Confirmed CUDA platform is available.")
         finally:
@@ -92,9 +87,7 @@ def cuda_platform_plugin() -> str | None:
         import os
 
         def cuda_is_jetson() -> bool:
-            return os.path.isfile("/etc/nv_tegra_release") or os.path.exists(
-                "/sys/class/tegra-firmware"
-            )
+            return os.path.isfile("/etc/nv_tegra_release") or os.path.exists("/sys/class/tegra-firmware")
 
         if cuda_is_jetson():
             logger.debug("Confirmed CUDA platform is available on Jetson.")
@@ -159,17 +152,13 @@ def cpu_platform_plugin() -> str | None:
     try:
         is_cpu = aphrodite_version_matches_substr("cpu")
         if is_cpu:
-            logger.debug(
-                "Confirmed CPU platform is available because Aphrodite is built with CPU."
-            )
+            logger.debug("Confirmed CPU platform is available because Aphrodite is built with CPU.")
         if not is_cpu:
             import sys
 
             is_cpu = sys.platform.startswith("darwin")
             if is_cpu:
-                logger.debug(
-                    "Confirmed CPU platform is available because the machine is MacOS."
-                )
+                logger.debug("Confirmed CPU platform is available because the machine is MacOS.")
 
     except Exception as e:
         logger.debug("CPU platform is not available because: %s", str(e))
@@ -200,29 +189,19 @@ def resolve_current_platform_cls_qualname() -> str:
         except Exception:
             pass
 
-    activated_builtin_plugins = list(
-        set(activated_plugins) & set(builtin_platform_plugins.keys())
-    )
+    activated_builtin_plugins = list(set(activated_plugins) & set(builtin_platform_plugins.keys()))
     activated_oot_plugins = list(set(activated_plugins) & set(platform_plugins.keys()))
 
     if len(activated_oot_plugins) >= 2:
-        raise RuntimeError(
-            "Only one platform plugin can be activated, but got: "
-            f"{activated_oot_plugins}"
-        )
+        raise RuntimeError(f"Only one platform plugin can be activated, but got: {activated_oot_plugins}")
     elif len(activated_oot_plugins) == 1:
         platform_cls_qualname = platform_plugins[activated_oot_plugins[0]]()
         logger.info("Platform plugin %s is activated", activated_oot_plugins[0])
     elif len(activated_builtin_plugins) >= 2:
-        raise RuntimeError(
-            "Only one platform plugin can be activated, but got: "
-            f"{activated_builtin_plugins}"
-        )
+        raise RuntimeError(f"Only one platform plugin can be activated, but got: {activated_builtin_plugins}")
     elif len(activated_builtin_plugins) == 1:
         platform_cls_qualname = builtin_platform_plugins[activated_builtin_plugins[0]]()
-        logger.debug(
-            "Automatically detected platform %s.", activated_builtin_plugins[0]
-        )
+        logger.debug("Automatically detected platform %s.", activated_builtin_plugins[0])
     else:
         platform_cls_qualname = "aphrodite.platforms.interface.UnspecifiedPlatform"
         logger.debug("No platform detected, Aphrodite is running on UnspecifiedPlatform")

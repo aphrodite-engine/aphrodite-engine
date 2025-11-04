@@ -10,9 +10,7 @@ from transformers import Blip2VisionConfig, BlipVisionConfig
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
@@ -25,9 +23,7 @@ def get_blip_patch_grid_length(*, image_size: int, patch_size: int) -> int:
 
 
 def get_blip_num_patches(*, image_size: int, patch_size: int) -> int:
-    grid_length = get_blip_patch_grid_length(
-        image_size=image_size, patch_size=patch_size
-    )
+    grid_length = get_blip_patch_grid_length(image_size=image_size, patch_size=patch_size)
     return grid_length * grid_length
 
 
@@ -50,21 +46,15 @@ class BlipVisionEmbeddings(nn.Module):
             stride=self.patch_size,
         )
 
-        self.num_patches = get_blip_num_patches(
-            image_size=self.image_size, patch_size=self.patch_size
-        )
+        self.num_patches = get_blip_num_patches(image_size=self.image_size, patch_size=self.patch_size)
         self.num_positions = self.num_patches + 1
 
-        self.position_embedding = nn.Parameter(
-            torch.randn(1, self.num_positions, self.embed_dim)
-        )
+        self.position_embedding = nn.Parameter(torch.randn(1, self.num_positions, self.embed_dim))
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         batch_size = pixel_values.shape[0]
         target_dtype = self.patch_embedding.weight.dtype
-        patch_embeds = self.patch_embedding(
-            pixel_values.to(dtype=target_dtype)
-        )  # shape = [*, width, grid, grid]
+        patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
         patch_embeds = patch_embeds.flatten(2).transpose(1, 2)
 
         class_embeds = self.class_embedding.expand(batch_size, 1, -1)
@@ -117,16 +107,10 @@ class BlipAttention(nn.Module):
         self.tp_size = get_tensor_model_parallel_world_size()
         self.num_heads_per_partition = divide(self.num_heads, self.tp_size)
 
-        self.attn = MultiHeadAttention(
-            self.num_heads_per_partition, self.head_dim, self.scale
-        )
+        self.attn = MultiHeadAttention(self.num_heads_per_partition, self.head_dim, self.scale)
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
-        return (
-            tensor.view(bsz, seq_len, self.num_heads, self.head_dim)
-            .transpose(1, 2)
-            .contiguous()
-        )
+        return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
 
     def forward(
         self,
@@ -292,9 +276,7 @@ class BlipVisionModel(nn.Module, SupportsQuant):
             require_post_norm = len(self.encoder.layers) == num_hidden_layers
 
         if require_post_norm:
-            self.post_layernorm = nn.LayerNorm(
-                config.hidden_size, eps=config.layer_norm_eps
-            )
+            self.post_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         else:
             self.post_layernorm = None
 

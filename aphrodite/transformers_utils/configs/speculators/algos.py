@@ -30,6 +30,4 @@ def update_eagle3(config_dict: dict, aphrodite_config: dict) -> None:
     aphrodite_config["norm_before_residual"] = config_dict.get("norm_before_residual", True)
     aphrodite_config["architectures"] = ["Eagle3LlamaForCausalLM"]
     if config_dict.get("eagle_aux_hidden_state_layer_ids"):
-        aphrodite_config["eagle_aux_hidden_state_layer_ids"] = config_dict[
-            "eagle_aux_hidden_state_layer_ids"
-        ]
+        aphrodite_config["eagle_aux_hidden_state_layer_ids"] = config_dict["eagle_aux_hidden_state_layer_ids"]

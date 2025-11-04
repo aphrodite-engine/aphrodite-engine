@@ -5,8 +5,7 @@ import torch
 import torch.nn.functional as F
 import torch_xla
 
-from aphrodite.lora.ops.xla_ops import (bgmv_expand, bgmv_expand_slice,
-                                        bgmv_shrink)
+from aphrodite.lora.ops.xla_ops import bgmv_expand, bgmv_expand_slice, bgmv_shrink
 from aphrodite.lora.punica_wrapper.utils import convert_mapping
 
 if TYPE_CHECKING:
@@ -37,9 +36,7 @@ class PunicaWrapperTPU(PunicaWrapperBase):
         # Not all of them are used by the TPU so only convert the useful ones.
         self._token_lora_indices = self._token_lora_indices.to(dtype=torch.int32)
         self._sampler_indices = self._sampler_indices.to(dtype=torch.int32)
-        self._sampler_indices_padded = self._sampler_indices_padded.to(
-            dtype=torch.int32
-        )
+        self._sampler_indices_padded = self._sampler_indices_padded.to(dtype=torch.int32)
 
         torch.ops.xla.dynamo_set_buffer_donor_(self._token_lora_indices, True)
         torch.ops.xla.dynamo_set_buffer_donor_(self._sampler_indices, True)
@@ -77,9 +74,7 @@ class PunicaWrapperTPU(PunicaWrapperBase):
     ):
         return bgmv_shrink(x, w_t_all, self._get_token_lora_indices(x), scale)
 
-    def expand(
-        self, y: torch.Tensor, x: torch.Tensor, w_t_all: torch.Tensor, add_inputs: bool
-    ):
+    def expand(self, y: torch.Tensor, x: torch.Tensor, w_t_all: torch.Tensor, add_inputs: bool):
         return bgmv_expand(x, w_t_all, y, self._get_token_lora_indices(x), add_inputs)
 
     def expand_slice(
@@ -243,9 +238,7 @@ class PunicaWrapperTPU(PunicaWrapperBase):
                 device=x.device,
             )
         buffer = self.add_shrink(buffer, x, lora_a_stacked, scale, **kwargs)
-        return self.add_expand(
-            y, buffer, lora_b_stacked, output_slices, add_inputs=True, **kwargs
-        )
+        return self.add_expand(y, buffer, lora_b_stacked, output_slices, add_inputs=True, **kwargs)
 
     def add_lora_logits(
         self,
@@ -314,25 +307,21 @@ class PunicaWrapperTPU(PunicaWrapperBase):
             extra_vocab_size,
             "cpu",
         )
-        self._token_lora_indices = self._pad_to_shape(
-            base_indices, self._token_lora_indices.shape, dims=1
-        ).to(self.device)
-        self._sampler_indices = self._pad_to_shape(
-            sampler_indices, self._sampler_indices.shape, dims=1
-        ).to(self.device)
+        self._token_lora_indices = self._pad_to_shape(base_indices, self._token_lora_indices.shape, dims=1).to(
+            self.device
+        )
+        self._sampler_indices = self._pad_to_shape(sampler_indices, self._sampler_indices.shape, dims=1).to(self.device)
         self._sampler_indices_padded = self._pad_to_shape(
             sampler_indices_padded, self._sampler_indices_padded.shape, dims=1
         ).to(self.device)
-        self._embeddings_indices = self._pad_to_shape(
-            embeddings_indices, self._embeddings_indices.shape, dims=2
-        ).to(self.device)
+        self._embeddings_indices = self._pad_to_shape(embeddings_indices, self._embeddings_indices.shape, dims=2).to(
+            self.device
+        )
         self.indices_len[:] = indices_len
 
     def _update_prefill_metadata(self, token_lora_tensor: torch.Tensor) -> None:
         self.batch_size = 1
-        self._lora_indices_per_batch[: self.batch_size] = token_lora_tensor[
-            : self.batch_size
-        ]
+        self._lora_indices_per_batch[: self.batch_size] = token_lora_tensor[: self.batch_size]
 
     def _pad_prompt_mapping(self, prompt_mapping: tuple[int, ...]) -> tuple[int, ...]:
         num_reqs = len(prompt_mapping)

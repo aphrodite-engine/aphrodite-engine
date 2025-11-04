@@ -7,8 +7,7 @@ from typing import ClassVar
 import regex as re
 import torch
 from torch._dynamo.utils import lazy_format_graph_code
-from torch._inductor.pattern_matcher import (PatternMatcherPass,
-                                             PatternPrettyPrinter)
+from torch._inductor.pattern_matcher import PatternMatcherPass, PatternPrettyPrinter
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
@@ -60,9 +59,7 @@ class AphroditeInductorPass(InductorPass):
     def dump_graph(self, graph: torch.fx.Graph, stage: str):
         i = AphroditeInductorPass.dump_prefix
         i_str = "" if i is None else f".{i}"
-        lazy_format_graph_code(
-            f"post_grad{i_str}.{self.pass_name}.{stage}", graph.owning_module
-        )
+        lazy_format_graph_code(f"post_grad{i_str}.{self.pass_name}.{stage}", graph.owning_module)
 
     def begin(self):
         self._start_time = time.perf_counter_ns()
@@ -85,9 +82,7 @@ class AphroditePatternMatcherPass(AphroditeInductorPass):
     matched_count: int = 0
     """The number of matched patterns in the pass."""
 
-    _OP_OVERLOAD_PATTERN: ClassVar[re.Pattern] = re.compile(
-        r"<OpOverload\(op='([^']*)', overload='([^']*)'\)>"
-    )
+    _OP_OVERLOAD_PATTERN: ClassVar[re.Pattern] = re.compile(r"<OpOverload\(op='([^']*)', overload='([^']*)'\)>")
 
     def _replace_op_overloads(self, string: str) -> str:
         """Replace <OpOverload(..., ...)> with nicer formulations"""
@@ -115,9 +110,7 @@ class AphroditePatternMatcherPass(AphroditeInductorPass):
 
         from aphrodite.utils.system_utils import unique_filepath
 
-        file_path = unique_filepath(
-            lambda i: debug_dump_path / f"patterns.{self.pass_name}.{i}.py"
-        )
+        file_path = unique_filepath(lambda i: debug_dump_path / f"patterns.{self.pass_name}.{i}.py")
 
         with file_path.open("w") as f:
             print(
@@ -152,8 +145,7 @@ class AphroditePatternMatcherPass(AphroditeInductorPass):
                     pattern_repr = "\n".join(
                         [f"def pattern_{i}():"]
                         + [
-                            f"{pp.memoized_objs_names[key]} = "
-                            f"{pp.memoized_objs_pp[key]}"
+                            f"{pp.memoized_objs_names[key]} = {pp.memoized_objs_pp[key]}"
                             for key in pp.memoized_objs_names
                         ]
                         + [f"return {out_node}"]

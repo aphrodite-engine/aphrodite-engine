@@ -7,16 +7,21 @@ from typing import Optional
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionImpl,
-                                                   AttentionMetadata,
-                                                   AttentionType, MultipleOf)
+from aphrodite.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionMetadata,
+    AttentionType,
+    MultipleOf,
+)
 from aphrodite.attention.ops.triton_unified_attention import unified_attention
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
-                                                   split_decodes_and_prefills)
+from aphrodite.v1.attention.backends.utils import (
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    split_decodes_and_prefills,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 logger = init_logger(__name__)
@@ -190,10 +195,8 @@ class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadat
         fast_build: bool = False,
     ) -> TreeAttentionMetadata:
         decode_threshold = self.tree_attn_bias.shape[0]
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
-            split_decodes_and_prefills(
-                common_attn_metadata, decode_threshold=decode_threshold
-            )
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata, decode_threshold=decode_threshold
         )
 
         num_actual_tokens = common_attn_metadata.num_actual_tokens
@@ -265,9 +268,7 @@ def _prepare_tree_attn_bias(
 ) -> torch.Tensor:
     # +1 comes from the additional root node.
     tree_len = len(sorted_tree_choices) + 1
-    tree_attn_mask = torch.full(
-        (tree_len, tree_len), -torch.inf, device=device, dtype=dtype
-    )
+    tree_attn_mask = torch.full((tree_len, tree_len), -torch.inf, device=device, dtype=dtype)
 
     # Set diagonal to all zeros. Each token should
     # attend to itself.
@@ -288,9 +289,7 @@ def _prepare_tree_attn_bias(
                 continue
             ancestor_idx = []
             for c in range(len(cur_tree_choice) - 1):
-                ancestor_idx.append(
-                    sorted_tree_choices.index(cur_tree_choice[: c + 1]) + 1
-                )
+                ancestor_idx.append(sorted_tree_choices.index(cur_tree_choice[: c + 1]) + 1)
             tree_attn_mask[j + start + 1, ancestor_idx] = mask_val
         start += depth_counts[i]
     return tree_attn_mask
@@ -333,10 +332,7 @@ class TreeAttentionImpl(AttentionImpl):
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "TreeAttentionImpl."
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for TreeAttentionImpl."
             )
 
     def forward(
@@ -366,9 +362,7 @@ class TreeAttentionImpl(AttentionImpl):
         assert output is not None, "Output tensor must be provided."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for TreeAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for TreeAttentionImpl")
 
         if attn_metadata is None:
             # Profiling run.

@@ -3,8 +3,7 @@ from unittest.mock import ANY, patch
 import torch
 
 from aphrodite.attention.backends.abstract import AttentionType
-from aphrodite.v1.attention.backends.pallas import (PallasAttentionBackendImpl,
-                                                    PallasMetadata)
+from aphrodite.v1.attention.backends.pallas import PallasAttentionBackendImpl, PallasMetadata
 
 
 def test_ragged_paged_attention():
@@ -51,14 +50,10 @@ def test_ragged_paged_attention():
     max_num_reqs = 8
     max_num_blocks_per_req = 8
     num_kv_update_slices = torch.tensor([num_tokens], dtype=torch.int32)
-    block_tables = torch.zeros(
-        (max_num_reqs, max_num_blocks_per_req), dtype=torch.int32
-    )
+    block_tables = torch.zeros((max_num_reqs, max_num_blocks_per_req), dtype=torch.int32)
     context_lens = torch.ones((max_num_reqs,), dtype=torch.int32)
     query_lens = [1] * max_num_reqs
-    query_start_loc = torch.cumsum(
-        torch.tensor([0] + query_lens, dtype=torch.int32), dim=0, dtype=torch.int32
-    )
+    query_start_loc = torch.cumsum(torch.tensor([0] + query_lens, dtype=torch.int32), dim=0, dtype=torch.int32)
     num_seqs = torch.tensor([max_num_reqs], dtype=torch.int32)
     attn_metadata = PallasMetadata(
         slot_mapping=slot_mapping,

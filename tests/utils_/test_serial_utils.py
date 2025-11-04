@@ -1,9 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.utils.serial_utils import (EMBED_DTYPE_TO_TORCH_DTYPE,
-                                          ENDIANNESS, binary2tensor,
-                                          tensor2binary)
+from aphrodite.utils.serial_utils import EMBED_DTYPE_TO_TORCH_DTYPE, ENDIANNESS, binary2tensor, tensor2binary
 from tests.models.utils import check_embeddings_close
 
 
@@ -15,9 +13,7 @@ def test_encode_and_decode(embed_dtype: str, endianness: str):
         tensor = torch.rand(2, 3, 5, 7, 11, 13, device="cpu", dtype=torch.float32)
         shape = tensor.shape
         binary = tensor2binary(tensor, embed_dtype, endianness)
-        new_tensor = binary2tensor(binary, shape, embed_dtype, endianness).to(
-            torch.float32
-        )
+        new_tensor = binary2tensor(binary, shape, embed_dtype, endianness).to(torch.float32)
 
         if embed_dtype in ["float32", "float16"]:
             torch.testing.assert_close(tensor, new_tensor, atol=0.001, rtol=0.001)

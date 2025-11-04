@@ -36,10 +36,7 @@ class DeepSpeedFPConfig(QuantizationConfig):
             )
 
     def __repr__(self) -> str:
-        return (
-            f"DeepSpeedFPConfig(weight_bits={self.weight_bits}), "
-            f"group_size={self.group_size}"
-        )
+        return f"DeepSpeedFPConfig(weight_bits={self.weight_bits}), group_size={self.group_size}"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -70,9 +67,7 @@ class DeepSpeedFPConfig(QuantizationConfig):
             "quantize_config.json",
         ]
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["DeepSpeedFPLinearMethod"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["DeepSpeedFPLinearMethod"]:
         if isinstance(layer, LinearBase):
             return DeepSpeedFPLinearMethod(self)
         return None
@@ -158,15 +153,11 @@ class DeepSpeedFPParameter(nn.Parameter):
             import deepspeed
 
             if version.parse(deepspeed.__version__) < version.parse("0.14.2"):
-                raise ImportError(
-                    "deepspeed version is wrong. Please install deepspeed>=0.14.2."
-                )
+                raise ImportError("deepspeed version is wrong. Please install deepspeed>=0.14.2.")
             from deepspeed.ops.fp_quantizer import FP_Quantize
         except ImportError as err:
             raise ImportError(
-                "Please install deepspeed>=0.14.2 via "
-                "`pip install deepspeed>=0.14.2` to use "
-                "deepspeedfp quantizer."
+                "Please install deepspeed>=0.14.2 via `pip install deepspeed>=0.14.2` to use deepspeedfp quantizer."
             ) from err
         data = torch.empty(
             (
@@ -197,9 +188,7 @@ class DeepSpeedFPParameter(nn.Parameter):
         Return a tensor containing the dequantized weights of this parameter.
         """
         assert self.data.device.type == "cuda" and self.data.dtype == torch.int8
-        return self.fp_quantizer.dequantize(
-            self.data, fp_out=fp_out, q_bits=self.quant_config.weight_bits
-        )
+        return self.fp_quantizer.dequantize(self.data, fp_out=fp_out, q_bits=self.quant_config.weight_bits)
 
     def ds_selective_dequantize(self, indices, fp_out=None) -> torch.Tensor:
         """

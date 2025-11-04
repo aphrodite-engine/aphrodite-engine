@@ -10,7 +10,10 @@ import torch
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 from aphrodite.modeling.layers.fused_moe.layer import determine_expert_map
 from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
-    moe_permute, moe_permute_unpermute_supported, moe_unpermute)
+    moe_permute,
+    moe_permute_unpermute_supported,
+    moe_unpermute,
+)
 from aphrodite.platforms import current_platform
 
 NUM_EXPERTS = [16, 64, 256]
@@ -35,19 +38,15 @@ def torch_permute(
     if expert_map is not None:
         is_local_expert = expert_map[topk_ids] != -1
         not_local_expert = expert_map[topk_ids] == -1
-        topk_ids = is_local_expert * (topk_ids - start_expert) + not_local_expert * (
-            topk_ids + n_expert
-        )
-    token_expert_indices = torch.arange(
-        0, n_token * topk, dtype=torch.int32, device=hidden_states.device
-    ).reshape((n_token, topk))
+        topk_ids = is_local_expert * (topk_ids - start_expert) + not_local_expert * (topk_ids + n_expert)
+    token_expert_indices = torch.arange(0, n_token * topk, dtype=torch.int32, device=hidden_states.device).reshape(
+        (n_token, topk)
+    )
 
     sorted_topk_ids, sorted_indices = torch.sort(topk_ids.flatten(), stable=True)
     dst_row_id2src_row_id_map = token_expert_indices.flatten()[sorted_indices]
 
-    expert_first_token_offset = torch.zeros(
-        n_local_expert + 1, dtype=torch.int64, device="cuda"
-    )
+    expert_first_token_offset = torch.zeros(n_local_expert + 1, dtype=torch.int64, device="cuda")
     idx = 0
     for i in range(0, n_local_expert):
         cnt = 0
@@ -61,16 +60,14 @@ def torch_permute(
     if align_block_size is None:
         permuted_hidden_states = hidden_states[dst_row_id2src_row_id_map // topk, ...]
         permuted_row_size = permuted_hidden_states.shape[0]
-        m_indices = torch.empty(
-            permuted_row_size, device="cuda", dtype=torch.int32
-        ).fill_(fill_invalid_expert)
+        m_indices = torch.empty(permuted_row_size, device="cuda", dtype=torch.int32).fill_(fill_invalid_expert)
         for i in range(1, n_local_expert + 1):
             first_token_offset = expert_first_token_offset[i - 1]
             last_token_offset = expert_first_token_offset[i]
             m_indices[first_token_offset:last_token_offset] = i - 1
-        src_row_id2dst_row_id_map = torch.arange(
-            0, n_token * topk, device="cuda", dtype=torch.int32
-        )[src2dst_idx].reshape((n_token, topk))
+        src_row_id2dst_row_id_map = torch.arange(0, n_token * topk, device="cuda", dtype=torch.int32)[
+            src2dst_idx
+        ].reshape((n_token, topk))
         valid_row_idx += [i for i in range(expert_first_token_offset[-1])]
         dst_row_id2src_row_id_map[expert_first_token_offset[-1] :] = n_token * topk
         return [
@@ -93,16 +90,10 @@ def torch_permute(
             dtype=torch.int32,
             device=hidden_states.device,
         )
-        permuted_hidden_states = torch.empty(
-            (permuted_row_size, n_hidden), device="cuda", dtype=hidden_states.dtype
-        )
-        align_src_row_id2dst_row_id = torch.empty(
-            n_token * topk, device="cuda", dtype=torch.int32
-        )
+        permuted_hidden_states = torch.empty((permuted_row_size, n_hidden), device="cuda", dtype=hidden_states.dtype)
+        align_src_row_id2dst_row_id = torch.empty(n_token * topk, device="cuda", dtype=torch.int32)
         align_expert_first_token_offset = torch.zeros_like(expert_first_token_offset)
-        m_indices = torch.empty(
-            permuted_row_size, device="cuda", dtype=torch.int32
-        ).fill_(fill_invalid_expert)
+        m_indices = torch.empty(permuted_row_size, device="cuda", dtype=torch.int32).fill_(fill_invalid_expert)
         # get align_permuted_hidden_states,
         # valid row_idx and align_expert_first_token_offset
         for i in range(1, n_local_expert + 1):
@@ -111,9 +102,7 @@ def torch_permute(
             n_token_in_expert = last_token_offset - first_token_offset
             align_expert_first_token_offset[i] = (
                 align_expert_first_token_offset[i - 1]
-                + (n_token_in_expert + align_block_size - 1)
-                // align_block_size
-                * align_block_size
+                + (n_token_in_expert + align_block_size - 1) // align_block_size * align_block_size
             )
             align_first_token_offset = align_expert_first_token_offset[i - 1]
             align_last_token_offset = align_expert_first_token_offset[i]
@@ -125,9 +114,9 @@ def torch_permute(
                 align_first_token_offset : align_first_token_offset + n_token_in_expert,
                 ...,
             ] = hidden_states[dst_row_id2src_row_id_in_expert // topk, ...]
-            permuted_idx[
-                align_first_token_offset : align_first_token_offset + n_token_in_expert
-            ] = dst_row_id2src_row_id_in_expert
+            permuted_idx[align_first_token_offset : align_first_token_offset + n_token_in_expert] = (
+                dst_row_id2src_row_id_in_expert
+            )
             # set current expert m_indices
             m_indices[align_first_token_offset:align_last_token_offset] = i - 1
             valid_row_idx += [
@@ -148,9 +137,7 @@ def torch_permute(
             align_first_token_offset = align_expert_first_token_offset[eid]
             token_offset = i - first_token_offset
             align_src_row_id2dst_row_id[i] = align_first_token_offset + token_offset
-        align_src_row_id2dst_row_id = align_src_row_id2dst_row_id[src2dst_idx].reshape(
-            (n_token, topk)
-        )
+        align_src_row_id2dst_row_id = align_src_row_id2dst_row_id[src2dst_idx].reshape((n_token, topk))
         return [
             permuted_hidden_states,
             align_expert_first_token_offset,
@@ -177,15 +164,9 @@ def torch_unpermute(
     mask[valid_row_idx] = True
     permuted_hidden_states[~mask] = 0
 
-    permuted_hidden_states = permuted_hidden_states[
-        src_row_id2dst_row_id_map.flatten(), ...
-    ]
+    permuted_hidden_states = permuted_hidden_states[src_row_id2dst_row_id_map.flatten(), ...]
     permuted_hidden_states = permuted_hidden_states.view(-1, topk, n_hidden)
-    output = (
-        (permuted_hidden_states * topk_weights.unsqueeze(2))
-        .sum(1)
-        .to(permuted_hidden_states.dtype)
-    )
+    output = (permuted_hidden_states * topk_weights.unsqueeze(2)).sum(1).to(permuted_hidden_states.dtype)
     return output
 
 
@@ -218,9 +199,7 @@ def test_moe_permute_unpermute(
     current_platform.seed_everything(0)
     hidden_states = torch.randn((n_token, n_hidden), device="cuda").to(dtype)
     gating_output = torch.randn((n_token, n_expert), device="cuda").to(dtype)
-    topk_weights, topk_ids, token_expert_indices = fused_topk(
-        hidden_states, gating_output, topk, False
-    )
+    topk_weights, topk_ids, token_expert_indices = fused_topk(hidden_states, gating_output, topk, False)
     (
         gold_permuted_hidden_states,
         gold_expert_first_token_offset,
@@ -259,13 +238,9 @@ def test_moe_permute_unpermute(
     )
 
     # check expert_first_token_offset
-    torch.testing.assert_close(
-        gold_expert_first_token_offset, expert_first_token_offset, atol=0, rtol=0
-    )
+    torch.testing.assert_close(gold_expert_first_token_offset, expert_first_token_offset, atol=0, rtol=0)
     # check src_row_id2dst_row_id_map
-    torch.testing.assert_close(
-        gold_inv_permuted_idx.flatten(), inv_permuted_idx, atol=0, rtol=0
-    )
+    torch.testing.assert_close(gold_inv_permuted_idx.flatten(), inv_permuted_idx, atol=0, rtol=0)
     # check mindice
     # current kernel usage assumes deepgemm requires align_block_size
     # when it's not provided then we don't compute m_indices (for cutlass)
@@ -282,9 +257,7 @@ def test_moe_permute_unpermute(
     # add a random tensor to simulate group gemm
     result0 = 0.5 * permuted_hidden_states + torch.randn_like(permuted_hidden_states)
     result4 = torch.empty_like(hidden_states)
-    moe_unpermute(
-        result4, result0, topk_weights, inv_permuted_idx, expert_first_token_offset
-    )
+    moe_unpermute(result4, result0, topk_weights, inv_permuted_idx, expert_first_token_offset)
 
     gold4 = torch_unpermute(
         result0,

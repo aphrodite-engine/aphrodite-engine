@@ -5,8 +5,7 @@ from PIL import Image
 from aphrodite.assets.base import get_aphrodite_public_assets
 from aphrodite.assets.image import VLM_IMAGES_DIR
 
-from ....conftest import (IMAGE_ASSETS, AphroditeRunner, HfRunner,
-                          PromptImageInput)
+from ....conftest import IMAGE_ASSETS, AphroditeRunner, HfRunner, PromptImageInput
 from ....utils import large_gpu_test
 from ...utils import check_embeddings_close
 
@@ -42,9 +41,7 @@ def _run_test(
     # Aphrodite needs a fresh new process without cuda initialization.
     # if we run HF first, the cuda initialization will be done and it
     # will hurt multiprocessing backend with fork method (the default method).
-    with aphrodite_runner(
-        model, runner="pooling", dtype=dtype, enforce_eager=True
-    ) as aphrodite_model:
+    with aphrodite_runner(model, runner="pooling", dtype=dtype, enforce_eager=True) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.embed(input_texts, images=input_images)
 
     # use eager mode for hf runner, since phi3_v didn't work with flash_attn
@@ -111,20 +108,12 @@ def test_models_image(
     model: str,
     dtype: str,
 ) -> None:
-    input_texts_images = [
-        (text, asset.pil_image) for text, asset in zip(HF_IMAGE_PROMPTS, image_assets)
-    ]
+    input_texts_images = [(text, asset.pil_image) for text, asset in zip(HF_IMAGE_PROMPTS, image_assets)]
     # add cases for special_tokens
     input_texts_images.append(
         (
-            "\n<s><|user|>\n <|image_1|>\n\t <s>"
-            "Represent the given image for classification<|end|>"
-            "\n<|assistant|>\n",
-            Image.open(
-                get_aphrodite_public_assets(
-                    filename="cherry_blossom.jpg", s3_prefix=VLM_IMAGES_DIR
-                )
-            ),
+            "\n<s><|user|>\n <|image_1|>\n\t <s>Represent the given image for classification<|end|>\n<|assistant|>\n",
+            Image.open(get_aphrodite_public_assets(filename="cherry_blossom.jpg", s3_prefix=VLM_IMAGES_DIR)),
         )
     )
     input_texts = [text for text, _ in input_texts_images]

@@ -21,8 +21,7 @@ from typing import Annotated, Literal
 
 import torch
 import torch.nn as nn
-from transformers import (BatchFeature, FuyuConfig, FuyuImageProcessor,
-                          FuyuProcessor)
+from transformers import BatchFeature, FuyuConfig, FuyuImageProcessor, FuyuProcessor
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
@@ -30,15 +29,15 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.modeling.layers.linear import ColumnParallelLinear
 from aphrodite.modeling.models.persimmon import PersimmonForCausalLM
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
@@ -123,9 +122,7 @@ class FuyuProcessingInfo(BaseProcessingInfo):
 
     def get_image_size_with_most_features(self) -> ImageSize:
         image_processor = self.get_image_processor()
-        return ImageSize(
-            width=image_processor.size["width"], height=image_processor.size["height"]
-        )
+        return ImageSize(width=image_processor.size["width"], height=image_processor.size["height"])
 
 
 class FuyuDummyInputsBuilder(BaseDummyInputsBuilder[FuyuProcessingInfo]):
@@ -176,9 +173,7 @@ class FuyuMultiModalProcessor(BaseMultiModalProcessor[FuyuProcessingInfo]):
 
         image_patches = processed_outputs["image_patches"]
         processed_outputs["image_patches"] = flatten_bn(image_patches)
-        processed_outputs["patches_per_image"] = torch.tensor(
-            [len(p) for p in image_patches]
-        )
+        processed_outputs["patches_per_image"] = torch.tensor([len(p) for p in image_patches])
 
         return processed_outputs
 
@@ -204,9 +199,7 @@ class FuyuMultiModalProcessor(BaseMultiModalProcessor[FuyuProcessingInfo]):
         patches_per_image = hf_inputs.get("patches_per_image", torch.empty(0))
 
         return dict(
-            image_patches=MultiModalFieldConfig.flat_from_sizes(
-                "image", patches_per_image
-            ),
+            image_patches=MultiModalFieldConfig.flat_from_sizes("image", patches_per_image),
             patches_per_image=MultiModalFieldConfig.batched("image"),
         )
 
@@ -293,13 +286,9 @@ class FuyuForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             aphrodite_config=aphrodite_config.with_hf_config(config.text_config),
             prefix=maybe_prefix(prefix, "language_model"),
         )
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> FuyuImagePatchInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> FuyuImagePatchInputs | None:
         image_patches = kwargs.pop("image_patches", None)
         patches_per_image = kwargs.pop("patches_per_image", None)
 
@@ -313,9 +302,7 @@ class FuyuForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             resolve_bindings={"fn": self.image_feature_size},
         )
 
-    def _process_image_input(
-        self, image_input: FuyuImagePatchInputs
-    ) -> MultiModalEmbeddings:
+    def _process_image_input(self, image_input: FuyuImagePatchInputs) -> MultiModalEmbeddings:
         image_patches_flat = image_input["image_patches_flat"]
         patches_per_image = image_input["patches_per_image"]
 
@@ -357,9 +344,7 @@ class FuyuForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
-        logits = self.language_model.logits_processor(
-            self.language_model.lm_head, hidden_states
-        )
+        logits = self.language_model.logits_processor(self.language_model.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

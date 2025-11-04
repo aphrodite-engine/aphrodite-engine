@@ -15,8 +15,7 @@ import torch
 from torch import nn
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
-from transformers import (BatchFeature, PretrainedConfig, PreTrainedTokenizer,
-                          TensorType)
+from transformers import BatchFeature, PretrainedConfig, PreTrainedTokenizer, TensorType
 from transformers.image_utils import ImageInput
 from transformers.tokenization_utils_base import TextInput
 
@@ -24,26 +23,24 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.resampler import Resampler2, get_abs_pos
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
 from aphrodite.multimodal.parse import MultiModalDataItems
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
 from .qwen import QWenBaseModel, QWenModel
 
 
@@ -111,9 +108,7 @@ class VisualAttention(nn.Module):
         self.hidden_size_per_partition = embed_dim
 
         # Strided linear layer.
-        assert self._qkv_same_embed_dim, (
-            "Visual Attention implementation only supports self-attention"
-        )
+        assert self._qkv_same_embed_dim, "Visual Attention implementation only supports self-attention"
         self.in_proj = ReplicatedLinear(embed_dim, 3 * embed_dim)
         self.out_proj = ReplicatedLinear(embed_dim, embed_dim)
         self.norm_factor = math.sqrt(self.hidden_size_per_attention_head)
@@ -135,9 +130,7 @@ class VisualAttention(nn.Module):
         mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
         # [sq, b, np, 3 * hn] --> 3 [sq, b, np, hn]
-        query_layer, key_layer, value_layer = mixed_x_layer.split(
-            self.hidden_size_per_attention_head, dim=-1
-        )
+        query_layer, key_layer, value_layer = mixed_x_layer.split(self.hidden_size_per_attention_head, dim=-1)
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
         query_layer = query_layer.view(
@@ -154,9 +147,7 @@ class VisualAttention(nn.Module):
 
         q_scaled = query_layer / self.norm_factor
         if attn_mask is not None:
-            attention_probs = torch.baddbmm(
-                attn_mask, q_scaled, key_layer.transpose(-2, -1)
-            )
+            attention_probs = torch.baddbmm(attn_mask, q_scaled, key_layer.transpose(-2, -1))
         else:
             attention_probs = torch.bmm(q_scaled, key_layer.transpose(-2, -1))
         attention_probs = attention_probs.softmax(dim=-1)
@@ -182,9 +173,7 @@ class VisualAttention(nn.Module):
         context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # [sq, b, np, hn] --> [sq, b, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + (
-            self.hidden_size_per_partition,
-        )
+        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
         output, _ = self.out_proj(context_layer)
@@ -202,9 +191,7 @@ class QwenVLMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
     ):
         super().__init__()
-        self.c_fc = ColumnParallelLinear(
-            hidden_size, intermediate_size, bias=True, quant_config=quant_config
-        )
+        self.c_fc = ColumnParallelLinear(hidden_size, intermediate_size, bias=True, quant_config=quant_config)
         self.act_fn = get_act_fn("gelu")
         self.c_proj = RowParallelLinear(
             intermediate_size,
@@ -292,9 +279,7 @@ class TransformerBlock(nn.Module):
     def get_cast_device(self) -> torch.device:
         return self.resblocks[0].mlp.c_fc.weight.device
 
-    def forward(
-        self, x: torch.Tensor, attn_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
         for r in self.resblocks:
             x = r(x, attn_mask=attn_mask)
         return x
@@ -358,9 +343,7 @@ class VisionTransformer(nn.Module):
         )
 
         self.ln_post = norm_layer(output_dim)
-        self.proj = nn.Parameter(
-            (output_dim**-0.5) * torch.randn(output_dim, output_dim)
-        )
+        self.proj = nn.Parameter((output_dim**-0.5) * torch.randn(output_dim, output_dim))
 
         self.image_start_id = image_start_id
         self.image_end_id = image_start_id + 1
@@ -575,9 +558,7 @@ class QwenVLDummyInputsBuilder(BaseDummyInputsBuilder[QwenVLProcessingInfo]):
         img_start = hf_processor.image_start_tag
         img_end = hf_processor.image_end_tag
 
-        return "".join(
-            f"Picture {i}: {img_start}{img_end}\n" for i in range(1, num_images + 1)
-        )
+        return "".join(f"Picture {i}: {img_start}{img_end}\n" for i in range(1, num_images + 1))
 
     def get_dummy_mm_data(
         self,
@@ -686,9 +667,7 @@ class QwenVLMultiModalProcessor(BaseMultiModalProcessor[QwenVLProcessingInfo]):
     info=QwenVLProcessingInfo,
     dummy_inputs=QwenVLDummyInputsBuilder,
 )
-class QwenVLForConditionalGeneration(
-    QWenBaseModel, SupportsPP, SupportsLoRA, SupportsMultiModal
-):
+class QwenVLForConditionalGeneration(QWenBaseModel, SupportsPP, SupportsLoRA, SupportsMultiModal):
     merge_by_field_config = True
 
     packed_modules_mapping = {
@@ -731,9 +710,7 @@ class QwenVLForConditionalGeneration(
 
         self.transformer: QwenVLModel
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> QwenImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> QwenImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -783,7 +760,5 @@ class QwenVLForConditionalGeneration(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states

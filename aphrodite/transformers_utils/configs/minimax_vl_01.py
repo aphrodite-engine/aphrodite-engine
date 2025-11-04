@@ -29,22 +29,25 @@ class MiniMaxVL01Config(PretrainedConfig):
         self.image_seq_length = image_seq_length
 
         if vision_feature_select_strategy not in ["default", "full"]:
-            raise ValueError("vision_feature_select_strategy should " +
-                             "be one of 'default', 'full'." +
-                             f"Got: {vision_feature_select_strategy}")
+            raise ValueError(
+                "vision_feature_select_strategy should "
+                + "be one of 'default', 'full'."
+                + f"Got: {vision_feature_select_strategy}"
+            )
 
         self.vision_feature_select_strategy = vision_feature_select_strategy
         self.vision_feature_layer = vision_feature_layer
         image_grid_pinpoints = (
-            image_grid_pinpoints if image_grid_pinpoints is not None else
-            [[336, 672], [672, 336], [672, 672], [1008, 336], [336, 1008]])
+            image_grid_pinpoints
+            if image_grid_pinpoints is not None
+            else [[336, 672], [672, 336], [672, 672], [1008, 336], [336, 1008]]
+        )
         self.image_grid_pinpoints = image_grid_pinpoints
 
         if isinstance(vision_config, dict):
             if "model_type" not in vision_config:
                 vision_config["model_type"] = "clip_vision_model"
-            vision_config = CONFIG_MAPPING[vision_config["model_type"]](
-                **vision_config)
+            vision_config = CONFIG_MAPPING[vision_config["model_type"]](**vision_config)
         elif vision_config is None:
             vision_config = CONFIG_MAPPING["clip_vision_model"](
                 intermediate_size=4096,

@@ -6,8 +6,7 @@ from transformers import AutoModelForSpeechSeq2Seq
 from aphrodite.logprobs import SampleLogprobs
 from aphrodite.lora.request import LoRARequest
 
-from ....conftest import (AphroditeRunner, AudioTestAssets, HfRunner,
-                          PromptAudioInput)
+from ....conftest import AphroditeRunner, AudioTestAssets, HfRunner, PromptAudioInput
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import check_logprobs_close
 

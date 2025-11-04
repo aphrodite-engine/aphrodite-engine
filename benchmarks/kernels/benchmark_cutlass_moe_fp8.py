@@ -6,11 +6,11 @@ but use different quantization strategies and backends.
 
 import nvtx
 import torch
-
-from aphrodite import _custom_ops as ops
 from aphrodite.model_executor.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.model_executor.layers.fused_moe.cutlass_moe import cutlass_moe_fp8
 from aphrodite.model_executor.layers.fused_moe.fused_moe import fused_experts, fused_topk
+
+from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -75,9 +75,7 @@ def bench_run(
     # Create scales based on quantization strategy
     if per_out_ch:
         # Per-channel quantization
-        w1_scale = torch.empty(
-            (num_experts, 2 * n, 1), device=device, dtype=torch.float32
-        )
+        w1_scale = torch.empty((num_experts, 2 * n, 1), device=device, dtype=torch.float32)
         w2_scale = torch.empty((num_experts, k, 1), device=device, dtype=torch.float32)
     else:
         # Per-tensor quantization
@@ -274,14 +272,10 @@ def bench_run(
 
     # Benchmark only CUDA graphs (more reliable and faster)
     # Benchmark Triton MoE with CUDA graphs
-    triton_graph_time = bench_cuda_graph(
-        triton_graph, num_warmup=num_warmup, num_iters=num_iters
-    )
+    triton_graph_time = bench_cuda_graph(triton_graph, num_warmup=num_warmup, num_iters=num_iters)
 
     # Benchmark CUTLASS MoE with CUDA graphs
-    cutlass_graph_time = bench_cuda_graph(
-        cutlass_graph, num_warmup=num_warmup, num_iters=num_iters
-    )
+    cutlass_graph_time = bench_cuda_graph(cutlass_graph, num_warmup=num_warmup, num_iters=num_iters)
 
     # Convert ms to us and return results
     triton_time_us = triton_graph_time * 1000
@@ -339,11 +333,7 @@ def main(args):
 
                         # Print results table for this configuration
                         if config_results:
-                            print(
-                                f"\n{'Batch Size':<12}"
-                                f"{'Triton (us)':<15}"
-                                f"{'CUTLASS (us)':<15}"
-                            )
+                            print(f"\n{'Batch Size':<12}{'Triton (us)':<15}{'CUTLASS (us)':<15}")
                             print("-" * 45)
                             for result in config_results:
                                 print(
@@ -380,9 +370,7 @@ if __name__ == "__main__":
         choices=WEIGHT_SHAPES_MOE.keys(),
     )
     parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
-    parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     parser.add_argument("--limit-k", nargs="+", type=int, default=[])
     parser.add_argument("--limit-n", nargs="+", type=int, default=[])
     parser.add_argument(

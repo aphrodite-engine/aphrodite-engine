@@ -12,9 +12,7 @@ from aphrodite.platforms import current_platform
 @pytest.mark.parametrize("combined_kv_head_num", [2, 16])
 @pytest.mark.parametrize("head_dim", [128, 256])
 @pytest.mark.parametrize("num_slices_per_block", [4, 8])
-def test_kv_cache_update_kernel(
-    page_size: int, combined_kv_head_num: int, head_dim: int, num_slices_per_block: int
-):
+def test_kv_cache_update_kernel(page_size: int, combined_kv_head_num: int, head_dim: int, num_slices_per_block: int):
     page_num = 1000
     padded_num_tokens = 128
     kv_cache_cpu = torch.zeros(
@@ -43,18 +41,12 @@ def test_kv_cache_update_kernel(
         ],
         dtype=np.int32,
     )
-    new_kv_cache_indices = np.concatenate(
-        [np.array([0], dtype=np.int32), np.cumsum(slice_lens[:-1])]
-    )
-    slot_mapping = np.stack(
-        [kv_cache_start_indices, new_kv_cache_indices, slice_lens], axis=1
-    )
+    new_kv_cache_indices = np.concatenate([np.array([0], dtype=np.int32), np.cumsum(slice_lens[:-1])])
+    slot_mapping = np.stack([kv_cache_start_indices, new_kv_cache_indices, slice_lens], axis=1)
     slot_mapping = np.transpose(slot_mapping)
     slot_mapping_cpu = torch.tensor(slot_mapping, device="cpu", dtype=torch.int32)
     slot_mapping_xla = slot_mapping_cpu.to(torch_xla.device())
-    num_kv_update_slices_xla = torch.tensor(
-        [num_kv_update_slices], device=torch_xla.device(), dtype=torch.int32
-    )
+    num_kv_update_slices_xla = torch.tensor([num_kv_update_slices], device=torch_xla.device(), dtype=torch.int32)
     torch_xla.sync()
 
     torch.ops.xla.dynamo_set_buffer_donor_(kv_cache_xla, True)

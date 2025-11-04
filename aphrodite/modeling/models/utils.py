@@ -12,16 +12,13 @@ from typing_extensions import deprecated
 import aphrodite.envs as envs
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import (get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.multimodal import NestedTensors
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.utils.platform_utils import (is_pin_memory_available,
-                                            is_uva_available)
-from aphrodite.utils.torch_utils import (direct_register_custom_op,
-                                         get_cuda_view_from_cpu_tensor)
+from aphrodite.utils.platform_utils import is_pin_memory_available, is_uva_available
+from aphrodite.utils.torch_utils import direct_register_custom_op, get_cuda_view_from_cpu_tensor
 
 logger = init_logger(__name__)
 
@@ -69,28 +66,14 @@ class WeightsMapper:
 
         return key
 
-    def apply(
-        self, weights: Iterable[tuple[str, torch.Tensor]]
-    ) -> Iterable[tuple[str, torch.Tensor]]:
-        return (
-            (out_name, data)
-            for name, data in weights
-            if (out_name := self._map_name(name)) is not None
-        )
+    def apply(self, weights: Iterable[tuple[str, torch.Tensor]]) -> Iterable[tuple[str, torch.Tensor]]:
+        return ((out_name, data) for name, data in weights if (out_name := self._map_name(name)) is not None)
 
     def apply_list(self, values: list[str]) -> list[str]:
-        return [
-            out_name
-            for name in values
-            if (out_name := self._map_name(name)) is not None
-        ]
+        return [out_name for name in values if (out_name := self._map_name(name)) is not None]
 
     def apply_dict(self, values: dict[str, Any]) -> dict[str, Any]:
-        return {
-            out_name: value
-            for name, value in values.items()
-            if (out_name := self._map_name(name)) is not None
-        }
+        return {out_name: value for name, value in values.items() if (out_name := self._map_name(name)) is not None}
 
 
 class AutoWeightsLoader:
@@ -140,20 +123,14 @@ class AutoWeightsLoader:
         self,
         weights: Iterable[tuple[str, torch.Tensor]],
     ) -> Iterable[tuple[str, Iterable[tuple[str, torch.Tensor]]]]:
-        weights_by_parts = (
-            (weight_name.split(".", 1), weight_data)
-            for weight_name, weight_data in weights
-        )
+        weights_by_parts = ((weight_name.split(".", 1), weight_data) for weight_name, weight_data in weights)
 
         for prefix, group in itertools.groupby(weights_by_parts, key=lambda x: x[0][0]):
             yield (
                 prefix,
                 # Because maxsplit=1 in weight_name.split(...),
                 # the length of `parts` must either be 1 or 2
-                (
-                    ("" if len(parts) == 1 else parts[1], weights_data)
-                    for parts, weights_data in group
-                ),
+                (("" if len(parts) == 1 else parts[1], weights_data) for parts, weights_data in group),
             )
 
     def _get_qualname(self, prefix: str, rest: str) -> str:
@@ -195,8 +172,7 @@ class AutoWeightsLoader:
                     continue
 
                 raise ValueError(
-                    f"Attempted to load nested weight '{weight_qualname}' "
-                    f"into a single parameter '{base_prefix}'"
+                    f"Attempted to load nested weight '{weight_qualname}' into a single parameter '{base_prefix}'"
                 )
 
             weight_loader = getattr(param, "weight_loader", default_weight_loader)
@@ -206,9 +182,7 @@ class AutoWeightsLoader:
 
             yield weight_qualname
 
-    def _add_loadable_non_param_tensors(
-        self, module: nn.Module, child_params: dict[str, torch.Tensor]
-    ):
+    def _add_loadable_non_param_tensors(self, module: nn.Module, child_params: dict[str, torch.Tensor]):
         """
         Add tensor names that are not in the model params that may be in the
         safetensors, e.g., batch normalization stats.
@@ -245,9 +219,7 @@ class AutoWeightsLoader:
             if callable(module_load_weights):
                 loaded_params = module_load_weights(weights)
                 if loaded_params is None:
-                    logger.warning(
-                        "Unable to collect loaded parameters for module %s", module
-                    )
+                    logger.warning("Unable to collect loaded parameters for module %s", module)
                 else:
                     yield from map(
                         lambda x: self._get_qualname(base_prefix, x),
@@ -270,18 +242,14 @@ class AutoWeightsLoader:
 
                     continue
 
-                yield from self._load_module(
-                    prefix, child_modules[child_prefix], child_weights
-                )
+                yield from self._load_module(prefix, child_modules[child_prefix], child_weights)
             elif child_prefix in child_params:
                 if self._can_skip(prefix):
                     logger.debug("Skipping param %s", prefix)
 
                     continue
 
-                yield from self._load_param(
-                    prefix, child_params[child_prefix], child_weights
-                )
+                yield from self._load_param(prefix, child_params[child_prefix], child_weights)
             else:
                 can_skip_module = self._can_skip(prefix + ".")
                 can_skip_param = self._can_skip(prefix)
@@ -297,10 +265,7 @@ class AutoWeightsLoader:
 
                     continue
 
-                msg = (
-                    f"There is no module or parameter named '{prefix}' "
-                    f"in {type(self.module).__name__}"
-                )
+                msg = f"There is no module or parameter named '{prefix}' in {type(self.module).__name__}"
                 raise ValueError(msg)
 
     def load_weights(
@@ -312,9 +277,7 @@ class AutoWeightsLoader:
         if mapper is not None:
             weights = mapper.apply(weights)
         # filter out weights with first-prefix/substr to skip in name
-        weights = (
-            (name, weight) for name, weight in weights if not self._can_skip(name)
-        )
+        weights = ((name, weight) for name, weight in weights if not self._can_skip(name))
 
         autoloaded_weights = set(self._load_module("", self.module, weights))
         return autoloaded_weights
@@ -444,9 +407,7 @@ def _merge_multimodal_embeddings(
 
         # NOTE: This can avoid D2H sync (#22105), but fails to
         # raise an error if is_multimodal.sum() < len(mm_embeds_flat)
-        inputs_embeds.masked_scatter_(
-            is_multimodal.unsqueeze(-1), mm_embeds_flat.to(dtype=input_dtype)
-        )
+        inputs_embeds.masked_scatter_(is_multimodal.unsqueeze(-1), mm_embeds_flat.to(dtype=input_dtype))
     except RuntimeError as e:
         num_actual_tokens = len(mm_embeds_flat)
         num_expected_tokens = is_multimodal.sum().item()
@@ -632,15 +593,10 @@ def make_layers(
     from aphrodite.distributed.parallel_state import get_pp_group
     from aphrodite.distributed.utils import get_pp_indices
 
-    start_layer, end_layer = get_pp_indices(
-        num_hidden_layers, get_pp_group().rank_in_group, get_pp_group().world_size
-    )
+    start_layer, end_layer = get_pp_indices(num_hidden_layers, get_pp_group().rank_in_group, get_pp_group().world_size)
     modules = torch.nn.ModuleList(
         [PPMissingLayer() for _ in range(start_layer)]
-        + [
-            maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"))
-            for idx in range(start_layer, end_layer)
-        ]
+        + [maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}")) for idx in range(start_layer, end_layer)]
         + [PPMissingLayer() for _ in range(end_layer, num_hidden_layers)]
     )
     return start_layer, end_layer, modules
@@ -673,10 +629,7 @@ def is_pp_missing_parameter(name: str, model: torch.nn.Module) -> bool:
     if isinstance(model, PPMissingLayer):
         return True
 
-    return any(
-        name.startswith(missing_layer_name)
-        for missing_layer_name in get_pp_missing_layer_names(model)
-    )
+    return any(name.startswith(missing_layer_name) for missing_layer_name in get_pp_missing_layer_names(model))
 
 
 def make_empty_intermediate_tensors_factory(keys: list[str], hidden_size: int):
@@ -686,10 +639,7 @@ def make_empty_intermediate_tensors_factory(keys: list[str], hidden_size: int):
         device: torch.device,
     ) -> IntermediateTensors:
         return IntermediateTensors(
-            {
-                key: torch.zeros((batch_size, hidden_size), dtype=dtype, device=device)
-                for key in keys
-            }
+            {key: torch.zeros((batch_size, hidden_size), dtype=dtype, device=device) for key in keys}
         )
 
     return make_empty_intermediate_tensors
@@ -725,20 +675,12 @@ def extract_layer_index(layer_name: str, num_attn_module: int = 1) -> int:
         except ValueError:
             continue
     if num_attn_module == 1 or "attn" not in layer_name:
-        assert len(int_vals) == 1, (
-            f"layer name {layer_name} should only contain one integer"
-        )
+        assert len(int_vals) == 1, f"layer name {layer_name} should only contain one integer"
 
         return int_vals[0]
     else:
-        assert len(int_vals) <= 2, (
-            f"layer name {layer_name} should contain most two integers"
-        )
-        layer_index = (
-            int_vals[0] * num_attn_module + int_vals[1]
-            if len(int_vals) == 2
-            else int_vals[0]
-        )
+        assert len(int_vals) <= 2, f"layer name {layer_name} should contain most two integers"
+        layer_index = int_vals[0] * num_attn_module + int_vals[1] if len(int_vals) == 2 else int_vals[0]
         return layer_index
 
 
@@ -752,9 +694,7 @@ def cast_overflow_tensors(
     return tensors
 
 
-def fast_topk(
-    values: torch.Tensor, topk: int, dim: int
-) -> tuple[torch.Tensor, torch.Tensor]:
+def fast_topk(values: torch.Tensor, topk: int, dim: int) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Optimized topk implementation that uses torch.max for k=1 case.
 

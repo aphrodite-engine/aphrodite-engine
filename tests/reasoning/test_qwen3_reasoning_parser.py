@@ -124,16 +124,10 @@ def test_reasoning(
     qwen3_tokenizer,
 ):
     output = qwen3_tokenizer.tokenize(param_dict["output"])
-    output_tokens: list[str] = [
-        qwen3_tokenizer.convert_tokens_to_string([token]) for token in output
-    ]
-    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(
-        qwen3_tokenizer
-    )
+    output_tokens: list[str] = [qwen3_tokenizer.convert_tokens_to_string([token]) for token in output]
+    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(qwen3_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, output_tokens, streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, output_tokens, streaming=streaming)
 
     assert reasoning == param_dict["reasoning_content"]
     assert content == param_dict["content"]

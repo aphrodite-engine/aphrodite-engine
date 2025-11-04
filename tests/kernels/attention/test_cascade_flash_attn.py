@@ -1,12 +1,13 @@
 import pytest
 import torch
 
-from aphrodite.aphrodite_flash_attn import (fa_version_unsupported_reason,
-                                            flash_attn_varlen_func,
-                                            is_fa_version_supported)
+from aphrodite.aphrodite_flash_attn import (
+    fa_version_unsupported_reason,
+    flash_attn_varlen_func,
+    is_fa_version_supported,
+)
 from aphrodite.platforms import current_platform
-from aphrodite.v1.attention.backends.flash_attn import (cascade_attention,
-                                                        merge_attn_states)
+from aphrodite.v1.attention.backends.flash_attn import cascade_attention, merge_attn_states
 
 NUM_HEADS = [(4, 4), (8, 2), (16, 2)]
 HEAD_SIZES = [128, 192, 256]
@@ -86,8 +87,7 @@ def test_cascade(
     torch.set_default_device("cuda")
     if not is_fa_version_supported(fa_version):
         pytest.skip(
-            f"Flash attention version {fa_version} not supported due "
-            f'to: "{fa_version_unsupported_reason(fa_version)}"'
+            f'Flash attention version {fa_version} not supported due to: "{fa_version_unsupported_reason(fa_version)}"'
         )
 
     current_platform.seed_everything(0)
@@ -97,9 +97,7 @@ def test_cascade(
     num_query_heads = num_heads[0]
     num_kv_heads = num_heads[1]
     assert num_query_heads % num_kv_heads == 0
-    key_cache = torch.randn(
-        num_blocks, block_size, num_kv_heads, head_size, dtype=dtype
-    )
+    key_cache = torch.randn(num_blocks, block_size, num_kv_heads, head_size, dtype=dtype)
     value_cache = torch.randn_like(key_cache)
 
     seq_lens, common_prefix_len = seq_lens_and_common_prefix
@@ -111,14 +109,10 @@ def test_cascade(
 
     total_num_query_tokens = sum(query_lens)
     query = torch.randn(total_num_query_tokens, num_query_heads, head_size, dtype=dtype)
-    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(
-        dim=0, dtype=torch.int32
-    )
+    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(dim=0, dtype=torch.int32)
     kv_lens_tensor = torch.tensor(kv_lens, dtype=torch.int32)
     max_num_blocks_per_seq = (max_kv_len + block_size - 1) // block_size
-    block_tables = torch.randint(
-        0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32
-    )
+    block_tables = torch.randint(0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32)
 
     assert common_prefix_len > 0
     assert common_prefix_len % block_size == 0

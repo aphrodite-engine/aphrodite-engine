@@ -65,9 +65,7 @@ def create_video_from_image(
 
 def cosine_similarity(A: npt.NDArray, B: npt.NDArray, axis: int = -1) -> npt.NDArray:
     """Compute cosine similarity between two vectors."""
-    return np.sum(A * B, axis=axis) / (
-        np.linalg.norm(A, axis=axis) * np.linalg.norm(B, axis=axis)
-    )
+    return np.sum(A * B, axis=axis) / (np.linalg.norm(A, axis=axis) * np.linalg.norm(B, axis=axis))
 
 
 def normalize_image(image: npt.NDArray) -> npt.NDArray:

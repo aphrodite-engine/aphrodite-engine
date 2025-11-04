@@ -6,15 +6,12 @@ import torch.nn as nn
 
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.logger import init_logger
-from aphrodite.transformers_utils.tokenizer import (
-    AnyTokenizer, cached_tokenizer_from_config)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, cached_tokenizer_from_config
 from aphrodite.utils.collection_utils import ClassRegistry
 
 from .cache import BaseMultiModalProcessorCache
-from .processing import (BaseMultiModalProcessor, BaseProcessingInfo,
-                         InputProcessingContext)
-from .profiling import (BaseDummyInputsBuilder, DummyDecoderData,
-                        DummyEncoderData, MultiModalProfiler)
+from .processing import BaseMultiModalProcessor, BaseProcessingInfo, InputProcessingContext
+from .profiling import BaseDummyInputsBuilder, DummyDecoderData, DummyEncoderData, MultiModalProfiler
 
 if TYPE_CHECKING:
     from aphrodite.config import ModelConfig
@@ -127,13 +124,9 @@ class MultiModalRegistry:
         mm_config = model_config.get_multimodal_config()
 
         # Check if all supported modalities have limit == 0
-        if all(
-            mm_config.get_limit_per_prompt(modality) == 0
-            for modality in supported_modalities
-        ):
+        if all(mm_config.get_limit_per_prompt(modality) == 0 for modality in supported_modalities):
             logger.info_once(
-                "All limits of multimodal modalities supported by the model "
-                "are set to 0, running in text-only mode."
+                "All limits of multimodal modalities supported by the model are set to 0, running in text-only mode."
             )
             return False
 
@@ -157,9 +150,7 @@ class MultiModalRegistry:
         profiler: MultiModalProfiler = MultiModalProfiler(processor)
 
         seq_len = model_config.max_model_len
-        profiler_limits = (
-            profiler.get_mm_limits() if profiler_limits is None else profiler_limits
-        )
+        profiler_limits = profiler.get_mm_limits() if profiler_limits is None else profiler_limits
 
         return profiler.get_mm_max_contiguous_tokens(
             seq_len,
@@ -291,8 +282,7 @@ class MultiModalRegistry:
         token_ids = dummy_data.prompt_token_ids
         if len(token_ids) < seq_len:
             raise AssertionError(
-                f"Expected at least {seq_len} dummy tokens for profiling, "
-                f"but found {len(token_ids)} tokens instead."
+                f"Expected at least {seq_len} dummy tokens for profiling, but found {len(token_ids)} tokens instead."
             )
 
         return dummy_data

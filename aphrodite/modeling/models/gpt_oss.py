@@ -9,29 +9,36 @@ from aphrodite.attention import Attention, AttentionType
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_dp_group, get_ep_group, get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_gather)
+from aphrodite.distributed import (
+    get_dp_group,
+    get_ep_group,
+    get_pp_group,
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+    tensor_model_parallel_all_gather,
+)
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEParallelConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.utils import sequence_parallel_chunk
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.math_utils import cdiv
 
 from .interfaces import SupportsEagle3, SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, WeightsMapper, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class OAIAttention(nn.Module):
@@ -58,9 +65,7 @@ class OAIAttention(nn.Module):
             rope_scaling={
                 "rope_type": "yarn",
                 "factor": config.rope_scaling["factor"],
-                "original_max_position_embeddings": config.rope_scaling[
-                    "original_max_position_embeddings"
-                ],
+                "original_max_position_embeddings": config.rope_scaling["original_max_position_embeddings"],
                 "beta_fast": config.rope_scaling["beta_fast"],
                 "beta_slow": config.rope_scaling["beta_slow"],
             },
@@ -69,9 +74,7 @@ class OAIAttention(nn.Module):
 
         tp_size = get_tensor_model_parallel_world_size()
 
-        self.sinks = torch.nn.Parameter(
-            torch.empty(config.num_attention_heads // tp_size, requires_grad=False)
-        )
+        self.sinks = torch.nn.Parameter(torch.empty(config.num_attention_heads // tp_size, requires_grad=False))
 
         self.q_size = self.num_attention_heads * self.head_dim // tp_size
         self.kv_size = self.num_key_value_heads * self.head_dim // tp_size
@@ -112,9 +115,7 @@ class OAIAttention(nn.Module):
             sinks=self.sinks,
         )
 
-    def forward(
-        self, hidden_states: torch.Tensor, positions: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
         qkv, _ = self.qkv(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -186,9 +187,7 @@ class TransformerBlock(torch.nn.Module):
         cache_config = aphrodite_config.cache_config
 
         self.layer_idx = extract_layer_index(prefix)
-        self.attn = OAIAttention(
-            config, prefix=f"{prefix}.attn", cache_config=cache_config
-        )
+        self.attn = OAIAttention(config, prefix=f"{prefix}.attn", cache_config=cache_config)
         self.mlp = MLPBlock(aphrodite_config, self.layer_idx, prefix=f"{prefix}.mlp")
         self.input_layernorm = RMSNorm(config.hidden_size, eps=1e-5)
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=1e-5)
@@ -343,9 +342,7 @@ class GptOssModel(nn.Module):
                 if use_ep:
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
-                    narrow_weight = weight[
-                        ..., tp_rank_start // mxfp4_block : tp_rank_end // mxfp4_block
-                    ]
+                    narrow_weight = weight[..., tp_rank_start // mxfp4_block : tp_rank_end // mxfp4_block]
 
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
@@ -362,9 +359,7 @@ class GptOssModel(nn.Module):
                 # Handle MLP gate and up projection weights
                 # flat weight from (E, 2 * N, block_size, entry_per_block)
                 # to (E, 2 * N, -1), shouldn't trigger copy for contiguous
-                weight = weight.view(
-                    num_experts, 2 * intermediate_size, -1
-                ).contiguous()
+                weight = weight.view(num_experts, 2 * intermediate_size, -1).contiguous()
 
                 # Extract gate and up projection parts
                 # since the weight is shuffled, we can slice directly
@@ -388,9 +383,7 @@ class GptOssModel(nn.Module):
                 # Handle MLP down projection weights
                 # same flatten here, but since 2 mx4 value are packed in 1
                 # uint8, divide by 2
-                weight = weight.view(
-                    num_experts, -1, intermediate_size // 2
-                ).contiguous()
+                weight = weight.view(num_experts, -1, intermediate_size // 2).contiguous()
                 if use_ep:
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
@@ -436,9 +429,7 @@ class GptOssModel(nn.Module):
                     # (only load on rank 0 to avoid duplication)
                     if tp_rank != 0:
                         weight.zero_()
-                weight_loader(
-                    param, weight, weight_name=name, shard_id=None, expert_id=None
-                )
+                weight_loader(param, weight, weight_name=name, shard_id=None, expert_id=None)
                 loaded_params.add(name)
                 continue
             elif "sinks" in name:
@@ -603,9 +594,7 @@ class GptOssModel(nn.Module):
         ep_rank_end = (ep_rank + 1) * experts_per_rank
 
         quant_method = (
-            self.config.quantization_config["quant_method"]
-            if hasattr(self.config, "quantization_config")
-            else None
+            self.config.quantization_config["quant_method"] if hasattr(self.config, "quantization_config") else None
         )
         if quant_method == "mxfp4":
             return self._load_weights_mxfp4(
@@ -669,9 +658,7 @@ class GptOssForCausalLM(nn.Module, SupportsPP, SupportsEagle3, SupportsLoRA):
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         self.logits_processor = LogitsProcessor(self.config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
         self.model.aux_hidden_state_layers = layers

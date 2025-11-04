@@ -9,14 +9,15 @@ from aphrodite.logprobs import PromptLogprobs, SampleLogprobs
 from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.v1.engine import EngineCoreRequest
-from aphrodite.v1.engine.output_processor import (OutputProcessor,
-                                                  RequestOutputCollector)
+from aphrodite.v1.engine.output_processor import OutputProcessor, RequestOutputCollector
 from aphrodite.v1.metrics.stats import IterationStats
-from tests.v1.engine.utils import (NUM_PROMPT_LOGPROBS_UNDER_TEST,
-                                   NUM_SAMPLE_LOGPROBS_UNDER_TEST,
-                                   STOP_STRINGS,
-                                   DummyOutputProcessorTestVectors,
-                                   MockEngineCore)
+from tests.v1.engine.utils import (
+    NUM_PROMPT_LOGPROBS_UNDER_TEST,
+    NUM_SAMPLE_LOGPROBS_UNDER_TEST,
+    STOP_STRINGS,
+    DummyOutputProcessorTestVectors,
+    MockEngineCore,
+)
 
 
 def _ref_convert_id_to_token(
@@ -35,12 +36,8 @@ def _ref_convert_id_to_token(
     return tokenizer.decode([token_id]) or ""
 
 
-@pytest.mark.parametrize(
-    "request_output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY]
-)
-def test_incremental_detokenization(
-    request_output_kind: RequestOutputKind, dummy_test_vectors
-):
+@pytest.mark.parametrize("request_output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
+def test_incremental_detokenization(request_output_kind: RequestOutputKind, dummy_test_vectors):
     output_processor = OutputProcessor(dummy_test_vectors.tokenizer, log_stats=False)
     engine_core = MockEngineCore(tokens_list=dummy_test_vectors.generation_tokens)
 
@@ -131,11 +128,7 @@ def _validate_logprobs(
         ref_prompt_logprobs = dtv.prompt_logprobs[req_idx]
         if num_sample_logprobs is not None:
             # Validate sample logprobs
-            assert logprobs is not None, (
-                f"Request {req_id} requires sample"
-                " logprobs but sample logprobs are"
-                " None."
-            )
+            assert logprobs is not None, f"Request {req_id} requires sample logprobs but sample logprobs are None."
             # Require num sampled tokens to match num
             # sampled logprobs - especially important
             # to check since the detokenizer can cause
@@ -149,30 +142,22 @@ def _validate_logprobs(
                 f" {len_sample_logprobs} sample logprobs."
             )
             ref_cumulative_logprob = 0.0
-            for idx, (sampled_token, pos_logprob_dict) in enumerate(
-                zip(new_tokens, logprobs)
-            ):
+            for idx, (sampled_token, pos_logprob_dict) in enumerate(zip(new_tokens, logprobs)):
                 # Break out the reference log probability value &
                 # logprob token id tensors associated with this
                 # position in the completion. Also break out the
                 # sampled token ranks
-                (ref_pos_logprob_toks, ref_pos_logprob_vals, ref_sampled_token_rank) = (
-                    ref_logprobs[idx]
-                )
+                (ref_pos_logprob_toks, ref_pos_logprob_vals, ref_sampled_token_rank) = ref_logprobs[idx]
                 # For each position in the completion sequence,
                 # ensure the actual sampled token is among the
                 # logprobs
                 assert sampled_token in pos_logprob_dict, (
-                    f"Sampled token {sampled_token} not"
-                    f" present in logprob at index {idx}"
+                    f"Sampled token {sampled_token} not present in logprob at index {idx}"
                 )
 
                 # Validate number of sample logprobs
                 num_lp_toks = len(pos_logprob_dict)
-                assert (
-                    num_lp_toks == num_sample_logprobs
-                    or num_lp_toks == num_sample_logprobs + 1
-                ), (
+                assert num_lp_toks == num_sample_logprobs or num_lp_toks == num_sample_logprobs + 1, (
                     "Valid numbers of sample logprobs are"
                     f" {num_sample_logprobs} or"
                     f" {num_sample_logprobs + 1} but"
@@ -203,8 +188,7 @@ def _validate_logprobs(
                     ref_lp_val = ref_pos_logprob_vals[jdx]
                     ref_tok_id = ref_pos_logprob_toks[jdx]
                     assert ref_tok_id in pos_logprob_dict, (
-                        f"Expected token {ref_tok_id} to be"
-                        f" in logprob dict but it is not."
+                        f"Expected token {ref_tok_id} to be in logprob dict but it is not."
                     )
 
                     # Extract actually-generated logprob
@@ -219,9 +203,7 @@ def _validate_logprobs(
 
                     # Rank must be >= 1
                     assert lp_rank >= 1, (
-                        f"Logprob {lp} has invalid"
-                        f" rank {lp_rank} < 1."
-                        f" Logprob dict: {pos_logprob_dict}"
+                        f"Logprob {lp} has invalid rank {lp_rank} < 1. Logprob dict: {pos_logprob_dict}"
                     )
 
                     # Validate log probability
@@ -232,11 +214,7 @@ def _validate_logprobs(
                         f" expected. Logprob: {lp}"
                     )
 
-                assert rank_one_appears, (
-                    f"No Logprob has rank 1"
-                    " in the following Logprob"
-                    f" dict: {pos_logprob_dict}"
-                )
+                assert rank_one_appears, f"No Logprob has rank 1 in the following Logprob dict: {pos_logprob_dict}"
 
                 # Validate logprobs detokenization
                 for lp_tok in pos_logprob_dict:
@@ -262,18 +240,14 @@ def _validate_logprobs(
         if num_prompt_logprobs is not None:
             # Validate prompt logprobs
             assert prompt_logprobs is not None, (
-                f"Request {req_id} requires prompt"
-                " logprobs but prompt logprobs are"
-                " None."
+                f"Request {req_id} requires prompt logprobs but prompt logprobs are None."
             )
             # Require num prompt tokens to match num
             # prompt logprobs
             num_prompt_tokens = len(prompt_token_ids)
             len_prompt_logprobs = len(prompt_logprobs)
             assert num_prompt_tokens == len_prompt_logprobs, (
-                f"Request {req_id} has {num_prompt_tokens}"
-                " prompt tokens but has"
-                f" {len_prompt_logprobs} prompt logprobs."
+                f"Request {req_id} has {num_prompt_tokens} prompt tokens but has {len_prompt_logprobs} prompt logprobs."
             )
             # First prompt logprob is None
             first_plp_dict = prompt_logprobs[0]
@@ -290,9 +264,7 @@ def _validate_logprobs(
                 ref_prompt_logprob_vals,
                 ref_prompt_token_ranks,
             ) = ref_prompt_logprobs
-            for idx, (prompt_token, pos_logprob_dict) in enumerate(
-                zip(prompt_token_ids[1:], prompt_logprobs[1:])
-            ):
+            for idx, (prompt_token, pos_logprob_dict) in enumerate(zip(prompt_token_ids[1:], prompt_logprobs[1:])):
                 # Break out the reference prompt log prob value
                 # vector, prompt logprob token id vector, and
                 # prompt token rank at the current position.
@@ -314,10 +286,7 @@ def _validate_logprobs(
                 )
                 # Validate number of prompt logprobs
                 num_plp_toks = len(pos_logprob_dict)
-                assert (
-                    num_plp_toks == num_prompt_logprobs
-                    or num_plp_toks == num_prompt_logprobs + 1
-                ), (
+                assert num_plp_toks == num_prompt_logprobs or num_plp_toks == num_prompt_logprobs + 1, (
                     "Valid numbers of prompt logprobs are"
                     f" {num_prompt_logprobs} or"
                     f" {num_prompt_logprobs + 1} but"
@@ -349,8 +318,7 @@ def _validate_logprobs(
                     ref_plp_val = float(ref_pos_prompt_logprob_vals[jdx])
                     ref_tok_id = int(ref_pos_prompt_logprob_toks[jdx])
                     assert ref_tok_id in pos_logprob_dict, (
-                        f"Expected token {ref_tok_id} to be"
-                        f" in logprob dict but it is not."
+                        f"Expected token {ref_tok_id} to be in logprob dict but it is not."
                     )
 
                     # Extract actually-generated logprob
@@ -365,9 +333,7 @@ def _validate_logprobs(
 
                     # Rank must be >= 1
                     assert plp_rank >= 1, (
-                        f"Logprob {plp} has invalid"
-                        f" rank {plp_rank} < 1."
-                        f" Logprob dict: {pos_logprob_dict}"
+                        f"Logprob {plp} has invalid rank {plp_rank} < 1. Logprob dict: {pos_logprob_dict}"
                     )
 
                     # Validate log probability
@@ -378,11 +344,7 @@ def _validate_logprobs(
                         f" expected. Logprob: {plp}"
                     )
 
-                assert rank_one_appears, (
-                    f"No Logprob has rank 1"
-                    " in the following Logprob"
-                    f" dict: {pos_logprob_dict}"
-                )
+                assert rank_one_appears, f"No Logprob has rank 1 in the following Logprob dict: {pos_logprob_dict}"
 
                 # Validate prompt logprob detokenization
                 for plp_tok in pos_logprob_dict:
@@ -401,9 +363,7 @@ def _validate_logprobs(
             assert prompt_logprobs is None
 
 
-@pytest.mark.parametrize(
-    "request_output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY]
-)
+@pytest.mark.parametrize("request_output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.parametrize("num_sample_logprobs", [None, NUM_SAMPLE_LOGPROBS_UNDER_TEST])
 @pytest.mark.parametrize("num_prompt_logprobs", [None, NUM_PROMPT_LOGPROBS_UNDER_TEST])
 def test_logprobs_processor(
@@ -415,18 +375,12 @@ def test_logprobs_processor(
     output_processor = OutputProcessor(dummy_test_vectors.tokenizer, log_stats=False)
     engine_core = MockEngineCore(
         tokens_list=dummy_test_vectors.generation_tokens,
-        generated_logprobs_raw=None
-        if num_sample_logprobs is None
-        else dummy_test_vectors.generation_logprobs,
-        prompt_logprobs_raw=None
-        if num_prompt_logprobs is None
-        else dummy_test_vectors.prompt_logprobs,
+        generated_logprobs_raw=None if num_sample_logprobs is None else dummy_test_vectors.generation_logprobs,
+        prompt_logprobs_raw=None if num_prompt_logprobs is None else dummy_test_vectors.prompt_logprobs,
     )
 
     # Make N requests.
-    request_id_list = [
-        f"request-{idx}" for idx in range(len(dummy_test_vectors.prompt_strings))
-    ]
+    request_id_list = [f"request-{idx}" for idx in range(len(dummy_test_vectors.prompt_strings))]
     requests = [
         EngineCoreRequest(
             request_id=request_id_list[idx],
@@ -477,9 +431,7 @@ def test_logprobs_processor(
             new_tokens = request_output.outputs[0].token_ids
             prompt_logprobs = request_output.prompt_logprobs
             logprobs = request_output.outputs[0].logprobs
-            gen_cumulative_logprobs[request_id] = request_output.outputs[
-                0
-            ].cumulative_logprob
+            gen_cumulative_logprobs[request_id] = request_output.outputs[0].cumulative_logprob
             if request_id not in gen_logprobs:
                 # Start tracking sample and prompt logprobs for this request
                 gen_tokens[request_id] = new_tokens
@@ -571,17 +523,13 @@ def test_stop_token(
     """
     model_id = dummy_test_vectors.tokenizer.name_or_path
     if model_id != "meta-llama/Llama-3.2-1B":
-        raise AssertionError(
-            f"Test requires meta-llama/Llama-3.2-1B but {model_id} is in use."
-        )
+        raise AssertionError(f"Test requires meta-llama/Llama-3.2-1B but {model_id} is in use.")
     do_logprobs = num_sample_logprobs is not None
     # EOS under test; if False, stop_token_ids under test
     is_eos_test = stop_token_type == "eos_token_id"
     # EOS under test but ignore_eos enabled
     is_eos_ignore_test = is_eos_test and ignore_eos
-    eos_token_id = (
-        dummy_test_vectors.tokenizer.eos_token_id if is_eos_test else None
-    )  # '<|end_of_text|>'
+    eos_token_id = dummy_test_vectors.tokenizer.eos_token_id if is_eos_test else None  # '<|end_of_text|>'
     stop_token_ids = [128009] if not is_eos_test else None  # '<|eot_id|>'
 
     output_processor = OutputProcessor(dummy_test_vectors.tokenizer, log_stats=False)
@@ -678,9 +626,7 @@ def test_stop_token(
         # Validate number of sample logprobs
         num_tokens = len(gen_tokens)
         num_logprobs = len(gen_logprobs)
-        assert num_tokens == num_logprobs, (
-            f"Token count ({num_tokens}) != logprobs count ({num_logprobs})"
-        )
+        assert num_tokens == num_logprobs, f"Token count ({num_tokens}) != logprobs count ({num_logprobs})"
 
     # Check requests are finished
     assert output_processor.get_num_unfinished_requests() == 0
@@ -697,16 +643,12 @@ def test_stop_string(
     output_processor = OutputProcessor(dummy_test_vectors.tokenizer, log_stats=False)
     engine_core = MockEngineCore(
         tokens_list=dummy_test_vectors.generation_tokens,
-        generated_logprobs_raw=dummy_test_vectors.generation_logprobs
-        if num_sample_logprobs
-        else None,
+        generated_logprobs_raw=dummy_test_vectors.generation_logprobs if num_sample_logprobs else None,
         prompt_logprobs_raw=None,
     )
 
     # Make N requests.
-    request_id_list = [
-        f"request-{idx}" for idx in range(len(dummy_test_vectors.prompt_strings))
-    ]
+    request_id_list = [f"request-{idx}" for idx in range(len(dummy_test_vectors.prompt_strings))]
     requests = [
         EngineCoreRequest(
             request_id=request_id_list[idx],
@@ -766,9 +708,7 @@ def test_stop_string(
             new_tokens = request_output.outputs[0].token_ids
             prompt_logprobs = request_output.prompt_logprobs
             logprobs = request_output.outputs[0].logprobs
-            gen_cumulative_logprobs[request_id] = request_output.outputs[
-                0
-            ].cumulative_logprob
+            gen_cumulative_logprobs[request_id] = request_output.outputs[0].cumulative_logprob
             if request_id not in gen_strings:
                 gen_strings[request_id] = new_text
                 gen_tokens[request_id] = new_tokens
@@ -785,9 +725,7 @@ def test_stop_string(
                     plp.extend(prompt_logprobs)
 
     # Confirmed tracked values matches what we expected.
-    for idx, (ref_gen_str, stop_str) in enumerate(
-        zip(dummy_test_vectors.generation_strings, STOP_STRINGS)
-    ):
+    for idx, (ref_gen_str, stop_str) in enumerate(zip(dummy_test_vectors.generation_strings, STOP_STRINGS)):
         # Request should be aborted.
         request_id = f"request-{idx}"
         assert request_id in aborted
@@ -853,12 +791,7 @@ def test_iteration_stats(dummy_test_vectors):
     outputs = engine_core.get_outputs()[:num_active]
     iteration_stats = IterationStats()
     output_processor.process_outputs(outputs, engine_core_timestamp, iteration_stats)
-    total_prompt_tokens = sum(
-        [
-            len(prompt_tokens)
-            for prompt_tokens in dummy_test_vectors.prompt_tokens[:num_active]
-        ]
-    )
+    total_prompt_tokens = sum([len(prompt_tokens) for prompt_tokens in dummy_test_vectors.prompt_tokens[:num_active]])
 
     assert iteration_stats.num_prompt_tokens == total_prompt_tokens
     assert iteration_stats.num_generation_tokens == num_active

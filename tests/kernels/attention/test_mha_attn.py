@@ -79,9 +79,7 @@ def test_mha_attn_platform(device: str):
         with (
             patch("aphrodite.attention.layer.current_platform", CudaPlatform()),
             patch("aphrodite.modeling.models.vision.current_platform", CudaPlatform()),
-            patch(
-                "aphrodite.attention.layer.check_upstream_fa_availability", return_value=True
-            ),
+            patch("aphrodite.attention.layer.check_upstream_fa_availability", return_value=True),
             patch.dict(
                 "sys.modules",
                 {
@@ -121,11 +119,7 @@ NUM_HEADS = [1, 16]
 NUM_KV_HEADS = [1]
 HEAD_SIZES = [64, 80]
 # flshattF and tritonflashattF supported: {torch.float16, torch.bfloat16}
-DTYPES = (
-    [torch.half, torch.bfloat16, torch.float]
-    if not current_platform.is_rocm()
-    else [torch.half, torch.bfloat16]
-)
+DTYPES = [torch.half, torch.bfloat16, torch.float] if not current_platform.is_rocm() else [torch.half, torch.bfloat16]
 CUDA_DEVICES = ["cuda"]
 
 
@@ -153,9 +147,7 @@ def test_mha_attn_forward(
     k = torch.randn(batch_size, seq_len, num_kv_heads * head_size)
     v = torch.randn(batch_size, seq_len, num_kv_heads * head_size)
     scale = 1.0 / head_size**0.5
-    attn = MultiHeadAttention(
-        num_heads, head_size, scale=scale, num_kv_heads=num_kv_heads
-    )
+    attn = MultiHeadAttention(num_heads, head_size, scale=scale, num_kv_heads=num_kv_heads)
     output = attn(q, k, v)
 
     assert num_heads % num_kv_heads == 0

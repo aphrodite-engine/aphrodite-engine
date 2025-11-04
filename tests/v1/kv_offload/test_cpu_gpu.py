@@ -16,8 +16,7 @@ if not current_platform.is_rocm():
 
     BACKENDS_TO_TEST.append(FlashInferBackend)
 
-    from aphrodite.v1.attention.backends.mla.flashattn_mla import (
-        FlashAttnMLABackend)
+    from aphrodite.v1.attention.backends.mla.flashattn_mla import FlashAttnMLABackend
 
     BACKENDS_TO_TEST.append(FlashAttnMLABackend)
 
@@ -74,9 +73,7 @@ def test_transfer(
         attn_backend = attn_backends_list[i % len(attn_backends_list)]
         attn_backends[layer_name] = attn_backend
 
-        gpu_cache_shape = attn_backend.get_kv_cache_shape(
-            num_gpu_blocks, gpu_block_size, num_heads, head_size
-        )
+        gpu_cache_shape = attn_backend.get_kv_cache_shape(num_gpu_blocks, gpu_block_size, num_heads, head_size)
         gpu_caches[layer_name] = torch.rand(gpu_cache_shape, dtype=dtype, device=device)
 
     # create handler
@@ -90,9 +87,7 @@ def test_transfer(
     )
 
     # select block mappings
-    gpu_blocks = random.sample(
-        range(num_gpu_blocks), num_mappings * gpu_blocks_per_cpu_block
-    )
+    gpu_blocks = random.sample(range(num_gpu_blocks), num_mappings * gpu_blocks_per_cpu_block)
     cpu_blocks = random.sample(range(num_cpu_blocks), num_mappings)
 
     # convert cpu blocks to gpu block size
@@ -105,9 +100,7 @@ def test_transfer(
     # maybe skip a GPU block to test writing to the middle of a CPU block
     if gpu_to_cpu:
         gpu_blocks = gpu_blocks[gpu_blocks_per_cpu_block - 1 :]
-        cpu_blocks_in_gpu_block_size = cpu_blocks_in_gpu_block_size[
-            gpu_blocks_per_cpu_block - 1 :
-        ]
+        cpu_blocks_in_gpu_block_size = cpu_blocks_in_gpu_block_size[gpu_blocks_per_cpu_block - 1 :]
 
     # set transfer direction
     if gpu_to_cpu:
@@ -133,9 +126,7 @@ def test_transfer(
 
     # build dst -> src mapping
     dst_to_src = {}
-    for src_block, dst_block in zip(
-        src_blocks_in_gpu_block_size, dst_blocks_in_gpu_block_size
-    ):
+    for src_block, dst_block in zip(src_blocks_in_gpu_block_size, dst_blocks_in_gpu_block_size):
         dst_to_src[dst_block] = src_block
 
     # build transfer specs
@@ -179,14 +170,10 @@ def test_transfer(
                         expected_value = src_cache[i][src_block_candidate]
                     else:
                         expected_value = orig_dst_cache[i][dst_block]
-                    torch.testing.assert_close(
-                        dst_cache[i][dst_block].cpu(), expected_value.cpu()
-                    )
+                    torch.testing.assert_close(dst_cache[i][dst_block].cpu(), expected_value.cpu())
             else:
                 if src_block_candidate is not None:
                     expected_value = src_cache[src_block_candidate]
                 else:
                     expected_value = orig_dst_cache[dst_block]
-                torch.testing.assert_close(
-                    dst_cache[dst_block].cpu(), expected_value.cpu()
-                )
+                torch.testing.assert_close(dst_cache[dst_block].cpu(), expected_value.cpu())

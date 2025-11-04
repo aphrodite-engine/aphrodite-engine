@@ -16,10 +16,10 @@ import time
 from multiprocessing import Event, Process
 
 from lmcache.experimental.cache_engine import LMCacheEngineBuilder
-from aphrodite.distributed.kv_transfer.kv_connector.v1.lmcache_integration.aphrodite_v1_adapter import ENGINE_NAME
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.config import KVTransferConfig
+from aphrodite.distributed.kv_transfer.kv_connector.v1.lmcache_integration.aphrodite_v1_adapter import ENGINE_NAME
 
 # LMCache-related environment variables
 # The port to start LMCache server
@@ -113,9 +113,7 @@ def run_decode(prefill_done, prompts, timeout=1):
 
 
 def run_lmcache_server(port):
-    server_proc = subprocess.Popen(
-        ["python", "-m", "lmcache.experimental.server", "localhost", str(port)]
-    )
+    server_proc = subprocess.Popen(["python", "-m", "lmcache.experimental.server", "localhost", str(port)])
     return server_proc
 
 

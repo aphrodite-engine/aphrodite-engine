@@ -6,9 +6,7 @@ import pytest
 from huggingface_hub.utils import HfHubHTTPError
 from torch import nn
 
-from aphrodite.lora.utils import (get_adapter_absolute_path,
-                                  parse_fine_tuned_lora_name,
-                                  replace_submodule)
+from aphrodite.lora.utils import get_adapter_absolute_path, parse_fine_tuned_lora_name, replace_submodule
 from aphrodite.modeling.models.utils import WeightsMapper
 
 
@@ -21,12 +19,8 @@ class LoRANameParserTestConfig(NamedTuple):
 
 def test_parse_fine_tuned_lora_name_valid():
     fixture = [
-        LoRANameParserTestConfig(
-            "base_model.model.lm_head.lora_A.weight", "lm_head", True, False
-        ),
-        LoRANameParserTestConfig(
-            "base_model.model.lm_head.lora_B.weight", "lm_head", False, False
-        ),
+        LoRANameParserTestConfig("base_model.model.lm_head.lora_A.weight", "lm_head", True, False),
+        LoRANameParserTestConfig("base_model.model.lm_head.lora_B.weight", "lm_head", False, False),
         LoRANameParserTestConfig(
             "base_model.model.model.embed_tokens.lora_embedding_A",
             "model.embed_tokens",
@@ -62,39 +56,29 @@ def test_parse_fine_tuned_lora_name_valid():
             "base_model.model.model.layers.9.mlp.down_proj.lora_A.weight",
             "language_model.model.layers.9.mlp.down_proj",
             True,
-            weights_mapper=WeightsMapper(
-                orig_to_new_prefix={"model.": "language_model.model."}
-            ),
+            weights_mapper=WeightsMapper(orig_to_new_prefix={"model.": "language_model.model."}),
         ),
         LoRANameParserTestConfig(
             "base_model.model.model.layers.9.mlp.down_proj.lora_B.weight",
             "language_model.model.layers.9.mlp.down_proj",
             False,
-            weights_mapper=WeightsMapper(
-                orig_to_new_prefix={"model.": "language_model.model."}
-            ),
+            weights_mapper=WeightsMapper(orig_to_new_prefix={"model.": "language_model.model."}),
         ),
         LoRANameParserTestConfig(
             "model.layers.9.mlp.down_proj.lora_A.weight",
             "language_model.model.layers.9.mlp.down_proj",
             True,
-            weights_mapper=WeightsMapper(
-                orig_to_new_prefix={"model.": "language_model.model."}
-            ),
+            weights_mapper=WeightsMapper(orig_to_new_prefix={"model.": "language_model.model."}),
         ),
         LoRANameParserTestConfig(
             "model.layers.9.mlp.down_proj.lora_B.weight",
             "language_model.model.layers.9.mlp.down_proj",
             False,
-            weights_mapper=WeightsMapper(
-                orig_to_new_prefix={"model.": "language_model.model."}
-            ),
+            weights_mapper=WeightsMapper(orig_to_new_prefix={"model.": "language_model.model."}),
         ),
     ]
     for name, module_name, is_lora_a, weights_mapper in fixture:
-        assert (module_name, is_lora_a) == parse_fine_tuned_lora_name(
-            name, weights_mapper
-        )
+        assert (module_name, is_lora_a) == parse_fine_tuned_lora_name(name, weights_mapper)
 
 
 def test_parse_fine_tuned_lora_name_invalid():
@@ -183,9 +167,7 @@ def test_get_adapter_absolute_path_huggingface(mock_exist, mock_snapshot_downloa
 
 @patch("huggingface_hub.snapshot_download")
 @patch("os.path.exists")
-def test_get_adapter_absolute_path_huggingface_error(
-    mock_exist, mock_snapshot_download
-):
+def test_get_adapter_absolute_path_huggingface_error(mock_exist, mock_snapshot_download):
     # Hugging Face model identifier with download error
     path = "org/repo"
     mock_exist.return_value = False

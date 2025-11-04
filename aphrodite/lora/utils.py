@@ -3,37 +3,38 @@ from typing import TYPE_CHECKING, Optional
 
 import huggingface_hub
 import regex as re
-from huggingface_hub.utils import (EntryNotFoundError, HfHubHTTPError,
-                                   HFValidationError, RepositoryNotFoundError)
+from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError, HFValidationError, RepositoryNotFoundError
 from torch import nn
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
 from aphrodite.logger import init_logger
+
 # being imported for _all_lora_classes below
-from aphrodite.lora.layers import (BaseLayerWithLoRA,
-                                   ColumnParallelLinearWithLoRA,
-                                   ColumnParallelLinearWithShardedLoRA,
-                                   FusedMoEWithLoRA, LogitsProcessorWithLoRA,
-                                   MergedColumnParallelLinearWithLoRA,
-                                   MergedColumnParallelLinearWithShardedLoRA,
-                                   MergedQKVParallelLinearWithLoRA,
-                                   MergedQKVParallelLinearWithShardedLoRA,
-                                   QKVParallelLinearWithLoRA,
-                                   QKVParallelLinearWithShardedLoRA,
-                                   ReplicatedLinearWithLoRA,
-                                   RowParallelLinearWithLoRA,
-                                   RowParallelLinearWithShardedLoRA,
-                                   VocabParallelEmbeddingWithLoRA)
+from aphrodite.lora.layers import (
+    BaseLayerWithLoRA,
+    ColumnParallelLinearWithLoRA,
+    ColumnParallelLinearWithShardedLoRA,
+    FusedMoEWithLoRA,
+    LogitsProcessorWithLoRA,
+    MergedColumnParallelLinearWithLoRA,
+    MergedColumnParallelLinearWithShardedLoRA,
+    MergedQKVParallelLinearWithLoRA,
+    MergedQKVParallelLinearWithShardedLoRA,
+    QKVParallelLinearWithLoRA,
+    QKVParallelLinearWithShardedLoRA,
+    ReplicatedLinearWithLoRA,
+    RowParallelLinearWithLoRA,
+    RowParallelLinearWithShardedLoRA,
+    VocabParallelEmbeddingWithLoRA,
+)
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.linear import LinearBase
-from aphrodite.modeling.utils import (get_moe_expert_mapping,
-                                      get_packed_modules_mapping)
+from aphrodite.modeling.utils import get_moe_expert_mapping, get_packed_modules_mapping
 
 if TYPE_CHECKING:
     from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-    from aphrodite.modeling.layers.vocab_parallel_embedding import (
-        ParallelLMHead)
+    from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
     from aphrodite.modeling.models.utils import WeightsMapper
 
 logger = init_logger(__name__)
@@ -103,9 +104,7 @@ def from_layer_logits_processor(
     return ret
 
 
-def replace_submodule(
-    model: nn.Module, module_name: str, new_module: nn.Module
-) -> nn.Module:
+def replace_submodule(model: nn.Module, module_name: str, new_module: nn.Module) -> nn.Module:
     """Replace a submodule in a model with a new module."""
     parent = model.get_submodule(".".join(module_name.split(".")[:-1]))
     target_name = module_name.split(".")[-1]
@@ -113,9 +112,7 @@ def replace_submodule(
     return new_module
 
 
-def parse_fine_tuned_lora_name(
-    name: str, weights_mapper: Optional["WeightsMapper"] = None
-) -> tuple[str, bool]:
+def parse_fine_tuned_lora_name(name: str, weights_mapper: Optional["WeightsMapper"] = None) -> tuple[str, bool]:
     """Parse the name of lora weights.
 
     args:
@@ -157,9 +154,7 @@ def parse_fine_tuned_lora_name(
     raise ValueError(f"{name} is unsupported LoRA weight")
 
 
-def is_regex_target_modules(
-    load_modules: str | list[str], expected_lora_modules: list[str]
-) -> bool:
+def is_regex_target_modules(load_modules: str | list[str], expected_lora_modules: list[str]) -> bool:
     """
     PEFT supports passing `target_modules` in the form of regular expressions,
     such as `model.*(q_proj|k_proj|v_proj)$`. This function is mainly used to
@@ -270,15 +265,10 @@ def process_packed_modules_mapping(model: nn.Module) -> dict[str, list[str]]:
             # of routed experts.
             packed_modules_mapping = get_packed_modules_mapping(model)
 
-            packed_modules_mapping["experts"] = [
-                weight_name.rstrip(".") for _, weight_name, _, _ in moe_packed_mapping
-            ]
+            packed_modules_mapping["experts"] = [weight_name.rstrip(".") for _, weight_name, _, _ in moe_packed_mapping]
 
             return packed_modules_mapping
         else:
-            raise AttributeError(
-                "To support LoRA for MoE model, "
-                "'get_expert_mapping' must be implemented"
-            )
+            raise AttributeError("To support LoRA for MoE model, 'get_expert_mapping' must be implemented")
     else:
         return get_packed_modules_mapping(model)

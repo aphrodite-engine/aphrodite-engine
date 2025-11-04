@@ -2,8 +2,8 @@ from itertools import accumulate
 
 import nvtx
 import torch
-
 from aphrodite.model_executor.layers.rotary_embedding import RotaryEmbedding, get_rope
+
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -58,19 +58,9 @@ def benchmark_rope_kernels_multi_lora(
     # create query offsets for batched RoPE, we concat multiple kv cache
     # together and each query needs to find the right kv cache of its type
     offset_map = torch.tensor(
-        list(
-            accumulate(
-                [0]
-                + [
-                    max_position * scaling_factor * 2
-                    for scaling_factor in scaling_factors[:-1]
-                ]
-            )
-        )
+        list(accumulate([0] + [max_position * scaling_factor * 2 for scaling_factor in scaling_factors[:-1]]))
     )
-    query_types = torch.randint(
-        0, len(scaling_factors), (batch_size, seq_len), device=device
-    )
+    query_types = torch.randint(0, len(scaling_factors), (batch_size, seq_len), device=device)
     # map query types to offsets
     query_offsets = offset_map[query_types]
     # the kernel takes flattened offsets
@@ -92,9 +82,7 @@ def benchmark_rope_kernels_multi_lora(
 
 
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser(
-        description="Benchmark the rotary embedding kernels."
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the rotary embedding kernels.")
     parser.add_argument("--is-neox-style", type=bool, default=True)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--seq-len", type=int, default=512)
@@ -106,13 +94,9 @@ if __name__ == "__main__":
         default=128,
     )
     parser.add_argument("--rotary-dim", type=int, choices=[16, 32], default=32)
-    parser.add_argument(
-        "--dtype", type=str, choices=["bfloat16", "float"], default="float"
-    )
+    parser.add_argument("--dtype", type=str, choices=["bfloat16", "float"], default="float")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument(
-        "--device", type=str, choices=["cuda:0", "cuda:1"], default="cuda:0"
-    )
+    parser.add_argument("--device", type=str, choices=["cuda:0", "cuda:1"], default="cuda:0")
     args = parser.parse_args()
     print(args)
 

@@ -20,11 +20,11 @@ import copy
 import itertools
 
 import torch
+from aphrodite.model_executor.layers.quantization.qutlass_utils import to_blocked
 from compressed_tensors.transform.utils.hadamard import deterministic_hadamard_matrix
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite._custom_ops import fusedQuantizeMx, matmul_mxf4_bf16_tn
-from aphrodite.model_executor.layers.quantization.qutlass_utils import to_blocked
 from aphrodite.triton_utils import triton
 
 PROVIDER_CFGS = {
@@ -37,33 +37,22 @@ _enabled = [k for k, v in PROVIDER_CFGS.items() if v["enabled"]]
 
 
 def get_hadamard_matrix(group_size: int, dtype: torch.dtype, device: torch.device):
-    return (
-        deterministic_hadamard_matrix(group_size, dtype=dtype, device=device)
-        * group_size**-0.5
-    )
+    return deterministic_hadamard_matrix(group_size, dtype=dtype, device=device) * group_size**-0.5
 
 
-def _quant_weight_mxfp4(
-    b: torch.Tensor, forward_hadamard_matrix: torch.Tensor, device: str
-):
-    weight_hf_e2m1, weight_hf_e8m0 = fusedQuantizeMx(
-        b, forward_hadamard_matrix, method="abs_max"
-    )
+def _quant_weight_mxfp4(b: torch.Tensor, forward_hadamard_matrix: torch.Tensor, device: str):
+    weight_hf_e2m1, weight_hf_e8m0 = fusedQuantizeMx(b, forward_hadamard_matrix, method="abs_max")
     weight_hf_scale_block = to_blocked(weight_hf_e8m0, backend="triton")
     return weight_hf_e2m1, weight_hf_scale_block
 
 
 def build_mxfp4_runner(cfg, a, b, forward_hadamard_matrix, dtype, device):
-    weight_hf_e2m1, weight_hf_scale_block = _quant_weight_mxfp4(
-        b, forward_hadamard_matrix, device
-    )
+    weight_hf_e2m1, weight_hf_scale_block = _quant_weight_mxfp4(b, forward_hadamard_matrix, device)
     alpha = torch.tensor([1.0], device="cuda")
 
     if cfg["no_a_quant"]:
         # Pre-quantize activation
-        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeMx(
-            a, forward_hadamard_matrix, method="abs_max"
-        )
+        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeMx(a, forward_hadamard_matrix, method="abs_max")
         input_hf_scale_block = to_blocked(input_hf_e8m0, backend="triton")
 
         def run():
@@ -79,9 +68,7 @@ def build_mxfp4_runner(cfg, a, b, forward_hadamard_matrix, dtype, device):
 
     # Quantize activation on-the-fly
     def run():
-        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeMx(
-            a, forward_hadamard_matrix, method="abs_max"
-        )
+        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeMx(a, forward_hadamard_matrix, method="abs_max")
         input_hf_scale_block = to_blocked(input_hf_e8m0, backend="triton")
         return matmul_mxf4_bf16_tn(
             input_hf_e2m1,
@@ -141,12 +128,8 @@ def benchmark(batch_size, provider, N, K, had_size):
         )
     else:
         cfg = PROVIDER_CFGS[provider]
-        run_quant = build_mxfp4_runner(
-            cfg, a, b, forward_hadamard_matrix, dtype, device
-        )
-        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-            lambda: run_quant(), rep=200, quantiles=quantiles
-        )
+        run_quant = build_mxfp4_runner(cfg, a, b, forward_hadamard_matrix, dtype, device)
+        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(lambda: run_quant(), rep=200, quantiles=quantiles)
 
     to_tflops = lambda t_ms: (2 * M * N * K) * 1e-12 / (t_ms * 1e-3)
     return to_tflops(ms), to_tflops(max_ms), to_tflops(min_ms)

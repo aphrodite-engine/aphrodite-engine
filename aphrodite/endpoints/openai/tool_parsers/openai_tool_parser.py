@@ -3,12 +3,14 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from aphrodite.endpoints.harmony_utils import parse_output_into_messages
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage,
-                                                 ExtractedToolCallInformation,
-                                                 FunctionCall, ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser, ToolParserManager)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    DeltaMessage,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
 from aphrodite.logger import init_logger
 
 if TYPE_CHECKING:
@@ -53,9 +55,7 @@ class OpenAIToolParser(ToolParser):
                         try:
                             tool_args = json.dumps(json.loads(msg_text))
                         except json.JSONDecodeError:
-                            logger.exception(
-                                "Error decoding JSON tool call from response."
-                            )
+                            logger.exception("Error decoding JSON tool call from response.")
                             tool_args = msg_text
                     else:
                         tool_args = msg_text

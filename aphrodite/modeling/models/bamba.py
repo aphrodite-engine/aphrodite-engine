@@ -15,24 +15,27 @@ from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA,
-                         SupportsMambaPrefixCaching, SupportsPP, SupportsQuant)
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .interfaces import HasInnerState, IsHybrid, SupportsLoRA, SupportsMambaPrefixCaching, SupportsPP, SupportsQuant
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class BambaMLP(nn.Module):
@@ -56,10 +59,7 @@ class BambaMLP(nn.Module):
             quant_config=quant_config,
         )
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -259,11 +259,7 @@ class BambaModel(nn.Module):
         lora_config = aphrodite_config.lora_config
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -324,9 +320,7 @@ class BambaModel(nn.Module):
             )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.final_layernorm(hidden_states, residual)
         return hidden_states
 
@@ -457,9 +451,7 @@ class BambaForCausalLM(
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = BambaModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = BambaModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -475,13 +467,9 @@ class BambaForCausalLM(
             prefix=maybe_prefix(prefix, "lm_head"),
         )
 
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -494,9 +482,7 @@ class BambaForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

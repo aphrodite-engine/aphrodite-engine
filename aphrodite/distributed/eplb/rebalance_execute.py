@@ -8,8 +8,7 @@ from collections.abc import Iterable, MutableSequence, Sequence
 from functools import partial
 
 import torch
-from torch.distributed import (P2POp, ProcessGroup, all_gather,
-                               batch_isend_irecv, get_global_rank)
+from torch.distributed import P2POp, ProcessGroup, all_gather, batch_isend_irecv, get_global_rank
 
 
 def idx_local_to_global(
@@ -86,9 +85,7 @@ def get_ep_ranks_with_expert(
 
     # Remove those ranks that can get this expert locally.
     ranks_to_send_set = set(ranks_to_send)
-    ranks_to_recv_actual = [
-        rank for rank in ranks_to_recv if rank not in ranks_to_send_set
-    ]
+    ranks_to_recv_actual = [rank for rank in ranks_to_recv if rank not in ranks_to_send_set]
 
     return ranks_to_send, ranks_to_recv_actual
 
@@ -112,10 +109,7 @@ def shuffle_layer(
     )
 
     # 0. Do nothing for experts that did not change.
-    is_unchanged = [
-        old_indices[local2global(i)] == new_indices[local2global(i)]
-        for i in range(num_local_experts)
-    ]
+    is_unchanged = [old_indices[local2global(i)] == new_indices[local2global(i)] for i in range(num_local_experts)]
 
     # 1. Perform weight copy inside the local rank.
     is_received_locally = is_unchanged[:]
@@ -373,9 +367,9 @@ def _map_old_expert_indices_with_rank_mapping(
             new_start_idx = new_rank * num_local_physical_experts
             new_end_idx = (new_rank + 1) * num_local_physical_experts
 
-            mapped_expert_indices[:, new_start_idx:new_end_idx] = (
-                old_global_expert_indices[:, old_start_idx:old_end_idx]
-            )
+            mapped_expert_indices[:, new_start_idx:new_end_idx] = old_global_expert_indices[
+                :, old_start_idx:old_end_idx
+            ]
         # If new_rank is None or >= new_ep_size, the experts remain -1
         # (scale down case)
 
@@ -410,9 +404,9 @@ def _map_new_expert_indices_with_rank_mapping(
             new_start_idx = new_rank * num_local_physical_experts
             new_end_idx = (new_rank + 1) * num_local_physical_experts
 
-            mapped_expert_indices[:, old_start_idx:old_end_idx] = (
-                new_global_expert_indices[:, new_start_idx:new_end_idx]
-            )
+            mapped_expert_indices[:, old_start_idx:old_end_idx] = new_global_expert_indices[
+                :, new_start_idx:new_end_idx
+            ]
 
     return mapped_expert_indices
 

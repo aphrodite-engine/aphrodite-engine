@@ -63,11 +63,7 @@ def _state_passing_fwd_kernel(
     out_ptrs = out_ptr + offs_m * stride_out_dim
 
     if HAS_INITSTATES:
-        initstates_ptrs = (
-            initstates_ptr
-            + pid_h * stride_initstates_head
-            + offs_m * stride_initstates_dim
-        )
+        initstates_ptrs = initstates_ptr + pid_h * stride_initstates_head + offs_m * stride_initstates_dim
 
         states = tl.load(initstates_ptrs, mask=offs_m < dim, other=0.0).to(tl.float32)
     else:
@@ -87,9 +83,7 @@ def _state_passing_fwd_kernel(
                     + pid_h * stride_initstates_head
                     + offs_m * stride_initstates_dim
                 )
-                states = tl.load(initstates_ptrs, mask=offs_m < dim, other=0.0).to(
-                    tl.float32
-                )
+                states = tl.load(initstates_ptrs, mask=offs_m < dim, other=0.0).to(tl.float32)
             else:
                 states = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
 

@@ -3,8 +3,7 @@ from torch import nn
 
 from aphrodite.config import ModelConfig
 from aphrodite.config.load import LoadConfig
-from aphrodite.modeling.model_loader import (get_model_loader,
-                                             register_model_loader)
+from aphrodite.modeling.model_loader import get_model_loader, register_model_loader
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 
 

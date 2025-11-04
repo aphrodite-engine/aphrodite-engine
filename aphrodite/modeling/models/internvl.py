@@ -19,21 +19,19 @@ from transformers import BatchFeature, PretrainedConfig, TensorType
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
-from aphrodite.modeling.models.intern_vit import (InternVisionModel,
-                                                  InternVisionPatchModel)
+from aphrodite.modeling.models.intern_vit import InternVisionModel, InternVisionPatchModel
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.image import convert_image_mode
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.awq import AWQConfig
@@ -41,10 +39,8 @@ from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from aphrodite.utils.torch_utils import set_default_torch_num_threads
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
-from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
-                    maybe_prefix)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
+from .utils import AutoWeightsLoader, init_aphrodite_registered_model, maybe_prefix
 
 IMG_START = "<img>"
 IMG_END = "</img>"
@@ -120,9 +116,7 @@ def build_transform(input_size: int):
     transform = T.Compose(
         [
             T.Lambda(lambda img: convert_image_mode(img, "RGB")),
-            T.Resize(
-                (input_size, input_size), interpolation=T.InterpolationMode.BICUBIC
-            ),
+            T.Resize((input_size, input_size), interpolation=T.InterpolationMode.BICUBIC),
             T.ToTensor(),
             T.Normalize(mean=MEAN, std=STD),
         ]
@@ -357,9 +351,7 @@ class BaseInternVLProcessor(ABC):
             dynamic_image_size = config.dynamic_image_size
         assert isinstance(dynamic_image_size, bool)
 
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.image_size = image_size
         self.min_dynamic_patch = min_dynamic_patch
         self.max_dynamic_patch = max_dynamic_patch
@@ -387,17 +379,9 @@ class BaseInternVLProcessor(ABC):
         dynamic_image_size: bool | None = None,
         use_thumbnail: bool | None = None,
     ) -> tuple[int, int]:
-        min_dynamic_patch = (
-            self.min_dynamic_patch if min_dynamic_patch is None else min_dynamic_patch
-        )
-        max_dynamic_patch = (
-            self.max_dynamic_patch if max_dynamic_patch is None else max_dynamic_patch
-        )
-        dynamic_image_size = (
-            self.dynamic_image_size
-            if dynamic_image_size is None
-            else dynamic_image_size
-        )
+        min_dynamic_patch = self.min_dynamic_patch if min_dynamic_patch is None else min_dynamic_patch
+        max_dynamic_patch = self.max_dynamic_patch if max_dynamic_patch is None else max_dynamic_patch
+        dynamic_image_size = self.dynamic_image_size if dynamic_image_size is None else dynamic_image_size
         use_thumbnail = self.use_thumbnail if use_thumbnail is None else use_thumbnail
 
         return resolve_internvl_min_max_num(
@@ -488,9 +472,7 @@ class BaseInternVLProcessor(ABC):
             )
             image_inputs = {
                 "pixel_values_flat": torch.cat(pixel_values_lst),
-                "image_num_patches": torch.tensor(
-                    [len(item) for item in pixel_values_lst]
-                ),
+                "image_num_patches": torch.tensor([len(item) for item in pixel_values_lst]),
             }
 
             for pixel_values in pixel_values_lst:
@@ -614,17 +596,13 @@ class InternVLProcessor(BaseInternVLProcessor):
             )
             video_inputs = {
                 "pixel_values_flat_video": torch.cat(pixel_values_lst_video),
-                "video_num_patches": torch.tensor(
-                    [len(item) for item in pixel_values_lst_video]
-                ),
+                "video_num_patches": torch.tensor([len(item) for item in pixel_values_lst_video]),
             }
 
             for pixel_values in pixel_values_lst_video:
                 num_patches = pixel_values.shape[0]
 
-                video_repl = self.get_video_repl(
-                    self.num_image_token, num_patches, self.video_token
-                )
+                video_repl = self.get_video_repl(self.num_image_token, num_patches, self.video_token)
                 text = [t.replace("<video>", video_repl.full, 1) for t in text]
         return text, video_inputs
 
@@ -638,9 +616,7 @@ class InternVLProcessor(BaseInternVLProcessor):
         dynamic_image_size: bool | None = None,
         return_tensors: str | TensorType | None = None,
     ) -> BatchFeature:
-        text, images, videos = [
-            self._make_batch_input(x) for x in (text, images, videos)
-        ]
+        text, images, videos = [self._make_batch_input(x) for x in (text, images, videos)]
 
         text, image_inputs = self._preprocess_image(
             text=text,
@@ -681,9 +657,7 @@ class InternVLProcessor(BaseInternVLProcessor):
         repl_features = video_context_token * self.num_image_token
         repl_features_with_sep = IMG_START + repl_features + IMG_END
         # num_patches is equal to num_frames
-        repl_full = "".join(
-            [f"Frame{i + 1}: {repl_features_with_sep}" for i in range(num_patches)]
-        )
+        repl_full = "".join([f"Frame{i + 1}: {repl_features_with_sep}" for i in range(num_patches)])
 
         return PromptUpdateDetails.select_text(repl_full, video_context_token)
 
@@ -816,9 +790,7 @@ class BaseInternVLMultiModalProcessor(BaseMultiModalProcessor[_I]):
         num_images = len(image_num_patches)
 
         return dict(
-            pixel_values_flat=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_num_patches
-            ),
+            pixel_values_flat=MultiModalFieldConfig.flat_from_sizes("image", image_num_patches),
             image_num_patches=MultiModalFieldConfig.batched("image"),
             image_embeds=MultiModalFieldConfig.batched("image"),
             image_token_id=MultiModalFieldConfig.shared("image", num_images),
@@ -845,9 +817,7 @@ class BaseInternVLMultiModalProcessor(BaseMultiModalProcessor[_I]):
             image_num_patches = []
 
         def get_replacement_internvl(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 feature_size = images.get_feature_size(item_idx)
@@ -921,9 +891,7 @@ class InternVLProcessingInfo(BaseInternVLProcessingInfo):
         )
 
 
-class InternVLDummyInputsBuilder(
-    BaseInternVLDummyInputsBuilder[InternVLProcessingInfo]
-):
+class InternVLDummyInputsBuilder(BaseInternVLDummyInputsBuilder[InternVLProcessingInfo]):
     """InternVL DummyInputsBuilder extended for video support"""
 
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
@@ -937,15 +905,11 @@ class InternVLDummyInputsBuilder(
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions] | None = None,
     ) -> MultiModalDataDict:
-        dummy_image = super().get_dummy_mm_data(
-            seq_len=seq_len, mm_counts=mm_counts, mm_options=mm_options
-        )
+        dummy_image = super().get_dummy_mm_data(seq_len=seq_len, mm_counts=mm_counts, mm_options=mm_options)
         if self.info.supports_video:
             config = self.info.get_hf_config()
             image_size: int = config.vision_config.image_size
-            target_num_frames = self.info.get_num_frames_with_most_features(
-                seq_len, mm_counts
-            )
+            target_num_frames = self.info.get_num_frames_with_most_features(seq_len, mm_counts)
             num_videos = mm_counts.get("video", 0)
             video_overrides = mm_options.get("video") if mm_options else None
             dummy_video = {
@@ -962,9 +926,7 @@ class InternVLDummyInputsBuilder(
         return {**dummy_image, **dummy_video}
 
 
-class InternVLMultiModalProcessor(
-    BaseInternVLMultiModalProcessor[InternVLProcessingInfo]
-):
+class InternVLMultiModalProcessor(BaseInternVLMultiModalProcessor[InternVLProcessingInfo]):
     """InternVL MultiModalProcessor extended for video support"""
 
     def _call_hf_processor(
@@ -974,15 +936,10 @@ class InternVLMultiModalProcessor(
         mm_kwargs: Mapping[str, object],
         tok_kwargs: Mapping[str, object],
     ) -> BatchFeature:
-        processed_outputs = super()._call_hf_processor(
-            prompt, mm_data, mm_kwargs, tok_kwargs
-        )
+        processed_outputs = super()._call_hf_processor(prompt, mm_data, mm_kwargs, tok_kwargs)
 
         hf_processor = self.info.get_hf_processor(**mm_kwargs)
-        if (
-            self.info.supports_video
-            and (video_token_id := hf_processor.video_token_id) is not None
-        ):
+        if self.info.supports_video and (video_token_id := hf_processor.video_token_id) is not None:
             processed_outputs["video_token_id"] = torch.tensor(video_token_id)
         return processed_outputs
 
@@ -996,9 +953,7 @@ class InternVLMultiModalProcessor(
             video_num_patches = hf_inputs.get("video_num_patches", torch.empty(0))
             num_videos = len(video_num_patches)
             video_fields = dict(
-                pixel_values_flat_video=MultiModalFieldConfig.flat_from_sizes(
-                    "video", video_num_patches
-                ),
+                pixel_values_flat_video=MultiModalFieldConfig.flat_from_sizes("video", video_num_patches),
                 video_num_patches=MultiModalFieldConfig.batched("video"),
                 video_token_id=MultiModalFieldConfig.shared("video", num_videos),
             )
@@ -1035,9 +990,7 @@ class InternVLMultiModalProcessor(
             if num_patches is not None:
                 assert isinstance(num_patches, int)
 
-            return hf_processor.get_video_repl(
-                feature_size, num_patches, video_context_token=hf_processor.video_token
-            )
+            return hf_processor.get_video_repl(feature_size, num_patches, video_context_token=hf_processor.video_token)
 
         if self.info.supports_video:
             prompt_repl = [
@@ -1086,9 +1039,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         image_size = config.force_image_size or config.vision_config.image_size
         patch_size = config.vision_config.patch_size
         self.patch_size = patch_size
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.downsample_ratio = config.downsample_ratio
         self.ps_version = config.ps_version
 
@@ -1113,21 +1064,15 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         self.video_context_token_id = None
 
         self.visual_token_mask = None
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _patch_quant_config(
-        self, config: PretrainedConfig, quant_config: QuantizationConfig
-    ):
+    def _patch_quant_config(self, config: PretrainedConfig, quant_config: QuantizationConfig):
         # the awq models from OpenGVLab missing `modules_to_not_convert`
         # patch the quant_config to add `modules_to_not_convert` back
         if isinstance(quant_config, AWQConfig):
             text_config = config.text_config
             llm_quant_config = getattr(text_config, "quantization_config", None)
-            if (not quant_config.modules_to_not_convert) and (
-                llm_quant_config is not None
-            ):
+            if (not quant_config.modules_to_not_convert) and (llm_quant_config is not None):
                 quant_config.modules_to_not_convert.append("vision_model")
 
     def _init_vision_model(
@@ -1141,9 +1086,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         if not is_mono:
             vision_feature_layer = config.select_layer
             if vision_feature_layer < 0:
-                num_hidden_layers = (
-                    config.vision_config.num_hidden_layers + vision_feature_layer + 1
-                )
+                num_hidden_layers = config.vision_config.num_hidden_layers + vision_feature_layer + 1
             else:
                 num_hidden_layers = vision_feature_layer + 1
 
@@ -1163,9 +1106,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
 
         return nn.Sequential(
             nn.LayerNorm(vit_hidden_size * int(1 / self.downsample_ratio) ** 2),
-            nn.Linear(
-                vit_hidden_size * int(1 / self.downsample_ratio) ** 2, llm_hidden_size
-            ),
+            nn.Linear(vit_hidden_size * int(1 / self.downsample_ratio) ** 2, llm_hidden_size),
             nn.GELU(),
             nn.Linear(llm_hidden_size, llm_hidden_size),
         )
@@ -1199,9 +1140,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         vit_embeds = self.mlp1(vit_embeds)
         return vit_embeds
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> InternVLImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> InternVLImageInputs | None:
         pixel_values_flat = kwargs.pop("pixel_values_flat", None)
         image_num_patches = kwargs.pop("image_num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -1235,9 +1174,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
 
         raise AssertionError("This line should be unreachable.")
 
-    def _parse_and_validate_video_input(
-        self, **kwargs: object
-    ) -> InternVLVideoPixelInputs | None:
+    def _parse_and_validate_video_input(self, **kwargs: object) -> InternVLVideoPixelInputs | None:
         pixel_values_flat_video = kwargs.pop("pixel_values_flat_video", None)
         video_num_patches = kwargs.pop("video_num_patches", None)
         video_embeds = kwargs.pop("image_embeds", None)
@@ -1275,10 +1212,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         self,
         image_input: InternVLImageInputs | InternVLVideoInputs,
     ) -> tuple[torch.Tensor, ...]:
-        if (
-            image_input["type"] == "image_embeds"
-            or image_input["type"] == "video_embeds"
-        ):
+        if image_input["type"] == "image_embeds" or image_input["type"] == "video_embeds":
             return image_input["data"]
 
         assert self.vision_model is not None
@@ -1295,9 +1229,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         # by the size of each embedding.
         feature_size = image_embeds.shape[1]
         image_embeds = image_embeds.view(-1, self.config.text_config.hidden_size)
-        image_feature_sizes = [
-            num_patches * feature_size for num_patches in num_patches
-        ]
+        image_feature_sizes = [num_patches * feature_size for num_patches in num_patches]
         return image_embeds.split(image_feature_sizes)
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
@@ -1306,10 +1238,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
         # Preserve the order of modalities if there are multiple of them
         # from the order of kwargs.
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values_flat", "image_embeds")
-                and "images" not in modalities
-            ):
+            if input_key in ("pixel_values_flat", "image_embeds") and "images" not in modalities:
                 modalities["images"] = self._parse_and_validate_image_input(**kwargs)
             if input_key in ("pixel_values_flat_video",) and "videos" not in modalities:
                 modalities["videos"] = self._parse_and_validate_video_input(**kwargs)
@@ -1319,9 +1248,7 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA)
     def _set_visual_token_mask(self, input_ids: torch.Tensor) -> None:
         if self.is_mono:
             assert self.img_context_token_id is not None
-            self.visual_token_mask = (input_ids == self.img_context_token_id).reshape(
-                -1, 1
-            )
+            self.visual_token_mask = (input_ids == self.img_context_token_id).reshape(-1, 1)
         else:
             self.visual_token_mask = None
 

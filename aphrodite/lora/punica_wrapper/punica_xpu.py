@@ -10,8 +10,7 @@ from typing import final
 import torch
 
 from aphrodite.lora.layers import LoRAMapping
-from aphrodite.lora.ops.ipex_ops import (bgmv_expand, bgmv_expand_slice,
-                                         bgmv_shrink)
+from aphrodite.lora.ops.ipex_ops import bgmv_expand, bgmv_expand_slice, bgmv_shrink
 
 from .punica_base import PunicaWrapperBase
 
@@ -46,9 +45,7 @@ class PunicaWrapperXPU(PunicaWrapperBase):
         **kwargs,
     ):
         self.is_prefill = mapping.is_prefill
-        self._update_base_metadata(
-            mapping, lora_index_to_id, max_loras, vocab_size, extra_vocab_size
-        )
+        self._update_base_metadata(mapping, lora_index_to_id, max_loras, vocab_size, extra_vocab_size)
 
     def _get_token_lora_indices(self, x: torch.Tensor) -> torch.IntTensor:
         return torch.narrow(self._token_lora_indices, 0, 0, x.size(0))
@@ -72,9 +69,7 @@ class PunicaWrapperXPU(PunicaWrapperBase):
         add_inputs: bool,
     ):
         token_lora_indices = self._get_token_lora_indices(x)
-        bgmv_expand_slice(
-            x, w_t_all, y, token_lora_indices, y_offset, y_slice_size, add_inputs
-        )
+        bgmv_expand_slice(x, w_t_all, y, token_lora_indices, y_offset, y_slice_size, add_inputs)
 
     def add_shrink(
         self,

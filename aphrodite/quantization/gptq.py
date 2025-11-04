@@ -11,13 +11,14 @@ from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
 from aphrodite.modeling.layers.linear import LinearMethodBase
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter,
-                                          PackedColumnParameter,
-                                          RowAphroditeParameter)
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.modeling.parameter import (
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+    PackedColumnParameter,
+    RowAphroditeParameter,
+)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.quantization.utils.gptq_utils import get_linear_quant_method
 from aphrodite.transformers_utils.config import get_safetensors_params_metadata
 from aphrodite.utils.collection_utils import is_list_of
@@ -88,8 +89,7 @@ class GPTQConfig(QuantizationConfig):
         # For now, show a warning, since gptq_marlin will be used by default.
         if self.weight_bits == 4:
             logger.warning_once(
-                "Currently, the 4-bit gptq_gemm kernel for GPTQ is buggy. "
-                "Please switch to gptq_marlin or gptq_bitblas."
+                "Currently, the 4-bit gptq_gemm kernel for GPTQ is buggy. Please switch to gptq_marlin or gptq_bitblas."
             )
 
         self.modules_in_block_to_quantize = modules_in_block_to_quantize or []
@@ -139,15 +139,9 @@ class GPTQConfig(QuantizationConfig):
         group_size = cls.get_from_keys(config, ["group_size"])
         desc_act = cls.get_from_keys(config, ["desc_act"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        autoround_version = cls.get_from_keys_or(
-            config, ["autoround_version"], default=""
-        )
-        modules_in_block_to_quantize = cls.get_from_keys_or(
-            config, ["modules_in_block_to_quantize"], default=None
-        )
-        checkpoint_format = cls.get_from_keys_or(
-            config, ["checkpoint_format"], default=""
-        )
+        autoround_version = cls.get_from_keys_or(config, ["autoround_version"], default="")
+        modules_in_block_to_quantize = cls.get_from_keys_or(config, ["modules_in_block_to_quantize"], default=None)
+        checkpoint_format = cls.get_from_keys_or(config, ["checkpoint_format"], default="")
         return cls(
             weight_bits,
             group_size,
@@ -180,9 +174,7 @@ class GPTQConfig(QuantizationConfig):
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.modules_in_block_to_quantize is not None:
-            self.modules_in_block_to_quantize = hf_to_aphrodite_mapper.apply_list(
-                self.modules_in_block_to_quantize
-            )
+            self.modules_in_block_to_quantize = hf_to_aphrodite_mapper.apply_list(self.modules_in_block_to_quantize)
 
     def maybe_update_config(self, model_name: str, revision: str | None = None):
         if self.modules_in_block_to_quantize:
@@ -190,9 +182,7 @@ class GPTQConfig(QuantizationConfig):
                 # original modules_in_block_to_quantize: list[list[str]]
                 # flatten original modules_in_block_to_quantize
                 self.modules_in_block_to_quantize = [
-                    item
-                    for sublist in self.modules_in_block_to_quantize
-                    for item in sublist
+                    item for sublist in self.modules_in_block_to_quantize for item in sublist
                 ]
             return
 
@@ -201,8 +191,7 @@ class GPTQConfig(QuantizationConfig):
         quant_layers: set[str] = {
             param_name.rsplit(".", 1)[0]
             for param_name, info in metadata.items()
-            if (dtype := info.get("dtype", None))
-            and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
+            if (dtype := info.get("dtype", None)) and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
         }
         self.modules_in_block_to_quantize = list(quant_layers)
 
@@ -259,10 +248,7 @@ class GPTQLinearMethod(LinearMethodBase):
         exllama_state = ExllamaState.UNINITIALIZED
         scale_and_zero_size = input_size // group_size
         scale_and_zero_input_dim = None
-        if (
-            input_size != input_size_per_partition
-            and self.quant_config.group_size != -1
-        ):
+        if input_size != input_size_per_partition and self.quant_config.group_size != -1:
             # For act-order models, we cannot use Exllama for row parallel layer
             if self.quant_config.desc_act:
                 exllama_state = ExllamaState.UNUSED
@@ -286,10 +272,7 @@ class GPTQLinearMethod(LinearMethodBase):
 
         g_idx = RowAphroditeParameter(
             data=torch.tensor(
-                [
-                    i // self.quant_config.group_size
-                    for i in range(input_size_per_partition)
-                ],
+                [i // self.quant_config.group_size for i in range(input_size_per_partition)],
                 dtype=torch.int32,
             ),
             input_dim=0,
@@ -321,9 +304,7 @@ class GPTQLinearMethod(LinearMethodBase):
             )
 
         else:
-            scales = GroupQuantScaleParameter(
-                output_dim=1, input_dim=0, **weight_scale_args
-            )
+            scales = GroupQuantScaleParameter(output_dim=1, input_dim=0, **weight_scale_args)
             qzeros = PackedAphroditeParameter(
                 input_dim=0,
                 output_dim=1,
@@ -352,9 +333,7 @@ class GPTQLinearMethod(LinearMethodBase):
             if self.quant_config.desc_act:
                 layer.g_idx.data = torch.argsort(layer.g_idx).to(torch.int)
             else:
-                layer.g_idx.data = torch.empty(
-                    (0,), dtype=torch.int, device=layer.g_idx.device
-                )
+                layer.g_idx.data = torch.empty((0,), dtype=torch.int, device=layer.g_idx.device)
             layer.exllama_state = ExllamaState.READY
             ops.gptq_shuffle(layer.qweight, layer.g_idx, self.quant_config.weight_bits)
 

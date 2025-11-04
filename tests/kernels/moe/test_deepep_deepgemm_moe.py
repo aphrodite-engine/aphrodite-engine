@@ -12,14 +12,11 @@ from torch.distributed import ProcessGroup
 from typing_extensions import ParamSpec
 
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.modeling.layers.fused_moe.config import (
-    FusedMoEQuantConfig, fp8_w8a8_moe_quant_config)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig, fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
-from aphrodite.modeling.layers.fused_moe.modular_kernel import (
-    FusedMoEModularKernel)
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from aphrodite.platforms import current_platform
-from aphrodite.utils.deep_gemm import (is_deep_gemm_e8m0_used,
-                                       is_deep_gemm_supported)
+from aphrodite.utils.deep_gemm import is_deep_gemm_e8m0_used, is_deep_gemm_supported
 from aphrodite.utils.import_utils import has_deep_ep, has_deep_gemm
 
 from ...utils import multi_gpu_test
@@ -27,18 +24,14 @@ from .parallel_utils import ProcessGroupInfo, parallel_launch
 from .utils import make_test_weights
 
 if has_deep_ep():
-    from aphrodite.modeling.layers.fused_moe.deepep_ht_prepare_finalize import (
-        DeepEPHTPrepareAndFinalize)
-    from aphrodite.modeling.layers.fused_moe.deepep_ll_prepare_finalize import (
-        DeepEPLLPrepareAndFinalize)
+    from aphrodite.modeling.layers.fused_moe.deepep_ht_prepare_finalize import DeepEPHTPrepareAndFinalize
+    from aphrodite.modeling.layers.fused_moe.deepep_ll_prepare_finalize import DeepEPLLPrepareAndFinalize
 
     from .parallel_utils import DeepEPHTArgs, DeepEPLLArgs, make_deepep_a2a
 
 if has_deep_gemm():
-    from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import (
-        BatchedDeepGemmExperts)
-    from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import (
-        DeepGemmExperts)
+    from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import BatchedDeepGemmExperts
+    from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
 
 requires_deep_ep = pytest.mark.skipif(
     not has_deep_ep(),
@@ -106,9 +99,7 @@ class TestTensors:
         fp8_info = torch.finfo(torch.float8_e4m3fn)
         fp8_max, fp8_min = fp8_info.max, fp8_info.min
 
-        rank_tokens = (
-            torch.randn((m, k), device=torch.cuda.current_device(), dtype=dtype) / 10.0
-        )
+        rank_tokens = torch.randn((m, k), device=torch.cuda.current_device(), dtype=dtype) / 10.0
         rank_tokens = rank_tokens.clamp(min=fp8_min, max=fp8_max)
         rank_token_scales = None
 
@@ -119,9 +110,7 @@ class TestTensors:
             device=torch.cuda.current_device(),
         ).to(dtype=torch.int64)
 
-        topk_weights = torch.randn(
-            topk_ids.shape, dtype=torch.float32, device=torch.cuda.current_device()
-        )
+        topk_weights = torch.randn(topk_ids.shape, dtype=torch.float32, device=torch.cuda.current_device())
 
         return TestTensors(
             rank_tokens=rank_tokens,
@@ -409,9 +398,7 @@ NUM_EXPERTS = [32]
 @multi_gpu_test(num_gpus=2)
 @requires_deep_ep
 @requires_deep_gemm
-@pytest.mark.skipif(
-    is_deep_gemm_e8m0_used(), reason="Skipping test for Blackwell DeepGEMM"
-)
+@pytest.mark.skipif(is_deep_gemm_e8m0_used(), reason="Skipping test for Blackwell DeepGEMM")
 def test_ht_deepep_deepgemm_moe(
     mnk: tuple[int, int, int],
     num_experts: int,
@@ -445,9 +432,7 @@ def test_ht_deepep_deepgemm_moe(
         use_fp8_dispatch=None,
     )
 
-    w1, w2, w1_scale, w2_scale = make_block_quant_fp8_weights(
-        num_experts, n, k, block_size
-    )
+    w1, w2, w1_scale, w2_scale = make_block_quant_fp8_weights(num_experts, n, k, block_size)
 
     parallel_launch(
         world_size,
@@ -483,9 +468,7 @@ USE_FP8_DISPATCH = [False]
 @multi_gpu_test(num_gpus=2)
 @requires_deep_ep
 @requires_deep_gemm
-@pytest.mark.skipif(
-    is_deep_gemm_e8m0_used(), reason="Skipping test for Blackwell DeepGEMM"
-)
+@pytest.mark.skipif(is_deep_gemm_e8m0_used(), reason="Skipping test for Blackwell DeepGEMM")
 def test_ll_deepep_deepgemm_moe(
     mnk: tuple[int, int, int],
     num_experts: int,
@@ -517,9 +500,7 @@ def test_ll_deepep_deepgemm_moe(
         use_fp8_dispatch=use_fp8_dispatch,
     )
 
-    w1, w2, w1_scale, w2_scale = make_block_quant_fp8_weights(
-        num_experts, n, k, block_size
-    )
+    w1, w2, w1_scale, w2_scale = make_block_quant_fp8_weights(num_experts, n, k, block_size)
 
     parallel_launch(
         world_size,

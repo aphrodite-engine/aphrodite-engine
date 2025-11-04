@@ -14,9 +14,13 @@ from uuid import uuid4
 import pytest
 
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.logger import (_DATE_FORMAT, _FORMAT,
-                              _configure_aphrodite_root_logger,
-                              enable_trace_function_call, init_logger)
+from aphrodite.logger import (
+    _DATE_FORMAT,
+    _FORMAT,
+    _configure_aphrodite_root_logger,
+    enable_trace_function_call,
+    init_logger,
+)
 from aphrodite.logging_utils import NewLineFormatter
 from aphrodite.logging_utils.dump_input import prepare_object_to_dump
 
@@ -206,8 +210,7 @@ def test_custom_logging_config_causes_an_error_if_configure_logging_is_off():
                 _configure_aphrodite_root_logger()
             assert ex_info.type is RuntimeError
             expected_message_snippet = (
-                "APHRODITE_CONFIGURE_LOGGING evaluated to false, but "
-                "APHRODITE_LOGGING_CONFIG_PATH was given."
+                "APHRODITE_CONFIGURE_LOGGING evaluated to false, but APHRODITE_LOGGING_CONFIG_PATH was given."
             )
             assert expected_message_snippet in str(ex_info)
 

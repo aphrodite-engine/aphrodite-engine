@@ -201,7 +201,8 @@ void dynamic_scaled_fp8_quant(torch::Tensor& out,          // [..., d]
                       hidden_size, in_row_stride,
                       static_cast<int64_t>(num_tokens));
 
-              aphrodite::scaled_fp8_quant_kernel_strided_dynamic<scalar_t, fp8_t>
+              aphrodite::scaled_fp8_quant_kernel_strided_dynamic<scalar_t,
+                                                                 fp8_t>
                   <<<grid, block, 0, stream>>>(
                       out.data_ptr<fp8_t>(), input.data_ptr<scalar_t>(),
                       scale.data_ptr<float>(), hidden_size, in_row_stride,

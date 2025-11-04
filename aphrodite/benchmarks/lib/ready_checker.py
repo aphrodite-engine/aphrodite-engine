@@ -6,8 +6,7 @@ import time
 import aiohttp
 from tqdm.asyncio import tqdm
 
-from .endpoint_request_func import (RequestFunc, RequestFuncInput,
-                                    RequestFuncOutput)
+from .endpoint_request_func import RequestFunc, RequestFuncInput, RequestFuncOutput
 
 
 async def wait_for_endpoint(
@@ -54,9 +53,7 @@ async def wait_for_endpoint(
 
             # ping the endpoint using request_func
             try:
-                output = await request_func(
-                    request_func_input=test_input, session=session
-                )
+                output = await request_func(request_func_input=test_input, session=session)
                 if output.success:
                     pbar.close()
                     return output

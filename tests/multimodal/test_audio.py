@@ -6,9 +6,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from aphrodite.multimodal.audio import (AudioMediaIO, AudioResampler,
-                                        resample_audio_librosa,
-                                        resample_audio_scipy)
+from aphrodite.multimodal.audio import AudioMediaIO, AudioResampler, resample_audio_librosa, resample_audio_scipy
 
 
 @pytest.fixture
@@ -20,9 +18,7 @@ def test_resample_audio_librosa(dummy_audio):
     with patch("aphrodite.multimodal.audio.librosa.resample") as mock_resample:
         mock_resample.return_value = dummy_audio * 2
         out = resample_audio_librosa(dummy_audio, orig_sr=44100, target_sr=22050)
-        mock_resample.assert_called_once_with(
-            dummy_audio, orig_sr=44100, target_sr=22050
-        )
+        mock_resample.assert_called_once_with(dummy_audio, orig_sr=44100, target_sr=22050)
         assert np.all(out == dummy_audio * 2)
 
 
@@ -52,9 +48,7 @@ def test_audio_resampler_librosa_calls_resample(dummy_audio):
     with patch("aphrodite.multimodal.audio.resample_audio_librosa") as mock_resample:
         mock_resample.return_value = dummy_audio
         out = resampler.resample(dummy_audio, orig_sr=44100)
-        mock_resample.assert_called_once_with(
-            dummy_audio, orig_sr=44100, target_sr=22050
-        )
+        mock_resample.assert_called_once_with(dummy_audio, orig_sr=44100, target_sr=22050)
         assert np.all(out == dummy_audio)
 
 
@@ -63,9 +57,7 @@ def test_audio_resampler_scipy_calls_resample(dummy_audio):
     with patch("aphrodite.multimodal.audio.resample_audio_scipy") as mock_resample:
         mock_resample.return_value = dummy_audio
         out = resampler.resample(dummy_audio, orig_sr=44100)
-        mock_resample.assert_called_once_with(
-            dummy_audio, orig_sr=44100, target_sr=22050
-        )
+        mock_resample.assert_called_once_with(dummy_audio, orig_sr=44100, target_sr=22050)
         assert np.all(out == dummy_audio)
 
 

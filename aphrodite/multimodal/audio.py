@@ -64,22 +64,13 @@ class AudioResampler:
         orig_sr: float,
     ) -> npt.NDArray[np.floating]:
         if self.target_sr is None:
-            raise RuntimeError(
-                "Audio resampling is not supported when `target_sr` is not provided"
-            )
+            raise RuntimeError("Audio resampling is not supported when `target_sr` is not provided")
         if self.method == "librosa":
-            return resample_audio_librosa(
-                audio, orig_sr=orig_sr, target_sr=self.target_sr
-            )
+            return resample_audio_librosa(audio, orig_sr=orig_sr, target_sr=self.target_sr)
         elif self.method == "scipy":
-            return resample_audio_scipy(
-                audio, orig_sr=orig_sr, target_sr=self.target_sr
-            )
+            return resample_audio_scipy(audio, orig_sr=orig_sr, target_sr=self.target_sr)
         else:
-            raise ValueError(
-                f"Invalid resampling method: {self.method}. "
-                "Supported methods are 'librosa' and 'scipy'."
-            )
+            raise ValueError(f"Invalid resampling method: {self.method}. Supported methods are 'librosa' and 'scipy'.")
 
 
 class AudioMediaIO(MediaIO[tuple[npt.NDArray, float]]):

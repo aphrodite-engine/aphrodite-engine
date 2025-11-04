@@ -26,8 +26,8 @@ fptr_t init_custom_ar(const std::vector<fptr_t>& fake_ipc_ptrs,
     ipc_ptrs[i] = reinterpret_cast<aphrodite::Signal*>(fake_ipc_ptrs[i]);
   }
   return (fptr_t) new aphrodite::CustomAllreduce(ipc_ptrs, rank_data.data_ptr(),
-                                            rank_data.numel(), rank, world_size,
-                                            fully_connected);
+                                                 rank_data.numel(), rank,
+                                                 world_size, fully_connected);
 }
 
 /**

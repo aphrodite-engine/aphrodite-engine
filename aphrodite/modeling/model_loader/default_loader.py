@@ -14,12 +14,18 @@ from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
-    download_safetensors_index_file_from_hf, download_weights_from_hf,
-    fastsafetensors_weights_iterator, filter_duplicate_safetensors_files,
-    filter_files_not_needed_for_inference, maybe_download_from_modelscope,
+    download_safetensors_index_file_from_hf,
+    download_weights_from_hf,
+    fastsafetensors_weights_iterator,
+    filter_duplicate_safetensors_files,
+    filter_files_not_needed_for_inference,
+    maybe_download_from_modelscope,
     multi_thread_pt_weights_iterator,
-    multi_thread_safetensors_weights_iterator, np_cache_weights_iterator,
-    pt_weights_iterator, safetensors_weights_iterator)
+    multi_thread_safetensors_weights_iterator,
+    np_cache_weights_iterator,
+    pt_weights_iterator,
+    safetensors_weights_iterator,
+)
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.torchao import torchao_version_at_least
 
@@ -63,9 +69,7 @@ class DefaultModelLoader(BaseModelLoader):
 
         if unexpected_keys:
             raise ValueError(
-                f"Unexpected extra config keys for load format "
-                f"{load_config.load_format}: "
-                f"{unexpected_keys}"
+                f"Unexpected extra config keys for load format {load_config.load_format}: {unexpected_keys}"
             )
 
     def _prepare_weights(
@@ -78,10 +82,7 @@ class DefaultModelLoader(BaseModelLoader):
         """Prepare weights for the model.
 
         If the model is not local, it will be downloaded."""
-        model_name_or_path = (
-            maybe_download_from_modelscope(model_name_or_path, revision)
-            or model_name_or_path
-        )
+        model_name_or_path = maybe_download_from_modelscope(model_name_or_path, revision) or model_name_or_path
 
         is_local = os.path.isdir(model_name_or_path)
         load_format = self.load_config.load_format
@@ -142,16 +143,12 @@ class DefaultModelLoader(BaseModelLoader):
                     self.load_config.download_dir,
                     revision,
                 )
-            hf_weights_files = filter_duplicate_safetensors_files(
-                hf_weights_files, hf_folder, index_file
-            )
+            hf_weights_files = filter_duplicate_safetensors_files(hf_weights_files, hf_folder, index_file)
         else:
             hf_weights_files = filter_files_not_needed_for_inference(hf_weights_files)
 
         if len(hf_weights_files) == 0:
-            raise RuntimeError(
-                f"Cannot find any model weights with `{model_name_or_path}`"
-            )
+            raise RuntimeError(f"Cannot find any model weights with `{model_name_or_path}`")
 
         return hf_folder, hf_weights_files, use_safetensors
 
@@ -166,7 +163,7 @@ class DefaultModelLoader(BaseModelLoader):
             source.fall_back_to_pt,
             source.allow_patterns_overrides,
         )
-        
+
         # Calculate total size by iterating through files
         total_bytes = 0
         for file_path in hf_weights_files:
@@ -193,9 +190,7 @@ class DefaultModelLoader(BaseModelLoader):
                     weights_iterator = multi_thread_safetensors_weights_iterator(
                         hf_weights_files,
                         self.load_config.use_tqdm_on_load,
-                        max_workers=extra_config.get(
-                            "num_threads", self.DEFAULT_NUM_THREADS
-                        ),
+                        max_workers=extra_config.get("num_threads", self.DEFAULT_NUM_THREADS),
                     )
                 else:
                     weights_iterator = safetensors_weights_iterator(
@@ -209,9 +204,7 @@ class DefaultModelLoader(BaseModelLoader):
                     hf_weights_files,
                     self.load_config.use_tqdm_on_load,
                     self.load_config.pt_load_map_location,
-                    max_workers=extra_config.get(
-                        "num_threads", self.DEFAULT_NUM_THREADS
-                    ),
+                    max_workers=extra_config.get("num_threads", self.DEFAULT_NUM_THREADS),
                 )
             else:
                 weights_iterator = pt_weights_iterator(
@@ -244,9 +237,7 @@ class DefaultModelLoader(BaseModelLoader):
             total_bytes,
         )
 
-    def _get_weights_iterator(
-        self, source: "Source"
-    ) -> Generator[tuple[str, torch.Tensor], None, None]:
+    def _get_weights_iterator(self, source: "Source") -> Generator[tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
         iterator, _ = self._get_weights_iterator_with_size(source)
         return iterator
@@ -267,9 +258,7 @@ class DefaultModelLoader(BaseModelLoader):
             allow_patterns_overrides=getattr(model, "allow_patterns_overrides", None),
         )
 
-        primary_iterator, primary_bytes = self._get_weights_iterator_with_size(
-            primary_weights
-        )
+        primary_iterator, primary_bytes = self._get_weights_iterator_with_size(primary_weights)
         total_bytes = primary_bytes
 
         # Collect all weight iterators and their sizes
@@ -298,9 +287,7 @@ class DefaultModelLoader(BaseModelLoader):
         )
 
     def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
-        if model_config.quantization == "torchao" and torchao_version_at_least(
-            "0.14.0"
-        ):
+        if model_config.quantization == "torchao" and torchao_version_at_least("0.14.0"):
             self.load_config.safetensors_load_strategy = "torchao"
         weights_to_load = {name for name, _ in model.named_parameters()}
 
@@ -317,9 +304,7 @@ class DefaultModelLoader(BaseModelLoader):
             weights_iter, total_bytes = self.get_all_weights(model_config, model)
             from aphrodite.utils import tensor_progress_bar
 
-            loaded_weights = model.load_weights(
-                tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
-            )
+            loaded_weights = model.load_weights(tensor_progress_bar(weights_iter, total_bytes, "Loading model weights"))
         elif offline_quantization_or_first_run_of_online_quantization:
             # case 1: offline quantized checkpoint
             # case 2: Step I1 first run of weight loading with
@@ -328,13 +313,10 @@ class DefaultModelLoader(BaseModelLoader):
             weights_iter, total_bytes = self.get_all_weights(model_config, model)
             from aphrodite.utils import tensor_progress_bar
 
-            loaded_weights = model.load_weights(
-                tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
-            )
+            loaded_weights = model.load_weights(tensor_progress_bar(weights_iter, total_bytes, "Loading model weights"))
         else:
             # to avoid circular dependency
-            from aphrodite.modeling.model_loader.online_quantization import (
-                load_weights_and_online_quantize)
+            from aphrodite.modeling.model_loader.online_quantization import load_weights_and_online_quantize
 
             # subsequent runs of weight loading with online
             # quantization
@@ -351,7 +333,4 @@ class DefaultModelLoader(BaseModelLoader):
         if model_config.quantization is None and loaded_weights is not None:
             weights_not_loaded = weights_to_load - loaded_weights
             if weights_not_loaded:
-                raise ValueError(
-                    "Following weights were not initialized from "
-                    f"checkpoint: {weights_not_loaded}"
-                )
+                raise ValueError(f"Following weights were not initialized from checkpoint: {weights_not_loaded}")

@@ -38,16 +38,23 @@ from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.modeling.models.llama import LlamaAttention, LlamaMLP
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import HasNoOps, SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, PPMissingLayer, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    PPMissingLayer,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 def _ffn_mult_to_intermediate_size(ffn_mult: float, n_embd: int) -> int:
@@ -138,27 +145,19 @@ class DeciLMDecoderLayer(nn.Module):
         self.hidden_size = config.hidden_size
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        if rope_scaling is not None and getattr(
-            config, "original_max_position_embeddings", None
-        ):
-            rope_scaling["original_max_position_embeddings"] = (
-                config.original_max_position_embeddings
-            )
+        if rope_scaling is not None and getattr(config, "original_max_position_embeddings", None):
+            rope_scaling["original_max_position_embeddings"] = config.original_max_position_embeddings
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         # Support abacusai/Smaug-72B-v0.1 with attention_bias
         # Support internlm/internlm-7b with bias
-        attention_bias = getattr(config, "attention_bias", False) or getattr(
-            config, "bias", False
-        )
+        attention_bias = getattr(config, "attention_bias", False) or getattr(config, "bias", False)
         bias_o_proj = attention_bias
         # support internlm/internlm3-8b with qkv_bias
         if hasattr(config, "qkv_bias"):
             attention_bias = config.qkv_bias
 
         if not self._is_no_op_attention:
-            num_kv_heads = (
-                config.num_attention_heads // block_config.attention.n_heads_in_group
-            )
+            num_kv_heads = config.num_attention_heads // block_config.attention.n_heads_in_group
             self.self_attn = DeciLMAttention(
                 config=config,
                 hidden_size=self.hidden_size,
@@ -177,9 +176,7 @@ class DeciLMDecoderLayer(nn.Module):
 
         if not self._is_no_op_ffn:
             ffn_mult = block_config.ffn.ffn_mult
-            intermediate_size = _ffn_mult_to_intermediate_size(
-                ffn_mult, config.hidden_size
-            )
+            intermediate_size = _ffn_mult_to_intermediate_size(ffn_mult, config.hidden_size)
 
             self.mlp = LlamaMLP(
                 hidden_size=self.hidden_size,
@@ -189,9 +186,7 @@ class DeciLMDecoderLayer(nn.Module):
                 bias=getattr(config, "mlp_bias", False),
                 prefix=f"{prefix}.mlp",
             )
-            self.post_attention_layernorm = RMSNorm(
-                config.hidden_size, eps=config.rms_norm_eps
-            )
+            self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -216,9 +211,7 @@ class DeciLMDecoderLayer(nn.Module):
 
         # Fully Connected
         if not self._is_no_op_ffn:
-            hidden_states, residual = self.post_attention_layernorm(
-                hidden_states, residual
-            )
+            hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
             hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
@@ -242,16 +235,10 @@ class DeciModel(nn.Module):
         self.config = config
         self.quant_config = quant_config
         self.padding_idx = config.pad_token_id
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
-        if get_pp_group().is_first_rank or (
-            config.tie_word_embeddings and get_pp_group().is_last_rank
-        ):
+        if get_pp_group().is_first_rank or (config.tie_word_embeddings and get_pp_group().is_last_rank):
             self.embed_tokens = VocabParallelEmbedding(
                 self.vocab_size,
                 config.hidden_size,
@@ -315,9 +302,7 @@ class DeciModel(nn.Module):
                 hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
@@ -340,15 +325,11 @@ class DeciModel(nn.Module):
                 # Models trained using ColossalAI may include these tensors in
                 # the checkpoint. Skip them.
                 continue
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -428,9 +409,7 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
         self.config = config
         self.lora_config = lora_config
 
-        self.model = self._init_model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = self._init_model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
             self.unpadded_vocab_size = config.vocab_size
@@ -454,15 +433,11 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
                 self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 
             logit_scale = getattr(config, "logit_scale", 1.0)
-            self.logits_processor = LogitsProcessor(
-                self.unpadded_vocab_size, config.vocab_size, logit_scale
-            )
+            self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size, logit_scale)
         else:
             self.lm_head = PPMissingLayer()
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def _init_model(self, aphrodite_config: AphroditeConfig, prefix: str = ""):
         return DeciModel(aphrodite_config=aphrodite_config, prefix=prefix)
@@ -477,9 +452,7 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        model_output = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        model_output = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return model_output
 
     def compute_logits(

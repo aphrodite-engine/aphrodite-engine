@@ -5,8 +5,7 @@ import regex as re
 import torch
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import LinearBase, UnquantizedLinearMethod
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig, QuantizationMethods
@@ -49,34 +48,22 @@ class AutoRoundConfig(QuantizationConfig):
     ) -> None:
         super().__init__()
         if weight_bits not in self.SUPPORTED_BITS:
-            raise ValueError(
-                f"Unsupported weight_bits: {weight_bits}, "
-                f"currently only support  {self.SUPPORTED_BITS}"
-            )
+            raise ValueError(f"Unsupported weight_bits: {weight_bits}, currently only support  {self.SUPPORTED_BITS}")
         if data_type not in self.SUPPORTED_DTYPES:
-            raise ValueError(
-                f"Unsupported data_type: {data_type},"
-                f" currently only support  {self.SUPPORTED_DTYPES}"
-            )
+            raise ValueError(f"Unsupported data_type: {data_type}, currently only support  {self.SUPPORTED_DTYPES}")
         if packing_format not in self.SUPPORTED_FORMATS:
             raise ValueError(
-                f"Unsupported packing_format: {packing_format}, "
-                f"currently only support  {self.SUPPORTED_FORMATS}"
+                f"Unsupported packing_format: {packing_format}, currently only support  {self.SUPPORTED_FORMATS}"
             )
         if backend not in self.SUPPORTED_BACKENDS:
-            raise ValueError(
-                f"Unsupported backend: {backend},  "
-                f"currently only support  {self.SUPPORTED_BACKENDS}"
-            )
+            raise ValueError(f"Unsupported backend: {backend},  currently only support  {self.SUPPORTED_BACKENDS}")
 
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.sym = sym
         self.packing_format = packing_format
         self.block_name_to_quantize = (
-            block_name_to_quantize.split(",")
-            if isinstance(block_name_to_quantize, str)
-            else block_name_to_quantize
+            block_name_to_quantize.split(",") if isinstance(block_name_to_quantize, str) else block_name_to_quantize
         )
         self.extra_config = extra_config
         self.data_type = data_type
@@ -84,10 +71,7 @@ class AutoRoundConfig(QuantizationConfig):
         self.pack_factor = Fraction(32, weight_bits)
 
     def __repr__(self) -> str:
-        return (
-            f"AutoRoundConfig(weight_bits={self.weight_bits}, "
-            f"group_size={self.group_size}, sym={self.sym})"
-        )
+        return f"AutoRoundConfig(weight_bits={self.weight_bits}, group_size={self.group_size}, sym={self.sym})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -111,9 +95,7 @@ class AutoRoundConfig(QuantizationConfig):
             weight_bits=cls.get_from_keys(config, ["bits"]),
             group_size=cls.get_from_keys(config, ["group_size"]),
             sym=cls.get_from_keys(config, ["sym"]),
-            packing_format=cls.get_from_keys_or(
-                config, ["packing_format"], "auto_round:auto_gptq"
-            ),
+            packing_format=cls.get_from_keys_or(config, ["packing_format"], "auto_round:auto_gptq"),
             block_name_to_quantize=cls.get_from_keys_or(
                 config, ["block_name_to_quantize", "to_quant_block_names"], None
             ),
@@ -142,9 +124,7 @@ class AutoRoundConfig(QuantizationConfig):
 
             REGEX_SPECIAL_CHARS = set(r"*+?^$()[]{}|\\")
             for pattern, cfg in self.extra_config.items():
-                if not isinstance(pattern, str) or not any(
-                    c in REGEX_SPECIAL_CHARS for c in pattern
-                ):
+                if not isinstance(pattern, str) or not any(c in REGEX_SPECIAL_CHARS for c in pattern):
                     continue
 
                 try:
@@ -171,39 +151,25 @@ class AutoRoundConfig(QuantizationConfig):
         # 2. Determine whether layer should be quantized
         quantized = not isinstance(layer, ParallelLMHead)
         if self.block_name_to_quantize:
-            quantized = any(
-                layer_name.startswith(name) for name in self.block_name_to_quantize
-            )
+            quantized = any(layer_name.startswith(name) for name in self.block_name_to_quantize)
 
         # 3. Handle fused MoE
         if self.extra_config and "fusedmoe" in layer.__class__.__name__.lower():
-            moe_configs = [
-                get_config(name, quantized)
-                for name in self.extra_config
-                if name.startswith(layer_name)
-            ]
+            moe_configs = [get_config(name, quantized) for name in self.extra_config if name.startswith(layer_name)]
             if moe_configs:
                 if len(set(moe_configs)) == 1:
                     return moe_configs[0]
-                raise ValueError(
-                    f"Fused MoE layer '{layer_name}' requires "
-                    f"consistent quant config for all sub-layers"
-                )
+                raise ValueError(f"Fused MoE layer '{layer_name}' requires consistent quant config for all sub-layers")
 
         # 4. Handle fused QKV or other patterns
         if self.extra_config:
             for fusion_key, sub_keys in self.packed_modules_mapping.items():
                 if fusion_key in layer_name and layer_name.count(fusion_key) == 1:
-                    sub_names = [
-                        layer_name.replace(fusion_key, sub_key) for sub_key in sub_keys
-                    ]
+                    sub_names = [layer_name.replace(fusion_key, sub_key) for sub_key in sub_keys]
                     sub_configs = [get_config(name, quantized) for name in sub_names]
                     if len(set(sub_configs)) == 1:
                         return sub_configs[0]
-                    raise ValueError(
-                        f"Fused module '{layer_name}' requires "
-                        f"consistent quant config for {sub_names}"
-                    )
+                    raise ValueError(f"Fused module '{layer_name}' requires consistent quant config for {sub_names}")
 
         # 5. Fallback or try a regular expression match
         return get_config(layer_name, quantized)
@@ -213,16 +179,13 @@ class AutoRoundConfig(QuantizationConfig):
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.block_name_to_quantize is not None:
-            self.block_name_to_quantize = hf_to_aphrodite_mapper.apply_list(
-                self.block_name_to_quantize
-            )
+            self.block_name_to_quantize = hf_to_aphrodite_mapper.apply_list(self.block_name_to_quantize)
         if self.extra_config is not None:
             self.extra_config = hf_to_aphrodite_mapper.apply_dict(self.extra_config)
 
     def apply_awq_quant_layer(self, layer, prefix: str, backend: str = "auto"):
         from aphrodite.modeling.layers.fused_moe import FusedMoE
-        from aphrodite.quantization.utils.marlin_utils import (
-            check_marlin_supported, check_moe_marlin_supports_layer)
+        from aphrodite.quantization.utils.marlin_utils import check_marlin_supported, check_moe_marlin_supports_layer
 
         weight_bits, group_size, sym = self.get_layer_config(layer, prefix)
         if not self.check_quantized(weight_bits):
@@ -249,15 +212,12 @@ class AutoRoundConfig(QuantizationConfig):
             )
 
             if isinstance(layer, FusedMoE):
-                use_marlin = use_marlin and check_moe_marlin_supports_layer(
-                    layer, group_size
-                )
+                use_marlin = use_marlin and check_moe_marlin_supports_layer(layer, group_size)
 
         else:
             use_marlin = False
         if use_marlin:
-            from aphrodite.quantization.awq_marlin import (
-                AWQMarlinConfig, AWQMarlinLinearMethod, AWQMoEMethod)
+            from aphrodite.quantization.awq_marlin import AWQMarlinConfig, AWQMarlinLinearMethod, AWQMoEMethod
 
             quant_args_marlin = AWQMarlinConfig(
                 weight_bits=weight_bits,
@@ -299,8 +259,7 @@ class AutoRoundConfig(QuantizationConfig):
 
     def apply_gptq_quant_layer(self, layer, prefix: str, backend: str = "auto"):
         from aphrodite.modeling.layers.fused_moe import FusedMoE
-        from aphrodite.quantization.utils.marlin_utils import (
-            check_marlin_supported, check_moe_marlin_supports_layer)
+        from aphrodite.quantization.utils.marlin_utils import check_marlin_supported, check_moe_marlin_supports_layer
 
         weight_bits, group_size, sym = self.get_layer_config(layer, prefix)
         if not self.check_quantized(weight_bits):
@@ -326,14 +285,11 @@ class AutoRoundConfig(QuantizationConfig):
                 GPTQ_TYPE_MAP[(weight_bits, sym)], group_size, has_zp=not sym
             )
             if isinstance(layer, FusedMoE):
-                use_marlin = use_marlin and check_moe_marlin_supports_layer(
-                    layer, group_size
-                )
+                use_marlin = use_marlin and check_moe_marlin_supports_layer(layer, group_size)
         else:
             use_marlin = False
         if use_marlin:
-            from aphrodite.quantization.gptq_marlin import (
-                GPTQMarlinConfig, GPTQMarlinLinearMethod, GPTQMarlinMoEMethod)
+            from aphrodite.quantization.gptq_marlin import GPTQMarlinConfig, GPTQMarlinLinearMethod, GPTQMarlinMoEMethod
 
             quant_args_marlin = GPTQMarlinConfig(
                 weight_bits=weight_bits,
@@ -345,8 +301,7 @@ class AutoRoundConfig(QuantizationConfig):
                 full_config={},
             )
         else:
-            from aphrodite.quantization.gptq import (GPTQConfig,
-                                                     GPTQLinearMethod)
+            from aphrodite.quantization.gptq import GPTQConfig, GPTQLinearMethod
 
             quant_args = GPTQConfig(
                 weight_bits=weight_bits,
@@ -369,9 +324,7 @@ class AutoRoundConfig(QuantizationConfig):
                     "sym": sym,
                     "lm_head": False,
                 }
-                return MoeWNA16Config.from_config(config).get_quant_method(
-                    layer, prefix
-                )
+                return MoeWNA16Config.from_config(config).get_quant_method(layer, prefix)
 
         if isinstance(layer, (LinearBase, ParallelLMHead)):
             if use_marlin:
@@ -388,41 +341,28 @@ class AutoRoundConfig(QuantizationConfig):
                 return UnquantizedLinearMethod()
             else:
                 return None
-        from aphrodite.quantization.ipex_quant import (IPEXAWQLinearMethod,
-                                                       IPEXConfig,
-                                                       IPEXGPTQLinearMethod)
+        from aphrodite.quantization.ipex_quant import IPEXAWQLinearMethod, IPEXConfig, IPEXGPTQLinearMethod
 
         if isinstance(layer, (LinearBase, ParallelLMHead)):
             if "awq" in self.packing_format:
-                config = IPEXConfig(
-                    method="awq", weight_bits=weight_bits, group_size=group_size
-                )
+                config = IPEXConfig(method="awq", weight_bits=weight_bits, group_size=group_size)
                 return IPEXAWQLinearMethod(config)
             elif "gptq" in self.packing_format:
-                config = IPEXConfig(
-                    method="gptq", weight_bits=weight_bits, group_size=group_size
-                )
+                config = IPEXConfig(method="gptq", weight_bits=weight_bits, group_size=group_size)
                 return IPEXGPTQLinearMethod(config)
             else:
-                raise ValueError(
-                    f"ipex backend only supports awq "
-                    f"and gtpq format,but got {self.packing_format}"
-                )
+                raise ValueError(f"ipex backend only supports awq and gtpq format,but got {self.packing_format}")
         else:
             return None
 
     def get_quant_method(self, layer: torch.nn.Module, prefix: str):
         if prefix and self.extra_config:
             for layer_name in self.extra_config:
-                if (
-                    layer_name == prefix or layer_name == f"model.{prefix}"
-                ) and self.extra_config[layer_name].get("bits", 16) >= 16:
+                if (layer_name == prefix or layer_name == f"model.{prefix}") and self.extra_config[layer_name].get(
+                    "bits", 16
+                ) >= 16:
                     return UnquantizedLinearMethod()
-        if (
-            current_platform.is_cpu()
-            or current_platform.is_xpu()
-            or self.backend == "ipex"
-        ):
+        if current_platform.is_cpu() or current_platform.is_xpu() or self.backend == "ipex":
             return self.apply_ipex_quant_layer(layer, prefix)
         if "gptq" in self.packing_format or "gptq" in self.backend:
             return self.apply_gptq_quant_layer(layer, prefix)

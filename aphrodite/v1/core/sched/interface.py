@@ -3,8 +3,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
-        KVConnectorBase_V1)
+    from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorBase_V1
     from aphrodite.v1.core.sched.output import SchedulerOutput
     from aphrodite.v1.engine import EngineCoreOutputs
     from aphrodite.v1.metrics.stats import SchedulerStats

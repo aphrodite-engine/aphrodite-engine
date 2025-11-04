@@ -1,11 +1,12 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          permute_param_layout_)
+from aphrodite.modeling.parameter import BaseAphroditeParameter, permute_param_layout_
 from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.allspark_utils import (
-    ALLSPARK_AMPERE_M_CUBLAS_THRESHOLD, check_allspark_supported_dtype_shape)
+    ALLSPARK_AMPERE_M_CUBLAS_THRESHOLD,
+    check_allspark_supported_dtype_shape,
+)
 
 from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
 
@@ -59,12 +60,8 @@ class AllSparkLinearKernel(MPLinearKernel):
         permute_param_layout_(old_scale_param, input_dim=0, output_dim=1)
 
         # unpack weight from K / 4 x N int32 to K x N uint8
-        new_weight_param = torch.nn.Parameter(
-            old_weight_param.data, requires_grad=False
-        )
-        new_weight_param.data = (
-            new_weight_param.data.t().contiguous().view(dtype=torch.uint8)
-        )
+        new_weight_param = torch.nn.Parameter(old_weight_param.data, requires_grad=False)
+        new_weight_param.data = new_weight_param.data.t().contiguous().view(dtype=torch.uint8)
         new_weight_param.data = new_weight_param.data.t().contiguous()
 
         new_scale_param = torch.nn.Parameter(old_scale_param.data, requires_grad=False)

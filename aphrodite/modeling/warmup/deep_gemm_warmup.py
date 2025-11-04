@@ -10,23 +10,20 @@ from tqdm import tqdm
 import aphrodite.envs as envs
 from aphrodite.distributed.parallel_state import get_dp_group
 from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
-from aphrodite.modeling.layers.fused_moe.deep_gemm_utils import (
-    compute_aligned_M)
+from aphrodite.modeling.layers.fused_moe.deep_gemm_utils import compute_aligned_M
 from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
-from aphrodite.modeling.layers.fused_moe.modular_kernel import (
-    FusedMoEModularKernel)
-from aphrodite.modeling.layers.fused_moe.triton_deep_gemm_moe import (
-    TritonOrDeepGemmExperts)
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
+from aphrodite.modeling.layers.fused_moe.triton_deep_gemm_moe import TritonOrDeepGemmExperts
 from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.quantization.fp8 import Fp8LinearMethod
-from aphrodite.utils.deep_gemm import (fp8_gemm_nt,
-                                       get_mk_alignment_for_contiguous_layout,
-                                       m_grouped_fp8_gemm_nt_contiguous)
+from aphrodite.utils.deep_gemm import (
+    fp8_gemm_nt,
+    get_mk_alignment_for_contiguous_layout,
+    m_grouped_fp8_gemm_nt_contiguous,
+)
 
 
-def _generate_optimal_warmup_m_values(
-    max_tokens: int, n: int, device: torch.device
-) -> list[int]:
+def _generate_optimal_warmup_m_values(max_tokens: int, n: int, device: torch.device) -> list[int]:
     """
     Generate M values that cover all possible DeepGEMM kernel configurations.
     Reference: https://github.com/deepseek-ai/DeepGEMM/blob/79f48ee15a82dd5fad5cd9beaa393c1f755e6b55/csrc/jit_kernels/heuristics/common.hpp
@@ -103,17 +100,9 @@ def _extract_data_from_fused_moe_module(
     """
     assert isinstance(m, FusedMoE)
     w13 = m.w13_weight
-    w13_s = (
-        m.w13_weight_scale_inv
-        if hasattr(m, "w13_weight_scale_inv")
-        else m.w13_weight_scale
-    )
+    w13_s = m.w13_weight_scale_inv if hasattr(m, "w13_weight_scale_inv") else m.w13_weight_scale
     w2 = m.w2_weight
-    w2_s = (
-        m.w2_weight_scale_inv
-        if hasattr(m, "w2_weight_scale_inv")
-        else m.w2_weight_scale
-    )
+    w2_s = m.w2_weight_scale_inv if hasattr(m, "w2_weight_scale_inv") else m.w2_weight_scale
     num_topk = m.top_k
 
     assert isinstance(w13, torch.Tensor)
@@ -178,9 +167,7 @@ def _deepgemm_fp8_gemm_nt_warmup(w: torch.Tensor, ws: torch.Tensor, max_tokens: 
 
     device = w.device
     a1q = torch.empty((max_tokens, k), device=device, dtype=torch.float8_e4m3fn)
-    a1q_scales = torch.empty(
-        (max_tokens, k // block_m), device=device, dtype=torch.float32
-    )
+    a1q_scales = torch.empty((max_tokens, k // block_m), device=device, dtype=torch.float32)
     out = torch.empty((max_tokens, n), device=device, dtype=torch.bfloat16)
 
     # Use optimal M values only if APHRODITE_DEEP_GEMM_WARMUP is set to "relax".
@@ -190,9 +177,7 @@ def _deepgemm_fp8_gemm_nt_warmup(w: torch.Tensor, ws: torch.Tensor, max_tokens: 
         desc = f"DeepGemm(fp8_gemm_nt) warmup (W={w.size()}) [relaxed]"
     else:
         assert envs.APHRODITE_DEEP_GEMM_WARMUP == "full", (
-            "Expected "
-            'APHRODITE_DEEP_GEMM_WARMUP env to be set to "full" but got '
-            f"{envs.APHRODITE_DEEP_GEMM_WARMUP}"
+            f'Expected APHRODITE_DEEP_GEMM_WARMUP env to be set to "full" but got {envs.APHRODITE_DEEP_GEMM_WARMUP}'
         )
         m_values = list(range(1, max_tokens + 1))
         desc = f"DeepGemm(fp8_gemm_nt) warmup (W={w.size()}) [all tokens]"
@@ -200,9 +185,7 @@ def _deepgemm_fp8_gemm_nt_warmup(w: torch.Tensor, ws: torch.Tensor, max_tokens: 
     pbar = tqdm(total=len(m_values), desc=desc)
 
     for num_tokens in m_values:
-        fp8_gemm_nt(
-            (a1q[:num_tokens], a1q_scales[:num_tokens]), (w, ws), out[:num_tokens]
-        )
+        fp8_gemm_nt((a1q[:num_tokens], a1q_scales[:num_tokens]), (w, ws), out[:num_tokens])
         pbar.update(1)
 
     FP8_GEMM_NT_WARMUP_CACHE.add(w.size())
@@ -237,22 +220,16 @@ def _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
 
     # This is the maximum GroupedGemm M size that we expect to run
     # the grouped_gemm with.
-    MAX_M = compute_aligned_M(
-        max_tokens, num_topk, num_experts, block_m, expert_tokens_meta=None
-    )
+    MAX_M = compute_aligned_M(max_tokens, num_topk, num_experts, block_m, expert_tokens_meta=None)
     # Distribute expert-ids evenly.
     MAX_BLOCKS = MAX_M // block_m
-    expert_ids_block = torch.randint(
-        low=0, high=num_experts, size=(MAX_BLOCKS,), device=device, dtype=torch.int32
-    )
+    expert_ids_block = torch.randint(low=0, high=num_experts, size=(MAX_BLOCKS,), device=device, dtype=torch.int32)
     expert_ids = torch.repeat_interleave(expert_ids_block, block_m, dim=0)
 
     def _warmup(w: torch.Tensor, w_scale: torch.Tensor):
         _, n, k = w.size()
         a1q = torch.empty((MAX_M, k), device=device, dtype=torch.float8_e4m3fn)
-        a1q_scales = torch.empty(
-            (MAX_M, k // block_m), device=device, dtype=torch.float32
-        )
+        a1q_scales = torch.empty((MAX_M, k // block_m), device=device, dtype=torch.float32)
         out = torch.empty((MAX_M, n), device=device, dtype=torch.bfloat16)
 
         # Generate M values in block_m increments (already optimized for MoE)
@@ -287,20 +264,12 @@ def deepgemm_fp8_gemm_nt_warmup(model: torch.nn.Module, max_tokens: int):
         _deepgemm_fp8_gemm_nt_warmup(w=w, ws=ws, max_tokens=max_tokens)
 
 
-def deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
-    model: torch.nn.Module, max_tokens: int
-):
-    dg_modules = [
-        m for m in model.modules() if _fused_moe_grouped_gemm_may_use_deep_gemm(m)
-    ]
+def deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(model: torch.nn.Module, max_tokens: int):
+    dg_modules = [m for m in model.modules() if _fused_moe_grouped_gemm_may_use_deep_gemm(m)]
 
     for dgm in dg_modules:
-        w13, w13_scale, w2, w2_scale, num_topk = _extract_data_from_fused_moe_module(
-            dgm
-        )
-        _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
-            w13, w2, w13_scale, w2_scale, num_topk, max_tokens
-        )
+        w13, w13_scale, w2, w2_scale, num_topk = _extract_data_from_fused_moe_module(dgm)
+        _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(w13, w2, w13_scale, w2_scale, num_topk, max_tokens)
 
 
 def deep_gemm_warmup(model: torch.nn.Module, max_tokens: int):

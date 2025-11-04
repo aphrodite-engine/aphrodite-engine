@@ -14,10 +14,8 @@ from .base_device_communicator import All2AllManagerBase, Cache
 
 if has_flashinfer_all2all():
     from flashinfer.comm import Mapping  # type: ignore[import-not-found]
-    from flashinfer.comm.mnnvl import (
-        MnnvlConfig)  # type: ignore[import-not-found]
-    from flashinfer.comm.trtllm_alltoall import (
-        MnnvlMoe)  # type: ignore[import-not-found]
+    from flashinfer.comm.mnnvl import MnnvlConfig  # type: ignore[import-not-found]
+    from flashinfer.comm.trtllm_alltoall import MnnvlMoe  # type: ignore[import-not-found]
 
 logger = init_logger(__name__)
 
@@ -40,9 +38,7 @@ class NaiveAll2AllManager(All2AllManagerBase):
         is_sequence_parallel: bool,
     ) -> torch.Tensor:
         assert len(x.shape) == 2
-        buffer = torch.empty(
-            (cu_tokens_across_sp_cpu[-1], x.size(1)), device=x.device, dtype=x.dtype
-        )
+        buffer = torch.empty((cu_tokens_across_sp_cpu[-1], x.size(1)), device=x.device, dtype=x.dtype)
 
         rank = self.rank if is_sequence_parallel else self.dp_rank
         world_size = self.world_size if is_sequence_parallel else self.dp_world_size
@@ -68,17 +64,11 @@ class NaiveAll2AllManager(All2AllManagerBase):
         assert dp_metadata is not None
         cu_tokens_across_sp_cpu = dp_metadata.cu_tokens_across_sp(sp_size)
 
-        hidden_states = self.naive_multicast(
-            hidden_states, cu_tokens_across_sp_cpu, is_sequence_parallel
-        )
-        router_logits = self.naive_multicast(
-            router_logits, cu_tokens_across_sp_cpu, is_sequence_parallel
-        )
+        hidden_states = self.naive_multicast(hidden_states, cu_tokens_across_sp_cpu, is_sequence_parallel)
+        router_logits = self.naive_multicast(router_logits, cu_tokens_across_sp_cpu, is_sequence_parallel)
         return hidden_states, router_logits
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         ep_rank = self.rank if is_sequence_parallel else self.dp_rank
 
         dp_metadata = get_forward_context().dp_metadata
@@ -129,9 +119,7 @@ class AgRsAll2AllManager(All2AllManagerBase):
         )
         return hidden_states, router_logits
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         """
         Reduce-scatter hidden_states across all dp ranks.
         """
@@ -164,19 +152,17 @@ class PPLXAll2AllManager(All2AllManagerBase):
             # inter-node communication needs nvshmem,
             # intra-node communication uses p2p mapping directly
             from pplx_kernels.nvshmem import (  # type: ignore[import-not-found]
-                nvshmem_alloc_empty_unique_id, nvshmem_get_unique_id,
-                nvshmem_init)
+                nvshmem_alloc_empty_unique_id,
+                nvshmem_get_unique_id,
+                nvshmem_init,
+            )
 
             logger.debug(
                 "Initialize NVSHMEM for pplx_kernels: rank=%d, world size=%d",
                 self.rank,
                 self.world_size,
             )
-            uid = (
-                nvshmem_get_unique_id()
-                if self.rank == 0
-                else nvshmem_alloc_empty_unique_id()
-            )
+            uid = nvshmem_get_unique_id() if self.rank == 0 else nvshmem_alloc_empty_unique_id()
             dist.broadcast(
                 uid,
                 src=dist.get_process_group_ranks(self.cpu_group)[0],
@@ -203,9 +189,7 @@ class PPLXAll2AllManager(All2AllManagerBase):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         raise NotImplementedError
 
     def destroy(self):
@@ -214,8 +198,7 @@ class PPLXAll2AllManager(All2AllManagerBase):
                 handle.destroy()
 
         if self.internode:
-            from pplx_kernels.nvshmem import (
-                nvshmem_finalize)  # type: ignore[import-not-found]
+            from pplx_kernels.nvshmem import nvshmem_finalize  # type: ignore[import-not-found]
 
             logger.debug("PPLX NVSHMEM finalize")
             nvshmem_finalize()
@@ -249,9 +232,7 @@ class DeepEPAll2AllManagerBase(All2AllManagerBase):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         raise NotImplementedError
 
     def destroy(self):
@@ -291,17 +272,14 @@ class DeepEPHTAll2AllManager(DeepEPAll2AllManagerBase):
 
     def get_handle(self, kwargs):
         assert len(kwargs) == 0, (
-            "DeepEPHTAll2AllManager expects no arguments. All the required "
-            "args are computed in the Manager itself."
+            "DeepEPHTAll2AllManager expects no arguments. All the required args are computed in the Manager itself."
         )
 
         import deep_ep  # type: ignore[import-not-found]
 
         buffer_kwargs = self._make_all2all_kwargs()
         logger.debug("DeepEP all2all args %s", buffer_kwargs)
-        handle: deep_ep.Buffer = self.handle_cache.get_or_create(
-            buffer_kwargs, deep_ep.Buffer
-        )
+        handle: deep_ep.Buffer = self.handle_cache.get_or_create(buffer_kwargs, deep_ep.Buffer)
         return handle
 
     def set_num_sms(self, num_sms: int):
@@ -371,9 +349,7 @@ class DeepEPLLAll2AllManager(DeepEPAll2AllManagerBase):
 
         buffer_kwargs = self._make_all2all_kwargs(**kwargs)
         logger.debug("DeepEP all2all args %s", buffer_kwargs)
-        handle: deep_ep.Buffer = self.handle_cache.get_or_create(
-            buffer_kwargs, deep_ep.Buffer
-        )
+        handle: deep_ep.Buffer = self.handle_cache.get_or_create(buffer_kwargs, deep_ep.Buffer)
         return handle
 
     # DeepEP LL uses RDMA so no SMs are used for communication
@@ -392,9 +368,7 @@ class FlashInferAllToAllManager(All2AllManagerBase):
     world_size: int
 
     def __init__(self, cpu_group):
-        assert has_flashinfer_all2all(), (
-            "flashinfer all2all module not found. Please install/check flashinfer"
-        )  # noqa
+        assert has_flashinfer_all2all(), "flashinfer all2all module not found. Please install/check flashinfer"  # noqa
         super().__init__(cpu_group)
         logger.debug(
             "Initialize for flashinfer All2All rank=%d, world size=%d",
@@ -423,8 +397,7 @@ class FlashInferAllToAllManager(All2AllManagerBase):
             tp_size=world_size,
         )
 
-        from aphrodite.distributed.device_communicators.mnnvl_compat import (
-            CustomCommunicator)
+        from aphrodite.distributed.device_communicators.mnnvl_compat import CustomCommunicator
 
         dp_config = MnnvlConfig(
             comm_backend=CustomCommunicator(get_dp_group().cpu_group),
@@ -433,18 +406,14 @@ class FlashInferAllToAllManager(All2AllManagerBase):
         )
 
         self.workspace_tensor = MnnvlMoe.get_moe_workspaces(self.mapping, dp_config)
-        self.prepare_workspace_tensor = MnnvlMoe.get_moe_prepare_workspace(
-            self.mapping, dp_config
-        )
+        self.prepare_workspace_tensor = MnnvlMoe.get_moe_prepare_workspace(self.mapping, dp_config)
 
         self.world_size = world_size
         self.rank = rank
         self.gpus_per_node = gpus_per_node
         self.initialized = True
 
-        logger.info(
-            "FlashInfer All2All initialized for rank %s, size %s", rank, world_size
-        )
+        logger.info("FlashInfer All2All initialized for rank %s, size %s", rank, world_size)
 
     def ensure_alltoall_workspace_initialized(self):
         """Ensure workspace is initialized"""
@@ -467,11 +436,7 @@ class FlashInferAllToAllManager(All2AllManagerBase):
 
     def cleanup(self):
         """Clean up workspace"""
-        if (
-            self.initialized
-            and self.workspace_tensor is not None
-            and self.prepare_workspace_tensor is not None
-        ):
+        if self.initialized and self.workspace_tensor is not None and self.prepare_workspace_tensor is not None:
             try:
                 del self.workspace_tensor
                 del self.prepare_workspace_tensor

@@ -1,17 +1,15 @@
 import torch
-
 from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
     apply_w8a8_block_fp8_linear,
 )
 from aphrodite.model_executor.layers.quantization.utils.w8a8_utils import (
     CUTLASS_BLOCK_FP8_SUPPORTED,
 )
+
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import triton as aphrodite_triton
 
-assert current_platform.is_cuda(), (
-    "Only support benchmarking w8a8 block fp8 kernel on CUDA device."
-)
+assert current_platform.is_cuda(), "Only support benchmarking w8a8 block fp8 kernel on CUDA device."
 
 # DeepSeek-V3 weight shapes
 DEEPSEEK_V3_SHAPES = [
@@ -47,10 +45,7 @@ def build_w8a8_block_fp8_runner(M, N, K, block_size, device, use_cutlass):
     n_tiles = (N + block_n - 1) // block_n
     k_tiles = (K + block_k - 1) // block_k
 
-    Bs = (
-        torch.rand(n_tiles, k_tiles, dtype=torch.float32, device=device)
-        * factor_for_scale
-    )
+    Bs = torch.rand(n_tiles, k_tiles, dtype=torch.float32, device=device) * factor_for_scale
 
     # SM90 CUTLASS requires row-major format for scales
     if use_cutlass and current_platform.is_device_capability(90):
@@ -58,13 +53,9 @@ def build_w8a8_block_fp8_runner(M, N, K, block_size, device, use_cutlass):
 
     def run():
         if use_cutlass:
-            return apply_w8a8_block_fp8_linear(
-                A_ref, B, block_size, Bs, cutlass_block_fp8_supported=True
-            )
+            return apply_w8a8_block_fp8_linear(A_ref, B, block_size, Bs, cutlass_block_fp8_supported=True)
         else:
-            return apply_w8a8_block_fp8_linear(
-                A_ref, B, block_size, Bs, cutlass_block_fp8_supported=False
-            )
+            return apply_w8a8_block_fp8_linear(A_ref, B, block_size, Bs, cutlass_block_fp8_supported=False)
 
     return run
 
@@ -103,16 +94,10 @@ def benchmark_tflops(batch_size, provider, N, K, block_size=(128, 128)):
             lambda: torch.nn.functional.linear(a, b), quantiles=quantiles
         )
     elif provider == "w8a8-block-fp8-triton":
-        run_w8a8_triton = build_w8a8_block_fp8_runner(
-            M, N, K, block_size, device, use_cutlass=False
-        )
-        ms, min_ms, max_ms = aphrodite_triton.testing.do_bench_cudagraph(
-            lambda: run_w8a8_triton(), quantiles=quantiles
-        )
+        run_w8a8_triton = build_w8a8_block_fp8_runner(M, N, K, block_size, device, use_cutlass=False)
+        ms, min_ms, max_ms = aphrodite_triton.testing.do_bench_cudagraph(lambda: run_w8a8_triton(), quantiles=quantiles)
     elif provider == "w8a8-block-fp8-cutlass":
-        run_w8a8_cutlass = build_w8a8_block_fp8_runner(
-            M, N, K, block_size, device, use_cutlass=True
-        )
+        run_w8a8_cutlass = build_w8a8_block_fp8_runner(M, N, K, block_size, device, use_cutlass=True)
         ms, min_ms, max_ms = aphrodite_triton.testing.do_bench_cudagraph(
             lambda: run_w8a8_cutlass(), quantiles=quantiles
         )

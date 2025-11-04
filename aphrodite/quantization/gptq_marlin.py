@@ -8,33 +8,37 @@ from safetensors.torch import _TYPES as _SAFETENSORS_TO_TORCH_DTYPE
 import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    fused_marlin_moe)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import fused_marlin_moe
 from aphrodite.modeling.layers.fused_moe.layer import (
-    FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported,
-    UnquantizedFusedMoEMethod)
+    FusedMoE,
+    FusedMoEMethodBase,
+    FusedMoeWeightScaleSupported,
+    UnquantizedFusedMoEMethod,
+)
 from aphrodite.modeling.layers.linear import LinearMethodBase, set_weight_attrs
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter,
-                                          PackedColumnParameter,
-                                          RowAphroditeParameter)
+from aphrodite.modeling.parameter import (
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+    PackedColumnParameter,
+    RowAphroditeParameter,
+)
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
-from aphrodite.quantization.kernels.mixed_precision import (
-    MPLinearLayerConfig, choose_mp_linear_kernel)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
+from aphrodite.quantization.kernels.mixed_precision import MPLinearLayerConfig, choose_mp_linear_kernel
 from aphrodite.quantization.utils import replace_parameter
-from aphrodite.quantization.utils.gptq_utils import (get_dynamic_override,
-                                                     get_linear_quant_method,
-                                                     override_config)
+from aphrodite.quantization.utils.gptq_utils import get_dynamic_override, get_linear_quant_method, override_config
 from aphrodite.quantization.utils.marlin_utils import (
-    check_marlin_supported, check_moe_marlin_supports_layer,
-    marlin_make_workspace_new, marlin_moe_permute_scales, marlin_permute_bias,
-    marlin_repeat_scales_on_all_ranks, verify_marlin_supported)
+    check_marlin_supported,
+    check_moe_marlin_supports_layer,
+    marlin_make_workspace_new,
+    marlin_moe_permute_scales,
+    marlin_permute_bias,
+    marlin_repeat_scales_on_all_ranks,
+    verify_marlin_supported,
+)
 from aphrodite.scalar_type import scalar_types
 from aphrodite.transformers_utils.config import get_safetensors_params_metadata
 from aphrodite.utils.collection_utils import is_list_of
@@ -130,9 +134,7 @@ class GPTQMarlinConfig(QuantizationConfig):
         self.full_config = full_config
 
         if (weight_bits, is_sym) not in self.TYPE_MAP:
-            raise ValueError(
-                f"Unsupported quantization config: bits={weight_bits}, sym={is_sym}"
-            )
+            raise ValueError(f"Unsupported quantization config: bits={weight_bits}, sym={is_sym}")
 
         self.quant_type = self.TYPE_MAP[(weight_bits, is_sym)]
 
@@ -176,9 +178,7 @@ class GPTQMarlinConfig(QuantizationConfig):
         desc_act = cls.get_from_keys(config, ["desc_act"])
         is_sym = cls.get_from_keys(config, ["sym"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        modules_in_block_to_quantize = cls.get_from_keys_or(
-            config, ["modules_in_block_to_quantize"], default=None
-        )
+        modules_in_block_to_quantize = cls.get_from_keys_or(config, ["modules_in_block_to_quantize"], default=None)
         return cls(
             weight_bits,
             group_size,
@@ -191,19 +191,14 @@ class GPTQMarlinConfig(QuantizationConfig):
         )
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> QuantizationMethods | None:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> QuantizationMethods | None:
         can_convert = cls.is_gptq_marlin_compatible(hf_quant_cfg)
 
-        is_valid_user_quant = (
-            user_quant is None or user_quant == "marlin" or user_quant == "gptq_marlin"
-        )
+        is_valid_user_quant = user_quant is None or user_quant == "marlin" or user_quant == "gptq_marlin"
 
         if can_convert and is_valid_user_quant:
-            msg = (
-                "The model is convertible to {} during runtime."
-                " Using {} kernel.".format(cls.get_name(), cls.get_name())
+            msg = "The model is convertible to {} during runtime. Using {} kernel.".format(
+                cls.get_name(), cls.get_name()
             )
             logger.info(msg)
             return cls.get_name()
@@ -217,20 +212,15 @@ class GPTQMarlinConfig(QuantizationConfig):
             )
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, FusedMoE):
             from aphrodite.quantization.moe_wna16 import MoeWNA16Config
 
             if not check_moe_marlin_supports_layer(layer, self.group_size):
                 logger.warning_once(
-                    f"Layer '{prefix}' is not supported by GPTQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels."
+                    f"Layer '{prefix}' is not supported by GPTQMoeMarlin. Falling back to Moe WNA16 kernels."
                 )
-                return MoeWNA16Config.from_config(self.full_config).get_quant_method(
-                    layer, prefix
-                )
+                return MoeWNA16Config.from_config(self.full_config).get_quant_method(layer, prefix)
             return get_moe_quant_method(self, layer, prefix, GPTQMarlinMoEMethod)
         return get_linear_quant_method(self, layer, prefix, GPTQMarlinLinearMethod)
 
@@ -255,15 +245,11 @@ class GPTQMarlinConfig(QuantizationConfig):
         if (num_bits, sym) not in cls.TYPE_MAP:
             return False
 
-        return check_marlin_supported(
-            quant_type=cls.TYPE_MAP[(num_bits, sym)], group_size=group_size
-        )
+        return check_marlin_supported(quant_type=cls.TYPE_MAP[(num_bits, sym)], group_size=group_size)
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper):
         if self.modules_in_block_to_quantize is not None:
-            self.modules_in_block_to_quantize = hf_to_aphrodite_mapper.apply_list(
-                self.modules_in_block_to_quantize
-            )
+            self.modules_in_block_to_quantize = hf_to_aphrodite_mapper.apply_list(self.modules_in_block_to_quantize)
 
     def maybe_update_config(self, model_name: str, revision: str | None = None):
         if self.modules_in_block_to_quantize:
@@ -271,9 +257,7 @@ class GPTQMarlinConfig(QuantizationConfig):
                 # original modules_in_block_to_quantize: list[list[str]]
                 # flatten original modules_in_block_to_quantize
                 self.modules_in_block_to_quantize = [
-                    item
-                    for sublist in self.modules_in_block_to_quantize
-                    for item in sublist
+                    item for sublist in self.modules_in_block_to_quantize for item in sublist
                 ]
             return
 
@@ -282,8 +266,7 @@ class GPTQMarlinConfig(QuantizationConfig):
         quant_layers: set[str] = {
             param_name.rsplit(".", 1)[0]
             for param_name, info in metadata.items()
-            if (dtype := info.get("dtype", None))
-            and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
+            if (dtype := info.get("dtype", None)) and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
         }
         self.modules_in_block_to_quantize = list(quant_layers)
 
@@ -346,9 +329,7 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
             group_size = input_size
 
         # Determine sharding
-        if marlin_repeat_scales_on_all_ranks(
-            self.quant_config.desc_act, self.quant_config.group_size, is_row_parallel
-        ):
+        if marlin_repeat_scales_on_all_ranks(self.quant_config.desc_act, self.quant_config.group_size, is_row_parallel):
             # By setting scale_dim == None, weight_loader will
             # repeat the scales on each GPU in TP>1 case.
             scales_and_zp_input_dim = None
@@ -410,9 +391,7 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
             )
 
         else:
-            scales = GroupQuantScaleParameter(
-                output_dim=1, input_dim=0, **weight_scale_args
-            )
+            scales = GroupQuantScaleParameter(output_dim=1, input_dim=0, **weight_scale_args)
             qzeros = PackedAphroditeParameter(
                 input_dim=0,
                 output_dim=1,
@@ -474,17 +453,11 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
     ):
         intermediate_size_full = extra_weight_attrs.pop("intermediate_size_full")
 
-        self.is_k_full = (not self.quant_config.desc_act) or (
-            intermediate_size_per_partition == intermediate_size_full
-        )
+        self.is_k_full = (not self.quant_config.desc_act) or (intermediate_size_per_partition == intermediate_size_full)
 
         if self.quant_config.group_size != -1:
             scales_size13 = hidden_size // self.quant_config.group_size
-            w2_scales_size = (
-                intermediate_size_full
-                if self.quant_config.desc_act
-                else intermediate_size_per_partition
-            )
+            w2_scales_size = intermediate_size_full if self.quant_config.desc_act else intermediate_size_per_partition
             scales_size2 = w2_scales_size // self.quant_config.group_size
             strategy = FusedMoeWeightScaleSupported.GROUP.value
         else:
@@ -618,12 +591,8 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
             w13_sorted_g_idx = torch.empty_like(layer.w13_g_idx)
             w2_sorted_g_idx = torch.empty_like(layer.w2_g_idx)
             for e in range(num_experts):
-                w13_g_idx_sort_indices[e] = torch.argsort(layer.w13_g_idx[e]).to(
-                    torch.int32
-                )
-                w2_g_idx_sort_indices[e] = torch.argsort(layer.w2_g_idx[e]).to(
-                    torch.int32
-                )
+                w13_g_idx_sort_indices[e] = torch.argsort(layer.w13_g_idx[e]).to(torch.int32)
+                w2_g_idx_sort_indices[e] = torch.argsort(layer.w2_g_idx[e]).to(torch.int32)
                 w13_sorted_g_idx[e] = layer.w13_g_idx[e][w13_g_idx_sort_indices[e]]
                 w2_sorted_g_idx[e] = layer.w2_g_idx[e][w2_g_idx_sort_indices[e]]
             replace_parameter(layer, "w13_g_idx", w13_sorted_g_idx)
@@ -678,11 +647,7 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         marlin_w2_scales = marlin_moe_permute_scales(
             s=layer.w2_scales,
             size_k=layer.w2_scales.shape[1]
-            * (
-                self.quant_config.group_size
-                if self.quant_config.group_size != -1
-                else self.quant_config.pack_factor
-            ),
+            * (self.quant_config.group_size if self.quant_config.group_size != -1 else self.quant_config.pack_factor),
             size_n=layer.w2_scales.shape[2],
             group_size=self.quant_config.group_size,
         )
@@ -694,9 +659,7 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         if hasattr(layer, "w2_bias") and layer.w2_bias is not None:
             layer.w2_bias.data = marlin_permute_bias(layer.w2_bias)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return None
 
     def apply(
@@ -725,9 +688,7 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         assert self.fused_experts is None
 
         if enable_eplb:
-            raise NotImplementedError(
-                "EPLB not supported for `GPTQMarlinMoEMethod` yet."
-            )
+            raise NotImplementedError("EPLB not supported for `GPTQMarlinMoEMethod` yet.")
 
         assert activation == "silu", "Only SiLU activation is supported."
 

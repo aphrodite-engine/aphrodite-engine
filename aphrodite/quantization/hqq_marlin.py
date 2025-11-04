@@ -4,17 +4,17 @@ import torch
 
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
+from aphrodite.modeling.parameter import BaseAphroditeParameter, GroupQuantScaleParameter, PackedAphroditeParameter
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.quantization.utils.marlin_utils import (
-    GPTQ_MARLIN_MAX_PARALLEL, GPTQ_MARLIN_MIN_THREAD_N,
-    marlin_make_empty_g_idx, marlin_permute_bias, marlin_permute_scales)
+    GPTQ_MARLIN_MAX_PARALLEL,
+    GPTQ_MARLIN_MIN_THREAD_N,
+    marlin_make_empty_g_idx,
+    marlin_permute_bias,
+    marlin_permute_scales,
+)
 from aphrodite.quantization.utils.marlin_utils_test import MarlinWorkspace
 from aphrodite.quantization.utils.quant_utils import gptq_pack
 from aphrodite.scalar_type import scalar_types
@@ -33,9 +33,7 @@ class HQQMarlinConfig(QuantizationConfig):
     ) -> None:
         super().__init__()
         assert group_size == 64, "The only supported HQQ group size is currently 64."
-        assert weight_bits == 4, (
-            "The only supported HQQ quantization bitsize is currently 4."
-        )
+        assert weight_bits == 4, "The only supported HQQ quantization bitsize is currently 4."
 
         self.weight_bits = weight_bits
         self.group_size = group_size
@@ -44,10 +42,7 @@ class HQQMarlinConfig(QuantizationConfig):
         self.skip_modules = skip_modules
 
     def __repr__(self) -> str:
-        return (
-            f"HQQMarlinConfig(quant_type={self.quant_type}, "
-            f"group_size={self.group_size})"
-        )
+        return f"HQQMarlinConfig(quant_type={self.quant_type}, group_size={self.group_size})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -78,13 +73,9 @@ class HQQMarlinConfig(QuantizationConfig):
         components = prefix.split(".")
 
         # Check if any of the skip modules exactly matches any component
-        return self.skip_modules is not None and any(
-            module_name in components for module_name in self.skip_modules
-        )
+        return self.skip_modules is not None and any(module_name in components for module_name in self.skip_modules)
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, LinearBase):
             if self.is_layer_skipped(prefix):
                 return UnquantizedLinearMethod()
@@ -202,9 +193,7 @@ class HQQMarlinMethod(LinearMethodBase):
 
         weight_loader = extra_weight_attrs.get("weight_loader", error_loader)
 
-        self.scales_and_zp_size = (
-            input_size_per_partition // self.quant_config.group_size
-        )
+        self.scales_and_zp_size = input_size_per_partition // self.quant_config.group_size
 
         qweight = HQQweightParameter(
             data=torch.empty(

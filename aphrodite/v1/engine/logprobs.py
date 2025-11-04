@@ -4,8 +4,7 @@ from dataclasses import dataclass
 
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import Logprob, PromptLogprobs, SampleLogprobs
-from aphrodite.transformers_utils.detokenizer_utils import (
-    AnyTokenizer, convert_ids_list_to_tokens)
+from aphrodite.transformers_utils.detokenizer_utils import AnyTokenizer, convert_ids_list_to_tokens
 from aphrodite.v1.engine import EngineCoreOutput, EngineCoreRequest
 from aphrodite.v1.outputs import LogprobsLists, LogprobsTensors
 
@@ -66,9 +65,7 @@ class LogprobsProcessor:
         for rank, logprobs, token_ids in zip(ranks_lst, logprobs_lst, token_ids_lst):
             # Detokenize (non-incrementally).
             decoded_tokens = (
-                NONES
-                if self.tokenizer is None
-                else (convert_ids_list_to_tokens(self.tokenizer, token_ids))
+                NONES if self.tokenizer is None else (convert_ids_list_to_tokens(self.tokenizer, token_ids))
             )
 
             # Sampler puts the sampled logprob in first.
@@ -109,9 +106,7 @@ class LogprobsProcessor:
         decoded_tokens = (
             None
             if self.tokenizer is None
-            else (
-                convert_ids_list_to_tokens(self.tokenizer, token_ids.flatten().tolist())
-            )
+            else (convert_ids_list_to_tokens(self.tokenizer, token_ids.flatten().tolist()))
         )
 
         # Recover shapes.
@@ -127,9 +122,7 @@ class LogprobsProcessor:
             # Handle flattening.
             offset = pos * num_logprobs
             offset_end = offset + num_logprobs
-            decoded_tokens_for_pos = (
-                NONES if decoded_tokens is None else decoded_tokens[offset:offset_end]
-            )
+            decoded_tokens_for_pos = NONES if decoded_tokens is None else decoded_tokens[offset:offset_end]
 
             # Update with the Logprob dictionary for this pos.
             self.prompt_logprobs.append(
@@ -196,9 +189,7 @@ class LogprobsProcessor:
                 rank=rank,
                 decoded_token=token,
             )
-            for token_id, logprob, rank, token in zip(
-                logprob_token_ids, logprobs, ranks, decoded_tokens
-            )
+            for token_id, logprob, rank, token in zip(logprob_token_ids, logprobs, ranks, decoded_tokens)
         }
 
     def update_from_output(self, output: EngineCoreOutput) -> None:

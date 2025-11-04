@@ -10,8 +10,7 @@ from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.image import rescale_image_size
 from aphrodite.platforms import current_platform
 
-from ....conftest import (IMAGE_ASSETS, AphroditeRunner, HfRunner,
-                          PromptAudioInput, PromptImageInput)
+from ....conftest import IMAGE_ASSETS, AphroditeRunner, HfRunner, PromptAudioInput, PromptImageInput
 from ....utils import large_gpu_test
 from ...utils import check_logprobs_close
 
@@ -21,19 +20,13 @@ HF_IMAGE_PROMPTS = IMAGE_ASSETS.prompts(
         "cherry_blossom": "<|user|>\n<|image|>\nPlease infer the season with reason in details.<|end|>\n<|assistant|>\n",  # noqa: E501
     }
 )
-HF_MULTIIMAGE_IMAGE_PROMPT = (
-    "<|user|>\n<|image|>\n<|image|>\nDescribe these images.<|end|>\n<|assistant|>\n"  # noqa: E501
-)
+HF_MULTIIMAGE_IMAGE_PROMPT = "<|user|>\n<|image|>\n<|image|>\nDescribe these images.<|end|>\n<|assistant|>\n"  # noqa: E501
 
-model_path = snapshot_download(
-    "microsoft/Phi-4-multimodal-instruct", revision="refs/pr/70"
-)
+model_path = snapshot_download("microsoft/Phi-4-multimodal-instruct", revision="refs/pr/70")
 # Since the vision-lora and speech-lora co-exist with the base model,
 # we have to manually specify the path of the lora weights.
 vision_lora_path = os.path.join(model_path, "vision-lora")
-speech_question = os.path.join(
-    model_path, "examples", "what_is_shown_in_this_image.wav"
-)
+speech_question = os.path.join(model_path, "examples", "what_is_shown_in_this_image.wav")
 models = [model_path]
 
 target_dtype = "half"
@@ -218,10 +211,7 @@ def test_multi_images_models(
     inputs_per_case = [
         (
             [HF_MULTIIMAGE_IMAGE_PROMPT for _ in size_factors],
-            [
-                [rescale_image_size(image, factor) for image in images]
-                for factor in size_factors
-            ],
+            [[rescale_image_size(image, factor) for image in images] for factor in size_factors],
             None,
         ),
     ]

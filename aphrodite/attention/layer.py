@@ -9,35 +9,26 @@ import torch.nn.functional as F
 
 import aphrodite.envs as envs
 from aphrodite.attention import AttentionType
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   MLAAttentionImpl)
-from aphrodite.attention.backends.registry import (_Backend,
-                                                   backend_name_to_enum)
+from aphrodite.attention.backends.abstract import AttentionBackend, MLAAttentionImpl
+from aphrodite.attention.backends.registry import _Backend, backend_name_to_enum
 from aphrodite.attention.selector import get_attn_backend
-from aphrodite.attention.utils.kv_sharing_utils import (
-    validate_kv_sharing_target)
+from aphrodite.attention.utils.kv_sharing_utils import validate_kv_sharing_target
 from aphrodite.config import CacheConfig, get_current_aphrodite_config
 from aphrodite.config.aphrodite import AphroditeConfig
 from aphrodite.config.multimodal import MultiModalConfig
-from aphrodite.distributed.kv_transfer import (get_kv_transfer_group,
-                                               has_kv_transfer_group,
-                                               is_v1_kv_transfer_group)
+from aphrodite.distributed.kv_transfer import get_kv_transfer_group, has_kv_transfer_group, is_v1_kv_transfer_group
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.attention_layer_base import AttentionLayerBase
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, UnquantizedLinearMethod
 from aphrodite.modeling.models.vision import get_vit_attn_backend
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.kv_cache import BaseKVCacheMethod
 from aphrodite.quantization.utils.quant_utils import GroupShape
-from aphrodite.utils.torch_utils import (direct_register_custom_op,
-                                         kv_cache_dtype_str_to_dtype)
-from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheSpec,
-                                             MLAAttentionSpec,
-                                             SlidingWindowSpec)
+from aphrodite.utils.torch_utils import direct_register_custom_op, kv_cache_dtype_str_to_dtype
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec, MLAAttentionSpec, SlidingWindowSpec
 
 if current_platform.is_rocm():
     from aphrodite.platforms.rocm import on_gfx9
@@ -99,20 +90,14 @@ def maybe_get_vit_flash_attn_backend(
         if envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_MHA and on_gfx9():
             attn_backend = _Backend.ROCM_AITER_FA
 
-        elif (
-            check_upstream_fa_availability(torch.get_default_dtype())
-            and on_gfx9()
-            and attn_backend_override is None
-        ):
+        elif check_upstream_fa_availability(torch.get_default_dtype()) and on_gfx9() and attn_backend_override is None:
             attn_backend = _Backend.FLASH_ATTN
             use_upstream_fa = True
         else:
             return _Backend.TORCH_SDPA, None
 
     elif current_platform.is_cuda():
-        if attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(
-            torch.get_default_dtype()
-        ):
+        if attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(torch.get_default_dtype()):
             attn_backend = _Backend.FLASH_ATTN
             use_upstream_fa = True
     else:
@@ -125,8 +110,7 @@ def maybe_get_vit_flash_attn_backend(
             if use_upstream_fa:
                 from flash_attn import flash_attn_varlen_func
             else:
-                from aphrodite.aphrodite_flash_attn import (
-                    flash_attn_varlen_func)
+                from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func
     else:
         flash_attn_varlen_func = None
 
@@ -177,12 +161,8 @@ def _init_kv_cache_quant(
     # the quant op after this attention layer.
     layer._o_scale_float = None
 
-    quant_method = (
-        quant_config.get_quant_method(layer, prefix=prefix) if quant_config else None
-    )
-    if quant_method is not None and not isinstance(
-        quant_method, UnquantizedLinearMethod
-    ):
+    quant_method = quant_config.get_quant_method(layer, prefix=prefix) if quant_config else None
+    if quant_method is not None and not isinstance(quant_method, UnquantizedLinearMethod):
         assert isinstance(quant_method, BaseKVCacheMethod)
         # TODO (mgoin): kv cache dtype should be specified in the FP8
         # checkpoint config and become the "auto" behavior
@@ -248,9 +228,7 @@ class Attention(nn.Module, AttentionLayerBase):
             kv_cache_dtype = "auto"
             block_size = 16
             calculate_kv_scales = False
-        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(
-            kv_cache_dtype, aphrodite_config.model_config
-        )
+        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(kv_cache_dtype, aphrodite_config.model_config)
         if num_kv_heads is None:
             num_kv_heads = num_heads
         assert num_heads % num_kv_heads == 0, (
@@ -258,9 +236,7 @@ class Attention(nn.Module, AttentionLayerBase):
         )
 
         # Initialize KV cache quantization attributes
-        _init_kv_cache_quant(
-            self, quant_config, prefix, kv_cache_dtype, calculate_kv_scales
-        )
+        _init_kv_cache_quant(self, quant_config, prefix, kv_cache_dtype, calculate_kv_scales)
 
         self.num_heads = num_heads
         self.head_size = head_size
@@ -325,10 +301,7 @@ class Attention(nn.Module, AttentionLayerBase):
         # use a placeholder kv cache tensor during init, which will be replaced
         # by bind_kv_cache
         # this variable will not be accessed if use_direct_call is True
-        self.kv_cache = [
-            torch.tensor([])
-            for _ in range(aphrodite_config.parallel_config.pipeline_parallel_size)
-        ]
+        self.kv_cache = [torch.tensor([]) for _ in range(aphrodite_config.parallel_config.pipeline_parallel_size)]
 
         # Initialize q/k/v range constants.
         self.q_range = torch.tensor(envs.Q_SCALE_CONSTANT, dtype=torch.float32)
@@ -337,10 +310,7 @@ class Attention(nn.Module, AttentionLayerBase):
 
         # for attn backends supporting query quantization
         self.query_quant = None
-        if (
-            self.kv_cache_dtype.startswith("fp8")
-            and self.impl.supports_quant_query_input()
-        ):
+        if self.kv_cache_dtype.startswith("fp8") and self.impl.supports_quant_query_input():
             self.query_quant = QuantFP8(static=True, group_shape=GroupShape.PER_TENSOR)
 
     def forward(
@@ -396,13 +366,9 @@ class Attention(nn.Module, AttentionLayerBase):
                 if isinstance(attn_metadata, dict):
                     attn_metadata = attn_metadata[self.layer_name]
                 self_kv_cache = self.kv_cache[forward_context.virtual_engine]
-                self.impl.forward(
-                    self, query, key, value, self_kv_cache, attn_metadata, output=output
-                )
+                self.impl.forward(self, query, key, value, self_kv_cache, attn_metadata, output=output)
             else:
-                torch.ops.aphrodite.unified_attention_with_output(
-                    query, key, value, output, self.layer_name
-                )
+                torch.ops.aphrodite.unified_attention_with_output(query, key, value, output, self.layer_name)
             return output.view(-1, hidden_size)
         else:
             if self.use_direct_call:
@@ -411,13 +377,9 @@ class Attention(nn.Module, AttentionLayerBase):
                 if isinstance(attn_metadata, dict):
                     attn_metadata = attn_metadata[self.layer_name]
                 self_kv_cache = self.kv_cache[forward_context.virtual_engine]
-                return self.impl.forward(
-                    self, query, key, value, self_kv_cache, attn_metadata
-                )
+                return self.impl.forward(self, query, key, value, self_kv_cache, attn_metadata)
             else:
-                return torch.ops.aphrodite.unified_attention(
-                    query, key, value, self.layer_name
-                )
+                return torch.ops.aphrodite.unified_attention(query, key, value, self.layer_name)
 
     def calc_kv_scales(self, query, key, value):
         self._q_scale.copy_(torch.abs(query).max() / self.q_range)
@@ -449,9 +411,7 @@ class Attention(nn.Module, AttentionLayerBase):
         # Should not be called for enc-dec or encoder-only attention.
         assert self.attn_type == AttentionType.DECODER
         if self.sliding_window is not None:
-            assert not aphrodite_config.model_config.use_mla, (
-                "MLA is not supported for slidingwindow"
-            )
+            assert not aphrodite_config.model_config.use_mla, "MLA is not supported for slidingwindow"
             return SlidingWindowSpec(
                 block_size=block_size,
                 num_kv_heads=self.num_kv_heads,
@@ -490,8 +450,7 @@ class MultiHeadAttention(nn.Module):
         self.layer_name = prefix
 
         assert self.num_heads % self.num_kv_heads == 0, (
-            f"num_heads ({self.num_heads}) is not "
-            f"divisible by num_kv_heads ({self.num_kv_heads})"
+            f"num_heads ({self.num_heads}) is not divisible by num_kv_heads ({self.num_kv_heads})"
         )
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
 
@@ -531,12 +490,10 @@ class MultiHeadAttention(nn.Module):
                 else _Backend.TORCH_SDPA
             )
 
-        self.attn_backend, self._flash_attn_varlen_func = (
-            maybe_get_vit_flash_attn_backend(
-                self.attn_backend,
-                use_upstream_fa,
-                attn_backend_override=attn_backend_override,
-            )
+        self.attn_backend, self._flash_attn_varlen_func = maybe_get_vit_flash_attn_backend(
+            self.attn_backend,
+            use_upstream_fa,
+            attn_backend_override=attn_backend_override,
         )
 
         if self.attn_backend == _Backend.XFORMERS and not check_xformers_availability():
@@ -552,10 +509,7 @@ class MultiHeadAttention(nn.Module):
         if current_platform.is_rocm() and self.attn_backend == _Backend.FLASH_ATTN:
             use_upstream_fa = True
 
-        logger.info_once(
-            f"MultiHeadAttention attn_backend: {self.attn_backend}, "
-            f"use_upstream_fa: {use_upstream_fa}"
-        )
+        logger.info_once(f"MultiHeadAttention attn_backend: {self.attn_backend}, use_upstream_fa: {use_upstream_fa}")
 
     def forward(
         self,
@@ -581,12 +535,8 @@ class MultiHeadAttention(nn.Module):
 
         if self.is_flash_attn_backend:
             assert self._flash_attn_varlen_func is not None
-            cu_seqlens_q = torch.arange(
-                0, (bsz + 1) * q_len, step=q_len, dtype=torch.int32, device=query.device
-            )
-            cu_seqlens_k = torch.arange(
-                0, (bsz + 1) * kv_len, step=kv_len, dtype=torch.int32, device=key.device
-            )
+            cu_seqlens_q = torch.arange(0, (bsz + 1) * q_len, step=q_len, dtype=torch.int32, device=query.device)
+            cu_seqlens_k = torch.arange(0, (bsz + 1) * kv_len, step=kv_len, dtype=torch.int32, device=key.device)
 
             out = self._flash_attn_varlen_func(
                 query.flatten(0, 1),
@@ -601,9 +551,7 @@ class MultiHeadAttention(nn.Module):
         elif self.attn_backend == _Backend.XFORMERS:
             from xformers import ops as xops
 
-            out = xops.memory_efficient_attention_forward(
-                query, key, value, scale=self.scale
-            )
+            out = xops.memory_efficient_attention_forward(query, key, value, scale=self.scale)
         elif self.attn_backend == _Backend.TORCH_SDPA:
             query, key, value = (x.transpose(1, 2) for x in (query, key, value))
             out = F.scaled_dot_product_attention(query, key, value, scale=self.scale)
@@ -616,9 +564,7 @@ class MultiHeadAttention(nn.Module):
             out = out.transpose(1, 2)
         else:
             # ViT attention hasn't supported this backend yet
-            raise NotImplementedError(
-                f"ViT attention hasn't supported {self.attn_backend} backend yet."
-            )
+            raise NotImplementedError(f"ViT attention hasn't supported {self.attn_backend} backend yet.")
 
         return out.reshape(bsz, q_len, -1)
 
@@ -672,9 +618,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
             calculate_kv_scales = False
 
         # Initialize KV cache quantization attributes
-        _init_kv_cache_quant(
-            self, quant_config, prefix, kv_cache_dtype, calculate_kv_scales
-        )
+        _init_kv_cache_quant(self, quant_config, prefix, kv_cache_dtype, calculate_kv_scales)
 
         dtype = torch.get_default_dtype()
         self.attn_backend = get_attn_backend(
@@ -717,10 +661,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
         compilation_config.static_forward_context[prefix] = self
 
         self.kv_cache = [
-            torch.tensor([])
-            for _ in range(
-                get_current_aphrodite_config().parallel_config.pipeline_parallel_size
-            )
+            torch.tensor([]) for _ in range(get_current_aphrodite_config().parallel_config.pipeline_parallel_size)
         ]
 
         self.use_sparse = use_sparse
@@ -745,9 +686,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
             self_kv_cache = self.kv_cache[forward_context.virtual_engine]
 
             # Mirror Attention.forward scale calculation path
-            if self.calculate_kv_scales and getattr(
-                attn_metadata, "enable_kv_scales_calculation", False
-            ):
+            if self.calculate_kv_scales and getattr(attn_metadata, "enable_kv_scales_calculation", False):
                 self.calc_kv_scales(q, kv_c_normed, k_pe)
 
             if self.attn_backend.accept_output_buffer:
@@ -763,9 +702,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
                 )
                 return output
             else:
-                return self.impl.forward(
-                    self, q, kv_c_normed, k_pe, self_kv_cache, attn_metadata
-                )
+                return self.impl.forward(self, q, kv_c_normed, k_pe, self_kv_cache, attn_metadata)
         else:
             if self.attn_backend.accept_output_buffer:
                 output = torch.empty(output_shape, dtype=q.dtype, device=q.device)
@@ -797,9 +734,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
         if hasattr(self.impl, "process_weights_after_loading"):
             self.impl.process_weights_after_loading(act_dtype)
 
-    def calc_kv_scales(
-        self, q: torch.Tensor, kv_c_normed: torch.Tensor, k_pe: torch.Tensor
-    ) -> None:
+    def calc_kv_scales(self, q: torch.Tensor, kv_c_normed: torch.Tensor, k_pe: torch.Tensor) -> None:
         """Optional scale calculation for MLA inputs.
 
         Mirrors Attention.calc_kv_scales. Not all MLA backends require this
@@ -823,9 +758,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
         return self.attn_backend
 
     def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec:
-        kv_cache_dtype = kv_cache_dtype_str_to_dtype(
-            self.kv_cache_dtype, aphrodite_config.model_config
-        )
+        kv_cache_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, aphrodite_config.model_config)
         return MLAAttentionSpec(
             block_size=aphrodite_config.cache_config.block_size,
             num_kv_heads=1,
@@ -878,9 +811,7 @@ def maybe_calc_kv_scales(
     if isinstance(attn_metadata, dict):
         attn_metadata = attn_metadata[layer_name]
 
-    if attn_metadata is None or not getattr(
-        attn_metadata, "enable_kv_scales_calculation", False
-    ):
+    if attn_metadata is None or not getattr(attn_metadata, "enable_kv_scales_calculation", False):
         return
 
     self = forward_context.no_compile_layers[layer_name]

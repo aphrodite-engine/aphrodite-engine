@@ -127,10 +127,7 @@ def evaluate_gsm8k(
     # Build few-shot examples from train split (like lm-eval does)
     few_shot_examples = ""
     for i in range(num_shots):
-        few_shot_examples += (
-            f"Question: {train_data[i]['question']}\n"
-            f"Answer: {train_data[i]['answer']}\n\n"
-        )
+        few_shot_examples += f"Question: {train_data[i]['question']}\nAnswer: {train_data[i]['answer']}\n\n"
 
     # Prepare test questions and labels from test split
     questions = []
@@ -159,9 +156,7 @@ def evaluate_gsm8k(
             states[i] = answer
             return answer
 
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=600)
-        ) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600)) as session:
             tasks = [get_answer(session, i) for i in range(num_questions)]
             await tqdm.gather(*tasks, desc="Evaluating")
 
@@ -194,26 +189,18 @@ def evaluate_gsm8k(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GSM8K evaluation for Aphrodite run")
-    parser.add_argument(
-        "--num-shots", type=int, default=5, help="Number of few-shot examples"
-    )
+    parser.add_argument("--num-shots", type=int, default=5, help="Number of few-shot examples")
     parser.add_argument(
         "--num-questions",
         type=int,
         default=1319,
         help="Number of questions to evaluate",
     )
-    parser.add_argument(
-        "--max-tokens", type=int, default=256, help="Max tokens for generation"
-    )
+    parser.add_argument("--max-tokens", type=int, default=256, help="Max tokens for generation")
     parser.add_argument("--host", type=str, default="http://127.0.0.1", help="Host URL")
     parser.add_argument("--port", type=int, default=8000, help="Port number")
-    parser.add_argument(
-        "--temperature", type=float, default=0.0, help="Temperature for generation"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility"
-    )
+    parser.add_argument("--temperature", type=float, default=0.0, help="Temperature for generation")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--save-results", type=str, help="Save results to JSON file")
 
     args = parser.parse_args()

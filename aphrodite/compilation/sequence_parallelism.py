@@ -4,15 +4,12 @@ import torch.fx as fx
 from torch._inductor.pattern_matcher import PatternMatcherPass
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import (get_tp_group,
-                                   tensor_model_parallel_all_reduce)
-from aphrodite.distributed.parallel_state import (
-    get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_tp_group, tensor_model_parallel_all_reduce
+from aphrodite.distributed.parallel_state import get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 
-from .aphrodite_inductor_pass import (AphroditeInductorPass,
-                                      AphroditePatternMatcherPass)
+from .aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
 from .inductor_pass import enable_fake_mode
 
 logger = init_logger(__name__)
@@ -43,9 +40,7 @@ class _RMSNormAndQuantOpHelper:
             epsilon=self.epsilon,
         )
 
-    def _functional_fused_add_rmsnorm(
-        self, input_tensor, residual_tensor, weight_tensor
-    ):
+    def _functional_fused_add_rmsnorm(self, input_tensor, residual_tensor, weight_tensor):
         return torch.ops.higher_order.auto_functionalized(
             torch.ops._C.fused_add_rms_norm.default,
             input=input_tensor,
@@ -63,12 +58,8 @@ class _RMSNormAndQuantOpHelper:
         scale_tensor,
     ):
         if self.quant_op is None:
-            raise RuntimeError(
-                "_RMSNormAndQuantOpHelper was not initialized with a quant_op."
-            )
-        rmsnorm_out_tuple = self._functional_rmsnorm(
-            rmsnorm_result_buffer, input_tensor, weight_tensor
-        )
+            raise RuntimeError("_RMSNormAndQuantOpHelper was not initialized with a quant_op.")
+        rmsnorm_out_tuple = self._functional_rmsnorm(rmsnorm_result_buffer, input_tensor, weight_tensor)
         quant_out_tuple = torch.ops.higher_order.auto_functionalized(
             self.quant_op,
             result=quant_result_buffer,
@@ -86,12 +77,8 @@ class _RMSNormAndQuantOpHelper:
         scale_tensor,
     ):
         if self.quant_op is None:
-            raise RuntimeError(
-                "_RMSNormAndQuantOpHelper was not initialized with a quant_op."
-            )
-        fused_add_rmsnorm_out_tuple = self._functional_fused_add_rmsnorm(
-            input_tensor, residual_tensor, weight_tensor
-        )
+            raise RuntimeError("_RMSNormAndQuantOpHelper was not initialized with a quant_op.")
+        fused_add_rmsnorm_out_tuple = self._functional_fused_add_rmsnorm(input_tensor, residual_tensor, weight_tensor)
         quant_out_tuple = torch.ops.higher_order.auto_functionalized(
             self.quant_op,
             result=quant_result_buffer,
@@ -163,9 +150,7 @@ class FirstAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
 
             return all_gather, reduce_scatter
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class MiddleAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
@@ -188,9 +173,7 @@ class MiddleAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
             rms_norm_weights: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor]:
             all_reduce = self._all_reduce(mm_1)
-            rmsnorm = self._functional_fused_add_rmsnorm(
-                all_reduce, residual, rms_norm_weights
-            )
+            rmsnorm = self._functional_fused_add_rmsnorm(all_reduce, residual, rms_norm_weights)
             return rmsnorm[1], rmsnorm[2]
 
         def replacement(
@@ -199,15 +182,11 @@ class MiddleAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
             rms_norm_weights: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor]:
             reduce_scatter = self._reduce_scatter(mm_1)
-            rmsnorm = self._functional_fused_add_rmsnorm(
-                reduce_scatter, residual, rms_norm_weights
-            )
+            rmsnorm = self._functional_fused_add_rmsnorm(reduce_scatter, residual, rms_norm_weights)
             all_gather = self._all_gather(rmsnorm[1])
             return all_gather, rmsnorm[2]
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class LastAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
@@ -230,9 +209,7 @@ class LastAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
             rms_norm_weights: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor]:
             all_reduce = self._all_reduce(mm_1)
-            rmsnorm = self._functional_fused_add_rmsnorm(
-                all_reduce, residual, rms_norm_weights
-            )
+            rmsnorm = self._functional_fused_add_rmsnorm(all_reduce, residual, rms_norm_weights)
             return rmsnorm[1]
 
         def replacement(
@@ -241,24 +218,18 @@ class LastAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
             rms_norm_weights: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor]:
             reduce_scatter = self._reduce_scatter(mm_1)
-            rmsnorm = self._functional_fused_add_rmsnorm(
-                reduce_scatter, residual, rms_norm_weights
-            )
+            rmsnorm = self._functional_fused_add_rmsnorm(reduce_scatter, residual, rms_norm_weights)
             normalized = self._all_gather(rmsnorm[1])
             return normalized
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 FP8_DTYPE = current_platform.fp8_dtype()
 
 
 class FirstAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
-    def __init__(
-        self, epsilon: float, dtype: torch.dtype, device: str, op: torch._ops.OpOverload
-    ):
+    def __init__(self, epsilon: float, dtype: torch.dtype, device: str, op: torch._ops.OpOverload):
         super().__init__(epsilon, dtype, device, quant_op=op)
 
     def get_inputs(self):
@@ -278,9 +249,7 @@ class FirstAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
             scale: torch.Tensor,
         ):
             all_reduce = self._all_reduce(input)
-            static_fp8 = self._functional_rmsnorm_then_quant(
-                rmsnorm_result, quant_result, all_reduce, weight, scale
-            )
+            static_fp8 = self._functional_rmsnorm_then_quant(rmsnorm_result, quant_result, all_reduce, weight, scale)
             return static_fp8[1], all_reduce
 
         def replacement(
@@ -292,9 +261,7 @@ class FirstAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
         ):
             reduce_scatter = self._reduce_scatter(input)
 
-            rmsnorm_result = torch.empty_like(
-                reduce_scatter, dtype=rmsnorm_result.dtype
-            )
+            rmsnorm_result = torch.empty_like(reduce_scatter, dtype=rmsnorm_result.dtype)
             quant_result = torch.empty_like(
                 rmsnorm_result,  # Output of RMSNorm
                 dtype=quant_result.dtype,
@@ -306,15 +273,11 @@ class FirstAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
 
             return all_gather, reduce_scatter
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class MiddleAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
-    def __init__(
-        self, epsilon: float, dtype: torch.dtype, device: str, op: torch._ops.OpOverload
-    ):
+    def __init__(self, epsilon: float, dtype: torch.dtype, device: str, op: torch._ops.OpOverload):
         super().__init__(epsilon, dtype, device, quant_op=op)
 
     def get_inputs(self):
@@ -342,10 +305,8 @@ class MiddleAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
             scale: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor]:
             all_reduce = self._all_reduce(mm_1)
-            static_fp8, rmsnorm_residual_out = (
-                self._functional_fused_add_rmsnorm_then_quant(  # noqa: E501
-                    result, all_reduce, residual, rms_norm_weights, scale
-                )
+            static_fp8, rmsnorm_residual_out = self._functional_fused_add_rmsnorm_then_quant(  # noqa: E501
+                result, all_reduce, residual, rms_norm_weights, scale
             )
             return static_fp8[1], rmsnorm_residual_out
 
@@ -358,23 +319,17 @@ class MiddleAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
         ) -> tuple[torch.Tensor, torch.Tensor]:
             reduce_scatter = self._reduce_scatter(mm_1)
             quant_result_buf = torch.empty_like(reduce_scatter, dtype=result.dtype)
-            static_fp8, rmsnorm_residual_out = (
-                self._functional_fused_add_rmsnorm_then_quant(  # noqa: E501
-                    quant_result_buf, reduce_scatter, residual, rms_norm_weights, scale
-                )
+            static_fp8, rmsnorm_residual_out = self._functional_fused_add_rmsnorm_then_quant(  # noqa: E501
+                quant_result_buf, reduce_scatter, residual, rms_norm_weights, scale
             )
             all_gather = self._all_gather(static_fp8[1])
             return all_gather, rmsnorm_residual_out
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class LastAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
-    def __init__(
-        self, epsilon: float, dtype: torch.dtype, device: str, op: torch._ops.OpOverload
-    ):
+    def __init__(self, epsilon: float, dtype: torch.dtype, device: str, op: torch._ops.OpOverload):
         super().__init__(epsilon, dtype, device, quant_op=op)
 
     def get_inputs(self):
@@ -422,9 +377,7 @@ class LastAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
             normalized = self._all_gather(static_fp8[1])
             return normalized
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class SequenceParallelismPass(AphroditePatternMatcherPass):
@@ -451,35 +404,27 @@ class SequenceParallelismPass(AphroditePatternMatcherPass):
     def __init__(self, config: AphroditeConfig):
         super().__init__(config)
 
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="sequence_parallelism_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="sequence_parallelism_pass")
 
         for epsilon in [1e-5, 1e-6]:
             # RMSNorm + Static FP8 quantization patterns
             fp8_quant_op = torch.ops._C.static_scaled_fp8_quant.default
-            FirstAllReduceRMSNormStaticFP8Pattern(
-                epsilon, self.model_dtype, self.device, fp8_quant_op
-            ).register(self.patterns)
-            MiddleAllReduceRMSNormStaticFP8Pattern(
-                epsilon, self.model_dtype, self.device, fp8_quant_op
-            ).register(self.patterns)
-            LastAllReduceRMSNormStaticFP8Pattern(
-                epsilon, self.model_dtype, self.device, fp8_quant_op
-            ).register(self.patterns)
+            FirstAllReduceRMSNormStaticFP8Pattern(epsilon, self.model_dtype, self.device, fp8_quant_op).register(
+                self.patterns
+            )
+            MiddleAllReduceRMSNormStaticFP8Pattern(epsilon, self.model_dtype, self.device, fp8_quant_op).register(
+                self.patterns
+            )
+            LastAllReduceRMSNormStaticFP8Pattern(epsilon, self.model_dtype, self.device, fp8_quant_op).register(
+                self.patterns
+            )
 
             # Normal RMSNorm patterns
-            FirstAllReduceRMSNormPattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
+            FirstAllReduceRMSNormPattern(epsilon, self.model_dtype, self.device).register(self.patterns)
 
-            MiddleAllReduceRMSNormPattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
+            MiddleAllReduceRMSNormPattern(epsilon, self.model_dtype, self.device).register(self.patterns)
 
-            LastAllReduceRMSNormPattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
+            LastAllReduceRMSNormPattern(epsilon, self.model_dtype, self.device).register(self.patterns)
         self.dump_patterns(config, self.patterns)
 
     def is_applicable(self, shape: int | None) -> bool:
@@ -496,10 +441,7 @@ class SequenceParallelismPass(AphroditePatternMatcherPass):
         # 2. For specific shape provided during compilation (e.g., from
         #    `compile_sizes`), which must be divisible by the tensor-parallel
         #    size.
-        if (
-            not self.compilation_config.splitting_ops
-            or self.compilation_config.use_inductor_graph_partition
-        ):
+        if not self.compilation_config.splitting_ops or self.compilation_config.use_inductor_graph_partition:
             return True
         tp_size = get_tensor_model_parallel_world_size()
         return shape is not None and shape % tp_size == 0

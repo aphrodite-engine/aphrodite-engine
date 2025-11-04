@@ -9,18 +9,12 @@ import pytest
 import torch.nn as nn
 from PIL import Image
 
-from aphrodite.config import (AphroditeConfig, ModelConfig,
-                              set_current_aphrodite_config)
-from aphrodite.config.multimodal import (AudioDummyOptions, BaseDummyOptions,
-                                         ImageDummyOptions, VideoDummyOptions)
-from aphrodite.distributed import (cleanup_dist_env_and_memory,
-                                   init_distributed_environment,
-                                   initialize_model_parallel)
-from aphrodite.modeling.models.interfaces import (SupportsMultiModal,
-                                                  supports_multimodal)
+from aphrodite.config import AphroditeConfig, ModelConfig, set_current_aphrodite_config
+from aphrodite.config.multimodal import AudioDummyOptions, BaseDummyOptions, ImageDummyOptions, VideoDummyOptions
+from aphrodite.distributed import cleanup_dist_env_and_memory, init_distributed_environment, initialize_model_parallel
+from aphrodite.modeling.models.interfaces import SupportsMultiModal, supports_multimodal
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, BatchedTensorInputs
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             InputProcessingContext)
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, InputProcessingContext
 from aphrodite.multimodal.utils import group_mm_kwargs_by_modality
 from aphrodite.transformers_utils.tokenizer import cached_tokenizer_from_config
 from aphrodite.utils.collection_utils import is_list_of
@@ -31,9 +25,7 @@ from ...utils import dummy_hf_overrides
 from .test_common import get_model_ids_to_test, get_text_token_prompts
 
 ImageInput = list[Image.Image]
-VideoInput: TypeAlias = (
-    list[Image.Image] | list[np.ndarray] | list[tuple[np.ndarray, dict[str, Any]]]
-)
+VideoInput: TypeAlias = list[Image.Image] | list[np.ndarray] | list[tuple[np.ndarray, dict[str, Any]]]
 AudioInput = list[tuple[np.ndarray, int]]
 
 
@@ -49,9 +41,7 @@ MM_OPTIONS_OVERRIDES = {
 }
 
 
-def _resize_data(
-    _data: Image.Image | np.ndarray, size_factor: float
-) -> Image.Image | np.ndarray:
+def _resize_data(_data: Image.Image | np.ndarray, size_factor: float) -> Image.Image | np.ndarray:
     assert size_factor <= 1, "Size factor must be less than 1"
     # Image input
     if isinstance(_data, Image.Image):
@@ -97,20 +87,14 @@ def create_batched_mm_kwargs(
     processing_info = processor.info
     dummy_inputs = processor.dummy_inputs
     supported_mm_limits = processing_info.get_supported_mm_limits()
-    mm_counts = {
-        modality: 3 if limit is None else limit
-        for modality, limit in supported_mm_limits.items()
-    }
+    mm_counts = {modality: 3 if limit is None else limit for modality, limit in supported_mm_limits.items()}
     processor_inputs = dummy_inputs.get_dummy_processor_inputs(
         seq_len=model_config.max_model_len,
         mm_counts=mm_counts,
         mm_options=MM_OPTIONS_OVERRIDES.get(model_type),
     )
     mm_data = processor_inputs.mm_data
-    resized_mm_data = {
-        modality: resize_mm_data(data, size_factors)
-        for modality, data in mm_data.items()
-    }
+    resized_mm_data = {modality: resize_mm_data(data, size_factors) for modality, data in mm_data.items()}
 
     # video metadata will be added back to the resized video data here.
     text_prompt, token_prompt = get_text_token_prompts(processor, resized_mm_data)
@@ -158,9 +142,7 @@ def test_model_tensor_schema(model_id: str):
     model_info.check_available_online(on_fail="skip")
     model_info.check_transformers_version(on_fail="skip")
 
-    model_arch = next(
-        arch for arch, info in HF_EXAMPLE_MODELS.hf_models.items() if info == model_info
-    )
+    model_arch = next(arch for arch, info in HF_EXAMPLE_MODELS.hf_models.items() if info == model_info)
 
     hf_overrides_fn = partial(
         dummy_hf_overrides,
@@ -204,10 +186,7 @@ def test_model_tensor_schema(model_id: str):
     )
     processing_info = factories.info(ctx)
     supported_mm_limits = processing_info.get_supported_mm_limits()
-    limit_mm_per_prompt = {
-        modality: 3 if limit is None else limit
-        for modality, limit in supported_mm_limits.items()
-    }
+    limit_mm_per_prompt = {modality: 3 if limit is None else limit for modality, limit in supported_mm_limits.items()}
 
     def _to_dummy_options(modality: str, count: int) -> BaseDummyOptions:
         if modality == "video":
@@ -219,18 +198,12 @@ def test_model_tensor_schema(model_id: str):
         return BaseDummyOptions(count=count)
 
     model_config.get_multimodal_config().limit_per_prompt = {
-        modality: _to_dummy_options(modality, count)
-        for modality, count in limit_mm_per_prompt.items()
+        modality: _to_dummy_options(modality, count) for modality, count in limit_mm_per_prompt.items()
     }
     processor = factories.build_processor(ctx, cache=None)
 
     with initialize_dummy_model(model_cls, model_config) as model:
-        for modality, _, mm_kwargs in create_batched_mm_kwargs(
-            model_cls, model_config, processor
-        ):
+        for modality, _, mm_kwargs in create_batched_mm_kwargs(model_cls, model_config, processor):
             for method_name in inputs_parse_methods:
-                print(
-                    f"Testing `{method_name}` with modality={modality} "
-                    f"and mm_kwargs{list(mm_kwargs.keys())}"
-                )
+                print(f"Testing `{method_name}` with modality={modality} and mm_kwargs{list(mm_kwargs.keys())}")
                 getattr(model, method_name)(modality=modality, **mm_kwargs)

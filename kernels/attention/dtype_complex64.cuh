@@ -20,29 +20,29 @@ struct Complex8_ {
 };
 
 // Complex64 vector types for Q, K, V.
-template<>
+template <>
 struct Vec<cuFloatComplex, 1> {
   using Type = cuFloatComplex;
 };
-template<>
+template <>
 struct Vec<cuFloatComplex, 2> {
   using Type = Complex4_;
 };
-template<>
+template <>
 struct Vec<cuFloatComplex, 4> {
   using Type = Complex8_;
 };
 
 // Complex64 accumulator vector types corresponding to Vec.
-template<>
+template <>
 struct FloatVec<cuFloatComplex> {
   using Type = cuFloatComplex;
 };
-template<>
+template <>
 struct FloatVec<Complex4_> {
   using Type = Complex4_;
 };
-template<>
+template <>
 struct FloatVec<Complex8_> {
   using Type = Complex8_;
 };
@@ -69,12 +69,12 @@ inline __device__ Complex8_ add(Complex8_ a, Complex8_ b) {
 }
 
 // Vector multiplication.
-template<>
+template <>
 inline __device__ cuFloatComplex mul(cuFloatComplex a, cuFloatComplex b) {
   return cuCmulf(a, b);
 }
 
-template<>
+template <>
 inline __device__ Complex4_ mul(Complex4_ a, Complex4_ b) {
   Complex4_ c;
   c.x = cuCmulf(a.x, b.x);
@@ -82,7 +82,7 @@ inline __device__ Complex4_ mul(Complex4_ a, Complex4_ b) {
   return c;
 }
 
-template<>
+template <>
 inline __device__ Complex4_ mul(cuFloatComplex a, Complex4_ b) {
   Complex4_ c;
   c.x = cuCmulf(a, b.x);
@@ -90,7 +90,7 @@ inline __device__ Complex4_ mul(cuFloatComplex a, Complex4_ b) {
   return c;
 }
 
-template<>
+template <>
 inline __device__ Complex8_ mul(Complex8_ a, Complex8_ b) {
   Complex8_ c;
   c.x = cuCmulf(a.x, b.x);
@@ -100,7 +100,7 @@ inline __device__ Complex8_ mul(Complex8_ a, Complex8_ b) {
   return c;
 }
 
-template<>
+template <>
 inline __device__ Complex8_ mul(cuFloatComplex a, Complex8_ b) {
   Complex8_ c;
   c.x = cuCmulf(a, b.x);
@@ -111,7 +111,8 @@ inline __device__ Complex8_ mul(cuFloatComplex a, Complex8_ b) {
 }
 
 // Vector fused multiply-add.
-inline __device__ cuFloatComplex fma(cuFloatComplex a, cuFloatComplex b, cuFloatComplex c) {
+inline __device__ cuFloatComplex fma(cuFloatComplex a, cuFloatComplex b,
+                                     cuFloatComplex c) {
   return cuCfmaf(a, b, c);
 }
 
@@ -147,12 +148,12 @@ inline __device__ Complex8_ fma(cuFloatComplex a, Complex8_ b, Complex8_ c) {
   return d;
 }
 
-template<>
+template <>
 inline __device__ cuFloatComplex sum(cuFloatComplex v) {
   return v;
 }
 
-template<>
+template <>
 inline __device__ Complex4_ sum(Complex4_ v) {
   Complex4_ acc;
   acc.x = cuCaddf(v.x, v.y);
@@ -160,7 +161,7 @@ inline __device__ Complex4_ sum(Complex4_ v) {
   return acc;
 }
 
-template<>
+template <>
 inline __device__ Complex8_ sum(Complex8_ v) {
   Complex4_ acc1;
   Complex4_ acc2;
@@ -195,24 +196,14 @@ inline __device__ void from_float(cuFloatComplex& dst, cuFloatComplex src) {
   dst = src;
 }
 
-inline __device__ void from_float(Complex4_& dst, Complex4_ src) {
-  dst = src;
-}
+inline __device__ void from_float(Complex4_& dst, Complex4_ src) { dst = src; }
 
-inline __device__ void from_float(Complex8_& dst, Complex8_ src) {
-  dst = src;
-}
+inline __device__ void from_float(Complex8_& dst, Complex8_ src) { dst = src; }
 
-inline __device__ cuFloatComplex to_float(cuFloatComplex u) {
-  return u;
-}
+inline __device__ cuFloatComplex to_float(cuFloatComplex u) { return u; }
 
-inline __device__ Complex4_ to_float(Complex4_ u) {
-  return u;
-}
+inline __device__ Complex4_ to_float(Complex4_ u) { return u; }
 
-inline __device__ Complex8_ to_float(Complex8_ u) {
-  return u;
-}
+inline __device__ Complex8_ to_float(Complex8_ u) { return u; }
 
-} // namespace aphrodite
+}  // namespace aphrodite

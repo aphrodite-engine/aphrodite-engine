@@ -34,14 +34,9 @@ class CudagraphDispatcher:
             CUDAGraphMode.FULL: set(),
         }
 
-        not_use_piecewise_compilation = (
-            not self.cudagraph_mode.requires_piecewise_compilation()
-        )
+        not_use_piecewise_compilation = not self.cudagraph_mode.requires_piecewise_compilation()
 
-        assert (
-            not_use_piecewise_compilation
-            or self.compilation_config.is_attention_compiled_piecewise()
-        ), (
+        assert not_use_piecewise_compilation or self.compilation_config.is_attention_compiled_piecewise(), (
             "Compilation mode should be CompilationMode.APHRODITE_COMPILE when "
             "cudagraph_mode piecewise cudagraphs is used, "
             "and attention should be in splitting_ops or "
@@ -53,17 +48,13 @@ class CudagraphDispatcher:
 
         self.keys_initialized = False
 
-    def add_cudagraph_key(
-        self, runtime_mode: CUDAGraphMode, batch_descriptor: BatchDescriptor
-    ):
+    def add_cudagraph_key(self, runtime_mode: CUDAGraphMode, batch_descriptor: BatchDescriptor):
         assert runtime_mode in [CUDAGraphMode.PIECEWISE, CUDAGraphMode.FULL], (
             f"Invalid cudagraph runtime mode for keys: {runtime_mode}"
         )
         self.cudagraph_keys[runtime_mode].add(batch_descriptor)
 
-    def initialize_cudagraph_keys(
-        self, cudagraph_mode: CUDAGraphMode, uniform_decode_query_len: int
-    ):
+    def initialize_cudagraph_keys(self, cudagraph_mode: CUDAGraphMode, uniform_decode_query_len: int):
         # This should be called only after attention backend is initialized.
 
         # LoRA activation cases to specialize the cuda graphs on
@@ -79,26 +70,16 @@ class CudagraphDispatcher:
         # guarantee all keys would be used. For example, if we allow lazy
         # capturing in future PR, some keys may never be triggered.
         if cudagraph_mode.mixed_mode() != CUDAGraphMode.NONE:
-            for bs, has_lora in product(
-                self.compilation_config.cudagraph_capture_sizes, lora_cases
-            ):
+            for bs, has_lora in product(self.compilation_config.cudagraph_capture_sizes, lora_cases):
                 self.add_cudagraph_key(
                     cudagraph_mode.mixed_mode(),
-                    BatchDescriptor(
-                        num_tokens=bs, uniform_decode=False, has_lora=has_lora
-                    ),
+                    BatchDescriptor(num_tokens=bs, uniform_decode=False, has_lora=has_lora),
                 )
 
         # if decode cudagraph mode is FULL, and we don't already have mixed
         # mode full cudagraphs then add them here.
-        if (
-            cudagraph_mode.decode_mode() == CUDAGraphMode.FULL
-            and cudagraph_mode.separate_routine()
-        ):
-            max_num_tokens = (
-                uniform_decode_query_len
-                * self.aphrodite_config.scheduler_config.max_num_seqs
-            )
+        if cudagraph_mode.decode_mode() == CUDAGraphMode.FULL and cudagraph_mode.separate_routine():
+            max_num_tokens = uniform_decode_query_len * self.aphrodite_config.scheduler_config.max_num_seqs
             cudagraph_capture_sizes_for_decode = [
                 x
                 for x in self.compilation_config.cudagraph_capture_sizes
@@ -107,9 +88,7 @@ class CudagraphDispatcher:
             for bs, has_lora in product(cudagraph_capture_sizes_for_decode, lora_cases):
                 self.add_cudagraph_key(
                     CUDAGraphMode.FULL,
-                    BatchDescriptor(
-                        num_tokens=bs, uniform_decode=True, has_lora=has_lora
-                    ),
+                    BatchDescriptor(num_tokens=bs, uniform_decode=True, has_lora=has_lora),
                 )
         self.keys_initialized = True
 

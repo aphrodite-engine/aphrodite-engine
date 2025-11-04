@@ -94,9 +94,7 @@ class BaseVisualTokenizerConfig(PretrainedConfig):
                 model_type = backbone_config["model_type"]
                 if model_type != "aimv2":
                     backbone_config.pop("model_type")
-                    backbone_config = AutoConfig.for_model(
-                        model_type, **backbone_config
-                    )
+                    backbone_config = AutoConfig.for_model(model_type, **backbone_config)
                 else:
                     backbone_config = AIMv2Config(**backbone_config)
         self.backbone_config = backbone_config
@@ -167,9 +165,7 @@ class OvisConfig(PretrainedConfig):
             if not isinstance(visual_tokenizer_config, PretrainedConfig):
                 model_type = visual_tokenizer_config["model_type"]
                 visual_tokenizer_config.pop("model_type")
-                visual_tokenizer_config = AutoConfig.for_model(
-                    model_type, **visual_tokenizer_config
-                )
+                visual_tokenizer_config = AutoConfig.for_model(model_type, **visual_tokenizer_config)
 
         self.visual_tokenizer_config = visual_tokenizer_config
         self.multimodal_max_length = multimodal_max_length

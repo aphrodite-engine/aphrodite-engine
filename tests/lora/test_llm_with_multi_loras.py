@@ -97,9 +97,7 @@ def test_multi_loras_with_tp_sync():
         outputs = llm.chat(
             [messages],
             sampling_params,
-            chat_template_kwargs={
-                "enable_thinking": False
-            },  # for those loras, ensure enable_thinking=False
+            chat_template_kwargs={"enable_thinking": False},  # for those loras, ensure enable_thinking=False
             lora_request=lora_request,
             use_tqdm=False,
         )
@@ -112,13 +110,9 @@ def test_multi_loras_with_tp_sync():
         setting `APHRODITE_ALLOW_RUNTIME_LORA_UPDATING=true`
         for dynamic lora loading and unloading
         """
-        remove_lora_response = llm.llm_engine.remove_lora(
-            lora_id=LORA_NAME_ID_MAP[name]
-        )
+        remove_lora_response = llm.llm_engine.remove_lora(lora_id=LORA_NAME_ID_MAP[name])
 
-        add_lora_response = llm.llm_engine.add_lora(
-            make_add_lora_request(name, LORA_NAME_PATH_MAP[name])
-        )
+        add_lora_response = llm.llm_engine.add_lora(make_add_lora_request(name, LORA_NAME_PATH_MAP[name]))
 
         print(f"{remove_lora_response=}, {add_lora_response=}")
 
@@ -168,8 +162,7 @@ def test_multiple_lora_requests():
     PROMPTS = ["Hello, my name is"] * 2
     LORA_NAME = "Alice"
     lora_request = [
-        LoRARequest(LORA_NAME + str(idx), idx + 1, LORA_NAME_PATH_MAP[LORA_NAME])
-        for idx in range(len(PROMPTS))
+        LoRARequest(LORA_NAME + str(idx), idx + 1, LORA_NAME_PATH_MAP[LORA_NAME]) for idx in range(len(PROMPTS))
     ]
     # Multiple SamplingParams should be matched with each prompt
     outputs = llm.generate(PROMPTS, lora_request=lora_request)

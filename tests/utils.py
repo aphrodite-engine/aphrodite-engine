@@ -32,8 +32,7 @@ from openai.types.completion import Completion
 from typing_extensions import ParamSpec
 
 import aphrodite.envs as envs
-from aphrodite.distributed import (ensure_model_parallel_initialized,
-                                   init_distributed_environment)
+from aphrodite.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from aphrodite.endpoints.cli.run import ServeSubcommand
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.modeling.model_loader import get_model_loader
@@ -46,9 +45,7 @@ from aphrodite.utils.torch_utils import cuda_device_count_stateless
 from tests.models.utils import TextTextLogprobs
 
 if current_platform.is_rocm():
-    from amdsmi import (amdsmi_get_gpu_vram_usage,
-                        amdsmi_get_processor_handles, amdsmi_init,
-                        amdsmi_shut_down)
+    from amdsmi import amdsmi_get_gpu_vram_usage, amdsmi_get_processor_handles, amdsmi_init, amdsmi_shut_down
 
     @contextmanager
     def _nvml():
@@ -58,9 +55,7 @@ if current_platform.is_rocm():
         finally:
             amdsmi_shut_down()
 elif current_platform.is_cuda():
-    from aphrodite.third_party.pynvml import (nvmlDeviceGetHandleByIndex,
-                                              nvmlDeviceGetMemoryInfo,
-                                              nvmlInit, nvmlShutdown)
+    from aphrodite.third_party.pynvml import nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlInit, nvmlShutdown
 
     @contextmanager
     def _nvml():
@@ -83,9 +78,7 @@ APHRODITE_PATH = Path(__file__).parent.parent
 class RemoteOpenAIServer:
     DUMMY_API_KEY = "token-abc123"  # Aphrodite's OpenAI server does not need API key
 
-    def _start_server(
-        self, model: str, aphrodite_serve_args: list[str], env_dict: dict[str, str] | None
-    ) -> None:
+    def _start_server(self, model: str, aphrodite_serve_args: list[str], env_dict: dict[str, str] | None) -> None:
         """Subclasses override this method to customize server process launch"""
         env = os.environ.copy()
         # the current process might initialize cuda,
@@ -115,9 +108,7 @@ class RemoteOpenAIServer:
     ) -> None:
         if auto_port:
             if "-p" in aphrodite_serve_args or "--port" in aphrodite_serve_args:
-                raise ValueError(
-                    "You have manually specified the port when `auto_port=True`."
-                )
+                raise ValueError("You have manually specified the port when `auto_port=True`.")
 
             # No need for a port if using unix sockets
             if "--uds" not in aphrodite_serve_args:
@@ -125,9 +116,7 @@ class RemoteOpenAIServer:
                 aphrodite_serve_args = aphrodite_serve_args + ["--port", str(get_open_port())]
         if seed is not None:
             if "--seed" in aphrodite_serve_args:
-                raise ValueError(
-                    f"You have manually specified the seed when `seed={seed}`."
-                )
+                raise ValueError(f"You have manually specified the seed when `seed={seed}`.")
 
             aphrodite_serve_args = aphrodite_serve_args + ["--seed", str(seed)]
 
@@ -183,11 +172,7 @@ class RemoteOpenAIServer:
     def _wait_for_server(self, *, url: str, timeout: float):
         # run health check
         start = time.time()
-        client = (
-            httpx.Client(transport=httpx.HTTPTransport(uds=self.uds))
-            if self.uds
-            else requests
-        )
+        client = httpx.Client(transport=httpx.HTTPTransport(uds=self.uds)) if self.uds else requests
         while True:
             try:
                 if client.get(url).status_code == 200:
@@ -207,11 +192,7 @@ class RemoteOpenAIServer:
 
     @property
     def url_root(self) -> str:
-        return (
-            f"http://{self.uds.split('/')[-1]}"
-            if self.uds
-            else f"http://{self.host}:{self.port}"
-        )
+        return f"http://{self.uds.split('/')[-1]}" if self.uds else f"http://{self.host}:{self.port}"
 
     def url_for(self, *parts: str) -> str:
         return self.url_root + "/" + "/".join(parts)
@@ -240,12 +221,8 @@ class RemoteOpenAIServer:
 class RemoteOpenAIServerCustom(RemoteOpenAIServer):
     """Launch test server with custom child process"""
 
-    def _start_server(
-        self, model: str, aphrodite_serve_args: list[str], env_dict: dict[str, str] | None
-    ) -> None:
-        self.proc: Process = Process(
-            target=self.child_process_fxn, args=(env_dict, model, aphrodite_serve_args)
-        )  # type: ignore[assignment]
+    def _start_server(self, model: str, aphrodite_serve_args: list[str], env_dict: dict[str, str] | None) -> None:
+        self.proc: Process = Process(target=self.child_process_fxn, args=(env_dict, model, aphrodite_serve_args))  # type: ignore[assignment]
         self.proc.start()
 
     def __init__(
@@ -297,17 +274,13 @@ class RemoteAnthropicServer:
     ) -> None:
         if auto_port:
             if "-p" in aphrodite_serve_args or "--port" in aphrodite_serve_args:
-                raise ValueError(
-                    "You have manually specified the port when `auto_port=True`."
-                )
+                raise ValueError("You have manually specified the port when `auto_port=True`.")
 
             # Don't mutate the input args
             aphrodite_serve_args = aphrodite_serve_args + ["--port", str(get_open_port())]
         if seed is not None:
             if "--seed" in aphrodite_serve_args:
-                raise ValueError(
-                    f"You have manually specified the seed when `seed={seed}`."
-                )
+                raise ValueError(f"You have manually specified the seed when `seed={seed}`.")
 
             aphrodite_serve_args = aphrodite_serve_args + ["--seed", str(seed)]
 
@@ -402,9 +375,7 @@ class RemoteAnthropicServer:
     def get_async_client(self, **kwargs):
         if "timeout" not in kwargs:
             kwargs["timeout"] = 600
-        return anthropic.AsyncAnthropic(
-            base_url=self.url_for(), api_key=self.DUMMY_API_KEY, max_retries=0, **kwargs
-        )
+        return anthropic.AsyncAnthropic(base_url=self.url_for(), api_key=self.DUMMY_API_KEY, max_retries=0, **kwargs)
 
 
 def _test_completion(
@@ -416,9 +387,7 @@ def _test_completion(
     results = []
 
     # test with text prompt
-    completion = client.completions.create(
-        model=model, prompt=prompt, max_tokens=5, temperature=0.0
-    )
+    completion = client.completions.create(model=model, prompt=prompt, max_tokens=5, temperature=0.0)
 
     results.append(
         {
@@ -447,9 +416,7 @@ def _test_completion(
     )
 
     # test seeded random sampling
-    completion = client.completions.create(
-        model=model, prompt=prompt, max_tokens=5, seed=33, temperature=1.0
-    )
+    completion = client.completions.create(model=model, prompt=prompt, max_tokens=5, seed=33, temperature=1.0)
 
     results.append(
         {
@@ -461,9 +428,7 @@ def _test_completion(
     )
 
     # test seeded random sampling with multiple prompts
-    completion = client.completions.create(
-        model=model, prompt=[prompt, prompt], max_tokens=5, seed=33, temperature=1.0
-    )
+    completion = client.completions.create(model=model, prompt=[prompt, prompt], max_tokens=5, seed=33, temperature=1.0)
 
     results.append(
         {
@@ -523,9 +488,7 @@ def _test_completion_close(
     results = []
 
     # test with text prompt
-    completion = client.completions.create(
-        model=model, prompt=prompt, max_tokens=1, logprobs=5, temperature=0.0
-    )
+    completion = client.completions.create(model=model, prompt=prompt, max_tokens=1, logprobs=5, temperature=0.0)
 
     logprobs = completion.choices[0].logprobs.top_logprobs[0]
     logprobs = {k: round(v, 2) for k, v in logprobs.items()}
@@ -550,9 +513,7 @@ def _test_chat(
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
 
     # test with text prompt
-    chat_response = client.chat.completions.create(
-        model=model, messages=messages, max_tokens=5, temperature=0.0
-    )
+    chat_response = client.chat.completions.create(model=model, messages=messages, max_tokens=5, temperature=0.0)
 
     results.append(
         {
@@ -746,9 +707,7 @@ def compare_all_settings(
             args = args + ["--load-format", envs.APHRODITE_TEST_FORCE_LOAD_FORMAT]
         compare_results: list = []
         results = ref_results if i == 0 else compare_results
-        with RemoteOpenAIServer(
-            model, args, env_dict=env, max_wait_seconds=max_wait_seconds
-        ) as server:
+        with RemoteOpenAIServer(model, args, env_dict=env, max_wait_seconds=max_wait_seconds) as server:
             client = server.get_client()
 
             # test models list
@@ -795,10 +754,7 @@ def compare_all_settings(
                             torch.tensor(compare_result["embedding"]),
                             dim=0,
                         )
-                        assert sim >= 0.999, (
-                            f"Embedding for {model=} are not the same.\n"
-                            f"cosine_similarity={sim}\n"
-                        )
+                        assert sim >= 0.999, f"Embedding for {model=} are not the same.\ncosine_similarity={sim}\n"
                         del ref_result["embedding"]
                         del compare_result["embedding"]
                     assert ref_result == compare_result, (
@@ -940,17 +896,11 @@ def wait_for_gpu_memory_to_clear(
 
         dur_s = time.time() - start_time
         if all(is_free(used, total) for used, total in output_raw.values()):
-            print(
-                f"Done waiting for free GPU memory on devices {devices=} "
-                f"({threshold=}) {dur_s=:.02f}"
-            )
+            print(f"Done waiting for free GPU memory on devices {devices=} ({threshold=}) {dur_s=:.02f}")
             break
 
         if dur_s >= timeout_s:
-            raise ValueError(
-                f"Memory of devices {devices=} not free after "
-                f"{dur_s=:.02f} ({threshold=})"
-            )
+            raise ValueError(f"Memory of devices {devices=} not free after {dur_s=:.02f} ({threshold=})")
 
         time.sleep(5)
 
@@ -1044,9 +994,7 @@ def fork_new_process_for_each_test(func: Callable[_P, None]) -> Callable[_P, Non
                         ):
                             exc_info = cloudpickle.load(f)
 
-                    if (
-                        original_exception := exc_info.get("pickled_exception")
-                    ) is not None:
+                    if (original_exception := exc_info.get("pickled_exception")) is not None:
                         # Re-raise the actual exception object if it was
                         # successfully pickled.
                         assert isinstance(original_exception, Exception)
@@ -1105,18 +1053,14 @@ def spawn_new_process_for_each_test(f: Callable[_P, None]) -> Callable[_P, None]
 
             cmd = [sys.executable, "-m", f"{module_name}"]
 
-            returned = subprocess.run(
-                cmd, input=input_bytes, capture_output=True, env=env
-            )
+            returned = subprocess.run(cmd, input=input_bytes, capture_output=True, env=env)
 
             # check if the subprocess is successful
             try:
                 returned.check_returncode()
             except Exception as e:
                 # wrap raised exception to provide more information
-                raise RuntimeError(
-                    f"Error raised in subprocess:\n{returned.stderr.decode()}"
-                ) from e
+                raise RuntimeError(f"Error raised in subprocess:\n{returned.stderr.decode()}") from e
 
     return wrapper
 
@@ -1246,9 +1190,7 @@ async def completions_with_server_args(
     assert len(max_tokens) == len(prompts)
 
     outputs = None
-    with RemoteOpenAIServer(
-        model_name, server_cli_args, max_wait_seconds=max_wait_seconds
-    ) as server:
+    with RemoteOpenAIServer(model_name, server_cli_args, max_wait_seconds=max_wait_seconds) as server:
         client = server.get_async_client()
         outputs = [
             client.completions.create(
@@ -1352,10 +1294,7 @@ def prep_prompts(batch_size: int, ln_range: tuple[int, int] = (800, 1100)):
     for _ in range(batch_size):
         idx = random.randint(30, 90)
         indices.append(idx)
-        prompt = (
-            "```python\n# We set a number of variables, "
-            + f"x{idx} will be important later\n"
-        )
+        prompt = "```python\n# We set a number of variables, " + f"x{idx} will be important later\n"
         ln = random.randint(*ln_range)
         for k in range(30, ln):
             v = random.randint(10, 99)
@@ -1368,9 +1307,7 @@ def prep_prompts(batch_size: int, ln_range: tuple[int, int] = (800, 1100)):
     return prompts, answer, indices
 
 
-def check_answers(
-    indices: list[int], answer: list[int], outputs: list[str], accept_rate: float = 0.7
-):
+def check_answers(indices: list[int], answer: list[int], outputs: list[str], accept_rate: float = 0.7):
     answer2 = [int(text[0:2].strip()) for text in outputs]
     print(list(zip(indices, zip(answer, answer2))))
     numok = 0

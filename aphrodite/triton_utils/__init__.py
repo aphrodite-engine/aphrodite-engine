@@ -1,6 +1,4 @@
-from aphrodite.triton_utils.importing import (HAS_TRITON,
-                                              TritonLanguagePlaceholder,
-                                              TritonPlaceholder)
+from aphrodite.triton_utils.importing import HAS_TRITON, TritonLanguagePlaceholder, TritonPlaceholder
 
 if HAS_TRITON:
     import triton

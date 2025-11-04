@@ -81,11 +81,7 @@ def test_models(
         # 5042 tokens for gemma2
         # gemma2 has alternating sliding window size of 4096
         # we need a prompt with more than 4096 tokens to test the sliding window
-        prompt = (
-            "The following numbers of the sequence "
-            + ", ".join(str(i) for i in range(1024))
-            + " are:"
-        )
+        prompt = "The following numbers of the sequence " + ", ".join(str(i) for i in range(1024)) + " are:"
         example_prompts = [prompt]
 
         with hf_runner(model) as hf_model:
@@ -105,9 +101,7 @@ def test_models(
         ) as aphrodite_model:
             if enable_prompt_embeds:
                 aphrodite_outputs = aphrodite_model.generate_greedy(prompt_embeds, max_tokens)
-                aphrodite_outputs = _fix_prompt_embed_outputs(
-                    aphrodite_outputs, hf_model, example_prompts
-                )
+                aphrodite_outputs = _fix_prompt_embed_outputs(aphrodite_outputs, hf_model, example_prompts)
             else:
                 aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts, max_tokens)
 
@@ -189,9 +183,7 @@ def test_models_distributed(
                     with torch.no_grad():
                         prompt_embeds = hf_model.get_prompt_embeddings(example_prompts)
                     aphrodite_outputs = aphrodite_model.generate_greedy(prompt_embeds, max_tokens)
-                    aphrodite_outputs = _fix_prompt_embed_outputs(
-                        aphrodite_outputs, hf_model, example_prompts
-                    )
+                    aphrodite_outputs = _fix_prompt_embed_outputs(aphrodite_outputs, hf_model, example_prompts)
                     hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
             else:
                 aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts, max_tokens)

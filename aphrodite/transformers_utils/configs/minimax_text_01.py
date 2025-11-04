@@ -1,4 +1,4 @@
-""" MiniMaxText01 model configuration"""
+"""MiniMaxText01 model configuration"""
 
 from transformers.configuration_utils import PretrainedConfig
 

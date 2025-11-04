@@ -32,25 +32,28 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 # Default Grok1-specific constants, overridden by config values if present
 DEFAULT_ATTN_OUTPUT_MULTIPLIER = 0.08838834764831845
@@ -188,9 +191,7 @@ class Grok1Attention(nn.Module):
             logits_soft_cap=attn_logits_soft_cap,
             prefix=f"{prefix}.attn",
         )
-        self.attn_multiplier = (
-            getattr(self.config, "attn_output_multiplier", 1.0) if self.config else 1.0
-        )
+        self.attn_multiplier = getattr(self.config, "attn_output_multiplier", 1.0) if self.config else 1.0
 
     def forward(
         self,
@@ -298,11 +299,7 @@ class Grok1Model(nn.Module):
         self.config = config
         self.quant_config = quant_config
         self.padding_idx = config.pad_token_id
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
         self.embedding_multiplier_scale = getattr(
@@ -318,9 +315,7 @@ class Grok1Model(nn.Module):
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: Grok1DecoderLayer(
-                config, cache_config, quant_config=quant_config, prefix=prefix
-            ),
+            lambda prefix: Grok1DecoderLayer(config, cache_config, quant_config=quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
 
@@ -356,9 +351,7 @@ class Grok1Model(nn.Module):
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
@@ -386,15 +379,11 @@ class Grok1Model(nn.Module):
         loaded_params: set[str] = set()
         expert_params_mapping = self.get_expert_mapping()
         for name, loaded_weight in weights:
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -404,9 +393,7 @@ class Grok1Model(nn.Module):
                     continue
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -429,9 +416,7 @@ class Grok1Model(nn.Module):
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
                         continue
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
@@ -445,9 +430,7 @@ class Grok1Model(nn.Module):
                     break
                 else:
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
@@ -463,9 +446,7 @@ class Grok1Model(nn.Module):
                         name = name.replace("scale", "weight")
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -493,9 +474,7 @@ class Grok1ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.lora_config = lora_config
         self.quant_config = quant_config
 
-        self.model = Grok1Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Grok1Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
@@ -513,16 +492,12 @@ class Grok1ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
 
-        self.output_multiplier_scale = getattr(
-            config, "output_multiplier_scale", DEFAULT_OUTPUT_MULTIPLIER_SCALE
-        )
+        self.output_multiplier_scale = getattr(config, "output_multiplier_scale", DEFAULT_OUTPUT_MULTIPLIER_SCALE)
         self.logits_processor = LogitsProcessor(
             self.unpadded_vocab_size, config.vocab_size, self.output_multiplier_scale
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -534,9 +509,7 @@ class Grok1ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

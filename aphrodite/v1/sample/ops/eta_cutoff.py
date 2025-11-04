@@ -15,9 +15,7 @@ def eta_cutoff(
     probs = shifted_logits.exp()
 
     neg_entropy = (probs * shifted_logits).nansum(dim=-1)
-    eps = torch.min(eta_cutoff,
-                    torch.sqrt(eta_cutoff) *
-                    torch.exp(neg_entropy)).unsqueeze(dim=1)
+    eps = torch.min(eta_cutoff, torch.sqrt(eta_cutoff) * torch.exp(neg_entropy)).unsqueeze(dim=1)
 
     eta_mask = probs < eps
 

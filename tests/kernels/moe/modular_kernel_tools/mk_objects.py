@@ -4,21 +4,14 @@ import torch
 
 # Fused experts and PrepareFinalize imports
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
-from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import (
-    BatchedDeepGemmExperts)
-from aphrodite.modeling.layers.fused_moe.batched_triton_or_deep_gemm_moe import (
-    BatchedTritonOrDeepGemmExperts)
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
+from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import BatchedDeepGemmExperts
+from aphrodite.modeling.layers.fused_moe.batched_triton_or_deep_gemm_moe import BatchedTritonOrDeepGemmExperts
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
 from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import DeepGemmExperts
-from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
-    BatchedTritonExperts, NaiveBatchedExperts)
-from aphrodite.modeling.layers.fused_moe.layer import (FusedMoEMethodBase,
-                                                       TritonExperts)
-from aphrodite.modeling.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoEP)
-from aphrodite.modeling.layers.fused_moe.triton_deep_gemm_moe import (
-    TritonOrDeepGemmExperts)
+from aphrodite.modeling.layers.fused_moe.fused_batched_moe import BatchedTritonExperts, NaiveBatchedExperts
+from aphrodite.modeling.layers.fused_moe.layer import FusedMoEMethodBase, TritonExperts
+from aphrodite.modeling.layers.fused_moe.prepare_finalize import MoEPrepareAndFinalizeNoEP
+from aphrodite.modeling.layers.fused_moe.triton_deep_gemm_moe import TritonOrDeepGemmExperts
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.quant_utils import cutlass_fp4_supported
 from aphrodite.quantization.utils.w8a8_utils import cutlass_fp8_supported
@@ -182,10 +175,8 @@ register_experts(
 
 # Disable on blackwell for now
 if has_deep_ep() and not current_platform.has_device_capability(100):
-    from aphrodite.modeling.layers.fused_moe.deepep_ht_prepare_finalize import (
-        DeepEPHTPrepareAndFinalize)
-    from aphrodite.modeling.layers.fused_moe.deepep_ll_prepare_finalize import (
-        DeepEPLLPrepareAndFinalize)
+    from aphrodite.modeling.layers.fused_moe.deepep_ht_prepare_finalize import DeepEPHTPrepareAndFinalize
+    from aphrodite.modeling.layers.fused_moe.deepep_ll_prepare_finalize import DeepEPLLPrepareAndFinalize
 
     register_prepare_and_finalize(
         DeepEPHTPrepareAndFinalize,
@@ -204,8 +195,7 @@ if has_deep_ep() and not current_platform.has_device_capability(100):
     )
 
 if has_pplx():
-    from aphrodite.modeling.layers.fused_moe.pplx_prepare_finalize import (
-        PplxPrepareAndFinalize)
+    from aphrodite.modeling.layers.fused_moe.pplx_prepare_finalize import PplxPrepareAndFinalize
 
     register_prepare_and_finalize(
         PplxPrepareAndFinalize,
@@ -216,11 +206,11 @@ if has_pplx():
     )
 
 if has_flashinfer_cutlass_fused_moe() and current_platform.has_device_capability(100):
-    from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import (
-        FlashInferExperts)
+    from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import FlashInferExperts
     from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_prepare_finalize import (  # noqa: E501
         FlashInferCutlassMoEPrepareAndFinalize,
-        create_flashinfer_prepare_finalize)
+        create_flashinfer_prepare_finalize,
+    )
 
     register_prepare_and_finalize(
         FlashInferCutlassMoEPrepareAndFinalize,
@@ -287,8 +277,7 @@ if has_deep_gemm() and is_deep_gemm_supported():
     )
 
 if cutlass_fp8_supported():
-    from aphrodite.modeling.layers.fused_moe import (CutlassBatchedExpertsFp8,
-                                                     CutlassExpertsFp8)
+    from aphrodite.modeling.layers.fused_moe import CutlassBatchedExpertsFp8, CutlassExpertsFp8
 
     register_experts(
         CutlassExpertsFp8,
@@ -308,8 +297,7 @@ if cutlass_fp8_supported():
     )
 
 if cutlass_fp4_supported():
-    from aphrodite.modeling.layers.fused_moe.cutlass_moe import (
-        CutlassExpertsFp4)
+    from aphrodite.modeling.layers.fused_moe.cutlass_moe import CutlassExpertsFp4
 
     register_experts(
         CutlassExpertsFp4,
@@ -380,15 +368,11 @@ def make_prepare_finalize(
     quant_config: FusedMoEQuantConfig,
 ) -> mk.FusedMoEPrepareAndFinalize:
     if backend != "naive" and backend is not None:
-        prepare_finalize = FusedMoEMethodBase._maybe_make_prepare_finalize(
-            moe, quant_config
-        )
+        prepare_finalize = FusedMoEMethodBase._maybe_make_prepare_finalize(moe, quant_config)
         assert prepare_finalize is not None
         return prepare_finalize
     elif prepare_finalize_type == FlashInferCutlassMoEPrepareAndFinalize:
-        return create_flashinfer_prepare_finalize(
-            use_dp=moe.moe_parallel_config.dp_size > 1
-        )
+        return create_flashinfer_prepare_finalize(use_dp=moe.moe_parallel_config.dp_size > 1)
     else:
         return MoEPrepareAndFinalizeNoEP()
 

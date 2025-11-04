@@ -7,13 +7,11 @@ import torch
 import torch.distributed as dist
 
 from aphrodite import _custom_ops as ops
-from aphrodite.distributed.communication_op import (  # noqa
-    tensor_model_parallel_all_reduce)
+from aphrodite.distributed.communication_op import tensor_model_parallel_all_reduce  # noqa
 from aphrodite.distributed.parallel_state import get_tp_group, graph_capture
 from aphrodite.platforms import current_platform
 
-from ..utils import (ensure_model_parallel_initialized,
-                     init_test_distributed_environment, multi_process_parallel)
+from ..utils import ensure_model_parallel_initialized, init_test_distributed_environment, multi_process_parallel
 
 torch.manual_seed(42)
 random.seed(44)
@@ -60,12 +58,8 @@ def graph_quickreduce(
         for sz in test_sizes:
             for dtype in [torch.float16, torch.bfloat16]:
                 with graph_capture(device=device) as graph_capture_context:
-                    inp1 = torch.randint(
-                        1, 23, (sz,), dtype=dtype, device=torch.cuda.current_device()
-                    )
-                    inp2 = torch.randint(
-                        -23, 1, (sz,), dtype=dtype, device=torch.cuda.current_device()
-                    )
+                    inp1 = torch.randint(1, 23, (sz,), dtype=dtype, device=torch.cuda.current_device())
+                    inp2 = torch.randint(-23, 1, (sz,), dtype=dtype, device=torch.cuda.current_device())
                     torch.cuda.synchronize()
                     graph = torch.cuda.CUDAGraph()
                     with torch.cuda.graph(graph, stream=graph_capture_context.stream):
@@ -97,22 +91,16 @@ def eager_quickreduce(
         # Size over 8MB is sufficient for custom quick allreduce.
         sz = 16 * 1024 * 1024
         fa = get_tp_group().device_communicator.qr_comm
-        inp = torch.tensor(
-            [1.0 * ((i) % 23) for i in range(sz)], dtype=torch.float16, device=device
-        )
+        inp = torch.tensor([1.0 * ((i) % 23) for i in range(sz)], dtype=torch.float16, device=device)
         out = fa.quick_all_reduce(inp)
         torch.testing.assert_close(out, inp * tp_size, atol=2.5, rtol=0.1)
 
-        inp = torch.tensor(
-            [1.0 * ((i) % 23) for i in range(sz)], dtype=torch.bfloat16, device=device
-        )
+        inp = torch.tensor([1.0 * ((i) % 23) for i in range(sz)], dtype=torch.bfloat16, device=device)
         out = fa.quick_all_reduce(inp)
         torch.testing.assert_close(out, inp * tp_size, atol=2.5, rtol=0.1)
 
 
-@pytest.mark.skipif(
-    not current_platform.is_rocm(), reason="only test quick allreduce for rocm"
-)
+@pytest.mark.skipif(not current_platform.is_rocm(), reason="only test quick allreduce for rocm")
 @pytest.mark.parametrize("quant_mode", ["FP", "INT8", "INT6", "INT4"])
 @pytest.mark.parametrize("tp_size", [2])
 @pytest.mark.parametrize("pipeline_parallel_size", [1, 2])
@@ -166,9 +154,7 @@ def qr_variable_input(rank, world_size):
         dtype = torch.float16
         if num % 2 == 0:
             s2 = 1024
-            inp1 = torch.zeros(
-                (s1, s2), dtype=dtype, device=torch.cuda.current_device()
-            )
+            inp1 = torch.zeros((s1, s2), dtype=dtype, device=torch.cuda.current_device())
         else:
             s2 = 2048
             inp1 = torch.ones((s1, s2), dtype=dtype, device=torch.cuda.current_device())
@@ -186,9 +172,7 @@ def qr_variable_input(rank, world_size):
         num += 1
 
 
-@pytest.mark.skipif(
-    not current_platform.is_rocm(), reason="only test quick allreduce for rocm"
-)
+@pytest.mark.skipif(not current_platform.is_rocm(), reason="only test quick allreduce for rocm")
 @pytest.mark.parametrize("tp_size", [4, 8])
 @pytest.mark.parametrize("pipeline_parallel_size", [1])
 def test_custom_quick_allreduce_variable_input(tp_size, pipeline_parallel_size):

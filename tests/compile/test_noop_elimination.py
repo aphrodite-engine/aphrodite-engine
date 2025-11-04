@@ -3,17 +3,14 @@ import torch
 
 import aphrodite
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, PassConfig)
+from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, PassConfig
 
 from .backend import TestBackend
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 # Important edge case is when `num_tokens == buffer_size`
-@pytest.mark.parametrize(
-    ("num_tokens", "buffer_size"), [(256, 256), (256, 512), (1024, 1024), (1024, 1025)]
-)
+@pytest.mark.parametrize(("num_tokens", "buffer_size"), [(256, 256), (256, 512), (1024, 1024), (1024, 1025)])
 @pytest.mark.parametrize("hidden_size", [64, 4096])
 def test_noop_elimination(dtype, num_tokens, hidden_size, buffer_size):
     torch.set_default_device("cuda")

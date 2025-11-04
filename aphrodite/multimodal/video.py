@@ -22,9 +22,7 @@ logger = init_logger(__name__)
 def resize_video(frames: npt.NDArray, size: tuple[int, int]) -> npt.NDArray:
     num_frames, _, _, channels = frames.shape
     new_height, new_width = size
-    resized_frames = np.empty(
-        (num_frames, new_height, new_width, channels), dtype=frames.dtype
-    )
+    resized_frames = np.empty((num_frames, new_height, new_width, channels), dtype=frames.dtype)
     # lazy import cv2 to avoid bothering users who only use text models
     import cv2
 
@@ -55,9 +53,7 @@ def sample_frames_from_video(frames: npt.NDArray, num_frames: int) -> npt.NDArra
 class VideoLoader:
     @classmethod
     @abstractmethod
-    def load_bytes(
-        cls, data: bytes, num_frames: int = -1, **kwargs
-    ) -> tuple[npt.NDArray, dict[str, Any]]:
+    def load_bytes(cls, data: bytes, num_frames: int = -1, **kwargs) -> tuple[npt.NDArray, dict[str, Any]]:
         raise NotImplementedError
 
 
@@ -130,9 +126,7 @@ class OpenCVVideoBackend(VideoLoader):
         if num_frames_to_sample == total_frames_num:
             frame_idx = list(range(0, num_frames_to_sample))
         else:
-            uniform_sampled_frames = np.linspace(
-                0, total_frames_num - 1, num_frames_to_sample, dtype=int
-            )
+            uniform_sampled_frames = np.linspace(0, total_frames_num - 1, num_frames_to_sample, dtype=int)
             frame_idx = uniform_sampled_frames.tolist()
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -151,8 +145,7 @@ class OpenCVVideoBackend(VideoLoader):
                     i += 1
 
         assert i == num_frames_to_sample, (
-            f"Expected reading {num_frames_to_sample} frames, "
-            f"but only loaded {i} frames from video."
+            f"Expected reading {num_frames_to_sample} frames, but only loaded {i} frames from video."
         )
 
         # Use transformers transformers.video_utils.VideoMetadata format
@@ -203,24 +196,14 @@ class OpenCVDynamicVideoBackend(OpenCVVideoBackend):
         frame_indices: range | list[int]
         if duration <= max_duration:
             n = int(math.floor(duration * fps))
-            frame_indices = sorted(
-                {
-                    min(max_frame_idx, int(math.ceil(i * original_fps / fps)))
-                    for i in range(n)
-                }
-            )
+            frame_indices = sorted({min(max_frame_idx, int(math.ceil(i * original_fps / fps))) for i in range(n)})
         else:
             num_samples = int(max_duration * fps)
             if num_samples >= total_frames_num:
                 frame_indices = range(total_frames_num)
             else:
                 target_seconds = np.linspace(0, duration, num_samples, endpoint=True)
-                frame_indices = sorted(
-                    {
-                        min(max_frame_idx, int(math.ceil(t * original_fps)))
-                        for t in target_seconds
-                    }
-                )
+                frame_indices = sorted({min(max_frame_idx, int(math.ceil(t * original_fps))) for t in target_seconds})
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -238,8 +221,7 @@ class OpenCVDynamicVideoBackend(OpenCVVideoBackend):
                     i += 1
 
         assert i == len(frame_indices), (
-            f"Expected reading {len(frame_indices)} frames, "
-            f"but only loaded {i} frames from video."
+            f"Expected reading {len(frame_indices)} frames, but only loaded {i} frames from video."
         )
 
         # Use transformers transformers.video_utils.VideoMetadata format
@@ -276,22 +258,16 @@ class VideoMediaIO(MediaIO[npt.NDArray]):
         self.video_loader = VIDEO_LOADER_REGISTRY.load(video_loader_backend)
 
     def load_bytes(self, data: bytes) -> tuple[npt.NDArray, dict[str, Any]]:
-        return self.video_loader.load_bytes(
-            data, num_frames=self.num_frames, **self.kwargs
-        )
+        return self.video_loader.load_bytes(data, num_frames=self.num_frames, **self.kwargs)
 
-    def load_base64(
-        self, media_type: str, data: str
-    ) -> tuple[npt.NDArray, dict[str, Any]]:
+    def load_base64(self, media_type: str, data: str) -> tuple[npt.NDArray, dict[str, Any]]:
         if media_type.lower() == "video/jpeg":
             load_frame = partial(
                 self.image_io.load_base64,
                 "image/jpeg",
             )
 
-            return np.stack(
-                [np.asarray(load_frame(frame_data)) for frame_data in data.split(",")]
-            ), {}
+            return np.stack([np.asarray(load_frame(frame_data)) for frame_data in data.split(",")]), {}
 
         return self.load_bytes(base64.b64decode(data))
 

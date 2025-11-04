@@ -3,8 +3,7 @@ from pathlib import Path
 import pytest
 from transformers import PretrainedConfig
 
-from aphrodite.transformers_utils.config import (get_config_parser,
-                                                 register_config_parser)
+from aphrodite.transformers_utils.config import get_config_parser, register_config_parser
 from aphrodite.transformers_utils.config_parser_base import ConfigParserBase
 
 

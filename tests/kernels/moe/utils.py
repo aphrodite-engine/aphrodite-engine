@@ -5,15 +5,16 @@ from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts, fused_topk
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
 from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
-    BatchedPrepareAndFinalize, BatchedTritonExperts, NaiveBatchedExperts)
-from aphrodite.modeling.layers.fused_moe.modular_kernel import (
-    FusedMoEModularKernel)
+    BatchedPrepareAndFinalize,
+    BatchedTritonExperts,
+    NaiveBatchedExperts,
+)
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input
 from aphrodite.utils.deep_gemm import per_block_cast_to_fp8
 from aphrodite.utils.math_utils import round_up
 from tests.kernels.quant_utils import per_block_cast_to_int8
-from tests.kernels.quantization.nvfp4_utils import (FLOAT4_E2M1_MAX,
-                                                    FLOAT8_E4M3_MAX)
+from tests.kernels.quantization.nvfp4_utils import FLOAT4_E2M1_MAX, FLOAT8_E4M3_MAX
 
 
 def triton_moe(
@@ -70,9 +71,7 @@ def batched_moe(
     )
 
     fused_experts = FusedMoEModularKernel(
-        BatchedPrepareAndFinalize(
-            max_num_tokens, num_dispatchers=1, num_local_experts=w1.shape[0], rank=0
-        ),
+        BatchedPrepareAndFinalize(max_num_tokens, num_dispatchers=1, num_local_experts=w1.shape[0], rank=0),
         BatchedTritonExperts(
             max_num_tokens=max_num_tokens,
             num_dispatchers=1,
@@ -110,9 +109,7 @@ def naive_batched_moe(
     )
 
     fused_experts = FusedMoEModularKernel(
-        BatchedPrepareAndFinalize(
-            max_num_tokens, num_dispatchers=1, num_local_experts=w1.shape[0], rank=0
-        ),
+        BatchedPrepareAndFinalize(max_num_tokens, num_dispatchers=1, num_local_experts=w1.shape[0], rank=0),
         NaiveBatchedExperts(
             max_num_tokens=max_num_tokens,
             num_dispatchers=1,
@@ -123,9 +120,7 @@ def naive_batched_moe(
     return fused_experts(a, w1, w2, topk_weight, topk_ids)
 
 
-def chunk_scales(
-    scales: torch.Tensor | None, start: int, end: int
-) -> torch.Tensor | None:
+def chunk_scales(scales: torch.Tensor | None, start: int, end: int) -> torch.Tensor | None:
     if scales is not None:
         if scales.numel() == 1:
             return scales
@@ -148,15 +143,11 @@ def make_quantized_test_activations(
     a_scale = None
 
     if quant_dtype is not None:
-        assert quant_dtype == torch.float8_e4m3fn or quant_dtype == torch.int8, (
-            "only fp8/int8 supported"
-        )
+        assert quant_dtype == torch.float8_e4m3fn or quant_dtype == torch.int8, "only fp8/int8 supported"
         a_q = torch.zeros_like(a, dtype=quant_dtype)
         a_scale_l = [None] * E
         for e in range(E):
-            a_q[e], a_scale_l[e] = moe_kernel_quantize_input(
-                a[e], None, quant_dtype, per_act_token_quant, block_shape
-            )
+            a_q[e], a_scale_l[e] = moe_kernel_quantize_input(a[e], None, quant_dtype, per_act_token_quant, block_shape)
         a_scale = torch.stack(a_scale_l)
 
         if not per_act_token_quant and block_shape is None:
@@ -172,11 +163,9 @@ def moe_quantize_weights(
     per_token_quant: bool,
     block_shape: list[int] | None,
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-    assert (
-        quant_dtype == torch.float8_e4m3fn
-        or quant_dtype == torch.int8
-        or quant_dtype == "nvfp4"
-    ), "only fp8/int8/nvfp4 supported"
+    assert quant_dtype == torch.float8_e4m3fn or quant_dtype == torch.int8 or quant_dtype == "nvfp4", (
+        "only fp8/int8/nvfp4 supported"
+    )
 
     w_gs = None
 
@@ -192,13 +181,9 @@ def moe_quantize_weights(
             raise RuntimeError(f"Unsupported quant type {quant_dtype}")
     else:
         if quant_dtype == torch.int8:
-            w, w_s = ops.scaled_int8_quant(
-                w, w_s, use_per_token_if_dynamic=per_token_quant
-            )
+            w, w_s = ops.scaled_int8_quant(w, w_s, use_per_token_if_dynamic=per_token_quant)
         elif quant_dtype == torch.float8_e4m3fn:
-            w, w_s = ops.scaled_fp8_quant(
-                w, w_s, use_per_token_if_dynamic=per_token_quant
-            )
+            w, w_s = ops.scaled_fp8_quant(w, w_s, use_per_token_if_dynamic=per_token_quant)
         elif quant_dtype == "nvfp4":
             assert not per_token_quant
             w_amax = torch.abs(w).max().to(torch.float32)
@@ -265,16 +250,12 @@ def make_test_weights(
     tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None],
 ]:
     return (
-        make_test_weight(
-            e, 2 * n, k, in_dtype, quant_dtype, block_shape, per_out_ch_quant
-        ),
+        make_test_weight(e, 2 * n, k, in_dtype, quant_dtype, block_shape, per_out_ch_quant),
         make_test_weight(e, k, n, in_dtype, quant_dtype, block_shape, per_out_ch_quant),
     )
 
 
-def per_token_cast_to_fp8(
-    x: torch.Tensor, block_size: int = 128
-) -> tuple[torch.Tensor, torch.Tensor]:
+def per_token_cast_to_fp8(x: torch.Tensor, block_size: int = 128) -> tuple[torch.Tensor, torch.Tensor]:
     assert x.dim() == 2
     m, n = x.shape
     pad_size = (block_size - (n % block_size)) % block_size
@@ -347,9 +328,7 @@ def fused_moe(
     global_num_experts: int = -1,
     expert_map: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    topk_weights, topk_ids, _ = fused_topk(
-        hidden_states, score.float(), topk, renormalize
-    )
+    topk_weights, topk_ids, _ = fused_topk(hidden_states, score.float(), topk, renormalize)
     return fused_experts(
         hidden_states,
         w1,
@@ -420,8 +399,7 @@ class RealMLP(torch.nn.Module):
         w1_s: torch.Tensor | None = None,
         w2_s: torch.Tensor | None = None,
     ) -> None:
-        from aphrodite.modeling.layers.linear import (
-            MergedColumnParallelLinear, RowParallelLinear)
+        from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, RowParallelLinear
 
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
@@ -431,15 +409,9 @@ class RealMLP(torch.nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.gate_up_proj",
         )
-        self.gate_up_proj.register_parameter(
-            "weight", torch.nn.Parameter(w1, requires_grad=False)
-        )
-        self.gate_up_proj.register_parameter(
-            "weight_scale", torch.nn.Parameter(w1_s, requires_grad=False)
-        )
-        self.gate_up_proj.register_parameter(
-            "input_scale", None
-        )  # torch.nn.Parameter(None, requires_grad=False))
+        self.gate_up_proj.register_parameter("weight", torch.nn.Parameter(w1, requires_grad=False))
+        self.gate_up_proj.register_parameter("weight_scale", torch.nn.Parameter(w1_s, requires_grad=False))
+        self.gate_up_proj.register_parameter("input_scale", None)  # torch.nn.Parameter(None, requires_grad=False))
         self.down_proj = RowParallelLinear(
             intermediate_size,
             hidden_size,
@@ -448,19 +420,11 @@ class RealMLP(torch.nn.Module):
             reduce_results=reduce_results,
             prefix=f"{prefix}.down_proj",
         )
-        self.down_proj.register_parameter(
-            "weight", torch.nn.Parameter(w2, requires_grad=False)
-        )
-        self.down_proj.register_parameter(
-            "weight_scale", torch.nn.Parameter(w2_s, requires_grad=False)
-        )
-        self.down_proj.register_parameter(
-            "input_scale", None
-        )  # torch.nn.Parameter(None, requires_grad=False))
+        self.down_proj.register_parameter("weight", torch.nn.Parameter(w2, requires_grad=False))
+        self.down_proj.register_parameter("weight_scale", torch.nn.Parameter(w2_s, requires_grad=False))
+        self.down_proj.register_parameter("input_scale", None)  # torch.nn.Parameter(None, requires_grad=False))
         if hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):

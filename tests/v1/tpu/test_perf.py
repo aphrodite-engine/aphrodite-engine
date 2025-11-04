@@ -86,15 +86,11 @@ def test_perf(
     aphrodite_runner: type[AphroditeRunner],
     params: TestParams,
 ) -> None:
-    tokenizer = get_tokenizer(
-        params.model, tokenizer_mode="auto", trust_remote_code=True
-    )
+    tokenizer = get_tokenizer(params.model, tokenizer_mode="auto", trust_remote_code=True)
 
     prompts = []
     for i in range(params.num_prompts):
-        prefix_token_ids = np.random.randint(
-            0, tokenizer.vocab_size, size=params.prefix_len
-        ).tolist()
+        prefix_token_ids = np.random.randint(0, tokenizer.vocab_size, size=params.prefix_len).tolist()
         prompt = tokenizer.decode(prefix_token_ids)
         prompts.append(prompt)
 
@@ -104,9 +100,7 @@ def test_perf(
         )
     )
 
-    sampling_params = SamplingParams(
-        max_tokens=params.decode_len, temperature=1.0, min_p=0.0
-    )
+    sampling_params = SamplingParams(max_tokens=params.decode_len, temperature=1.0, min_p=0.0)
 
     with aphrodite_runner(
         params.model,
@@ -131,11 +125,7 @@ def test_perf(
         avg_time = sum(times) / len(times)
 
         print("  -- avg_time = {}".format(avg_time))
-        print(
-            "  -- expected_avg_time = {} with err_tol = {}".format(
-                params.expected_avg_time, params.err_tol
-            )
-        )
+        print("  -- expected_avg_time = {} with err_tol = {}".format(params.expected_avg_time, params.err_tol))
         diff = avg_time - params.expected_avg_time
         ok = diff < params.err_tol
         if diff < -params.err_tol:

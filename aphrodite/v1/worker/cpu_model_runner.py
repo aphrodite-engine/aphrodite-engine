@@ -32,10 +32,7 @@ class CPUModelRunner(GPUModelRunner):
     # Note: Remove the override after new attention backend finished
     def _may_reorder_batch(self, scheduler_output: "SchedulerOutput") -> None:
         if len(self.kv_cache_config.kv_cache_groups) > 1:
-            raise ValueError(
-                "Multiple KVCacheGroups is not"
-                "currently supported with CPU model runner."
-            )
+            raise ValueError("Multiple KVCacheGroups is notcurrently supported with CPU model runner.")
         super()._may_reorder_batch(scheduler_output)
 
     def _postprocess_tensors(self) -> None:

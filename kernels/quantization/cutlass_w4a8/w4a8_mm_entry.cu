@@ -120,7 +120,7 @@ struct W4A8GemmKernel {
   // Epilogue per-tok, per-chan scales
   using ChTokScalesEpilogue =
       typename aphrodite::c3x::ScaledEpilogue<ElementAccumulator, ElementD,
-                                         TileShape>;
+                                              TileShape>;
   using EVTCompute = typename ChTokScalesEpilogue::EVTCompute;
   using CollectiveEpilogue =
       typename cutlass::epilogue::collective::CollectiveBuilder<

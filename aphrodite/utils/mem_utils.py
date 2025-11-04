@@ -82,10 +82,7 @@ class MemorySnapshot:
 
         self.free_memory, self.total_memory = torch.cuda.mem_get_info()
         shared_sysmem_device_mem_sms = ((8, 7), (11, 0), (12, 1))  # Orin, Thor, Spark
-        if (
-            current_platform.is_cuda()
-            and current_platform.get_device_capability() in shared_sysmem_device_mem_sms
-        ):
+        if current_platform.is_cuda() and current_platform.get_device_capability() in shared_sysmem_device_mem_sms:
             # On UMA (Orin, Thor and Spark) platform,
             # where both CPU and GPU rely on system memory,
             # the cudaMemGetInfo function shows the amount of free system memory
@@ -225,6 +222,4 @@ def memory_profiling(
 
     non_torch_memory = result.non_torch_increase
     peak_activation_memory = result.torch_peak_increase
-    result.non_kv_cache_memory = (
-        non_torch_memory + peak_activation_memory + result.weights_memory
-    )  # noqa
+    result.non_kv_cache_memory = non_torch_memory + peak_activation_memory + result.weights_memory  # noqa

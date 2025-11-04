@@ -1,8 +1,5 @@
 from aphrodite.v1.kv_offload.abstract import LoadStoreSpec
-from aphrodite.v1.kv_offload.worker.worker import (OffloadingHandler,
-                                                   OffloadingWorker,
-                                                   TransferResult,
-                                                   TransferSpec)
+from aphrodite.v1.kv_offload.worker.worker import OffloadingHandler, OffloadingWorker, TransferResult, TransferSpec
 
 
 class LoadStoreSpec1(LoadStoreSpec):

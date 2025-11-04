@@ -33,14 +33,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BatchFeature, PretrainedConfig
 from transformers.models.qwen2_vl import Qwen2VLImageProcessorFast
-from transformers.models.qwen2_vl.image_processing_qwen2_vl import (
-    smart_resize as image_smart_resize)
-from transformers.models.qwen3_vl import (Qwen3VLProcessor,
-                                          Qwen3VLVideoProcessor)
-from transformers.models.qwen3_vl.configuration_qwen3_vl import (
-    Qwen3VLConfig, Qwen3VLVisionConfig)
-from transformers.models.qwen3_vl.video_processing_qwen3_vl import (
-    smart_resize as video_smart_resize)
+from transformers.models.qwen2_vl.image_processing_qwen2_vl import smart_resize as image_smart_resize
+from transformers.models.qwen3_vl import Qwen3VLProcessor, Qwen3VLVideoProcessor
+from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig, Qwen3VLVisionConfig
+from transformers.models.qwen3_vl.video_processing_qwen3_vl import smart_resize as video_smart_resize
 from transformers.video_utils import VideoMetadata
 
 from aphrodite.attention.backends.registry import _Backend
@@ -52,41 +48,45 @@ from aphrodite.config.multimodal import BaseDummyOptions, VideoDummyOptions
 from aphrodite.distributed import get_pp_group
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.activation import _ACTIVATION_REGISTRY
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItem,
-                                         MultiModalKwargsItems, VideoItem)
-from aphrodite.multimodal.parse import (ImageSize, MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalKwargsItem,
+    MultiModalKwargsItems,
+    VideoItem,
+)
+from aphrodite.multimodal.parse import ImageSize, MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.collection_utils import is_list_of
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA, SupportsMRoPE,
-                         SupportsMultiModal, SupportsPP)
-from .qwen2_5_vl import (Qwen2_5_VisionAttention,
-                         Qwen2_5_VisionRotaryEmbedding,
-                         Qwen2_5_VLImageEmbeddingInputs, Qwen2_5_VLImageInputs,
-                         Qwen2_5_VLImagePixelInputs,
-                         Qwen2_5_VLVideoEmbeddingInputs, Qwen2_5_VLVideoInputs,
-                         Qwen2_5_VLVideoPixelInputs)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMRoPE, SupportsMultiModal, SupportsPP
+from .qwen2_5_vl import (
+    Qwen2_5_VisionAttention,
+    Qwen2_5_VisionRotaryEmbedding,
+    Qwen2_5_VLImageEmbeddingInputs,
+    Qwen2_5_VLImageInputs,
+    Qwen2_5_VLImagePixelInputs,
+    Qwen2_5_VLVideoEmbeddingInputs,
+    Qwen2_5_VLVideoInputs,
+    Qwen2_5_VLVideoPixelInputs,
+)
 from .qwen2_vl import Qwen2VLProcessingInfo
 from .qwen3 import Qwen3ForCausalLM, Qwen3Model
-from .utils import (AutoWeightsLoader, PPMissingLayer, WeightsMapper,
-                    _merge_multimodal_embeddings, maybe_prefix)
-from .vision import (conv3d_to_linear_weight, get_vit_attn_backend,
-                     run_dp_sharded_mrope_vision_model)
+from .utils import AutoWeightsLoader, PPMissingLayer, WeightsMapper, _merge_multimodal_embeddings, maybe_prefix
+from .vision import conv3d_to_linear_weight, get_vit_attn_backend, run_dp_sharded_mrope_vision_model
 
 logger = init_logger(__name__)
 
@@ -292,9 +292,7 @@ class Qwen3_VisionTransformer(nn.Module):
 
         # NOTE: This is used for creating empty tensor for all_gather for
         # DP ViT. Here out_hidden_size is enlarged due to deepstack
-        self.out_hidden_size = vision_config.out_hidden_size * (
-            1 + len(self.deepstack_visual_indexes)
-        )
+        self.out_hidden_size = vision_config.out_hidden_size * (1 + len(self.deepstack_visual_indexes))
 
         self.patch_embed = Qwen3_VisionPatchEmbed(
             patch_size=self.patch_size,
@@ -355,9 +353,7 @@ class Qwen3_VisionTransformer(nn.Module):
             _Backend.XFORMERS,
             _Backend.ROCM_AITER_FA,
         }:
-            raise RuntimeError(
-                f"Qwen3-VL does not support {self.attn_backend} backend now."
-            )
+            raise RuntimeError(f"Qwen3-VL does not support {self.attn_backend} backend now.")
         self.blocks = nn.ModuleList(
             [
                 Qwen3_VisionBlock(
@@ -426,12 +422,8 @@ class Qwen3_VisionTransformer(nn.Module):
 
         outputs = []
         for t, h, w in grid_thw:
-            h_idxs = torch.linspace(
-                0, num_grid_per_side - 1, h, dtype=torch.float32, device=self.device
-            )
-            w_idxs = torch.linspace(
-                0, num_grid_per_side - 1, w, dtype=torch.float32, device=self.device
-            )
+            h_idxs = torch.linspace(0, num_grid_per_side - 1, h, dtype=torch.float32, device=self.device)
+            w_idxs = torch.linspace(0, num_grid_per_side - 1, w, dtype=torch.float32, device=self.device)
 
             h_floor = h_idxs.to(torch.long)
             w_floor = w_idxs.to(torch.long)
@@ -470,9 +462,7 @@ class Qwen3_VisionTransformer(nn.Module):
             weighted_embeds = embeds * weights
             combined = weighted_embeds.sum(dim=0)
 
-            combined = combined.reshape(
-                h // m_size, m_size, w // m_size, m_size, hidden_dim
-            )
+            combined = combined.reshape(h // m_size, m_size, w // m_size, m_size, hidden_dim)
             combined = combined.permute(0, 2, 1, 3, 4).reshape(1, -1, hidden_dim)
             repeated = combined.expand(t, -1, -1).reshape(-1, hidden_dim)
             outputs.append(repeated)
@@ -485,10 +475,7 @@ class Qwen3_VisionTransformer(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         max_seqlen = torch.zeros([], device=cu_seqlens.device)
         seqlens = torch.zeros(1, device=cu_seqlens.device)
-        if (
-            self.attn_backend == _Backend.FLASH_ATTN
-            or self.attn_backend == _Backend.ROCM_AITER_FA
-        ):
+        if self.attn_backend == _Backend.FLASH_ATTN or self.attn_backend == _Backend.ROCM_AITER_FA:
             max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
         elif self.attn_backend == _Backend.XFORMERS:
             seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
@@ -532,9 +519,7 @@ class Qwen3_VisionTransformer(nn.Module):
             )
             if layer_num in self.deepstack_visual_indexes:
                 deepstack_merger_idx = self.deepstack_visual_indexes.index(layer_num)
-                deepstack_feature = self.deepstack_merger_list[deepstack_merger_idx](
-                    hidden_states
-                )
+                deepstack_feature = self.deepstack_merger_list[deepstack_merger_idx](hidden_states)
                 deepstack_feature_lists.append(deepstack_feature)
         hidden_states = self.merger(hidden_states)
         hidden_states = torch.cat(
@@ -649,18 +634,14 @@ class Qwen3VLProcessingInfo(Qwen2VLProcessingInfo):
         return preprocessed_size, num_vision_tokens
 
     def _get_max_video_frames(self, max_tokens: int, start_num_frames: int = 2) -> int:
-        return super()._get_max_video_frames(
-            max_tokens, start_num_frames=start_num_frames
-        )
+        return super()._get_max_video_frames(max_tokens, start_num_frames=start_num_frames)
 
     def get_num_frames_with_most_features(
         self,
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> int:
-        return super().get_num_frames_with_most_features(
-            seq_len, mm_counts, max_frames_per_video=_MAX_FRAMES_PER_VIDEO
-        )
+        return super().get_num_frames_with_most_features(seq_len, mm_counts, max_frames_per_video=_MAX_FRAMES_PER_VIDEO)
 
     def get_max_video_tokens(
         self,
@@ -680,9 +661,7 @@ class Qwen3VLProcessingInfo(Qwen2VLProcessingInfo):
         formatted_video_soft_tokens = video_soft_tokens * 12.5
         return int(formatted_video_soft_tokens)
 
-    def _calculate_timestamps(
-        self, indices: list[int] | torch.Tensor, video_fps: float, merge_size: int
-    ):
+    def _calculate_timestamps(self, indices: list[int] | torch.Tensor, video_fps: float, merge_size: int):
         if not isinstance(indices, list):
             indices = indices.tolist()
         if len(indices) % merge_size != 0:
@@ -690,8 +669,7 @@ class Qwen3VLProcessingInfo(Qwen2VLProcessingInfo):
             indices = indices + [indices[-1]] * (merge_size - len(indices) % merge_size)
         timestamps = [idx / video_fps for idx in indices]
         timestamps = [
-            (timestamps[i] + timestamps[i + merge_size - 1]) / 2
-            for i in range(0, len(timestamps), merge_size)
+            (timestamps[i] + timestamps[i + merge_size - 1]) / 2 for i in range(0, len(timestamps), merge_size)
         ]
         return timestamps
 
@@ -727,12 +705,7 @@ class Qwen3VLProcessingInfo(Qwen2VLProcessingInfo):
                 ),
                 total_num_frames,
             )
-            indices = (
-                np.linspace(0, total_num_frames - 1, num_frames)
-                .round()
-                .astype(int)
-                .tolist()
-            )
+            indices = np.linspace(0, total_num_frames - 1, num_frames).round().astype(int).tolist()
         timestamps = self._calculate_timestamps(indices, video_fps, merge_size)
         return timestamps
 
@@ -759,9 +732,7 @@ class Qwen3VLDummyInputsBuilder(BaseDummyInputsBuilder[Qwen3VLProcessingInfo]):
         video_overrides = mm_options.get("video") if mm_options else None
 
         target_width, target_height = self.info.get_image_size_with_most_features()
-        target_num_frames = self.info.get_num_frames_with_most_features(
-            seq_len, mm_counts
-        )
+        target_num_frames = self.info.get_num_frames_with_most_features(seq_len, mm_counts)
 
         if video_overrides:
             assert isinstance(video_overrides, VideoDummyOptions)
@@ -769,15 +740,13 @@ class Qwen3VLDummyInputsBuilder(BaseDummyInputsBuilder[Qwen3VLProcessingInfo]):
             if num_frames_override:
                 if num_frames_override > target_num_frames:
                     logger.warning(
-                        "video.num_frames override (%d) exceeds model's "
-                        "maximum number of frames (%d), will be ignored",
+                        "video.num_frames override (%d) exceeds model's maximum number of frames (%d), will be ignored",
                         num_frames_override,
                         target_num_frames,
                     )
                 if num_frames_override < 2:
                     logger.warning(
-                        "video.num_frames override (%d) cannot be less "
-                        "than 2, will be ignored",
+                        "video.num_frames override (%d) cannot be less than 2, will be ignored",
                         num_frames_override,
                     )
                 target_num_frames = min(target_num_frames, num_frames_override)
@@ -798,8 +767,7 @@ class Qwen3VLDummyInputsBuilder(BaseDummyInputsBuilder[Qwen3VLProcessingInfo]):
             if width_override:
                 if width_override > width:
                     logger.warning(
-                        "video.width override (%d) exceeds model's "
-                        "maximum width (%d), will be ignored",
+                        "video.width override (%d) exceeds model's maximum width (%d), will be ignored",
                         width_override,
                         width,
                     )
@@ -808,8 +776,7 @@ class Qwen3VLDummyInputsBuilder(BaseDummyInputsBuilder[Qwen3VLProcessingInfo]):
             if height_override:
                 if height_override > height:
                     logger.warning(
-                        "video.height override (%d) exceeds model's "
-                        "maximum height (%d), will be ignored",
+                        "video.height override (%d) exceeds model's maximum height (%d), will be ignored",
                         height_override,
                         height,
                     )
@@ -888,13 +855,9 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                 if "do_sample_frames" not in video_mm_kwargs:
                     # qwen_vl_utils already has "do_sample_frames" in
                     # mm_kwargs, don't overwrite it.
-                    video_mm_kwargs["do_sample_frames"] = metadata.get(
-                        "do_sample_frames", False
-                    )
+                    video_mm_kwargs["do_sample_frames"] = metadata.get("do_sample_frames", False)
 
-                metadata = VideoMetadata(
-                    **{k: metadata[k] for k in metadata if k != "do_sample_frames"}
-                )
+                metadata = VideoMetadata(**{k: metadata[k] for k in metadata if k != "do_sample_frames"})
 
                 video_mm_data = dict()
                 video_mm_data["videos"] = [[video_array]]
@@ -947,19 +910,11 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
         video_grid_sizes = video_grid_thw.prod(-1)
 
         return dict(
-            pixel_values=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_grid_sizes
-            ),
-            image_embeds=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_grid_sizes
-            ),
+            pixel_values=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
+            image_embeds=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
             image_grid_thw=MultiModalFieldConfig.batched("image"),
-            pixel_values_videos=MultiModalFieldConfig.flat_from_sizes(
-                "video", video_grid_sizes
-            ),
-            video_embeds=MultiModalFieldConfig.flat_from_sizes(
-                "video", video_grid_sizes
-            ),
+            pixel_values_videos=MultiModalFieldConfig.flat_from_sizes("video", video_grid_sizes),
+            video_embeds=MultiModalFieldConfig.flat_from_sizes("video", video_grid_sizes),
             video_grid_thw=MultiModalFieldConfig.batched("video"),
         )
 
@@ -998,27 +953,21 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
             sampled_fps = hf_processor_mm_kwargs.get("fps")
             if is_list_of(sampled_fps, float):
                 sampled_fps = sampled_fps[item_idx]
-            timestamps = self.info._get_video_second_idx(
-                metadata, out_item, do_sample_frames, sampled_fps
-            )
+            timestamps = self.info._get_video_second_idx(metadata, out_item, do_sample_frames, sampled_fps)
 
             assert len(timestamps) == grid_thw[0], (
-                f"The timestamps length({len(timestamps)}) should be equal "
-                f"video length ({grid_thw[0]})."
+                f"The timestamps length({len(timestamps)}) should be equal video length ({grid_thw[0]})."
             )
 
             frames_idx_token = [
-                tokenizer.encode(f"<{curr_time:.1f} seconds>", add_special_tokens=False)
-                for curr_time in timestamps
+                tokenizer.encode(f"<{curr_time:.1f} seconds>", add_special_tokens=False) for curr_time in timestamps
             ]
             num_tokens_per_frame = int(grid_thw[1:].prod()) // merge_length
             placeholder = []
             for frame_idx in frames_idx_token:
                 placeholder.extend(frame_idx)
                 placeholder.extend(
-                    [vision_start_token_id]
-                    + [video_token_id] * num_tokens_per_frame
-                    + [vision_end_token_id]
+                    [vision_start_token_id] + [video_token_id] * num_tokens_per_frame + [vision_end_token_id]
                 )
             return PromptUpdateDetails.select_token_id(placeholder, video_token_id)
 
@@ -1056,10 +1005,7 @@ class Qwen3LLMModel(Qwen3Model):
         if not get_pp_group().is_first_rank:
             assert self.start_layer >= len(
                 aphrodite_config.model_config.hf_config.vision_config.deepstack_visual_indexes
-            ), (
-                "start_layer should be greater than or equal to "
-                "len(deepstack_visual_indexes)"
-            )
+            ), "start_layer should be greater than or equal to len(deepstack_visual_indexes)"
 
     def forward(
         self,
@@ -1080,27 +1026,18 @@ class Qwen3LLMModel(Qwen3Model):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer_idx, layer in islice(
-            enumerate(self.layers), self.start_layer, self.end_layer
-        ):
+        for layer_idx, layer in islice(enumerate(self.layers), self.start_layer, self.end_layer):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
 
-            if deepstack_input_embeds is not None and layer_idx in range(
-                0, len(deepstack_input_embeds)
-            ):
-                hidden_states = (
-                    hidden_states
-                    + deepstack_input_embeds[f"deepstack_input_embeds_{layer_idx}"]
-                )
+            if deepstack_input_embeds is not None and layer_idx in range(0, len(deepstack_input_embeds)):
+                hidden_states = hidden_states + deepstack_input_embeds[f"deepstack_input_embeds_{layer_idx}"]
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -1133,9 +1070,7 @@ class Qwen3LLMForCausalLM(Qwen3ForCausalLM):
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -1143,9 +1078,7 @@ class Qwen3LLMForCausalLM(Qwen3ForCausalLM):
     info=Qwen3VLProcessingInfo,
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
-class Qwen3VLForConditionalGeneration(
-    nn.Module, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE
-):
+class Qwen3VLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE):
     merge_by_field_config = True
 
     packed_modules_mapping = {
@@ -1189,16 +1122,10 @@ class Qwen3VLForConditionalGeneration(
         self.config = config
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        if not multimodal_config.get_limit_per_prompt(
-            "image"
-        ) and not multimodal_config.get_limit_per_prompt("video"):
+        if not multimodal_config.get_limit_per_prompt("image") and not multimodal_config.get_limit_per_prompt("video"):
             self.visual = None
         else:
-            attn_backend_override = (
-                multimodal_config.mm_encoder_attn_backend
-                if multimodal_config is not None
-                else None
-            )
+            attn_backend_override = multimodal_config.mm_encoder_attn_backend if multimodal_config is not None else None
             self.visual = Qwen3_VisionTransformer(
                 config.vision_config,
                 norm_eps=getattr(config, "rms_norm_eps", 1e-6),
@@ -1212,16 +1139,10 @@ class Qwen3VLForConditionalGeneration(
             aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "language_model")
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
         self.use_deepstack = hasattr(config.vision_config, "deepstack_visual_indexes")
-        self.deepstack_num_level = (
-            len(config.vision_config.deepstack_visual_indexes)
-            if self.use_deepstack
-            else 0
-        )
+        self.deepstack_num_level = len(config.vision_config.deepstack_visual_indexes) if self.use_deepstack else 0
         # register buffer for deepstack
         if self.use_deepstack and self.visual is not None:
             self.deepstack_input_embeds = [
@@ -1240,9 +1161,7 @@ class Qwen3VLForConditionalGeneration(
         # get deepstack_input_embeds from buffer, and clear the buffer
         return IntermediateTensors(
             {
-                f"deepstack_input_embeds_{idx}": self.deepstack_input_embeds[idx][
-                    :num_tokens
-                ]
+                f"deepstack_input_embeds_{idx}": self.deepstack_input_embeds[idx][:num_tokens]
                 for idx in range(self.deepstack_num_level)
             }
         )
@@ -1261,9 +1180,7 @@ class Qwen3VLForConditionalGeneration(
                 for _ in range(self.deepstack_num_level)
             ]
         for idx in range(self.deepstack_num_level):
-            self.deepstack_input_embeds[idx][:num_tokens].copy_(
-                deepstack_input_embeds[idx]
-            )
+            self.deepstack_input_embeds[idx][:num_tokens].copy_(deepstack_input_embeds[idx])
 
     def _clear_deepstack_input_embeds(self, num_tokens: int) -> None:
         # clear deepstack_input_embeds in buffer
@@ -1271,9 +1188,7 @@ class Qwen3VLForConditionalGeneration(
             for idx in range(self.deepstack_num_level):
                 self.deepstack_input_embeds[idx][:num_tokens].zero_()
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> Qwen2_5_VLImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> Qwen2_5_VLImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -1295,9 +1210,7 @@ class Qwen3VLForConditionalGeneration(
                 image_grid_thw=image_grid_thw,
             )
 
-    def _parse_and_validate_video_input(
-        self, **kwargs: object
-    ) -> Qwen2_5_VLVideoInputs | None:
+    def _parse_and_validate_video_input(self, **kwargs: object) -> Qwen2_5_VLVideoInputs | None:
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_embeds = kwargs.pop("video_embeds", None)
         video_grid_thw = kwargs.pop("video_grid_thw", None)
@@ -1321,9 +1234,7 @@ class Qwen3VLForConditionalGeneration(
                 video_grid_thw=video_grid_thw,
             )
 
-    def _process_image_input(
-        self, image_input: Qwen2_5_VLImageInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_image_input(self, image_input: Qwen2_5_VLImageInputs) -> tuple[torch.Tensor, ...]:
         grid_thw = image_input["image_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -1333,24 +1244,17 @@ class Qwen3VLForConditionalGeneration(
         else:
             pixel_values = image_input["pixel_values"].type(self.visual.dtype)
             if self.use_data_parallel:
-                return run_dp_sharded_mrope_vision_model(
-                    self.visual, pixel_values, grid_thw_list, rope_type="rope_3d"
-                )
+                return run_dp_sharded_mrope_vision_model(self.visual, pixel_values, grid_thw_list, rope_type="rope_3d")
             else:
                 image_embeds = self.visual(pixel_values, grid_thw=grid_thw_list)
 
         # Split concatenated embeddings for each image item.
         # Using prod on grid_thw_list instead of grid_thw.prod avoids CUDA sync
         merge_size = self.visual.spatial_merge_size
-        sizes = (
-            torch.tensor(grid_thw_list, dtype=torch.long).prod(-1)
-            // (merge_size * merge_size)
-        ).tolist()
+        sizes = (torch.tensor(grid_thw_list, dtype=torch.long).prod(-1) // (merge_size * merge_size)).tolist()
         return image_embeds.split(sizes)
 
-    def _process_video_input(
-        self, video_input: Qwen2_5_VLVideoInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_video_input(self, video_input: Qwen2_5_VLVideoInputs) -> tuple[torch.Tensor, ...]:
         grid_thw = video_input["video_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -1358,9 +1262,7 @@ class Qwen3VLForConditionalGeneration(
         if video_input["type"] == "video_embeds":
             video_embeds = video_input["video_embeds"].type(self.visual.dtype)
         else:
-            pixel_values_videos = video_input["pixel_values_videos"].type(
-                self.visual.dtype
-            )
+            pixel_values_videos = video_input["pixel_values_videos"].type(self.visual.dtype)
             if self.use_data_parallel:
                 return run_dp_sharded_mrope_vision_model(
                     self.visual, pixel_values_videos, grid_thw_list, rope_type="rope_3d"
@@ -1371,29 +1273,16 @@ class Qwen3VLForConditionalGeneration(
         # Split concatenated embeddings for each video item.
         # Using prod on grid_thw_list instead of grid_thw.prod avoids CUDA sync
         merge_size = self.visual.spatial_merge_size
-        sizes = (
-            torch.tensor(grid_thw_list, dtype=torch.long).prod(-1)
-            // (merge_size * merge_size)
-        ).tolist()
+        sizes = (torch.tensor(grid_thw_list, dtype=torch.long).prod(-1) // (merge_size * merge_size)).tolist()
         return video_embeds.split(sizes)
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
         mm_input_by_modality = {}
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values", "image_embeds")
-                and "image" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["image"] = self._parse_and_validate_image_input(
-                    **kwargs
-                )
-            if (
-                input_key in ("pixel_values_videos", "video_embeds")
-                and "video" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["video"] = self._parse_and_validate_video_input(
-                    **kwargs
-                )
+            if input_key in ("pixel_values", "image_embeds") and "image" not in mm_input_by_modality:
+                mm_input_by_modality["image"] = self._parse_and_validate_image_input(**kwargs)
+            if input_key in ("pixel_values_videos", "video_embeds") and "video" not in mm_input_by_modality:
+                mm_input_by_modality["video"] = self._parse_and_validate_video_input(**kwargs)
         return mm_input_by_modality
 
     def get_mrope_input_positions(
@@ -1418,9 +1307,7 @@ class Qwen3VLForConditionalGeneration(
         spatial_merge_size = hf_config.vision_config.spatial_merge_size
 
         input_tokens_tensor = torch.tensor(input_tokens)
-        vision_start_indices = torch.argwhere(
-            input_tokens_tensor == vision_start_token_id
-        ).squeeze(1)
+        vision_start_indices = torch.argwhere(input_tokens_tensor == vision_start_token_id).squeeze(1)
         vision_tokens = input_tokens_tensor[vision_start_indices + 1]
         image_nums = (vision_tokens == image_token_id).sum()
         video_nums = (vision_tokens == video_token_id).sum()
@@ -1466,39 +1353,18 @@ class Qwen3VLForConditionalGeneration(
             text_len = ed - st
 
             st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-            llm_pos_ids_list.append(
-                torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx
-            )
+            llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
-            t_index = (
-                torch.arange(llm_grid_t)
-                .view(-1, 1)
-                .expand(-1, llm_grid_h * llm_grid_w)
-                .flatten()
-            )
-            h_index = (
-                torch.arange(llm_grid_h)
-                .view(1, -1, 1)
-                .expand(llm_grid_t, -1, llm_grid_w)
-                .flatten()
-            )
-            w_index = (
-                torch.arange(llm_grid_w)
-                .view(1, 1, -1)
-                .expand(llm_grid_t, llm_grid_h, -1)
-                .flatten()
-            )
-            llm_pos_ids_list.append(
-                torch.stack([t_index, h_index, w_index]) + text_len + st_idx
-            )
+            t_index = torch.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+            h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+            w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+            llm_pos_ids_list.append(torch.stack([t_index, h_index, w_index]) + text_len + st_idx)
             st = ed + llm_grid_t * llm_grid_h * llm_grid_w
 
         if st < len(input_tokens):
             st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
             text_len = len(input_tokens) - st
-            llm_pos_ids_list.append(
-                torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx
-            )
+            llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
         llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
         mrope_position_delta = (llm_positions.max() + 1 - len(input_tokens)).item()
@@ -1508,9 +1374,7 @@ class Qwen3VLForConditionalGeneration(
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
 
-    def get_multimodal_embeddings(
-        self, **kwargs: object
-    ) -> MultiModalEmbeddings | None:
+    def get_multimodal_embeddings(self, **kwargs: object) -> MultiModalEmbeddings | None:
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not mm_input_by_modality:
             return None
@@ -1549,12 +1413,8 @@ class Qwen3VLForConditionalGeneration(
             dim=-1,
         )
 
-        multimodal_embeddings = torch.split(
-            multimodal_embeddings_main, visual_lens, dim=0
-        )
-        multimodal_embeddings_multiscale = torch.split(
-            multimodal_embeddings_multiscale, visual_lens, dim=0
-        )
+        multimodal_embeddings = torch.split(multimodal_embeddings_main, visual_lens, dim=0)
+        multimodal_embeddings_multiscale = torch.split(multimodal_embeddings_multiscale, visual_lens, dim=0)
 
         deepstack_input_embeds = inputs_embeds.new_zeros(
             inputs_embeds.size(0), self.deepstack_num_level * inputs_embeds.size(1)
@@ -1655,14 +1515,8 @@ class Qwen3VLForConditionalGeneration(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        if (
-            self.use_deepstack
-            and inputs_embeds is not None
-            and get_pp_group().is_first_rank
-        ):
-            deepstack_input_embeds = self._get_deepstack_input_embeds(
-                inputs_embeds.size(0)
-            )
+        if self.use_deepstack and inputs_embeds is not None and get_pp_group().is_first_rank:
+            deepstack_input_embeds = self._get_deepstack_input_embeds(inputs_embeds.size(0))
         else:
             deepstack_input_embeds = None
 

@@ -13,17 +13,12 @@ from aphrodite.triton_utils import tl, triton
 logger = init_logger(__name__)
 
 
-def _matmul_launch_metadata(
-    grid: Callable[..., Any], kernel: Any, args: dict[str, Any]
-) -> dict[str, Any]:
+def _matmul_launch_metadata(grid: Callable[..., Any], kernel: Any, args: dict[str, Any]) -> dict[str, Any]:
     ret = {}
     m, n, k = args["M"], args["N"], args["K"]
     ret["name"] = f"{kernel.name} [M={m}, N={n}, K={k}]"
     if "tiles_per_update" in args:
-        ret["name"] = (
-            f"{kernel.name} [M={m}, N={n}, K={k}, "
-            f"tiles_per_update={args['tiles_per_update']:02}]"
-        )
+        ret["name"] = f"{kernel.name} [M={m}, N={n}, K={k}, tiles_per_update={args['tiles_per_update']:02}]"
     if "c_ptr" in args:
         bytes_per_elem = args["c_ptr"].element_size()
     else:
@@ -80,9 +75,7 @@ def matmul_kernel_persistent(
     num_pid_in_group = GROUP_SIZE_M * num_pid_n
 
     for tile_id in tl.range(start_pid, num_tiles, NUM_SMS, flatten=True):
-        pid_m, pid_n = _compute_pid(
-            tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS
-        )
+        pid_m, pid_n = _compute_pid(tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
         start_m = pid_m * BLOCK_SIZE_M
         start_n = pid_n * BLOCK_SIZE_N
         offs_am = start_m + tl.arange(0, BLOCK_SIZE_M)
@@ -102,25 +95,15 @@ def matmul_kernel_persistent(
                 offs_k = ki * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K).to(tl.int64)
             else:
                 offs_k = ki * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
-            a_ptrs = a_ptr + (
-                offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak
-            )
-            b_ptrs = b_ptr + (
-                offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn
-            )
+            a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+            b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
 
-            a = tl.load(
-                a_ptrs, mask=offs_k_for_mask[None, :] < K - ki * BLOCK_SIZE_K, other=0.0
-            )
-            b = tl.load(
-                b_ptrs, mask=offs_k_for_mask[:, None] < K - ki * BLOCK_SIZE_K, other=0.0
-            )
+            a = tl.load(a_ptrs, mask=offs_k_for_mask[None, :] < K - ki * BLOCK_SIZE_K, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k_for_mask[:, None] < K - ki * BLOCK_SIZE_K, other=0.0)
             accumulator = tl.dot(a, b, accumulator)
 
         tile_id_c += NUM_SMS
-        pid_m, pid_n = _compute_pid(
-            tile_id_c, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS
-        )
+        pid_m, pid_n = _compute_pid(tile_id_c, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
         offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
         offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
         if C_LARGE:
@@ -136,15 +119,11 @@ def matmul_kernel_persistent(
         tl.store(c_ptrs, c, mask=c_mask)
 
 
-def matmul_persistent(
-    a: torch.Tensor, b: torch.Tensor, bias: torch.Tensor | None = None
-):
+def matmul_persistent(a: torch.Tensor, b: torch.Tensor, bias: torch.Tensor | None = None):
     # Check constraints.
     assert a.shape[1] == b.shape[0], "Incompatible dimensions"
     assert a.dtype == b.dtype, "Incompatible dtypes"
-    assert bias is None or bias.dim() == 1, (
-        "Currently assuming bias is 1D, let Horace know if you run into this"
-    )
+    assert bias is None or bias.dim() == 1, "Currently assuming bias is 1D, let Horace know if you run into this"
     NUM_SMS = torch.cuda.get_device_properties("cuda").multi_processor_count
     M, K = a.shape
     K, N = b.shape
@@ -157,8 +136,7 @@ def matmul_persistent(
         return (
             min(
                 NUM_SMS,
-                triton.cdiv(M, META["BLOCK_SIZE_M"])
-                * triton.cdiv(N, META["BLOCK_SIZE_N"]),
+                triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
             ),
         )
 
@@ -289,9 +267,7 @@ def log_softmax(input: torch.Tensor, dim: int = -1) -> torch.Tensor:
         Tensor with log_softmax applied along the specified dimension
     """
     if dim != -1 and dim != input.ndim - 1:
-        raise ValueError(
-            "This implementation only supports log_softmax along the last dimension"
-        )
+        raise ValueError("This implementation only supports log_softmax along the last dimension")
 
     # Flatten all dimensions except the last one
     original_shape = input.shape
@@ -356,9 +332,7 @@ def mean_kernel(
         mask = n_offsets < N
 
         # Calculate input indices
-        input_idx = (
-            m_idx * input_stride0 + n_offsets * input_stride1 + k_idx * input_stride2
-        )
+        input_idx = m_idx * input_stride0 + n_offsets * input_stride1 + k_idx * input_stride2
 
         # Load and accumulate
         vals = tl.load(input_ptr + input_idx, mask=mask, other=0.0)
@@ -390,9 +364,7 @@ def mean_dim(
         Tensor with mean values along specified dimension
     """
     # Validate inputs
-    assert -input.ndim <= dim < input.ndim, (
-        f"Invalid dimension {dim} for tensor with {input.ndim} dimensions"
-    )
+    assert -input.ndim <= dim < input.ndim, f"Invalid dimension {dim} for tensor with {input.ndim} dimensions"
 
     # Handle negative dim
     if dim < 0:
@@ -536,10 +508,7 @@ def bmm_batch_invariant(a, b, *, out=None):
             return out
         return result
     else:
-        raise ValueError(
-            f"bmm_batch_invariant expects 3D tensors, "
-            f"got shapes {a.shape} and {b.shape}"
-        )
+        raise ValueError(f"bmm_batch_invariant expects 3D tensors, got shapes {a.shape} and {b.shape}")
 
 
 def addmm_batch_invariant(bias, a, b):
@@ -636,9 +605,7 @@ def _rms_norm_kernel(
         tl.store(output_row_start_ptr + col_idx, output, mask=mask)
 
 
-def rms_norm(
-    input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6
-) -> torch.Tensor:
+def rms_norm(input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """
     Compute RMS normalization using Triton kernel.
 
@@ -655,8 +622,7 @@ def rms_norm(
     """
     assert weight.dim() == 1, "Weight must be 1-dimensional"
     assert input.shape[-1] == weight.shape[0], (
-        f"Input last dimension ({input.shape[-1]}) must match "
-        f"weight dimension ({weight.shape[0]})"
+        f"Input last dimension ({input.shape[-1]}) must match weight dimension ({weight.shape[0]})"
     )
 
     # Flatten all dimensions except the last one
@@ -683,9 +649,7 @@ def rms_norm(
     return output.reshape(original_shape)
 
 
-def rms_norm_batch_invariant(
-    input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6
-) -> torch.Tensor:
+def rms_norm_batch_invariant(input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """
     Batch-invariant wrapper for RMS normalization.
 
@@ -732,9 +696,7 @@ def enable_batch_invariant_mode():
     _batch_invariant_LIB.impl("aten::matmul", matmul_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::bmm", bmm_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::linear", linear_batch_invariant, "CUDA")
-    _batch_invariant_LIB.impl(
-        "aten::_log_softmax", _log_softmax_batch_invariant, "CUDA"
-    )
+    _batch_invariant_LIB.impl("aten::_log_softmax", _log_softmax_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::softmax", softmax_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::_softmax", softmax_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::mean.dim", mean_batch_invariant, "CUDA")

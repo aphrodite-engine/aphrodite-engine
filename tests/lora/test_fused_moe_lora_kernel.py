@@ -100,9 +100,7 @@ def sample_data(
     num_experts: int,
     top_k_num: int,
 ):
-    topk_ids, topk_weights = assign_experts_to_tokens(
-        num_tokens, num_experts, top_k_num
-    )
+    topk_ids, topk_weights = assign_experts_to_tokens(num_tokens, num_experts, top_k_num)
     token_lora_mapping = assign_loras_to_tokens(num_tokens, num_sequences, max_loras)
     return topk_ids, topk_weights, token_lora_mapping
 
@@ -195,9 +193,7 @@ def use_torch(
         expert_ids = topk_ids[i]
         lora_a = lora_a_stacked[0][lora_idx][expert_ids]
         lora_b = lora_b_stacked[0][lora_idx][expert_ids]
-        tensors = [
-            hidden_states[i] @ lora_a[x].T @ lora_b[x].T for x in range(top_k_num)
-        ]
+        tensors = [hidden_states[i] @ lora_a[x].T @ lora_b[x].T for x in range(top_k_num)]
         outputs.append(torch.stack(tensors, dim=0))
     return torch.stack(outputs, dim=0)
 

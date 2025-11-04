@@ -17,20 +17,18 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.modeling.layers.linear import ReplicatedLinear
-from aphrodite.modeling.models.intern_vit import (InternVisionModel,
-                                                  InternVisionPatchModel)
+from aphrodite.modeling.models.intern_vit import InternVisionModel, InternVisionPatchModel
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.image import convert_image_mode
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.awq import AWQConfig
@@ -38,8 +36,7 @@ from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
-from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
-                    maybe_prefix)
+from .utils import AutoWeightsLoader, init_aphrodite_registered_model, maybe_prefix
 
 IMG_START = "<img>"
 IMG_END = "</img>"
@@ -89,9 +86,7 @@ class SkyworkR1VImageEmbeddingInputs(TensorSchema):
     ]
 
 
-SkyworkR1VImageInputs: TypeAlias = (
-    SkyworkR1VImagePixelInputs | SkyworkR1VImageEmbeddingInputs
-)
+SkyworkR1VImageInputs: TypeAlias = SkyworkR1VImagePixelInputs | SkyworkR1VImageEmbeddingInputs
 
 
 # adapted from https://huggingface.co/Skywork/Skywork-R1V-38B/
@@ -100,9 +95,7 @@ def build_transform(input_size: int):
     return T.Compose(
         [
             T.Lambda(lambda img: convert_image_mode(img, "RGB")),
-            T.Resize(
-                (input_size, input_size), interpolation=T.InterpolationMode.BICUBIC
-            ),
+            T.Resize((input_size, input_size), interpolation=T.InterpolationMode.BICUBIC),
             T.ToTensor(),
             T.Normalize(mean=MEAN, std=STD),
         ]
@@ -296,9 +289,7 @@ class SkyworkR1VProcessor:
             dynamic_image_size = config.dynamic_image_size
         assert isinstance(dynamic_image_size, bool)
 
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.image_size = image_size
         self.min_dynamic_patch = min_dynamic_patch
         self.max_dynamic_patch = max_dynamic_patch
@@ -327,17 +318,9 @@ class SkyworkR1VProcessor:
         dynamic_image_size: bool | None = None,
         use_thumbnail: bool | None = None,
     ) -> tuple[int, int]:
-        min_dynamic_patch = (
-            self.min_dynamic_patch if min_dynamic_patch is None else min_dynamic_patch
-        )
-        max_dynamic_patch = (
-            self.max_dynamic_patch if max_dynamic_patch is None else max_dynamic_patch
-        )
-        dynamic_image_size = (
-            self.dynamic_image_size
-            if dynamic_image_size is None
-            else dynamic_image_size
-        )
+        min_dynamic_patch = self.min_dynamic_patch if min_dynamic_patch is None else min_dynamic_patch
+        max_dynamic_patch = self.max_dynamic_patch if max_dynamic_patch is None else max_dynamic_patch
+        dynamic_image_size = self.dynamic_image_size if dynamic_image_size is None else dynamic_image_size
         use_thumbnail = self.use_thumbnail if use_thumbnail is None else use_thumbnail
 
         return resolve_skyworkr1v_min_max_num(
@@ -438,9 +421,7 @@ class SkyworkR1VProcessor:
             )
             image_inputs = {
                 "pixel_values_flat": torch.cat(pixel_values_lst),
-                "image_num_patches": torch.tensor(
-                    [len(item) for item in pixel_values_lst]
-                ),
+                "image_num_patches": torch.tensor([len(item) for item in pixel_values_lst]),
             }
 
             for pixel_values in pixel_values_lst:
@@ -571,9 +552,7 @@ class SkyworkR1VMultiModalProcessor(BaseMultiModalProcessor[SkyworkR1VProcessing
         num_images = len(image_num_patches)
 
         return dict(
-            pixel_values_flat=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_num_patches
-            ),
+            pixel_values_flat=MultiModalFieldConfig.flat_from_sizes("image", image_num_patches),
             image_num_patches=MultiModalFieldConfig.batched("image"),
             image_embeds=MultiModalFieldConfig.batched("image"),
             image_token_id=MultiModalFieldConfig.shared("image", num_images),
@@ -600,9 +579,7 @@ class SkyworkR1VMultiModalProcessor(BaseMultiModalProcessor[SkyworkR1VProcessing
             image_num_patches = []
 
         def get_replacement_skyworkr1v(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 feature_size = images.get_feature_size(item_idx)
@@ -658,9 +635,7 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         image_size = config.force_image_size or config.vision_config.image_size
         patch_size = config.vision_config.patch_size
         self.patch_size = patch_size
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.downsample_ratio = config.downsample_ratio
         self.ps_version = config.ps_version
 
@@ -679,27 +654,19 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
             prefix=maybe_prefix(prefix, "language_model"),
         )
 
-        self.mlp1 = self._init_mlp1(
-            config, quant_config, prefix=maybe_prefix(prefix, "mlp1")
-        )
+        self.mlp1 = self._init_mlp1(config, quant_config, prefix=maybe_prefix(prefix, "mlp1"))
 
         self.img_context_token_id = None
         self.visual_token_mask = None
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _patch_quant_config(
-        self, config: PretrainedConfig, quant_config: QuantizationConfig
-    ):
+    def _patch_quant_config(self, config: PretrainedConfig, quant_config: QuantizationConfig):
         # the awq models from OpenGVLab missing `modules_to_not_convert`
         # patch the quant_config to add `modules_to_not_convert` back
         if isinstance(quant_config, AWQConfig):
             text_config = config.text_config
             llm_quant_config = getattr(text_config, "quantization_config", None)
-            if (not quant_config.modules_to_not_convert) and (
-                llm_quant_config is not None
-            ):
+            if (not quant_config.modules_to_not_convert) and (llm_quant_config is not None):
                 quant_config.modules_to_not_convert.append("vision_model")
 
     def _init_vision_model(
@@ -713,9 +680,7 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         if not is_mono:
             vision_feature_layer = config.select_layer
             if vision_feature_layer < 0:
-                num_hidden_layers = (
-                    config.vision_config.num_hidden_layers + vision_feature_layer + 1
-                )
+                num_hidden_layers = config.vision_config.num_hidden_layers + vision_feature_layer + 1
             else:
                 num_hidden_layers = vision_feature_layer + 1
 
@@ -785,9 +750,7 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         vit_embeds = self.mlp1(vit_embeds)
         return vit_embeds
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> SkyworkR1VImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> SkyworkR1VImageInputs | None:
         pixel_values_flat = kwargs.pop("pixel_values_flat", None)
         image_num_patches = kwargs.pop("image_num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -836,24 +799,18 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
 
         # Only one image in the current batch
         if len(num_patches) == 1:
-            return image_embeds.view(-1, self.config.text_config.hidden_size).unsqueeze(
-                0
-            )
+            return image_embeds.view(-1, self.config.text_config.hidden_size).unsqueeze(0)
 
         # NOTE: Image embeddings are split into separate tensors for each image
         # by the size of each embedding.
         feature_size = image_embeds.shape[1]
         image_embeds = image_embeds.view(-1, self.config.text_config.hidden_size)
-        image_feature_sizes = [
-            num_patches * feature_size for num_patches in num_patches
-        ]
+        image_feature_sizes = [num_patches * feature_size for num_patches in num_patches]
         return image_embeds.split(image_feature_sizes)
 
     def _set_visual_token_mask(self, input_ids: torch.Tensor) -> None:
         if self.is_mono:
-            self.visual_token_mask = (input_ids == self.img_context_token_id).reshape(
-                -1, 1
-            )
+            self.visual_token_mask = (input_ids == self.img_context_token_id).reshape(-1, 1)
         else:
             self.visual_token_mask = None
 

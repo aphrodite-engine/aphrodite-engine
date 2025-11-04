@@ -13,15 +13,19 @@ import torch
 import torch.distributed as dist
 import zmq
 from torch.distributed import ProcessGroup
-from zmq import IPV6  # type: ignore
-from zmq import SUB, SUBSCRIBE, XPUB, XPUB_VERBOSE, Context  # type: ignore
+from zmq import (  # type: ignore
+    IPV6,  # type: ignore
+    SUB,
+    SUBSCRIBE,
+    XPUB,
+    XPUB_VERBOSE,
+    Context,
+)
 
 import aphrodite.envs as envs
 from aphrodite.distributed.utils import StatelessProcessGroup, sched_yield
 from aphrodite.logger import init_logger
-from aphrodite.utils.network_utils import (get_ip, get_open_port,
-                                           get_open_zmq_ipc_path,
-                                           is_valid_ipv6_address)
+from aphrodite.utils.network_utils import get_ip, get_open_port, get_open_zmq_ipc_path, is_valid_ipv6_address
 
 if TYPE_CHECKING:
     from _typeshed import SizedBuffer
@@ -135,18 +139,14 @@ class ShmRingBuffer:
         self.metadata_size = 1 + n_reader
         self.max_chunk_bytes = max_chunk_bytes
         self.max_chunks = max_chunks
-        self.total_bytes_of_buffer = (
-            self.max_chunk_bytes + self.metadata_size
-        ) * self.max_chunks
+        self.total_bytes_of_buffer = (self.max_chunk_bytes + self.metadata_size) * self.max_chunks
         self.data_offset = 0
         self.metadata_offset = self.max_chunk_bytes * self.max_chunks
 
         if name is None:
             # we are creating a buffer
             self.is_creator = True
-            self.shared_memory = shared_memory.SharedMemory(
-                create=True, size=self.total_bytes_of_buffer
-            )
+            self.shared_memory = shared_memory.SharedMemory(create=True, size=self.total_bytes_of_buffer)
             # initialize the metadata section to 0
             with self.shared_memory.buf[self.metadata_offset :] as metadata_buffer:
                 torch.frombuffer(metadata_buffer, dtype=torch.uint8).fill_(0)
@@ -330,9 +330,7 @@ class MessageQueue:
 
             self.remote_socket = None
 
-            self._read_spin_timer = (
-                SpinSleepTimer() if envs.APHRODITE_SLEEP_WHEN_IDLE else SpinTimer()
-            )
+            self._read_spin_timer = SpinSleepTimer() if envs.APHRODITE_SLEEP_WHEN_IDLE else SpinTimer()
         else:
             self.buffer = None  # type: ignore
             self.current_idx = -1
@@ -478,9 +476,7 @@ class MessageQueue:
                         raise TimeoutError
 
                     # if we wait for a long time, log a message
-                    if not indefinite and (
-                        elapsed > APHRODITE_RINGBUFFER_WARNING_INTERVAL * n_warning
-                    ):
+                    if not indefinite and (elapsed > APHRODITE_RINGBUFFER_WARNING_INTERVAL * n_warning):
                         logger.info(
                             "No available shared memory broadcast block found"
                             " in %s seconds. This typically happens when some"
@@ -520,9 +516,7 @@ class MessageQueue:
             total_bytes += len(raw_buf) + 4
             return False
 
-        all_buffers[0] = pickle.dumps(
-            obj, protocol=pickle.HIGHEST_PROTOCOL, buffer_callback=oob_callback
-        )
+        all_buffers[0] = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL, buffer_callback=oob_callback)
         if self.n_local_reader > 0:
             if total_bytes + len(all_buffers[0]) >= self.buffer.max_chunk_bytes:
                 with self.acquire_write(timeout) as buf:
@@ -623,17 +617,13 @@ class MessageQueue:
             )
             handle = buffer_io.export_handle()
             if isinstance(pg, ProcessGroup):
-                dist.broadcast_object_list(
-                    [handle], src=global_ranks[writer_rank], group=pg
-                )
+                dist.broadcast_object_list([handle], src=global_ranks[writer_rank], group=pg)
             else:
                 pg.broadcast_obj(handle, writer_rank)
         else:
             if isinstance(pg, ProcessGroup):
                 recv = [None]
-                dist.broadcast_object_list(
-                    recv, src=global_ranks[writer_rank], group=pg
-                )
+                dist.broadcast_object_list(recv, src=global_ranks[writer_rank], group=pg)
                 handle = recv[0]  # type: ignore
             else:
                 handle = pg.broadcast_obj(None, writer_rank)

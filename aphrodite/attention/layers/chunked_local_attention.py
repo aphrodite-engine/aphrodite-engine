@@ -4,17 +4,18 @@ from typing import ClassVar
 import torch
 
 from aphrodite import envs
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionMetadata)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionMetadata
 from aphrodite.attention.selector import get_attn_backend
 from aphrodite.config import CacheConfig
 from aphrodite.config.aphrodite import AphroditeConfig
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.v1.attention.backends.utils import (
-    AttentionCGSupport, CommonAttentionMetadata,
-    make_local_attention_virtual_batches, subclass_attention_backend)
-from aphrodite.v1.kv_cache_interface import (ChunkedLocalAttentionSpec,
-                                             KVCacheSpec)
+    AttentionCGSupport,
+    CommonAttentionMetadata,
+    make_local_attention_virtual_batches,
+    subclass_attention_backend,
+)
+from aphrodite.v1.kv_cache_interface import ChunkedLocalAttentionSpec, KVCacheSpec
 
 from ..layer import Attention
 
@@ -30,8 +31,7 @@ def create_chunked_local_attention_backend(
     underlying_builder = underlying_attn_backend.get_builder_cls()
 
     class ChunkedLocalAttentionBuilder(underlying_builder):  # type: ignore
-        cudagraph_support: ClassVar[AttentionCGSupport] = \
-            AttentionCGSupport.NEVER
+        cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.NEVER
 
         def build(
             self,
@@ -81,9 +81,7 @@ class ChunkedLocalAttention(Attention):
             block_size = 16
 
         if envs.APHRODITE_USE_V1:
-            underlying_attn_backend = get_attn_backend(
-                head_size, dtype, kv_cache_dtype, block_size
-            )
+            underlying_attn_backend = get_attn_backend(head_size, dtype, kv_cache_dtype, block_size)
 
             attn_backend = create_chunked_local_attention_backend(
                 underlying_attn_backend, attention_chunk_size, block_size

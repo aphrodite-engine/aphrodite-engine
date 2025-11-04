@@ -58,9 +58,7 @@ class Sampler(nn.Module):
         assert sampling_metadata.temperature is not None
 
         # Apply temperature.
-        logits = self.apply_temperature(
-            logits, sampling_metadata.temperature, sampling_metadata.all_random
-        )
+        logits = self.apply_temperature(logits, sampling_metadata.temperature, sampling_metadata.all_random)
 
         # Apply min_p.
         if sampling_metadata.min_p is not None:

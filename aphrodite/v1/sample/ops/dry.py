@@ -24,14 +24,10 @@ def apply_all_dry(
 
     applies_to = multipliers.nonzero(as_tuple=True)[0]
     for irow in applies_to.tolist():
-        prompt_len = len(input_token_ids[irow]) - (input_token_ids[irow]
-                                                   == VOCAB_SIZE).sum().item()
-        output_len = len(output_token_ids[irow]) - (
-            output_token_ids[irow] == VOCAB_SIZE).sum().item()
+        prompt_len = len(input_token_ids[irow]) - (input_token_ids[irow] == VOCAB_SIZE).sum().item()
+        output_len = len(output_token_ids[irow]) - (output_token_ids[irow] == VOCAB_SIZE).sum().item()
 
-        token_seq = torch.cat((input_token_ids[irow][:prompt_len],
-                               output_token_ids[irow][:output_len]),
-                              dim=0)
+        token_seq = torch.cat((input_token_ids[irow][:prompt_len], output_token_ids[irow][:output_len]), dim=0)
 
         range_limit = ranges[irow].item()
         if range_limit > 0:
@@ -44,17 +40,13 @@ def apply_all_dry(
         if last_token in sequence_breakers_ids[irow]:
             continue
 
-        break_mask = torch.zeros(len(token_seq),
-                                 dtype=torch.bool,
-                                 device=logits.device)
+        break_mask = torch.zeros(len(token_seq), dtype=torch.bool, device=logits.device)
         for break_tok in sequence_breakers_ids[irow]:
             break_mask.logical_or_(token_seq == break_tok)
 
         curr_max_ngram = 0
         max_ngram_val = max_ngram[irow].item()
-        for curr_max_ngram in range(
-                min(len(break_mask),
-                    int(max_ngram_val) + 1)):  # noqa: E501
+        for curr_max_ngram in range(min(len(break_mask), int(max_ngram_val) + 1)):  # noqa: E501
             if break_mask[-curr_max_ngram - 1]:
                 break
 
@@ -62,12 +54,9 @@ def apply_all_dry(
         if curr_max_ngram <= min_ngram:
             continue
 
-        ngram_lens = torch.zeros(VOCAB_SIZE,
-                                 dtype=torch.int32,
-                                 device=logits.device)
+        ngram_lens = torch.zeros(VOCAB_SIZE, dtype=torch.int32, device=logits.device)
 
-        endpoint_indexes_all = torch.nonzero(token_seq == last_token,
-                                             as_tuple=True)[0].tolist()
+        endpoint_indexes_all = torch.nonzero(token_seq == last_token, as_tuple=True)[0].tolist()
         if len(endpoint_indexes_all) < 2:
             continue
         endpoint_indexes = endpoint_indexes_all[:-1]
@@ -93,15 +82,14 @@ def apply_all_dry(
                 next_tok = token_seq[idx + 1]
                 new_len = match_len + 1
 
-                ngram_lens[next_tok] = max(ngram_lens[next_tok].item(),
-                                           new_len)
+                ngram_lens[next_tok] = max(ngram_lens[next_tok].item(), new_len)
 
                 if new_len >= early_exit_match_len_val:
                     break
 
         penalty_mask = ngram_lens > 0
         if penalty_mask.any():
-            scales = bases[irow]**(ngram_lens[penalty_mask] - min_ngram)
+            scales = bases[irow] ** (ngram_lens[penalty_mask] - min_ngram)
             logits[irow][penalty_mask] -= multipliers[irow] * scales
 
     return logits

@@ -2,22 +2,17 @@ import pytest
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.config import (AphroditeConfig, ParallelConfig,
-                              set_current_aphrodite_config)
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.config import nvfp4_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp4
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 from aphrodite.platforms import current_platform
 from tests.kernels.moe.utils import make_test_weights
-from tests.kernels.quantization.nvfp4_utils import (FLOAT4_E2M1_MAX,
-                                                    FLOAT8_E4M3_MAX,
-                                                    dequantize_nvfp4_to_dtype)
+from tests.kernels.quantization.nvfp4_utils import FLOAT4_E2M1_MAX, FLOAT8_E4M3_MAX, dequantize_nvfp4_to_dtype
 from tests.kernels.utils import torch_moe
 
 if not current_platform.has_device_capability(100):
-    pytest.skip(
-        "Nvfp4 Requires compute capability of 10 or above.", allow_module_level=True
-    )
+    pytest.skip("Nvfp4 Requires compute capability of 10 or above.", allow_module_level=True)
 
 MNK_FACTORS = [
     (2, 1024, 1024),
@@ -36,27 +31,21 @@ MNK_FACTORS = [
 @pytest.mark.parametrize("topk", [1, 6, 8])
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
 @torch.inference_mode()
-def test_cutlass_fp4_moe_no_graph(
-    m: int, n: int, k: int, e: int, topk: int, dtype: torch.dtype
-):
+def test_cutlass_fp4_moe_no_graph(m: int, n: int, k: int, e: int, topk: int, dtype: torch.dtype):
     current_platform.seed_everything(7)
-    with set_current_aphrodite_config(
-        AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))
-    ):
+    with set_current_aphrodite_config(AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))):
         quant_blocksize = 16
 
         a = torch.randn((m, k), device="cuda", dtype=dtype) / 10
 
-        (_, w1_q, w1_blockscale, w1_gs), (_, w2_q, w2_blockscale, w2_gs) = (
-            make_test_weights(
-                e,
-                n,
-                k,
-                in_dtype=dtype,
-                quant_dtype="nvfp4",
-                block_shape=None,  # use quant_blocksize?
-                per_out_ch_quant=False,
-            )
+        (_, w1_q, w1_blockscale, w1_gs), (_, w2_q, w2_blockscale, w2_gs) = make_test_weights(
+            e,
+            n,
+            k,
+            in_dtype=dtype,
+            quant_dtype="nvfp4",
+            block_shape=None,  # use quant_blocksize?
+            per_out_ch_quant=False,
         )
 
         score = torch.randn((m, e), device="cuda", dtype=dtype)
@@ -93,9 +82,7 @@ def test_cutlass_fp4_moe_no_graph(
         )
 
         # Reference check:
-        a_global_scale = (
-            (FLOAT8_E4M3_MAX * FLOAT4_E2M1_MAX) / torch.amax(a.flatten(), dim=-1)
-        ).to(torch.float32)
+        a_global_scale = ((FLOAT8_E4M3_MAX * FLOAT4_E2M1_MAX) / torch.amax(a.flatten(), dim=-1)).to(torch.float32)
         a_fp4, a_scale_interleaved = ops.scaled_fp4_quant(a, a_global_scale)
 
         a_in_dtype = dequantize_nvfp4_to_dtype(

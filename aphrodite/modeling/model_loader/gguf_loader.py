@@ -10,11 +10,12 @@ from transformers import AutoModelForCausalLM
 from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
-from aphrodite.modeling.model_loader.utils import (
-    initialize_model, process_weights_after_loading)
+from aphrodite.modeling.model_loader.utils import initialize_model, process_weights_after_loading
 from aphrodite.modeling.model_loader.weight_utils import (
-    get_gguf_extra_tensor_names, get_gguf_weight_type_map,
-    gguf_quant_weights_iterator)
+    get_gguf_extra_tensor_names,
+    get_gguf_weight_type_map,
+    gguf_quant_weights_iterator,
+)
 from aphrodite.utils.torch_utils import set_default_torch_dtype
 
 
@@ -28,18 +29,13 @@ class GGUFModelLoader(BaseModelLoader):
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
         if load_config.model_loader_extra_config:
-            raise ValueError(
-                f"Model loader extra config is not supported for "
-                f"load format {load_config.load_format}"
-            )
+            raise ValueError(f"Model loader extra config is not supported for load format {load_config.load_format}")
 
     def _prepare_weights(self, model_name_or_path: str):
         if os.path.isfile(model_name_or_path):
             return model_name_or_path
         # for raw HTTPS link
-        if model_name_or_path.startswith(
-            ("http://", "https://")
-        ) and model_name_or_path.endswith(".gguf"):
+        if model_name_or_path.startswith(("http://", "https://")) and model_name_or_path.endswith(".gguf"):
             return hf_hub_download(url=model_name_or_path)
         # repo id/filename.gguf
         if "/" in model_name_or_path and model_name_or_path.endswith(".gguf"):
@@ -112,9 +108,7 @@ class GGUFModelLoader(BaseModelLoader):
         num_layers = config.num_hidden_layers
         name_map = gguf.get_tensor_name_map(arch, num_layers)
         with torch.device("meta"):
-            dummy_model = AutoModelForCausalLM.from_config(
-                config, trust_remote_code=model_config.trust_remote_code
-            )
+            dummy_model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_config.trust_remote_code)
         state_dict = dummy_model.state_dict()
 
         for hf_name in state_dict:
@@ -134,20 +128,14 @@ class GGUFModelLoader(BaseModelLoader):
     def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
         local_model_path = self._prepare_weights(model_config.model)
         gguf_weights_map = self._get_gguf_weights_map(model_config)
-        model.load_weights(
-            self._get_weights_iterator(local_model_path, gguf_weights_map)
-        )
+        model.load_weights(self._get_weights_iterator(local_model_path, gguf_weights_map))
 
-    def load_model(
-        self, aphrodite_config: AphroditeConfig, model_config: ModelConfig
-    ) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig, model_config: ModelConfig) -> nn.Module:
         device_config = aphrodite_config.device_config
         local_model_path = self._prepare_weights(model_config.model)
         gguf_weights_map = self._get_gguf_weights_map(model_config)
         # we can only know if tie word embeddings after mapping weights
-        if "lm_head.weight" in get_gguf_extra_tensor_names(
-            local_model_path, gguf_weights_map
-        ):
+        if "lm_head.weight" in get_gguf_extra_tensor_names(local_model_path, gguf_weights_map):
             model_config.hf_config.update({"tie_word_embeddings": True})
 
         weight_type_map = get_gguf_weight_type_map(model_config.model, gguf_weights_map)

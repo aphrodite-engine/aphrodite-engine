@@ -22,19 +22,19 @@ from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.tasks import SupportedTask
 from aphrodite.utils.async_utils import in_loop
-from aphrodite.utils.network_utils import (close_sockets, get_open_port,
-                                           get_open_zmq_inproc_path,
-                                           make_zmq_socket)
-from aphrodite.v1.engine import (EngineCoreOutputs, EngineCoreRequest,
-                                 EngineCoreRequestType,
-                                 ReconfigureDistributedRequest,
-                                 ReconfigureRankType, UtilityOutput)
+from aphrodite.utils.network_utils import close_sockets, get_open_port, get_open_zmq_inproc_path, make_zmq_socket
+from aphrodite.v1.engine import (
+    EngineCoreOutputs,
+    EngineCoreRequest,
+    EngineCoreRequestType,
+    ReconfigureDistributedRequest,
+    ReconfigureRankType,
+    UtilityOutput,
+)
 from aphrodite.v1.engine.coordinator import DPCoordinator
 from aphrodite.v1.engine.core import EngineCore, EngineCoreProc
 from aphrodite.v1.engine.exceptions import EngineDeadError
-from aphrodite.v1.engine.utils import (CoreEngineActorManager,
-                                       CoreEngineProcManager,
-                                       launch_core_engines)
+from aphrodite.v1.engine.utils import CoreEngineActorManager, CoreEngineProcManager, launch_core_engines
 from aphrodite.v1.executor import Executor
 from aphrodite.v1.serial_utils import MsgpackDecoder, MsgpackEncoder, bytestr
 
@@ -69,14 +69,11 @@ class EngineCoreClient(ABC):
         # TODO: support this for debugging purposes.
         if asyncio_mode and not multiprocess_mode:
             raise NotImplementedError(
-                "Running EngineCore in asyncio without multiprocessing "
-                "is not currently supported."
+                "Running EngineCore in asyncio without multiprocessing is not currently supported."
             )
 
         if multiprocess_mode and asyncio_mode:
-            return EngineCoreClient.make_async_mp_client(
-                aphrodite_config, executor_class, log_stats
-            )
+            return EngineCoreClient.make_async_mp_client(aphrodite_config, executor_class, log_stats)
 
         if multiprocess_mode and not asyncio_mode:
             return SyncMPClient(aphrodite_config, executor_class, log_stats)
@@ -160,9 +157,7 @@ class EngineCoreClient(ABC):
     def pin_lora(self, lora_id: int) -> bool:
         raise NotImplementedError
 
-    def save_sharded_state(
-        self, path: str, pattern: str | None = None, max_size: int | None = None
-    ) -> None:
+    def save_sharded_state(self, path: str, pattern: str | None = None, max_size: int | None = None) -> None:
         raise NotImplementedError
 
     def collective_rpc(
@@ -303,9 +298,7 @@ class InprocClient(EngineCoreClient):
     def pin_lora(self, lora_id: int) -> bool:
         return self.engine_core.pin_lora(lora_id)
 
-    def save_sharded_state(
-        self, path: str, pattern: str | None = None, max_size: int | None = None
-    ) -> None:
+    def save_sharded_state(self, path: str, pattern: str | None = None, max_size: int | None = None) -> None:
         self.engine_core.save_sharded_state(path, pattern, max_size)
 
     def collective_rpc(
@@ -467,17 +460,13 @@ class MPClient(EngineCoreClient):
                 (output_address,) = addresses.outputs
                 self.stats_update_address = addresses.frontend_stats_publish_address
                 if coordinator is not None:
-                    assert self.stats_update_address == (
-                        coordinator.get_stats_publish_address()
-                    )
+                    assert self.stats_update_address == (coordinator.get_stats_publish_address())
 
             # Create input and output sockets.
             self.input_socket = self.resources.input_socket = make_zmq_socket(
                 self.ctx, input_address, zmq.ROUTER, bind=True
             )
-            self.resources.output_socket = make_zmq_socket(
-                self.ctx, output_address, zmq.PULL
-            )
+            self.resources.output_socket = make_zmq_socket(self.ctx, output_address, zmq.PULL)
 
             parallel_config = aphrodite_config.parallel_config
             dp_size = parallel_config.data_parallel_size
@@ -486,33 +475,21 @@ class MPClient(EngineCoreClient):
             offline_mode = parallel_config.data_parallel_rank_local is not None
             # Client manages local+remote EngineCores in pure internal LB case.
             # Client manages local EngineCores in hybrid and external LB case.
-            local_engines_only = (
-                parallel_config.data_parallel_hybrid_lb
-                or parallel_config.data_parallel_external_lb
-            )
+            local_engines_only = parallel_config.data_parallel_hybrid_lb or parallel_config.data_parallel_external_lb
 
             num_ranks = dp_local_size if local_engines_only else dp_size
-            self.engine_ranks_managed = (
-                [dp_rank] if offline_mode else list(range(dp_rank, dp_rank + num_ranks))
-            )
-            assert parallel_config.data_parallel_size_local <= len(
-                self.engine_ranks_managed
-            )
+            self.engine_ranks_managed = [dp_rank] if offline_mode else list(range(dp_rank, dp_rank + num_ranks))
+            assert parallel_config.data_parallel_size_local <= len(self.engine_ranks_managed)
 
             # ZMQ identity of each engine that this client will talk to.
-            self.core_engines: list[EngineIdentity] = [
-                rank.to_bytes(2, "little") for rank in self.engine_ranks_managed
-            ]
+            self.core_engines: list[EngineIdentity] = [rank.to_bytes(2, "little") for rank in self.engine_ranks_managed]
 
             # Wait for ready messages from each engine on the input socket.
             identities = set(self.core_engines)
             sync_input_socket = zmq.Socket.shadow(self.input_socket)
             while identities:
                 if not sync_input_socket.poll(timeout=600_000):
-                    raise TimeoutError(
-                        "Timed out waiting for engines to send"
-                        "initial message on input socket."
-                    )
+                    raise TimeoutError("Timed out waiting for engines to sendinitial message on input socket.")
                 identity, _ = sync_input_socket.recv_multipart()
                 identities.remove(identity)
 
@@ -538,9 +515,7 @@ class MPClient(EngineCoreClient):
 
     def _format_exception(self, e: Exception) -> Exception:
         """If errored, use EngineDeadError so root cause is clear."""
-        return (
-            EngineDeadError(suppress_context=True) if self.resources.engine_dead else e
-        )
+        return EngineDeadError(suppress_context=True) if self.resources.engine_dead else e
 
     def ensure_alive(self):
         if self.resources.engine_dead:
@@ -560,11 +535,7 @@ class MPClient(EngineCoreClient):
     def start_engine_core_monitor(self):
         """Start a monitor thread for engine core processes."""
         engine_manager = self.resources.engine_manager
-        if (
-            engine_manager is None
-            or not hasattr(engine_manager, "processes")
-            or not engine_manager.processes
-        ):
+        if engine_manager is None or not hasattr(engine_manager, "processes") or not engine_manager.processes:
             # No engine processes to monitor
             return
 
@@ -581,9 +552,7 @@ class MPClient(EngineCoreClient):
             if not _self or _self.resources.engine_dead:
                 return
             _self.resources.engine_dead = True
-            proc_name = next(
-                proc.name for proc in engine_processes if proc.sentinel == died[0]
-            )
+            proc_name = next(proc.name for proc in engine_processes if proc.sentinel == died[0])
             logger.error(
                 "Engine core proc %s died unexpectedly, shutting down client.",
                 proc_name,
@@ -593,14 +562,10 @@ class MPClient(EngineCoreClient):
             # like MultiprocExecutor, but we set engine_dead flag which will
             # cause subsequent operations to raise EngineDeadError
 
-        Thread(
-            target=monitor_engine_cores, daemon=True, name="MPClientEngineMonitor"
-        ).start()
+        Thread(target=monitor_engine_cores, daemon=True, name="MPClientEngineMonitor").start()
 
 
-def _process_utility_output(
-    output: UtilityOutput, utility_results: dict[int, AnyFuture]
-):
+def _process_utility_output(output: UtilityOutput, utility_results: dict[int, AnyFuture]):
     """Set the result from a utility method in the waiting future."""
     future = utility_results.pop(output.call_id)
     failure_message = output.failure_message
@@ -623,9 +588,7 @@ def _process_utility_output(
 class SyncMPClient(MPClient):
     """Synchronous client for multi-proc EngineCore."""
 
-    def __init__(
-        self, aphrodite_config: AphroditeConfig, executor_class: type[Executor], log_stats: bool
-    ):
+    def __init__(self, aphrodite_config: AphroditeConfig, executor_class: type[Executor], log_stats: bool):
         super().__init__(
             asyncio_mode=False,
             aphrodite_config=aphrodite_config,
@@ -776,9 +739,7 @@ class SyncMPClient(MPClient):
     ) -> list[_R]:
         return self.call_utility("collective_rpc", method, timeout, args, kwargs)
 
-    def save_sharded_state(
-        self, path: str, pattern: str | None = None, max_size: int | None = None
-    ) -> None:
+    def save_sharded_state(self, path: str, pattern: str | None = None, max_size: int | None = None) -> None:
         self.call_utility("save_sharded_state", path, pattern, max_size)
 
 
@@ -825,9 +786,9 @@ class AsyncMPClient(MPClient):
         decoder = self.decoder
         utility_results = self.utility_results
         outputs_queue = self.outputs_queue
-        output_handler: (
-            Callable[[AsyncMPClient, EngineCoreOutputs], Awaitable[None]] | None
-        ) = getattr(self.__class__, "process_engine_outputs", None)
+        output_handler: Callable[[AsyncMPClient, EngineCoreOutputs], Awaitable[None]] | None = getattr(
+            self.__class__, "process_engine_outputs", None
+        )
         _self_ref = weakref.ref(self) if output_handler else None
         output_socket = resources.output_socket
         assert output_socket is not None
@@ -857,9 +818,7 @@ class AsyncMPClient(MPClient):
             except asyncio.CancelledError:
                 outputs_queue.put_nowait(EngineDeadError())
 
-        resources.output_queue_task = asyncio.create_task(
-            process_outputs_socket(), name="EngineCoreOutputQueueTask"
-        )
+        resources.output_queue_task = asyncio.create_task(process_outputs_socket(), name="EngineCoreOutputQueueTask")
 
     async def get_output_async(self) -> EngineCoreOutputs:
         self._ensure_output_queue_task()
@@ -884,9 +843,7 @@ class AsyncMPClient(MPClient):
         message = (request_type.value, *self.encoder.encode(request))
         return self._send_input_message(message, engine, request)
 
-    def _send_input_message(
-        self, message: tuple[bytestr, ...], engine: EngineIdentity, objects: Any
-    ) -> Awaitable[Any]:
+    def _send_input_message(self, message: tuple[bytestr, ...], engine: EngineIdentity, objects: Any) -> Awaitable[Any]:
         """
         objects is a reference to retain until zmq is finished with the
         buffers, in case they were extracted from tensors in the request.
@@ -912,9 +869,7 @@ class AsyncMPClient(MPClient):
     async def call_utility_async(self, method: str, *args) -> Any:
         return await self._call_utility_async(method, *args, engine=self.core_engine)
 
-    async def _call_utility_async(
-        self, method: str, *args, engine: EngineIdentity
-    ) -> Any:
+    async def _call_utility_async(self, method: str, *args, engine: EngineIdentity) -> Any:
         call_id = uuid.uuid1().int >> 64
         future = asyncio.get_running_loop().create_future()
         self.utility_results[call_id] = future
@@ -983,9 +938,7 @@ class AsyncMPClient(MPClient):
         args: tuple = (),
         kwargs: dict[str, Any] | None = None,
     ) -> list[_R]:
-        return await self.call_utility_async(
-            "collective_rpc", method, timeout, args, kwargs
-        )
+        return await self.call_utility_async("collective_rpc", method, timeout, args, kwargs)
 
 
 class DPAsyncMPClient(AsyncMPClient):
@@ -1017,8 +970,8 @@ class DPAsyncMPClient(AsyncMPClient):
         self.lb_engines: list[list[int]] = [[0, 0] for _ in self.core_engines]
 
         self.first_req_sock_addr = get_open_zmq_inproc_path()
-        self.first_req_send_socket = self.resources.first_req_send_socket = (
-            make_zmq_socket(self.ctx, self.first_req_sock_addr, zmq.PAIR, bind=True)
+        self.first_req_send_socket = self.resources.first_req_send_socket = make_zmq_socket(
+            self.ctx, self.first_req_sock_addr, zmq.PAIR, bind=True
         )
         try:
             # If we are running in an asyncio event loop, start the stats task.
@@ -1039,9 +992,7 @@ class DPAsyncMPClient(AsyncMPClient):
         # NOTE: running and waiting counts are all global from
         # the Coordinator include all global EngineCores. This
         # slice includes just the cores managed by this client.
-        count_slice = slice(
-            self.engine_ranks_managed[0], self.engine_ranks_managed[-1] + 1
-        )
+        count_slice = slice(self.engine_ranks_managed[0], self.engine_ranks_managed[-1] + 1)
 
         async def run_engine_stats_update_task():
             with (
@@ -1063,11 +1014,7 @@ class DPAsyncMPClient(AsyncMPClient):
 
                 while True:
                     events = await poller.poll()
-                    if (
-                        not self.engines_running
-                        and len(events) == 2
-                        or (events[0][0] == first_req_rcv_socket)
-                    ):
+                    if not self.engines_running and len(events) == 2 or (events[0][0] == first_req_rcv_socket):
                         # Check if this is a regular request notification or
                         # scale up notification
                         buf = first_req_rcv_socket.recv(flags=zmq.NOBLOCK).result()
@@ -1081,9 +1028,7 @@ class DPAsyncMPClient(AsyncMPClient):
                             # Extract new engine count from the decoded message
                             new_engine_count = decoded[1]
                             # Send scale up notification to coordinator
-                            scale_msg = msgspec.msgpack.encode(
-                                ("SCALE_ELASTIC_EP", new_engine_count)
-                            )
+                            scale_msg = msgspec.msgpack.encode(("SCALE_ELASTIC_EP", new_engine_count))
                             await socket.send(scale_msg)
                             continue
 
@@ -1093,9 +1038,7 @@ class DPAsyncMPClient(AsyncMPClient):
                         assert decoded[0] == "FIRST_REQ"
                         target_eng_index = decoded[1]
                         self.engines_running = True
-                        msg = msgspec.msgpack.encode(
-                            (target_eng_index, self.current_wave)
-                        )
+                        msg = msgspec.msgpack.encode((target_eng_index, self.current_wave))
                         await socket.send(msg)
 
                     buf = None
@@ -1115,13 +1058,9 @@ class DPAsyncMPClient(AsyncMPClient):
                     if counts is not None:
                         sliced_counts = counts[count_slice]
                         self.lb_engines = sliced_counts
-                        logger.debug(
-                            "Received counts: %s (%s)", sliced_counts, count_slice
-                        )
+                        logger.debug("Received counts: %s (%s)", sliced_counts, count_slice)
 
-        resources.stats_update_task = asyncio.create_task(
-            run_engine_stats_update_task()
-        )
+        resources.stats_update_task = asyncio.create_task(run_engine_stats_update_task())
 
     async def add_request_async(self, request: EngineCoreRequest) -> None:
         self._ensure_stats_update_task()
@@ -1173,9 +1112,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
 
         assert len(self.core_engines) > 1
 
-        self.eng_start_index = (
-            len(self.core_engines) * self.client_index
-        ) // client_count
+        self.eng_start_index = (len(self.core_engines) * self.client_index) // client_count
 
     def get_core_engine_for_request(self, request: EngineCoreRequest) -> EngineIdentity:
         # Engines are in rank order.
@@ -1207,17 +1144,12 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         # Only the result from the first engine is returned.
         return (
             await asyncio.gather(
-                *[
-                    self._call_utility_async(method, *args, engine=engine)
-                    for engine in self.core_engines
-                ]
+                *[self._call_utility_async(method, *args, engine=engine) for engine in self.core_engines]
             )
         )[0]
 
     @staticmethod
-    async def process_engine_outputs(
-        self: "DPLBAsyncMPClient", outputs: EngineCoreOutputs
-    ):
+    async def process_engine_outputs(self: "DPLBAsyncMPClient", outputs: EngineCoreOutputs):
         if outputs.finished_requests and self.reqs_in_flight:
             for req_id in outputs.finished_requests:
                 self.reqs_in_flight.pop(req_id, None)
@@ -1239,9 +1171,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         for engine, req_ids in by_engine.items():
             await self._abort_requests(req_ids, engine)
 
-    async def _abort_requests(
-        self, request_ids: list[str], engine: EngineIdentity
-    ) -> None:
+    async def _abort_requests(self, request_ids: list[str], engine: EngineIdentity) -> None:
         await self._send_input(EngineCoreRequestType.ABORT, request_ids, engine)
 
     async def scale_elastic_ep(self, new_data_parallel_size: int) -> None:
@@ -1260,17 +1190,11 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         scale_up = new_data_parallel_size > cur_data_parallel_size
 
         if scale_up:
-            await self._scale_up_elastic_ep(
-                cur_data_parallel_size, new_data_parallel_size
-            )
+            await self._scale_up_elastic_ep(cur_data_parallel_size, new_data_parallel_size)
         else:
-            await self._scale_down_elastic_ep(
-                cur_data_parallel_size, new_data_parallel_size
-            )
+            await self._scale_down_elastic_ep(cur_data_parallel_size, new_data_parallel_size)
 
-    async def _scale_up_elastic_ep(
-        self, cur_data_parallel_size: int, new_data_parallel_size: int
-    ) -> None:
+    async def _scale_up_elastic_ep(self, cur_data_parallel_size: int, new_data_parallel_size: int) -> None:
         """Scale up the data parallel size by creating new engine cores
         and reconfiguring existing ones."""
         cur_data_parallel_size = len(self.core_engines)
@@ -1287,9 +1211,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
                 new_data_parallel_master_ip=self.aphrodite_config.parallel_config.data_parallel_master_ip,
                 new_data_parallel_master_port=self.aphrodite_config.parallel_config.data_parallel_master_port,
             )
-            coro = self._call_utility_async(
-                "reinitialize_distributed", reconfig_request, engine=engine
-            )
+            coro = self._call_utility_async("reinitialize_distributed", reconfig_request, engine=engine)
             reconfig_futures.append(asyncio.create_task(coro))
 
         logger.info("All reconfigure messages sent, starting engine creation")
@@ -1298,9 +1220,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         # self.resources.engine_manager is guaranteed to be
         # CoreEngineActorManager for RayDPClient
         assert isinstance(self.resources.engine_manager, CoreEngineActorManager)
-        self.resources.engine_manager.scale_up_elastic_ep(
-            self.aphrodite_config, new_data_parallel_size
-        )
+        self.resources.engine_manager.scale_up_elastic_ep(self.aphrodite_config, new_data_parallel_size)
 
         # Create new CoreEngine objects for the new engines
         new_engine_identities = set()
@@ -1313,10 +1233,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         sync_input_socket = zmq.Socket.shadow(self.input_socket)
         while new_engine_identities:
             if not sync_input_socket.poll(timeout=600_000):
-                raise TimeoutError(
-                    "Timed out waiting for new engines to send initial "
-                    "message on input socket."
-                )
+                raise TimeoutError("Timed out waiting for new engines to send initial message on input socket.")
             identity, _ = sync_input_socket.recv_multipart()
             new_engine_identities.discard(identity)
 
@@ -1327,9 +1244,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         # Notify coordinator about scale up through existing
         # stats_update_task connection
         self._ensure_stats_update_task()
-        scale_up_marker = msgspec.msgpack.encode(
-            ("SCALE_ELASTIC_EP", new_data_parallel_size)
-        )
+        scale_up_marker = msgspec.msgpack.encode(("SCALE_ELASTIC_EP", new_data_parallel_size))
         await self.first_req_send_socket.send(scale_up_marker)
 
         # Update the parallel config
@@ -1339,9 +1254,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
             new_data_parallel_size,
         )
 
-    async def _scale_down_elastic_ep(
-        self, cur_data_parallel_size: int, new_data_parallel_size: int
-    ) -> None:
+    async def _scale_down_elastic_ep(self, cur_data_parallel_size: int, new_data_parallel_size: int) -> None:
         """Scale down the data parallel size by shutting down and
         reconfiguring existing engine cores."""
         cur_data_parallel_size = len(self.core_engines)
@@ -1358,12 +1271,8 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
                 new_data_parallel_master_port=self.aphrodite_config.parallel_config.data_parallel_master_port,
             )
             if cur_dp_rank >= new_data_parallel_size:
-                reconfig_request.new_data_parallel_rank = (
-                    ReconfigureRankType.SHUTDOWN_CURRENT_RANK
-                )
-            coro = self._call_utility_async(
-                "reinitialize_distributed", reconfig_request, engine=engine
-            )
+                reconfig_request.new_data_parallel_rank = ReconfigureRankType.SHUTDOWN_CURRENT_RANK
+            coro = self._call_utility_async("reinitialize_distributed", reconfig_request, engine=engine)
             reconfig_futures.append(asyncio.create_task(coro))
 
         for _ in range(new_data_parallel_size, cur_data_parallel_size):
@@ -1372,14 +1281,10 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         await asyncio.gather(*reconfig_futures)
 
         assert isinstance(self.resources.engine_manager, CoreEngineActorManager)
-        self.resources.engine_manager.scale_down_elastic_ep(
-            cur_data_parallel_size, new_data_parallel_size
-        )
+        self.resources.engine_manager.scale_down_elastic_ep(cur_data_parallel_size, new_data_parallel_size)
 
         self._ensure_stats_update_task()
-        scale_down_marker = msgspec.msgpack.encode(
-            ("SCALE_ELASTIC_EP", new_data_parallel_size)
-        )
+        scale_down_marker = msgspec.msgpack.encode(("SCALE_ELASTIC_EP", new_data_parallel_size))
         await self.first_req_send_socket.send(scale_down_marker)
 
         self.aphrodite_config.parallel_config.data_parallel_size = new_data_parallel_size

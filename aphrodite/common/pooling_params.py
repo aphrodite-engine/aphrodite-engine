@@ -75,9 +75,7 @@ class PoolingParams(
         """Returns a deep copy of the PoolingParams instance."""
         return deepcopy(self)
 
-    def verify(
-        self, task: PoolingTask, model_config: Optional["ModelConfig"] = None
-    ) -> None:
+    def verify(self, task: PoolingTask, model_config: Optional["ModelConfig"] = None) -> None:
         if self.task is None:
             self.task = task
         elif self.task != task:
@@ -99,9 +97,7 @@ class PoolingParams(
         self._set_default_parameters(model_config)
         self._verify_valid_parameters()
 
-    def _merge_default_parameters(
-        self, model_config: Optional["ModelConfig"] = None
-    ) -> None:
+    def _merge_default_parameters(self, model_config: Optional["ModelConfig"] = None) -> None:
         if model_config is None:
             return
 
@@ -121,9 +117,7 @@ class PoolingParams(
 
         self._verify_step_pooling(pooler_config, valid_parameters)
 
-    def _verify_step_pooling(
-        self, pooler_config: "PoolerConfig", valid_parameters: list[str]
-    ):
+    def _verify_step_pooling(self, pooler_config: "PoolerConfig", valid_parameters: list[str]):
         step_pooling_parameters = ["step_tag_id", "returned_token_ids"]
         if pooler_config.pooling_type != "STEP":
             invalid_parameters = []
@@ -208,6 +202,4 @@ class PoolingParams(
         )
 
     def __post_init__(self) -> None:
-        assert self.output_kind == RequestOutputKind.FINAL_ONLY, (
-            "For pooling output_kind has to be FINAL_ONLY"
-        )
+        assert self.output_kind == RequestOutputKind.FINAL_ONLY, "For pooling output_kind has to be FINAL_ONLY"

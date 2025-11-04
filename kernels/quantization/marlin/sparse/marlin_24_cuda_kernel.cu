@@ -1031,7 +1031,8 @@ torch::Tensor gptq_marlin_24_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
                                   aphrodite::ScalarTypeId const b_q_type_id,
                                   int64_t size_m, int64_t size_n,
                                   int64_t size_k) {
-  aphrodite::ScalarType const b_q_type = aphrodite::ScalarType::from_id(b_q_type_id);
+  aphrodite::ScalarType const b_q_type =
+      aphrodite::ScalarType::from_id(b_q_type_id);
   // Verify num_bits
   TORCH_CHECK(b_q_type == aphrodite::kU4B8 || b_q_type == aphrodite::kU8B128,
               "num_bits must be uint4b8 or uint8b128. Got = ", b_q_type.str());

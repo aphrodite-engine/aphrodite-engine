@@ -1,18 +1,24 @@
 import threading
 from collections import deque
-from typing import List, Optional, Tuple, cast
+from typing import cast
 
 import torch
 
 from .locks import ConditionLike, LockLike, NoOpCondition, NoOpLock
 from .mem_info_tracker import MemInfoTracker
-from .tp_ipc_util import (broadcast_map_to_kv_tensors,
-                          broadcast_unmap_from_kv_tensors)
-from .utils import (CONTIGUOUS_LAYOUT, GPU_UTILIZATION, MAX_RESERVED_PAGES,
-                    MIN_RESERVED_PAGES, PAGE_PREALLOC_ENABLED, SANITY_CHECK)
+from .tp_ipc_util import broadcast_map_to_kv_tensors, broadcast_unmap_from_kv_tensors
+from .utils import (
+    CONTIGUOUS_LAYOUT,
+    GPU_UTILIZATION,
+    MAX_RESERVED_PAGES,
+    MIN_RESERVED_PAGES,
+    PAGE_PREALLOC_ENABLED,
+    SANITY_CHECK,
+)
 
 try:
     from aphrodite.v1.core.dynamic_kv import vmm_ops
+
     _vmm_ops_available = True
 except ImportError:
     _vmm_ops_available = False
@@ -25,15 +31,14 @@ PREALLOC_THREAD_TIMEOUT: float = 2.0
 
 
 class Page:
-
     def __init__(self, page_id: int, page_size: int):
         self.page_id = page_id
         self.page_size = page_size
 
-        self.start_block: Optional[int] = None
-        self.end_block: Optional[int] = None
-        self.num_kv_blocks: Optional[int] = None
-        self.free_list: List[int] = []
+        self.start_block: int | None = None
+        self.end_block: int | None = None
+        self.num_kv_blocks: int | None = None
+        self.free_list: list[int] = []
 
     def _require_init(self) -> None:
         """Raise AssertionError if the page has not been initialised."""
@@ -42,13 +47,12 @@ class Page:
         assert self.num_kv_blocks is not None, "Page not initialised"
 
     def init(self, block_mem_size: int) -> None:
-        self.start_block, self.end_block = self.get_block_range(
-            self.page_id, self.page_size, block_mem_size)
+        self.start_block, self.end_block = self.get_block_range(self.page_id, self.page_size, block_mem_size)
 
         self.num_kv_blocks = self.end_block - self.start_block
         self.free_list = list(range(self.start_block, self.end_block))
 
-    def alloc(self, num_blocks: int = 1) -> List[int]:
+    def alloc(self, num_blocks: int = 1) -> list[int]:
         self._require_init()
         if self.full():
             raise ValueError(f"Page {self.page_id} is already full")
@@ -62,7 +66,7 @@ class Page:
             self._sanity_check(block_id)
         self.free_list.append(block_id)
 
-    def free_batch(self, block_ids: List[int]) -> None:
+    def free_batch(self, block_ids: list[int]) -> None:
         self._require_init()
         if SANITY_CHECK:
             for block_id in block_ids:
@@ -81,29 +85,25 @@ class Page:
         self._require_init()
         return len(self.free_list)
 
-    def get_free_blocks(self) -> List[int]:
+    def get_free_blocks(self) -> list[int]:
         self._require_init()
         return self.free_list
 
     def _has_block(self, block_id: int) -> bool:
         self._require_init()
-        return block_id >= cast(int, self.start_block) and block_id < cast(
-            int, self.end_block)
+        return block_id >= cast(int, self.start_block) and block_id < cast(int, self.end_block)
 
     def _sanity_check(self, block_id: int) -> None:
         self._require_init()
         if not self._has_block(block_id):
-            raise ValueError(
-                f"Page {self.page_id} does not have block {block_id}")
+            raise ValueError(f"Page {self.page_id} does not have block {block_id}")
         if block_id in self.free_list:
             raise ValueError(f"Block {block_id} is already free")
 
     @staticmethod
-    def get_block_range(page_id: int, page_size: int,
-                        block_mem_size: int) -> Tuple[int, int]:
+    def get_block_range(page_id: int, page_size: int, block_mem_size: int) -> tuple[int, int]:
         """Get the block range of a page."""
-        start_block = (page_id * page_size + block_mem_size -
-                       1) // block_mem_size
+        start_block = (page_id * page_size + block_mem_size - 1) // block_mem_size
         end_block = ((page_id + 1) * page_size) // block_mem_size
         return start_block, end_block
 
@@ -114,15 +114,16 @@ class Page:
 
 
 class PageAllocator:
-
-    def __init__(self,
-                 num_layers: int,
-                 mem_size_per_layer: int,
-                 page_size: int,
-                 tp_size: int = 1,
-                 async_sched: bool = False,
-                 contiguous_layout: bool = CONTIGUOUS_LAYOUT,
-                 enable_page_prealloc: bool = PAGE_PREALLOC_ENABLED):
+    def __init__(
+        self,
+        num_layers: int,
+        mem_size_per_layer: int,
+        page_size: int,
+        tp_size: int = 1,
+        async_sched: bool = False,
+        contiguous_layout: bool = CONTIGUOUS_LAYOUT,
+        enable_page_prealloc: bool = PAGE_PREALLOC_ENABLED,
+    ):
         """
         Args:
             num_layers: Number of layers (for physical memory calculation).
@@ -134,15 +135,24 @@ class PageAllocator:
             enable_page_prealloc: Whether to enable page preallocation.
         """
         logger.info(
-            f"Init kvcached KV cache allocator: "
-            f"num_layers={num_layers}, "
-            f"mem_size_per_layer={mem_size_per_layer//(1024*1024)}MB, "
-            f"total_mem_size={2 * num_layers * mem_size_per_layer//(1024*1024)}MB, "
-            f"page_size={page_size//(1024*1024)}MB, "
-            f"tp_size={tp_size}, "
-            f"async_sched={async_sched}, "
-            f"contiguous_layout={contiguous_layout}, "
-            f"enable_prealloc={enable_page_prealloc}")
+            "Init kvcached KV cache allocator: "
+            "num_layers=%d, "
+            "mem_size_per_layer=%dMB, "
+            "total_mem_size=%dMB, "
+            "page_size=%d, "
+            "tp_size=%d, "
+            "async_sched=%s, "
+            "contiguous_layout=%s, "
+            "enable_prealloc=%s",
+            num_layers,
+            mem_size_per_layer // (1024 * 1024),
+            2 * num_layers * mem_size_per_layer // (1024 * 1024),
+            page_size // (1024 * 1024),
+            tp_size,
+            async_sched,
+            contiguous_layout,
+            enable_page_prealloc,
+        )
 
         self.num_layers = num_layers
         self.mem_size_per_layer = mem_size_per_layer
@@ -162,8 +172,7 @@ class PageAllocator:
 
         self.reclaimed_page_list: deque[int] = deque()
 
-        self.mem_info_tracker = MemInfoTracker(self.mem_size_per_layer *
-                                               num_layers * 2)
+        self.mem_info_tracker = MemInfoTracker(self.mem_size_per_layer * num_layers * 2)
 
         self.enable_page_prealloc: bool = enable_page_prealloc
 
@@ -178,7 +187,7 @@ class PageAllocator:
             self._cond = NoOpCondition(self._lock)
         self.prealloc_running: bool = False
         self.prealloc_needed: bool = False
-        self.prealloc_thd: Optional[threading.Thread] = None
+        self.prealloc_thd: threading.Thread | None = None
 
     def __del__(self):
         try:
@@ -195,7 +204,7 @@ class PageAllocator:
 
     def alloc_page(self) -> Page:
         with self._lock:
-            page_id: Optional[int] = None
+            page_id: int | None = None
 
             while page_id is None:
                 if self.reserved_page_list:
@@ -218,9 +227,7 @@ class PageAllocator:
                     raise ValueError("No free pages left")
 
                 if not self.enable_page_prealloc:
-                    raise RuntimeError(
-                        "Inconsistent page allocator state: no free pages "
-                        "available to allocate")
+                    raise RuntimeError("Inconsistent page allocator state: no free pages available to allocate")
 
                 self._cond.wait()
 
@@ -243,8 +250,7 @@ class PageAllocator:
 
     def free_page(self, page_id: int) -> None:
         with self._lock:
-            if SANITY_CHECK and (page_id in self.free_page_list
-                                 or page_id in self.reserved_page_list):
+            if SANITY_CHECK and (page_id in self.free_page_list or page_id in self.reserved_page_list):
                 raise ValueError(f"Page {page_id} is already free or reserved")
 
             self.num_free_pages += 1
@@ -260,18 +266,15 @@ class PageAllocator:
             self._update_memory_usage()
             self._cond.notify_all()
 
-    def free_pages(self, page_ids: List[int]) -> None:
+    def free_pages(self, page_ids: list[int]) -> None:
         with self._lock:
             if SANITY_CHECK:
                 for page_id in page_ids:
-                    if (page_id in self.free_page_list
-                            or page_id in self.reserved_page_list):
-                        raise ValueError(
-                            f"Page {page_id} is already free or reserved")
+                    if page_id in self.free_page_list or page_id in self.reserved_page_list:
+                        raise ValueError(f"Page {page_id} is already free or reserved")
 
             self.num_free_pages += len(page_ids)
-            num_to_reserve = self.max_reserved_pages - len(
-                self.reserved_page_list)
+            num_to_reserve = self.max_reserved_pages - len(self.reserved_page_list)
             if num_to_reserve > 0:
                 self.reserved_page_list.extend(page_ids[:num_to_reserve])
                 self._cond.notify_all()
@@ -297,19 +300,15 @@ class PageAllocator:
             elif new_num_pages > self.num_total_pages:
                 num_to_expand = new_num_pages - self.num_total_pages
 
-                num_to_reuse = min(len(self.reclaimed_page_list),
-                                   num_to_expand)
+                num_to_reuse = min(len(self.reclaimed_page_list), num_to_expand)
                 if num_to_reuse > 0:
                     for _ in range(num_to_reuse):
-                        self.free_page_list.append(
-                            self.reclaimed_page_list.popleft())
+                        self.free_page_list.append(self.reclaimed_page_list.popleft())
                     num_to_expand -= num_to_reuse
                     self.num_free_pages += num_to_reuse
 
                 if num_to_expand > 0:
-                    new_page_ids = list(
-                        range(self.num_total_pages,
-                              self.num_total_pages + num_to_expand))
+                    new_page_ids = list(range(self.num_total_pages, self.num_total_pages + num_to_expand))
                     self.free_page_list.extend(new_page_ids)
                     self.num_free_pages += num_to_expand
                 self.num_total_pages = new_num_pages
@@ -395,8 +394,7 @@ class PageAllocator:
                 self.prealloc_needed = False
                 current_reserved = len(self.reserved_page_list)
                 to_reserve = max(0, self.min_reserved_pages - current_reserved)
-                to_reserve = min(to_reserve, len(self.free_page_list),
-                                 self.get_avail_physical_pages())
+                to_reserve = min(to_reserve, len(self.free_page_list), self.get_avail_physical_pages())
                 if to_reserve <= 0:
                     continue
 
@@ -416,34 +414,30 @@ class PageAllocator:
                         self._update_memory_usage()
                         self._cond.notify_all()
                     logger.debug(
-                        f"Preallocated {len(pages_to_reserve)} pages, "
-                        f"reserved={len(self.reserved_page_list)}")
+                        "Preallocated %d pages, reserved=%d", len(pages_to_reserve), len(self.reserved_page_list)
+                    )
                 except Exception as e:
                     with self._lock:
                         self.free_page_list.extendleft(pages_to_reserve)
                         self._cond.notify_all()
-                    logger.error(
-                        f"Failed to preallocate {len(pages_to_reserve)} pages: "
-                        f"{e}")
+                    logger.error("Failed to preallocate %d pages: %s", len(pages_to_reserve), e)
 
     def _start_prealloc_thread(self):
         if self.prealloc_thd is None:
             self.prealloc_running = True
-            self.prealloc_thd = threading.Thread(target=self._prealloc_worker,
-                                                 daemon=True)
+            self.prealloc_thd = threading.Thread(target=self._prealloc_worker, daemon=True)
             self.prealloc_thd.start()
 
             self._trigger_preallocation()
 
-    def _stop_prealloc_thread(self, timeout: Optional[float] = None):
+    def _stop_prealloc_thread(self, timeout: float | None = None):
         if self.prealloc_thd is not None:
             with self._lock:
                 self.prealloc_running = False
                 self._cond.notify_all()
             self.prealloc_thd.join(timeout)
             if self.prealloc_thd.is_alive():
-                logger.warning(
-                    "Preallocation thread did not stop within timeout")
+                logger.warning("Preallocation thread did not stop within timeout")
             self.prealloc_thd = None
             logger.debug("Stopped page preallocation thread")
 
@@ -456,11 +450,9 @@ class PageAllocator:
     def _map_pages(self, page_ids: list[int]) -> None:
         if not _vmm_ops_available:
             return
-        
+
         if self.contiguous_layout:
-            offsets = [
-                pid * self.page_size * self.num_layers * 2 for pid in page_ids
-            ]
+            offsets = [pid * self.page_size * self.num_layers * 2 for pid in page_ids]
         else:
             offsets = [pid * self.page_size for pid in page_ids]
         if self.tp_size > 1:
@@ -471,11 +463,9 @@ class PageAllocator:
     def _unmap_pages(self, page_ids: list[int]) -> None:
         if not _vmm_ops_available:
             return
-        
+
         if self.contiguous_layout:
-            offsets = [
-                pid * self.page_size * self.num_layers * 2 for pid in page_ids
-            ]
+            offsets = [pid * self.page_size * self.num_layers * 2 for pid in page_ids]
         else:
             offsets = [pid * self.page_size for pid in page_ids]
         if self.tp_size > 1:
@@ -487,11 +477,7 @@ class PageAllocator:
 
     def _update_memory_usage(self):
         """Update memory usage information in shared memory."""
-        used_phy_mem_size = (self.get_num_inuse_pages() * self.num_layers *
-                             self.page_size * 2)
-        prealloc_phy_mem_size = (self.get_num_reserved_pages() *
-                                 self.num_layers * self.page_size * 2)
+        used_phy_mem_size = self.get_num_inuse_pages() * self.num_layers * self.page_size * 2
+        prealloc_phy_mem_size = self.get_num_reserved_pages() * self.num_layers * self.page_size * 2
 
-        self.mem_info_tracker.update_memory_usage(
-            used_size=used_phy_mem_size, prealloc_size=prealloc_phy_mem_size)
-
+        self.mem_info_tracker.update_memory_usage(used_size=used_phy_mem_size, prealloc_size=prealloc_phy_mem_size)

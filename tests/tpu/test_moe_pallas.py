@@ -7,10 +7,8 @@ import pytest
 import torch
 import torch_xla
 
-from aphrodite.modeling.layers.fused_moe.moe_pallas import (
-    fused_moe as pallas_moe)
-from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import (
-    fused_moe as torch_moe)
+from aphrodite.modeling.layers.fused_moe.moe_pallas import fused_moe as pallas_moe
+from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import fused_moe as torch_moe
 from aphrodite.platforms import current_platform
 
 if not current_platform.is_tpu():

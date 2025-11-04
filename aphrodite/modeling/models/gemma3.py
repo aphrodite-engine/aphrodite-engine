@@ -25,28 +25,27 @@ from aphrodite.attention import Attention, AttentionType
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.activation import GeluAndMul
 from aphrodite.modeling.layers.layernorm import GemmaRMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from ...attention.layers.encoder_only_attention import EncoderOnlyAttention
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 logger = init_logger(__name__)
 
@@ -173,11 +172,7 @@ class Gemma3Attention(nn.Module):
         else:
             attn_type = AttentionType.ENCODER_ONLY
 
-        attn_cls = (
-            EncoderOnlyAttention
-            if attn_type == AttentionType.ENCODER_ONLY
-            else Attention
-        )
+        attn_cls = EncoderOnlyAttention if attn_type == AttentionType.ENCODER_ONLY else Attention
 
         self.attn = attn_cls(
             self.num_heads,
@@ -313,15 +308,9 @@ class Gemma3DecoderLayer(nn.Module):
             prefix=f"{prefix}.mlp",
         )
         self.input_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = GemmaRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
-        self.pre_feedforward_layernorm = GemmaRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
-        self.post_feedforward_layernorm = GemmaRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pre_feedforward_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_feedforward_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -342,9 +331,7 @@ class Gemma3DecoderLayer(nn.Module):
         )
         hidden_states = self.post_attention_layernorm(hidden_states)
 
-        hidden_states, residual = self.pre_feedforward_layernorm(
-            hidden_states, residual
-        )
+        hidden_states, residual = self.pre_feedforward_layernorm(hidden_states, residual)
         hidden_states = self.mlp(hidden_states)
         hidden_states = self.post_feedforward_layernorm(hidden_states)
         return hidden_states, residual
@@ -368,9 +355,7 @@ class Gemma3Model(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: Gemma3DecoderLayer(
-                config, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: Gemma3DecoderLayer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         self.norm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -416,9 +401,7 @@ class Gemma3Model(nn.Module):
                 **kwargs,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -436,16 +419,10 @@ class Gemma3Model(nn.Module):
         for name, loaded_weight in weights:
             # Revert +1 during llama.cpp conversion
             # see: https://github.com/ggml-org/llama.cpp/blob/be7c3034108473beda214fd1d7c98fd6a7a3bdf5/convert_hf_to_gguf.py#L3397-L3400
-            if (
-                self.quant_config
-                and self.quant_config.get_name() == "gguf"
-                and name.endswith("norm.weight")
-            ):
+            if self.quant_config and self.quant_config.get_name() == "gguf" and name.endswith("norm.weight"):
                 loaded_weight -= 1
 
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache scales for compressed-tensors quantization
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
@@ -461,9 +438,7 @@ class Gemma3Model(nn.Module):
                 if remapped_name is not None and remapped_name in params_dict:
                     # Successfully remapped, use the remapped name
                     param = params_dict[remapped_name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
                     loaded_params.add(remapped_name)
                     continue
@@ -523,15 +498,9 @@ class Gemma3ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         # currently all existing Gemma models have `tie_word_embeddings` enabled
         assert config.tie_word_embeddings
         self.quant_config = quant_config
-        self.model = Gemma3Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
-        self.logits_processor = LogitsProcessor(
-            config.vocab_size, soft_cap=config.final_logit_softcapping
-        )
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.model = Gemma3Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
+        self.logits_processor = LogitsProcessor(config.vocab_size, soft_cap=config.final_logit_softcapping)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -544,9 +513,7 @@ class Gemma3ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs)
         return hidden_states
 
     def compute_logits(

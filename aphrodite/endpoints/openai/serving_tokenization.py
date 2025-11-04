@@ -6,13 +6,15 @@ from fastapi import Request
 
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (DetokenizeRequest,
-                                                 DetokenizeResponse,
-                                                 ErrorResponse,
-                                                 TokenizeChatRequest,
-                                                 TokenizeRequest,
-                                                 TokenizeResponse,
-                                                 TokenizerInfoResponse)
+from aphrodite.endpoints.openai.protocol import (
+    DetokenizeRequest,
+    DetokenizeResponse,
+    ErrorResponse,
+    TokenizeChatRequest,
+    TokenizeRequest,
+    TokenizeResponse,
+    TokenizerInfoResponse,
+)
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.renderer import RenderConfig
@@ -66,11 +68,7 @@ class OpenAIServingTokenization(OpenAIServing):
             renderer = self._get_renderer(tokenizer)
 
             if isinstance(request, TokenizeChatRequest):
-                tool_dicts = (
-                    None
-                    if request.tools is None
-                    else [tool.model_dump() for tool in request.tools]
-                )
+                tool_dicts = None if request.tools is None else [tool.model_dump() for tool in request.tools]
                 error_check_ret = self._validate_chat_template(
                     request_chat_template=request.chat_template,
                     chat_template_kwargs=request.chat_template_kwargs,
@@ -105,9 +103,7 @@ class OpenAIServingTokenization(OpenAIServing):
 
         input_ids: list[int] = []
         for engine_prompt in engine_prompts:
-            self._log_inputs(
-                request_id, engine_prompt, params=None, lora_request=lora_request
-            )
+            self._log_inputs(request_id, engine_prompt, params=None, lora_request=lora_request)
 
             if isinstance(engine_prompt, dict) and "prompt_token_ids" in engine_prompt:
                 input_ids.extend(engine_prompt["prompt_token_ids"])
@@ -138,9 +134,7 @@ class OpenAIServingTokenization(OpenAIServing):
 
         tokenizer = await self.engine_client.get_tokenizer()
 
-        self._log_inputs(
-            request_id, request.tokens, params=None, lora_request=lora_request
-        )
+        self._log_inputs(request_id, request.tokens, params=None, lora_request=lora_request)
 
         prompt_input = await self._tokenize_prompt_input_async(
             request,

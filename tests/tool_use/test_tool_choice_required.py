@@ -8,8 +8,7 @@ from pydantic import TypeAdapter
 
 from aphrodite.endpoints.openai.protocol import ChatCompletionToolsParam
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
-from aphrodite.endpoints.openai.tool_parsers.utils import (
-    get_json_schema_from_tools)
+from aphrodite.endpoints.openai.tool_parsers.utils import get_json_schema_from_tools
 
 pytestmark = pytest.mark.cpu_test
 
@@ -24,8 +23,7 @@ EXAMPLE_TOOLS = [
                 "properties": {
                     "city": {
                         "type": "string",
-                        "description": "The city to find the weather for"
-                        ", e.g. 'San Francisco'",
+                        "description": "The city to find the weather for, e.g. 'San Francisco'",
                     },
                 },
                 "required": ["city"],
@@ -44,8 +42,7 @@ EXAMPLE_TOOLS = [
                 "properties": {
                     "city": {
                         "type": "string",
-                        "description": "The city to get the forecast for, e.g. "
-                        "'New York'",
+                        "description": "The city to get the forecast for, e.g. 'New York'",
                     },
                     "days": {
                         "type": "integer",
@@ -61,9 +58,7 @@ EXAMPLE_TOOLS = [
 ]
 
 
-def _compile_and_check(
-    tools: list[ChatCompletionToolsParam], sample_output, should_match: bool
-):
+def _compile_and_check(tools: list[ChatCompletionToolsParam], sample_output, should_match: bool):
     # self = MagicMock(tool_choice="required", tools=tools)
     # schema = ChatCompletionRequest._get_json_schema_from_tool(self)
     schema = get_json_schema_from_tools(tools=tools, tool_choice="required")
@@ -190,9 +185,7 @@ VALID_TOOLS = [t[0] for t in VALID_TOOL_OUTPUTS]
 )
 def test_structured_outputs_json(sample_output, should_match):
     _compile_and_check(
-        tools=TypeAdapter(list[ChatCompletionToolsParam]).validate_python(
-            EXAMPLE_TOOLS
-        ),
+        tools=TypeAdapter(list[ChatCompletionToolsParam]).validate_python(EXAMPLE_TOOLS),
         sample_output=sample_output,
         should_match=should_match,
     )
@@ -254,24 +247,13 @@ def update_parameters_empty_dict(
         ),
     ],
 )
-@pytest.mark.parametrize(
-    "update_parameters", [update_parameters_none, update_parameters_empty_dict]
-)
-def test_structured_outputs_json_without_parameters(
-    sample_output, should_match, update_parameters
-):
+@pytest.mark.parametrize("update_parameters", [update_parameters_none, update_parameters_empty_dict])
+def test_structured_outputs_json_without_parameters(sample_output, should_match, update_parameters):
     updated_tools = [deepcopy(EXAMPLE_TOOLS[0])]
     tools = TypeAdapter(list[ChatCompletionToolsParam]).validate_python(updated_tools)
     tools = list(map(update_parameters, tools))
-    assert all(
-        [
-            tool.function.parameters is None or tool.function.parameters == {}
-            for tool in tools
-        ]
-    )
-    _compile_and_check(
-        tools=tools, sample_output=sample_output, should_match=should_match
-    )
+    assert all([tool.function.parameters is None or tool.function.parameters == {} for tool in tools])
+    _compile_and_check(tools=tools, sample_output=sample_output, should_match=should_match)
 
 
 @pytest.mark.parametrize("output", VALID_TOOLS)
@@ -292,14 +274,12 @@ def test_streaming_output_valid(output, empty_params, delta_len):
         delta_text = output_json[i : i + delta_len]
         current_text = previous_text + delta_text
 
-        delta_message, function_name_returned = (
-            OpenAIServingChat.extract_tool_call_required_streaming(
-                self,
-                previous_text=previous_text,
-                current_text=current_text,
-                delta_text=delta_text,
-                function_name_returned=function_name_returned,
-            )
+        delta_message, function_name_returned = OpenAIServingChat.extract_tool_call_required_streaming(
+            self,
+            previous_text=previous_text,
+            current_text=current_text,
+            delta_text=delta_text,
+            function_name_returned=function_name_returned,
         )
 
         if delta_message:

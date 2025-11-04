@@ -5,9 +5,7 @@ from pydantic.dataclasses import dataclass
 
 from aphrodite.config.utils import config
 
-StructuredOutputsBackend = Literal[
-    "auto", "xgrammar", "guidance", "outlines", "lm-format-enforcer"
-]
+StructuredOutputsBackend = Literal["auto", "xgrammar", "guidance", "outlines", "lm-format-enforcer"]
 
 
 @config
@@ -55,12 +53,6 @@ class StructuredOutputsConfig:
 
     def __post_init__(self):
         if self.disable_any_whitespace and self.backend not in ("xgrammar", "guidance"):
-            raise ValueError(
-                "disable_any_whitespace is only supported for "
-                "xgrammar and guidance backends."
-            )
+            raise ValueError("disable_any_whitespace is only supported for xgrammar and guidance backends.")
         if self.disable_additional_properties and self.backend != "guidance":
-            raise ValueError(
-                "disable_additional_properties is only supported "
-                "for the guidance backend."
-            )
+            raise ValueError("disable_additional_properties is only supported for the guidance backend.")

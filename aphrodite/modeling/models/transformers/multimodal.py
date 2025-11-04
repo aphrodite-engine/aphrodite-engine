@@ -20,17 +20,18 @@ import torch
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config.utils import getattr_iter
-from aphrodite.modeling.models.interfaces import (SupportsMRoPE,
-                                                  SupportsMultiModal)
+from aphrodite.modeling.models.interfaces import SupportsMRoPE, SupportsMultiModal
 from aphrodite.modeling.models.utils import WeightsMapper
 from aphrodite.multimodal import MultiModalKwargsItems
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs, MultiModalUUIDDict,
-                                         PlaceholderRange)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalUUIDDict,
+    PlaceholderRange,
+)
 from aphrodite.multimodal.parse import ImageProcessorItems, MultiModalDataItems
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo)
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, BaseProcessingInfo
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 
 if TYPE_CHECKING:
@@ -60,9 +61,7 @@ class MultiModalProcessingInfo(BaseProcessingInfo):
         processor = self.get_hf_processor()
         multimodal_config = self.ctx.model_config.multimodal_config
         mm_processor_kwargs = multimodal_config.mm_processor_kwargs or {}
-        mm_tokens = processor._get_num_multimodal_tokens(
-            image_sizes=([height, width],), **mm_processor_kwargs
-        )
+        mm_tokens = processor._get_num_multimodal_tokens(image_sizes=([height, width],), **mm_processor_kwargs)
         image_tokens = mm_tokens["num_image_tokens"][0]
         return image_tokens
 
@@ -133,13 +132,8 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
         # HF Processors always return a mask but Aphrodite doesn't need it
         hf_inputs.pop("attention_mask", None)
         num_image_patches = hf_inputs.get("num_image_patches")
-        mm_fields = {
-            key: MultiModalFieldConfig.flat_from_sizes("image", num_image_patches)
-            for key in hf_inputs
-        }
-        mm_fields["image_embeds"] = MultiModalFieldConfig.flat_from_sizes(
-            "image", num_image_patches
-        )
+        mm_fields = {key: MultiModalFieldConfig.flat_from_sizes("image", num_image_patches) for key in hf_inputs}
+        mm_fields["image_embeds"] = MultiModalFieldConfig.flat_from_sizes("image", num_image_patches)
 
         # Keep these as batched, as they always have batch size as first dim
         mm_fields["image_grid_thw"] = MultiModalFieldConfig.batched("image")
@@ -197,11 +191,7 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
         )
 
         # For gemma3 we check `token_type_ids` as the key
-        token_type_key = (
-            "mm_token_type_ids"
-            if "mm_token_type_ids" in processed_data
-            else "token_type_ids"
-        )
+        token_type_key = "mm_token_type_ids" if "mm_token_type_ids" in processed_data else "token_type_ids"
         mm_token_type_ids = processed_data.pop(token_type_key)
 
         # We can infer Aphrodite style placeholder from token type ids, if we split
@@ -215,9 +205,7 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
             image_size = images.get_image_size(item_idx)
             image_sizes.append((image_size.height, image_size.width))
 
-        mm_tokens_per_modality = hf_processor._get_num_multimodal_tokens(
-            image_sizes=image_sizes, **mm_processor_kwargs
-        )
+        mm_tokens_per_modality = hf_processor._get_num_multimodal_tokens(image_sizes=image_sizes, **mm_processor_kwargs)
 
         mm_placeholders = {}
         split_sizes = mm_tokens_per_modality["num_image_tokens"]
@@ -235,18 +223,14 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
             ]
             mm_placeholders = {"image": ranges}
 
-        processed_data["num_image_patches"] = torch.tensor(
-            mm_tokens_per_modality["num_image_patches"]
-        )
+        processed_data["num_image_patches"] = torch.tensor(mm_tokens_per_modality["num_image_patches"])
         mm_kwargs = MultiModalKwargsItems.from_hf_inputs(
             processed_data,
             self._get_mm_fields_config(processed_data, hf_processor_mm_kwargs),
         )
 
         # Use overrides if provided; fallback to data-dependent hashing.
-        mm_hashes = self._hash_mm_items(
-            mm_items, hf_processor_mm_kwargs, tokenization_kwargs, mm_uuids=mm_uuids
-        )
+        mm_hashes = self._hash_mm_items(mm_items, hf_processor_mm_kwargs, tokenization_kwargs, mm_uuids=mm_uuids)
 
         return MultiModalInputs(
             type="multimodal",
@@ -299,9 +283,7 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
         # Gemma3 and PaliGemma needs `token_type_ids` to work correctly
         # Other models will not have `token_type_ids` in kwargs
         kwargs = {k: v for k, v in kwargs.items() if k == "token_type_ids"}
-        model_output = super().forward(
-            input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs
-        )
+        model_output = super().forward(input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs)
         return model_output
 
     def get_language_model(self) -> torch.nn.Module:
@@ -350,13 +332,8 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
                 # Embeddings have to be 2D tensors of length `num_images`
                 # but transformers returns concat tensors if each patch
                 # is of different size. We split it back to make Aphrodite happy
-                vision_embeddings = torch.split(
-                    vision_embeddings, num_image_patches.flatten().tolist()
-                )
-                vision_embeddings = [
-                    embed.flatten(start_dim=0, end_dim=-2)
-                    for embed in vision_embeddings
-                ]
+                vision_embeddings = torch.split(vision_embeddings, num_image_patches.flatten().tolist())
+                vision_embeddings = [embed.flatten(start_dim=0, end_dim=-2) for embed in vision_embeddings]
 
             return vision_embeddings
 

@@ -24,14 +24,10 @@ BITBLAS_SUPPORTED_SYM = [False, True]
 
 # Determines the supported quantization types for BitBLAS based on the
 # device's capability and whether zero-point (zp) is used.
-def query_bitblas_supported_quant_types(
-    has_zp: bool, device_capability: int | None = None
-):
+def query_bitblas_supported_quant_types(has_zp: bool, device_capability: int | None = None):
     if device_capability is None:
         capability_tuple = current_platform.get_device_capability()
-        device_capability = (
-            -1 if capability_tuple is None else capability_tuple.to_int()
-        )
+        device_capability = -1 if capability_tuple is None else capability_tuple.to_int()
 
     if device_capability < 70:
         return []
@@ -54,9 +50,7 @@ def _check_bitblas_supported(
 ) -> tuple[bool, str | None]:
     if device_capability is None:
         capability_tuple = current_platform.get_device_capability()
-        device_capability = (
-            -1 if capability_tuple is None else capability_tuple.to_int()
-        )
+        device_capability = -1 if capability_tuple is None else capability_tuple.to_int()
 
     supported_types = query_bitblas_supported_quant_types(has_zp, device_capability)
 
@@ -81,10 +75,7 @@ def _check_bitblas_supported(
         import bitblas
 
         if version.parse(bitblas.__version__) < version.parse(MINIMUM_BITBLAS_VERSION):
-            raise ImportError(
-                "bitblas version is wrong. Please "
-                f"install bitblas>={MINIMUM_BITBLAS_VERSION}"
-            )
+            raise ImportError(f"bitblas version is wrong. Please install bitblas>={MINIMUM_BITBLAS_VERSION}")
     except ImportError:
         return False, "BitBLAS is not installed."
 
@@ -97,15 +88,11 @@ def check_bitblas_supported(
     has_zp: bool = False,
     device_capability: int | None = None,
 ) -> bool:
-    cond, _ = _check_bitblas_supported(
-        quant_type, group_size, has_zp, device_capability
-    )
+    cond, _ = _check_bitblas_supported(quant_type, group_size, has_zp, device_capability)
     return cond
 
 
-def verify_bitblas_supported(
-    quant_type: ScalarType, group_size: int, has_zp: bool = False
-) -> None:
+def verify_bitblas_supported(quant_type: ScalarType, group_size: int, has_zp: bool = False) -> None:
     cond, err_msg = _check_bitblas_supported(quant_type, group_size, has_zp)
     if not cond:
         assert err_msg is not None
@@ -154,9 +141,7 @@ def check_bitblas_supports_shape(
     group_size: int,
 ) -> tuple[bool, str | None]:
     try:
-        verify_bitblas_supports_shape(
-            output_size_per_partition, input_size_per_partition, input_size, group_size
-        )
+        verify_bitblas_supports_shape(output_size_per_partition, input_size_per_partition, input_size, group_size)
     except ValueError as e:
         return False, e.__str__()
     return True, None
@@ -166,9 +151,7 @@ def bitblas_is_k_full(act_order: bool, is_row_parallel: bool) -> bool:
     return (not act_order) or (act_order and not is_row_parallel)
 
 
-def bitblas_repeat_scales_on_all_ranks(
-    act_order: bool, group_size: int, is_row_parallel: bool
-) -> bool:
+def bitblas_repeat_scales_on_all_ranks(act_order: bool, group_size: int, is_row_parallel: bool) -> bool:
     # Need to repeat scales on every rank if act_ordering or
     # channelwise and RowParallelLinear
     is_channelwise = group_size == -1
@@ -176,15 +159,11 @@ def bitblas_repeat_scales_on_all_ranks(
 
 
 def bitblas_make_empty_g_idx(device: torch.device) -> torch.Tensor:
-    return torch.nn.Parameter(
-        torch.empty(0, dtype=torch.int, device=device), requires_grad=False
-    )
+    return torch.nn.Parameter(torch.empty(0, dtype=torch.int, device=device), requires_grad=False)
 
 
 def bitblas_make_empty_zp(device: torch.device) -> torch.Tensor:
-    return torch.nn.Parameter(
-        torch.empty(0, dtype=torch.int, device=device), requires_grad=False
-    )
+    return torch.nn.Parameter(torch.empty(0, dtype=torch.int, device=device), requires_grad=False)
 
 
 def bitblas_sort_g_idx(g_idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

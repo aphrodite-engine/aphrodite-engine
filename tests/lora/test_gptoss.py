@@ -38,9 +38,7 @@ def test_gptoss20b_lora(gptoss20b_lora_files):
     )
 
     expected_lora_output = [
-        "I am an AI language model developed by OpenAI. "
-        "I am here to help you with any questions or "
-        "tasks you may have."
+        "I am an AI language model developed by OpenAI. I am here to help you with any questions or tasks you may have."
     ]
 
     output1 = do_sample(llm, gptoss20b_lora_files, lora_id=1)

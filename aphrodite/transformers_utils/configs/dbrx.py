@@ -5,7 +5,7 @@
 # https://huggingface.co/databricks/dbrx-base/blob/main/configuration_dbrx.py
 """Dbrx configuration."""
 
-from typing import Any, Optional
+from typing import Any
 
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
@@ -36,7 +36,7 @@ class DbrxAttentionConfig(PretrainedConfig):
     def __init__(
         self,
         attn_pdrop: float = 0,
-        clip_qkv: Optional[float] = None,
+        clip_qkv: float | None = None,
         kv_n_heads: int = 1,
         rope_theta: float = 10000.0,
         **kwargs: Any,
@@ -105,13 +105,13 @@ class DbrxFFNConfig(PretrainedConfig):
 
     def __init__(
         self,
-        ffn_act_fn: Optional[dict] = None,
+        ffn_act_fn: dict | None = None,
         ffn_hidden_size: int = 3584,
         moe_num_experts: int = 4,
         moe_top_k: int = 1,
-        moe_jitter_eps: Optional[float] = None,
+        moe_jitter_eps: float | None = None,
         moe_loss_weight: float = 0.01,
-        moe_normalize_expert_weights: Optional[float] = 1,
+        moe_normalize_expert_weights: float | None = 1,
         uniform_expert_assignment: bool = False,
         **kwargs: Any,
     ):
@@ -232,8 +232,8 @@ class DbrxConfig(PretrainedConfig):
         vocab_size: int = 32000,
         resid_pdrop: float = 0.0,
         emb_pdrop: float = 0.0,
-        attn_config: Optional[DbrxAttentionConfig] = None,
-        ffn_config: Optional[DbrxFFNConfig] = None,
+        attn_config: DbrxAttentionConfig | None = None,
+        ffn_config: DbrxFFNConfig | None = None,
         use_cache: bool = True,
         initializer_range: float = 0.02,
         output_router_logits: bool = False,

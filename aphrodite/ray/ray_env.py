@@ -10,9 +10,7 @@ CONFIG_HOME = envs.APHRODITE_CONFIG_ROOT
 
 # This file contains a list of env vars that should not be copied
 # from the driver to the Ray workers.
-RAY_NON_CARRY_OVER_ENV_VARS_FILE = os.path.join(
-    CONFIG_HOME, "ray_non_carry_over_env_vars.json"
-)
+RAY_NON_CARRY_OVER_ENV_VARS_FILE = os.path.join(CONFIG_HOME, "ray_non_carry_over_env_vars.json")
 
 try:
     if os.path.exists(RAY_NON_CARRY_OVER_ENV_VARS_FILE):
@@ -61,9 +59,7 @@ def get_env_vars_to_copy(
 
     to_destination = " to " + destination if destination is not None else ""
 
-    logger.info(
-        "RAY_NON_CARRY_OVER_ENV_VARS from config: %s", RAY_NON_CARRY_OVER_ENV_VARS
-    )
+    logger.info("RAY_NON_CARRY_OVER_ENV_VARS from config: %s", RAY_NON_CARRY_OVER_ENV_VARS)
     logger.info(
         "Copying the following environment variables%s: %s",
         to_destination,

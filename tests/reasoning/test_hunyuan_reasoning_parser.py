@@ -138,9 +138,7 @@ TEST_CASES = [
 ]
 
 # Global tokenizer initialization to avoid repeated loading
-tokenizer = AutoTokenizer.from_pretrained(
-    "tencent/Hunyuan-A13B-Instruct", trust_remote_code=True
-)
+tokenizer = AutoTokenizer.from_pretrained("tencent/Hunyuan-A13B-Instruct", trust_remote_code=True)
 
 
 @pytest.mark.parametrize("streaming, param_dict", TEST_CASES)
@@ -150,16 +148,10 @@ def test_reasoning(
 ):
     output = tokenizer.tokenize(param_dict["output"])
     # decode everything to tokens
-    output_tokens: list[str] = [
-        tokenizer.convert_tokens_to_string([token]) for token in output
-    ]
-    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(
-        tokenizer
-    )
+    output_tokens: list[str] = [tokenizer.convert_tokens_to_string([token]) for token in output]
+    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, output_tokens, streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, output_tokens, streaming=streaming)
 
     assert reasoning == param_dict["reasoning_content"]
     assert content == param_dict["content"]

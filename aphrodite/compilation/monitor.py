@@ -1,7 +1,6 @@
 import time
 
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode)
+from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode
 from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
@@ -30,6 +29,7 @@ def start_monitoring_torch_compile(aphrodite_config: AphroditeConfig):
 
     if is_global_first_rank():
         from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
         from aphrodite.utils import get_progress_log_prefix
 
         global dynamo_progress_task
@@ -70,8 +70,7 @@ def validate_cudagraph_capturing_enabled():
     global cudagraph_capturing_enabled
     if not cudagraph_capturing_enabled:
         raise RuntimeError(
-            "CUDA graph capturing detected at an inappropriate "
-            "time. This operation is currently disabled."
+            "CUDA graph capturing detected at an inappropriate time. This operation is currently disabled."
         )
 
 

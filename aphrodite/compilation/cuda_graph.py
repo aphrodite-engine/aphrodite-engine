@@ -10,8 +10,7 @@ import aphrodite.envs as envs
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.compilation.monitor import validate_cudagraph_capturing_enabled
 from aphrodite.config import AphroditeConfig, CUDAGraphMode
-from aphrodite.distributed.device_communicators.pynccl_allocator import (
-    set_graph_pool_id)
+from aphrodite.distributed.device_communicators.pynccl_allocator import set_graph_pool_id
 from aphrodite.forward_context import BatchDescriptor, get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
@@ -97,10 +96,7 @@ class CUDAGraphWrapper:
         # allow accessing the attributes of the runnable.
         if hasattr(self.runnable, key):
             return getattr(self.runnable, key)
-        raise AttributeError(
-            f"Attribute {key} not exists in the runnable of "
-            f"cudagraph wrapper: {self.runnable}"
-        )
+        raise AttributeError(f"Attribute {key} not exists in the runnable of cudagraph wrapper: {self.runnable}")
 
     def unwrap(self) -> Callable:
         # in case we need to access the original runnable.
@@ -111,10 +107,7 @@ class CUDAGraphWrapper:
         batch_descriptor = forward_context.batch_descriptor
         cudagraph_runtime_mode = forward_context.cudagraph_runtime_mode
 
-        if (
-            cudagraph_runtime_mode == CUDAGraphMode.NONE
-            or cudagraph_runtime_mode != self.runtime_mode
-        ):
+        if cudagraph_runtime_mode == CUDAGraphMode.NONE or cudagraph_runtime_mode != self.runtime_mode:
             # CUDAGraphMode.NONE could mean the profile run, a warmup run, or
             # running without cudagraphs.
             # We do not trigger capture/replay if the runtime mode is not
@@ -125,9 +118,7 @@ class CUDAGraphWrapper:
 
         if batch_descriptor not in self.concrete_cudagraph_entries:
             # create a new entry for this batch descriptor
-            self.concrete_cudagraph_entries[batch_descriptor] = CUDAGraphEntry(
-                batch_descriptor=batch_descriptor
-            )
+            self.concrete_cudagraph_entries[batch_descriptor] = CUDAGraphEntry(batch_descriptor=batch_descriptor)
 
         entry = self.concrete_cudagraph_entries[batch_descriptor]
 
@@ -145,9 +136,7 @@ class CUDAGraphWrapper:
             # validate that cudagraph capturing is legal at this point.
             validate_cudagraph_capturing_enabled()
 
-            input_addresses = [
-                x.data_ptr() for x in args if isinstance(x, torch.Tensor)
-            ]
+            input_addresses = [x.data_ptr() for x in args if isinstance(x, torch.Tensor)]
             entry.input_addresses = input_addresses
             cudagraph = torch.cuda.CUDAGraph()
 
@@ -193,9 +182,7 @@ class CUDAGraphWrapper:
 
         if self.is_debugging_mode:
             # check if the input addresses are the same
-            new_input_addresses = [
-                x.data_ptr() for x in args if isinstance(x, torch.Tensor)
-            ]
+            new_input_addresses = [x.data_ptr() for x in args if isinstance(x, torch.Tensor)]
             assert new_input_addresses == entry.input_addresses, (
                 f"Input addresses for cudagraphs are different "
                 f"during replay. Expected {entry.input_addresses}, "

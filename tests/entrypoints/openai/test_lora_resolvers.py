@@ -4,14 +4,11 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aphrodite.endpoints.openai.serving_completion import OpenAIServingCompletion
 
 from aphrodite.config.multimodal import MultiModalConfig
-from aphrodite.endpoints.openai.protocol import (CompletionRequest,
-                                                 ErrorResponse)
-from aphrodite.endpoints.openai.serving_completion import (
-    OpenAIServingCompletion)
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
+from aphrodite.endpoints.openai.protocol import CompletionRequest, ErrorResponse
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.resolver import LoRAResolver, LoRAResolverRegistry
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
@@ -53,9 +50,7 @@ class MockModelConfig:
 
 
 class MockLoRAResolver(LoRAResolver):
-    async def resolve_lora(
-        self, base_model_name: str, lora_name: str
-    ) -> LoRARequest | None:
+    async def resolve_lora(self, base_model_name: str, lora_name: str) -> LoRARequest | None:
         if lora_name == "test-lora":
             return LoRARequest(
                 lora_name="test-lora",
@@ -121,13 +116,9 @@ def mock_serving_setup():
         base_model_paths=BASE_MODEL_PATHS,
     )
 
-    serving_completion = OpenAIServingCompletion(
-        mock_engine, models, request_logger=None
-    )
+    serving_completion = OpenAIServingCompletion(mock_engine, models, request_logger=None)
 
-    serving_completion._process_inputs = AsyncMock(
-        return_value=(MagicMock(name="engine_request"), {})
-    )
+    serving_completion._process_inputs = AsyncMock(return_value=(MagicMock(name="engine_request"), {}))
 
     return mock_engine, serving_completion
 
@@ -183,9 +174,7 @@ async def test_serving_completion_resolver_not_found(mock_serving_setup, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_serving_completion_resolver_add_lora_fails(
-    mock_serving_setup, monkeypatch
-):
+async def test_serving_completion_resolver_add_lora_fails(mock_serving_setup, monkeypatch):
     monkeypatch.setenv("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING", "true")
 
     mock_engine, serving_completion = mock_serving_setup

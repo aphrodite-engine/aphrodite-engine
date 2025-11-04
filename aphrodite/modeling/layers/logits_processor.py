@@ -2,11 +2,9 @@
 
 import torch
 
-from aphrodite.distributed import (tensor_model_parallel_all_gather,
-                                   tensor_model_parallel_gather)
+from aphrodite.distributed import tensor_model_parallel_all_gather, tensor_model_parallel_gather
 from aphrodite.modeling._custom_op import CustomOp
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.platforms import current_platform
 
 

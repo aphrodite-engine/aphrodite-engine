@@ -31,8 +31,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from huggingface_hub import snapshot_download
 from PIL import Image
-from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
-                          BatchEncoding, BatchFeature)
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BatchEncoding, BatchFeature
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
 from aphrodite import LLM, SamplingParams, envs
@@ -41,11 +40,8 @@ from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.common.connections import global_http_connection
 from aphrodite.common.sampling_params import BeamSearchParams
-from aphrodite.config.model import (ConvertOption, RunnerOption,
-                                    _get_and_verify_dtype)
-from aphrodite.distributed import (cleanup_dist_env_and_memory,
-                                   init_distributed_environment,
-                                   initialize_model_parallel)
+from aphrodite.config.model import ConvertOption, RunnerOption, _get_and_verify_dtype
+from aphrodite.distributed import cleanup_dist_env_and_memory, init_distributed_environment, initialize_model_parallel
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import Logprob
 from aphrodite.multimodal.utils import fetch_image
@@ -53,8 +49,7 @@ from aphrodite.outputs import RequestOutput
 from aphrodite.transformers_utils.utils import maybe_model_redirect
 from aphrodite.utils.collection_utils import is_list_of
 from aphrodite.utils.torch_utils import set_default_torch_num_threads
-from tests.models.utils import (TokensTextLogprobs,
-                                TokensTextLogprobsPromptLogprobs)
+from tests.models.utils import TokensTextLogprobs, TokensTextLogprobsPromptLogprobs
 
 logger = init_logger(__name__)
 
@@ -445,14 +440,10 @@ class HfRunner:
             else:
                 # check that prompt is (batched) list of integers (token ids)
                 if not is_list_of(prompt, typ=int, check="all"):
-                    raise ValueError(
-                        "Prompt must be a list of ints corresponding to the prompt token ids."
-                    )
+                    raise ValueError("Prompt must be a list of ints corresponding to the prompt token ids.")
                 # check that no multimodal input is provided
                 if images or videos or audios:
-                    raise ValueError(
-                        "When providing prompt token ids multimodal inputs are not supported."
-                    )
+                    raise ValueError("When providing prompt token ids multimodal inputs are not supported.")
                 input_dict = {
                     "input_ids": torch.tensor(prompt, dtype=torch.long).unsqueeze(0),
                 }
@@ -495,9 +486,7 @@ class HfRunner:
         audios: PromptAudioInput | None = None,
         **kwargs: Any,
     ) -> list[tuple[list[list[int]], list[str]]]:
-        all_inputs = self.get_inputs(
-            prompts, images=images, videos=videos, audios=audios
-        )
+        all_inputs = self.get_inputs(prompts, images=images, videos=videos, audios=audios)
 
         outputs: list[tuple[list[list[int]], list[str]]] = []
         for inputs in all_inputs:
@@ -559,9 +548,7 @@ class HfRunner:
         for i in range(len(outputs)):
             output_ids, output_str = outputs[i]
             for j in range(len(output_ids)):
-                output_ids[j] = [
-                    x for x in output_ids[j] if x != self.tokenizer.pad_token_id
-                ]
+                output_ids[j] = [x for x in output_ids[j] if x != self.tokenizer.pad_token_id]
             outputs[i] = (output_ids, output_str)
         return outputs
 
@@ -574,9 +561,7 @@ class HfRunner:
         audios: PromptAudioInput | None = None,
         **kwargs: Any,
     ) -> list[list[torch.Tensor]]:
-        all_inputs = self.get_inputs(
-            prompts, images=images, videos=videos, audios=audios
-        )
+        all_inputs = self.get_inputs(prompts, images=images, videos=videos, audios=audios)
 
         all_logprobs: list[list[torch.Tensor]] = []
         for inputs in all_inputs:
@@ -653,9 +638,7 @@ class HfRunner:
         videos: PromptVideoInput | None = None,
         **kwargs: Any,
     ) -> list[TokensTextLogprobs]:
-        all_inputs = self.get_inputs(
-            prompts, images=images, videos=videos, audios=audios
-        )
+        all_inputs = self.get_inputs(prompts, images=images, videos=videos, audios=audios)
 
         all_logprobs: list[list[dict[int, float]]] = []
         all_output_ids: list[list[int]] = []
@@ -685,10 +668,7 @@ class HfRunner:
             all_output_strs.append(self.tokenizer.decode(output_ids))
 
         outputs = zip(all_output_ids, all_output_strs, all_logprobs)
-        return [
-            (output_ids, output_str, output_logprobs)
-            for output_ids, output_str, output_logprobs in outputs
-        ]
+        return [(output_ids, output_str, output_logprobs) for output_ids, output_str, output_logprobs in outputs]
 
     def encode(self, prompts: list[str], *args, **kwargs) -> list[list[torch.Tensor]]:
         return self.model.encode(prompts, *args, **kwargs)
@@ -785,12 +765,8 @@ class AphroditeRunner:
         videos: PromptVideoInput | None = None,
         audios: PromptAudioInput | None = None,
     ) -> list[dict[str, Any]]:
-        if any(
-            x is not None and len(x) != len(prompts) for x in [images, videos, audios]
-        ):
-            raise ValueError(
-                "All non-None multimodal inputs must have the same length as prompts"
-            )
+        if any(x is not None and len(x) != len(prompts) for x in [images, videos, audios]):
+            raise ValueError("All non-None multimodal inputs must have the same length as prompts")
 
         inputs = list[dict[str, Any]]()
         for i, prompt in enumerate(prompts):
@@ -829,9 +805,7 @@ class AphroditeRunner:
     ) -> list[tuple[list[list[int]], list[str]]] | tuple[list, list]:
         inputs = self.get_inputs(prompts, images=images, videos=videos, audios=audios)
 
-        req_outputs = self.llm.generate(
-            inputs, sampling_params=sampling_params, **kwargs
-        )
+        req_outputs = self.llm.generate(inputs, sampling_params=sampling_params, **kwargs)
 
         outputs: list[tuple[list[list[int]], list[str]]] = []
         logprobs = []
@@ -863,9 +837,7 @@ class AphroditeRunner:
                 output_str = sample.text
                 output_ids = list(sample.token_ids)
                 output_logprobs = sample.logprobs
-            outputs.append(
-                (output_ids, output_str, output_logprobs, req_output.prompt_logprobs)
-            )
+            outputs.append((output_ids, output_str, output_logprobs, req_output.prompt_logprobs))
         return outputs
 
     def generate_w_logprobs(
@@ -879,13 +851,9 @@ class AphroditeRunner:
     ) -> list[TokensTextLogprobs] | list[TokensTextLogprobsPromptLogprobs]:
         inputs = self.get_inputs(prompts, images=images, videos=videos, audios=audios)
 
-        req_outputs = self.llm.generate(
-            inputs, sampling_params=sampling_params, **kwargs
-        )
+        req_outputs = self.llm.generate(inputs, sampling_params=sampling_params, **kwargs)
 
-        toks_str_logsprobs_prompt_logprobs = self._final_steps_generate_w_logprobs(
-            req_outputs
-        )
+        toks_str_logsprobs_prompt_logprobs = self._final_steps_generate_w_logprobs(req_outputs)
         # Omit prompt logprobs if not required by sampling params
         return (
             [x[0:-1] for x in toks_str_logsprobs_prompt_logprobs]
@@ -951,9 +919,7 @@ class AphroditeRunner:
         :param prompts: list of prompts to score
         :return: perplexity score of each prompt
         """
-        outputs = self.generate_greedy_logprobs(
-            prompts, max_tokens=1, num_logprobs=None, num_prompt_logprobs=0
-        )
+        outputs = self.generate_greedy_logprobs(prompts, max_tokens=1, num_logprobs=None, num_prompt_logprobs=0)
 
         perplexities = []
         for output in outputs:
@@ -1254,9 +1220,7 @@ def dummy_gemma2_embedding_path():
 # Add the flag `--optional` to allow run tests
 # that are marked with @pytest.mark.optional
 def pytest_addoption(parser):
-    parser.addoption(
-        "--optional", action="store_true", default=False, help="run optional test"
-    )
+    parser.addoption("--optional", action="store_true", default=False, help="run optional test")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -1337,9 +1301,7 @@ class LocalAssetServer:
 
     def __enter__(self):
         self.port = _find_free_port()
-        self.server = http.server.ThreadingHTTPServer(
-            (self.address, self.port), AssetHandler
-        )
+        self.server = http.server.ThreadingHTTPServer((self.address, self.port), AssetHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         return self

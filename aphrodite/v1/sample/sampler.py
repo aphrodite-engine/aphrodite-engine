@@ -1,4 +1,5 @@
 """A layer that samples the next tokens from the model's outputs."""
+
 import torch
 import torch.nn as nn
 
@@ -36,43 +37,42 @@ DEFAULT_SAMPLER_ORDER = [
 
 
 class Sampler(nn.Module):
-
     """
     A layer that samples the next tokens from the model's outputs
     with the following steps in order:
-    1. If logprobs are requested:  
+    1. If logprobs are requested:
         a) If `logprobs_mode` is `raw_logprobs`, compute logprobs
-           as the final logprobs to return.  
+           as the final logprobs to return.
         b) If `logprobs_mode` is `raw_logits`, clone the logits
-           as the final logprobs to return.  
-    2. Convert logits to float32.  
-    3. Apply allowed token ids whitelist.  
-    4. Apply bad words exclusion.  
+           as the final logprobs to return.
+    2. Convert logits to float32.
+    3. Apply allowed token ids whitelist.
+    4. Apply bad words exclusion.
     5. Apply logit processors which are not argmax-invariant,
-       i.e. that can impact greedy sampling.  
-        a) Min tokens processor  
-        b) Logit bias processor  
-    6. Apply penalties  
-        a) Repetition penalty  
-        b) Frequency penalty  
-        c) Presence penalty  
-    7. Sample the next tokens. `sample` method performs the following steps:  
+       i.e. that can impact greedy sampling.
+        a) Min tokens processor
+        b) Logit bias processor
+    6. Apply penalties
+        a) Repetition penalty
+        b) Frequency penalty
+        c) Presence penalty
+    7. Sample the next tokens. `sample` method performs the following steps:
         a) If not `all_random`, perform greedy sampling. If `all_greedy`,
-           return the greedily sampled tokens and final logprobs if requested.  
-        b) Apply temperature.  
+           return the greedily sampled tokens and final logprobs if requested.
+        b) Apply temperature.
         c) Apply logit processors which are argmax-invariant, by default
-           the min_p processor.  
-        d) Apply top_k and/or top_p.  
-        e) Sample the next tokens with the probability distribution.  
+           the min_p processor.
+        d) Apply top_k and/or top_p.
+        e) Sample the next tokens with the probability distribution.
         f) If `all_random` or temperature >= epsilon (1e-5), return the
            randomly sampled tokens and final logprobs if requested. Else,
-           return the greedily sampled tokens and logprobs if requested.  
+           return the greedily sampled tokens and logprobs if requested.
     8. Gather the logprobs of the top `max_num_logprobs` and sampled token
        (if requested). Note that if the sampled token is within the top
        `max_num_logprobs`, the logprob will be eventually merged in
        `LogprobsProcessor` during output processing. Therefore, the
        final output may contain either `max_num_logprobs + 1` or
-       `max_num_logprobs` logprobs.  
+       `max_num_logprobs` logprobs.
     9. Return the final `SamplerOutput`.
     """
 
@@ -105,9 +105,7 @@ class Sampler(nn.Module):
         # Use float32 for the logits.
         logits = logits.to(torch.float32)
 
-        logits = self.sampling_ops.apply_logits_processors(
-            logits, sampling_metadata, predict_bonus_token
-        )
+        logits = self.sampling_ops.apply_logits_processors(logits, sampling_metadata, predict_bonus_token)
 
         # Apply samplers in priority order
         logits = self._execute_samplers_in_order(logits, sampling_metadata)
@@ -129,14 +127,10 @@ class Sampler(nn.Module):
             logprobs_tensors = None
         elif num_logprobs == -1:
             # Return the full unsorted and unranked logprobs.
-            logprobs_tensors = LogprobsTensors(
-                torch.empty(0), raw_logprobs, torch.empty(0)
-            )
+            logprobs_tensors = LogprobsTensors(torch.empty(0), raw_logprobs, torch.empty(0))
         else:
             # Gather the logprobs and ranks of the topk and sampled token.
-            logprobs_tensors = self.gather_logprobs(
-                raw_logprobs, num_logprobs, token_ids=sampled
-            )
+            logprobs_tensors = self.gather_logprobs(raw_logprobs, num_logprobs, token_ids=sampled)
 
         # Use int32 to reduce the tensor size.
         sampled = sampled.to(torch.int32)
@@ -174,20 +168,18 @@ class Sampler(nn.Module):
         """
         # Check if mirostat is active - if so, disable other samplers
         has_mirostat = False
-        if (sampling_metadata.mirostat_mode is not None and 
-            sampling_metadata.mirostat_tau is not None and 
-            sampling_metadata.mirostat_eta is not None):
+        if (
+            sampling_metadata.mirostat_mode is not None
+            and sampling_metadata.mirostat_tau is not None
+            and sampling_metadata.mirostat_eta is not None
+        ):
             batch_size = len(sampling_metadata.output_token_ids)
-            has_mirostat = any(
-                sampling_metadata.mirostat_mode[i].item() == 2
-                for i in range(batch_size)
-            )
+            has_mirostat = any(sampling_metadata.mirostat_mode[i].item() == 2 for i in range(batch_size))
 
         if has_mirostat:
             # Mirostat is active - only apply mirostat and skip other samplers
             logger.debug("Mirostat active - applying mirostat only")
-            logits = self.sampling_ops.apply_mirostat(
-                logits, sampling_metadata)
+            logits = self.sampling_ops.apply_mirostat(logits, sampling_metadata)
             return logits
 
         # Determine the sampler execution order
@@ -210,131 +202,96 @@ class Sampler(nn.Module):
                 logger.warning_once(
                     "Both sampler_priority and temperature_last=True "
                     "were specified. Using custom sampler_priority order "
-                    "and ignoring temperature_last.")
+                    "and ignoring temperature_last."
+                )
 
         # Log the execution order for debugging
         logger.debug("Sampler execution order: ")
         for i, sampler_id in enumerate(sampler_order, 1):
-            logger.debug(f"{i}. {sampler_id.name}")
+            logger.debug("%d. %s", i, sampler_id.name)
 
         # Execute samplers in the specified order
         for sampler_id in sampler_order:
-            if sampler_id == SamplerID.DRY and \
-                sampling_metadata.dry_multiplier is not None:
-                logger.debug("Applying DRY with dry_multiplier: "
-                             f"{sampling_metadata.dry_multiplier}")
+            if sampler_id == SamplerID.DRY and sampling_metadata.dry_multiplier is not None:
+                logger.debug("Applying DRY with dry_multiplier: %s", sampling_metadata.dry_multiplier)
                 logits = self.sampling_ops.apply_dry(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.PENALTIES and \
-                not sampling_metadata.no_penalties:
+            elif sampler_id == SamplerID.PENALTIES and not sampling_metadata.no_penalties:
                 logger.debug("Applying penalties")
                 logits = self.sampling_ops.apply_penalties(
-                    logits, sampling_metadata, sampling_metadata.output_token_ids)
+                    logits, sampling_metadata, sampling_metadata.output_token_ids
+                )
 
-            elif sampler_id == SamplerID.NO_REPEAT_NGRAM and \
-                sampling_metadata.no_repeat_ngram_size is not None:
-                logger.debug(
-                    f"Applying no_repeat_ngram with size: "
-                    f"{sampling_metadata.no_repeat_ngram_size}")
-                logits = self.sampling_ops.apply_no_repeat_ngram(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.NO_REPEAT_NGRAM and sampling_metadata.no_repeat_ngram_size is not None:
+                logger.debug("Applying no_repeat_ngram with size: %s", sampling_metadata.no_repeat_ngram_size)
+                logits = self.sampling_ops.apply_no_repeat_ngram(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.TEMPERATURE and \
-                sampling_metadata.temperature is not None:
-                logger.debug(
-                    f"Applying temperature: {sampling_metadata.temperature}")
+            elif sampler_id == SamplerID.TEMPERATURE and sampling_metadata.temperature is not None:
+                logger.debug("Applying temperature: %s", sampling_metadata.temperature)
                 logits = self.apply_temperature(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.TOP_NSIGMA and \
-                sampling_metadata.top_nsigma is not None:
-                logger.debug(
-                    f"Applying Top-Nsigma with nsigma: "
-                    f"{sampling_metadata.top_nsigma}")
-                logits = self.sampling_ops.apply_top_nsigma(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.TOP_NSIGMA and sampling_metadata.top_nsigma is not None:
+                logger.debug("Applying Top-Nsigma with nsigma: %s", sampling_metadata.top_nsigma)
+                logits = self.sampling_ops.apply_top_nsigma(logits, sampling_metadata)
 
             elif sampler_id == SamplerID.TOP_P_TOP_K:
                 # Apply top-k and top-p filtering to logits
                 if sampling_metadata.top_k is not None:
-                    logger.debug(
-                        f"Applying Top-k with top_k: "
-                        f"{sampling_metadata.top_k}")
+                    logger.debug("Applying Top-k with top_k: %s", sampling_metadata.top_k)
                     # Apply top-k filtering to logits
                     for i, top_k_val in enumerate(sampling_metadata.top_k):
                         if top_k_val < logits.size(-1):
-                            top_k_values, _ = torch.topk(logits[i], \
-                                int(top_k_val.item()), dim=-1)
-                            top_k_threshold = top_k_values[-1] if \
-                                top_k_values.numel() > 0 else -float('inf')
+                            top_k_values, _ = torch.topk(logits[i], int(top_k_val.item()), dim=-1)
+                            top_k_threshold = top_k_values[-1] if top_k_values.numel() > 0 else -float("inf")
                             logits[i] = torch.where(
-                                logits[i] >= top_k_threshold, logits[i],
-                                torch.tensor(-float('inf'), device=logits.device,
-                                             dtype=logits.dtype))
+                                logits[i] >= top_k_threshold,
+                                logits[i],
+                                torch.tensor(-float("inf"), device=logits.device, dtype=logits.dtype),
+                            )
 
                 if sampling_metadata.top_p is not None:
-                    logger.debug(
-                        f"Applying Top-p with top_p: "
-                        f"{sampling_metadata.top_p}")
+                    logger.debug("Applying Top-p with top_p: %s", sampling_metadata.top_p)
                     # Apply top-p filtering to logits
                     for i, top_p_val in enumerate(sampling_metadata.top_p):
                         if top_p_val < 1.0:
-                            sorted_logits, sorted_indices = torch.sort(
-                                logits[i], descending=True, dim=-1)
-                            cumulative_probs = torch.softmax(
-                                sorted_logits, dim=-1).cumsum(dim=-1)
-                            sorted_indices_to_remove = \
-                                cumulative_probs > top_p_val
-                            sorted_indices_to_remove[1:] = \
-                                sorted_indices_to_remove[:-1].clone()
+                            sorted_logits, sorted_indices = torch.sort(logits[i], descending=True, dim=-1)
+                            cumulative_probs = torch.softmax(sorted_logits, dim=-1).cumsum(dim=-1)
+                            sorted_indices_to_remove = cumulative_probs > top_p_val
+                            sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
                             sorted_indices_to_remove[0] = 0
                             indices_to_remove = sorted_indices_to_remove.scatter(
-                                0, sorted_indices, sorted_indices_to_remove)
-                            logits[i][indices_to_remove] = -float('inf')
+                                0, sorted_indices, sorted_indices_to_remove
+                            )
+                            logits[i][indices_to_remove] = -float("inf")
 
-            elif sampler_id == SamplerID.TOP_A and \
-                sampling_metadata.top_a is not None:
-                logger.debug(f"Applying Top-a with top_a: "
-                    f"{sampling_metadata.top_a}")
-                logits = self.sampling_ops.apply_top_a(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.TOP_A and sampling_metadata.top_a is not None:
+                logger.debug("Applying Top-a with top_a: %s", sampling_metadata.top_a)
+                logits = self.sampling_ops.apply_top_a(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.TFS and \
-                sampling_metadata.tfs is not None:
-                logger.debug(f"Applying TFS with tfs: {sampling_metadata.tfs}")
+            elif sampler_id == SamplerID.TFS and sampling_metadata.tfs is not None:
+                logger.debug("Applying TFS with tfs: %s", sampling_metadata.tfs)
                 logits = self.sampling_ops.apply_tfs(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.ETA_CUTOFF and \
-                sampling_metadata.eta_cutoff is not None:
-                logger.debug(f"Applying ETA Cutoff with eta_cutoff: "
-                    f"{sampling_metadata.eta_cutoff}")
-                logits = self.sampling_ops.apply_eta_cutoff(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.ETA_CUTOFF and sampling_metadata.eta_cutoff is not None:
+                logger.debug("Applying ETA Cutoff with eta_cutoff: %s", sampling_metadata.eta_cutoff)
+                logits = self.sampling_ops.apply_eta_cutoff(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.EPSILON_CUTOFF and \
-                sampling_metadata.epsilon_cutoff is not None:
-                logger.debug(f"Applying Epsilon Cutoff with epsilon_cutoff: "
-                    f"{sampling_metadata.epsilon_cutoff}")
-                logits = self.sampling_ops.apply_epsilon_cutoff(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.EPSILON_CUTOFF and sampling_metadata.epsilon_cutoff is not None:
+                logger.debug("Applying Epsilon Cutoff with epsilon_cutoff: %s", sampling_metadata.epsilon_cutoff)
+                logits = self.sampling_ops.apply_epsilon_cutoff(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.TYPICAL_P and \
-                sampling_metadata.typical_p is not None:
-                logger.debug(f"Applying Typical P with typical_p: "
-                    f"{sampling_metadata.typical_p}")
-                logits = self.sampling_ops.apply_typical_p(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.TYPICAL_P and sampling_metadata.typical_p is not None:
+                logger.debug("Applying Typical P with typical_p: %s", sampling_metadata.typical_p)
+                logits = self.sampling_ops.apply_typical_p(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.QUADRATIC and \
-                sampling_metadata.quadratic_smoothing_factor is not None:
-                logger.debug(f"Applying Quadratic with smoothing_factor: "
-                    f"{sampling_metadata.quadratic_smoothing_factor}")
-                logits = self.sampling_ops.apply_quadratic(
-                    logits, sampling_metadata)
+            elif sampler_id == SamplerID.QUADRATIC and sampling_metadata.quadratic_smoothing_factor is not None:
+                logger.debug(
+                    "Applying Quadratic with smoothing_factor: %s", sampling_metadata.quadratic_smoothing_factor
+                )
+                logits = self.sampling_ops.apply_quadratic(logits, sampling_metadata)
 
-            elif sampler_id == SamplerID.XTC and \
-                sampling_metadata.xtc_threshold is not None:
-                logger.debug(f"Applying XTC with threshold: "
-                    f"{sampling_metadata.xtc_threshold}")
+            elif sampler_id == SamplerID.XTC and sampling_metadata.xtc_threshold is not None:
+                logger.debug("Applying XTC with threshold: %s", sampling_metadata.xtc_threshold)
                 logits = self.sampling_ops.apply_xtc(logits, sampling_metadata)
 
         return logits

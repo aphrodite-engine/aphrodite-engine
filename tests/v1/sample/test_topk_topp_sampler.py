@@ -32,9 +32,7 @@ def test_topk_impl_equivalence():
     k = torch.randint(1, 10, (BATCH_SIZE,), generator=generator)
 
     # Set k=vocab_size for ~50% of requests in the batch (top-k disabled).
-    k.masked_fill_(
-        torch.randint(0, 2, (BATCH_SIZE,), generator=generator, dtype=bool), VOCAB_SIZE
-    )
+    k.masked_fill_(torch.randint(0, 2, (BATCH_SIZE,), generator=generator, dtype=bool), VOCAB_SIZE)
 
     # Top-k only implementation
     result1 = apply_top_k_top_p(logits=logits.clone(), k=k, p=None)
@@ -76,9 +74,7 @@ def test_flashinfer_sampler():
 
     # Generate various top-k and top-p values
     k_values = torch.randint(1, 1000, (BATCH_SIZE,), generator=generator)
-    p_values = (
-        torch.rand((BATCH_SIZE,), generator=generator) * 0.5 + 0.5
-    )  # range in [0.5, 1.0]
+    p_values = torch.rand((BATCH_SIZE,), generator=generator) * 0.5 + 0.5  # range in [0.5, 1.0]
 
     # Sometimes disable top-k (k=vocab_size)
     k_values.masked_fill_(
@@ -87,9 +83,7 @@ def test_flashinfer_sampler():
     )
 
     # Sometimes disable top-p (p=1.0)
-    p_values.masked_fill_(
-        torch.randint(0, 2, (BATCH_SIZE,), generator=generator, dtype=torch.bool), 1.0
-    )
+    p_values.masked_fill_(torch.randint(0, 2, (BATCH_SIZE,), generator=generator, dtype=torch.bool), 1.0)
 
     python_logits = apply_top_k_top_p(
         logits=logits.clone(),

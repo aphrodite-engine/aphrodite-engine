@@ -10,10 +10,11 @@ from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.v1.structured_output.backend_types import (
-    StructuredOutputBackend, StructuredOutputGrammar, StructuredOutputOptions)
-from aphrodite.v1.structured_output.utils import (choice_as_grammar,
-                                                  convert_lark_to_ebnf,
-                                                  grammar_is_likely_lark)
+    StructuredOutputBackend,
+    StructuredOutputGrammar,
+    StructuredOutputOptions,
+)
+from aphrodite.v1.structured_output.utils import choice_as_grammar, convert_lark_to_ebnf, grammar_is_likely_lark
 
 if TYPE_CHECKING:
     import xgrammar as xgr
@@ -26,9 +27,7 @@ logger = init_logger(__name__)
 @dataclass
 class XgrammarBackend(StructuredOutputBackend):
     def __post_init__(self):
-        self.disable_any_whitespace = (
-            self.aphrodite_config.structured_outputs_config.disable_any_whitespace
-        )
+        self.disable_any_whitespace = self.aphrodite_config.structured_outputs_config.disable_any_whitespace
 
         if isinstance(self.tokenizer, MistralTokenizer):
             # NOTE: ideally, xgrammar should handle this accordingly.
@@ -41,9 +40,7 @@ class XgrammarBackend(StructuredOutputBackend):
             tokenizer_info = xgr.TokenizerInfo(  # type: ignore
                 encoded_vocab=self.tokenizer.vocab,
                 # NOTE: https://github.com/mlc-ai/xgrammar/blob/5e141f6ff1ca02bc31f9e512e68b61f2a8ae88e5/tests/python/test_tokenizer_info.py#L43 # noqa: E501
-                vocab_type=xgr.VocabType.RAW
-                if self.tokenizer.is_tekken
-                else xgr.VocabType.BYTE_FALLBACK,
+                vocab_type=xgr.VocabType.RAW if self.tokenizer.is_tekken else xgr.VocabType.BYTE_FALLBACK,
                 vocab_size=self.vocab_size,
                 stop_token_ids=stop_token_ids,
                 add_prefix_space=True,
@@ -62,17 +59,11 @@ class XgrammarBackend(StructuredOutputBackend):
 
         self.num_speculative_tokens = 0
         if self.aphrodite_config.speculative_config is not None:
-            self.num_speculative_tokens = (
-                self.aphrodite_config.speculative_config.num_speculative_tokens
-            )
+            self.num_speculative_tokens = self.aphrodite_config.speculative_config.num_speculative_tokens
 
-    def compile_grammar(
-        self, request_type: StructuredOutputOptions, grammar_spec: str
-    ) -> StructuredOutputGrammar:
+    def compile_grammar(self, request_type: StructuredOutputOptions, grammar_spec: str) -> StructuredOutputGrammar:
         if request_type == StructuredOutputOptions.JSON:
-            ctx = self.compiler.compile_json_schema(
-                grammar_spec, any_whitespace=not self.disable_any_whitespace
-            )
+            ctx = self.compiler.compile_json_schema(grammar_spec, any_whitespace=not self.disable_any_whitespace)
         elif request_type == StructuredOutputOptions.JSON_OBJECT:
             ctx = self.compiler.compile_json_schema(
                 '{"type": "object"}', any_whitespace=not self.disable_any_whitespace
@@ -97,12 +88,8 @@ class XgrammarBackend(StructuredOutputBackend):
             else:
                 ctx = self.compiler.compile_structural_tag(grammar_spec)
         else:
-            logger.error(
-                "Validation should have already occurred. Please file an issue."
-            )
-            raise ValueError(
-                f"grammar is not of valid supported types. ({request_type!s})"
-            )
+            logger.error("Validation should have already occurred. Please file an issue.")
+            raise ValueError(f"grammar is not of valid supported types. ({request_type!s})")
 
         return XgrammarGrammar(
             matcher=xgr.GrammarMatcher(
@@ -132,9 +119,7 @@ class XgrammarGrammar(StructuredOutputGrammar):
     vocab_size: int
     matcher: xgr.GrammarMatcher = field(hash=False)
     ctx: xgr.CompiledGrammar = field(hash=False)
-    num_processed_tokens: int = field(
-        default_factory=lambda: 0, repr=False, hash=False, init=False
-    )
+    num_processed_tokens: int = field(default_factory=lambda: 0, repr=False, hash=False, init=False)
     _is_terminated: bool = field(default=False, repr=False, hash=False)
 
     def accept_tokens(self, request_id: str, tokens: list[int]) -> bool:
@@ -148,8 +133,7 @@ class XgrammarGrammar(StructuredOutputGrammar):
         for token in tokens:
             if not self.matcher.accept_token(token):
                 logger.error(
-                    "Failed to advance FSM for request %s "
-                    "for tokens %s. Please file an issue.",
+                    "Failed to advance FSM for request %s for tokens %s. Please file an issue.",
                     request_id,
                     token,
                 )
@@ -223,17 +207,12 @@ def has_xgrammar_unsupported_json_features(schema: dict[str, Any]) -> bool:
 
         # Check for array unsupported keywords
         if obj.get("type") == "array" and any(
-            key in obj
-            for key in ("uniqueItems", "contains", "minContains", "maxContains")
+            key in obj for key in ("uniqueItems", "contains", "minContains", "maxContains")
         ):
             return True
 
         # Unsupported keywords for strings
-        if (
-            obj.get("type") == "string"
-            and "format" in obj
-            and obj["format"] not in STRING_SUPPORTED_FORMATS
-        ):
+        if obj.get("type") == "string" and "format" in obj and obj["format"] not in STRING_SUPPORTED_FORMATS:
             return True
 
         # Unsupported keywords for objects
@@ -277,18 +256,14 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
         try:
             xgr.Grammar.from_regex(so_params.regex)
         except Exception as err:
-            raise ValueError(
-                f"Failed to transform regex into a grammar: {err}"
-            ) from err
+            raise ValueError(f"Failed to transform regex into a grammar: {err}") from err
 
     if so_params.choice:
         choice_grammar = choice_as_grammar(so_params.choice)
         try:
             xgr.Grammar.from_ebnf(choice_grammar)
         except Exception as err:
-            raise ValueError(
-                "Failed to transform choices into a grammar: {err}"
-            ) from err
+            raise ValueError("Failed to transform choices into a grammar: {err}") from err
         so_params.choice = None
         so_params.grammar = choice_grammar
         return
@@ -305,14 +280,10 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
         try:
             xgr.Grammar.from_json_schema(schema)
         except Exception as err:
-            raise ValueError(
-                f"Failed to transform json schema into a grammar: {err}"
-            ) from err
+            raise ValueError(f"Failed to transform json schema into a grammar: {err}") from err
 
         if has_xgrammar_unsupported_json_features(schema):
-            raise ValueError(
-                "The provided JSON schema contains features not supported by xgrammar."
-            )
+            raise ValueError("The provided JSON schema contains features not supported by xgrammar.")
         return
 
     if so_params.grammar:
@@ -321,9 +292,7 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
             try:
                 so_params.grammar = convert_lark_to_ebnf(so_params.grammar)
             except ValueError as e:
-                raise ValueError(
-                    "Failed to convert the grammar from Lark to EBNF. "
-                ) from e
+                raise ValueError("Failed to convert the grammar from Lark to EBNF. ") from e
 
         # Test parsing EBNF grammar, possibly already converted from Lark
         try:

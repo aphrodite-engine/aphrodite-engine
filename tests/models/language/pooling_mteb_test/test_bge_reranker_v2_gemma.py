@@ -5,8 +5,7 @@ import pytest
 import torch
 
 from tests.conftest import HfRunner
-from tests.models.language.pooling_mteb_test.mteb_utils import (
-    AphroditeMtebEncoder, mteb_test_rerank_models)
+from tests.models.language.pooling_mteb_test.mteb_utils import AphroditeMtebEncoder, mteb_test_rerank_models
 from tests.models.utils import LASTPoolingRerankModelInfo, RerankModelInfo
 
 RERANK_MODELS = [
@@ -26,9 +25,7 @@ PROMPT = "Given a query A and a passage B, determine whether the passage contain
 
 
 class GemmaRerankerHfRunner(HfRunner):
-    def __init__(
-        self, model_name: str, dtype: str = "auto", *args: Any, **kwargs: Any
-    ) -> None:
+    def __init__(self, model_name: str, dtype: str = "auto", *args: Any, **kwargs: Any) -> None:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         super().__init__(model_name, dtype, auto_cls=AutoModelForCausalLM)
@@ -42,12 +39,8 @@ class GemmaRerankerHfRunner(HfRunner):
                 prompt = PROMPT
 
             sep = "\n"
-            prompt_inputs = tokenizer(
-                prompt, return_tensors=None, add_special_tokens=False
-            )["input_ids"]
-            sep_inputs = tokenizer(sep, return_tensors=None, add_special_tokens=False)[
-                "input_ids"
-            ]
+            prompt_inputs = tokenizer(prompt, return_tensors=None, add_special_tokens=False)["input_ids"]
+            sep_inputs = tokenizer(sep, return_tensors=None, add_special_tokens=False)["input_ids"]
             inputs = []
             for query, passage in pairs:
                 query_inputs = tokenizer(

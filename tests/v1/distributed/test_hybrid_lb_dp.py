@@ -178,10 +178,7 @@ def servers(server_manager):
 async def clients(servers: list[tuple[RemoteOpenAIServer, list[str]]]):
     # Create a client for each node (each node has its own API endpoint)
     async with AsyncExitStack() as stack:
-        yield [
-            await stack.enter_async_context(server.get_async_client())
-            for server, _ in servers
-        ]
+        yield [await stack.enter_async_context(server.get_async_client()) for server, _ in servers]
 
 
 def _get_parallel_config(server: RemoteOpenAIServer):
@@ -207,12 +204,8 @@ def test_hybrid_dp_server_info(server_manager):
         api_process_counts = [c["_api_process_count"] for c in parallel_configs]
         api_process_ranks = [c["_api_process_rank"] for c in parallel_configs]
 
-        assert all(c == api_server_count for c in api_process_counts), (
-            api_process_counts
-        )
-        assert all(0 <= r < api_server_count for r in api_process_ranks), (
-            api_process_ranks
-        )
+        assert all(c == api_server_count for c in api_process_counts), api_process_counts
+        assert all(0 <= r < api_server_count for r in api_process_ranks), api_process_ranks
 
 
 @pytest.mark.asyncio
@@ -283,9 +276,7 @@ async def test_hybrid_lb_completion(
 
     _, server_args = servers[0]
     api_server_count = (
-        server_args.count("--api-server-count")
-        and server_args[server_args.index("--api-server-count") + 1]
-        or 1
+        server_args.count("--api-server-count") and server_args[server_args.index("--api-server-count") + 1] or 1
     )
     print(
         f"Successfully completed hybrid LB test with {len(clients)} nodes "
@@ -336,13 +327,9 @@ async def test_hybrid_lb_completion_streaming(
         # finish reason should only return in the last block for OpenAI API
         assert finish_reason_count == 1, "Finish reason should appear exactly once."
         assert last_chunk is not None, "Stream should have yielded at least one chunk."
-        assert last_chunk.choices[0].finish_reason == "length", (
-            "Finish reason should be 'length'."
-        )
+        assert last_chunk.choices[0].finish_reason == "length", "Finish reason should be 'length'."
         # Check that the combined text matches the non-streamed version.
-        assert "".join(chunks) == single_output, (
-            "Streamed output should match non-streamed output."
-        )
+        assert "".join(chunks) == single_output, "Streamed output should match non-streamed output."
         return True  # Indicate success for this request
 
     # Test single request to each node
@@ -380,9 +367,7 @@ async def test_hybrid_lb_completion_streaming(
 
     _, server_args = servers[0]
     api_server_count = (
-        server_args.count("--api-server-count")
-        and server_args[server_args.index("--api-server-count") + 1]
-        or 1
+        server_args.count("--api-server-count") and server_args[server_args.index("--api-server-count") + 1] or 1
     )
     print(
         f"Successfully completed hybrid LB streaming test with "

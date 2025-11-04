@@ -5,7 +5,7 @@
 
 import os
 from shutil import copyfile
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import sentencepiece as spm
 from transformers.tokenization_utils import AddedToken, PreTrainedTokenizer
@@ -43,7 +43,7 @@ class BaichuanTokenizer(PreTrainedTokenizer):
         bos_token="<s>",
         eos_token="</s>",
         pad_token=None,
-        sp_model_kwargs: Optional[Dict[str, Any]] = None,
+        sp_model_kwargs: dict[str, Any] | None = None,
         add_bos_token=True,
         add_eos_token=False,
         clean_up_tokenization_spaces=False,
@@ -146,8 +146,8 @@ class BaichuanTokenizer(PreTrainedTokenizer):
         return out_string
 
     def save_vocabulary(
-        self, save_directory, filename_prefix: Optional[str] = None
-    ) -> Tuple[str]:
+        self, save_directory, filename_prefix: str | None = None
+    ) -> tuple[str]:
         """
         Save the vocabulary and special tokens file to a directory.
 
@@ -159,8 +159,10 @@ class BaichuanTokenizer(PreTrainedTokenizer):
             `Tuple(str)`: Paths to the files saved.
         """
         if not os.path.isdir(save_directory):
-            logger.error(f"Vocabulary path ({save_directory}) should be"
-                         " a directory")
+            logger.error("Vocabulary path (%s) should be"
+                         " a directory",
+                         save_directory,
+            )
             return
         out_vocab_file = os.path.join(
             save_directory,
@@ -192,10 +194,10 @@ class BaichuanTokenizer(PreTrainedTokenizer):
 
     def get_special_tokens_mask(
         self,
-        token_ids_0: List[int],
-        token_ids_1: Optional[List[int]] = None,
+        token_ids_0: list[int],
+        token_ids_1: list[int] | None = None,
         already_has_special_tokens: bool = False,
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Retrieve sequence ids from a token list that has no special tokens
         added. This method is called when adding special tokens using the
@@ -236,8 +238,8 @@ class BaichuanTokenizer(PreTrainedTokenizer):
         )
 
     def create_token_type_ids_from_sequences(
-        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
-    ) -> List[int]:
+        self, token_ids_0: list[int], token_ids_1: list[int] | None = None
+    ) -> list[int]:
         """
         Creates a mask from the two sequences passed to be used in a
         sequence-pair classification task. An ALBERT

@@ -11,7 +11,10 @@ from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import QKVParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.llama import LlamaDecoderLayer, LlamaForCausalLM
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -70,16 +73,12 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
             else None
         )
 
-    def _norm_before_residual(
-        self, hidden_states: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _norm_before_residual(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         hidden_states = self.hidden_norm(hidden_states)
         residual = hidden_states
         return hidden_states, residual
 
-    def _norm_after_residual(
-        self, hidden_states: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _norm_after_residual(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         residual = hidden_states
         hidden_states = self.hidden_norm(hidden_states)
         return hidden_states, residual
@@ -155,13 +154,9 @@ class LlamaModel(nn.Module):
             ]
         )
         if hasattr(self.config, "target_hidden_size"):
-            self.fc = torch.nn.Linear(
-                self.config.target_hidden_size * 3, self.config.hidden_size, bias=False
-            )
+            self.fc = torch.nn.Linear(self.config.target_hidden_size * 3, self.config.hidden_size, bias=False)
         else:
-            self.fc = torch.nn.Linear(
-                self.config.hidden_size * 3, self.config.hidden_size, bias=False
-            )
+            self.fc = torch.nn.Linear(self.config.hidden_size * 3, self.config.hidden_size, bias=False)
         self.norm = RMSNorm(
             self.config.hidden_size,
             eps=self.config.rms_norm_eps,
@@ -231,16 +226,12 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
         if getattr(self.config, "draft_vocab_size", None) is None:
             base_vocab_size = getattr(self.config, "vocab_size", None)
             self.config.draft_vocab_size = base_vocab_size
-        target_layer_num = aphrodite_config.model_config.get_num_layers(
-            aphrodite_config.parallel_config
-        )
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
 
         # Store target layer count in draft config for
         # proper layer_types indexing in draft models
         self.config.target_layer_count = target_layer_num
-        self.model = LlamaModel(
-            aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num
-        )
+        self.model = LlamaModel(aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num)
 
         logit_scale = getattr(self.config, "logit_scale", 1.0)
         self.lm_head = ParallelLMHead(
@@ -250,9 +241,7 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
             padding_size=(DEFAULT_VOCAB_PADDING_SIZE),
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        self.logits_processor = LogitsProcessor(
-            self.config.draft_vocab_size, scale=logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.config.draft_vocab_size, scale=logit_scale)
         self.draft_id_to_target_id = nn.Parameter(
             torch.zeros(self.config.draft_vocab_size, dtype=torch.long),
             requires_grad=False,
@@ -282,8 +271,7 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
         logits = self.logits_processor(self.lm_head, hidden_states)
         if self.draft_id_to_target_id is None:
             assert logits.shape[1] == self.config.vocab_size, (
-                "Expected logits to have shape "
-                f"(*, {self.config.vocab_size}), but got {logits.shape}"
+                f"Expected logits to have shape (*, {self.config.vocab_size}), but got {logits.shape}"
             )
             return logits
 

@@ -27,15 +27,8 @@ else:
 @triton.heuristics({"HAS_DT_BIAS": lambda args: args["dt_bias_ptr"] is not None})
 @triton.heuristics({"HAS_D": lambda args: args["D_ptr"] is not None})
 @triton.heuristics({"HAS_Z": lambda args: args["z_ptr"] is not None})
-@triton.heuristics(
-    {
-        "HAS_STATE_BATCH_INDICES": lambda args: args["state_batch_indices_ptr"]
-        is not None
-    }
-)
-@triton.heuristics(
-    {"BLOCK_SIZE_DSTATE": lambda args: triton.next_power_of_2(args["dstate"])}
-)
+@triton.heuristics({"HAS_STATE_BATCH_INDICES": lambda args: args["state_batch_indices_ptr"] is not None})
+@triton.heuristics({"BLOCK_SIZE_DSTATE": lambda args: triton.next_power_of_2(args["dstate"])})
 @triton.jit
 def _selective_scan_update_kernel(
     # Pointers to matrices
@@ -108,16 +101,12 @@ def _selective_scan_update_kernel(
     if HAS_STATE_BATCH_INDICES:
         dst_state_batch_indices_ptr += pid_b
         dst_state_batch_idx = tl.load(dst_state_batch_indices_ptr).to(tl.int64)
-        dst_state_ptr = state_ptr + (
-            dst_state_batch_idx * stride_state_batch + pid_h * stride_state_head
-        )
+        dst_state_ptr = state_ptr + (dst_state_batch_idx * stride_state_batch + pid_h * stride_state_head)
         state_batch_indices_ptr += pid_b
         state_batch_idx = tl.load(state_batch_indices_ptr).to(tl.int64)
         state_ptr += state_batch_idx * stride_state_batch + pid_h * stride_state_head
     else:
-        dst_state_ptr = (
-            state_ptr + pid_b * stride_state_batch + pid_h * stride_state_head
-        )
+        dst_state_ptr = state_ptr + pid_b * stride_state_batch + pid_h * stride_state_head
         state_ptr += pid_b * stride_state_batch + pid_h * stride_state_head
 
     x_ptr += pid_b * stride_x_batch + pid_h * stride_x_head
@@ -133,21 +122,15 @@ def _selective_scan_update_kernel(
 
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = tl.arange(0, BLOCK_SIZE_DSTATE)
-    state_ptrs = state_ptr + (
-        offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate
-    )
-    dst_state_ptrs = dst_state_ptr + (
-        offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate
-    )
+    state_ptrs = state_ptr + (offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate)
+    dst_state_ptrs = dst_state_ptr + (offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate)
     x_ptrs = x_ptr + offs_m * stride_x_dim
     dt_ptrs = dt_ptr + offs_m * stride_dt_dim
     if HAS_DT_BIAS:
         dt_bias_ptrs = dt_bias_ptr + offs_m * stride_dt_bias_dim
     if HAS_D:
         D_ptr += pid_h * stride_D_head
-    A_ptrs = A_ptr + (
-        offs_m[:, None] * stride_A_dim + offs_n[None, :] * stride_A_dstate
-    )
+    A_ptrs = A_ptr + (offs_m[:, None] * stride_A_dim + offs_n[None, :] * stride_A_dstate)
     B_ptrs = B_ptr + offs_n * stride_B_dstate
     C_ptrs = C_ptr + offs_n * stride_C_dstate
     if HAS_D:
@@ -167,9 +150,7 @@ def _selective_scan_update_kernel(
             dt += tl.load(dt_bias_ptrs, mask=offs_m < dim, other=0.0).to(tl.float32)
         if DT_SOFTPLUS:
             dt = softplus(dt)
-        A = tl.load(
-            A_ptrs, mask=(offs_m[:, None] < dim) & (offs_n[None, :] < dstate), other=0.0
-        ).to(tl.float32)
+        A = tl.load(A_ptrs, mask=(offs_m[:, None] < dim) & (offs_n[None, :] < dstate), other=0.0).to(tl.float32)
         dA = tl.exp(A * dt[:, None])
     else:
         dt = tl.load(dt_ptr).to(tl.float32)
@@ -291,18 +272,9 @@ def selective_state_update(
     BLOCK_SIZE_M, num_warps = (
         (32, 4)
         if dstate <= 16
-        else (
-            (16, 4)
-            if dstate <= 32
-            else ((8, 4) if dstate <= 64 else ((4, 4) if dstate <= 128 else ((4, 8))))
-        )
+        else ((16, 4) if dstate <= 32 else ((8, 4) if dstate <= 64 else ((4, 4) if dstate <= 128 else ((4, 8)))))
     )
-    tie_hdim = (
-        A.stride(-1) == 0
-        and A.stride(-2) == 0
-        and dt.stride(-1) == 0
-        and dt_bias.stride(-1) == 0
-    )
+    tie_hdim = A.stride(-1) == 0 and A.stride(-2) == 0 and dt.stride(-1) == 0 and dt_bias.stride(-1) == 0
     with torch.cuda.device(x.device.index):
         _selective_scan_update_kernel[grid](
             state,

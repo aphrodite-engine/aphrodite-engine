@@ -255,10 +255,11 @@ bool is_valid_config(thread_config_t const& th_config, int thread_m_blocks,
              group_blocks == GROUP_BLOCKS && num_threads == NUM_THREADS &&     \
              is_zp_float == IS_ZP_FLOAT) {                                     \
       constexpr auto S_TYPE =                                                  \
-          W_TYPE == aphrodite::kFE2M1f                                              \
-              ? (GROUP_BLOCKS == 1 ? aphrodite::kFE4M3fn : aphrodite::kFE8M0fnu)         \
-              : (std::is_same<scalar_t, half>::value ? aphrodite::kFloat16          \
-                                                     : aphrodite::kBFloat16);       \
+          W_TYPE == aphrodite::kFE2M1f                                         \
+              ? (GROUP_BLOCKS == 1 ? aphrodite::kFE4M3fn                       \
+                                   : aphrodite::kFE8M0fnu)                     \
+              : (std::is_same<scalar_t, half>::value ? aphrodite::kFloat16     \
+                                                     : aphrodite::kBFloat16);  \
       kernel = Marlin<scalar_t, W_TYPE.id(), S_TYPE.id(), NUM_THREADS,         \
                       THREAD_M_BLOCKS, THREAD_N_BLOCKS, THREAD_K_BLOCKS,       \
                       M_BLOCK_SIZE_8, pipe_stages, GROUP_BLOCKS, IS_ZP_FLOAT>; \
@@ -434,13 +435,13 @@ MarlinFuncPtr get_marlin_kernel(const aphrodite::ScalarType q_type,
 }
 
 template <typename scalar_t>
-exec_config_t determine_exec_config(const aphrodite::ScalarType& q_type, int prob_m,
-                                    int prob_n, int prob_k, int thread_m_blocks,
-                                    bool m_block_size_8, int num_bits,
-                                    int group_size, bool has_act_order,
-                                    bool is_k_full, bool has_zp,
-                                    bool is_zp_float, int max_shared_mem,
-                                    int sms) {
+exec_config_t determine_exec_config(const aphrodite::ScalarType& q_type,
+                                    int prob_m, int prob_n, int prob_k,
+                                    int thread_m_blocks, bool m_block_size_8,
+                                    int num_bits, int group_size,
+                                    bool has_act_order, bool is_k_full,
+                                    bool has_zp, bool is_zp_float,
+                                    int max_shared_mem, int sms) {
   exec_config_t exec_cfg = exec_config_t{1, thread_config_t{-1, -1, -1}};
   thread_config_t* thread_configs = thread_m_blocks > 1
                                         ? large_batch_thread_configs
@@ -489,11 +490,11 @@ template <typename scalar_t>
 void marlin_mm(const void* A, const void* B, void* C, void* C_tmp, void* b_bias,
                void* s, void* s2, void* zp, void* g_idx, void* perm,
                void* a_tmp, int prob_m, int prob_n, int prob_k, int lda,
-               void* workspace, aphrodite::ScalarType const& q_type, bool has_bias,
-               bool has_act_order, bool is_k_full, bool has_zp, int num_groups,
-               int group_size, int dev, cudaStream_t stream, int thread_k_init,
-               int thread_n_init, int sms, bool use_atomic_add,
-               bool use_fp32_reduce, bool is_zp_float) {
+               void* workspace, aphrodite::ScalarType const& q_type,
+               bool has_bias, bool has_act_order, bool is_k_full, bool has_zp,
+               int num_groups, int group_size, int dev, cudaStream_t stream,
+               int thread_k_init, int thread_n_init, int sms,
+               bool use_atomic_add, bool use_fp32_reduce, bool is_zp_float) {
   if (has_zp) {
     TORCH_CHECK(
         q_type == aphrodite::kU4 || q_type == aphrodite::kU8,
@@ -682,7 +683,8 @@ torch::Tensor gptq_marlin_gemm(
     aphrodite::ScalarTypeId const& b_q_type_id, int64_t size_m, int64_t size_n,
     int64_t size_k, bool is_k_full, bool use_atomic_add, bool use_fp32_reduce,
     bool is_zp_float) {
-  aphrodite::ScalarType const b_q_type = aphrodite::ScalarType::from_id(b_q_type_id);
+  aphrodite::ScalarType const b_q_type =
+      aphrodite::ScalarType::from_id(b_q_type_id);
   int pack_factor = 32 / b_q_type.size_bits();
 
   // Verify A
@@ -855,12 +857,13 @@ torch::Tensor gptq_marlin_gemm(
         b_q_type == aphrodite::kU4 || b_q_type == aphrodite::kU8,
         "b_q_type must be u4 or u8 when has_zp = True. Got = ", b_q_type.str());
   } else {
-    TORCH_CHECK(b_q_type == aphrodite::kU4B8 || b_q_type == aphrodite::kU8B128 ||
-                    b_q_type == aphrodite::kFE4M3fn || b_q_type == aphrodite::kFE2M1f,
-                "b_q_type must be uint4b8, uint8b128, float8_e4m3fn or "
-                "float4_e2m1f when "
-                "has_zp = False. Got = ",
-                b_q_type.str());
+    TORCH_CHECK(
+        b_q_type == aphrodite::kU4B8 || b_q_type == aphrodite::kU8B128 ||
+            b_q_type == aphrodite::kFE4M3fn || b_q_type == aphrodite::kFE2M1f,
+        "b_q_type must be uint4b8, uint8b128, float8_e4m3fn or "
+        "float4_e2m1f when "
+        "has_zp = False. Got = ",
+        b_q_type.str());
   }
 
   if (has_zp && is_zp_float) {

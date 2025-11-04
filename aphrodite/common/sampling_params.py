@@ -1,14 +1,14 @@
 """Sampling parameters for text generation."""
+
 import copy
 import warnings
 from dataclasses import field
 from enum import Enum, IntEnum
 from functools import cached_property
-from typing import Any
+from typing import Annotated, Any
 
 import msgspec
 from pydantic.dataclasses import dataclass
-from typing_extensions import Annotated
 
 from aphrodite.config import SchedulerConfig
 from aphrodite.logger import init_logger
@@ -119,6 +119,7 @@ class RequestOutputKind(Enum):
     # Do not return intermediate RequestOuputs
     FINAL_ONLY = 2
 
+
 class SamplerID(IntEnum):
     # Mirror these in aphrodite/modeling/layers/sampler.py
     # Values out of order to keep backwards compatibility
@@ -158,9 +159,7 @@ class SamplerID(IntEnum):
             return cls[value.upper()]
         except KeyError as e:
             valid_names = [x.name for x in cls]
-            raise ValueError(
-                f"Invalid sampler name '{value}'. Must be one of: {valid_names}"
-            ) from e
+            raise ValueError(f"Invalid sampler name '{value}'. Must be one of: {valid_names}") from e
 
 
 class SamplingParams(
@@ -643,10 +642,7 @@ class SamplingParams(
         if logit_bias is not None:
             # Convert token_id to integer
             # Clamp the bias between -100 and 100 per OpenAI API spec
-            logit_bias = {
-                int(token): min(100.0, max(-100.0, bias))
-                for token, bias in logit_bias.items()
-            }
+            logit_bias = {int(token): min(100.0, max(-100.0, bias)) for token, bias in logit_bias.items()}
         if guided_decoding is not None:
             warnings.warn(
                 "guided_decoding is deprecated. This will be removed in "
@@ -661,21 +657,15 @@ class SamplingParams(
         return SamplingParams(
             n=1 if n is None else n,
             best_of=best_of,
-            presence_penalty=
-            0.0 if presence_penalty is None else presence_penalty,
-            frequency_penalty=
-            0.0 if frequency_penalty is None else frequency_penalty,
-            repetition_penalty=
-            1.0 if repetition_penalty is None else repetition_penalty,
-            no_repeat_ngram_size=
-            0 if no_repeat_ngram_size is None else no_repeat_ngram_size,
+            presence_penalty=0.0 if presence_penalty is None else presence_penalty,
+            frequency_penalty=0.0 if frequency_penalty is None else frequency_penalty,
+            repetition_penalty=1.0 if repetition_penalty is None else repetition_penalty,
+            no_repeat_ngram_size=0 if no_repeat_ngram_size is None else no_repeat_ngram_size,
             temperature=1.0 if temperature is None else temperature,
             dynatemp_min=0.0 if dynatemp_min is None else dynatemp_min,
             dynatemp_max=0.0 if dynatemp_max is None else dynatemp_max,
-            dynatemp_exponent=
-            1.0 if dynatemp_exponent is None else dynatemp_exponent,
-            temperature_last=
-            False if temperature_last is None else temperature_last,
+            dynatemp_exponent=1.0 if dynatemp_exponent is None else dynatemp_exponent,
+            temperature_last=False if temperature_last is None else temperature_last,
             top_p=1.0 if top_p is None else top_p,
             top_k=-1 if top_k is None else top_k,
             top_a=0.0 if top_a is None else top_a,
@@ -684,21 +674,15 @@ class SamplingParams(
             eta_cutoff=0.0 if eta_cutoff is None else eta_cutoff,
             epsilon_cutoff=0.0 if epsilon_cutoff is None else epsilon_cutoff,
             typical_p=1.0 if typical_p is None else typical_p,
-            smoothing_factor=
-            0.0 if smoothing_factor is None else smoothing_factor,
-            smoothing_curve=
-            1.0 if smoothing_curve is None else smoothing_curve,
+            smoothing_factor=0.0 if smoothing_factor is None else smoothing_factor,
+            smoothing_curve=1.0 if smoothing_curve is None else smoothing_curve,
             seed=seed,
-            use_beam_search=
-            (False if use_beam_search is None else use_beam_search),
-            length_penalty=
-            1.0 if length_penalty is None else length_penalty,
+            use_beam_search=(False if use_beam_search is None else use_beam_search),
+            length_penalty=1.0 if length_penalty is None else length_penalty,
             early_stopping=False if early_stopping is None else early_stopping,
             stop=stop,
             stop_token_ids=stop_token_ids if stop_token_ids is not None else [],
-            include_stop_str_in_output=
-            (False if include_stop_str_in_output is None else
-             include_stop_str_in_output),
+            include_stop_str_in_output=(False if include_stop_str_in_output is None else include_stop_str_in_output),
             ignore_eos=False if ignore_eos is None else ignore_eos,
             max_tokens=16 if max_tokens is None else max_tokens,
             min_tokens=0 if min_tokens is None else min_tokens,
@@ -707,11 +691,10 @@ class SamplingParams(
             detokenize=True if detokenize is None else detokenize,
             custom_token_bans=custom_token_bans,
             token_ban_ranges=token_ban_ranges,
-            skip_special_tokens=(True if skip_special_tokens is None else
-                                 skip_special_tokens),
-            spaces_between_special_tokens=
-            (True if spaces_between_special_tokens is None else
-             spaces_between_special_tokens),
+            skip_special_tokens=(True if skip_special_tokens is None else skip_special_tokens),
+            spaces_between_special_tokens=(
+                True if spaces_between_special_tokens is None else spaces_between_special_tokens
+            ),
             logits_processors=logits_processors,
             truncate_prompt_tokens=truncate_prompt_tokens,
             xtc_threshold=0.1 if xtc_threshold is None else xtc_threshold,
@@ -722,23 +705,15 @@ class SamplingParams(
             mirostat_eta=0.0 if mirostat_eta is None else mirostat_eta,
             dry_multiplier=0.0 if dry_multiplier is None else dry_multiplier,
             dry_base=1.75 if dry_base is None else dry_base,
-            dry_allowed_length=
-            2 if dry_allowed_length is None else dry_allowed_length,
-            dry_sequence_breaker_ids=
-            ([] if dry_sequence_breaker_ids is None else
-             dry_sequence_breaker_ids),
+            dry_allowed_length=2 if dry_allowed_length is None else dry_allowed_length,
+            dry_sequence_breaker_ids=([] if dry_sequence_breaker_ids is None else dry_sequence_breaker_ids),
             dry_range=0 if dry_range is None else dry_range,
             dry_max_ngram=12 if dry_max_ngram is None else dry_max_ngram,
-            dry_max_occurrences=
-            8 if dry_max_occurrences is None else dry_max_occurrences,
-            dry_early_exit_match_len=
-            8 if dry_early_exit_match_len is None else dry_early_exit_match_len,
+            dry_max_occurrences=8 if dry_max_occurrences is None else dry_max_occurrences,
+            dry_early_exit_match_len=8 if dry_early_exit_match_len is None else dry_early_exit_match_len,
             skew=0.0 if skew is None else skew,
-            sampler_priority=
-            [] if sampler_priority is None else sampler_priority,
-            output_kind=
-            (RequestOutputKind.CUMULATIVE if output_kind is None else
-             output_kind),
+            sampler_priority=[] if sampler_priority is None else sampler_priority,
+            output_kind=(RequestOutputKind.CUMULATIVE if output_kind is None else output_kind),
             structured_outputs=structured_outputs,
             logit_bias=logit_bias,
             allowed_token_ids=allowed_token_ids,
@@ -829,15 +804,19 @@ class SamplingParams(
         if self.best_of:
             if self.best_of < self.n:
                 raise ValueError(
-                    f"best_of must be greater than or equal to n, "
-                    f"got n={self.n} and best_of={self.best_of}.")
+                    f"best_of must be greater than or equal to n, got n={self.n} and best_of={self.best_of}."
+                )
             self._real_n = self.n
             self.n = self.best_of
         if 0 < self.temperature < _MAX_TEMP:
             logger.warning(
-                f"temperature {self.temperature} is less than {_MAX_TEMP}, "
+                "temperature %s is less than %s, "
                 "which may cause numerical errors NaN or inf in tensors. We "
-                f"have maxed it out to {_MAX_TEMP}.")
+                "have maxed it out to %s.",
+                self.temperature,
+                _MAX_TEMP,
+                _MAX_TEMP,
+            )
             self.temperature = max(self.temperature, _MAX_TEMP)
         if self.seed == -1:
             self.seed = None
@@ -854,8 +833,7 @@ class SamplingParams(
         else:
             self.stop_token_ids = list(self.stop_token_ids)
         self.logprobs = 1 if self.logprobs is True else self.logprobs
-        self.prompt_logprobs = (1 if self.prompt_logprobs is True else
-                                self.prompt_logprobs)
+        self.prompt_logprobs = 1 if self.prompt_logprobs is True else self.prompt_logprobs
 
         # Number of characters to hold back for stop string evaluation
         # until sequence is finished.
@@ -863,10 +841,7 @@ class SamplingParams(
             self.output_text_buffer_length = max(len(s) for s in self.stop) - 1
 
         if self.logit_bias is not None:
-            logit_bias = {
-                int(token): bias
-                for token, bias in self.logit_bias.items()
-            }
+            logit_bias = {int(token): bias for token, bias in self.logit_bias.items()}
             self.logit_bias = logit_bias
 
         self._verify_args()
@@ -897,39 +872,31 @@ class SamplingParams(
 
     def _verify_args(self) -> None:
         if not isinstance(self.n, int):
-            raise ValueError(f"n must be an int, but is of "
-                             f"type {type(self.n)}")
+            raise ValueError(f"n must be an int, but is of type {type(self.n)}")
         if self.n < 1:
             raise ValueError(f"n must be at least 1, got {self.n}.")
         if self.best_of is not None:
             if not isinstance(self.best_of, int):
-                raise ValueError(
-                    f"best_of must be an integer, got {type(self.best_of)}")
+                raise ValueError(f"best_of must be an integer, got {type(self.best_of)}")
             if self.best_of < 1:
-                raise ValueError(
-                    f"best_of must be at least 1, got {self.best_of}")
+                raise ValueError(f"best_of must be at least 1, got {self.best_of}")
             if self.best_of < self.n:
                 raise ValueError(
-                    f"best_of must be greater than or equal to n, "
-                    f"got n={self.n} and best_of={self.best_of}.")
+                    f"best_of must be greater than or equal to n, got n={self.n} and best_of={self.best_of}."
+                )
         if not -2.0 <= self.presence_penalty <= 2.0:
-            raise ValueError("presence_penalty must be in [-2, 2], got "
-                             f"{self.presence_penalty}.")
+            raise ValueError(f"presence_penalty must be in [-2, 2], got {self.presence_penalty}.")
         if not -2.0 <= self.frequency_penalty <= 2.0:
-            raise ValueError("frequency_penalty must be in [-2, 2], got "
-                             f"{self.frequency_penalty}.")
+            raise ValueError(f"frequency_penalty must be in [-2, 2], got {self.frequency_penalty}.")
         if self.repetition_penalty < 1.0:
-            raise ValueError("repetition_penalty must be in [1, inf), got "
-                             f"{self.repetition_penalty}.")
+            raise ValueError(f"repetition_penalty must be in [1, inf), got {self.repetition_penalty}.")
         if self.temperature < 0.0:
-            raise ValueError(
-                f"temperature must be non-negative, got {self.temperature}.")
+            raise ValueError(f"temperature must be non-negative, got {self.temperature}.")
         if not 0.0 < self.top_p <= 1.0:
             raise ValueError(f"top_p must be in (0, 1], got {self.top_p}.")
         # quietly accept -1 as disabled, but prefer 0
         if self.top_k < -1:
-            raise ValueError(f"top_k must be 0 (disable), or at least 1, "
-                             f"got {self.top_k}.")
+            raise ValueError(f"top_k must be 0 (disable), or at least 1, got {self.top_k}.")
         if self.top_a < 0:
             raise ValueError(f"top_a must be non negative, got {self.top_a}.")
         if not 0.0 <= self.min_p <= 1.0:
@@ -937,64 +904,41 @@ class SamplingParams(
         if not 0.0 < self.tfs <= 1.0:
             raise ValueError(f"tfs must be in (0, 1], got {self.tfs}.")
         if self.epsilon_cutoff < 0.0 or self.epsilon_cutoff > 1000.0:
-            raise ValueError("epsilon_cutoff must be in [0, 1000], got "
-                             f"{self.epsilon_cutoff}.")
+            raise ValueError(f"epsilon_cutoff must be in [0, 1000], got {self.epsilon_cutoff}.")
         # pylint: disable=unneeded-not
         if not self.eta_cutoff >= 0:
-            raise ValueError(
-                f"eta_cutoff must be non negative, got {self.eta_cutoff}.")
+            raise ValueError(f"eta_cutoff must be non negative, got {self.eta_cutoff}.")
         if not 0.0 <= self.typical_p <= 1.0:
-            raise ValueError(
-                f"typical_p must be in (0, 1], got {self.typical_p}.")
+            raise ValueError(f"typical_p must be in (0, 1], got {self.typical_p}.")
         if self.max_tokens is not None and self.max_tokens < 1:
-            raise ValueError(
-                f"max_tokens must be at least 1, got {self.max_tokens}.")
+            raise ValueError(f"max_tokens must be at least 1, got {self.max_tokens}.")
         if self.min_tokens < 0:
-            raise ValueError(f"min_tokens must be greater than or equal to 0, "
-                             f"got {self.min_tokens}.")
+            raise ValueError(f"min_tokens must be greater than or equal to 0, got {self.min_tokens}.")
         if self.max_tokens is not None and self.min_tokens > self.max_tokens:
             raise ValueError(
-                f"min_tokens must be less than or equal to "
-                f"max_tokens={self.max_tokens}, got {self.min_tokens}."
+                f"min_tokens must be less than or equal to max_tokens={self.max_tokens}, got {self.min_tokens}."
             )
         if self.logprobs is not None and self.logprobs != -1 and self.logprobs < 0:
-            raise ValueError(
-                f"logprobs must be non-negative or -1, got {self.logprobs}."
-            )
-        if (
-            self.prompt_logprobs is not None
-            and self.prompt_logprobs != -1
-            and self.prompt_logprobs < 0
-        ):
-            raise ValueError(
-                f"prompt_logprobs must be non-negative or -1, got "
-                f"{self.prompt_logprobs}."
-            )
+            raise ValueError(f"logprobs must be non-negative or -1, got {self.logprobs}.")
+        if self.prompt_logprobs is not None and self.prompt_logprobs != -1 and self.prompt_logprobs < 0:
+            raise ValueError(f"prompt_logprobs must be non-negative or -1, got {self.prompt_logprobs}.")
         if self.truncate_prompt_tokens is not None and (
             self.truncate_prompt_tokens == 0 or self.truncate_prompt_tokens < -1
         ):
-            raise ValueError(
-                f"truncate_prompt_tokens must be an integer >= 1 or -1, "
-                f"got {self.truncate_prompt_tokens}")
+            raise ValueError(f"truncate_prompt_tokens must be an integer >= 1 or -1, got {self.truncate_prompt_tokens}")
         assert isinstance(self.stop, list)
         if any(not stop_str for stop_str in self.stop):
             raise ValueError("stop cannot contain an empty string.")
         if self.stop and not self.detokenize:
             raise ValueError(
-                "stop strings are only supported when detokenize is True. "
-                "set detokenize=True to use stop.")
+                "stop strings are only supported when detokenize is True. set detokenize=True to use stop."
+            )
         if self.xtc_threshold < 0.0:
-            raise ValueError(
-                "xtc_threshold must be non-negative, got "
-                f"{self.xtc_threshold}.")
+            raise ValueError(f"xtc_threshold must be non-negative, got {self.xtc_threshold}.")
         if not 0.0 <= self.xtc_probability <= 1.0:
-            raise ValueError(
-                "xtc_probability must be in [0, 1], got "
-                f"{self.xtc_probability}.")
+            raise ValueError(f"xtc_probability must be in [0, 1], got {self.xtc_probability}.")
         if self.nsigma < 0.0:
-            raise ValueError(
-                "nsigma must be non-negative, got "
-                f"{self.nsigma}.")
+            raise ValueError(f"nsigma must be non-negative, got {self.nsigma}.")
         if self.mirostat_mode not in [0, 2]:
             raise ValueError(f"mirostat_mode must be 0 or 2, got {self.mirostat_mode}.")
         if self.mirostat_tau < 0.0:
@@ -1002,64 +946,38 @@ class SamplingParams(
         if self.mirostat_eta < 0.0:
             raise ValueError(f"mirostat_eta must be non-negative, got {self.mirostat_eta}.")
         if self.dry_multiplier < 0.0:
-            raise ValueError(
-                "dry_multiplier must be non-negative, got "
-                f"{self.dry_multiplier}.")
+            raise ValueError(f"dry_multiplier must be non-negative, got {self.dry_multiplier}.")
         if self.dry_base <= 1.0:
-            raise ValueError(
-                "dry_base must be greater than 1, got "
-                f"{self.dry_base}.")
+            raise ValueError(f"dry_base must be greater than 1, got {self.dry_base}.")
         if self.dry_allowed_length < 0:
-            raise ValueError(
-                "dry_allowed_length must be non-negative, got "
-                f"{self.dry_allowed_length}.")
+            raise ValueError(f"dry_allowed_length must be non-negative, got {self.dry_allowed_length}.")
         if self.dry_range < 0:
-            raise ValueError(
-                "dry_range must be non-negative, got "
-                f"{self.dry_range}.")
+            raise ValueError(f"dry_range must be non-negative, got {self.dry_range}.")
         if self.dry_max_ngram < 0:
-            raise ValueError(
-                "dry_max_ngram must be non-negative, got "
-                f"{self.dry_max_ngram}.")
+            raise ValueError(f"dry_max_ngram must be non-negative, got {self.dry_max_ngram}.")
         if self.dry_max_occurrences < 0:
-            raise ValueError(
-                "dry_max_occurrences must be non-negative, got "
-                f"{self.dry_max_occurrences}.")
+            raise ValueError(f"dry_max_occurrences must be non-negative, got {self.dry_max_occurrences}.")
         if self.dry_early_exit_match_len < 0:
-            raise ValueError(
-                "dry_early_exit_match_len must be non-negative, got "
-                f"{self.dry_early_exit_match_len}.")
+            raise ValueError(f"dry_early_exit_match_len must be non-negative, got {self.dry_early_exit_match_len}.")
         if self.skew < 0.0:
-            raise ValueError(
-                "skew must be non-negative, got "
-                f"{self.skew}.")
-        if self.custom_token_bans is not None and not isinstance(
-            self.custom_token_bans, list):
-            raise ValueError(
-                "custom_token_bans must be a list of integers")
-        if self.token_ban_ranges is not None and not isinstance(
-            self.token_ban_ranges, list):
-            raise ValueError(
-                "token_ban_ranges must be a list of tuples")
+            raise ValueError(f"skew must be non-negative, got {self.skew}.")
+        if self.custom_token_bans is not None and not isinstance(self.custom_token_bans, list):
+            raise ValueError("custom_token_bans must be a list of integers")
+        if self.token_ban_ranges is not None and not isinstance(self.token_ban_ranges, list):
+            raise ValueError("token_ban_ranges must be a list of tuples")
         if self.bad_words is None:
             self.bad_words = []
         else:
             self.bad_words = list(self.bad_words)
 
-        if self.banned_phrases_token_ids is not None and not isinstance(
-                self.banned_phrases_token_ids, list):
-            raise ValueError(
-                "banned_phrases_token_ids must be a list of lists of integers")
+        if self.banned_phrases_token_ids is not None and not isinstance(self.banned_phrases_token_ids, list):
+            raise ValueError("banned_phrases_token_ids must be a list of lists of integers")
 
         if self.enable_deepconf:
             if self.deepconf_window_size < 1:
-                raise ValueError(
-                    "deepconf_window_size must be at least 1, got "
-                    f"{self.deepconf_window_size}.")
+                raise ValueError(f"deepconf_window_size must be at least 1, got {self.deepconf_window_size}.")
             if self.deepconf_threshold < 0:
-                raise ValueError(
-                    "deepconf_threshold must be non-negative, got "
-                    f"{self.deepconf_threshold}.")
+                raise ValueError(f"deepconf_threshold must be non-negative, got {self.deepconf_threshold}.")
 
         if self.sampler_priority is not None:
             if not self.sampler_priority:
@@ -1067,36 +985,26 @@ class SamplingParams(
                 return
 
             if not isinstance(self.sampler_priority, list):
-                raise ValueError(
-                    "sampler_priority must be a list of integers or strings")
+                raise ValueError("sampler_priority must be a list of integers or strings")
 
             try:
-                self.sampler_priority = [
-                    SamplerID.from_str(x) for x in self.sampler_priority
-                ]
+                self.sampler_priority = [SamplerID.from_str(x) for x in self.sampler_priority]
                 provided_samplers = set(self.sampler_priority)
             except ValueError as e:
-                raise ValueError(
-                    f"Invalid sampler ID in priority list: {e}"
-                ) from e
+                raise ValueError(f"Invalid sampler ID in priority list: {e}") from e
 
             required_samplers = set(SamplerID)
             if not required_samplers.issubset(provided_samplers):
                 missing = required_samplers - provided_samplers
                 missing_names = [s.name for s in missing]
-                raise ValueError(
-                    "Missing required samplers in priority list: "
-                    f"{missing_names}"
-                )
+                raise ValueError(f"Missing required samplers in priority list: {missing_names}")
 
-        if self.best_of != self._real_n and self.output_kind == (
-                RequestOutputKind.DELTA):
+        if self.best_of != self._real_n and self.output_kind == (RequestOutputKind.DELTA):
             raise ValueError("best_of must equal n to use output_kind=DELTA")
 
     def _verify_beam_search(self) -> None:
         if self.best_of == 1:
-            raise ValueError("best_of must be greater than 1 when using beam "
-                             f"search. Got {self.best_of}.")
+            raise ValueError(f"best_of must be greater than 1 when using beam search. Got {self.best_of}.")
         if self.temperature > _SAMPLING_EPS:
             raise ValueError("temperature must be 0 when using beam search.")
         if self.top_p < 1.0 - _SAMPLING_EPS:
@@ -1104,19 +1012,15 @@ class SamplingParams(
         if self.top_k != -1:
             raise ValueError("top_k must be -1 when using beam search.")
         if self.early_stopping not in [True, False, "never"]:
-            raise ValueError(
-                f"early_stopping must be True, False, or 'never', "
-                f"got {self.early_stopping}.")
+            raise ValueError(f"early_stopping must be True, False, or 'never', got {self.early_stopping}.")
 
     def _verify_non_beam_search(self) -> None:
         if self.early_stopping is not False:
-            raise ValueError("early_stopping is not effective and must be "
-                             "False when not using beam search.")
-        if (self.length_penalty < 1.0 - _SAMPLING_EPS
-                or self.length_penalty > 1.0 + _SAMPLING_EPS):
+            raise ValueError("early_stopping is not effective and must be False when not using beam search.")
+        if self.length_penalty < 1.0 - _SAMPLING_EPS or self.length_penalty > 1.0 + _SAMPLING_EPS:
             raise ValueError(
-                "length_penalty is not effective and must be the "
-                "default value of 1.0 when not using beam search.")
+                "length_penalty is not effective and must be the default value of 1.0 when not using beam search."
+            )
 
     def _verify_greedy_sampling(self) -> None:
         if self.top_p < 1.0 - _SAMPLING_EPS:
@@ -1124,19 +1028,16 @@ class SamplingParams(
         if self.top_k != -1:
             raise ValueError("top_k must be -1 when using greedy sampling.")
 
-    def _verify_with_scheduler_config(
-            self, scheduler_config: "SchedulerConfig") -> None:
+    def _verify_with_scheduler_config(self, scheduler_config: "SchedulerConfig") -> None:
         if scheduler_config.single_user_mode:
             if self.n > 1:
                 raise ValueError("n must be 1 in single user mode.")
             if self.use_beam_search:
-                raise ValueError(
-                    "beam search is not supported in single user mode.")
+                raise ValueError("beam search is not supported in single user mode.")
 
     def update_from_generation_config(
-            self,
-            generation_config: dict[str, Any],
-            model_eos_token_id: int | None = None) -> None:
+        self, generation_config: dict[str, Any], model_eos_token_id: int | None = None
+    ) -> None:
         """Update if there are non-default values from generation_config"""
 
         if model_eos_token_id is not None:
@@ -1171,8 +1072,7 @@ class SamplingParams(
             for add_prefix_space in [False, True]:
                 prefix = " " if add_prefix_space else ""
                 prompt = prefix + bad_word.lstrip()
-                prompt_token_ids = tokenizer.encode(text=prompt,
-                                                    add_special_tokens=False)
+                prompt_token_ids = tokenizer.encode(text=prompt, add_special_tokens=False)
 
                 # If no space at the beginning
                 # or if prefix space produces a new word token
@@ -1184,17 +1084,19 @@ class SamplingParams(
                     self._bad_words_token_ids.append(prompt_token_ids)
 
         invalid_token_ids = [
-            token_id for bad_words_token_ids in self._bad_words_token_ids
+            token_id
+            for bad_words_token_ids in self._bad_words_token_ids
             for token_id in bad_words_token_ids
             if token_id < 0 or token_id > tokenizer.max_token_id
         ]
         if len(invalid_token_ids) > 0:
             raise ValueError(
-                f"The model vocabulary size is {tokenizer.max_token_id+1},"
+                f"The model vocabulary size is {tokenizer.max_token_id + 1},"
                 f" but the following tokens"
                 f" were specified as bad: {invalid_token_ids}."
                 f" All token id values should be integers satisfying:"
-                f" 0 <= token_id <= {tokenizer.max_token_id}.")
+                f" 0 <= token_id <= {tokenizer.max_token_id}."
+            )
 
     @cached_property
     def sampling_type(self) -> SamplingType:
@@ -1225,10 +1127,7 @@ class SamplingParams(
         logit_processor_refs = (
             None
             if self.logits_processors is None
-            else {
-                id(lp): lp.clone() if hasattr(lp, "clone") else lp
-                for lp in self.logits_processors
-            }
+            else {id(lp): lp.clone() if hasattr(lp, "clone") else lp for lp in self.logits_processors}
         )
         return copy.deepcopy(self, memo=logit_processor_refs)
 
@@ -1236,14 +1135,16 @@ class SamplingParams(
         repr_str = "SamplingParams("
         for param, default_value in self.default_values.items():
             current_value = getattr(self, param)
-            if ((param != "guided_decoding" or current_value is None or 
-                 not all(getattr(current_value, field) is None 
-                        for field in ["json", "regex", "choice", "grammar", 
-                                    "json_object", "backend",
-                                    "whitespace_pattern"]))
-                and current_value != default_value):
+            if (
+                param != "guided_decoding"
+                or current_value is None
+                or not all(
+                    getattr(current_value, field) is None
+                    for field in ["json", "regex", "choice", "grammar", "json_object", "backend", "whitespace_pattern"]
+                )
+            ) and current_value != default_value:
                 repr_str += f"{param}={current_value}, "
-        repr_str = repr_str.rstrip(', ') + ")"
+        repr_str = repr_str.rstrip(", ") + ")"
         return repr_str
 
 
@@ -1254,6 +1155,7 @@ class BeamSearchParams(
     dict=True,
 ):  # type: ignore[call-arg]
     """Beam search parameters for text generation."""
+
     beam_width: int
     max_tokens: int
     ignore_eos: bool = False

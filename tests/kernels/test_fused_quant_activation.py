@@ -14,9 +14,7 @@ SEEDS = [0]
 CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)]
 
 
-def ref_impl(
-    silu_and_mul: SiluAndMul, x: torch.Tensor, scale: torch.Tensor
-) -> torch.Tensor:
+def ref_impl(silu_and_mul: SiluAndMul, x: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     silu_and_mul_out = silu_and_mul.forward_native(x)
     out, scales = ops.scaled_fp8_quant(silu_and_mul_out, scale)
     return out
@@ -61,7 +59,5 @@ def test_silu_and_mul(
     assert ref_out.dtype == quant_dtype
     assert ops_out.dtype == quant_dtype
     assert ref_out.shape == ops_out.shape
-    assert torch.allclose(
-        ref_out.to(dtype=torch.float32), ops_out.to(dtype=torch.float32)
-    )
+    assert torch.allclose(ref_out.to(dtype=torch.float32), ops_out.to(dtype=torch.float32))
     opcheck(torch.ops._C.silu_and_mul_quant, (ops_out, x, scale))

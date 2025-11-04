@@ -11,7 +11,7 @@ import urllib.request
 import uuid
 import warnings
 from collections.abc import Sequence
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import rasterio
@@ -20,18 +20,13 @@ import torch
 from einops import rearrange
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.endpoints.openai.protocol import (IOProcessorRequest,
-                                                 IOProcessorResponse)
+from aphrodite.endpoints.openai.protocol import IOProcessorRequest, IOProcessorResponse
 from aphrodite.inputs.data import PromptType
-from aphrodite.modeling.models.terratorch_plugin.plugins import (
-    generate_datamodule)
+from aphrodite.modeling.models.terratorch_plugin.plugins import generate_datamodule
 from aphrodite.outputs import PoolingRequestOutput
-from aphrodite.plugins.io_processors.interface import (IOProcessor,
-                                                       IOProcessorInput,
-                                                       IOProcessorOutput)
+from aphrodite.plugins.io_processors.interface import IOProcessor, IOProcessorInput, IOProcessorOutput
 
-from .types import (PluginConfig, RequestData, RequestOutput,
-                    TiledInferenceParameters)
+from .types import PluginConfig, RequestData, RequestOutput, TiledInferenceParameters
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +36,7 @@ OFFSET = 0
 PERCENTILE = 99
 
 DEFAULT_INPUT_INDICES = [0, 1, 2, 3, 4, 5]
+
 
 class SegmentationIOProcessor(IOProcessor):
     """Aphrodite IOProcessor for segmentation tasks
@@ -54,31 +50,30 @@ class SegmentationIOProcessor(IOProcessor):
         TERRATORCH_SEGMENTATION_IO_PROCESSOR_CONFIG
     This variable is to be set while starting the Aphrodite instance.
     The plugins configurable variables are:
-    - output_path (String): Default path for storing output files when requesting output in 'path' mode. It is is ignored otherwise.
+    - output_path (String): Default path for storing output files when requesting output in 'path' mode. It is is
+        ignored otherwise.
     The full schema of the plugin configuration can be found in aphrodite.plugins.segmentation.types.PluginConfig
-    
 
-    Once instantiated from the Aphrodite side, the plugin is automatically used when performing inference requests to the
-    '/pooling' endpoint of a Aphrodite instance.
+
+    Once instantiated from the Aphrodite side, the plugin is automatically used when performing inference requests to
+    the '/pooling' endpoint of an Aphrodite instance.
     """
 
     def __init__(self, aphrodite_config: AphroditeConfig):
-
         super().__init__(aphrodite_config)
 
         self.model_config = aphrodite_config.model_config.hf_config.to_dict()["pretrained_cfg"]
 
         if "data" not in self.model_config:
-            raise ValueError("The model config does not contain the "
-                             "Terratorch datamodule configuration")
+            raise ValueError("The model config does not contain the Terratorch datamodule configuration")
 
         plugin_config_string = os.getenv("TERRATORCH_SEGMENTATION_IO_PROCESSOR_CONFIG", "{}")
 
         self.plugin_config = PluginConfig.model_validate_json(plugin_config_string)
 
         self.datamodule = generate_datamodule(self.model_config["data"])
-        
-        self.tiled_inference_parameters = self._init_tiled_inference_parameters_info() 
+
+        self.tiled_inference_parameters = self._init_tiled_inference_parameters_info()
         self.batch_size = 1
         self.requests_cache: dict[str, dict[str, Any]] = {}
 
@@ -90,19 +85,22 @@ class SegmentationIOProcessor(IOProcessor):
                     tiled_inf_param_dict["h_crop"] = tiled_inf_param_dict["crop"]
                     tiled_inf_param_dict["w_crop"] = tiled_inf_param_dict["crop"]
                 else:
-                    raise ValueError(f"Expect 'crop' (or 'h_crop' and 'w_crop') in tiled_inference_parameters "
-                                    f"but got {tiled_inf_param_dict}")
-            if ("stride" in tiled_inf_param_dict or
-                "w_stride" in tiled_inf_param_dict or
-                "h_stride" in tiled_inf_param_dict):
-                warnings.warn("The 'stride' parameters for tiled inference are ignored in Aphrodite.")
+                    raise ValueError(
+                        f"Expect 'crop' (or 'h_crop' and 'w_crop') in tiled_inference_parameters "
+                        f"but got {tiled_inf_param_dict}"
+                    )
+            if (
+                "stride" in tiled_inf_param_dict
+                or "w_stride" in tiled_inf_param_dict
+                or "h_stride" in tiled_inf_param_dict
+            ):
+                warnings.warn("The 'stride' parameters for tiled inference are ignored in Aphrodite.", stacklevel=2)
         else:
             tiled_inf_param_dict = {}
-        
+
         return TiledInferenceParameters(**tiled_inf_param_dict)
 
-    def save_geotiff(self, image: torch.Tensor, meta: dict,
-                 out_format: str, request_id: str = None) -> str | bytes:
+    def save_geotiff(self, image: torch.Tensor, meta: dict, out_format: str, request_id: str = None) -> str | bytes:
         """Save multi-band image in Geotiff file.
 
         Args:
@@ -126,11 +124,10 @@ class SegmentationIOProcessor(IOProcessor):
                         dest.write(image[i, :, :], i + 1)
 
                 file_data = tmpfile.read()
-                return base64.b64encode(file_data).decode('utf-8')
+                return base64.b64encode(file_data).decode("utf-8")
 
         else:
             raise ValueError("Unknown output format")
-
 
     def _convert_np_uint8(self, float_image: torch.Tensor):
         image = float_image.numpy() * 255.0
@@ -138,11 +135,11 @@ class SegmentationIOProcessor(IOProcessor):
 
         return image
 
-
-    def read_geotiff(self, 
-        file_path: Optional[str] = None,
-        path_type: Optional[str] = None,
-        file_data: Optional[bytes] = None,
+    def read_geotiff(
+        self,
+        file_path: str | None = None,
+        path_type: str | None = None,
+        file_data: bytes | None = None,
     ) -> tuple[torch.Tensor, dict, tuple[float, float] | None]:
         """Read all bands from *file_path* and return image + meta info.
 
@@ -156,8 +153,8 @@ class SegmentationIOProcessor(IOProcessor):
 
         if all([x is None for x in [file_path, path_type, file_data]]):
             raise Exception("All input fields to read_geotiff are None")
-        write_to_file: Optional[bytes] = None
-        path: Optional[str] = None
+        write_to_file: bytes | None = None
+        path: str | None = None
         if file_path is not None and path_type == "url":
             resp = urllib.request.urlopen(file_path)
             write_to_file = resp.read()
@@ -188,13 +185,13 @@ class SegmentationIOProcessor(IOProcessor):
 
         return img, meta, coords
 
-
-    def load_image(self, 
-        data: Union[list[str]],
+    def load_image(
+        self,
+        data: list[str],
         path_type: str,
-        mean: Optional[list[float]] = None,
-        std: Optional[list[float]] = None,
-        indices: Optional[Union[list[int], None]] = None,
+        mean: list[float] | None = None,
+        std: list[float] | None = None,
+        indices: list[int] | None | None = None,
     ):
         """Build an input example by loading images in *file_paths*.
 
@@ -237,8 +234,7 @@ class SegmentationIOProcessor(IOProcessor):
                     if len(julian_day) == 3:
                         julian_day = int(julian_day)
                     else:
-                        julian_day = (datetime.datetime.strptime(
-                            julian_day, "%m%d").timetuple().tm_yday)
+                        julian_day = datetime.datetime.strptime(julian_day, "%m%d").timetuple().tm_yday
                     temporal_coords.append([year, julian_day])
             except Exception:
                 logger.exception("Could not extract timestamp for %s", file)
@@ -249,15 +245,13 @@ class SegmentationIOProcessor(IOProcessor):
 
         return imgs, temporal_coords, location_coords, metas
 
-
     def parse_request(self, request: Any) -> IOProcessorInput:
         if type(request) is dict:
             image_prompt = RequestData(**request)
             return image_prompt
         if isinstance(request, IOProcessorRequest):
             if not hasattr(request, "data"):
-                raise ValueError(
-                    "missing 'data' field in OpenAIBaseModel Request")
+                raise ValueError("missing 'data' field in OpenAIBaseModel Request")
 
             request_data = request.data
 
@@ -268,8 +262,7 @@ class SegmentationIOProcessor(IOProcessor):
 
         raise ValueError("Unable to parse request")
 
-    def output_to_response(
-            self, plugin_output: IOProcessorOutput) -> IOProcessorResponse:
+    def output_to_response(self, plugin_output: IOProcessorOutput) -> IOProcessorResponse:
         return IOProcessorResponse(
             request_id=plugin_output.request_id,
             data=plugin_output,
@@ -278,14 +271,12 @@ class SegmentationIOProcessor(IOProcessor):
     def pre_process(
         self,
         prompt: IOProcessorInput,
-        request_id: Optional[str] = None,
+        request_id: str | None = None,
         **kwargs,
-    ) -> Union[PromptType, Sequence[PromptType]]:
-
+    ) -> PromptType | Sequence[PromptType]:
         image_data = dict(prompt)
 
-        indices = (DEFAULT_INPUT_INDICES if not image_data["indices"]
-                   else image_data["indices"])
+        indices = DEFAULT_INPUT_INDICES if not image_data["indices"] else image_data["indices"]
 
         input_data, temporal_coords, location_coords, meta_data = self.load_image(
             data=[image_data["data"]],
@@ -297,10 +288,12 @@ class SegmentationIOProcessor(IOProcessor):
             input_data = input_data / 10000  # Convert to range 0-1
 
         original_h, original_w = input_data.shape[-2:]
-        pad_h = (self.tiled_inference_parameters.h_crop -
-                 (original_h % self.tiled_inference_parameters.h_crop)) % self.tiled_inference_parameters.h_crop
-        pad_w = (self.tiled_inference_parameters.w_crop -
-                 (original_w % self.tiled_inference_parameters.w_crop)) % self.tiled_inference_parameters.w_crop
+        pad_h = (
+            self.tiled_inference_parameters.h_crop - (original_h % self.tiled_inference_parameters.h_crop)
+        ) % self.tiled_inference_parameters.h_crop
+        pad_w = (
+            self.tiled_inference_parameters.w_crop - (original_w % self.tiled_inference_parameters.w_crop)
+        ) % self.tiled_inference_parameters.w_crop
         input_data = np.pad(
             input_data,
             ((0, 0), (0, 0), (0, 0), (0, pad_h), (0, pad_w)),
@@ -308,11 +301,9 @@ class SegmentationIOProcessor(IOProcessor):
         )
 
         batch = torch.tensor(input_data)
-        windows = (batch.unfold(3, self.tiled_inference_parameters.h_crop,
-                                   self.tiled_inference_parameters.w_crop)
-                        .unfold(4, self.tiled_inference_parameters.h_crop,
-                                   self.tiled_inference_parameters.w_crop)
-        )
+        windows = batch.unfold(
+            3, self.tiled_inference_parameters.h_crop, self.tiled_inference_parameters.w_crop
+        ).unfold(4, self.tiled_inference_parameters.h_crop, self.tiled_inference_parameters.w_crop)
 
         h1, w1 = windows.shape[3:5]
         windows = rearrange(
@@ -336,8 +327,7 @@ class SegmentationIOProcessor(IOProcessor):
         }
 
         # Split into batches if number of windows > batch_size
-        num_batches = (windows.shape[0] // self.batch_size
-                       if windows.shape[0] > self.batch_size else 1)
+        num_batches = windows.shape[0] // self.batch_size if windows.shape[0] > self.batch_size else 1
         windows = torch.tensor_split(windows, num_batches, dim=0)
 
         temporal_coords = torch.tensor(temporal_coords).unsqueeze(0) if temporal_coords else None
@@ -346,8 +336,7 @@ class SegmentationIOProcessor(IOProcessor):
         prompts = []
         for window in windows:
             # Apply standardization
-            window = self.datamodule.test_transform(
-                image=window.squeeze().numpy().transpose(1, 2, 0))
+            window = self.datamodule.test_transform(image=window.squeeze().numpy().transpose(1, 2, 0))
             try:
                 window = self.datamodule.aug(window)["image"]
             except Exception:
@@ -358,7 +347,7 @@ class SegmentationIOProcessor(IOProcessor):
                 "prompt_token_ids": [1],
                 "multi_modal_data": {
                     "pixel_values": window.to(torch.float16)[0],
-                }
+                },
             }
 
             # not all models use location coordinates, so we don't bother sending them to Aphrodite if not needed
@@ -372,10 +361,9 @@ class SegmentationIOProcessor(IOProcessor):
     def post_process(
         self,
         model_output: Sequence[PoolingRequestOutput],
-        request_id: Optional[str] = None,
+        request_id: str | None = None,
         **kwargs,
     ) -> IOProcessorOutput:
-
         pred_imgs_list = []
 
         if not request_id:
@@ -383,7 +371,7 @@ class SegmentationIOProcessor(IOProcessor):
 
         if request_id and (request_id in self.requests_cache):
             request_info = self.requests_cache[request_id]
-            del(self.requests_cache[request_id])
+            del self.requests_cache[request_id]
 
         for output in model_output:
             y_hat = output.outputs.data.argmax(dim=1)
@@ -409,16 +397,15 @@ class SegmentationIOProcessor(IOProcessor):
         )
 
         # Cut padded area back to original size
-        pred_imgs = pred_imgs[..., :request_info["original_h"], :request_info["original_w"]]
+        pred_imgs = pred_imgs[..., : request_info["original_h"], : request_info["original_w"]]
 
         # Squeeze (batch size 1)
         pred_imgs = pred_imgs[0]
 
         meta_data = request_info["meta_data"]
         meta_data.update(count=1, dtype="uint8", compress="lzw", nodata=0)
-        out_data = self.save_geotiff(self._convert_np_uint8(pred_imgs), meta_data,
-                                request_info["out_data_format"], request_id)
+        out_data = self.save_geotiff(
+            self._convert_np_uint8(pred_imgs), meta_data, request_info["out_data_format"], request_id
+        )
 
-        return RequestOutput(data_format=request_info["out_data_format"],
-                                  data=out_data,
-                                  request_id=request_id)
+        return RequestOutput(data_format=request_info["out_data_format"], data=out_data, request_id=request_id)

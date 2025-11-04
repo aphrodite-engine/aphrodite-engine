@@ -94,9 +94,7 @@ class AsyncMicrobatchTokenizer:
                 if timeout <= 0:
                     break
                 try:
-                    prompt, kwargs, result_future = await asyncio.wait_for(
-                        queue.get(), timeout
-                    )
+                    prompt, kwargs, result_future = await asyncio.wait_for(queue.get(), timeout)
                     prompts.append(prompt)
                     result_futures.append(result_future)
                     if not can_batch:
@@ -109,9 +107,7 @@ class AsyncMicrobatchTokenizer:
                 # batched tokenizer call for a big speed-up.
                 if can_batch and len(prompts) > 1:
                     batch_encode_fn = partial(self.tokenizer, prompts, **kwargs)
-                    results = await self._loop.run_in_executor(
-                        self._executor, batch_encode_fn
-                    )
+                    results = await self._loop.run_in_executor(self._executor, batch_encode_fn)
 
                     for i, fut in enumerate(result_futures):
                         if not fut.done():
@@ -121,9 +117,7 @@ class AsyncMicrobatchTokenizer:
                     encode_fn = lambda prompts=prompts, kwargs=kwargs_list: [
                         self.tokenizer(p, **kw) for p, kw in zip(prompts, kwargs)
                     ]
-                    results = await self._loop.run_in_executor(
-                        self._executor, encode_fn
-                    )
+                    results = await self._loop.run_in_executor(self._executor, encode_fn)
 
                     for fut, res in zip(result_futures, results):
                         if not fut.done():
@@ -146,9 +140,7 @@ class AsyncMicrobatchTokenizer:
                 if timeout <= 0:
                     break
                 try:
-                    token_ids, result_future = await asyncio.wait_for(
-                        queue.get(), timeout
-                    )
+                    token_ids, result_future = await asyncio.wait_for(queue.get(), timeout)
                     token_ids_list.append(token_ids)
                     result_futures.append(result_future)
                 except asyncio.TimeoutError:
@@ -156,9 +148,7 @@ class AsyncMicrobatchTokenizer:
 
             try:
                 # Perform a single batched decode call for all requests
-                results = await self._loop.run_in_executor(
-                    self._executor, self.tokenizer.batch_decode, token_ids_list
-                )
+                results = await self._loop.run_in_executor(self._executor, self.tokenizer.batch_decode, token_ids_list)
                 for fut, res in zip(result_futures, results):
                     if not fut.done():
                         fut.set_result(res)

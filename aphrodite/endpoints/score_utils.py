@@ -5,20 +5,21 @@ from typing_extensions import Required, TypedDict
 
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (
-    BaseMultiModalItemTracker, ChatCompletionContentPartImageEmbedsParam,
-    ChatCompletionContentPartImageParam, ChatCompletionContentPartTextParam,
-    MultiModalItemTracker, _ContentPart, _parse_chat_message_content_part)
+    BaseMultiModalItemTracker,
+    ChatCompletionContentPartImageEmbedsParam,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartTextParam,
+    MultiModalItemTracker,
+    _ContentPart,
+    _parse_chat_message_content_part,
+)
 from aphrodite.inputs import TokensPrompt
 from aphrodite.modeling.models.interfaces import supports_score_template
 from aphrodite.multimodal.inputs import MultiModalDataDict
 from aphrodite.outputs import PoolingRequestOutput
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    PreTrainedTokenizer,
-                                                    PreTrainedTokenizerFast)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 
-ScoreContentPartParam: TypeAlias = (
-    ChatCompletionContentPartImageParam | ChatCompletionContentPartImageEmbedsParam
-)
+ScoreContentPartParam: TypeAlias = ChatCompletionContentPartImageParam | ChatCompletionContentPartImageEmbedsParam
 
 
 class ScoreMultiModalParam(TypedDict, total=False):
@@ -125,10 +126,7 @@ def _parse_score_content(
 
     mm_placeholder_storage = mm_parser.mm_placeholder_storage()
 
-    if (
-        len(mm_placeholder_storage) != 1
-        or len(next(iter(mm_placeholder_storage.values()))) != 1
-    ):
+    if len(mm_placeholder_storage) != 1 or len(next(iter(mm_placeholder_storage.values()))) != 1:
         raise ValueError("Only one multi-modal item is supported")
 
     return next(iter(mm_placeholder_storage.values()))[0]
@@ -191,9 +189,7 @@ def get_score_prompt(
         prompt_inputs = tokenizer(full_prompt, **tokenization_kwargs)
     elif model_config.use_pad_token:
         # cross_encoder models defaults to using pad_token.
-        prompt_inputs = tokenizer(
-            text=prompt_1, text_pair=prompt_2, **tokenization_kwargs
-        )
+        prompt_inputs = tokenizer(text=prompt_1, text_pair=prompt_2, **tokenization_kwargs)
         full_prompt = tokenizer.decode(prompt_inputs["input_ids"])
     else:
         # `llm as reranker` models defaults to not using pad_token.
@@ -218,10 +214,7 @@ def compress_token_type_ids(token_type_ids: list[int]) -> int:
     if not found.
     """
     first_one = len(token_type_ids)
-    err_msg = (
-        "Token type ids are expected to be a sequence"
-        " of zeros followed by a sequence of ones"
-    )
+    err_msg = "Token type ids are expected to be a sequence of zeros followed by a sequence of ones"
     for i, type_id in enumerate(token_type_ids):
         if type_id == 0 and first_one < i:
             raise ValueError(err_msg)

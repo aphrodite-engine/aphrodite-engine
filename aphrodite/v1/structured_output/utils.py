@@ -74,9 +74,7 @@ def apply_grammar_bitmask(
     seq = sorted(input_batch.req_id_to_index.items(), key=lambda x: x[1])
     for req_id, batch_index in seq:
         logit_index = batch_index + cumulative_offset
-        cumulative_offset += len(
-            scheduler_output.scheduled_spec_decode_tokens.get(req_id, [])
-        )
+        cumulative_offset += len(scheduler_output.scheduled_spec_decode_tokens.get(req_id, []))
         if req_id in scheduler_output.structured_output_request_ids:
             struct_out_req_batch_indices[req_id] = logit_index
 
@@ -90,9 +88,7 @@ def apply_grammar_bitmask(
     )
     cumulative_index = 0
     for req_id in scheduler_output.structured_output_request_ids:
-        num_spec_tokens = len(
-            scheduler_output.scheduled_spec_decode_tokens.get(req_id, [])
-        )
+        num_spec_tokens = len(scheduler_output.scheduled_spec_decode_tokens.get(req_id, []))
         if req_id in struct_out_req_batch_indices:
             logit_index = struct_out_req_batch_indices[req_id]
             for i in range(1 + num_spec_tokens):
@@ -201,11 +197,7 @@ def _reduced_vocabulary(
         string = tokenizer.convert_tokens_to_string([token])
 
         # A hack to handle missing spaces to HF's Llama tokenizers
-        if (
-            type(token) is str
-            and token.startswith(file_utils.SPIECE_UNDERLINE)
-            or token == "<0x20>"
-        ):
+        if type(token) is str and token.startswith(file_utils.SPIECE_UNDERLINE) or token == "<0x20>":
             return " " + string
 
         return string
@@ -234,10 +226,7 @@ def _reduced_vocabulary(
                     # GPT2 tokenizers: map each byte back using unicode_to_bytes
                     byte_vals = [unicode_to_bytes.get(c) for c in token]
                     if None in byte_vals:
-                        raise RuntimeError(
-                            f"Cannot convert token `{token}`"
-                            f" ({token_idx}) to bytes: {token_str}"
-                        )
+                        raise RuntimeError(f"Cannot convert token `{token}` ({token_idx}) to bytes: {token_str}")
                     # safe to ignore, since if None in byte_vals,
                     # an error is thrown.
                     token_bytes = bytes(byte_vals)  # type: ignore[arg-type]
@@ -381,10 +370,7 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
                 if name == "start":
                     first_rule = "start"
             except IndexError as e:
-                raise ValueError(
-                    f"Invalid rule format on line {line_num}. "
-                    "Expected 'rule_name: definition'"
-                ) from e
+                raise ValueError(f"Invalid rule format on line {line_num}. Expected 'rule_name: definition'") from e
 
     if not defined_rules:
         raise ValueError("No valid rules found in grammar")
@@ -404,9 +390,7 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
             if ":" in line and not line.startswith("|"):
                 # Save previous rule if exists
                 if current_rule:
-                    output_lines.append(
-                        f"{current_rule} ::= {' | '.join(current_definition)}"
-                    )
+                    output_lines.append(f"{current_rule} ::= {' | '.join(current_definition)}")
 
                 # Process new rule
                 name, definition = line.split(":", 1)
@@ -419,15 +403,10 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
 
             elif line.startswith("|"):
                 if not current_rule:
-                    raise ValueError(
-                        f"Alternative '|' on line {line_num} "
-                        "without a preceding rule definition"
-                    )
+                    raise ValueError(f"Alternative '|' on line {line_num} without a preceding rule definition")
 
                 alt_def = line[1:].strip()
-                check_quotes(
-                    alt_def, f"alternative for rule '{current_rule}'", line_num
-                )
+                check_quotes(alt_def, f"alternative for rule '{current_rule}'", line_num)
                 alt_def = re.sub(r"'([^']*)'", r'"\1"', alt_def)
                 referenced_rules.update(extract_references(alt_def))
                 current_definition.append(alt_def)
@@ -442,9 +421,7 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
     # Validate all rules are defined
     undefined_rules = referenced_rules - defined_rules - {"root"}
     if undefined_rules:
-        raise ValueError(
-            f"Referenced rules are not defined: {', '.join(sorted(undefined_rules))}"
-        )
+        raise ValueError(f"Referenced rules are not defined: {', '.join(sorted(undefined_rules))}")
 
     return "\n".join(output_lines)
 

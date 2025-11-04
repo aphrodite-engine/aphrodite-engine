@@ -35,53 +35,47 @@ import torch.nn.functional as F
 from einops import rearrange
 from transformers import BatchFeature
 from transformers.models.glm4v.configuration_glm4v import Glm4vVisionConfig
-from transformers.models.glm4v.image_processing_glm4v import (
-    Glm4vImageProcessor, smart_resize)
-from transformers.models.glm4v.video_processing_glm4v import (
-    Glm4vVideoProcessor)
+from transformers.models.glm4v.image_processing_glm4v import Glm4vImageProcessor, smart_resize
+from transformers.models.glm4v.video_processing_glm4v import Glm4vVideoProcessor
 from transformers.video_utils import VideoMetadata
 
 from aphrodite.attention.backends.registry import _Backend
-from aphrodite.attention.layer import (check_upstream_fa_availability,
-                                       maybe_get_vit_flash_attn_backend)
+from aphrodite.attention.layer import check_upstream_fa_availability, maybe_get_vit_flash_attn_backend
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions, VideoDummyOptions
-from aphrodite.distributed import (get_tensor_model_parallel_world_size,
-                                   parallel_state)
+from aphrodite.distributed import get_tensor_model_parallel_world_size, parallel_state
 from aphrodite.distributed import utils as dist_utils
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems, VideoItem)
-from aphrodite.multimodal.parse import (ImageSize, MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems, VideoItem
+from aphrodite.multimodal.parse import ImageSize, MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from ..layers.activation import SiluAndMul
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
-from .qwen2_vl import (_create_qwen2vl_field_factory,
-                       apply_rotary_pos_emb_vision)
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
-from .vision import (conv3d_to_linear_weight, get_vit_attn_backend,
-                     run_dp_sharded_mrope_vision_model)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
+from .qwen2_vl import _create_qwen2vl_field_factory, apply_rotary_pos_emb_vision
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
+from .vision import conv3d_to_linear_weight, get_vit_attn_backend, run_dp_sharded_mrope_vision_model
 
 logger = init_logger(__name__)
 
@@ -209,12 +203,8 @@ def all_gather_interleave(local_tensor, hidden_size: int, tp_size: int):
         group=parallel_state.get_tp_group().device_group,
     )
 
-    gathered_tensors_split = [
-        torch.split(tensor, hidden_size // tp_size, -1) for tensor in gathered_tensors
-    ]
-    ordered_tensors = [
-        tensor for pair in zip(*gathered_tensors_split) for tensor in pair
-    ]
+    gathered_tensors_split = [torch.split(tensor, hidden_size // tp_size, -1) for tensor in gathered_tensors]
+    ordered_tensors = [tensor for pair in zip(*gathered_tensors_split) for tensor in pair]
     result_tensor = torch.cat(ordered_tensors, dim=-1)
     return result_tensor
 
@@ -232,18 +222,10 @@ class Glm4vVisionAttention(nn.Module):
     ) -> None:
         super().__init__()
         # Per attention head and per partition values.
-        self.tp_size = (
-            1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        )
-        self.tp_rank = (
-            0 if use_data_parallel else parallel_state.get_tensor_model_parallel_rank()
-        )
-        self.hidden_size_per_attention_head = dist_utils.divide(
-            projection_size, num_heads
-        )
-        self.num_attention_heads_per_partition = dist_utils.divide(
-            num_heads, self.tp_size
-        )
+        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
+        self.tp_rank = 0 if use_data_parallel else parallel_state.get_tensor_model_parallel_rank()
+        self.hidden_size_per_attention_head = dist_utils.divide(projection_size, num_heads)
+        self.num_attention_heads_per_partition = dist_utils.divide(num_heads, self.tp_size)
 
         self.qkv = QKVParallelLinear(
             hidden_size=embed_dim,
@@ -273,12 +255,10 @@ class Glm4vVisionAttention(nn.Module):
         )
         self.use_upstream_fa = False
 
-        self.attn_backend, self.flash_attn_varlen_func = (
-            maybe_get_vit_flash_attn_backend(
-                self.attn_backend,
-                self.use_upstream_fa,
-                attn_backend_override=attn_backend_override,
-            )
+        self.attn_backend, self.flash_attn_varlen_func = maybe_get_vit_flash_attn_backend(
+            self.attn_backend,
+            self.use_upstream_fa,
+            attn_backend_override=attn_backend_override,
         )
 
         if self.attn_backend not in {
@@ -287,9 +267,7 @@ class Glm4vVisionAttention(nn.Module):
             _Backend.XFORMERS,
             _Backend.ROCM_AITER_FA,
         }:
-            raise RuntimeError(
-                f"GLM-4V does not support {self.attn_backend} backend now."
-            )
+            raise RuntimeError(f"GLM-4V does not support {self.attn_backend} backend now.")
 
         self.is_flash_attn_backend = self.attn_backend in {
             _Backend.FLASH_ATTN,
@@ -350,9 +328,7 @@ class Glm4vVisionAttention(nn.Module):
                 causal=False,
             )
 
-            context_layer = rearrange(
-                output, "(b s) h d -> s b (h d)", b=batch_size
-            ).contiguous()
+            context_layer = rearrange(output, "(b s) h d -> s b (h d)", b=batch_size).contiguous()
         elif self.attn_backend == _Backend.TORCH_SDPA:
             # Execute attention entry by entry for speed & less VRAM.
             outputs = []
@@ -362,30 +338,20 @@ class Glm4vVisionAttention(nn.Module):
                 q_i = q[:, start_idx:end_idx]
                 k_i = k[:, start_idx:end_idx]
                 v_i = v[:, start_idx:end_idx]
-                q_i, k_i, v_i = (
-                    rearrange(x, "b s h d -> b h s d") for x in [q_i, k_i, v_i]
-                )
+                q_i, k_i, v_i = (rearrange(x, "b s h d -> b h s d") for x in [q_i, k_i, v_i])
                 output_i = F.scaled_dot_product_attention(q_i, k_i, v_i, dropout_p=0.0)
                 output_i = rearrange(output_i, "b h s d -> b s h d ")
                 outputs.append(output_i)
             context_layer = torch.cat(outputs, dim=1)
-            context_layer = rearrange(
-                context_layer, "b s h d -> s b (h d)"
-            ).contiguous()
+            context_layer = rearrange(context_layer, "b s h d -> s b (h d)").contiguous()
         elif self.attn_backend == _Backend.XFORMERS:
             from xformers import ops as xops
             from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
-            attn_bias = BlockDiagonalMask.from_seqlens(
-                q_seqlen=seqlens, kv_seqlen=None, device=q.device
-            )
+            attn_bias = BlockDiagonalMask.from_seqlens(q_seqlen=seqlens, kv_seqlen=None, device=q.device)
 
-            context_layer = xops.memory_efficient_attention_forward(
-                q, k, v, attn_bias=attn_bias, p=0, scale=None
-            )
-            context_layer = rearrange(
-                context_layer, "b s h d -> s b (h d)"
-            ).contiguous()
+            context_layer = xops.memory_efficient_attention_forward(q, k, v, attn_bias=attn_bias, p=0, scale=None)
+            context_layer = rearrange(context_layer, "b s h d -> s b (h d)").contiguous()
 
         output, _ = self.proj(context_layer)
         return output
@@ -540,9 +506,7 @@ class Glm4vVisionEmbeddings(nn.Module):
             persistent=False,
         )
 
-    def forward(
-        self, embeddings, lengths, image_shapes, h_coords, w_coords
-    ) -> torch.Tensor:
+    def forward(self, embeddings, lengths, image_shapes, h_coords, w_coords) -> torch.Tensor:
         pos_embed_weight = self.position_embedding.weight
         hidden_size = pos_embed_weight.shape[1]
         total_seq = h_coords.shape[0]
@@ -553,17 +517,13 @@ class Glm4vVisionEmbeddings(nn.Module):
 
         # Handle empty sequence case
         if total_seq == 0:
-            adapted_pos_embed = torch.empty(
-                0, hidden_size, device=device, dtype=pos_embed_weight.dtype
-            )
+            adapted_pos_embed = torch.empty(0, hidden_size, device=device, dtype=pos_embed_weight.dtype)
         else:
             # Convert inputs to tensors if needed
             if isinstance(lengths, list):
                 lengths = torch.tensor(lengths, device=device, dtype=torch.long)
             if not isinstance(image_shapes, torch.Tensor):
-                image_shapes = torch.tensor(
-                    image_shapes, device=device, dtype=torch.long
-                )
+                image_shapes = torch.tensor(image_shapes, device=device, dtype=torch.long)
 
             # Prepare 2D position embedding
             orig_size_sq = pos_embed_weight.shape[0]
@@ -588,19 +548,15 @@ class Glm4vVisionEmbeddings(nn.Module):
                     shape_idx = i % image_shapes.shape[0]
                     target_h_list.append(image_shapes[shape_idx, 1].repeat(lengths[i]))
                     target_w_list.append(image_shapes[shape_idx, 2].repeat(lengths[i]))
-                target_h = torch.cat(target_h_list).to(
-                    device=device, dtype=torch.float32
-                )
-                target_w = torch.cat(target_w_list).to(
-                    device=device, dtype=torch.float32
-                )
+                target_h = torch.cat(target_h_list).to(device=device, dtype=torch.float32)
+                target_w = torch.cat(target_w_list).to(device=device, dtype=torch.float32)
             else:
-                target_h = torch.cat(
-                    [image_shapes[i, 1].repeat(lengths[i]) for i in range(len(lengths))]
-                ).to(device=device, dtype=torch.float32)
-                target_w = torch.cat(
-                    [image_shapes[i, 2].repeat(lengths[i]) for i in range(len(lengths))]
-                ).to(device=device, dtype=torch.float32)
+                target_h = torch.cat([image_shapes[i, 1].repeat(lengths[i]) for i in range(len(lengths))]).to(
+                    device=device, dtype=torch.float32
+                )
+                target_w = torch.cat([image_shapes[i, 2].repeat(lengths[i]) for i in range(len(lengths))]).to(
+                    device=device, dtype=torch.float32
+                )
 
             # Normalize coordinates to [-1, 1] range for grid_sample
             h_coords = h_coords.to(device=device, dtype=torch.float32)
@@ -621,12 +577,8 @@ class Glm4vVisionEmbeddings(nn.Module):
             )
 
             # Reshape and convert back to original dtype
-            adapted_pos_embed_fp32 = (
-                interpolated_embed_fp32.squeeze(0).squeeze(-1).permute(1, 0)
-            )
-            adapted_pos_embed = adapted_pos_embed_fp32.to(pos_embed_weight.dtype).to(
-                embeddings.device
-            )
+            adapted_pos_embed_fp32 = interpolated_embed_fp32.squeeze(0).squeeze(-1).permute(1, 0)
+            adapted_pos_embed = adapted_pos_embed_fp32.to(pos_embed_weight.dtype).to(embeddings.device)
 
         # Add adapted position encoding to embeddings
         embeddings = embeddings + adapted_pos_embed
@@ -660,9 +612,7 @@ class Glm4vVisionRotaryEmbedding(nn.Module):
                     / self.dim
                 )
             )
-            seq = torch.arange(
-                seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
-            )
+            seq = torch.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
             freqs = torch.outer(seq, self.inv_freq)
             self._freqs_cached = freqs
 
@@ -730,27 +680,21 @@ class Glm4vVisionTransformer(nn.Module):
         )
         self.embeddings = Glm4vVisionEmbeddings(vision_config)
 
-        self.post_conv_layernorm = RMSNorm(
-            vision_config.hidden_size, eps=vision_config.rms_norm_eps
-        )
+        self.post_conv_layernorm = RMSNorm(vision_config.hidden_size, eps=vision_config.rms_norm_eps)
         self.downsample = nn.Conv2d(
             in_channels=vision_config.hidden_size,
             out_channels=vision_config.out_hidden_size,
             kernel_size=vision_config.spatial_merge_size,
             stride=vision_config.spatial_merge_size,
         )
-        self.post_layernorm = RMSNorm(
-            vision_config.hidden_size, eps=vision_config.rms_norm_eps
-        )
+        self.post_layernorm = RMSNorm(vision_config.hidden_size, eps=vision_config.rms_norm_eps)
 
         self.attn_backend = get_vit_attn_backend(
             head_size=head_dim,
             dtype=torch.get_default_dtype(),
             attn_backend_override=attn_backend_override,
         )
-        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(
-            torch.get_default_dtype()
-        ):
+        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(torch.get_default_dtype()):
             self.attn_backend = _Backend.FLASH_ATTN
 
     @property
@@ -799,10 +743,7 @@ class Glm4vVisionTransformer(nn.Module):
     ) -> tuple[int | None, list[int] | None]:
         max_seqlen, seqlens = None, None
         seqlens = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
-        if (
-            self.attn_backend == _Backend.FLASH_ATTN
-            or self.attn_backend == _Backend.ROCM_AITER_FA
-        ):
+        if self.attn_backend == _Backend.FLASH_ATTN or self.attn_backend == _Backend.ROCM_AITER_FA:
             max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max().item()
         return max_seqlen, seqlens
 
@@ -822,16 +763,14 @@ class Glm4vVisionTransformer(nn.Module):
         # compute position embedding
         rotary_pos_emb, image_type_ids = self.rot_pos_emb(grid_thw)
         # compute cu_seqlens
-        cu_seqlens = torch.repeat_interleave(
-            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
-        ).cumsum(dim=0, dtype=torch.int32)
+        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
+            dim=0, dtype=torch.int32
+        )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), "constant", 0)
 
         # pre-compute seqlens for attn mask to reduce cuMemcpy operations
         max_seqlen, seqlens = self.compute_attn_mask_seqlen(cu_seqlens)
-        x = self.embeddings(
-            x, seqlens, grid_thw, image_type_ids[:, 0], image_type_ids[:, 1]
-        )
+        x = self.embeddings(x, seqlens, grid_thw, image_type_ids[:, 0], image_type_ids[:, 1])
 
         # transformers
         x = x.unsqueeze(1)
@@ -919,9 +858,7 @@ class Glm4vProcessingInfo(BaseProcessingInfo):
         temporal_patch_size = vision_config.temporal_patch_size
         if do_resize:
             resized_height, resized_width = smart_resize(
-                num_frames=num_frames
-                if num_frames > temporal_patch_size
-                else temporal_patch_size,
+                num_frames=num_frames if num_frames > temporal_patch_size else temporal_patch_size,
                 height=image_height,
                 width=image_width,
                 factor=patch_size * merge_size,
@@ -945,9 +882,7 @@ class Glm4vProcessingInfo(BaseProcessingInfo):
         return preprocessed_size, num_vision_tokens
 
     def get_image_size_with_most_features(self) -> ImageSize:
-        max_image_size, _ = self._get_vision_info(
-            image_width=9999999, image_height=9999999
-        )
+        max_image_size, _ = self._get_vision_info(image_width=9999999, image_height=9999999)
         return max_image_size
 
     def get_num_image_tokens(
@@ -1015,15 +950,11 @@ class Glm4vProcessingInfo(BaseProcessingInfo):
 
         max_image_tokens = self.get_max_image_tokens() * max_images
         max_total_frames = self._get_max_video_frames(seq_len - max_image_tokens)
-        max_frames_per_video = min(
-            max_total_frames // max(max_videos, 1), _MAX_FRAMES_PER_VIDEO
-        )
+        max_frames_per_video = min(max_total_frames // max(max_videos, 1), _MAX_FRAMES_PER_VIDEO)
 
         return max(max_frames_per_video, 1)
 
-    def _get_video_second_idx(
-        self, metadata: dict[str, Any], total_frames: int
-    ) -> list[int]:
+    def _get_video_second_idx(self, metadata: dict[str, Any], total_frames: int) -> list[int]:
         video_processor = self.get_video_processor()
 
         video_fps = metadata.get("fps", video_processor.fps)
@@ -1048,13 +979,8 @@ class Glm4vProcessingInfo(BaseProcessingInfo):
                 if num_samples >= meta_frames:
                     frame_indices = list(range(meta_frames))
                 else:
-                    target_seconds = np.linspace(
-                        0, duration, num_samples, endpoint=True
-                    )
-                    frame_indices = [
-                        min(max_frame_idx, int(math.ceil(t * video_fps)))
-                        for t in target_seconds
-                    ]
+                    target_seconds = np.linspace(0, duration, num_samples, endpoint=True)
+                    frame_indices = [min(max_frame_idx, int(math.ceil(t * video_fps))) for t in target_seconds]
 
         seen, uniq = set(), []
         for idx in frame_indices:
@@ -1091,9 +1017,7 @@ class Glm4vProcessingInfo(BaseProcessingInfo):
 
         assert isinstance(grid_thw, torch.Tensor)
         timestamps = self._get_video_second_idx(metadata, len(video_array))
-        frames_idx_token = [
-            tokenizer.encode(str(i), add_special_tokens=False) for i in timestamps
-        ]
+        frames_idx_token = [tokenizer.encode(str(i), add_special_tokens=False) for i in timestamps]
         T, H, W = grid_thw
         num_tokens_per_frame = int(H * W) // merge_length
         placeholder = []
@@ -1137,9 +1061,7 @@ class Glm4vDummyInputsBuilder(BaseDummyInputsBuilder[Glm4vProcessingInfo]):
         num_videos = mm_counts.get("video", 0)
 
         target_width, target_height = self.info.get_image_size_with_most_features()
-        target_num_frames = self.info.get_num_frames_with_most_features(
-            seq_len, mm_counts
-        )
+        target_num_frames = self.info.get_num_frames_with_most_features(seq_len, mm_counts)
 
         image_overrides = mm_options.get("image") if mm_options else None
         video_overrides = mm_options.get("video") if mm_options else None
@@ -1173,8 +1095,7 @@ class Glm4vDummyInputsBuilder(BaseDummyInputsBuilder[Glm4vProcessingInfo]):
             if overrides.num_frames:
                 if overrides.num_frames > num_frames:
                     logger.warning(
-                        "video.num_frames override (%d) exceeds model's "
-                        "maximum number of frames (%d), will be ignored",
+                        "video.num_frames override (%d) exceeds model's maximum number of frames (%d), will be ignored",
                         overrides.num_frames,
                         num_frames,
                     )
@@ -1182,8 +1103,7 @@ class Glm4vDummyInputsBuilder(BaseDummyInputsBuilder[Glm4vProcessingInfo]):
             if overrides.width:
                 if overrides.width > width:
                     logger.warning(
-                        "video.width override (%d) exceeds model's "
-                        "maximum width (%d), will be ignored",
+                        "video.width override (%d) exceeds model's maximum width (%d), will be ignored",
                         overrides.width,
                         width,
                     )
@@ -1191,8 +1111,7 @@ class Glm4vDummyInputsBuilder(BaseDummyInputsBuilder[Glm4vProcessingInfo]):
             if overrides.height:
                 if overrides.height > height:
                     logger.warning(
-                        "video.height override (%d) exceeds model's "
-                        "maximum height (%d), will be ignored",
+                        "video.height override (%d) exceeds model's maximum height (%d), will be ignored",
                         overrides.height,
                         height,
                     )
@@ -1232,11 +1151,7 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
         # GLM-4.1V use `image_token_id` as video placeholder, we need to
         # replace it with `video_token_id` for video processing. So we
         # separate video processing from image processing.
-        if (
-            "videos" in mm_data
-            and isinstance(mm_data["videos"], list)
-            and len(mm_data["videos"]) > 0
-        ):
+        if "videos" in mm_data and isinstance(mm_data["videos"], list) and len(mm_data["videos"]) > 0:
             video_grid_thw_lst = []
             pixel_values_videos_lst = []
             for item in mm_data.pop("videos", []):
@@ -1244,24 +1159,14 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
 
                 # don't update mm_kwargs inplace
                 video_mm_kwargs = dict(**mm_kwargs)
-                video_mm_kwargs["do_sample_frames"] = metadata.get(
-                    "do_sample_frames", True
-                )
+                video_mm_kwargs["do_sample_frames"] = metadata.get("do_sample_frames", True)
 
                 video_mm_data = dict()
                 video_mm_data["videos"] = [[video_array]]
 
                 unuse_metadata = ["do_sample_frames"]
                 video_mm_data["video_metadata"] = [
-                    [
-                        VideoMetadata(
-                            **{
-                                k: metadata[k]
-                                for k in metadata
-                                if k not in unuse_metadata
-                            }
-                        )
-                    ]
+                    [VideoMetadata(**{k: metadata[k] for k in metadata if k not in unuse_metadata})]
                 ]
 
                 video_outputs = super()._call_hf_processor(
@@ -1271,9 +1176,7 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
                     tok_kwargs=tok_kwargs,
                 )
                 input_ids = video_outputs.pop("input_ids")
-                input_ids[input_ids == processor.image_token_id] = (
-                    processor.video_token_id
-                )
+                input_ids[input_ids == processor.image_token_id] = processor.video_token_id
                 video_placeholder = processor.tokenizer.batch_decode(input_ids)[0]
                 prompt = prompt.replace(
                     "<|begin_of_video|><|video|><|end_of_video|>",
@@ -1307,9 +1210,7 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
-        return _create_qwen2vl_field_factory(
-            self.info.get_hf_config().vision_config.spatial_merge_size
-        )(hf_inputs)
+        return _create_qwen2vl_field_factory(self.info.get_hf_config().vision_config.spatial_merge_size)(hf_inputs)
 
     def _get_prompt_updates(
         self,
@@ -1336,9 +1237,7 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
             assert isinstance(grid_thw, torch.Tensor)
 
             video, metadata = mm_items["video"][item_idx]
-            placeholder = self.info._construct_video_placeholder(
-                video, metadata, grid_thw
-            )
+            placeholder = self.info._construct_video_placeholder(video, metadata, grid_thw)
             return PromptUpdateDetails.select_token_id(
                 placeholder,
                 embed_token_id=hf_processor.video_token_id,
@@ -1363,9 +1262,7 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
     info=Glm4vProcessingInfo,
     dummy_inputs=Glm4vDummyInputsBuilder,
 )
-class Glm4vForConditionalGeneration(
-    nn.Module, SupportsMultiModal, SupportsLoRA, SupportsPP
-):
+class Glm4vForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLoRA, SupportsPP):
     merge_by_field_config = True
 
     packed_modules_mapping = {
@@ -1407,11 +1304,7 @@ class Glm4vForConditionalGeneration(
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
 
-        attn_backend_override = (
-            multimodal_config.mm_encoder_attn_backend
-            if multimodal_config is not None
-            else None
-        )
+        attn_backend_override = multimodal_config.mm_encoder_attn_backend if multimodal_config is not None else None
         self.visual = Glm4vVisionTransformer(
             config.vision_config,
             norm_eps=getattr(config, "rms_norm_eps", 1e-5),
@@ -1435,13 +1328,9 @@ class Glm4vForConditionalGeneration(
             architectures=architectures,
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> Glm4vImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> Glm4vImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -1463,9 +1352,7 @@ class Glm4vForConditionalGeneration(
                 image_grid_thw=image_grid_thw,
             )
 
-    def _parse_and_validate_video_input(
-        self, **kwargs: object
-    ) -> Glm4vVideoInputs | None:
+    def _parse_and_validate_video_input(self, **kwargs: object) -> Glm4vVideoInputs | None:
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_embeds = kwargs.pop("video_embeds", None)
         video_grid_thw = kwargs.pop("video_grid_thw", None)
@@ -1487,9 +1374,7 @@ class Glm4vForConditionalGeneration(
                 video_grid_thw=video_grid_thw,
             )
 
-    def _process_image_input(
-        self, image_input: Glm4vImageInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_image_input(self, image_input: Glm4vImageInputs) -> tuple[torch.Tensor, ...]:
         grid_thw = image_input["image_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -1505,15 +1390,10 @@ class Glm4vForConditionalGeneration(
             else:
                 image_embeds = self.visual(pixel_values, grid_thw=grid_thw.tolist())
         merge_size = self.visual.spatial_merge_size
-        sizes = (
-            torch.tensor(grid_thw_list, dtype=torch.long).prod(-1)
-            // (merge_size * merge_size)
-        ).tolist()
+        sizes = (torch.tensor(grid_thw_list, dtype=torch.long).prod(-1) // (merge_size * merge_size)).tolist()
         return image_embeds.split(sizes)
 
-    def _process_video_input(
-        self, video_input: Glm4vVideoInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_video_input(self, video_input: Glm4vVideoInputs) -> tuple[torch.Tensor, ...]:
         grid_thw = video_input["video_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -1521,9 +1401,7 @@ class Glm4vForConditionalGeneration(
         if video_input["type"] == "video_embeds":
             video_embeds = video_input["video_embeds"].type(self.visual.dtype)
         else:
-            pixel_values_videos = video_input["pixel_values_videos"].type(
-                self.visual.dtype
-            )
+            pixel_values_videos = video_input["pixel_values_videos"].type(self.visual.dtype)
             if self.use_data_parallel:
                 return run_dp_sharded_mrope_vision_model(
                     self.visual,
@@ -1532,15 +1410,10 @@ class Glm4vForConditionalGeneration(
                     rope_type="rope_3d",
                 )
             else:
-                video_embeds = self.visual(
-                    pixel_values_videos, grid_thw=grid_thw.tolist()
-                )
+                video_embeds = self.visual(pixel_values_videos, grid_thw=grid_thw.tolist())
         # Split concatenated embeddings for each video item.
         merge_size = self.visual.spatial_merge_size
-        sizes = (
-            torch.tensor(grid_thw_list, dtype=torch.long).prod(-1)
-            // (merge_size * merge_size)
-        ).tolist()
+        sizes = (torch.tensor(grid_thw_list, dtype=torch.long).prod(-1) // (merge_size * merge_size)).tolist()
         return video_embeds.split(sizes)
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
@@ -1549,28 +1422,16 @@ class Glm4vForConditionalGeneration(
         # Preserve the order of modalities if there are multiple of them
         # from the order of kwargs.
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values", "image_embeds")
-                and "image" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["image"] = self._parse_and_validate_image_input(
-                    **kwargs
-                )
-            if (
-                input_key in ("pixel_values_videos", "video_embeds")
-                and "video" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["video"] = self._parse_and_validate_video_input(
-                    **kwargs
-                )
+            if input_key in ("pixel_values", "image_embeds") and "image" not in mm_input_by_modality:
+                mm_input_by_modality["image"] = self._parse_and_validate_image_input(**kwargs)
+            if input_key in ("pixel_values_videos", "video_embeds") and "video" not in mm_input_by_modality:
+                mm_input_by_modality["video"] = self._parse_and_validate_video_input(**kwargs)
         return mm_input_by_modality
 
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
 
-    def get_multimodal_embeddings(
-        self, **kwargs: object
-    ) -> MultiModalEmbeddings | None:
+    def get_multimodal_embeddings(self, **kwargs: object) -> MultiModalEmbeddings | None:
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not mm_input_by_modality:
             return None

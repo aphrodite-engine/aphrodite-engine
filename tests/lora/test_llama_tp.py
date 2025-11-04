@@ -9,8 +9,7 @@ from aphrodite import LLM
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 
-from ..utils import (APHRODITE_PATH, create_new_process_for_each_test,
-                     multi_gpu_test)
+from ..utils import APHRODITE_PATH, create_new_process_for_each_test, multi_gpu_test
 
 MODEL_PATH = "meta-llama/Llama-2-7b-hf"
 
@@ -60,9 +59,7 @@ def do_sample(
         outputs = llm.generate(
             prompts,
             sampling_params,
-            lora_request=LoRARequest(str(lora_id), lora_id, lora_path)
-            if lora_id
-            else None,
+            lora_request=LoRARequest(str(lora_id), lora_id, lora_path) if lora_id else None,
         )
     # Print the outputs.
     generated_texts: list[str] = []
@@ -146,9 +143,7 @@ def test_llama_lora_tp4_fully_sharded_loras(sql_lora_files):
 
 
 @multi_gpu_test(num_gpus=2)
-def test_tp2_serialize_and_deserialize_lora(
-    tmp_path, sql_lora_files, sql_lora_huggingface_id
-):
+def test_tp2_serialize_and_deserialize_lora(tmp_path, sql_lora_files, sql_lora_huggingface_id):
     # Run the tensorizing of the LoRA adapter and the model in a subprocess
     # to guarantee cleanup
 
@@ -208,9 +203,4 @@ def test_tp2_serialize_and_deserialize_lora(
 
     print("lora adapter created")
     print("lora 1")
-    assert (
-        do_sample(
-            loaded_llm, sql_lora_files, tensorizer_config_dict=tc_as_dict, lora_id=1
-        )
-        == EXPECTED_LORA_OUTPUT
-    )
+    assert do_sample(loaded_llm, sql_lora_files, tensorizer_config_dict=tc_as_dict, lora_id=1) == EXPECTED_LORA_OUTPUT

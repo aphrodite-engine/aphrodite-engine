@@ -5,7 +5,9 @@ from mistral_common.exceptions import InvalidMessageStructureException
 from mistral_common.tokens.tokenizers.base import SpecialTokenPolicy
 
 from aphrodite.transformers_utils.tokenizers.mistral import (
-    MistralTokenizer, _prepare_apply_chat_template_tools_and_messages)
+    MistralTokenizer,
+    _prepare_apply_chat_template_tools_and_messages,
+)
 
 
 @pytest.mark.parametrize(
@@ -88,9 +90,7 @@ from aphrodite.transformers_utils.tokenizers.mistral import (
         ),
     ],
 )
-def test_prepare_apply_chat_template_tools_and_messages(
-    openai_request, expected_mistral_output
-):
+def test_prepare_apply_chat_template_tools_and_messages(openai_request, expected_mistral_output):
     actual_request = _prepare_apply_chat_template_tools_and_messages(
         openai_request["messages"], openai_request["tools"]
     )
@@ -200,9 +200,7 @@ def test_prepare_apply_chat_template_tools_and_messages(
         )
     ],
 )
-def test_prepare_apply_chat_template_tools_and_messages_list_content(
-    openai_request, expected_mistral_output
-):
+def test_prepare_apply_chat_template_tools_and_messages_list_content(openai_request, expected_mistral_output):
     actual_request = _prepare_apply_chat_template_tools_and_messages(
         openai_request["messages"], openai_request["tools"]
     )
@@ -213,14 +211,10 @@ def test_prepare_apply_chat_template_generation_prompt_and_continue():
     messages = [{"role": "assistant", "content": "Hello"}]
     tools: list[dict[str, Any]] = []
     with pytest.raises(ValueError):
-        _prepare_apply_chat_template_tools_and_messages(
-            messages, tools, add_generation_prompt=True
-        )
+        _prepare_apply_chat_template_tools_and_messages(messages, tools, add_generation_prompt=True)
 
     messages = [{"role": "user", "content": "Hello"}]
-    out_messages, _ = _prepare_apply_chat_template_tools_and_messages(
-        messages, tools, add_generation_prompt=True
-    )
+    out_messages, _ = _prepare_apply_chat_template_tools_and_messages(messages, tools, add_generation_prompt=True)
     assert out_messages == [{"role": "user", "content": "Hello"}]
 
     with pytest.raises(ValueError):
@@ -301,70 +295,34 @@ class TestMistralTokenizer:
                 ] + [f"[control_{i}]" for i in range(8, 769)]
 
     def get_vocab(self, mistral_tokenizer: MistralTokenizer):
-        assert (
-            mistral_tokenizer.get_vocab()
-            == mistral_tokenizer.transformers_tokenizer.get_vocab()
-        )
+        assert mistral_tokenizer.get_vocab() == mistral_tokenizer.transformers_tokenizer.get_vocab()
 
     def test_get_added_vocab(self, mistral_tokenizer: MistralTokenizer):
         assert mistral_tokenizer.get_added_vocab() == {}
 
     def test_encode_one(self, mistral_tokenizer: MistralTokenizer):
-        token_ids = (
-            [22177, 4304, 2662] if mistral_tokenizer.is_tekken else [23325, 2294, 1686]
-        )
+        token_ids = [22177, 4304, 2662] if mistral_tokenizer.is_tekken else [23325, 2294, 1686]
 
         assert mistral_tokenizer.encode_one("Hello world !") == token_ids
         assert mistral_tokenizer.encode_one("Hello world !", max_length=1) == token_ids
-        assert (
-            mistral_tokenizer.encode_one("Hello world !", truncation=True, max_length=1)
-            == token_ids[:-2]
-        )
-        assert (
-            mistral_tokenizer.encode_one(
-                "Hello world !", truncation=False, max_length=1
-            )
-            == token_ids
-        )
+        assert mistral_tokenizer.encode_one("Hello world !", truncation=True, max_length=1) == token_ids[:-2]
+        assert mistral_tokenizer.encode_one("Hello world !", truncation=False, max_length=1) == token_ids
 
     def test_encode(self, mistral_tokenizer: MistralTokenizer):
-        token_ids = (
-            [1, 22177, 4304, 2662, 2]
-            if mistral_tokenizer.is_tekken
-            else [1, 23325, 2294, 1686, 2]
-        )
+        token_ids = [1, 22177, 4304, 2662, 2] if mistral_tokenizer.is_tekken else [1, 23325, 2294, 1686, 2]
 
         assert mistral_tokenizer.encode("Hello world !") == token_ids[:-1]
         assert mistral_tokenizer.encode("Hello world !", max_length=3) == token_ids[:-2]
-        assert (
-            mistral_tokenizer.encode("Hello world !", truncation=True, max_length=3)
-            == token_ids[:-2]
-        )
-        assert (
-            mistral_tokenizer.encode("Hello world !", truncation=False, max_length=3)
-            == token_ids[:-1]
-        )
+        assert mistral_tokenizer.encode("Hello world !", truncation=True, max_length=3) == token_ids[:-2]
+        assert mistral_tokenizer.encode("Hello world !", truncation=False, max_length=3) == token_ids[:-1]
 
+        assert mistral_tokenizer.encode("Hello world !", add_special_tokens=True) == token_ids
+        assert mistral_tokenizer.encode("Hello world !", add_special_tokens=True, max_length=3) == token_ids[:-2]
         assert (
-            mistral_tokenizer.encode("Hello world !", add_special_tokens=True)
+            mistral_tokenizer.encode("Hello world !", add_special_tokens=True, truncation=False, max_length=3)
             == token_ids
         )
-        assert (
-            mistral_tokenizer.encode(
-                "Hello world !", add_special_tokens=True, max_length=3
-            )
-            == token_ids[:-2]
-        )
-        assert (
-            mistral_tokenizer.encode(
-                "Hello world !", add_special_tokens=True, truncation=False, max_length=3
-            )
-            == token_ids
-        )
-        assert (
-            mistral_tokenizer.encode("Hello world !", add_special_tokens=False)
-            == token_ids[1:-1]
-        )
+        assert mistral_tokenizer.encode("Hello world !", add_special_tokens=False) == token_ids[1:-1]
 
     @pytest.mark.parametrize(
         "openai_request,add_generation_prompt,continue_final_message,expected_output,decoded_expected_output",
@@ -999,15 +957,10 @@ class TestMistralTokenizer:
             add_generation_prompt=add_generation_prompt,
             continue_final_message=continue_final_message,
         )
-        decoded_actual_output = mistral_tokenizer.tokenizer.decode(
-            actual_output, SpecialTokenPolicy.KEEP
-        )
+        decoded_actual_output = mistral_tokenizer.tokenizer.decode(actual_output, SpecialTokenPolicy.KEEP)
 
         assert actual_output == expected_output[mistral_tokenizer.is_tekken]
-        assert (
-            decoded_actual_output
-            == decoded_expected_output[mistral_tokenizer.is_tekken]
-        )
+        assert decoded_actual_output == decoded_expected_output[mistral_tokenizer.is_tekken]
 
     def test_apply_chat_template_error(self, mistral_tokenizer: MistralTokenizer):
         messages = [{"role": "user", "content": "Hello world !"}]
@@ -1366,9 +1319,7 @@ class TestMistralTokenizer:
         )
 
         assert (
-            mistral_tokenizer.convert_tokens_to_string(
-                tokens[mistral_tokenizer.is_tekken]
-            )
+            mistral_tokenizer.convert_tokens_to_string(tokens[mistral_tokenizer.is_tekken])
             == expected_strings[mistral_tokenizer.is_tekken]
         )
 
@@ -2198,7 +2149,5 @@ class TestMistralTokenizer:
 
         ids = tuple_ids[mistral_tokenizer.is_tekken]
         expected_tokens = tuple_expected_tokens[mistral_tokenizer.is_tekken]
-        actual_tokens = mistral_tokenizer.convert_ids_to_tokens(
-            ids, skip_special_tokens=skip_special_tokens
-        )
+        actual_tokens = mistral_tokenizer.convert_ids_to_tokens(ids, skip_special_tokens=skip_special_tokens)
         assert actual_tokens == expected_tokens

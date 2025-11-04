@@ -12,8 +12,7 @@ from torch import nn
 from torch.nn import LayerNorm
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
-from transformers import (BatchFeature, PretrainedConfig, PreTrainedTokenizer,
-                          TensorType)
+from transformers import BatchFeature, PretrainedConfig, PreTrainedTokenizer, TensorType
 from transformers.image_utils import ImageInput
 from transformers.tokenization_utils_base import TextInput
 
@@ -23,28 +22,25 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul, get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
 from aphrodite.multimodal.parse import MultiModalDataItems
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, BaseProcessingInfo, PromptReplacement, PromptUpdate
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs import ChatGLMConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .chatglm import ChatGLMBaseModel, ChatGLMModel
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA, SupportsMRoPE,
-                         SupportsMultiModal, SupportsPP)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMRoPE, SupportsMultiModal, SupportsPP
 
 
 class GLMVImagePixelInputs(TensorSchema):
@@ -119,9 +115,7 @@ class EVA2CLIPAttention(nn.Module):
             prefix=f"{prefix}.dense",
         )
 
-        self.attn = MultiHeadAttention(
-            self.num_heads_per_rank, self.head_dim, self.scale
-        )
+        self.attn = MultiHeadAttention(self.num_heads_per_rank, self.head_dim, self.scale)
         self.output_dropout = torch.nn.Dropout(config.dropout_prob)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -173,15 +167,9 @@ class EVA2CLIPTransformerLayer(nn.Module):
     ):
         super().__init__()
         self.input_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.attention = EVA2CLIPAttention(
-            config, quant_config=quant_config, prefix=f"{prefix}.attention"
-        )
-        self.mlp = EVA2CLIPMLP(
-            config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-        )
-        self.post_attention_layernorm = LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
+        self.attention = EVA2CLIPAttention(config, quant_config=quant_config, prefix=f"{prefix}.attention")
+        self.mlp = EVA2CLIPMLP(config, quant_config=quant_config, prefix=f"{prefix}.mlp")
+        self.post_attention_layernorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
         attention_input = hidden_states
@@ -309,9 +297,7 @@ class EVA2CLIPModel(nn.Module):
         super().__init__()
         vision_config = Namespace(**config.vision_config)
         self.patch_embedding = EVA2CLIPPatchEmbedding(vision_config)
-        self.transformer = EVA2CLIPTransformer(
-            vision_config, quant_config=quant_config, prefix=f"{prefix}.transformer"
-        )
+        self.transformer = EVA2CLIPTransformer(vision_config, quant_config=quant_config, prefix=f"{prefix}.transformer")
         self.linear_proj = EVA2CLIPGLU(
             config,
             in_features=config.hidden_size,
@@ -362,9 +348,7 @@ class GLM4VModel(ChatGLMModel):
 
         quant_config = aphrodite_config.quant_config
 
-        self.vision = EVA2CLIPModel(
-            self.config, quant_config, prefix=f"{prefix}.vision"
-        )
+        self.vision = EVA2CLIPModel(self.config, quant_config, prefix=f"{prefix}.vision")
 
 
 class GLM4VProcessor:
@@ -542,9 +526,7 @@ class GLM4VMultiModalProcessor(BaseMultiModalProcessor[GLM4VProcessingInfo]):
     info=GLM4VProcessingInfo,
     dummy_inputs=GLM4VDummyInputsBuilder,
 )
-class GLM4VForCausalLM(
-    ChatGLMBaseModel, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE
-):
+class GLM4VForCausalLM(ChatGLMBaseModel, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE):
     merge_by_field_config = True
 
     packed_modules_mapping = {
@@ -585,9 +567,7 @@ class GLM4VForCausalLM(
 
         self.transformer: GLM4VModel
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> GLMVImagePixelInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> GLMVImagePixelInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
 
         if pixel_values is not None:
@@ -645,9 +625,7 @@ class GLM4VForCausalLM(
                     input_token_type.append("text")
 
             input_type_group: list[tuple[str, int, int]] = []
-            for key, group_iter in itertools.groupby(
-                enumerate(input_token_type), lambda x: x[1]
-            ):
+            for key, group_iter in itertools.groupby(enumerate(input_token_type), lambda x: x[1]):
                 group_list = list(group_iter)
                 start_index = group_list[0][0]
                 end_index = group_list[-1][0] + 1
@@ -656,9 +634,7 @@ class GLM4VForCausalLM(
             video_frame_num = 1
             mm_data_idx = 0
             for modality_type, start_idx, end_idx in input_type_group:
-                st_idx = (
-                    llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-                )
+                st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
                 if modality_type == "image":
                     t, h, w = (
                         image_grid_thw[mm_data_idx][0],
@@ -671,27 +647,10 @@ class GLM4VForCausalLM(
                         w // spatial_merge_size,
                     )
 
-                    t_index = (
-                        torch.arange(llm_grid_t)
-                        .view(-1, 1)
-                        .expand(-1, llm_grid_h * llm_grid_w)
-                        .flatten()
-                    )
-                    h_index = (
-                        torch.arange(llm_grid_h)
-                        .view(1, -1, 1)
-                        .expand(llm_grid_t, -1, llm_grid_w)
-                        .flatten()
-                    )
-                    w_index = (
-                        torch.arange(llm_grid_w)
-                        .view(1, 1, -1)
-                        .expand(llm_grid_t, llm_grid_h, -1)
-                        .flatten()
-                    )
-                    llm_pos_ids_list.append(
-                        torch.stack([t_index, h_index, w_index]) + st_idx
-                    )
+                    t_index = torch.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+                    h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+                    w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+                    llm_pos_ids_list.append(torch.stack([t_index, h_index, w_index]) + st_idx)
                     mm_data_idx += 1
 
                 elif modality_type == "video":
@@ -707,36 +666,17 @@ class GLM4VForCausalLM(
                     )
 
                     for t_idx in range(llm_grid_t):
-                        t_index = (
-                            torch.tensor(t_idx)
-                            .view(-1, 1)
-                            .expand(-1, llm_grid_h * llm_grid_w)
-                            .flatten()
-                        )
-                        h_index = (
-                            torch.arange(llm_grid_h)
-                            .view(1, -1, 1)
-                            .expand(1, -1, llm_grid_w)
-                            .flatten()
-                        )
-                        w_index = (
-                            torch.arange(llm_grid_w)
-                            .view(1, 1, -1)
-                            .expand(1, llm_grid_h, -1)
-                            .flatten()
-                        )
-                        llm_pos_ids_list.append(
-                            torch.stack([t_index, h_index, w_index]) + st_idx
-                        )
+                        t_index = torch.tensor(t_idx).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+                        h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(1, -1, llm_grid_w).flatten()
+                        w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(1, llm_grid_h, -1).flatten()
+                        llm_pos_ids_list.append(torch.stack([t_index, h_index, w_index]) + st_idx)
 
                     mm_data_idx += 1
                     video_frame_num += 1
 
                 else:
                     text_len = end_idx - start_idx
-                    llm_pos_ids_list.append(
-                        torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx
-                    )
+                    llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
                     video_frame_num = 1
 
         else:
@@ -772,8 +712,6 @@ class GLM4VForCausalLM(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states

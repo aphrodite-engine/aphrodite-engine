@@ -13,16 +13,14 @@ import torch
 from transformers import AutoTokenizer
 
 from aphrodite import SamplingParams
-from aphrodite.distributed.kv_events import (BlockStored, KVEventBatch,
-                                             ZmqEventPublisher)
+from aphrodite.distributed.kv_events import BlockStored, KVEventBatch, ZmqEventPublisher
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.torch_utils import set_default_torch_num_threads
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.core import EngineCore
-from aphrodite.v1.engine.core_client import (AsyncMPClient, EngineCoreClient,
-                                             SyncMPClient)
+from aphrodite.v1.engine.core_client import AsyncMPClient, EngineCoreClient, SyncMPClient
 from aphrodite.v1.engine.utils import CoreEngineProcManager
 from aphrodite.v1.executor.abstract import Executor
 from tests.utils import multi_gpu_test
@@ -39,9 +37,7 @@ PROMPT = "Hello my name is Robert and I love quantization kernels"
 PROMPT_TOKENS = TOKENIZER(PROMPT).input_ids
 
 
-def make_request(
-    params: SamplingParams, prompt_tokens_ids: list[int] | None = None
-) -> EngineCoreRequest:
+def make_request(params: SamplingParams, prompt_tokens_ids: list[int] | None = None) -> EngineCoreRequest:
     if not prompt_tokens_ids:
         prompt_tokens_ids = PROMPT_TOKENS
 
@@ -123,9 +119,7 @@ def echo(self, msg: str, err_msg: str | None = None, sleep: float | None = None)
 
 @create_new_process_for_each_test()
 @pytest.mark.parametrize("multiprocessing_mode", [True, False])
-def test_engine_core_client(
-    monkeypatch: pytest.MonkeyPatch, multiprocessing_mode: bool
-):
+def test_engine_core_client(monkeypatch: pytest.MonkeyPatch, multiprocessing_mode: bool):
     with monkeypatch.context() as m:
         # Monkey-patch core engine utility function to test.
         m.setattr(EngineCore, "echo", echo, raising=False)
@@ -158,9 +152,7 @@ def test_engine_core_client(
         loop_until_done(client, outputs)
 
         for req_id in request_ids:
-            assert len(outputs[req_id]) == MAX_TOKENS, (
-                f"{outputs[req_id]=}, {MAX_TOKENS=}"
-            )
+            assert len(outputs[req_id]) == MAX_TOKENS, f"{outputs[req_id]=}, {MAX_TOKENS=}"
         """Abort Request Cycle."""
 
         # Note: this code pathway will only work for multiprocessing
@@ -178,13 +170,9 @@ def test_engine_core_client(
 
         for idx, req_id in enumerate(request_ids):
             if idx % 2 == 0:
-                assert len(outputs[req_id]) < MAX_TOKENS, (
-                    f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
-                )
+                assert len(outputs[req_id]) < MAX_TOKENS, f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
             else:
-                assert len(outputs[req_id]) == MAX_TOKENS, (
-                    f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
-                )
+                assert len(outputs[req_id]) == MAX_TOKENS, f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
         """Abort after request is finished."""
 
         # Note: this code pathway will only work for multiprocessing
@@ -217,9 +205,7 @@ async def test_engine_core_client_asyncio(monkeypatch: pytest.MonkeyPatch):
         m.setattr(EngineCore, "echo", echo, raising=False)
 
         engine_args = EngineArgs(model=MODEL_NAME, enforce_eager=True)
-        aphrodite_config = engine_args.create_engine_config(
-            usage_context=UsageContext.UNKNOWN_CONTEXT
-        )
+        aphrodite_config = engine_args.create_engine_config(usage_context=UsageContext.UNKNOWN_CONTEXT)
         executor_class = Executor.get_class(aphrodite_config)
 
         with set_default_torch_num_threads(1):
@@ -248,9 +234,7 @@ async def test_engine_core_client_asyncio(monkeypatch: pytest.MonkeyPatch):
             await loop_until_done_async(client, outputs)
 
             for req_id in request_ids:
-                assert len(outputs[req_id]) == MAX_TOKENS, (
-                    f"{outputs[req_id]=}, {MAX_TOKENS=}"
-                )
+                assert len(outputs[req_id]) == MAX_TOKENS, f"{outputs[req_id]=}, {MAX_TOKENS=}"
             """Abort Request Cycle."""
 
             # Add requests to the engine.
@@ -265,13 +249,9 @@ async def test_engine_core_client_asyncio(monkeypatch: pytest.MonkeyPatch):
 
             for idx, req_id in enumerate(request_ids):
                 if idx % 2 == 0:
-                    assert len(outputs[req_id]) < MAX_TOKENS, (
-                        f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
-                    )
+                    assert len(outputs[req_id]) < MAX_TOKENS, f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
                 else:
-                    assert len(outputs[req_id]) == MAX_TOKENS, (
-                        f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
-                    )
+                    assert len(outputs[req_id]) == MAX_TOKENS, f"{len(outputs[req_id])=}, {MAX_TOKENS=}"
             """Utility method invocation"""
 
             core_client: AsyncMPClient = client
@@ -296,9 +276,7 @@ async def test_engine_core_client_asyncio(monkeypatch: pytest.MonkeyPatch):
             # Ensure client is still functional. The engine runs utility
             # methods in a single thread so this request won't be processed
             # until the cancelled sleeping one is complete.
-            result = await asyncio.wait_for(
-                core_client.call_utility_async("echo", "testarg3"), timeout=1.0
-            )
+            result = await asyncio.wait_for(core_client.call_utility_async("echo", "testarg3"), timeout=1.0)
             assert result == "testarg3"
         finally:
             client.shutdown()
@@ -373,9 +351,7 @@ async def test_engine_core_client_util_method_custom_return(
         m.setattr(EngineCore, "echo_dc", echo_dc, raising=False)
 
         engine_args = EngineArgs(model=MODEL_NAME, enforce_eager=True)
-        aphrodite_config = engine_args.create_engine_config(
-            usage_context=UsageContext.UNKNOWN_CONTEXT
-        )
+        aphrodite_config = engine_args.create_engine_config(usage_context=UsageContext.UNKNOWN_CONTEXT)
         executor_class = Executor.get_class(aphrodite_config)
 
         with set_default_torch_num_threads(1):
@@ -420,9 +396,7 @@ async def test_engine_core_client_util_method_custom_dict_return(
         m.setattr(EngineCore, "echo_dc_dict", echo_dc_dict, raising=False)
 
         engine_args = EngineArgs(model=MODEL_NAME, enforce_eager=True)
-        aphrodite_config = engine_args.create_engine_config(
-            usage_context=UsageContext.UNKNOWN_CONTEXT
-        )
+        aphrodite_config = engine_args.create_engine_config(usage_context=UsageContext.UNKNOWN_CONTEXT)
         executor_class = Executor.get_class(aphrodite_config)
 
         with set_default_torch_num_threads(1):
@@ -439,15 +413,11 @@ async def test_engine_core_client_util_method_custom_dict_return(
             core_client: AsyncMPClient = client
 
             # Test single object return
-            result = await core_client.call_utility_async(
-                "echo_dc_dict", "testarg3", False
-            )
+            result = await core_client.call_utility_async("echo_dc_dict", "testarg3", False)
             assert isinstance(result, MyDataclass) and result.message == "testarg3"
 
             # Test dict return with custom value types
-            result = await core_client.call_utility_async(
-                "echo_dc_dict", "testarg3", True
-            )
+            result = await core_client.call_utility_async("echo_dc_dict", "testarg3", True)
             assert isinstance(result, dict) and len(result) == 3
             for key, val in result.items():
                 assert key in ["key1", "key2", "key3"]
@@ -476,9 +446,7 @@ async def test_engine_core_client_util_method_nested_structures(
         m.setattr(EngineCore, "echo_dc_nested", echo_dc_nested, raising=False)
 
         engine_args = EngineArgs(model=MODEL_NAME, enforce_eager=True)
-        aphrodite_config = engine_args.create_engine_config(
-            usage_context=UsageContext.UNKNOWN_CONTEXT
-        )
+        aphrodite_config = engine_args.create_engine_config(usage_context=UsageContext.UNKNOWN_CONTEXT)
         executor_class = Executor.get_class(aphrodite_config)
 
         with set_default_torch_num_threads(1):
@@ -494,37 +462,21 @@ async def test_engine_core_client_util_method_nested_structures(
             core_client: AsyncMPClient = client
 
             # Test list of dicts: [{"a": val, "b": val}, {"c": val, "d": val}]
-            result = await core_client.call_utility_async(
-                "echo_dc_nested", "nested1", "list_of_dicts"
-            )
+            result = await core_client.call_utility_async("echo_dc_nested", "nested1", "list_of_dicts")
             assert isinstance(result, list) and len(result) == 2
             for i, item in enumerate(result):
                 assert isinstance(item, dict)
                 if i == 0:
                     assert "a" in item and "b" in item
-                    assert (
-                        isinstance(item["a"], MyDataclass)
-                        and item["a"].message == "nested1"
-                    )
-                    assert (
-                        isinstance(item["b"], MyDataclass)
-                        and item["b"].message == "nested1"
-                    )
+                    assert isinstance(item["a"], MyDataclass) and item["a"].message == "nested1"
+                    assert isinstance(item["b"], MyDataclass) and item["b"].message == "nested1"
                 else:
                     assert "c" in item and "d" in item
-                    assert (
-                        isinstance(item["c"], MyDataclass)
-                        and item["c"].message == "nested1"
-                    )
-                    assert (
-                        isinstance(item["d"], MyDataclass)
-                        and item["d"].message == "nested1"
-                    )
+                    assert isinstance(item["c"], MyDataclass) and item["c"].message == "nested1"
+                    assert isinstance(item["d"], MyDataclass) and item["d"].message == "nested1"
 
             # Test dict of lists: {"list1": [val, val], "list2": [val, val]}
-            result = await core_client.call_utility_async(
-                "echo_dc_nested", "nested2", "dict_of_lists"
-            )
+            result = await core_client.call_utility_async("echo_dc_nested", "nested2", "dict_of_lists")
             assert isinstance(result, dict) and len(result) == 2
             assert "list1" in result and "list2" in result
             for key, lst in result.items():
@@ -534,9 +486,7 @@ async def test_engine_core_client_util_method_nested_structures(
 
             # Test deeply nested: {"outer": [{"inner": [val, val]},
             # {"inner": [val]}]}
-            result = await core_client.call_utility_async(
-                "echo_dc_nested", "nested3", "deep_nested"
-            )
+            result = await core_client.call_utility_async("echo_dc_nested", "nested3", "deep_nested")
             assert isinstance(result, dict) and "outer" in result
             outer_list = result["outer"]
             assert isinstance(outer_list, list) and len(outer_list) == 2
@@ -554,15 +504,10 @@ async def test_engine_core_client_util_method_nested_structures(
             assert isinstance(inner_dict2, dict) and "inner" in inner_dict2
             inner_list2 = inner_dict2["inner"]
             assert isinstance(inner_list2, list) and len(inner_list2) == 1
-            assert (
-                isinstance(inner_list2[0], MyDataclass)
-                and inner_list2[0].message == "nested3"
-            )
+            assert isinstance(inner_list2[0], MyDataclass) and inner_list2[0].message == "nested3"
 
             # Test with None values in nested structures
-            result = await core_client.call_utility_async(
-                "echo_dc_nested", None, "list_of_dicts"
-            )
+            result = await core_client.call_utility_async("echo_dc_nested", None, "list_of_dicts")
             assert isinstance(result, list) and len(result) == 2
             for item in result:
                 assert isinstance(item, dict)
@@ -605,9 +550,7 @@ def test_kv_cache_events(
             log_stats=False,
         )
     endpoint = publisher_config.endpoint.replace("*", "127.0.0.1")
-    subscriber = MockSubscriber(
-        endpoint, topic=publisher_config.topic, decode_type=KVEventBatch
-    )
+    subscriber = MockSubscriber(endpoint, topic=publisher_config.topic, decode_type=KVEventBatch)
 
     try:
         custom_tokens = list(range(num_blocks * block_size))
@@ -627,20 +570,12 @@ def test_kv_cache_events(
         assert len(received.events) == 1, "We should have exactly one BlockStored event"
         event = received.events[0]
         assert isinstance(event, BlockStored), "We should have a BlockStored event"
-        assert len(event.block_hashes) == num_blocks, (
-            "We should have a BlockStored event with 2 block_hashes"
-        )
-        assert event.block_size == block_size, (
-            "Block size should be the same as the block size"
-        )
+        assert len(event.block_hashes) == num_blocks, "We should have a BlockStored event with 2 block_hashes"
+        assert event.block_size == block_size, "Block size should be the same as the block size"
         assert event.parent_block_hash is None, "Parent block hash should be None"
         assert event.lora_id is None, "Lora id should be None"
-        assert len(event.token_ids) == num_blocks * block_size, (
-            "Token ids should be the same as the custom tokens"
-        )
-        assert event.token_ids == custom_tokens, (
-            "Token ids should be the same as the custom tokens"
-        )
+        assert len(event.token_ids) == num_blocks * block_size, "Token ids should be the same as the custom tokens"
+        assert event.token_ids == custom_tokens, "Token ids should be the same as the custom tokens"
     finally:
         client.shutdown()
         subscriber.close()
@@ -692,9 +627,7 @@ async def test_kv_cache_events_dp(
         offset_endpoint = ZmqEventPublisher.offset_endpoint_port(base_endpoint, i)
         endpoints.append(offset_endpoint)
 
-    subscriber = MockSubscriber(
-        endpoints, topic=publisher_config.topic, decode_type=KVEventBatch
-    )
+    subscriber = MockSubscriber(endpoints, topic=publisher_config.topic, decode_type=KVEventBatch)
 
     try:
         custom_tokens = list(range(num_blocks * block_size))
@@ -715,9 +648,7 @@ async def test_kv_cache_events_dp(
         outputs: dict[str, list] = {req_id: [] for req_id in all_request_ids}
 
         print("processing requests...")
-        await asyncio.wait_for(
-            loop_until_fully_done_async(client, outputs), timeout=20.0
-        )
+        await asyncio.wait_for(loop_until_fully_done_async(client, outputs), timeout=20.0)
 
         # Receive from subscriber until no more messages
         print("collecting results...")
@@ -732,9 +663,7 @@ async def test_kv_cache_events_dp(
         # Collect all events and data_parallel_ranks from all results
         all_dp_ranks = [received.data_parallel_rank for (_, received) in results]
         unique_dps = set(all_dp_ranks)
-        assert len(unique_dps) == 2, (
-            f"Expected 2 unique data_parallel_ranks, got {len(unique_dps)}"
-        )
+        assert len(unique_dps) == 2, f"Expected 2 unique data_parallel_ranks, got {len(unique_dps)}"
 
     finally:
         client.shutdown()
@@ -756,9 +685,7 @@ def test_startup_failure(monkeypatch: pytest.MonkeyPatch):
 
         t = time.time()
         engine_args = EngineArgs(model=MODEL_NAME)
-        aphrodite_config = engine_args.create_engine_config(
-            usage_context=UsageContext.UNKNOWN_CONTEXT
-        )
+        aphrodite_config = engine_args.create_engine_config(usage_context=UsageContext.UNKNOWN_CONTEXT)
         executor_class = Executor.get_class(aphrodite_config)
         print(f"AphroditeConfig creation took {time.time() - t:.2f} seconds.")
 
@@ -804,9 +731,7 @@ def test_engine_core_proc_instantiation_cuda_empty(monkeypatch: pytest.MonkeyPat
         # Only implement the methods that are actually called during init
         from aphrodite.v1.kv_cache_interface import FullAttentionSpec
 
-        mock_spec = FullAttentionSpec(
-            block_size=16, num_kv_heads=1, head_size=64, dtype=torch.float16
-        )
+        mock_spec = FullAttentionSpec(block_size=16, num_kv_heads=1, head_size=64, dtype=torch.float16)
 
         mock_executor.get_kv_cache_specs.return_value = [{"default": mock_spec}]
         mock_executor.determine_available_memory.return_value = [1024 * 1024 * 1024]
@@ -822,9 +747,7 @@ def test_engine_core_proc_instantiation_cuda_empty(monkeypatch: pytest.MonkeyPat
 
         from aphrodite.v1.engine.utils import EngineZmqAddresses
 
-        def mock_startup_handshake(
-            self, handshake_socket, local_client, headless, parallel_config
-        ):
+        def mock_startup_handshake(self, handshake_socket, local_client, headless, parallel_config):
             return EngineZmqAddresses(
                 inputs=["tcp://127.0.0.1:5555"],
                 outputs=["tcp://127.0.0.1:5556"],

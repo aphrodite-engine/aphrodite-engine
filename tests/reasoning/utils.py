@@ -1,5 +1,4 @@
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.reasoning import ReasoningParser
 from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 
@@ -44,9 +43,7 @@ def run_reasoning_extraction(
             reconstructor.other_content or None,
         )
     else:
-        reasoning, content = run_reasoning_extraction_nonstreaming(
-            reasoning_parser, model_output, request
-        )
+        reasoning, content = run_reasoning_extraction_nonstreaming(reasoning_parser, model_output, request)
         return reasoning, content
 
 
@@ -56,9 +53,7 @@ def run_reasoning_extraction_mistral(
     request: ChatCompletionRequest | None = None,
     streaming: bool = False,
 ) -> tuple[str | None, str | None]:
-    assert isinstance(reasoning_parser.model_tokenizer, MistralTokenizer), type(
-        reasoning_parser.model_tokenizer
-    )
+    assert isinstance(reasoning_parser.model_tokenizer, MistralTokenizer), type(reasoning_parser.model_tokenizer)
     if streaming:
         reconstructor = run_reasoning_extraction_streaming_mistral(
             reasoning_parser,
@@ -70,12 +65,8 @@ def run_reasoning_extraction_mistral(
             reconstructor.other_content or None,
         )
     else:
-        str_output = reasoning_parser.model_tokenizer.convert_ids_to_tokens(
-            model_output
-        )
-        reasoning, content = run_reasoning_extraction_nonstreaming(
-            reasoning_parser, str_output, request
-        )
+        str_output = reasoning_parser.model_tokenizer.convert_ids_to_tokens(model_output)
+        reasoning, content = run_reasoning_extraction_nonstreaming(reasoning_parser, str_output, request)
         return reasoning, content
 
 
@@ -85,9 +76,7 @@ def run_reasoning_extraction_nonstreaming(
     request: ChatCompletionRequest | None = None,
 ) -> tuple[str | None, str | None]:
     request = request or ChatCompletionRequest(messages=[], model="test-model")
-    return reasoning_parser.extract_reasoning_content(
-        model_output="".join(model_output), request=request
-    )
+    return reasoning_parser.extract_reasoning_content(model_output="".join(model_output), request=request)
 
 
 def run_reasoning_extraction_streaming(
@@ -127,9 +116,7 @@ def run_reasoning_extraction_streaming_mistral(
     model_deltas: list[int],
     request: ChatCompletionRequest | None = None,
 ) -> StreamingReasoningReconstructor:
-    assert isinstance(reasoning_parser.model_tokenizer, MistralTokenizer), type(
-        reasoning_parser.model_tokenizer
-    )
+    assert isinstance(reasoning_parser.model_tokenizer, MistralTokenizer), type(reasoning_parser.model_tokenizer)
     request = request or ChatCompletionRequest(messages=[], model="test-model")
     reconstructor = StreamingReasoningReconstructor()
     previous_text = ""

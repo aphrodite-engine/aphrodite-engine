@@ -3,8 +3,7 @@ import enum
 import functools
 from abc import abstractmethod
 from dataclasses import dataclass, field, fields, make_dataclass
-from typing import (TYPE_CHECKING, Any, ClassVar, Generic, Literal, Protocol,
-                    TypeVar, get_args)
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Protocol, TypeVar, get_args
 
 import numpy as np
 import torch
@@ -19,10 +18,8 @@ if TYPE_CHECKING:
     from aphrodite.v1.worker.gpu_input_batch import InputBatch
 
 import aphrodite.envs as envs
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionMetadata)
-from aphrodite.distributed.kv_transfer.kv_connector.utils import (
-    get_kv_connector_cache_layout)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionMetadata
+from aphrodite.distributed.kv_transfer.kv_connector.utils import get_kv_connector_cache_layout
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.attention_layer_base import AttentionLayerBase
 from aphrodite.v1.kv_cache_interface import AttentionSpec
@@ -96,10 +93,7 @@ def slice_query_start_locs(
     Note: This function creates a new tensor to hold the new query_start_locs.
     This will break cudagraph compatibility.
     """
-    return (
-        query_start_loc[request_slice.start : request_slice.stop + 1]
-        - query_start_loc[request_slice.start]
-    )
+    return query_start_loc[request_slice.start : request_slice.stop + 1] - query_start_loc[request_slice.start]
 
 
 def _make_metadata_with_slice(
@@ -121,12 +115,8 @@ def _make_metadata_with_slice(
     last_req = request_slice.stop - 1
     last_tok = token_slice.stop - 1
 
-    assert start_locs[first_req] <= first_tok < start_locs[first_req + 1], (
-        "Token slice start outside of first request"
-    )
-    assert start_locs[last_req] <= last_tok < start_locs[last_req + 1], (
-        "Token slice end outside of last request"
-    )
+    assert start_locs[first_req] <= first_tok < start_locs[first_req + 1], "Token slice start outside of first request"
+    assert start_locs[last_req] <= last_tok < start_locs[last_req + 1], "Token slice end outside of last request"
 
     # If the "middle" request has tokens in both ubatches, we have to split it.
     # If ubatch_slice is the first ubatch then we will be splitting the last
@@ -136,13 +126,9 @@ def _make_metadata_with_slice(
     splits_last_request = last_tok < start_locs[last_req + 1] - 1
 
     query_start_loc_cpu = slice_query_start_locs(start_locs, request_slice)
-    query_start_loc = slice_query_start_locs(
-        attn_metadata.query_start_loc, request_slice
-    )
+    query_start_loc = slice_query_start_locs(attn_metadata.query_start_loc, request_slice)
 
-    assert len(query_start_loc) >= 2, (
-        f"query_start_loc must have at least 2 elements, got {len(query_start_loc)}"
-    )
+    assert len(query_start_loc) >= 2, f"query_start_loc must have at least 2 elements, got {len(query_start_loc)}"
 
     if splits_first_request:
         tokens_skipped = first_tok - start_locs[first_req]
@@ -168,9 +154,7 @@ def _make_metadata_with_slice(
 
     num_requests = request_slice.stop - request_slice.start
     num_actual_tokens = token_slice.stop - token_slice.start
-    max_query_len = int(
-        torch.max(torch.abs(query_start_loc_cpu[1:] - query_start_loc_cpu[:-1])).item()
-    )
+    max_query_len = int(torch.max(torch.abs(query_start_loc_cpu[1:] - query_start_loc_cpu[:-1])).item())
 
     # This is to account for the case where we are in a dummy
     # run and query_start_loc_cpu is full of 0s
@@ -262,10 +246,7 @@ class AttentionMetadataBuilder(abc.ABC, Generic[M]):
             # the reorder_batch_threshold based on the number of speculative
             # tokens from the config.
             speculative_config = self.aphrodite_config.speculative_config
-            if (
-                speculative_config is not None
-                and speculative_config.num_speculative_tokens is not None
-            ):
+            if speculative_config is not None and speculative_config.num_speculative_tokens is not None:
                 self.reorder_batch_threshold = max(
                     self.reorder_batch_threshold,
                     1 + speculative_config.num_speculative_tokens,
@@ -291,17 +272,13 @@ class AttentionMetadataBuilder(abc.ABC, Generic[M]):
         """
         raise NotImplementedError
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ) -> M:
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata) -> M:
         """
         Build attention metadata for CUDA graph capture. Uses build by default.
         Subclasses that override this method should call self.build or
         super().build_for_cudagraph_capture.
         """
-        return self.build(
-            common_prefix_len=0, common_attn_metadata=common_attn_metadata
-        )
+        return self.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)
 
     def build_for_drafting(
         self,
@@ -348,8 +325,7 @@ def get_kv_cache_layout():
     if _KV_CACHE_LAYOUT_OVERRIDE is not None:
         cache_layout = _KV_CACHE_LAYOUT_OVERRIDE
         logger.info_once(
-            "`_KV_CACHE_LAYOUT_OVERRIDE` variable detected. "
-            "Setting KV cache layout to %s.",
+            "`_KV_CACHE_LAYOUT_OVERRIDE` variable detected. Setting KV cache layout to %s.",
             cache_layout,
         )
         return cache_layout
@@ -362,8 +338,7 @@ def get_kv_cache_layout():
     else:
         assert is_valid_kv_cache_layout(cache_layout)
         logger.info_once(
-            "`APHRODITE_KV_CACHE_LAYOUT` environment variable "
-            "detected. Setting KV cache layout to %s.",
+            "`APHRODITE_KV_CACHE_LAYOUT` environment variable detected. Setting KV cache layout to %s.",
             cache_layout,
         )
     return cache_layout
@@ -414,9 +389,7 @@ def get_per_layer_parameters(
         sm_scale = impl.scale
         has_sinks = getattr(impl, "sinks", None) is not None
 
-        per_layer_params[key] = PerLayerParameters(
-            window_left, logits_soft_cap, sm_scale, has_sinks
-        )
+        per_layer_params[key] = PerLayerParameters(window_left, logits_soft_cap, sm_scale, has_sinks)
 
     return per_layer_params
 
@@ -441,12 +414,8 @@ def infer_global_hyperparameters(
     param_sets = list(per_layer_params.values())
     global_params = param_sets[0]
 
-    global_params.has_same_window_lefts = all(
-        params.window_left == global_params.window_left for params in param_sets
-    )
-    global_params.has_same_all_params = all(
-        params == global_params for params in param_sets
-    )
+    global_params.has_same_window_lefts = all(params.window_left == global_params.window_left for params in param_sets)
+    global_params.has_same_all_params = all(params == global_params for params in param_sets)
 
     return global_params
 
@@ -556,9 +525,9 @@ def make_local_attention_virtual_batches(
     # set the first block since this may be a partial block
     seqlens_q_local[arange == 0] = q_tokens_in_first_block
     # set the remaining blocks
-    seqlens_q_local[arange > 0] = np.minimum(
-        seqlens_q_local - attn_chunk_size * (arange - 1), attn_chunk_size
-    )[arange > 0]
+    seqlens_q_local[arange > 0] = np.minimum(seqlens_q_local - attn_chunk_size * (arange - 1), attn_chunk_size)[
+        arange > 0
+    ]
 
     # convert from q_seqlens to cu_seqlens_q
     cu_seqlens_q_local = np.empty(virtual_batches + 1, dtype=np.int32)
@@ -604,9 +573,7 @@ def make_local_attention_virtual_batches(
     #     [ 22, 23 ], < local-batch 6, (batch 2, starting from k[4])
     #     [ 24, 25 ], < local-batch 7, (batch 2, starting from k[8])
     #   ]
-    block_indices = block_starts[:, None] + np.arange(
-        pages_per_local_batch, dtype=np.int32
-    )
+    block_indices = block_starts[:, None] + np.arange(pages_per_local_batch, dtype=np.int32)
     block_indices = block_indices.reshape(-1).clip(max=block_table.shape[1] - 1)
     batch_indices = np.repeat(
         np.arange(actual_batch_size, dtype=np.int32),
@@ -619,9 +586,7 @@ def make_local_attention_virtual_batches(
     # tensor first, which recovers perf.
     batch_indices_torch = torch.from_numpy(batch_indices)
     block_indices_torch = torch.from_numpy(block_indices)
-    block_table_local = block_table[batch_indices_torch, block_indices_torch].view(
-        virtual_batches, -1
-    )
+    block_table_local = block_table[batch_indices_torch, block_indices_torch].view(virtual_batches, -1)
 
     query_start_loc_cpu = torch.from_numpy(cu_seqlens_q_local)
     seq_lens_cpu = torch.from_numpy(seqlens_k_local)
@@ -677,9 +642,7 @@ def make_kv_sharing_fast_prefill_common_attn_metadata(
 
     # Calculate new query_start_loc with tokens in generation_indices
     # decode_query_start_loc: [0, 1, 3, 4]
-    decode_query_start_loc = torch.empty(
-        num_reqs + 1, device=query_start_loc.device, dtype=query_start_loc.dtype
-    )
+    decode_query_start_loc = torch.empty(num_reqs + 1, device=query_start_loc.device, dtype=query_start_loc.dtype)
 
     decode_query_start_loc[0] = 0
     decode_query_start_loc[1:] = torch.cumsum(num_decode_tokens, dim=0)
@@ -713,9 +676,7 @@ def subclass_attention_backend(
     """
     name: str = name_prefix + attention_backend_cls.__name__  # type: ignore
 
-    return type(
-        name, (attention_backend_cls,), {"get_builder_cls": lambda: builder_cls}
-    )
+    return type(name, (attention_backend_cls,), {"get_builder_cls": lambda: builder_cls})
 
 
 def split_decodes_and_prefills(
@@ -746,9 +707,7 @@ def split_decodes_and_prefills(
     num_tokens = common_attn_metadata.num_actual_tokens
     query_start_loc = common_attn_metadata.query_start_loc_cpu
 
-    if max_query_len <= decode_threshold and (
-        not require_uniform or decode_threshold <= 1
-    ):
+    if max_query_len <= decode_threshold and (not require_uniform or decode_threshold <= 1):
         return num_reqs, 0, num_tokens, 0
 
     query_lens = query_start_loc[1:] - query_start_loc[:-1]
@@ -794,9 +753,7 @@ def reorder_batch_to_split_decodes_and_prefills(
     #  likely memory-bound and "prefill" to mean requests where attention is
     #  likely compute-bound,
     num_reqs = len(input_batch.req_ids)
-    num_scheduled_tokens = [
-        scheduler_output.num_scheduled_tokens[id] for id in input_batch.req_ids
-    ]
+    num_scheduled_tokens = [scheduler_output.num_scheduled_tokens[id] for id in input_batch.req_ids]
     num_scheduled_tokens_np = np.array(num_scheduled_tokens)
     num_computed_tokens_np = input_batch.num_computed_tokens_cpu[:num_reqs]
 
@@ -849,9 +806,7 @@ def reshape_query_for_spec_decode(query: torch.Tensor, batch_size: int) -> torch
     total_tokens = query.shape[0]
     num_heads = query.shape[1]
     head_dim = query.shape[2]
-    assert total_tokens % batch_size == 0, (
-        f"{total_tokens=} is not divisible by {batch_size=}"
-    )
+    assert total_tokens % batch_size == 0, f"{total_tokens=} is not divisible by {batch_size=}"
     seq_len = total_tokens // batch_size
     return query.view(batch_size, seq_len, num_heads, head_dim)
 
@@ -907,12 +862,8 @@ def create_fast_prefill_custom_backend(
             common_attn_metadata: CommonAttentionMetadata,
             fast_build: bool = False,
         ) -> AttentionMetadata:
-            new_common_attn_metadata = (
-                make_kv_sharing_fast_prefill_common_attn_metadata(common_attn_metadata)
-            )
-            metadata = super().build(
-                common_prefix_len, new_common_attn_metadata, fast_build
-            )
+            new_common_attn_metadata = make_kv_sharing_fast_prefill_common_attn_metadata(common_attn_metadata)
+            metadata = super().build(common_prefix_len, new_common_attn_metadata, fast_build)
 
             class KVSharingFastPrefillAttentionMetadata(
                 metadata.__class__,  #  type: ignore
@@ -928,9 +879,7 @@ def create_fast_prefill_custom_backend(
                         common_attn_metadata.logits_indices_padded is not None
                         and common_attn_metadata.num_logits_indices is not None
                     )
-                    self.logits_indices_padded = (
-                        common_attn_metadata.logits_indices_padded
-                    )
+                    self.logits_indices_padded = common_attn_metadata.logits_indices_padded
                     self.num_logits_indices = common_attn_metadata.num_logits_indices
 
             return KVSharingFastPrefillAttentionMetadata(metadata, common_attn_metadata)
@@ -969,12 +918,8 @@ def compute_causal_conv1d_metadata(query_start_loc_p: torch.Tensor):
 
         if batch_ptr is None:
             # Update default value after class definition
-            batch_ptr = torch.full(
-                (MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device
-            )
-            token_chunk_offset_ptr = torch.full(
-                (MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device
-            )
+            batch_ptr = torch.full((MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device)
+            token_chunk_offset_ptr = torch.full((MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device)
         else:
             if batch_ptr.nelement() < MAX_NUM_PROGRAMS:
                 batch_ptr.resize_(MAX_NUM_PROGRAMS).fill_(PAD_SLOT_ID)

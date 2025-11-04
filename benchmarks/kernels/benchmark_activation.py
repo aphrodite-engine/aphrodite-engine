@@ -1,10 +1,10 @@
 # benchmark custom activation op performance
 import itertools
 
-import torch
-
 import aphrodite.model_executor.layers.activation  # noqa F401
+import torch
 from aphrodite.model_executor.custom_op import CustomOp
+
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import triton
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
@@ -48,9 +48,7 @@ def benchmark_activation(
     elif provider == "compiled":
         fn = lambda: compiled_layer(x)
 
-    ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-        fn, quantiles=[0.5, 0.2, 0.8]
-    )
+    ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(fn, quantiles=[0.5, 0.2, 0.8])
     return ms, max_ms, min_ms
 
 
@@ -72,9 +70,7 @@ if __name__ == "__main__":
         ],
         default="silu_and_mul",
     )
-    parser.add_argument(
-        "--dtype", type=str, choices=["half", "bfloat16", "float"], default="bfloat16"
-    )
+    parser.add_argument("--dtype", type=str, choices=["half", "bfloat16", "float"], default="bfloat16")
     args = parser.parse_args()
     assert args
 

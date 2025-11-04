@@ -1,11 +1,23 @@
-from .interfaces import (HasInnerState, SupportsLoRA, SupportsMRoPE,
-                         SupportsMultiModal, SupportsPP, SupportsTranscription,
-                         has_inner_state, supports_lora, supports_mrope,
-                         supports_multimodal, supports_pp,
-                         supports_transcription)
-from .interfaces_base import (AphroditeModelForPooling,
-                              AphroditeModelForTextGeneration,
-                              is_pooling_model, is_text_generation_model)
+from .interfaces import (
+    HasInnerState,
+    SupportsLoRA,
+    SupportsMRoPE,
+    SupportsMultiModal,
+    SupportsPP,
+    SupportsTranscription,
+    has_inner_state,
+    supports_lora,
+    supports_mrope,
+    supports_multimodal,
+    supports_pp,
+    supports_transcription,
+)
+from .interfaces_base import (
+    AphroditeModelForPooling,
+    AphroditeModelForTextGeneration,
+    is_pooling_model,
+    is_text_generation_model,
+)
 from .registry import ModelRegistry
 
 __all__ = [

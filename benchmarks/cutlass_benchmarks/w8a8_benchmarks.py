@@ -7,14 +7,14 @@ from collections.abc import Callable, Iterable
 
 import torch
 import torch.utils.benchmark as TBenchmark
+from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
+    w8a8_triton_block_scaled_mm,
+)
 from torch.utils.benchmark import Measurement as TMeasurement
 from utils import make_rand_tensors
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite import _custom_ops as ops
-from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
-    w8a8_triton_block_scaled_mm,
-)
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.math_utils import cdiv
 
@@ -24,9 +24,7 @@ DEFAULT_TP_SIZES = [1]
 
 
 # bench
-def bench_fn(
-    label: str, sub_label: str, description: str, fn: Callable, *args, **kwargs
-) -> TMeasurement:
+def bench_fn(label: str, sub_label: str, description: str, fn: Callable, *args, **kwargs) -> TMeasurement:
     min_run_time = 1
 
     globals = {
@@ -68,9 +66,7 @@ def bench_int8(
         "pytorch_fp16_fp16_fp16_matmul-no-scales": lambda: torch.mm(
             a.to(dtype=torch.float16), b.to(dtype=torch.float16)
         ),
-        "cutlass_i8_i8_bf16_scaled_mm": lambda: ops.cutlass_scaled_mm(
-            a, b, scale_a, scale_b, torch.bfloat16
-        ),
+        "cutlass_i8_i8_bf16_scaled_mm": lambda: ops.cutlass_scaled_mm(a, b, scale_a, scale_b, torch.bfloat16),
         "cutlass_i8_i8_bf16_scaled_mm_bias": lambda: ops.cutlass_scaled_mm(
             a, b, scale_a, scale_b, torch.bfloat16, bias
         ),
@@ -115,9 +111,7 @@ def bench_fp8(
     scale_b = torch.tensor(1.0, device="cuda", dtype=torch.float32)
 
     block_scale_a = torch.rand((m, cdiv(k, 128)), device="cuda", dtype=torch.float32)
-    block_scale_b = torch.rand(
-        cdiv(k, 128), cdiv(n, 128), device="cuda", dtype=torch.float32
-    )
+    block_scale_b = torch.rand(cdiv(k, 128), cdiv(n, 128), device="cuda", dtype=torch.float32)
     block_scale_a_M_major = block_scale_a.t().contiguous().t()
     block_scale_b_K_major = block_scale_b.t().contiguous().t()
     bias = torch.zeros((n,), device="cuda", dtype=torch.bfloat16)
@@ -131,24 +125,16 @@ def bench_fp8(
         "pytorch_fp16_fp16_fp16_matmul-no-scales": lambda: torch.mm(
             a.to(dtype=torch.float16), b.to(dtype=torch.float16)
         ),
-        "pytorch_fp8_fp8_fp16_scaled_mm": lambda: torch._scaled_mm(
-            a, b, scale_a, scale_b, out_dtype=torch.float16
-        ),
+        "pytorch_fp8_fp8_fp16_scaled_mm": lambda: torch._scaled_mm(a, b, scale_a, scale_b, out_dtype=torch.float16),
         "pytorch_fp8_fp8_fp16_scaled_mm_fast_accum": lambda: torch._scaled_mm(
             a, b, scale_a, scale_b, out_dtype=torch.float16, use_fast_accum=True
         ),
-        "pytorch_fp8_fp8_bf16_scaled_mm": lambda: torch._scaled_mm(
-            a, b, scale_a, scale_b, out_dtype=torch.bfloat16
-        ),
+        "pytorch_fp8_fp8_bf16_scaled_mm": lambda: torch._scaled_mm(a, b, scale_a, scale_b, out_dtype=torch.bfloat16),
         "pytorch_fp8_fp8_bf16_scaled_mm_fast_accum": lambda: torch._scaled_mm(
             a, b, scale_a, scale_b, out_dtype=torch.bfloat16, use_fast_accum=True
         ),
-        "cutlass_fp8_fp8_bf16_scaled_mm": lambda: ops.cutlass_scaled_mm(
-            a, b, scale_a, scale_b, torch.bfloat16
-        ),
-        "cutlass_fp8_fp8_fp16_scaled_mm": lambda: ops.cutlass_scaled_mm(
-            a, b, scale_a, scale_b, torch.float16
-        ),
+        "cutlass_fp8_fp8_bf16_scaled_mm": lambda: ops.cutlass_scaled_mm(a, b, scale_a, scale_b, torch.bfloat16),
+        "cutlass_fp8_fp8_fp16_scaled_mm": lambda: ops.cutlass_scaled_mm(a, b, scale_a, scale_b, torch.float16),
         "cutlass_fp8_fp8_bf16_scaled_mm_bias": lambda: ops.cutlass_scaled_mm(
             a, b, scale_a, scale_b, torch.bfloat16, bias
         ),
@@ -357,12 +343,8 @@ Benchmark Cutlass GEMM.
         default=DEFAULT_MODELS,
         choices=WEIGHT_SHAPES.keys(),
     )
-    model_parser.add_argument(
-        "--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES
-    )
-    model_parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    model_parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
+    model_parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     model_parser.set_defaults(func=run_model_bench)
 
     args = parser.parse_args()

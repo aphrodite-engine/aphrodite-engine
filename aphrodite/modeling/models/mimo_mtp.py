@@ -27,8 +27,7 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.qwen2 import Qwen2DecoderLayer
 from aphrodite.quantization import QuantizationConfig
@@ -49,9 +48,7 @@ class MiMoMultiTokenPredictorLayer(nn.Module):
 
         self.token_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.hidden_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.input_proj = nn.Linear(
-            config.hidden_size * 2, config.hidden_size, bias=False
-        )
+        self.input_proj = nn.Linear(config.hidden_size * 2, config.hidden_size, bias=False)
         self.mtp_block = Qwen2DecoderLayer(
             config=config,
             cache_config=cache_config,
@@ -73,13 +70,9 @@ class MiMoMultiTokenPredictorLayer(nn.Module):
         inputs_embeds = self.token_layernorm(inputs_embeds)
         previous_hidden_states = self.hidden_layernorm(previous_hidden_states)
 
-        hidden_states = self.input_proj(
-            torch.cat([previous_hidden_states, inputs_embeds], dim=-1)
-        )
+        hidden_states = self.input_proj(torch.cat([previous_hidden_states, inputs_embeds], dim=-1))
 
-        hidden_states, residual = self.mtp_block(
-            positions=positions, hidden_states=hidden_states, residual=None
-        )
+        hidden_states, residual = self.mtp_block(positions=positions, hidden_states=hidden_states, residual=None)
         hidden_states = residual + hidden_states
         return self.final_layernorm(hidden_states)
 
@@ -150,9 +143,7 @@ class MiMoMTP(nn.Module):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         self.config = aphrodite_config.model_config.hf_config
-        self.model = MiMoMultiTokenPredictor(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = MiMoMultiTokenPredictor(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.lm_head = ParallelLMHead(
             self.config.vocab_size,
             self.config.hidden_size,
@@ -172,9 +163,7 @@ class MiMoMTP(nn.Module):
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
         assert spec_step_idx == 0, "mimo_mtp only support predict one token now"
-        hidden_states = self.model(
-            input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
-        )
+        hidden_states = self.model(input_ids, positions, hidden_states, inputs_embeds, spec_step_idx)
         return hidden_states
 
     def compute_logits(
@@ -227,9 +216,7 @@ class MiMoMTP(nn.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
-                if "mtp_layers" not in name and (
-                    "embed_tokens" not in name and "lm_head" not in name
-                ):
+                if "mtp_layers" not in name and ("embed_tokens" not in name and "lm_head" not in name):
                     continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
@@ -283,7 +270,5 @@ class MiMoMTP(nn.Module):
                 break
         if not spec_layer_weight:
             # treat rest weights as weights for transformer layer block
-            name = name.replace(
-                f"model.layers.{spec_layer}.", f"model.layers.{spec_layer}.mtp_block."
-            )
+            name = name.replace(f"model.layers.{spec_layer}.", f"model.layers.{spec_layer}.mtp_block.")
         return name

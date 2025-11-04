@@ -1,12 +1,10 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.platforms import current_platform
 
 from .base import BaseLayerWithLoRA
@@ -32,14 +30,10 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
                 + self.base_layer.num_added_embeddings_per_partition
             ]
             self.embeddings_slice = (
-                self.base_layer.shard_indices.added_vocab_start_index
-                - self.base_layer.org_vocab_size,
-                self.base_layer.shard_indices.added_vocab_end_index
-                - self.base_layer.org_vocab_size,
+                self.base_layer.shard_indices.added_vocab_start_index - self.base_layer.org_vocab_size,
+                self.base_layer.shard_indices.added_vocab_end_index - self.base_layer.org_vocab_size,
             )
-            self.base_layer.weight.data[
-                self.base_layer.num_org_embeddings_per_partition :
-            ].fill_(0)
+            self.base_layer.weight.data[self.base_layer.num_org_embeddings_per_partition :].fill_(0)
         else:
             self.embeddings_slice = None
             self.embeddings_weights = None
@@ -92,12 +86,8 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
         self.reset_lora(index)
         # NOTE self.lora_a_stacked is row-major, and lora_a is col-major,
         # so we need transpose here
-        self.lora_a_stacked[index, : lora_a.shape[1], : lora_a.shape[0]].copy_(
-            lora_a.T, non_blocking=True
-        )
-        self.lora_b_stacked[index, 0, : lora_b.shape[0], : lora_b.shape[1]].copy_(
-            lora_b, non_blocking=True
-        )
+        self.lora_a_stacked[index, : lora_a.shape[1], : lora_a.shape[0]].copy_(lora_a.T, non_blocking=True)
+        self.lora_b_stacked[index, 0, : lora_b.shape[0], : lora_b.shape[1]].copy_(lora_b, non_blocking=True)
         if embeddings_tensor is not None:
             self.embeddings_tensors[
                 index,
@@ -131,9 +121,7 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
 
         full_output_org = full_output
         if full_output.ndim == 3:
-            full_output = full_output.view(
-                full_output.shape[0] * full_output.shape[1], -1
-            )
+            full_output = full_output.view(full_output.shape[0] * full_output.shape[1], -1)
         if full_lora_a_embeddings.ndim == 3:
             full_lora_a_embeddings = full_lora_a_embeddings.view(
                 full_lora_a_embeddings.shape[0] * full_lora_a_embeddings.shape[1],

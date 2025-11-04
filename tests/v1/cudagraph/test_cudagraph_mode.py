@@ -70,9 +70,7 @@ def test_backend_and_cudagraph_mode_combo(backend_name, cudagraph_mode, supporte
             trust_remote_code=True,
             gpu_memory_utilization=0.45,
             max_model_len=1024,
-            compilation_config=CompilationConfig(
-                mode=CompilationMode.APHRODITE_COMPILE, cudagraph_mode=cudagraph_mode
-            ),
+            compilation_config=CompilationConfig(mode=CompilationMode.APHRODITE_COMPILE, cudagraph_mode=cudagraph_mode),
         )
         llm.generate(["Hello, my name is"] * 10)
     # when above code raises, `llm` may be undefined, so we need to catch that
@@ -104,12 +102,8 @@ combo_cases_2 = [
 ]
 
 
-@pytest.mark.parametrize(
-    "backend_name,cudagraph_mode,compilation_mode,supported", combo_cases_2
-)
-def test_cudagraph_compilation_combo(
-    backend_name, cudagraph_mode, compilation_mode, supported
-):
+@pytest.mark.parametrize("backend_name,cudagraph_mode,compilation_mode,supported", combo_cases_2)
+def test_cudagraph_compilation_combo(backend_name, cudagraph_mode, compilation_mode, supported):
     env_vars = backend_configs[backend_name].env_vars
 
     with temporary_environ(env_vars), ExitStack() as stack:
@@ -122,9 +116,7 @@ def test_cudagraph_compilation_combo(
             trust_remote_code=True,
             gpu_memory_utilization=0.45,
             max_model_len=1024,
-            compilation_config=CompilationConfig(
-                mode=compilation_mode, cudagraph_mode=cudagraph_mode
-            ),
+            compilation_config=CompilationConfig(mode=compilation_mode, cudagraph_mode=cudagraph_mode),
         )
         llm.generate(["Hello, my name is"] * 10)
     # when above code raises, `llm` may be undefined, so we need to catch that

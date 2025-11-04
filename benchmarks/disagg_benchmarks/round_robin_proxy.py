@@ -24,9 +24,7 @@ class RoundRobinProxy:
                     data=request.content,
                 ) as response:
                     # Start sending the response
-                    resp = web.StreamResponse(
-                        status=response.status, headers=response.headers
-                    )
+                    resp = web.StreamResponse(status=response.status, headers=response.headers)
                     await resp.prepare(request)
 
                     # Stream the response content

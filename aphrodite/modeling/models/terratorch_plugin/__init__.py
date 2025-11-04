@@ -1,5 +1,4 @@
-from .utils import (DummyDataGenerator, InferenceRunner, InputDefinition,
-                    InputTypeEnum)
+from .utils import DummyDataGenerator, InferenceRunner, InputDefinition, InputTypeEnum
 
 __all__ = [
     "DummyDataGenerator",

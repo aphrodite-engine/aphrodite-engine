@@ -2,8 +2,7 @@ import sys
 import types
 from unittest import mock
 
-from aphrodite.triton_utils.importing import (TritonLanguagePlaceholder,
-                                              TritonPlaceholder)
+from aphrodite.triton_utils.importing import TritonLanguagePlaceholder, TritonPlaceholder
 
 
 def test_triton_placeholder_is_module():

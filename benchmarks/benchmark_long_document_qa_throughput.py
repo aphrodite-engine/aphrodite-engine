@@ -42,8 +42,9 @@ import dataclasses
 import random
 import time
 
-from aphrodite import LLM, SamplingParams
 from aphrodite.engine.arg_utils import EngineArgs
+
+from aphrodite import LLM, SamplingParams
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 
@@ -97,9 +98,7 @@ def repeat_prompts(prompts, repeat_count, mode: str):
             repeated_prompts.extend([prompt] * repeat_count)
         return repeated_prompts
     else:
-        raise ValueError(
-            f"Invalid mode: {mode}, only support 'random', 'tile', 'interleave'"
-        )
+        raise ValueError(f"Invalid mode: {mode}, only support 'random', 'tile', 'interleave'")
 
 
 def main(args):
@@ -108,16 +107,12 @@ def main(args):
     # Prepare the prompts:
     # we append the document id at the beginning to avoid any of the document
     # being the prefix of other documents
-    prompts = [
-        str(i) + " ".join(["hi"] * args.document_length)
-        for i in range(args.num_documents)
-    ]
+    prompts = [str(i) + " ".join(["hi"] * args.document_length) for i in range(args.num_documents)]
 
     prompts = repeat_prompts(prompts, args.repeat_count, mode=args.repeat_mode)
 
     warmup_prompts = [
-        "This is warm up request " + str(i) + " ".join(["hi"] * args.document_length)
-        for i in range(args.num_documents)
+        "This is warm up request " + str(i) + " ".join(["hi"] * args.document_length) for i in range(args.num_documents)
     ]
 
     # Create the LLM engine
@@ -141,10 +136,7 @@ def main(args):
 
 
 def create_argument_parser():
-    parser = FlexibleArgumentParser(
-        description="Benchmark the performance with or "
-        "without automatic prefix caching."
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the performance with or without automatic prefix caching.")
 
     parser.add_argument(
         "--document-length",
@@ -152,16 +144,14 @@ def create_argument_parser():
         # Roughly the number of tokens for a system paper,
         # excluding images
         default=20000,
-        help="Range of input lengths for sampling prompts, "
-        'specified as "min:max" (e.g., "128:256").',
+        help='Range of input lengths for sampling prompts, specified as "min:max" (e.g., "128:256").',
     )
 
     parser.add_argument(
         "--num-documents",
         type=int,
         default=8,
-        help="Range of input lengths for sampling prompts, "
-        'specified as "min:max" (e.g., "128:256").',
+        help='Range of input lengths for sampling prompts, specified as "min:max" (e.g., "128:256").',
     )
 
     parser.add_argument("--output-len", type=int, default=10)

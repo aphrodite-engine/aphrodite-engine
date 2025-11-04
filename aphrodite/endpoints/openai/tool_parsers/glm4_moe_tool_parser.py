@@ -5,14 +5,17 @@ from typing import Any
 
 import regex as re
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 ChatCompletionToolsParam,
-                                                 DeltaFunctionCall,
-                                                 DeltaMessage, DeltaToolCall,
-                                                 ExtractedToolCallInformation,
-                                                 FunctionCall, ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser, ToolParserManager)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    ChatCompletionToolsParam,
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -33,17 +36,10 @@ class Glm4MoeModelToolParser(ToolParser):
         self.tool_calls_start_token = self.tool_call_start_token
 
         self.func_call_regex = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL)
-        self.func_detail_regex = re.compile(
-            r"<tool_call>([^\n]*)\n(.*)</tool_call>", re.DOTALL
-        )
-        self.func_arg_regex = re.compile(
-            r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.DOTALL
-        )
+        self.func_detail_regex = re.compile(r"<tool_call>([^\n]*)\n(.*)</tool_call>", re.DOTALL)
+        self.func_arg_regex = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.DOTALL)
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         self.tool_call_start_token_id = self.vocab.get(self.tool_call_start_token)
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
@@ -65,11 +61,7 @@ class Glm4MoeModelToolParser(ToolParser):
                 if tool.function.name == tool_name:
                     if tool.function.parameters is None:
                         return False
-                    arg_type = (
-                        tool.function.parameters.get("properties", {})
-                        .get(arg_name, {})
-                        .get("type", None)
-                    )
+                    arg_type = tool.function.parameters.get("properties", {}).get(arg_name, {}).get("type", None)
                     return arg_type == "string"
             logger.warning("No tool named '%s'.", tool_name)
             return False
@@ -106,25 +98,17 @@ class Glm4MoeModelToolParser(ToolParser):
                 tool_calls.append(
                     ToolCall(
                         type="function",
-                        function=FunctionCall(
-                            name=tc_name, arguments=json.dumps(arg_dct)
-                        ),
+                        function=FunctionCall(name=tc_name, arguments=json.dumps(arg_dct)),
                     )
                 )
         except Exception:
             logger.exception("Failed to extract tool call spec")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
         else:
             if len(tool_calls) > 0:
                 content = model_output[: model_output.find(self.tool_calls_start_token)]
-                return ExtractedToolCallInformation(
-                    tools_called=True, tool_calls=tool_calls, content=content
-                )
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+                return ExtractedToolCallInformation(tools_called=True, tool_calls=tool_calls, content=content)
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def extract_tool_calls_streaming(
         self,
@@ -156,9 +140,7 @@ class Glm4MoeModelToolParser(ToolParser):
             while len(self.streamed_args_for_tool) <= self.current_tool_id:
                 self.streamed_args_for_tool.append("")
 
-            extracted_tool_calls = self.extract_tool_calls(
-                cur_text[: end_idx + len(self.tool_call_end_token)], request
-            )
+            extracted_tool_calls = self.extract_tool_calls(cur_text[: end_idx + len(self.tool_call_end_token)], request)
 
             if len(extracted_tool_calls.tool_calls) == 0:
                 logger.warning("Failed to extract any tool calls.")
@@ -168,9 +150,7 @@ class Glm4MoeModelToolParser(ToolParser):
                 "name": tool_call.function.name,
                 "arguments": json.loads(tool_call.function.arguments),
             }
-            self.streamed_args_for_tool[self.current_tool_id] = (
-                tool_call.function.arguments
-            )
+            self.streamed_args_for_tool[self.current_tool_id] = tool_call.function.arguments
             delta = DeltaMessage(
                 content=extracted_tool_calls.content,
                 tool_calls=[

@@ -191,9 +191,7 @@ class UsageMessage:
 
             self.gpu_count = torch_xla.runtime.world_size()
             self.gpu_type = torch_xla.tpu.get_tpu_type()
-            self.gpu_memory_per_device = torch_xla.core.xla_model.get_memory_info()[
-                "bytes_limit"
-            ]
+            self.gpu_memory_per_device = torch_xla.core.xla_model.get_memory_info()["bytes_limit"]
             self.cuda_runtime = "torch_xla"
             return True
         except Exception:
@@ -210,15 +208,11 @@ class UsageMessage:
 
         if current_platform.is_cuda_alike():
             self.gpu_count = cuda_device_count_stateless()
-            self.gpu_type, self.gpu_memory_per_device = cuda_get_device_properties(
-                0, ("name", "total_memory")
-            )
+            self.gpu_type, self.gpu_memory_per_device = cuda_get_device_properties(0, ("name", "total_memory"))
         if current_platform.is_cuda():
             self.cuda_runtime = torch.version.cuda
         if current_platform.is_tpu():  # noqa: SIM102
-            if (not self._report_tpu_inference_usage()) and (
-                not self._report_torch_xla_usage()
-            ):
+            if (not self._report_tpu_inference_usage()) and (not self._report_torch_xla_usage()):
                 logger.exception("Failed to collect TPU information")
         self.provider = _detect_cloud_provider()
         self.architecture = platform.machine()
@@ -242,9 +236,7 @@ class UsageMessage:
         self.model_architecture = model_architecture
 
         # Environment variables
-        self.env_var_json = json.dumps(
-            {env_var: getattr(envs, env_var) for env_var in _USAGE_ENV_VARS_TO_COLLECT}
-        )
+        self.env_var_json = json.dumps({env_var: getattr(envs, env_var) for env_var in _USAGE_ENV_VARS_TO_COLLECT})
 
         # Metadata
         self.log_time = _get_current_timestamp_ns()

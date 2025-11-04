@@ -1,4 +1,5 @@
 """CLI subcommand for running the tokenizer-only server."""
+
 from __future__ import annotations
 
 import argparse
@@ -35,9 +36,7 @@ class TokenizerSubcommand(CLISubcommand):
 
         return make_arg_parser(parser)
 
-    def subparser_init(
-        self, subparsers: argparse._SubParsersAction
-    ) -> FlexibleArgumentParser:
+    def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         """Initialize the subparser for the tokenizer command."""
         parser = subparsers.add_parser(
             "tokenizer",

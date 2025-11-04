@@ -11,11 +11,11 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from aphrodite.modeling.layers.linear import LinearBase  # noqa: E501
-from aphrodite.modeling.layers.linear import UnquantizedLinearMethod
-from aphrodite.quantization import (QuantizationMethods,
-                                    get_quantization_config,
-                                    register_quantization_config)
+from aphrodite.modeling.layers.linear import (
+    LinearBase,  # noqa: E501
+    UnquantizedLinearMethod,
+)
+from aphrodite.quantization import QuantizationMethods, get_quantization_config, register_quantization_config
 from aphrodite.quantization.base_config import QuantizationConfig  # noqa: E501
 
 
@@ -83,9 +83,7 @@ class CustomQuantConfig(QuantizationConfig):
         """Create a config class from the model's quantization config."""
         return CustomQuantConfig(num_bits=config.get("num_bits", 8))
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> FakeQuantLinearMethod | None:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> FakeQuantLinearMethod | None:
         """Get the quantize method to use for the quantized layer."""
         if isinstance(layer, LinearBase):
             return FakeQuantLinearMethod(num_bits=self.num_bits)
@@ -115,9 +113,7 @@ def test_custom_quant(aphrodite_runner, model, monkeypatch):
     # `LLM.apply_model` requires pickling a function.
     monkeypatch.setenv("APHRODITE_ALLOW_INSECURE_SERIALIZATION", "1")
 
-    with aphrodite_runner(
-        model_name=model, quantization="custom_quant", enforce_eager=True
-    ) as llm:
+    with aphrodite_runner(model_name=model, quantization="custom_quant", enforce_eager=True) as llm:
 
         def check_model(model):
             layer = model.model.layers[0]

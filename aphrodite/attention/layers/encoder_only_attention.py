@@ -4,15 +4,12 @@ from copy import copy
 import torch
 
 from aphrodite import envs
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionMetadata,
-                                                   AttentionType)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionMetadata, AttentionType
 from aphrodite.attention.layer import Attention
 from aphrodite.attention.selector import get_attn_backend
 from aphrodite.config import CacheConfig
 from aphrodite.config.aphrodite import AphroditeConfig
-from aphrodite.v1.attention.backends.utils import (CommonAttentionMetadata,
-                                                   subclass_attention_backend)
+from aphrodite.v1.attention.backends.utils import CommonAttentionMetadata, subclass_attention_backend
 from aphrodite.v1.kv_cache_interface import KVCacheSpec
 
 
@@ -32,9 +29,7 @@ def create_encoder_only_attention_backend(
         ) -> AttentionMetadata:
             new_common_attn_metadata = copy(common_attn_metadata)
             new_common_attn_metadata.causal = False
-            return super().build(
-                common_prefix_len, new_common_attn_metadata, fast_build
-            )
+            return super().build(common_prefix_len, new_common_attn_metadata, fast_build)
 
     attn_backend = subclass_attention_backend(
         name_prefix=prefix,
@@ -69,13 +64,9 @@ class EncoderOnlyAttention(Attention):
             block_size = 16
 
         if envs.APHRODITE_USE_V1:
-            underlying_attn_backend = get_attn_backend(
-                head_size, dtype, kv_cache_dtype, block_size
-            )
+            underlying_attn_backend = get_attn_backend(head_size, dtype, kv_cache_dtype, block_size)
 
-            attn_backend = create_encoder_only_attention_backend(
-                underlying_attn_backend
-            )
+            attn_backend = create_encoder_only_attention_backend(underlying_attn_backend)
         else:
             # in v0 encoder only attention is handled inside the backends
             attn_backend = None

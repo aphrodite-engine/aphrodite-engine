@@ -63,9 +63,7 @@ def _get_submodule(module_name: str) -> Any | None:
 
 
 # General lazy import wrapper
-def _lazy_import_wrapper(
-    module_name: str, attr_name: str, fallback_fn: Callable[..., Any] = _missing
-):
+def _lazy_import_wrapper(module_name: str, attr_name: str, fallback_fn: Callable[..., Any] = _missing):
     """Create a lazy import wrapper for a specific function."""
 
     @functools.cache
@@ -85,22 +83,14 @@ def _lazy_import_wrapper(
 
 
 # Create lazy wrappers for each function
-flashinfer_trtllm_fp8_block_scale_moe = _lazy_import_wrapper(
-    "flashinfer.fused_moe", "trtllm_fp8_block_scale_moe"
-)
+flashinfer_trtllm_fp8_block_scale_moe = _lazy_import_wrapper("flashinfer.fused_moe", "trtllm_fp8_block_scale_moe")
 flashinfer_trtllm_fp8_per_tensor_scale_moe = _lazy_import_wrapper(
     "flashinfer.fused_moe", "trtllm_fp8_per_tensor_scale_moe"
 )
-flashinfer_cutlass_fused_moe = _lazy_import_wrapper(
-    "flashinfer.fused_moe", "cutlass_fused_moe"
-)
+flashinfer_cutlass_fused_moe = _lazy_import_wrapper("flashinfer.fused_moe", "cutlass_fused_moe")
 flashinfer_fp4_quantize = _lazy_import_wrapper("flashinfer", "fp4_quantize")
-nvfp4_block_scale_interleave = _lazy_import_wrapper(
-    "flashinfer", "nvfp4_block_scale_interleave"
-)
-trtllm_fp4_block_scale_moe = _lazy_import_wrapper(
-    "flashinfer", "trtllm_fp4_block_scale_moe"
-)
+nvfp4_block_scale_interleave = _lazy_import_wrapper("flashinfer", "nvfp4_block_scale_interleave")
+trtllm_fp4_block_scale_moe = _lazy_import_wrapper("flashinfer", "trtllm_fp4_block_scale_moe")
 
 # Special case for autotune since it returns a context manager
 autotune = _lazy_import_wrapper(
@@ -140,10 +130,7 @@ def has_flashinfer_all2all() -> bool:
 @functools.cache
 def has_flashinfer_moe() -> bool:
     """Return `True` if FlashInfer MoE module is available."""
-    return (
-        has_flashinfer()
-        and importlib.util.find_spec("flashinfer.fused_moe") is not None
-    )
+    return has_flashinfer() and importlib.util.find_spec("flashinfer.fused_moe") is not None
 
 
 @functools.cache
@@ -253,8 +240,7 @@ def use_trtllm_attention(
     if not supports_trtllm_attention():
         if force_use_trtllm:
             logger.warning_once(
-                "TRTLLM attention is not supported on this platform, "
-                "but APHRODITE_USE_TRTLLM_ATTENTION is set to 1"
+                "TRTLLM attention is not supported on this platform, but APHRODITE_USE_TRTLLM_ATTENTION is set to 1"
             )
         return False
 
@@ -292,9 +278,7 @@ def use_trtllm_attention(
                 logger.warning_once("Using TRTLLM prefill attention (auto-detected).")
         else:
             # Decode auto-detection
-            use_trtllm = (
-                num_tokens <= 256 and max_seq_len <= 131072 and kv_cache_dtype == "auto"
-            )
+            use_trtllm = num_tokens <= 256 and max_seq_len <= 131072 and kv_cache_dtype == "auto"
             if use_trtllm:
                 logger.warning_once("Using TRTLLM decode attention (auto-detected).")
         return use_trtllm
@@ -322,9 +306,7 @@ if has_flashinfer():
     ) -> torch.Tensor:
         from flashinfer import mm_fp4 as flashinfer_mm_fp4_
 
-        return flashinfer_mm_fp4_(
-            A, B, A_scale, B_scale, g_scale, dtype, block_size=16, backend=backend
-        )
+        return flashinfer_mm_fp4_(A, B, A_scale, B_scale, g_scale, dtype, block_size=16, backend=backend)
 
     @torch.library.register_fake(
         "aphrodite::flashinfer_mm_fp4",
@@ -368,9 +350,7 @@ if has_flashinfer():
         dtype: torch.dtype,
         backend: str,
     ) -> torch.Tensor:
-        return torch.empty(
-            A.shape[0], A.shape[1], B.shape[2], dtype=dtype, device=A.device
-        )
+        return torch.empty(A.shape[0], A.shape[1], B.shape[2], dtype=dtype, device=A.device)
 
 
 def flashinfer_scaled_fp4_mm(

@@ -2,8 +2,7 @@ import pytest
 
 from aphrodite.assets.video import VideoAsset
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.video import (OpenCVDynamicVideoBackend,
-                                        OpenCVVideoBackend)
+from aphrodite.multimodal.video import OpenCVDynamicVideoBackend, OpenCVVideoBackend
 
 from ...utils import build_model_context
 
@@ -87,9 +86,7 @@ def test_video_loader_consistency(
         video_bytes = f.read()
 
     static_video, static_metadata = OpenCVVideoBackend.load_bytes(video_bytes)
-    dynamic_video, dynamic_metadata = OpenCVDynamicVideoBackend.load_bytes(
-        video_bytes, fps=fps
-    )
+    dynamic_video, dynamic_metadata = OpenCVDynamicVideoBackend.load_bytes(video_bytes, fps=fps)
 
     # pre-sampled loader shouldn't read all frames
     assert len(dynamic_video) < len(static_video)
@@ -101,7 +98,4 @@ def test_video_loader_consistency(
     dynamic_outputs = processor.apply(prompt, dynamic_mm_data, hf_processor_mm_kwargs)
 
     assert static_outputs["prompt_token_ids"] == dynamic_outputs["prompt_token_ids"]
-    assert (
-        static_outputs["mm_kwargs"].get_data()
-        == dynamic_outputs["mm_kwargs"].get_data()
-    )
+    assert static_outputs["mm_kwargs"].get_data() == dynamic_outputs["mm_kwargs"].get_data()

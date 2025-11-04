@@ -5,8 +5,7 @@ from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.w8a8_utils import convert_to_channelwise
 
-from .ScaledMMLinearKernel import (ScaledMMLinearKernel,
-                                   ScaledMMLinearLayerConfig)
+from .ScaledMMLinearKernel import ScaledMMLinearKernel, ScaledMMLinearLayerConfig
 
 
 class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
@@ -66,15 +65,11 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
                 range_min = (input_scale * (int8_traits.min - azps)).min()
 
                 scale = (range_max - range_min) / (int8_traits.max - int8_traits.min)
-                replace_parameter(
-                    layer, self.i_s_name, torch.nn.Parameter(scale, requires_grad=False)
-                )
+                replace_parameter(layer, self.i_s_name, torch.nn.Parameter(scale, requires_grad=False))
 
                 # AZP loaded as int8 but used as int32
                 azp = (int8_traits.min - range_min / scale).to(dtype=torch.int32)
-                replace_parameter(
-                    layer, self.i_zp_name, torch.nn.Parameter(azp, requires_grad=False)
-                )
+                replace_parameter(layer, self.i_zp_name, torch.nn.Parameter(azp, requires_grad=False))
 
         else:
             setattr(layer, self.i_s_name, None)
@@ -112,9 +107,7 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
         # * dynamic, i_s is None and x_s computed from x.
         # * static, i_s is scalar and x_s is i_s.
         symmetric = azp_adj is None
-        x_q, x_s, x_zp = ops.scaled_int8_quant(
-            x.contiguous(), i_s, i_zp, symmetric=symmetric
-        )
+        x_q, x_s, x_zp = ops.scaled_int8_quant(x.contiguous(), i_s, i_zp, symmetric=symmetric)
 
         if x_zp is not None:
             # Currently, static is always per-tensor and dynamic is per-token
@@ -130,6 +123,4 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
                 azp=azp,
                 bias=bias,
             )
-        return ops.cutlass_scaled_mm(
-            x_q, w_q, scale_a=x_s, scale_b=w_s, out_dtype=x.dtype, bias=bias
-        )
+        return ops.cutlass_scaled_mm(x_q, w_q, scale_a=x_s, scale_b=w_s, out_dtype=x.dtype, bias=bias)

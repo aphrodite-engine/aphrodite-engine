@@ -11,8 +11,7 @@ import torch.nn.functional as F
 from transformers import PretrainedConfig
 
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.config import (ModelConfig, PoolerConfig,
-                              get_current_aphrodite_config)
+from aphrodite.config import ModelConfig, PoolerConfig, get_current_aphrodite_config
 from aphrodite.logger import init_logger
 from aphrodite.modeling.models.adapters import _load_st_projector
 from aphrodite.tasks import PoolingTask
@@ -75,10 +74,7 @@ def get_prompt_token_ids(pooling_metadata: PoolingMetadata) -> list[torch.Tensor
         "Please set `requires_token_ids=True` in `get_pooling_updates`"
     )
 
-    return [
-        pooling_metadata.prompt_token_ids[i, :num]
-        for i, num in enumerate(pooling_metadata.prompt_lens)
-    ]
+    return [pooling_metadata.prompt_token_ids[i, :num] for i, num in enumerate(pooling_metadata.prompt_lens)]
 
 
 def get_pooling_params(pooling_metadata: PoolingMetadata) -> list[PoolingParams]:
@@ -89,11 +85,7 @@ def get_pooling_params(pooling_metadata: PoolingMetadata) -> list[PoolingParams]
 def get_tasks(pooling_metadata: PoolingMetadata) -> list[PoolingTask]:
     pooling_params = get_pooling_params(pooling_metadata)
 
-    tasks: list[PoolingTask] = [
-        task
-        for pooling_param in pooling_params
-        if (task := pooling_param.task) is not None
-    ]
+    tasks: list[PoolingTask] = [task for pooling_param in pooling_params if (task := pooling_param.task) is not None]
     assert len(pooling_params) == len(tasks)
 
     return tasks
@@ -114,10 +106,7 @@ def get_classification_activation_function(config: PretrainedConfig):
 
 def get_cross_encoder_activation_function(config: PretrainedConfig):
     function_name: str | None = None
-    if (
-        hasattr(config, "sentence_transformers")
-        and "activation_fn" in config.sentence_transformers
-    ):
+    if hasattr(config, "sentence_transformers") and "activation_fn" in config.sentence_transformers:
         function_name = config.sentence_transformers["activation_fn"]
     elif (
         hasattr(config, "sbert_ce_default_activation_function")
@@ -127,8 +116,7 @@ def get_cross_encoder_activation_function(config: PretrainedConfig):
 
     if function_name is not None:
         assert function_name.startswith("torch.nn.modules."), (
-            "Loading of activation functions is restricted to "
-            "torch.nn.modules for security reasons"
+            "Loading of activation functions is restricted to torch.nn.modules for security reasons"
         )
         fn = resolve_obj_by_qualname(function_name)()
         return PoolerActivation.wraps(fn)
@@ -183,9 +171,7 @@ class CLSPool(PoolingMethod):
         hidden_states: torch.Tensor,
         pooling_cursor: PoolingCursor,
     ) -> list[torch.Tensor] | torch.Tensor:
-        assert not pooling_cursor.is_partial_prefill(), (
-            "partial prefill not supported with CLS pooling"
-        )
+        assert not pooling_cursor.is_partial_prefill(), "partial prefill not supported with CLS pooling"
 
         return hidden_states[pooling_cursor.first_token_indices_gpu]
 
@@ -211,13 +197,9 @@ class AllPool(PoolingMethod):
         hidden_states: torch.Tensor,
         pooling_cursor: PoolingCursor,
     ) -> list[torch.Tensor] | torch.Tensor:
-        assert not pooling_cursor.is_partial_prefill(), (
-            "partial prefill not supported with ALL pooling"
-        )
+        assert not pooling_cursor.is_partial_prefill(), "partial prefill not supported with ALL pooling"
 
-        hidden_states_lst = list(
-            hidden_states.split(pooling_cursor.num_scheduled_tokens_cpu.tolist())
-        )
+        hidden_states_lst = list(hidden_states.split(pooling_cursor.num_scheduled_tokens_cpu.tolist()))
         return [hidden_states_lst[i] for i in pooling_cursor.index]
 
 
@@ -230,13 +212,9 @@ class MeanPool(PoolingMethod):
         hidden_states: torch.Tensor,
         pooling_cursor: PoolingCursor,
     ) -> list[torch.Tensor] | torch.Tensor:
-        assert not pooling_cursor.is_partial_prefill(), (
-            "partial prefill not supported with MEAN pooling"
-        )
+        assert not pooling_cursor.is_partial_prefill(), "partial prefill not supported with MEAN pooling"
 
-        prompt_lens = pooling_cursor.prompt_lens_cpu.to(
-            hidden_states.device, non_blocking=True
-        )
+        prompt_lens = pooling_cursor.prompt_lens_cpu.to(hidden_states.device, non_blocking=True)
 
         # Use float32 for torch.cumsum in MeanPool,
         # otherwise precision will be lost significantly.
@@ -244,9 +222,7 @@ class MeanPool(PoolingMethod):
 
         start_indices = pooling_cursor.first_token_indices_gpu
         end_indices = pooling_cursor.last_token_indices_gpu
-        return (
-            cumsum[end_indices] - cumsum[start_indices] + hidden_states[start_indices]
-        ) / prompt_lens.unsqueeze(1)
+        return (cumsum[end_indices] - cumsum[start_indices] + hidden_states[start_indices]) / prompt_lens.unsqueeze(1)
 
 
 _T = TypeVar("_T", torch.Tensor, list[torch.Tensor])
@@ -304,9 +280,7 @@ class PoolerClassify(PoolerActivation):
 
         if static_num_labels:
             aphrodite_config = get_current_aphrodite_config()
-            self.num_labels = getattr(
-                aphrodite_config.model_config.hf_config, "num_labels", 0
-            )
+            self.num_labels = getattr(aphrodite_config.model_config.hf_config, "num_labels", 0)
             if self.num_labels == 0:
                 logger.warning(
                     "num_labels should be > 0 for classification"
@@ -317,9 +291,7 @@ class PoolerClassify(PoolerActivation):
             self.num_labels = None
 
     def forward_chunk(self, pooled_data: torch.Tensor) -> torch.Tensor:
-        num_labels = (
-            self.num_labels if self.num_labels is not None else pooled_data.shape[-1]
-        )
+        num_labels = self.num_labels if self.num_labels is not None else pooled_data.shape[-1]
 
         if num_labels < 2:
             return F.sigmoid(pooled_data)
@@ -427,7 +399,7 @@ class DummyPooler(Pooler):
             # Wrap tensor in a list with one element per request in metadata
             # For plugin tasks, we want to keep the full tensor per request
             num_requests = len(pooling_metadata.pooling_params)
-            return [hidden_states[i:i+1] for i in range(num_requests)]
+            return [hidden_states[i : i + 1] for i in range(num_requests)]
         return hidden_states
 
 
@@ -483,10 +455,7 @@ class EmbeddingPoolerHead(PoolerHead):
                 d = dimensions_list[0]
                 pooled_data = pooled_data[..., :d]
             else:
-                pooled_data = [
-                    vecs if d is None else vecs[..., :d]
-                    for vecs, d in zip(pooled_data, dimensions_list)
-                ]
+                pooled_data = [vecs if d is None else vecs[..., :d] for vecs, d in zip(pooled_data, dimensions_list)]
 
         # for normalize
         flags = [p.normalize for p in pooling_params]
@@ -494,10 +463,7 @@ class EmbeddingPoolerHead(PoolerHead):
             if flags[0]:
                 pooled_data = self.activation(pooled_data)
         else:
-            pooled_data = [
-                self.activation(vecs) if f else vecs
-                for vecs, f in zip(pooled_data, flags)
-            ]
+            pooled_data = [self.activation(vecs) if f else vecs for vecs, f in zip(pooled_data, flags)]
 
         # pooled_data shape: [batchsize, embedding_dimension]
         return pooled_data
@@ -581,12 +547,8 @@ class ClassifierPooler(Pooler):
         aphrodite_config = get_current_aphrodite_config()
         self.pooling = pooling
         self.classifier = classifier
-        self.act_fn = self.resolve_act_fn(
-            aphrodite_config.model_config, static_num_labels=True, act_fn=act_fn
-        )
-        self.logit_bias: float | None = (
-            aphrodite_config.model_config.pooler_config.logit_bias
-        )
+        self.act_fn = self.resolve_act_fn(aphrodite_config.model_config, static_num_labels=True, act_fn=act_fn)
+        self.logit_bias: float | None = aphrodite_config.model_config.pooler_config.logit_bias
         self.head_dtype = aphrodite_config.model_config.head_dtype
 
     def get_supported_tasks(self) -> Set[PoolingTask]:
@@ -617,18 +579,14 @@ class ClassifierPooler(Pooler):
         if len(set(flags)) == 1:
             scores = self.act_fn(pooled_data) if flags[0] else pooled_data
         else:
-            scores = [
-                self.act_fn(vecs) if f else vecs for vecs, f in zip(pooled_data, flags)
-            ]
+            scores = [self.act_fn(vecs) if f else vecs for vecs, f in zip(pooled_data, flags)]
 
         # scores shape: [batchsize, num_labels]
         return scores
 
 
 class TokenEmbeddingPoolerHead(EmbeddingPoolerHead):
-    def forward(
-        self, pooled_data: torch.Tensor, pooling_param: PoolingParams
-    ) -> torch.Tensor:
+    def forward(self, pooled_data: torch.Tensor, pooling_param: PoolingParams) -> torch.Tensor:
         pooled_data = pooled_data.to(self.head_dtype)
         # pooled_data shape: [n_tokens, hidden_dimension]
 
@@ -661,9 +619,7 @@ class TokenClassifierPoolerHead(nn.Module):
         self.act_fn = ClassifierPooler.resolve_act_fn(
             aphrodite_config.model_config, static_num_labels=False, act_fn=act_fn
         )
-        self.logit_bias: float | None = (
-            aphrodite_config.model_config.pooler_config.logit_bias
-        )
+        self.logit_bias: float | None = aphrodite_config.model_config.pooler_config.logit_bias
         self.head_dtype = aphrodite_config.model_config.head_dtype
 
     def get_supported_tasks(self) -> Set[PoolingTask]:
@@ -735,9 +691,7 @@ class StepPooler(Pooler):
 
         pooling_params = get_pooling_params(pooling_metadata)
 
-        for data, token_id, pooling_param in zip(
-            pooled_data_lst, prompt_token_ids, pooling_params
-        ):
+        for data, token_id, pooling_param in zip(pooled_data_lst, prompt_token_ids, pooling_params):
             step_tag_id = pooling_param.step_tag_id
             returned_token_ids = pooling_param.returned_token_ids
 
@@ -777,10 +731,7 @@ class DispatchPooler(Pooler):
 
         for task, pooler in poolers_by_task.items():
             if task not in pooler.get_supported_tasks():
-                raise ValueError(
-                    f"{pooler=} does not support {task=}. "
-                    f"Supported tasks: {pooler.get_supported_tasks()}"
-                )
+                raise ValueError(f"{pooler=} does not support {task=}. Supported tasks: {pooler.get_supported_tasks()}")
 
         self.poolers_by_task = poolers_by_task
 
@@ -801,10 +752,7 @@ class DispatchPooler(Pooler):
         offset = 0
         for task, group in groupby(get_tasks(pooling_metadata)):
             if not (pooler := poolers_by_task.get(task)):
-                raise ValueError(
-                    f"Unsupported task: {task} "
-                    f"Supported tasks: {self.get_supported_tasks()}"
-                )
+                raise ValueError(f"Unsupported task: {task} Supported tasks: {self.get_supported_tasks()}")
 
             num_items = len(list(group))
             group_output: PoolerOutput = pooler(

@@ -12,21 +12,15 @@ from einops import rearrange
 from torch import nn
 
 from aphrodite.attention import AttentionMetadata
-from aphrodite.config import (CacheConfig, ModelConfig,
-                              get_current_aphrodite_config)
-from aphrodite.distributed.communication_op import (
-    tensor_model_parallel_all_reduce)
-from aphrodite.distributed.parallel_state import (
-    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
+from aphrodite.config import CacheConfig, ModelConfig, get_current_aphrodite_config
+from aphrodite.distributed.communication_op import tensor_model_parallel_all_reduce
+from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.modeling._custom_op import CustomOp
-from aphrodite.modeling.layers.lightning_attn import (
-    lightning_attention, linear_decode_forward_triton)
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.lightning_attn import lightning_attention, linear_decode_forward_triton
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.mamba.abstract import MambaBase
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.torch_utils import direct_register_custom_op
 from aphrodite.v1.attention.backends.linear_attn import LinearAttentionMetadata
@@ -104,9 +98,7 @@ class MiniMaxText01LinearKernel:
         b, h, n, d = q.shape
         e = d
         kv_history = kv_caches.reshape(1, h, d, e).contiguous()
-        output, kv_history = lightning_attention(
-            q, k, v, slope_rate, block_size=block_size, kv_history=kv_history
-        )
+        output, kv_history = lightning_attention(q, k, v, slope_rate, block_size=block_size, kv_history=kv_history)
         kv_caches.copy_(kv_history[:, :, -1, :, :].reshape(h, d, e))
         assert output.shape[0] == 1, "batch size must be 1"
         return rearrange(output.squeeze(0), "h n d -> n (h d)")
@@ -118,8 +110,7 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
         return "linear_attention"
 
     def get_attn_backend(self) -> type["AttentionBackend"]:
-        from aphrodite.v1.attention.backends.linear_attn import (
-            LinearAttentionBackend)
+        from aphrodite.v1.attention.backends.linear_attn import LinearAttentionBackend
 
         return LinearAttentionBackend
 
@@ -202,12 +193,8 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
         if num_hidden_layer <= 1:
             self.slope_rate = slope_rate * (1 + 1e-5)
         else:
-            self.slope_rate = slope_rate * (
-                1 - layer_idx / (num_hidden_layer - 1) + 1e-5
-            )
-        self.tp_slope = self.slope_rate[
-            self.tp_rank * self.tp_heads : (self.tp_rank + 1) * self.tp_heads
-        ].contiguous()
+            self.slope_rate = slope_rate * (1 - layer_idx / (num_hidden_layer - 1) + 1e-5)
+        self.tp_slope = self.slope_rate[self.tp_rank * self.tp_heads : (self.tp_rank + 1) * self.tp_heads].contiguous()
 
         compilation_config = get_current_aphrodite_config().compilation_config
         if prefix in compilation_config.static_forward_context:
@@ -237,14 +224,10 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
                     + get_slopes(2 * closest_power_of_2)[0::2][: n - closest_power_of_2]
                 )
 
-        slopes = torch.tensor(
-            get_slopes(n_attention_heads), dtype=torch.float32
-        ).reshape(n_attention_heads, 1, 1)
+        slopes = torch.tensor(get_slopes(n_attention_heads), dtype=torch.float32).reshape(n_attention_heads, 1, 1)
         return slopes
 
-    def _prefill_and_mix_infer(
-        self, q, k, v, kv_cache, state_indices_tensor, attn_metadata
-    ):
+    def _prefill_and_mix_infer(self, q, k, v, kv_cache, state_indices_tensor, attn_metadata):
         hidden = []
         for _prefill_idx in range(getattr(attn_metadata, "num_prefills", 0)):
             if _prefill_idx >= len(attn_metadata.query_start_loc):
@@ -271,9 +254,7 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
             )
             hidden.append(out_slice.contiguous())
         if attn_metadata.num_decode_tokens > 0:
-            hidden_decode = self._decode_infer(
-                q, k, v, kv_cache, state_indices_tensor, attn_metadata
-            )
+            hidden_decode = self._decode_infer(q, k, v, kv_cache, state_indices_tensor, attn_metadata)
             hidden.insert(0, hidden_decode)
 
         if not hidden:
@@ -287,14 +268,10 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
         k = k[: attn_metadata.num_decode_tokens].unsqueeze(2).contiguous()
         v = v[: attn_metadata.num_decode_tokens].unsqueeze(2).contiguous()
         slot_id = state_indices_tensor[: attn_metadata.num_decodes]
-        hidden = linear_decode_forward_triton(
-            q, k, v, kv_cache, self.tp_slope, slot_id, 32
-        )
+        hidden = linear_decode_forward_triton(q, k, v, kv_cache, self.tp_slope, slot_id, 32)
         return hidden
 
-    def forward(
-        self, hidden_states: torch.Tensor, output: torch.Tensor, positions: torch.Tensor
-    ) -> None:
+    def forward(self, hidden_states: torch.Tensor, output: torch.Tensor, positions: torch.Tensor) -> None:
         torch.ops.aphrodite.linear_attention(
             hidden_states,
             output,
@@ -302,18 +279,14 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
             self.prefix,
         )
 
-    def _forward(
-        self, hidden_states: torch.Tensor, output: torch.Tensor, positions: torch.Tensor
-    ) -> None:
+    def _forward(self, hidden_states: torch.Tensor, output: torch.Tensor, positions: torch.Tensor) -> None:
         forward_context = get_forward_context()
         attn_metadata: AttentionMetadata = forward_context.attn_metadata
         if attn_metadata is not None:
             assert isinstance(attn_metadata, dict)
             attn_metadata = attn_metadata[self.prefix]
             assert isinstance(attn_metadata, LinearAttentionMetadata)
-            num_actual_tokens = (
-                attn_metadata.num_prefill_tokens + attn_metadata.num_decode_tokens
-            )
+            num_actual_tokens = attn_metadata.num_prefill_tokens + attn_metadata.num_decode_tokens
         else:
             num_actual_tokens = hidden_states.shape[0]
 
@@ -330,37 +303,22 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
             if num_prefills > 0:
                 num_decode_tokens = getattr(attn_metadata, "num_decode_tokens", 0)
                 for prefill_idx in range(num_prefills):
-                    q_start = attn_metadata.query_start_loc[
-                        num_decode_tokens + prefill_idx
-                    ]
-                    q_end = attn_metadata.query_start_loc[
-                        num_decode_tokens + prefill_idx + 1
-                    ]
+                    q_start = attn_metadata.query_start_loc[num_decode_tokens + prefill_idx]
+                    q_end = attn_metadata.query_start_loc[num_decode_tokens + prefill_idx + 1]
                     query_len = q_end - q_start
-                    context_len = (
-                        attn_metadata.seq_lens[num_decode_tokens + prefill_idx]
-                        - query_len
-                    )
+                    context_len = attn_metadata.seq_lens[num_decode_tokens + prefill_idx] - query_len
                     if context_len == 0:
-                        block_to_clear = state_indices_tensor[
-                            num_decode_tokens + prefill_idx
-                        ]
+                        block_to_clear = state_indices_tensor[num_decode_tokens + prefill_idx]
                         kv_cache[block_to_clear, ...] = 0
 
         decode_only = getattr(attn_metadata, "num_prefills", 0) == 0
         if attn_metadata is None:
-            hidden = torch.empty(
-                (q.shape[0], q.shape[1] * q.shape[2]), device=q.device, dtype=q.dtype
-            )
+            hidden = torch.empty((q.shape[0], q.shape[1] * q.shape[2]), device=q.device, dtype=q.dtype)
         else:
             if not decode_only:
-                hidden = self._prefill_and_mix_infer(
-                    q, k, v, kv_cache, state_indices_tensor, attn_metadata
-                )
+                hidden = self._prefill_and_mix_infer(q, k, v, kv_cache, state_indices_tensor, attn_metadata)
             else:
-                hidden = self._decode_infer(
-                    q, k, v, kv_cache, state_indices_tensor, attn_metadata
-                )
+                hidden = self._decode_infer(q, k, v, kv_cache, state_indices_tensor, attn_metadata)
         hidden = self.norm._forward(hidden)
         gate, _ = self.output_gate(hidden_states[:num_actual_tokens])
         hidden = F.sigmoid(gate) * hidden

@@ -12,12 +12,18 @@ from fastapi import Request
 import aphrodite.envs as envs
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (
-    DeltaMessage, ErrorResponse, RequestResponseMetadata,
-    TranscriptionResponse, TranscriptionResponseStreamChoice,
-    TranscriptionStreamResponse, TranslationResponse,
-    TranslationResponseStreamChoice, TranslationStreamResponse, UsageInfo)
-from aphrodite.endpoints.openai.serving_engine import (OpenAIServing,
-                                                       SpeechToTextRequest)
+    DeltaMessage,
+    ErrorResponse,
+    RequestResponseMetadata,
+    TranscriptionResponse,
+    TranscriptionResponseStreamChoice,
+    TranscriptionStreamResponse,
+    TranslationResponse,
+    TranslationResponseStreamChoice,
+    TranslationStreamResponse,
+    UsageInfo,
+)
+from aphrodite.endpoints.openai.serving_engine import OpenAIServing, SpeechToTextRequest
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import PromptType
@@ -65,9 +71,7 @@ class OpenAISpeechToText(OpenAIServing):
         self.default_sampling_params = self.model_config.get_diff_sampling_param()
         self.task_type = task_type
 
-        self.asr_config = self.model_cls.get_speech_to_text_config(
-            self.model_config, task_type
-        )
+        self.asr_config = self.model_cls.get_speech_to_text_config(self.model_config, task_type)
 
         self.enable_force_include_usage = enable_force_include_usage
 
@@ -94,11 +98,7 @@ class OpenAISpeechToText(OpenAIServing):
         # Validate request
         language = self.model_cls.validate_language(request.language)
         # Skip to_language validation to avoid extra logging for Whisper.
-        to_language = (
-            self.model_cls.validate_language(request.to_language)
-            if request.to_language
-            else None
-        )
+        to_language = self.model_cls.validate_language(request.to_language) if request.to_language else None
 
         if len(audio_data) / 1024**2 > self.max_audio_filesize_mb:
             raise ValueError("Maximum file size exceeded.")
@@ -109,10 +109,7 @@ class OpenAISpeechToText(OpenAIServing):
             y, sr = librosa.load(bytes_, sr=self.asr_config.sample_rate)
 
         duration = librosa.get_duration(y=y, sr=sr)
-        do_split_audio = (
-            self.asr_config.allow_audio_chunking
-            and duration > self.asr_config.max_audio_clip_s
-        )
+        do_split_audio = self.asr_config.allow_audio_chunking and duration > self.asr_config.max_audio_clip_s
         chunks = [y] if not do_split_audio else self._split_audio(y, int(sr))
         prompts = []
         for chunk in chunks:
@@ -151,9 +148,7 @@ class OpenAISpeechToText(OpenAIServing):
             raise self.engine_client.dead_error
 
         if request.response_format not in ["text", "json"]:
-            return self.create_error_response(
-                "Currently only support response_format `text` or `json`"
-            )
+            return self.create_error_response("Currently only support response_format `text` or `json`")
 
         request_id = f"{self.task_type}-{self._base_request_id(raw_request)}"
 
@@ -165,9 +160,7 @@ class OpenAISpeechToText(OpenAIServing):
             lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
             if lora_request:
-                return self.create_error_response(
-                    f"Currently do not support LoRA for {self.task_type.title()}."
-                )
+                return self.create_error_response(f"Currently do not support LoRA for {self.task_type.title()}.")
 
             prompts, duration_s = await self._preprocess_speech_to_text(
                 request=request,
@@ -184,9 +177,7 @@ class OpenAISpeechToText(OpenAIServing):
             # constrained by the size of the input audio, which is mapped to a
             # fixed-size log-mel-spectogram.
             default_max_tokens = self.model_config.max_model_len
-            sampling_params = request.to_sampling_params(
-                default_max_tokens, self.default_sampling_params
-            )
+            sampling_params = request.to_sampling_params(default_max_tokens, self.default_sampling_params)
 
             self._log_inputs(
                 request_id,
@@ -209,9 +200,7 @@ class OpenAISpeechToText(OpenAIServing):
             return self.create_error_response(str(e))
 
         if request.stream:
-            return stream_generator_method(
-                request, list_result_generator, request_id, request_metadata, duration_s
-            )
+            return stream_generator_method(request, list_result_generator, request_id, request_metadata, duration_s)
         # Non-streaming response.
         try:
             assert list_result_generator is not None
@@ -247,10 +236,8 @@ class OpenAISpeechToText(OpenAIServing):
         request_metadata: RequestResponseMetadata,
         audio_duration_s: float,
         chunk_object_type: Literal["translation.chunk", "transcription.chunk"],
-        response_stream_choice_class: type[TranscriptionResponseStreamChoice]
-        | type[TranslationResponseStreamChoice],
-        stream_response_class: type[TranscriptionStreamResponse]
-        | type[TranslationStreamResponse],
+        response_stream_choice_class: type[TranscriptionResponseStreamChoice] | type[TranslationResponseStreamChoice],
+        stream_response_class: type[TranscriptionStreamResponse] | type[TranslationStreamResponse],
     ) -> AsyncGenerator[str, None]:
         created_time = int(time.time())
         model_name = request.model
@@ -260,9 +247,7 @@ class OpenAISpeechToText(OpenAIServing):
 
         include_usage = self.enable_force_include_usage or request.stream_include_usage
         include_continuous_usage = (
-            request.stream_continuous_usage_stats
-            if include_usage and request.stream_continuous_usage_stats
-            else False
+            request.stream_continuous_usage_stats if include_usage and request.stream_continuous_usage_stats else False
         )
 
         try:
@@ -334,9 +319,7 @@ class OpenAISpeechToText(OpenAIServing):
                     model=model_name,
                     usage=final_usage,
                 )
-                final_usage_data = final_usage_chunk.model_dump_json(
-                    exclude_unset=True, exclude_none=True
-                )
+                final_usage_data = final_usage_chunk.model_dump_json(exclude_unset=True, exclude_none=True)
                 yield f"data: {final_usage_data}\n\n"
 
             # report to FastAPI middleware aggregate usage across all choices
@@ -354,9 +337,7 @@ class OpenAISpeechToText(OpenAIServing):
         # Send the final done message after all response.n are finished
         yield "data: [DONE]\n\n"
 
-    def _split_audio(
-        self, audio_data: np.ndarray, sample_rate: int
-    ) -> list[np.ndarray]:
+    def _split_audio(self, audio_data: np.ndarray, sample_rate: int) -> list[np.ndarray]:
         chunk_size = sample_rate * self.asr_config.max_audio_clip_s
         overlap_size = sample_rate * self.asr_config.overlap_chunk_second
         chunks = []

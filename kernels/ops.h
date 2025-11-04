@@ -361,24 +361,24 @@ void cutlass_scaled_sparse_mm(torch::Tensor& out, torch::Tensor const& a,
 std::vector<torch::Tensor> cutlass_sparse_compress(torch::Tensor const& a);
 
 void scaled_fp4_quant(torch::Tensor& output, torch::Tensor const& input,
-    torch::Tensor& output_scale,
-    torch::Tensor const& input_scale);
+                      torch::Tensor& output_scale,
+                      torch::Tensor const& input_scale);
 
 void scaled_fp4_experts_quant(
-torch::Tensor& output, torch::Tensor& output_scale,
-torch::Tensor const& input, torch::Tensor const& input_global_scale,
-torch::Tensor const& input_offset_by_experts,
-torch::Tensor const& output_scale_offset_by_experts);
+    torch::Tensor& output, torch::Tensor& output_scale,
+    torch::Tensor const& input, torch::Tensor const& input_global_scale,
+    torch::Tensor const& input_offset_by_experts,
+    torch::Tensor const& output_scale_offset_by_experts);
 
 void per_token_group_quant_fp8(const torch::Tensor& input,
-             torch::Tensor& output_q, torch::Tensor& output_s,
-             int64_t group_size, double eps, double fp8_min,
-             double fp8_max, bool scale_ue8m0);
+                               torch::Tensor& output_q, torch::Tensor& output_s,
+                               int64_t group_size, double eps, double fp8_min,
+                               double fp8_max, bool scale_ue8m0);
 
 void per_token_group_quant_int8(const torch::Tensor& input,
-              torch::Tensor& output_q,
-              torch::Tensor& output_s, int64_t group_size,
-              double eps, double int8_min, double int8_max);
+                                torch::Tensor& output_q,
+                                torch::Tensor& output_s, int64_t group_size,
+                                double eps, double int8_min, double int8_max);
 #endif
 
 void static_scaled_int8_quant(torch::Tensor& out, torch::Tensor const& input,

@@ -82,14 +82,9 @@ def test_models(
     installed = Version(transformers.__version__)
     required = Version("4.57.0.dev0")
     if model == "allenai/OLMoE-1B-7B-0924" and installed < required:
-        pytest.skip(
-            "MoE models with the Transformers backend require "
-            f"transformers>={required}, but got {installed}"
-        )
+        pytest.skip(f"MoE models with the Transformers backend require transformers>={required}, but got {installed}")
 
-    check_implementation(
-        hf_runner, aphrodite_runner, example_prompts, model, model_impl=model_impl
-    )
+    check_implementation(hf_runner, aphrodite_runner, example_prompts, model, model_impl=model_impl)
 
 
 def test_hybrid_attention(aphrodite_runner: type[AphroditeRunner]) -> None:
@@ -145,10 +140,7 @@ def test_quantization(
     max_tokens: int,
     num_logprobs: int,
 ) -> None:
-    if (
-        current_platform.is_rocm()
-        and quantization_kwargs.get("quantization", "") == "bitsandbytes"
-    ):
+    if current_platform.is_rocm() and quantization_kwargs.get("quantization", "") == "bitsandbytes":
         pytest.skip("bitsandbytes quantization is currently not supported in rocm.")
 
     with aphrodite_runner(
@@ -203,9 +195,7 @@ def test_embed_loading(aphrodite_runner, model):
         assert model_config.using_transformers_backend()
 
 
-@pytest.mark.parametrize(
-    "arch", ["TransformersEmbeddingModel", "TransformersForSequenceClassification"]
-)
+@pytest.mark.parametrize("arch", ["TransformersEmbeddingModel", "TransformersForSequenceClassification"])
 def test_pooling(hf_runner, aphrodite_runner, example_prompts, arch):
     model = get_model(arch)
 

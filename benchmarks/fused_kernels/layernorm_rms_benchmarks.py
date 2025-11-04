@@ -6,11 +6,11 @@ from itertools import product
 
 import torch
 import torch.utils.benchmark as TBenchmark
+from aphrodite.model_executor.layers.layernorm import RMSNorm
 from torch.utils.benchmark import Measurement as TMeasurement
 from tqdm import tqdm
 
 import aphrodite._custom_ops as ops
-from aphrodite.model_executor.layers.layernorm import RMSNorm
 
 
 @dataclass
@@ -21,12 +21,7 @@ class bench_params_t:
     dtype: torch.dtype
 
     def description(self):
-        return (
-            f"N {self.num_tokens} "
-            f"x D {self.hidden_size} "
-            f"x R {self.add_residual} "
-            f"x DT {self.dtype}"
-        )
+        return f"N {self.num_tokens} x D {self.hidden_size} x R {self.add_residual} x DT {self.dtype}"
 
 
 def get_bench_params() -> list[bench_params_t]:
@@ -37,9 +32,7 @@ def get_bench_params() -> list[bench_params_t]:
     DTYPES = [torch.bfloat16, torch.float]
 
     combinations = product(NUM_TOKENS, HIDDEN_SIZES, ADD_RESIDUAL, DTYPES)
-    bench_params = list(
-        map(lambda x: bench_params_t(x[0], x[1], x[2], x[3]), combinations)
-    )
+    bench_params = list(map(lambda x: bench_params_t(x[0], x[1], x[2], x[3]), combinations))
     return bench_params
 
 
@@ -84,9 +77,7 @@ def fused_impl(
     residual: torch.Tensor | None,
     quant_dtype: torch.dtype,
 ):
-    out, _ = ops.rms_norm_dynamic_per_token_quant(
-        x, rms_norm_layer.weight, 1e-6, quant_dtype, residual=residual
-    )
+    out, _ = ops.rms_norm_dynamic_per_token_quant(x, rms_norm_layer.weight, 1e-6, quant_dtype, residual=residual)
 
 
 # Bench functions
@@ -125,15 +116,8 @@ def bench(params: bench_params_t, label: str, sub_label: str) -> Iterable[TMeasu
     layer.weight.data.normal_(mean=1.0, std=0.1)
     # Make inputs
     scale = 1 / params.hidden_size
-    x = (
-        torch.randn(
-            params.num_tokens, params.hidden_size, dtype=params.dtype, device="cuda"
-        )
-        * scale
-    )
-    residual = (
-        (torch.randn_like(x) * scale).to(device="cuda") if params.add_residual else None
-    )
+    x = torch.randn(params.num_tokens, params.hidden_size, dtype=params.dtype, device="cuda") * scale
+    residual = (torch.randn_like(x) * scale).to(device="cuda") if params.add_residual else None
 
     timers = []
 

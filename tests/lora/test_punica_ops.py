@@ -6,8 +6,7 @@ import torch
 import aphrodite.lora.ops.torch_ops as torch_ops
 import aphrodite.lora.ops.triton_ops as triton_ops
 from aphrodite.lora.ops.triton_ops import LoRAKernelMeta
-from aphrodite.lora.ops.triton_ops.utils import (_LORA_A_PTR_DICT,
-                                                 _LORA_B_PTR_DICT)
+from aphrodite.lora.ops.triton_ops.utils import _LORA_A_PTR_DICT, _LORA_B_PTR_DICT
 from aphrodite.platforms import current_platform
 
 from .utils import PunicaTensors, assert_close, generate_data_for_nslices
@@ -144,9 +143,7 @@ def check_lora_shrink_kernel(
     )
 
     # Setup metadata information for the LoRA kernel.
-    lora_meta = LoRAKernelMeta.make(
-        max_loras=num_loras, max_num_tokens=token_nums, device="cuda"
-    )
+    lora_meta = LoRAKernelMeta.make(max_loras=num_loras, max_num_tokens=token_nums, device="cuda")
     lora_meta.prepare_tensors(data.token_lora_mapping)
 
     ref_out_tensor = data.ref_out_tensor
@@ -217,9 +214,7 @@ def check_lora_expand_kernel(
     )
 
     # Setup metadata information for the LoRA kernel.
-    lora_meta = LoRAKernelMeta.make(
-        max_loras=num_loras, max_num_tokens=token_nums, device="cuda"
-    )
+    lora_meta = LoRAKernelMeta.make(max_loras=num_loras, max_num_tokens=token_nums, device="cuda")
     lora_meta.prepare_tensors(data.token_lora_mapping)
 
     # Setup output tensors

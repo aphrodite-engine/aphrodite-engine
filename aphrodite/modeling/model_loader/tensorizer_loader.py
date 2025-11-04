@@ -10,11 +10,14 @@ from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.tensorizer import (
-    TensorizerConfig, deserialize_tensorizer_model, init_tensorizer_model,
-    is_aphrodite_tensorized, serialize_aphrodite_model,
-    tensorizer_weights_iterator)
-from aphrodite.modeling.model_loader.utils import (get_model_architecture,
-                                                   initialize_model)
+    TensorizerConfig,
+    deserialize_tensorizer_model,
+    init_tensorizer_model,
+    is_aphrodite_tensorized,
+    serialize_aphrodite_model,
+    tensorizer_weights_iterator,
+)
+from aphrodite.modeling.model_loader.utils import get_model_architecture, initialize_model
 from aphrodite.utils.torch_utils import set_default_torch_dtype
 
 logger = init_logger(__name__)
@@ -41,13 +44,9 @@ class TensorizerLoader(BaseModelLoader):
             self.tensorizer_config = load_config.model_loader_extra_config
         else:
             validate_config(load_config.model_loader_extra_config)
-            self.tensorizer_config = TensorizerConfig(
-                **load_config.model_loader_extra_config["tensorizer_config"]
-            )
+            self.tensorizer_config = TensorizerConfig(**load_config.model_loader_extra_config["tensorizer_config"])
 
-    def _verify_config(
-        self, model_config: ModelConfig, parallel_config: ParallelConfig
-    ):
+    def _verify_config(self, model_config: ModelConfig, parallel_config: ParallelConfig):
         self.tensorizer_config.verify_with_model_config(model_config)
         self.tensorizer_config.verify_with_parallel_config(parallel_config)
 
@@ -103,9 +102,7 @@ class TensorizerLoader(BaseModelLoader):
         else:
             model.load_weights(self._get_weights_iterator())
 
-    def load_model(
-        self, aphrodite_config: AphroditeConfig, model_config: ModelConfig
-    ) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig, model_config: ModelConfig) -> nn.Module:
         parallel_config = aphrodite_config.parallel_config
         self._verify_config(model_config, parallel_config)
 

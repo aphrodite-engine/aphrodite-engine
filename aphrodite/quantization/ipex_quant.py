@@ -7,11 +7,9 @@ from torch.nn import Module
 from torch.nn.parameter import Parameter
 
 from aphrodite._ipex_ops import ipex_ops as ops
-from aphrodite.modeling.layers.fused_moe import (FusedMoEMethodBase,
-                                                 FusedMoeWeightScaleSupported)
+from aphrodite.modeling.layers.fused_moe import FusedMoEMethodBase, FusedMoeWeightScaleSupported
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig, QuantizationMethods
@@ -52,22 +50,13 @@ class IPEXConfig(QuantizationConfig):
         self.pack_factor = 32 // self.weight_bits
 
         if self.weight_bits not in [4]:
-            raise ValueError(
-                f"IPEX quantization supports weight bits [4], "
-                f"but got {self.weight_bits}."
-            )
+            raise ValueError(f"IPEX quantization supports weight bits [4], but got {self.weight_bits}.")
 
         if self.method not in ["awq", "gptq"]:
-            raise ValueError(
-                f"IPEX quantization supports [awq, gptq], but got {self.method}."
-            )
+            raise ValueError(f"IPEX quantization supports [awq, gptq], but got {self.method}.")
 
     def __repr__(self) -> str:
-        return (
-            f"IPEXConfig(method={self.method},"
-            f"weight_bits={self.weight_bits}, "
-            f"group_size={self.group_size})"
-        )
+        return f"IPEXConfig(method={self.method},weight_bits={self.weight_bits}, group_size={self.group_size})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -94,12 +83,8 @@ class IPEXConfig(QuantizationConfig):
         if method == "awq":
             weight_bits = cls.get_from_keys(config, ["w_bit", "bits"])
             group_size = cls.get_from_keys(config, ["q_group_size", "group_size"])
-            modules_to_not_convert = cls.get_from_keys_or(
-                config, ["modules_to_not_convert"], None
-            )
-            return cls(
-                method, weight_bits, group_size, modules_to_not_convert, False, False
-            )
+            modules_to_not_convert = cls.get_from_keys_or(config, ["modules_to_not_convert"], None)
+            return cls(method, weight_bits, group_size, modules_to_not_convert, False, False)
         # otherwise for gptq
         weight_bits = cls.get_from_keys(config, ["bits"])
         group_size = cls.get_from_keys(config, ["group_size"])
@@ -108,9 +93,7 @@ class IPEXConfig(QuantizationConfig):
         return cls(method, weight_bits, group_size, [], desc_act, lm_head_quantized)
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> QuantizationMethods | None:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> QuantizationMethods | None:
         if not current_platform.is_cpu() and not current_platform.is_xpu():
             return None
 
@@ -121,14 +104,10 @@ class IPEXConfig(QuantizationConfig):
 
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["LinearMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["LinearMethodBase"]:
         if isinstance(layer, LinearBase):
             if self.method == "awq":
-                if is_layer_skipped(
-                    prefix, self.modules_to_not_convert, self.packed_modules_mapping
-                ):
+                if is_layer_skipped(prefix, self.modules_to_not_convert, self.packed_modules_mapping):
                     return UnquantizedLinearMethod()
                 return IPEXAWQLinearMethod(self)
             if self.method == "gptq":
@@ -177,19 +156,17 @@ class IPEXGPTQLinearMethod(GPTQLinearMethod):
         )
         layer.ipex_output_size = layer.qweight.shape[-1]
         g_idx = layer.g_idx if self.quant_config.desc_act else None
-        layer.ipex_qlinear = (
-            ipex.llm.quantization.woq_linear.IPEXWeightOnlyQuantizedLinear.from_weight(
-                layer.qweight,
-                layer.scales,
-                layer.qzeros,
-                layer.qweight.size(0),
-                layer.ipex_output_size,
-                qconfig=qconfig,
-                g_idx=g_idx,
-                bias=bias,
-                group_size=self.quant_config.group_size,
-                quant_method=IPEXConfig.IPEX_QUANT_METHOD_MAP["gptq"],
-            )
+        layer.ipex_qlinear = ipex.llm.quantization.woq_linear.IPEXWeightOnlyQuantizedLinear.from_weight(
+            layer.qweight,
+            layer.scales,
+            layer.qzeros,
+            layer.qweight.size(0),
+            layer.ipex_output_size,
+            qconfig=qconfig,
+            g_idx=g_idx,
+            bias=bias,
+            group_size=self.quant_config.group_size,
+            quant_method=IPEXConfig.IPEX_QUANT_METHOD_MAP["gptq"],
         )
 
     def apply(
@@ -247,18 +224,16 @@ class IPEXAWQLinearMethod(AWQLinearMethod):
         )
 
         layer.ipex_output_size = layer.qweight.size(1) * self.quant_config.pack_factor
-        layer.ipex_qlinear = (
-            ipex.llm.quantization.woq_linear.IPEXWeightOnlyQuantizedLinear.from_weight(
-                layer.qweight,
-                layer.scales,
-                layer.qzeros,
-                layer.qweight.size(0),
-                layer.ipex_output_size,
-                qconfig=qconfig,
-                bias=bias,
-                group_size=self.quant_config.group_size,
-                quant_method=IPEXConfig.IPEX_QUANT_METHOD_MAP["awq"],  # type: ignore
-            )
+        layer.ipex_qlinear = ipex.llm.quantization.woq_linear.IPEXWeightOnlyQuantizedLinear.from_weight(
+            layer.qweight,
+            layer.scales,
+            layer.qzeros,
+            layer.qweight.size(0),
+            layer.ipex_output_size,
+            qconfig=qconfig,
+            bias=bias,
+            group_size=self.quant_config.group_size,
+            quant_method=IPEXConfig.IPEX_QUANT_METHOD_MAP["awq"],  # type: ignore
         )
 
     def apply(
@@ -293,9 +268,7 @@ class XPUFp8LinearMethod(Fp8LinearMethod):
     ) -> torch.Tensor:
         weight = layer.weight.data
         weight_scale = layer.weight_scale.data
-        output = torch.ops.torch_ipex.fp8_gemm_w8a16(
-            x, weight, True, weight_scale, bias
-        )
+        output = torch.ops.torch_ipex.fp8_gemm_w8a16(x, weight, True, weight_scale, bias)
         return output
 
 
@@ -345,18 +318,12 @@ class XPUFp8MoEMethod(FusedMoEMethodBase):
 
         # Allocate 2 scales for w1 and w3 respectively.
         # They will be combined to a single scale after weight loading.
-        w13_weight_scale = torch.nn.Parameter(
-            torch.ones(num_experts, 2, dtype=torch.float32), requires_grad=False
-        )
-        w2_weight_scale = torch.nn.Parameter(
-            torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-        )
+        w13_weight_scale = torch.nn.Parameter(torch.ones(num_experts, 2, dtype=torch.float32), requires_grad=False)
+        w2_weight_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
         layer.register_parameter("w13_weight_scale", w13_weight_scale)
         layer.register_parameter("w2_weight_scale", w2_weight_scale)
 
-        extra_weight_attrs.update(
-            {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value}
-        )
+        extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.TENSOR.value})
         # INPUT_SCALES
         layer.w13_input_scale = None
         layer.w2_input_scale = None
@@ -378,11 +345,11 @@ class XPUFp8MoEMethod(FusedMoEMethodBase):
                 requires_grad=False,
             )
             for expert in range(layer.local_num_experts):
-                w13_weight[expert, :, :], layer.w13_weight_scale[expert] = (
-                    ops.scaled_fp8_quant(layer.w13_weight.data[expert, :, :])
+                w13_weight[expert, :, :], layer.w13_weight_scale[expert] = ops.scaled_fp8_quant(
+                    layer.w13_weight.data[expert, :, :]
                 )
-                w2_weight[expert, :, :], layer.w2_weight_scale[expert] = (
-                    ops.scaled_fp8_quant(layer.w2_weight.data[expert, :, :])
+                w2_weight[expert, :, :], layer.w2_weight_scale[expert] = ops.scaled_fp8_quant(
+                    layer.w2_weight.data[expert, :, :]
                 )
             layer.w13_weight = torch.nn.Parameter(w13_weight, requires_grad=False)
             layer.w2_weight = torch.nn.Parameter(w2_weight, requires_grad=False)
@@ -398,9 +365,7 @@ class XPUFp8MoEMethod(FusedMoEMethodBase):
             use_prepack=True,
         )
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return None
 
     def apply(

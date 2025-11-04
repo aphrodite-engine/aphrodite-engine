@@ -8,34 +8,40 @@ import torch.nn as nn
 from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import (AphroditeConfig, CacheConfig, ModelConfig,
-                              get_current_aphrodite_config)
-from aphrodite.distributed import (get_ep_group, get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, get_current_aphrodite_config
+from aphrodite.distributed import get_ep_group, get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.mamba.short_conv import ShortConv
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs import Lfm2MoeConfig
 
-from .interfaces import (HasInnerState, IsHybrid, MixtureOfExperts,
-                         SupportsLoRA, SupportsPP, SupportsQuant)
-from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .interfaces import HasInnerState, IsHybrid, MixtureOfExperts, SupportsLoRA, SupportsPP, SupportsQuant
+from .utils import (
+    AutoWeightsLoader,
+    PPMissingLayer,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class Lfm2MoeMlp(nn.Module):
@@ -89,8 +95,7 @@ class Lfm2MoeSparseMoeBlock(nn.Module):
 
         if self.tp_size > self.n_routed_experts:
             raise ValueError(
-                f"Tensor parallel size {self.tp_size} is greater than "
-                f"the number of experts {self.n_routed_experts}."
+                f"Tensor parallel size {self.tp_size} is greater than the number of experts {self.n_routed_experts}."
             )
 
         # Load balancing settings.
@@ -104,9 +109,7 @@ class Lfm2MoeSparseMoeBlock(nn.Module):
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
 
         self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = (
-            self.physical_expert_start + self.n_local_physical_experts
-        )
+        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
 
         self.gate = ReplicatedLinear(
             config.hidden_size,
@@ -116,9 +119,7 @@ class Lfm2MoeSparseMoeBlock(nn.Module):
             prefix=f"{prefix}.gate",
         )
         if config.use_expert_bias:
-            self.gate.e_score_correction_bias = nn.Parameter(
-                torch.empty(self.n_routed_experts, dtype=torch.float32)
-            )
+            self.gate.e_score_correction_bias = nn.Parameter(torch.empty(self.n_routed_experts, dtype=torch.float32))
         else:
             self.gate.e_score_correction_bias = None
 
@@ -148,8 +149,7 @@ class Lfm2MoeSparseMoeBlock(nn.Module):
         # router_logits: (num_tokens, n_experts)
         router_logits, _ = self.gate(hidden_states)
         final_hidden_states = (
-            self.experts(hidden_states=hidden_states, router_logits=router_logits)
-            * self.routed_scaling_factor
+            self.experts(hidden_states=hidden_states, router_logits=router_logits) * self.routed_scaling_factor
         )
 
         if self.tp_size > 1:
@@ -274,12 +274,8 @@ class Lfm2MoeAttentionDecoderLayer(nn.Module):
 
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        if rope_scaling is not None and getattr(
-            config, "original_max_position_embeddings", None
-        ):
-            rope_scaling["original_max_position_embeddings"] = (
-                config.original_max_position_embeddings
-            )
+        if rope_scaling is not None and getattr(config, "original_max_position_embeddings", None):
+            rope_scaling["original_max_position_embeddings"] = config.original_max_position_embeddings
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
 
         self.self_attn = Lfm2MoeAttention(
@@ -408,11 +404,7 @@ class Lfm2MoeModel(nn.Module):
         self.num_redundant_experts = eplb_config.num_redundant_experts
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -423,11 +415,7 @@ class Lfm2MoeModel(nn.Module):
         def get_layer(prefix: str):
             layer_idx = extract_layer_index(prefix)
             is_attn = self.config.layer_types[layer_idx] == "full_attention"
-            layer_class = (
-                Lfm2MoeAttentionDecoderLayer
-                if is_attn
-                else Lfm2MoeShortConvDecoderLayer
-            )
+            layer_class = Lfm2MoeAttentionDecoderLayer if is_attn else Lfm2MoeShortConvDecoderLayer
             return layer_class(
                 config,
                 layer_idx,
@@ -478,9 +466,7 @@ class Lfm2MoeModel(nn.Module):
                 residual=residual,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.embedding_norm(hidden_states, residual)
         return hidden_states
 
@@ -517,9 +503,7 @@ class Lfm2MoeModel(nn.Module):
                     continue
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -542,9 +526,7 @@ class Lfm2MoeModel(nn.Module):
                         continue
 
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     param = params_dict[name]
 
@@ -559,17 +541,13 @@ class Lfm2MoeModel(nn.Module):
                     break
                 else:
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
                         continue
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -641,15 +619,11 @@ class Lfm2MoeForCausalLM(
         quant_config = aphrodite_config.quant_config
         cache_config = aphrodite_config.cache_config
         lora_config = aphrodite_config.lora_config
-        assert not cache_config.enable_prefix_caching, (
-            "Lfm2Moe currently does not support prefix caching"
-        )
+        assert not cache_config.enable_prefix_caching, "Lfm2Moe currently does not support prefix caching"
 
         super().__init__()
         self.config = config
-        self.model = Lfm2MoeModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Lfm2MoeModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
             self.unpadded_vocab_size = self.config.vocab_size
@@ -674,13 +648,9 @@ class Lfm2MoeForCausalLM(
         else:
             self.lm_head = PPMissingLayer()
 
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
         # Set MoE hyperparameters
         self.expert_weights = []
@@ -691,17 +661,13 @@ class Lfm2MoeForCausalLM(
             if isinstance(layer, PPMissingLayer):
                 continue
 
-            assert isinstance(
-                layer, (Lfm2MoeAttentionDecoderLayer, Lfm2MoeShortConvDecoderLayer)
-            )
+            assert isinstance(layer, (Lfm2MoeAttentionDecoderLayer, Lfm2MoeShortConvDecoderLayer))
             if isinstance(layer.feed_forward, Lfm2MoeSparseMoeBlock):
                 example_layer = layer.feed_forward
                 self.moe_layers.append(layer.feed_forward.experts)
 
         if example_layer is None:
-            raise RuntimeError(
-                "No Lfm2MoeSparseMoeBlock layer found in the model.layers."
-            )
+            raise RuntimeError("No Lfm2MoeSparseMoeBlock layer found in the model.layers.")
 
         self.num_moe_layers = len(self.moe_layers)
         self.num_expert_groups = 1
@@ -756,9 +722,7 @@ class Lfm2MoeForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:

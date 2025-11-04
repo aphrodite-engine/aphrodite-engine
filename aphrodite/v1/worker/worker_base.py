@@ -223,9 +223,7 @@ class WorkerWrapperBase:
         """
         kwargs = all_kwargs[self.rpc_rank]
         self.aphrodite_config = kwargs.get("aphrodite_config")
-        assert self.aphrodite_config is not None, (
-            "aphrodite_config is required to initialize the worker"
-        )
+        assert self.aphrodite_config is not None, "aphrodite_config is required to initialize the worker"
         self.aphrodite_config.enable_trace_function_call_for_thread()
 
         from aphrodite.plugins import load_general_plugins
@@ -233,17 +231,13 @@ class WorkerWrapperBase:
         load_general_plugins()
 
         if isinstance(self.aphrodite_config.parallel_config.worker_cls, str):
-            worker_class = resolve_obj_by_qualname(
-                self.aphrodite_config.parallel_config.worker_cls
-            )
+            worker_class = resolve_obj_by_qualname(self.aphrodite_config.parallel_config.worker_cls)
         else:
             raise ValueError(
                 "passing worker_cls is no longer supported. Please pass keep the class in a separate module and pass the qualified name of the class as a string."  # noqa: E501
             )
         if self.aphrodite_config.parallel_config.worker_extension_cls:
-            worker_extension_cls = resolve_obj_by_qualname(
-                self.aphrodite_config.parallel_config.worker_extension_cls
-            )
+            worker_extension_cls = resolve_obj_by_qualname(self.aphrodite_config.parallel_config.worker_extension_cls)
             extended_calls = []
             if worker_extension_cls not in worker_class.__bases__:
                 # check any conflicts between worker and worker_extension_cls
@@ -258,9 +252,7 @@ class WorkerWrapperBase:
                     if callable(getattr(worker_extension_cls, attr)):
                         extended_calls.append(attr)
                 # dynamically inherit the worker extension class
-                worker_class.__bases__ = worker_class.__bases__ + (
-                    worker_extension_cls,
-                )
+                worker_class.__bases__ = worker_class.__bases__ + (worker_extension_cls,)
                 logger.info(
                     "Injected %s into %s for extended collective_rpc calls %s",
                     worker_extension_cls,
@@ -316,10 +308,7 @@ class WorkerWrapperBase:
             # exceptions in the rest worker may cause deadlock in rpc like ray
             # see https://github.com/aphrodite-project/aphrodite/issues/3455
             # print the error and inform the user to solve the error
-            msg = (
-                f"Error executing method {method!r}. "
-                "This might cause deadlock in distributed execution."
-            )
+            msg = f"Error executing method {method!r}. This might cause deadlock in distributed execution."
             logger.exception(msg)
             raise e
 
@@ -332,9 +321,7 @@ class WorkerWrapperBase:
             return
 
         for req_data in scheduler_output.scheduled_new_reqs:
-            req_data.mm_features = mm_cache.get_and_update_features(
-                req_data.mm_features
-            )
+            req_data.mm_features = mm_cache.get_and_update_features(req_data.mm_features)
 
     def execute_model(
         self,

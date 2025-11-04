@@ -3,16 +3,14 @@ import warnings
 import pytest
 import torch.cuda
 
-from aphrodite.modeling.models import (is_pooling_model,
-                                       is_text_generation_model,
-                                       supports_multimodal)
-from aphrodite.modeling.models.adapters import (as_embedding_model,
-                                                as_reward_model,
-                                                as_seq_cls_model)
-from aphrodite.modeling.models.registry import (_MULTIMODAL_MODELS,
-                                                _SPECULATIVE_DECODING_MODELS,
-                                                _TEXT_GENERATION_MODELS,
-                                                ModelRegistry)
+from aphrodite.modeling.models import is_pooling_model, is_text_generation_model, supports_multimodal
+from aphrodite.modeling.models.adapters import as_embedding_model, as_reward_model, as_seq_cls_model
+from aphrodite.modeling.models.registry import (
+    _MULTIMODAL_MODELS,
+    _SPECULATIVE_DECODING_MODELS,
+    _TEXT_GENERATION_MODELS,
+    ModelRegistry,
+)
 from aphrodite.platforms import current_platform
 
 from ..utils import create_new_process_for_each_test
@@ -67,8 +65,7 @@ def test_registry_model_property(model_arch, is_mm, init_cuda, is_ce):
         ModelRegistry._try_load_model_cls(model_arch)
         if not torch.cuda.is_initialized():
             warnings.warn(
-                "This model no longer initializes CUDA on import. "
-                "Please test using a different one.",
+                "This model no longer initializes CUDA on import. Please test using a different one.",
                 stacklevel=2,
             )
 
@@ -96,18 +93,12 @@ def test_registry_is_pp(model_arch, is_pp, init_cuda):
         ModelRegistry._try_load_model_cls(model_arch)
         if not torch.cuda.is_initialized():
             warnings.warn(
-                "This model no longer initializes CUDA on import. "
-                "Please test using a different one.",
+                "This model no longer initializes CUDA on import. Please test using a different one.",
                 stacklevel=2,
             )
 
 
 def test_hf_registry_coverage():
-    untested_archs = (
-        ModelRegistry.get_supported_archs() - HF_EXAMPLE_MODELS.get_supported_archs()
-    )
+    untested_archs = ModelRegistry.get_supported_archs() - HF_EXAMPLE_MODELS.get_supported_archs()
 
-    assert not untested_archs, (
-        "Please add the following architectures to "
-        f"`tests/models/registry.py`: {untested_archs}"
-    )
+    assert not untested_archs, f"Please add the following architectures to `tests/models/registry.py`: {untested_archs}"

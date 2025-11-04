@@ -102,8 +102,7 @@ class ServerProcess:
         elif server_cmd[0].endswith("infinity_emb"):
             if "--vector-disk-cache" in server_cmd:
                 raise NotImplementedError(
-                    "Infinity server uses caching but does not expose a method "
-                    "to reset the cache"
+                    "Infinity server uses caching but does not expose a method to reset the cache"
                 )
         else:
             raise NotImplementedError(

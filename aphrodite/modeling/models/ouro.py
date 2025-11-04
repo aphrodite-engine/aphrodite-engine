@@ -37,21 +37,21 @@ from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA
-from .utils import (AutoWeightsLoader, extract_layer_index,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    extract_layer_index,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class OuroMLP(nn.Module):
@@ -79,9 +79,7 @@ class OuroMLP(nn.Module):
             prefix=f"{prefix}.down_proj",
         )
         if hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -166,9 +164,7 @@ class OuroAttention(nn.Module):
             base_layer_idx = extract_layer_index(prefix)
             unique_layer_idx = ut_step * total_layers + base_layer_idx
 
-            unique_prefix = prefix.replace(
-                f"layers.{base_layer_idx}", f"layers.{unique_layer_idx}"
-            )
+            unique_prefix = prefix.replace(f"layers.{base_layer_idx}", f"layers.{unique_layer_idx}")
 
             self.attn.append(
                 Attention(
@@ -216,9 +212,7 @@ class OuroDecoderLayer(nn.Module):
         # Requires transformers > 4.32.0
         rope_theta = getattr(config, "rope_theta", 1000000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        dual_chunk_attention_config = getattr(
-            config, "dual_chunk_attention_config", None
-        )
+        dual_chunk_attention_config = getattr(config, "dual_chunk_attention_config", None)
 
         if getattr(config, "is_causal", True):
             attn_type = AttentionType.DECODER
@@ -249,12 +243,8 @@ class OuroDecoderLayer(nn.Module):
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.input_layernorm_2 = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
-        self.post_attention_layernorm_2 = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm_2 = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -268,9 +258,7 @@ class OuroDecoderLayer(nn.Module):
             hidden_states = self.input_layernorm(hidden_states)
         else:
             hidden_states, residual = self.input_layernorm(hidden_states, residual)
-        hidden_states = self.self_attn(
-            positions=positions, hidden_states=hidden_states, current_ut=current_ut
-        )
+        hidden_states = self.self_attn(positions=positions, hidden_states=hidden_states, current_ut=current_ut)
         hidden_states = self.input_layernorm_2(hidden_states)
 
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
@@ -303,9 +291,7 @@ class OuroModel(nn.Module):
         quant_config = aphrodite_config.quant_config
 
         # TODO (@robertgshaw2): see if this can be moved out
-        if cache_config.sliding_window is not None and hasattr(
-            config, "max_window_layers"
-        ):
+        if cache_config.sliding_window is not None and hasattr(config, "max_window_layers"):
             assert config.max_window_layers == config.num_hidden_layers, (
                 "Sliding window for some but all layers is not supported. "
                 "This model uses sliding window but `max_window_layers` = {} "
@@ -366,9 +352,7 @@ class OuroModel(nn.Module):
         for current_ut in range(self.total_ut_steps):
             residual = None
             for layer in self.layers[self.start_layer : self.end_layer]:
-                hidden_states, residual = layer(
-                    positions, hidden_states, current_ut, residual
-                )
+                hidden_states, residual = layer(positions, hidden_states, current_ut, residual)
             hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -386,15 +370,11 @@ class OuroModel(nn.Module):
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
                 continue
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -455,9 +435,7 @@ class OuroForCausalLM(nn.Module, SupportsLoRA):
         self.lora_config = lora_config
 
         self.quant_config = quant_config
-        self.model = OuroModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = OuroModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if config.tie_word_embeddings:
             self.lm_head = self.model.embed_tokens
@@ -471,9 +449,7 @@ class OuroForCausalLM(nn.Module, SupportsLoRA):
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -485,9 +461,7 @@ class OuroForCausalLM(nn.Module, SupportsLoRA):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import UserDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from typing import (TYPE_CHECKING, Any, Generic, Literal, NamedTuple,
-                    TypeAlias, TypeGuard, TypeVar)
+from typing import TYPE_CHECKING, Any, Generic, Literal, NamedTuple, TypeAlias, TypeGuard, TypeVar
 
 import numpy as np
 import torch
@@ -12,9 +11,18 @@ from aphrodite.utils.collection_utils import is_list_of
 from aphrodite.utils.import_utils import LazyLoader
 
 from .audio import AudioResampler
-from .inputs import (AudioItem, HfAudioItem, HfImageItem, HfVideoItem,
-                     ImageItem, ModalityData, MultiModalDataDict,
-                     MultiModalFieldConfig, MultiModalKwargsItems, VideoItem)
+from .inputs import (
+    AudioItem,
+    HfAudioItem,
+    HfImageItem,
+    HfVideoItem,
+    ImageItem,
+    ModalityData,
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalKwargsItems,
+    VideoItem,
+)
 
 _T = TypeVar("_T")
 _I = TypeVar("_I")
@@ -91,9 +99,7 @@ class ProcessorBatchItems(ModalityDataItems[Sequence[_T], _T]):
         return {}
 
 
-class EmbeddingItems(
-    ModalityDataItems[torch.Tensor | list[torch.Tensor], torch.Tensor]
-):
+class EmbeddingItems(ModalityDataItems[torch.Tensor | list[torch.Tensor], torch.Tensor]):
     """
     Base class for data items that are expressed as a batched embedding tensor,
     or a list of embedding tensors (one per item).
@@ -115,9 +121,7 @@ class EmbeddingItems(
         return len(self.get(item_idx))
 
 
-class DictEmbeddingItems(
-    ModalityDataItems[Mapping[str, torch.Tensor], Mapping[str, torch.Tensor]]
-):
+class DictEmbeddingItems(ModalityDataItems[Mapping[str, torch.Tensor], Mapping[str, torch.Tensor]]):
     """
     Base class for data items that are expressed as a dictionary of tensors.
 
@@ -142,8 +146,7 @@ class DictEmbeddingItems(
         if missing_required_data_keys:
             data_keys = set(data.keys())
             msg = (
-                f"The data should contain the fields: {required_fields}, "
-                f"but only found the following keys: {data_keys}"
+                f"The data should contain the fields: {required_fields}, but only found the following keys: {data_keys}"
             )
             raise ValueError(msg)
 
@@ -269,10 +272,7 @@ class MultiModalDataItems(UserDict[str, ModalityDataItems[Any, Any]]):
         if modality not in self:
             if strict:
                 available_modalities = set(self.keys())
-                raise KeyError(
-                    f"Modality {modality!r} not found. "
-                    f"Available modalities: {available_modalities}"
-                )
+                raise KeyError(f"Modality {modality!r} not found. Available modalities: {available_modalities}")
 
             return 0
 
@@ -293,25 +293,18 @@ class MultiModalDataItems(UserDict[str, ModalityDataItems[Any, Any]]):
         """
         if modality not in self:
             available_modalities = set(self.keys())
-            raise KeyError(
-                f"Modality {modality!r} not found. "
-                f"Available modalities: {available_modalities}"
-            )
+            raise KeyError(f"Modality {modality!r} not found. Available modalities: {available_modalities}")
 
         items = self[modality]
         if not isinstance(items, typ):
             raise TypeError(
-                f"Invalid type of data items for {modality=}. "
-                f"Expected type: {typ}, but "
-                f"found type: {type(items)}"
+                f"Invalid type of data items for {modality=}. Expected type: {typ}, but found type: {type(items)}"
             )
 
         return items  # type: ignore[return-value]
 
 
-ModalityDataParser: TypeAlias = Callable[
-    [ModalityData[Any]], ModalityDataItems[Any, Any] | None
-]
+ModalityDataParser: TypeAlias = Callable[[ModalityData[Any]], ModalityDataItems[Any, Any] | None]
 
 
 class MultiModalDataParser:
@@ -339,9 +332,7 @@ class MultiModalDataParser:
         )
         self.video_needs_metadata = video_needs_metadata
 
-    def _is_embeddings(
-        self, data: object
-    ) -> TypeGuard[torch.Tensor | list[torch.Tensor]]:
+    def _is_embeddings(self, data: object) -> TypeGuard[torch.Tensor | list[torch.Tensor]]:
         if isinstance(data, torch.Tensor):
             return data.ndim == 3
         if is_list_of(data, torch.Tensor):
@@ -395,9 +386,7 @@ class MultiModalDataParser:
             return AudioProcessorItems(None)
 
         # also check single audio item with sampling rate
-        if self._is_empty(data) or (
-            isinstance(data, tuple) and self._is_empty(data[0])
-        ):
+        if self._is_empty(data) or (isinstance(data, tuple) and self._is_empty(data[0])):
             return None
 
         if self._is_embeddings(data):
@@ -441,11 +430,7 @@ class MultiModalDataParser:
         if self._is_embeddings(data):
             return ImageEmbeddingItems(data)
 
-        if (
-            isinstance(data, PILImage.Image)
-            or isinstance(data, (np.ndarray, torch.Tensor))
-            and data.ndim == 3
-        ):
+        if isinstance(data, PILImage.Image) or isinstance(data, (np.ndarray, torch.Tensor)) and data.ndim == 3:
             data_items = [data]
         elif isinstance(data, (np.ndarray, torch.Tensor)):
             data_items = [elem for elem in data]
@@ -468,11 +453,7 @@ class MultiModalDataParser:
             return VideoEmbeddingItems(data)
 
         data_items: list[VideoItem]
-        if (
-            is_list_of(data, PILImage.Image)
-            or isinstance(data, (np.ndarray, torch.Tensor))
-            and data.ndim == 4
-        ):
+        if is_list_of(data, PILImage.Image) or isinstance(data, (np.ndarray, torch.Tensor)) and data.ndim == 4:
             data_items = [data]
         elif isinstance(data, (np.ndarray, torch.Tensor)):
             data_items = [elem for elem in data]

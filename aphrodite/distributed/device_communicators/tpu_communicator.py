@@ -10,9 +10,7 @@ from aphrodite.platforms.tpu import USE_TPU_INFERENCE
 
 from .base_device_communicator import DeviceCommunicatorBase
 
-USE_RAY = parallel_config = (
-    get_current_aphrodite_config().parallel_config.distributed_executor_backend == "ray"
-)
+USE_RAY = parallel_config = get_current_aphrodite_config().parallel_config.distributed_executor_backend == "ray"
 
 logger = init_logger(__name__)
 
@@ -23,8 +21,7 @@ if not USE_TPU_INFERENCE:
         import torch_xla.core.xla_model as xm
         import torch_xla.runtime as xr
         from torch_xla._internal import pjrt
-        from torch_xla.distributed.xla_multiprocessing import (
-            create_optimized_replica_groups)
+        from torch_xla.distributed.xla_multiprocessing import create_optimized_replica_groups
 
         if USE_RAY:
             from aphrodite.v1.executor import ray_utils
@@ -96,7 +93,6 @@ class TpuCommunicator(DeviceCommunicatorBase):
 
 
 if USE_TPU_INFERENCE:
-    from tpu_inference.distributed.device_communicators import (
-        TpuCommunicator as TpuInferenceCommunicator)
+    from tpu_inference.distributed.device_communicators import TpuCommunicator as TpuInferenceCommunicator
 
     TpuCommunicator = TpuInferenceCommunicator  # type: ignore

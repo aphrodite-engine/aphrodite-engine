@@ -35,9 +35,7 @@ def get_rope(
         dtype = torch.get_default_dtype()
     if rope_scaling is not None:
         # Transforms every value that is a list into a tuple for caching calls
-        rope_scaling_tuple = {
-            k: tuple(v) if isinstance(v, list) else v for k, v in rope_scaling.items()
-        }
+        rope_scaling_tuple = {k: tuple(v) if isinstance(v, list) else v for k, v in rope_scaling.items()}
         rope_scaling_args = tuple(rope_scaling_tuple.items())
     else:
         rope_scaling_args = None
@@ -68,11 +66,7 @@ def get_rope(
         return _ROPE_DICT[key]
 
     if dual_chunk_attention_config is not None:
-        extra_kwargs = {
-            k: v
-            for k, v in dual_chunk_attention_config.items()
-            if k in ("chunk_size", "local_size")
-        }
+        extra_kwargs = {k: v for k, v in dual_chunk_attention_config.items() if k in ("chunk_size", "local_size")}
         rotary_emb = DualChunkRotaryEmbedding(
             head_size,
             rotary_dim,
@@ -83,9 +77,7 @@ def get_rope(
             **extra_kwargs,
         )
     elif not rope_scaling:
-        rotary_emb = RotaryEmbedding(
-            head_size, rotary_dim, max_position, base, is_neox_style, dtype
-        )
+        rotary_emb = RotaryEmbedding(head_size, rotary_dim, max_position, base, is_neox_style, dtype)
     else:
         scaling_type = rope_scaling["rope_type"]
 
@@ -107,9 +99,7 @@ def get_rope(
                 original_max_position,
             )
         elif scaling_type == "mllama4":
-            rotary_emb = Llama4VisionRotaryEmbedding(
-                head_size, rotary_dim, max_position, base, is_neox_style, dtype
-            )
+            rotary_emb = Llama4VisionRotaryEmbedding(head_size, rotary_dim, max_position, base, is_neox_style, dtype)
         elif scaling_type == "default":
             if "mrope_section" in rope_scaling:
                 rotary_emb = MRotaryEmbedding(
@@ -179,17 +169,14 @@ def get_rope(
                     dtype,
                 )
             else:
-                raise ValueError(
-                    "Dynamic rope scaling must contain either 'alpha' or 'factor' field"
-                )
+                raise ValueError("Dynamic rope scaling must contain either 'alpha' or 'factor' field")
         elif scaling_type == "yarn":
             scaling_factor = rope_scaling["factor"]
             original_max_position = rope_scaling["original_max_position_embeddings"]
             extra_kwargs = {
                 k: v
                 for k, v in rope_scaling.items()
-                if k
-                in ("extrapolation_factor", "attn_factor", "beta_fast", "beta_slow")
+                if k in ("extrapolation_factor", "attn_factor", "beta_fast", "beta_slow")
             }
             if "mrope_section" in rope_scaling:
                 rotary_emb = MRotaryEmbedding(
@@ -246,11 +233,7 @@ def get_rope(
             short_factor = rope_scaling["short_factor"]
             long_factor = rope_scaling["long_factor"]
             original_max_position = rope_scaling["original_max_position_embeddings"]
-            extra_kwargs = {
-                k: v
-                for k, v in rope_scaling.items()
-                if k in ("short_mscale", "long_mscale")
-            }
+            extra_kwargs = {k: v for k, v in rope_scaling.items() if k in ("short_mscale", "long_mscale")}
             rotary_emb = Phi3LongRoPEScaledRotaryEmbedding(
                 head_size,
                 rotary_dim,

@@ -1,13 +1,13 @@
 """Helper functions to work with nested JSON structures."""
-from collections.abc import Iterable
+
+from collections.abc import Callable, Iterable
 from functools import reduce
-from typing import Callable, TypeVar, Union, overload
+from typing import TypeAlias, TypeVar, overload
 
 _T = TypeVar("_T")
 _U = TypeVar("_U")
 
-JSONTree = Union[dict[str, "JSONTree[_T]"], list["JSONTree[_T]"],
-                 tuple["JSONTree[_T]", ...], _T]
+JSONTree: TypeAlias = dict[str, "JSONTree[_T]"] | list["JSONTree[_T]"] | tuple["JSONTree[_T]", ...] | _T
 """A nested JSON structure where the leaves need not be JSON-serializable."""
 
 
@@ -43,8 +43,7 @@ def json_reduce_leaves(
     func: Callable[[_T, _T], _T],
     value: JSONTree[_T],
     /,
-) -> _T:
-    ...
+) -> _T: ...
 
 
 @overload
@@ -53,16 +52,15 @@ def json_reduce_leaves(
     value: JSONTree[_T],
     initial: _U,
     /,
-) -> _U:
-    ...
+) -> _U: ...
 
 
 def json_reduce_leaves(
-    func: Callable[..., Union[_T, _U]],
+    func: Callable[..., _T | _U],
     value: JSONTree[_T],
     initial: _U = ...,  # type: ignore[assignment]
     /,
-) -> Union[_T, _U]:
+) -> _T | _U:
     """
     Apply a function of two arguments cumulatively to each leaf in a
     nested JSON structure, from left to right, so as to reduce the

@@ -29,23 +29,23 @@ from transformers import StableLmConfig
 from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class StablelmMLP(nn.Module):
@@ -109,9 +109,7 @@ class StablelmAttention(nn.Module):
         self.num_key_value_heads = max(1, self.total_num_key_value_heads // tp_size)
         self.head_dim = self.hidden_size // self.total_num_heads
         self.max_position_embeddings = config.max_position_embeddings
-        self.partial_rotary_factor = getattr(
-            config, "rope_pct", getattr(config, "partial_rotary_factor", 1)
-        )
+        self.partial_rotary_factor = getattr(config, "rope_pct", getattr(config, "partial_rotary_factor", 1))
         self.scaling = self.head_dim**-0.5
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_key_value_heads * self.head_dim
@@ -178,9 +176,7 @@ class StablelmDecoderLayer(nn.Module):
         prefix: str = "",
     ) -> None:
         super().__init__()
-        self.self_attn = StablelmAttention(
-            config, cache_config, quant_config, prefix=f"{prefix}.self_attn"
-        )
+        self.self_attn = StablelmAttention(config, cache_config, quant_config, prefix=f"{prefix}.self_attn")
         self.mlp = StablelmMLP(config, quant_config, prefix=f"{prefix}.mlp")
         norm_eps = getattr(config, "norm_eps", getattr(config, "layer_norm_eps", 1e-05))
         self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=norm_eps)
@@ -225,9 +221,7 @@ class StableLMEpochModel(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: StablelmDecoderLayer(
-                config, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: StablelmDecoderLayer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         norm_eps = getattr(config, "norm_eps", getattr(config, "layer_norm_eps", 1e-05))
@@ -306,9 +300,7 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.model = StableLMEpochModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = StableLMEpochModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.lm_head = ParallelLMHead(
             config.vocab_size,
             config.hidden_size,
@@ -318,9 +310,7 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -332,9 +322,7 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

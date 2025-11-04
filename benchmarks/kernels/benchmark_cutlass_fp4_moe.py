@@ -8,15 +8,15 @@ and 16-bit activations.
 import nvtx
 import torch
 import torch.utils.benchmark as benchmark
-
-from aphrodite import _custom_ops as ops
-from aphrodite.config import ParallelConfig, AphroditeConfig, set_current_aphrodite_config
 from aphrodite.model_executor.layers.fused_moe.config import (
     fp8_w8a8_moe_quant_config,
     nvfp4_moe_quant_config,
 )
 from aphrodite.model_executor.layers.fused_moe.cutlass_moe import cutlass_moe_fp4
 from aphrodite.model_executor.layers.fused_moe.fused_moe import fused_experts, fused_topk
+
+from aphrodite import _custom_ops as ops
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.scalar_type import scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -41,9 +41,7 @@ FLOAT8_E4M3_MAX = torch.finfo(torch.float8_e4m3fn).max
 
 def to_fp8(tensor: torch.Tensor):
     finfo = torch.finfo(torch.float8_e4m3fn)
-    return torch.round(tensor.clamp(min=finfo.min, max=finfo.max)).to(
-        dtype=torch.float8_e4m3fn
-    )
+    return torch.round(tensor.clamp(min=finfo.min, max=finfo.max)).to(dtype=torch.float8_e4m3fn)
 
 
 def bench_run(
@@ -57,10 +55,8 @@ def bench_run(
 ):
     label = "NVFP4 Blockscaled CUTLASS MOE vs FP8 Tensor Scaled Triton"
 
-    sub_label = (
-        "{}, num_experts={}, topk={}, per_act_token={} per_out_ch={}, MKN=({})".format(
-            model, num_experts, topk, per_act_token, per_out_ch, mkn
-        )
+    sub_label = "{}, num_experts={}, topk={}, per_act_token={} per_out_ch={}, MKN=({})".format(
+        model, num_experts, topk, per_act_token, per_out_ch, mkn
     )
 
     print(f"Testing: {sub_label}")
@@ -75,9 +71,7 @@ def bench_run(
 
     _, a_fp8_scale = ops.scaled_fp8_quant(a)
 
-    w1_fp8q = torch.empty(
-        (num_experts, 2 * n, k), device=device, dtype=torch.float8_e4m3fn
-    )
+    w1_fp8q = torch.empty((num_experts, 2 * n, k), device=device, dtype=torch.float8_e4m3fn)
     w2_fp8q = torch.empty((num_experts, k, n), device=device, dtype=torch.float8_e4m3fn)
     w1_fp8scale = torch.empty((num_experts, 1, 1), device=device, dtype=torch.float32)
     w2_fp8scale = torch.empty((num_experts, 1, 1), device=device, dtype=torch.float32)
@@ -101,9 +95,7 @@ def bench_run(
         device=device,
         dtype=torch.float8_e4m3fn,
     )
-    w2_blockscale = torch.empty(
-        (num_experts, k, n // quant_blocksize), device=device, dtype=torch.float8_e4m3fn
-    )
+    w2_blockscale = torch.empty((num_experts, k, n // quant_blocksize), device=device, dtype=torch.float8_e4m3fn)
 
     # n_b_scales = 2 * n if per_out_ch else 1
     # k_b_scales = k if per_out_ch else 1
@@ -123,13 +115,9 @@ def bench_run(
         w1_gs[expert] = FLOAT8_E4M3_MAX * FLOAT4_E2M1_MAX / w1_amax
         w2_gs[expert] = FLOAT8_E4M3_MAX * FLOAT4_E2M1_MAX / w2_amax
 
-        w1_fp4[expert], w1_blockscale[expert] = ops.scaled_fp4_quant(
-            w1_e, w1_gs[expert]
-        )
+        w1_fp4[expert], w1_blockscale[expert] = ops.scaled_fp4_quant(w1_e, w1_gs[expert])
 
-        w2_fp4[expert], w2_blockscale[expert] = ops.scaled_fp4_quant(
-            w2_e, w2_gs[expert]
-        )
+        w2_fp4[expert], w2_blockscale[expert] = ops.scaled_fp4_quant(w2_e, w2_gs[expert])
 
     def run_triton_moe(
         a: torch.Tensor,
@@ -227,9 +215,7 @@ def bench_run(
             g2_alphas=w2_gs,
         )
 
-        with set_current_aphrodite_config(
-            AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))
-        ):
+        with set_current_aphrodite_config(AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))):
             return cutlass_moe_fp4(
                 a=a,
                 w1_fp4=w1_fp4,
@@ -253,9 +239,7 @@ def bench_run(
         w2_scale: torch.Tensor,
         a_fp8_scale: torch.Tensor,
     ):
-        with set_current_aphrodite_config(
-            AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))
-        ):
+        with set_current_aphrodite_config(AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))):
             quant_config = fp8_w8a8_moe_quant_config(
                 w1_scale=w1_scale,
                 w2_scale=w2_scale,
@@ -478,9 +462,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser(
-        description="Benchmark NVFP4 CUTLASS MOE across specified models/shapes/batches"
-    )
+    parser = FlexibleArgumentParser(description="Benchmark NVFP4 CUTLASS MOE across specified models/shapes/batches")
     parser.add_argument(
         "--models",
         nargs="+",
@@ -489,9 +471,7 @@ if __name__ == "__main__":
         choices=WEIGHT_SHAPES_MOE.keys(),
     )
     parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
-    parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     parser.add_argument("--limit-k", nargs="+", type=int, default=[])
     parser.add_argument("--limit-n", nargs="+", type=int, default=[])
     parser.add_argument("--limit-num-groups", nargs="+", type=int, default=[])

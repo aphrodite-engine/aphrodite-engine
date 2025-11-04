@@ -14,10 +14,7 @@ class ParameterSweep(list["ParameterSweepItem"]):
     @classmethod
     def from_records(cls, records: list[dict[str, object]]):
         if not isinstance(records, list):
-            raise TypeError(
-                f"The parameter sweep should be a list of dictionaries, "
-                f"but found type: {type(records)}"
-            )
+            raise TypeError(f"The parameter sweep should be a list of dictionaries, but found type: {type(records)}")
 
         return cls(ParameterSweepItem.from_record(record) for record in records)
 
@@ -26,10 +23,7 @@ class ParameterSweepItem(dict[str, object]):
     @classmethod
     def from_record(cls, record: dict[str, object]):
         if not isinstance(record, dict):
-            raise TypeError(
-                f"Each item in the parameter sweep should be a dictionary, "
-                f"but found type: {type(record)}"
-            )
+            raise TypeError(f"Each item in the parameter sweep should be a dictionary, but found type: {type(record)}")
 
         return cls(record)
 

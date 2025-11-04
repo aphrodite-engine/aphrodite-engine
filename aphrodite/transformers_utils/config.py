@@ -8,26 +8,25 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 import huggingface_hub
-from huggingface_hub import get_safetensors_metadata, hf_hub_download
+from huggingface_hub import get_safetensors_metadata, hf_hub_download, try_to_load_from_cache
 from huggingface_hub import list_repo_files as hf_list_repo_files
-from huggingface_hub import try_to_load_from_cache
-from huggingface_hub.utils import (EntryNotFoundError, HfHubHTTPError,
-                                   LocalEntryNotFoundError,
-                                   RepositoryNotFoundError,
-                                   RevisionNotFoundError)
+from huggingface_hub.utils import (
+    EntryNotFoundError,
+    HfHubHTTPError,
+    LocalEntryNotFoundError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
 from transformers import GenerationConfig, PretrainedConfig
-from transformers.models.auto.image_processing_auto import (
-    get_image_processor_config)
-from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_CAUSAL_LM_MAPPING_NAMES, MODEL_MAPPING_NAMES)
+from transformers.models.auto.image_processing_auto import get_image_processor_config
+from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES, MODEL_MAPPING_NAMES
 from transformers.models.auto.tokenization_auto import get_tokenizer_config
 from transformers.utils import CONFIG_NAME as HF_CONFIG_NAME
 
 from aphrodite import envs
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.config_parser_base import ConfigParserBase
-from aphrodite.transformers_utils.utils import (
-    check_gguf_file, parse_safetensors_file_metadata)
+from aphrodite.transformers_utils.utils import check_gguf_file, parse_safetensors_file_metadata
 
 if envs.APHRODITE_USE_MODELSCOPE:
     from modelscope import AutoConfig
@@ -118,11 +117,7 @@ class HFConfigParser(ConfigParserBase):
         # Use custom model class if it's in our registry
         model_type = config_dict.get("model_type")
         if model_type is None:
-            model_type = (
-                "speculators"
-                if config_dict.get("speculators_config") is not None
-                else model_type
-            )
+            model_type = "speculators" if config_dict.get("speculators_config") is not None else model_type
 
         if model_type in _CONFIG_REGISTRY:
             config_class = _CONFIG_REGISTRY[model_type]
@@ -145,10 +140,7 @@ class HFConfigParser(ConfigParserBase):
                     **kwargs,
                 )
             except ValueError as e:
-                if (
-                    not trust_remote_code
-                    and "requires you to execute the configuration file" in str(e)
-                ):
+                if not trust_remote_code and "requires you to execute the configuration file" in str(e):
                     err_msg = (
                         "Failed to load the model config. If the model "
                         "is a custom model not yet available in the "
@@ -175,29 +167,21 @@ class MistralConfigParser(ConfigParserBase):
         # This function loads a params.json config which
         # should be used when loading models in mistral format
         config_dict = _download_mistral_config_file(model, revision)
-        if (
-            max_position_embeddings := config_dict.get("max_position_embeddings")
-        ) is None:
-            max_position_embeddings = _maybe_retrieve_max_pos_from_hf(
-                model, revision, **kwargs
-            )
+        if (max_position_embeddings := config_dict.get("max_position_embeddings")) is None:
+            max_position_embeddings = _maybe_retrieve_max_pos_from_hf(model, revision, **kwargs)
             config_dict["max_position_embeddings"] = max_position_embeddings
 
-        from aphrodite.transformers_utils.configs.mistral import (
-            adapt_config_dict)
+        from aphrodite.transformers_utils.configs.mistral import adapt_config_dict
 
         config = adapt_config_dict(config_dict)
 
         # Mistral configs may define sliding_window as list[int]. Convert it
         # to int and add the layer_types list[str] to make it HF compatible
-        if (sliding_window := getattr(config, "sliding_window", None)) and isinstance(
-            sliding_window, list
-        ):
+        if (sliding_window := getattr(config, "sliding_window", None)) and isinstance(sliding_window, list):
             pattern_repeats = config.num_hidden_layers // len(sliding_window)
             layer_types = sliding_window * pattern_repeats
             config.layer_types = [
-                "full_attention" if layer_type is None else "sliding_attention"
-                for layer_type in layer_types
+                "full_attention" if layer_type is None else "sliding_attention" for layer_type in layer_types
             ]
             config.sliding_window = next(filter(None, sliding_window), None)
 
@@ -254,15 +238,12 @@ def register_config_parser(config_format: str):
     def _wrapper(config_parser_cls):
         if config_format in _CONFIG_FORMAT_TO_CONFIG_PARSER:
             logger.warning(
-                "Config format `%s` is already registered, and will be "
-                "overwritten by the new parser class `%s`.",
+                "Config format `%s` is already registered, and will be overwritten by the new parser class `%s`.",
                 config_format,
                 config_parser_cls,
             )
         if not issubclass(config_parser_cls, ConfigParserBase):
-            raise ValueError(
-                "The config parser must be a subclass of `ConfigParserBase`."
-            )
+            raise ValueError("The config parser must be a subclass of `ConfigParserBase`.")
         _CONFIG_FORMAT_TO_CONFIG_PARSER[config_format] = config_parser_cls
         logger.info(
             "Registered config parser `%s` with config format `%s`",
@@ -290,9 +271,7 @@ def with_retry(
             if attempt == max_retries - 1:
                 logger.error("%s: %s", log_msg, e)
                 raise
-            logger.error(
-                "%s: %s, retrying %d of %d", log_msg, e, attempt + 1, max_retries
-            )
+            logger.error("%s: %s, retrying %d of %d", log_msg, e, attempt + 1, max_retries)
             time.sleep(retry_delay)
             retry_delay *= 2
 
@@ -311,25 +290,18 @@ def list_repo_files(
     def lookup_files() -> list[str]:
         # directly list files if model is local
         if (local_path := Path(repo_id)).exists():
-            return [
-                str(file.relative_to(local_path))
-                for file in local_path.rglob("*")
-                if file.is_file()
-            ]
+            return [str(file.relative_to(local_path)) for file in local_path.rglob("*") if file.is_file()]
         # if model is remote, use hf_hub api to list files
         try:
             if envs.APHRODITE_USE_MODELSCOPE:
-                from aphrodite.transformers_utils.utils import (
-                    modelscope_list_repo_files)
+                from aphrodite.transformers_utils.utils import modelscope_list_repo_files
 
                 return modelscope_list_repo_files(
                     repo_id,
                     revision=revision,
                     token=os.getenv("MODELSCOPE_API_TOKEN", None),
                 )
-            return hf_list_repo_files(
-                repo_id, revision=revision, repo_type=repo_type, token=token
-            )
+            return hf_list_repo_files(repo_id, revision=revision, repo_type=repo_type, token=token)
         except huggingface_hub.errors.OfflineModeIsEnabled:
             # Don't raise in offline mode,
             # all we know is that we don't have this
@@ -347,23 +319,17 @@ def file_exists(
     revision: str | None = None,
     token: str | bool | None = None,
 ) -> bool:
-    file_list = list_repo_files(
-        repo_id, repo_type=repo_type, revision=revision, token=token
-    )
+    file_list = list_repo_files(repo_id, repo_type=repo_type, revision=revision, token=token)
     return file_name in file_list
 
 
 # In offline mode the result can be a false negative
-def file_or_path_exists(
-    model: str | Path, config_name: str, revision: str | None
-) -> bool:
+def file_or_path_exists(model: str | Path, config_name: str, revision: str | None) -> bool:
     if (local_path := Path(model)).exists():
         return (local_path / config_name).is_file()
 
     # Offline mode support: Check if config file is cached already
-    cached_filepath = try_to_load_from_cache(
-        repo_id=model, filename=config_name, revision=revision
-    )
+    cached_filepath = try_to_load_from_cache(repo_id=model, filename=config_name, revision=revision)
     if isinstance(cached_filepath, str):
         # The config file exists in cache- we can continue trying to load
         return True
@@ -372,9 +338,7 @@ def file_or_path_exists(
     # hf_hub. This will fail in offline mode.
 
     # Call HF to check if the file exists
-    return file_exists(
-        str(model), config_name, revision=revision, token=_get_hf_token()
-    )
+    return file_exists(str(model), config_name, revision=revision, token=_get_hf_token())
 
 
 def patch_rope_scaling(config: PretrainedConfig) -> None:
@@ -425,11 +389,7 @@ def _uses_mrope(config: PretrainedConfig) -> bool:
 
 def uses_mrope(config: PretrainedConfig) -> bool:
     """Detect if the model with this config uses M-ROPE."""
-    return (
-        _uses_mrope(config)
-        or _uses_mrope(config.get_text_config())
-        or thinker_uses_mrope(config)
-    )
+    return _uses_mrope(config) or _uses_mrope(config.get_text_config()) or thinker_uses_mrope(config)
 
 
 def thinker_uses_mrope(config: PretrainedConfig) -> bool:
@@ -529,12 +489,9 @@ def maybe_override_with_speculators(
         return model, tokenizer, aphrodite_speculative_config
 
     # Speculators format detected - process overrides
-    from aphrodite.transformers_utils.configs.speculators.base import (
-        SpeculatorsConfig)
+    from aphrodite.transformers_utils.configs.speculators.base import SpeculatorsConfig
 
-    speculative_config = SpeculatorsConfig.extract_aphrodite_speculative_config(
-        config_dict=config_dict
-    )
+    speculative_config = SpeculatorsConfig.extract_aphrodite_speculative_config(config_dict=config_dict)
 
     # Set the draft model to the speculators model
     speculative_config["model"] = model
@@ -629,12 +586,8 @@ def get_config(
 
     # ModelOpt 0.29.0 and before saves the quantization config in a separate
     # "hf_quant_config.json" in the same directory as the model config file.
-    if quantization_config is None and file_or_path_exists(
-        model, "hf_quant_config.json", revision
-    ):
-        quantization_config = get_hf_file_to_dict(
-            "hf_quant_config.json", model, revision
-        )
+    if quantization_config is None and file_or_path_exists(model, "hf_quant_config.json", revision):
+        quantization_config = get_hf_file_to_dict("hf_quant_config.json", model, revision)
 
     if quantization_config is not None:
         config.quantization_config = quantization_config
@@ -644,10 +597,7 @@ def get_config(
             if not envs.is_set("APHRODITE_USE_DEEP_GEMM_E8M0"):
                 os.environ["APHRODITE_USE_DEEP_GEMM_E8M0"] = "1"
                 logger.info_once(
-                    (
-                        "Detected quantization_config.scale_fmt=%s; "
-                        "enabling UE8M0 for DeepGEMM."
-                    ),
+                    ("Detected quantization_config.scale_fmt=%s; enabling UE8M0 for DeepGEMM."),
                     scale_fmt,
                 )
             elif not envs.APHRODITE_USE_DEEP_GEMM_E8M0:
@@ -676,17 +626,13 @@ def get_config(
     return config
 
 
-def try_get_local_file(
-    model: str | Path, file_name: str, revision: str | None = "main"
-) -> Path | None:
+def try_get_local_file(model: str | Path, file_name: str, revision: str | None = "main") -> Path | None:
     file_path = Path(model) / file_name
     if file_path.is_file():
         return file_path
     else:
         try:
-            cached_filepath = try_to_load_from_cache(
-                repo_id=model, filename=file_name, revision=revision
-            )
+            cached_filepath = try_to_load_from_cache(repo_id=model, filename=file_name, revision=revision)
             if isinstance(cached_filepath, str):
                 return Path(cached_filepath)
         except ValueError:
@@ -694,9 +640,7 @@ def try_get_local_file(
     return None
 
 
-def get_hf_file_to_dict(
-    file_name: str, model: str | Path, revision: str | None = "main"
-):
+def get_hf_file_to_dict(file_name: str, model: str | Path, revision: str | None = "main"):
     """
     Downloads a file from the Hugging Face Hub and returns
     its contents as a dictionary.
@@ -762,9 +706,7 @@ def get_pooling_config(model: str, revision: str | None = "main") -> dict | None
     modules_file_name = "modules.json"
 
     modules_dict = None
-    if file_or_path_exists(
-        model=model, config_name=modules_file_name, revision=revision
-    ):
+    if file_or_path_exists(model=model, config_name=modules_file_name, revision=revision):
         modules_dict = get_hf_file_to_dict(modules_file_name, model, revision)
 
     if modules_dict is None:
@@ -773,20 +715,12 @@ def get_pooling_config(model: str, revision: str | None = "main") -> dict | None
     logger.info("Found sentence-transformers modules configuration.")
 
     pooling = next(
-        (
-            item
-            for item in modules_dict
-            if item["type"] == "sentence_transformers.models.Pooling"
-        ),
+        (item for item in modules_dict if item["type"] == "sentence_transformers.models.Pooling"),
         None,
     )
     normalize = bool(
         next(
-            (
-                item
-                for item in modules_dict
-                if item["type"] == "sentence_transformers.models.Normalize"
-            ),
+            (item for item in modules_dict if item["type"] == "sentence_transformers.models.Normalize"),
             False,
         )
     )
@@ -794,9 +728,7 @@ def get_pooling_config(model: str, revision: str | None = "main") -> dict | None
     if pooling:
         pooling_file_name = "{}/config.json".format(pooling["path"])
         pooling_dict = get_hf_file_to_dict(pooling_file_name, model, revision)
-        pooling_type_name = next(
-            (item for item, val in pooling_dict.items() if val is True), None
-        )
+        pooling_type_name = next((item for item, val in pooling_dict.items() if val is True), None)
 
         if pooling_type_name is not None:
             pooling_type_name = get_pooling_config_name(pooling_type_name)
@@ -827,9 +759,7 @@ def get_pooling_config_name(pooling_name: str) -> str | None:
 
 
 @cache
-def get_sentence_transformer_tokenizer_config(
-    model: str | Path, revision: str | None = "main"
-):
+def get_sentence_transformer_tokenizer_config(model: str | Path, revision: str | None = "main"):
     """
     Returns the tokenization configuration dictionary for a
     given Sentence Transformer BERT model.
@@ -856,10 +786,7 @@ def get_sentence_transformer_tokenizer_config(
     encoder_dict = None
 
     for config_file in sentence_transformer_config_files:
-        if (
-            try_get_local_file(model=model, file_name=config_file, revision=revision)
-            is not None
-        ):
+        if try_get_local_file(model=model, file_name=config_file, revision=revision) is not None:
             encoder_dict = get_hf_file_to_dict(config_file, model, revision)
             if encoder_dict:
                 break
@@ -867,9 +794,7 @@ def get_sentence_transformer_tokenizer_config(
     if not encoder_dict and not Path(model).is_absolute():
         try:
             # If model is on HuggingfaceHub, get the repo files
-            repo_files = list_repo_files(
-                model, revision=revision, token=_get_hf_token()
-            )
+            repo_files = list_repo_files(model, revision=revision, token=_get_hf_token())
         except Exception:
             repo_files = []
 
@@ -899,14 +824,10 @@ def maybe_register_config_serialize_by_value() -> None:
     Examples:
 
     >>> from transformers import AutoConfig
-    >>> klass = AutoConfig.from_pretrained(
-    ...     "meta-llama/Meta-Llama-3-8B", trust_remote_code=True
-    ... )
+    >>> klass = AutoConfig.from_pretrained("meta-llama/Meta-Llama-3-8B", trust_remote_code=True)
     >>> klass.__class__  # transformers.models.llama.configuration_llama.LlamaConfig
     >>> import transformers_modules  # error, not initialized
-    >>> klass = AutoConfig.from_pretrained(
-    ...     "deepseek-ai/DeepSeek-V2.5", trust_remote_code=True
-    ... )
+    >>> klass = AutoConfig.from_pretrained("deepseek-ai/DeepSeek-V2.5", trust_remote_code=True)
     >>> import transformers_modules  # success, initialized
     >>> klass.__class__  # transformers_modules.deepseek-ai.DeepSeek-V2.5.98b11844770b2c3ffc18b175c758a803640f4e77.configuration_deepseek.DeepseekV2Config
 
@@ -977,9 +898,7 @@ def get_hf_image_processor_config(
     # Separate model folder from file path for GGUF models
     if check_gguf_file(model):
         model = Path(model).parent
-    return get_image_processor_config(
-        model, token=hf_token, revision=revision, **kwargs
-    )
+    return get_image_processor_config(model, token=hf_token, revision=revision, **kwargs)
 
 
 def get_hf_text_config(config: PretrainedConfig):
@@ -1034,9 +953,7 @@ def try_get_safetensors_metadata(
     )
 
     try:
-        return with_retry(
-            get_safetensors_metadata_partial, "Error retrieving safetensors"
-        )
+        return with_retry(get_safetensors_metadata_partial, "Error retrieving safetensors")
     except Exception:
         return None
 
@@ -1069,9 +986,7 @@ def try_get_dense_modules(
         if isinstance(modules, dict):
             modules = modules.get("modules", [])
 
-        dense_modules = [
-            m for m in modules if m.get("type") == "sentence_transformers.models.Dense"
-        ]
+        dense_modules = [m for m in modules if m.get("type") == "sentence_transformers.models.Dense"]
         if not dense_modules:
             return None
 
@@ -1173,16 +1088,12 @@ def get_model_path(model: str | Path, revision: str | None = None):
     return snapshot_download(repo_id=model, **common_kwargs)
 
 
-def get_hf_file_bytes(
-    file_name: str, model: str | Path, revision: str | None = "main"
-) -> bytes | None:
+def get_hf_file_bytes(file_name: str, model: str | Path, revision: str | None = "main") -> bytes | None:
     """Get file contents from HuggingFace repository as bytes."""
     file_path = try_get_local_file(model=model, file_name=file_name, revision=revision)
 
     if file_path is None:
-        hf_hub_file = hf_hub_download(
-            model, file_name, revision=revision, token=_get_hf_token()
-        )
+        hf_hub_file = hf_hub_download(model, file_name, revision=revision, token=_get_hf_token())
         file_path = Path(hf_hub_file)
 
     if file_path is not None and file_path.is_file():

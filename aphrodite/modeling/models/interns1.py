@@ -11,10 +11,8 @@ import torch
 import torch.nn as nn
 from transformers import BatchFeature, InternVLProcessor, PretrainedConfig
 from transformers.activations import ACT2FN
-from transformers.models.got_ocr2.image_processing_got_ocr2_fast import (
-    GotOcr2ImageProcessorFast)
-from transformers.models.internvl.video_processing_internvl import (
-    InternVLVideoProcessor)
+from transformers.models.got_ocr2.image_processing_got_ocr2_fast import GotOcr2ImageProcessorFast
+from transformers.models.internvl.video_processing_internvl import InternVLVideoProcessor
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
@@ -22,42 +20,34 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.modeling.models.interns1_vit import InternS1VisionModel
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
-from aphrodite.transformers_utils.processor import (
-    cached_video_processor_from_config)
+from aphrodite.transformers_utils.processor import cached_video_processor_from_config
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
 
 
 class InternS1MultiModalProjector(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.layer_norm = nn.LayerNorm(
-            config.vision_config.hidden_size * int(1 / config.downsample_ratio) ** 2
-        )
+        self.layer_norm = nn.LayerNorm(config.vision_config.hidden_size * int(1 / config.downsample_ratio) ** 2)
         self.linear_1 = nn.Linear(
             config.vision_config.hidden_size * int(1 / config.downsample_ratio) ** 2,
             config.text_config.hidden_size,
         )
         self.act = ACT2FN[config.projector_hidden_act]
-        self.linear_2 = nn.Linear(
-            config.text_config.hidden_size, config.text_config.hidden_size
-        )
+        self.linear_2 = nn.Linear(config.text_config.hidden_size, config.text_config.hidden_size)
 
     def forward(self, image_features):
         hidden_states = self.layer_norm(image_features)
@@ -183,12 +173,8 @@ class InternS1ProcessingInfo(BaseProcessingInfo):
             processor = self.get_hf_processor().image_processor
 
         if not isinstance(processor, GotOcr2ImageProcessorFast):
-            raise ValueError(
-                f"GotOcr2ImageProcessorFast is expected but got {type(processor)}"
-            )
-        num_image_patches = processor.get_number_of_image_patches(
-            image_height, image_width, images_kwargs=dict()
-        )
+            raise ValueError(f"GotOcr2ImageProcessorFast is expected but got {type(processor)}")
+        num_image_patches = processor.get_number_of_image_patches(image_height, image_width, images_kwargs=dict())
         num_image_tokens = self.get_hf_processor().image_seq_length * num_image_patches
         return num_image_tokens
 
@@ -280,9 +266,7 @@ class InternS1DummyInputsBuilder(BaseDummyInputsBuilder[InternS1ProcessingInfo])
         mm_options: Mapping[str, BaseDummyOptions] | None = None,
     ) -> MultiModalDataDict:
         target_width, target_height = self.info.get_image_size_with_most_features()
-        target_num_frames = self.info.get_num_frames_with_most_features(
-            seq_len, mm_counts
-        )
+        target_num_frames = self.info.get_num_frames_with_most_features(seq_len, mm_counts)
         num_images = mm_counts.get("image", 0)
         num_videos = mm_counts.get("video", 0)
 
@@ -327,9 +311,7 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
 
         hf_processor = self.info.get_hf_processor(**mm_kwargs)
         tokenizer = hf_processor.tokenizer
-        video_token_id = tokenizer.encode(
-            hf_processor.video_token, add_special_tokens=False
-        )
+        video_token_id = tokenizer.encode(hf_processor.video_token, add_special_tokens=False)
         assert len(video_token_id) == 1
         video_token_id = video_token_id[0]
 
@@ -401,15 +383,11 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
         num_videos = len(video_num_patches)
 
         return dict(
-            pixel_values=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_num_patches
-            ),
+            pixel_values=MultiModalFieldConfig.flat_from_sizes("image", image_num_patches),
             image_num_patches=MultiModalFieldConfig.batched("image"),
             image_embeds=MultiModalFieldConfig.batched("image"),
             image_token_id=MultiModalFieldConfig.shared("image", num_images),
-            pixel_values_videos=MultiModalFieldConfig.flat_from_sizes(
-                "video", video_num_patches
-            ),
+            pixel_values_videos=MultiModalFieldConfig.flat_from_sizes("video", video_num_patches),
             video_num_patches=MultiModalFieldConfig.batched("video"),
             video_token_id=MultiModalFieldConfig.shared("video", num_videos),
         )
@@ -442,9 +420,7 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
             image_num_patches = []
 
         def get_replacement_interns1_image(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 feature_size = images.get_feature_size(item_idx)
@@ -461,9 +437,7 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
             repl_features = video_token * hf_processor.image_seq_length
             repl_features_with_sep = start_image_token + repl_features + end_image_token
             # num_patches is equal to num_frames
-            repl_full = "\n".join(
-                [f"Frame{i + 1}: {repl_features_with_sep}" for i in range(num_patches)]
-            )
+            repl_full = "\n".join([f"Frame{i + 1}: {repl_features_with_sep}" for i in range(num_patches)])
 
             return PromptUpdateDetails.select_text(repl_full, video_token)
 
@@ -486,9 +460,7 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
     info=InternS1ProcessingInfo,
     dummy_inputs=InternS1DummyInputsBuilder,
 )
-class InternS1ForConditionalGeneration(
-    nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
-):
+class InternS1ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA):
     merge_by_field_config = True
 
     # To ensure correct weight loading and mapping.
@@ -524,9 +496,7 @@ class InternS1ForConditionalGeneration(
         image_size = config.vision_config.image_size[0]
         patch_size = config.vision_config.patch_size[0]
         self.patch_size = patch_size
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.downsample_ratio = config.downsample_ratio
 
         self.llm_arch_name = config.text_config.architectures[0]
@@ -548,9 +518,7 @@ class InternS1ForConditionalGeneration(
         self.video_context_token_id = None
 
         self.visual_token_mask = None
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     def _init_vision_model(
         self,
@@ -597,9 +565,7 @@ class InternS1ForConditionalGeneration(
         vit_embeds = self.multi_modal_projector(vit_embeds)
         return vit_embeds
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> InternS1ImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> InternS1ImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_num_patches = kwargs.pop("image_num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -634,9 +600,7 @@ class InternS1ForConditionalGeneration(
 
         raise AssertionError("This line should be unreachable.")
 
-    def _parse_and_validate_video_input(
-        self, **kwargs: object
-    ) -> InternS1VideoInputs | None:
+    def _parse_and_validate_video_input(self, **kwargs: object) -> InternS1VideoInputs | None:
         pixel_values_flat_video = kwargs.pop("pixel_values_videos", None)
         video_num_patches = kwargs.pop("video_num_patches", None)
         video_embeds = kwargs.pop("video_embeds", None)
@@ -675,10 +639,7 @@ class InternS1ForConditionalGeneration(
         self,
         image_input: InternS1ImageInputs | InternS1VideoInputs,
     ) -> tuple[torch.Tensor, ...]:
-        if (
-            image_input["type"] == "image_embeds"
-            or image_input["type"] == "video_embeds"
-        ):
+        if image_input["type"] == "image_embeds" or image_input["type"] == "video_embeds":
             return image_input["data"]
 
         assert self.vision_tower is not None
@@ -695,9 +656,7 @@ class InternS1ForConditionalGeneration(
         # by the size of each embedding.
         feature_size = image_embeds.shape[1]
         image_embeds = image_embeds.view(-1, self.config.text_config.hidden_size)
-        image_feature_sizes = [
-            num_patches * feature_size for num_patches in num_patches
-        ]
+        image_feature_sizes = [num_patches * feature_size for num_patches in num_patches]
         return image_embeds.split(image_feature_sizes)
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
@@ -706,10 +665,7 @@ class InternS1ForConditionalGeneration(
         # Preserve the order of modalities if there are multiple of them
         # from the order of kwargs.
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values", "image_embeds")
-                and "images" not in modalities
-            ):
+            if input_key in ("pixel_values", "image_embeds") and "images" not in modalities:
                 modalities["images"] = self._parse_and_validate_image_input(**kwargs)
             if input_key in ("pixel_values_videos",) and "videos" not in modalities:
                 modalities["videos"] = self._parse_and_validate_video_input(**kwargs)

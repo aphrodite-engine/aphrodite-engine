@@ -10,15 +10,11 @@ def _quant_dequant_mxfp6(
     scale_calculation_mode: str = "even",
 ) -> torch.Tensor:
     try:
-        from quark.torch.kernel.hw_emulation.hw_emulation_interface import (
-            fake_quantize_fp4_fp6_per_group_with_scale)
-        from quark.torch.quantization.utils import (even_round,
-                                                    reshape_to_blocks)
+        from quark.torch.kernel.hw_emulation.hw_emulation_interface import fake_quantize_fp4_fp6_per_group_with_scale
+        from quark.torch.quantization.utils import even_round, reshape_to_blocks
     except ImportError as err:
         raise ImportError(
-            "The package `amd-quark` is required to use "
-            "MX-FP6 models. Please install it with `pip install "
-            "amd-quark`."
+            "The package `amd-quark` is required to use MX-FP6 models. Please install it with `pip install amd-quark`."
         ) from err
 
     axis = -1
@@ -30,8 +26,7 @@ def _quant_dequant_mxfp6(
     # config.json that we do not check for here!
     if scale_calculation_mode != "even":
         raise NotImplementedError(
-            f"Scale calculation mode {scale_calculation_mode} is not yet "
-            "supported in MX-FP6 quantization"
+            f"Scale calculation mode {scale_calculation_mode} is not yet supported in MX-FP6 quantization"
         )
     scale = even_round(amax, quant_dtype)
 
@@ -55,18 +50,13 @@ def _quant_dequant_mxfp6_fake(
     return torch.empty_like(x)
 
 
-def _dequant_mxfp6(
-    x: torch.Tensor, scale: torch.Tensor, float_dtype: torch.dtype, quant_dtype: str
-) -> torch.Tensor:
+def _dequant_mxfp6(x: torch.Tensor, scale: torch.Tensor, float_dtype: torch.dtype, quant_dtype: str) -> torch.Tensor:
     try:
-        from quark.torch.kernel.hw_emulation.hw_emulation_interface import (
-            dequantize_fp4_fp6_per_group)
+        from quark.torch.kernel.hw_emulation.hw_emulation_interface import dequantize_fp4_fp6_per_group
         from quark.torch.utils.pack import create_pack_method
     except ImportError as e:
         raise ImportError(
-            "The package `amd-quark` is required to use "
-            "MX-FP6 models. Please install it with `pip install "
-            "amd-quark`."
+            "The package `amd-quark` is required to use MX-FP6 models. Please install it with `pip install amd-quark`."
         ) from e
 
     pack_method = create_pack_method(None, dtype=quant_dtype)
@@ -89,9 +79,7 @@ def _dequant_mxfp6_fake(
     x: torch.Tensor, scale: torch.Tensor, float_dtype: torch.dtype, quant_dtype: str
 ) -> torch.Tensor:
     assert (x.shape[-1] * 4) % 3 == 0
-    return torch.empty(
-        (*x.shape[:-1], (x.shape[-1] * 4) // 3), dtype=float_dtype, device=x.device
-    )
+    return torch.empty((*x.shape[:-1], (x.shape[-1] * 4) // 3), dtype=float_dtype, device=x.device)
 
 
 # Protect these operations into a torch custom op to avoid errors as
@@ -133,7 +121,5 @@ except AttributeError as error:
     raise error
 
 
-def dequant_mxfp6(
-    x: torch.Tensor, scale: torch.Tensor, float_dtype: torch.dtype, quant_dtype: str
-) -> torch.Tensor:
+def dequant_mxfp6(x: torch.Tensor, scale: torch.Tensor, float_dtype: torch.dtype, quant_dtype: str) -> torch.Tensor:
     return torch.ops.aphrodite.dequant_mxfp6(x, scale, float_dtype, quant_dtype)

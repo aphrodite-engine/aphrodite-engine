@@ -32,29 +32,36 @@ from transformers import PretrainedConfig
 from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_reduce)
+from aphrodite.distributed import (
+    get_pp_group,
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+    tensor_model_parallel_all_reduce,
+)
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts, fused_topk
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class DeepseekMLP(nn.Module):
@@ -79,9 +86,7 @@ class DeepseekMLP(nn.Module):
             reduce_results=reduce_results,
         )
         if hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -106,8 +111,7 @@ class DeepseekMoE(nn.Module):
         self.top_k = config.num_experts_per_tok
         if self.tp_size > self.n_routed_experts:
             raise ValueError(
-                f"Tensor parallel size {self.tp_size} is greater than "
-                f"the number of experts {self.n_routed_experts}."
+                f"Tensor parallel size {self.tp_size} is greater than the number of experts {self.n_routed_experts}."
             )
 
         self.experts = nn.ModuleList(
@@ -124,9 +128,7 @@ class DeepseekMoE(nn.Module):
         )
         self.pack_params()
 
-        self.gate = ReplicatedLinear(
-            config.hidden_size, self.n_routed_experts, bias=False, quant_config=None
-        )
+        self.gate = ReplicatedLinear(config.hidden_size, self.n_routed_experts, bias=False, quant_config=None)
 
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
@@ -172,9 +174,7 @@ class DeepseekMoE(nn.Module):
             renormalize=self.config.norm_topk_prob,
         )
 
-        final_hidden_states = fused_experts(
-            hidden_states, self.w1, self.w2, topk_weights, topk_ids, inplace=True
-        )
+        final_hidden_states = fused_experts(hidden_states, self.w1, self.w2, topk_weights, topk_ids, inplace=True)
 
         if self.config.n_shared_experts is not None:
             final_hidden_states = final_hidden_states + shared_output
@@ -295,9 +295,7 @@ class DeepseekDecoderLayer(nn.Module):
             and layer_idx >= config.first_k_dense_replace
             and layer_idx % config.moe_layer_freq == 0
         ):
-            self.mlp = DeepseekMoE(
-                config=config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-            )
+            self.mlp = DeepseekMoE(config=config, quant_config=quant_config, prefix=f"{prefix}.mlp")
         else:
             self.mlp = DeepseekMLP(
                 hidden_size=config.hidden_size,
@@ -307,9 +305,7 @@ class DeepseekDecoderLayer(nn.Module):
                 prefix=f"{prefix}.mlp",
             )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -352,9 +348,7 @@ class DeepseekModel(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: DeepseekDecoderLayer(
-                config, cache_config, quant_config=quant_config, prefix=prefix
-            ),
+            lambda prefix: DeepseekDecoderLayer(config, cache_config, quant_config=quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -384,9 +378,7 @@ class DeepseekModel(nn.Module):
         for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(positions, hidden_states, residual)
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -413,9 +405,7 @@ class DeepseekModel(nn.Module):
                 if name.endswith(".bias") and name not in params_dict:
                     continue
                 # Skip experts that are not assigned to this worker.
-                if (
-                    "mlp.experts." in name or "mlp.shared_experts." in name
-                ) and name not in params_dict:
+                if ("mlp.experts." in name or "mlp.shared_experts." in name) and name not in params_dict:
                     continue
                 if is_pp_missing_parameter(name, self):
                     continue
@@ -428,9 +418,7 @@ class DeepseekModel(nn.Module):
                 if name.endswith(".bias") and name not in params_dict:
                     continue
                 # Skip experts that are not assigned to this worker.
-                if (
-                    "mlp.experts." in name or "mlp.shared_experts." in name
-                ) and name not in params_dict:
+                if ("mlp.experts." in name or "mlp.shared_experts." in name) and name not in params_dict:
                     continue
                 if is_pp_missing_parameter(name, self):
                     continue
@@ -453,9 +441,7 @@ class DeepseekForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.model = DeepseekModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = DeepseekModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.lm_head = ParallelLMHead(
             config.vocab_size,
             config.hidden_size,
@@ -465,9 +451,7 @@ class DeepseekForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -479,9 +463,7 @@ class DeepseekForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

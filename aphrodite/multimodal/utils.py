@@ -24,8 +24,7 @@ from .image import ImageEmbeddingMediaIO, ImageMediaIO
 from .video import VideoMediaIO
 
 if TYPE_CHECKING:
-    from .inputs import (BatchedTensorInputs, MultiModalKwargsItem,
-                         MultiModalPlaceholderDict)
+    from .inputs import BatchedTensorInputs, MultiModalKwargsItem, MultiModalPlaceholderDict
 else:
     BatchedTensorInputs = Any
     MultiModalKwargsItem = Any
@@ -33,9 +32,7 @@ else:
 
 logger = init_logger(__name__)
 
-global_thread_pool = ThreadPoolExecutor(
-    max_workers=envs.APHRODITE_MEDIA_LOADING_THREAD_COUNT
-)
+global_thread_pool = ThreadPoolExecutor(max_workers=envs.APHRODITE_MEDIA_LOADING_THREAD_COUNT)
 atexit.register(global_thread_pool.shutdown)
 
 _M = TypeVar("_M")
@@ -62,9 +59,7 @@ class MediaConnector:
         """
         super().__init__()
 
-        self.media_io_kwargs: dict[str, dict[str, Any]] = (
-            media_io_kwargs if media_io_kwargs else {}
-        )
+        self.media_io_kwargs: dict[str, dict[str, Any]] = media_io_kwargs if media_io_kwargs else {}
         self.connection = connection
 
         if allowed_local_media_path:
@@ -72,13 +67,11 @@ class MediaConnector:
 
             if not allowed_local_media_path_.exists():
                 raise ValueError(
-                    "Invalid `--allowed-local-media-path`: The path "
-                    f"{allowed_local_media_path_} does not exist."
+                    f"Invalid `--allowed-local-media-path`: The path {allowed_local_media_path_} does not exist."
                 )
             if not allowed_local_media_path_.is_dir():
                 raise ValueError(
-                    "Invalid `--allowed-local-media-path`: The path "
-                    f"{allowed_local_media_path_} must be a directory."
+                    f"Invalid `--allowed-local-media-path`: The path {allowed_local_media_path_} must be a directory."
                 )
         else:
             allowed_local_media_path_ = None
@@ -109,9 +102,7 @@ class MediaConnector:
     ) -> _M:  # type: ignore[type-var]
         allowed_local_media_path = self.allowed_local_media_path
         if allowed_local_media_path is None:
-            raise RuntimeError(
-                "Cannot load local files without `--allowed-local-media-path`."
-            )
+            raise RuntimeError("Cannot load local files without `--allowed-local-media-path`.")
 
         filepath = Path(url2pathname(url_spec.path))
         if allowed_local_media_path not in filepath.resolve().parents:
@@ -123,10 +114,7 @@ class MediaConnector:
         return media_io.load_file(filepath)
 
     def _assert_url_in_allowed_media_domains(self, url_spec) -> None:
-        if (
-            self.allowed_media_domains
-            and url_spec.hostname not in self.allowed_media_domains
-        ):
+        if self.allowed_media_domains and url_spec.hostname not in self.allowed_media_domains:
             raise ValueError(
                 f"The URL must be from one of the allowed domains: "
                 f"{self.allowed_media_domains}. Input URL domain: "
@@ -186,15 +174,11 @@ class MediaConnector:
             return await future
 
         if url_spec.scheme == "data":
-            future = loop.run_in_executor(
-                global_thread_pool, self._load_data_url, url_spec, media_io
-            )
+            future = loop.run_in_executor(global_thread_pool, self._load_data_url, url_spec, media_io)
             return await future
 
         if url_spec.scheme == "file":
-            future = loop.run_in_executor(
-                global_thread_pool, self._load_file_url, url_spec, media_io
-            )
+            future = loop.run_in_executor(global_thread_pool, self._load_file_url, url_spec, media_io)
             return await future
         msg = "The URL must be either a HTTP, data or file URL."
         raise ValueError(msg)
@@ -240,9 +224,7 @@ class MediaConnector:
 
         By default, the image is converted into RGB format.
         """
-        image_io = ImageMediaIO(
-            image_mode=image_mode, **self.media_io_kwargs.get("image", {})
-        )
+        image_io = ImageMediaIO(image_mode=image_mode, **self.media_io_kwargs.get("image", {}))
 
         try:
             return self.load_from_url(
@@ -265,9 +247,7 @@ class MediaConnector:
 
         By default, the image is converted into RGB format.
         """
-        image_io = ImageMediaIO(
-            image_mode=image_mode, **self.media_io_kwargs.get("image", {})
-        )
+        image_io = ImageMediaIO(image_mode=image_mode, **self.media_io_kwargs.get("image", {}))
 
         try:
             return await self.load_from_url_async(
@@ -288,9 +268,7 @@ class MediaConnector:
         """
         Load video from an HTTP or base64 data URL.
         """
-        image_io = ImageMediaIO(
-            image_mode=image_mode, **self.media_io_kwargs.get("image", {})
-        )
+        image_io = ImageMediaIO(image_mode=image_mode, **self.media_io_kwargs.get("image", {}))
         video_io = VideoMediaIO(image_io, **self.media_io_kwargs.get("video", {}))
 
         return self.load_from_url(
@@ -310,9 +288,7 @@ class MediaConnector:
 
         By default, the image is converted into RGB format.
         """
-        image_io = ImageMediaIO(
-            image_mode=image_mode, **self.media_io_kwargs.get("image", {})
-        )
+        image_io = ImageMediaIO(image_mode=image_mode, **self.media_io_kwargs.get("image", {}))
         video_io = VideoMediaIO(image_io, **self.media_io_kwargs.get("video", {}))
 
         return await self.load_from_url_async(
@@ -375,11 +351,7 @@ def argsort_mm_positions(
         A list of `(modality, idx)`, which can be used to access an item
         by `mm_positions[modality][idx]`.
     """
-    flat_items = (
-        (modality, idx, item)
-        for modality, items in mm_positions.items()
-        for idx, item in enumerate(items)
-    )
+    flat_items = ((modality, idx, item) for modality, items in mm_positions.items() for idx, item in enumerate(items))
 
     sorted_flat_items = sorted(flat_items, key=lambda x: x[2].offset)
 
@@ -420,17 +392,14 @@ def group_mm_kwargs_by_modality(
             "for some examples on how to do this."
         )
 
-    from aphrodite.multimodal.inputs import (MultiModalKwargs,
-                                             MultiModalKwargsItems)
+    from aphrodite.multimodal.inputs import MultiModalKwargs, MultiModalKwargsItems
 
     for modality, items in groupby(mm_kwargs, key=lambda item: item.modality):
         items_lst = list(items)
 
         if merge_by_field_config:
             mm_kwargs_group: BatchedTensorInputs = dict(
-                MultiModalKwargsItems.from_seq(items_lst).get_data(
-                    pin_memory=pin_memory
-                )
+                MultiModalKwargsItems.from_seq(items_lst).get_data(pin_memory=pin_memory)
             )
 
             if device is not None:
@@ -441,10 +410,7 @@ def group_mm_kwargs_by_modality(
         else:
             mm_kwargs_group = MultiModalKwargs.as_kwargs(
                 MultiModalKwargs.batch(
-                    [
-                        MultiModalKwargsItems.from_seq([item]).get_data()
-                        for item in items_lst
-                    ],
+                    [MultiModalKwargsItems.from_seq([item]).get_data() for item in items_lst],
                     pin_memory=pin_memory,
                 ),
                 device=device,

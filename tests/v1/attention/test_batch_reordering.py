@@ -3,8 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from aphrodite.v1.attention.backends.utils import (
-    reorder_batch_to_split_decodes_and_prefills)
+from aphrodite.v1.attention.backends.utils import reorder_batch_to_split_decodes_and_prefills
 
 
 class MockInputBatch:
@@ -99,9 +98,7 @@ REORDER_TEST_CASES = {
 }
 
 
-@pytest.mark.parametrize(
-    "test_case", REORDER_TEST_CASES.values(), ids=REORDER_TEST_CASES.keys()
-)
+@pytest.mark.parametrize("test_case", REORDER_TEST_CASES.values(), ids=REORDER_TEST_CASES.keys())
 def test_reorder_batch_to_split_decodes_and_prefills(test_case: ReorderTestCase):
     req_ids = [f"r{i}" for i in range(len(test_case.requests))]
     num_computed_tokens = np.array([r[1] for r in test_case.requests], dtype=np.int32)
@@ -116,9 +113,5 @@ def test_reorder_batch_to_split_decodes_and_prefills(test_case: ReorderTestCase)
 
     expected_req_ids = [f"r{i}" for i in test_case.expected_order]
 
-    assert modified == test_case.expected_modified, (
-        f"Expected modified={test_case.expected_modified}, got {modified}"
-    )
-    assert input_batch.req_ids == expected_req_ids, (
-        f"Expected order {expected_req_ids}, got {input_batch.req_ids}"
-    )
+    assert modified == test_case.expected_modified, f"Expected modified={test_case.expected_modified}, got {modified}"
+    assert input_batch.req_ids == expected_req_ids, f"Expected order {expected_req_ids}, got {input_batch.req_ids}"

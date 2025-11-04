@@ -21,8 +21,7 @@ def _get_expected_num_patches(
     min_num: int,
     max_num: int,
 ):
-    from aphrodite.modeling.models.h2ovl import (calculate_h2ovl_targets,
-                                                 get_h2ovl_target_ratios)
+    from aphrodite.modeling.models.h2ovl import calculate_h2ovl_targets, get_h2ovl_target_ratios
 
     width, height = image.size
 
@@ -98,8 +97,7 @@ def _run_check(
     mm_data = {"image": images}
 
     total_expected_num_patches = sum(
-        _get_expected_num_patches(config, image, len(images), min_num, max_num)
-        for image in images
+        _get_expected_num_patches(config, image, len(images), min_num, max_num) for image in images
     )
 
     processed_inputs = processor.apply(prompt, mm_data, mm_processor_kwargs)

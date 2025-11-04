@@ -1,5 +1,4 @@
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 ResponsesRequest)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, ResponsesRequest
 from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParserManager
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 
@@ -50,9 +49,7 @@ class Qwen3ReasoningParser(BaseThinkingReasoningParser):
         # Check if the <think> is present in the model output, remove it
         # if it is present.
         model_output_parts = model_output.partition(self.start_token)
-        model_output = (
-            model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
-        )
+        model_output = model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
 
         # Check if the model output contains the </think> tokens.
         # If the end token is not found, return the model output as is.

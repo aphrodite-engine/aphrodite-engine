@@ -139,18 +139,12 @@ class ipex_ops:
         is_neox: bool,
     ) -> None:
         rot_dim = cos_sin_cache.size(1)
-        ipex.llm.functional.rotary_embedding_batched(
-            positions, query, key, head_size, cos_sin_cache, is_neox, rot_dim
-        )
+        ipex.llm.functional.rotary_embedding_batched(positions, query, key, head_size, cos_sin_cache, is_neox, rot_dim)
 
     @staticmethod
-    def rms_norm(
-        input: torch.Tensor, weight: torch.Tensor, epsilon: float
-    ) -> torch.Tensor:
+    def rms_norm(input: torch.Tensor, weight: torch.Tensor, epsilon: float) -> torch.Tensor:
         out = torch.empty_like(input)
-        torch.ops.torch_ipex.rms_norm_aphrodite(
-            out, input.contiguous(), weight, epsilon
-        )
+        torch.ops.torch_ipex.rms_norm_aphrodite(out, input.contiguous(), weight, epsilon)
         return out
 
     @staticmethod
@@ -160,9 +154,7 @@ class ipex_ops:
         weight: torch.Tensor,
         epsilon: float,
     ) -> None:
-        torch.ops.torch_ipex.fused_add_rms_norm_aphrodite(
-            input, residual, weight, epsilon
-        )
+        torch.ops.torch_ipex.fused_add_rms_norm_aphrodite(input, residual, weight, epsilon)
 
     @staticmethod
     def varlen_attention(
@@ -240,9 +232,7 @@ class ipex_ops:
         v_scale: float,
     ) -> None:
         assert kv_cache_dtype == "auto"
-        ipex.llm.modules.PagedAttention.reshape_and_cache(
-            key, value, key_cache, value_cache, slot_mapping
-        )
+        ipex.llm.modules.PagedAttention.reshape_and_cache(key, value, key_cache, value_cache, slot_mapping)
 
     @staticmethod
     def reshape_and_cache_flash(
@@ -344,10 +334,7 @@ class ipex_ops:
         pack_gqa=None,  # Can be tuned for speed
         sm_margin=0,  # Can be tuned if some SMs are used for communication
     ) -> None:
-        logger.warning_once(
-            "get_scheduler_metadata is not implemented for ipex_ops, "
-            "returning None."
-        )
+        logger.warning_once("get_scheduler_metadata is not implemented for ipex_ops, returning None.")
         return None
 
     @staticmethod
@@ -363,9 +350,7 @@ class ipex_ops:
         )
 
     @staticmethod
-    def swap_blocks(
-        src: torch.Tensor, dst: torch.Tensor, block_mapping: torch.Tensor
-    ) -> None:
+    def swap_blocks(src: torch.Tensor, dst: torch.Tensor, block_mapping: torch.Tensor) -> None:
         torch.xpu.swap_blocks(src, dst, block_mapping)  # type: ignore
 
     @staticmethod
@@ -410,14 +395,10 @@ class ipex_ops:
         if output is None:
             output = torch.empty(shape, device=input.device, dtype=out_dtype)
         else:
-            assert num_token_padding is None, (
-                "padding not supported if output passed in"
-            )
+            assert num_token_padding is None, "padding not supported if output passed in"
             assert output.dtype == out_dtype
         assert scale is None, "only dynamic fp8 quantization supported on XPU"
-        assert not use_per_token_if_dynamic, (
-            "per token dynamic fp8 quantization not supported on XPU"
-        )
+        assert not use_per_token_if_dynamic, "per token dynamic fp8 quantization not supported on XPU"
         scale = torch.zeros(1, device=input.device, dtype=torch.float32)
         torch.ops.torch_ipex.dynamic_scaled_fp8_quant(output, input, scale)
 

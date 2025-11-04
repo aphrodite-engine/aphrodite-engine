@@ -3,11 +3,15 @@ import torch
 from torch import nn
 
 from aphrodite.compilation.counter import compilation_counter
-from aphrodite.compilation.decorators import (ignore_torch_compile,
-                                              support_torch_compile)
-from aphrodite.config import (AphroditeConfig, CacheConfig, CompilationConfig,
-                              CompilationMode, CUDAGraphMode,
-                              set_current_aphrodite_config)
+from aphrodite.compilation.decorators import ignore_torch_compile, support_torch_compile
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    CompilationConfig,
+    CompilationMode,
+    CUDAGraphMode,
+    set_current_aphrodite_config,
+)
 from aphrodite.forward_context import BatchDescriptor, set_forward_context
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 
@@ -19,9 +23,7 @@ MLP_SIZE = 128
 
 
 @torch.inference_mode
-def run_model(
-    aphrodite_config: AphroditeConfig, model: nn.Module, cudagraph_runtime_mode: CUDAGraphMode
-):
+def run_model(aphrodite_config: AphroditeConfig, model: nn.Module, cudagraph_runtime_mode: CUDAGraphMode):
     with set_forward_context({}, aphrodite_config=aphrodite_config):
         # warmup for the model with cudagraph_mode NONE
         model(torch.randn(BATCH_SIZE, MLP_SIZE).cuda())
@@ -83,9 +85,7 @@ def test_ignore_torch_compile_decorator(use_inductor_graph_partition, monkeypatc
     cudagraph_runtime_mode = CUDAGraphMode.PIECEWISE
 
     expected_num_graphs_seen = 1
-    expected_num_cudagraph_captured = (
-        4  # num_cudagraph_sizes * num cudagraphs to capture
-    )
+    expected_num_cudagraph_captured = 4  # num_cudagraph_sizes * num cudagraphs to capture
     if use_inductor_graph_partition:
         expected_num_piecewise_graphs_seen = 1
         expected_num_piecewise_capturable_graphs_seen = 1
@@ -97,9 +97,7 @@ def test_ignore_torch_compile_decorator(use_inductor_graph_partition, monkeypatc
 
     @support_torch_compile
     class A(nn.Module):
-        def __init__(
-            self, *, aphrodite_config: AphroditeConfig, prefix: str = "", **kwargs
-        ) -> None:
+        def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", **kwargs) -> None:
             super().__init__()
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -158,9 +156,7 @@ def test_ignore_torch_compile_decorator(use_inductor_graph_partition, monkeypatc
 
 # Only enable torch.compile if
 # aphrodite_config.cache_config.kv_sharing_fast_prefill=True
-@support_torch_compile(
-    enable_if=lambda aphrodite_config: aphrodite_config.cache_config.kv_sharing_fast_prefill
-)
+@support_torch_compile(enable_if=lambda aphrodite_config: aphrodite_config.cache_config.kv_sharing_fast_prefill)
 class B(nn.Module):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", **kwargs) -> None:
         super().__init__()
@@ -176,9 +172,7 @@ class B(nn.Module):
 
 # Only enable torch.compile if
 # aphrodite_config.cache_config.kv_sharing_fast_prefill=False
-@support_torch_compile(
-    enable_if=lambda aphrodite_config: not aphrodite_config.cache_config.kv_sharing_fast_prefill
-)
+@support_torch_compile(enable_if=lambda aphrodite_config: not aphrodite_config.cache_config.kv_sharing_fast_prefill)
 class A(nn.Module):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", **kwargs) -> None:
         super().__init__()

@@ -284,7 +284,8 @@ void static_scaled_int8_quant(torch::Tensor& out,          // [..., hidden_size]
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scale.data_ptr<float>(), hidden_size);
         } else {
-          aphrodite::static_scaled_int8_azp_quant_kernel<scalar_t, float, int32_t>
+          aphrodite::static_scaled_int8_azp_quant_kernel<scalar_t, float,
+                                                         int32_t>
               <<<grid, block, 0, stream>>>(
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scale.data_ptr<float>(), azp->data_ptr<int32_t>(),
@@ -315,7 +316,8 @@ void dynamic_scaled_int8_quant(
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scales.data_ptr<float>(), hidden_size);
         } else {
-          aphrodite::dynamic_scaled_int8_azp_quant_kernel<scalar_t, float, int32_t>
+          aphrodite::dynamic_scaled_int8_azp_quant_kernel<scalar_t, float,
+                                                          int32_t>
               <<<grid, block, 0, stream>>>(
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scales.data_ptr<float>(), azp->data_ptr<int32_t>(),

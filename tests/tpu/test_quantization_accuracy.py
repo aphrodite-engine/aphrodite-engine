@@ -43,7 +43,6 @@ def test_gsm8k_correctness(config: GSM8KAccuracyTestConfig):
 
     EXPECTED_VALUE = config.expected_value
     measured_value = results["results"][TASK][FILTER]
-    assert (
-        measured_value - RTOL < EXPECTED_VALUE
-        and measured_value + RTOL > EXPECTED_VALUE
-    ), f"Expected: {EXPECTED_VALUE} |  Measured: {measured_value}"
+    assert measured_value - RTOL < EXPECTED_VALUE and measured_value + RTOL > EXPECTED_VALUE, (
+        f"Expected: {EXPECTED_VALUE} |  Measured: {measured_value}"
+    )

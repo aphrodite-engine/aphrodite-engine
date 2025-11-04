@@ -80,10 +80,7 @@ def dispatch_rotary_emb_function(
 
             return apply_rotary
         else:
-            logger.warning(
-                "flash_attn is not installed. Falling back to PyTorch "
-                "implementation for rotary embeddings."
-            )
+            logger.warning("flash_attn is not installed. Falling back to PyTorch implementation for rotary embeddings.")
 
     if default is not None:
         return default
@@ -99,9 +96,7 @@ def yarn_find_correction_dim(
     base: float = 10000,
     max_position_embeddings: int = 2048,
 ) -> float:
-    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (
-        2 * math.log(base)
-    )
+    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
 
 
 # Find dim range bounds based on rotations
@@ -112,18 +107,12 @@ def yarn_find_correction_range(
     base: float = 10000,
     max_position_embeddings: int = 2048,
 ) -> tuple[int, int]:
-    low = math.floor(
-        yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings)
-    )
-    high = math.ceil(
-        yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings)
-    )
+    low = math.floor(yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings))
+    high = math.ceil(yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings))
     return max(low, 0), min(high, dim - 1)  # Clamp values just in case
 
 
-def yarn_linear_ramp_mask(
-    low: float, high: float, dim: int, dtype: torch.dtype
-) -> torch.Tensor:
+def yarn_linear_ramp_mask(low: float, high: float, dim: int, dtype: torch.dtype) -> torch.Tensor:
     if low == high:
         high += 0.001  # Prevent singularity
 

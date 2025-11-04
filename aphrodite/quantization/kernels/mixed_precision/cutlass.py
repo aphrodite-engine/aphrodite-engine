@@ -1,8 +1,7 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          permute_param_layout_)
+from aphrodite.modeling.parameter import BaseAphroditeParameter, permute_param_layout_
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.utils.quant_utils import GroupShape
@@ -41,8 +40,7 @@ class CutlassW4A8LinearKernel(MPLinearKernel):
         if c.weight_type != scalar_types.int4:
             return (
                 False,
-                f"Quant type ({c.weight_type}) not supported by "
-                "CUTLASS W4A8, only supported int4",
+                f"Quant type ({c.weight_type}) not supported by CUTLASS W4A8, only supported int4",
             )
 
         # TODO(czhu): support -1 (column-wise)

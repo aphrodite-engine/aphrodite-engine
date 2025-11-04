@@ -32,26 +32,23 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_gather)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size, tensor_model_parallel_all_gather
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.modeling.models.utils import sequence_parallel_chunk
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter, make_layers,
-                    maybe_prefix)
+from .utils import AutoWeightsLoader, is_pp_missing_parameter, make_layers, maybe_prefix
 
 
 class GraniteMoeMoE(nn.Module):
@@ -115,9 +112,7 @@ class GraniteMoeMoE(nn.Module):
         final_hidden_states = self.experts(hidden_states, router_logits)
 
         if self.is_sequence_parallel:
-            final_hidden_states = tensor_model_parallel_all_gather(
-                final_hidden_states, 0
-            )
+            final_hidden_states = tensor_model_parallel_all_gather(final_hidden_states, 0)
             num_tokens = orig_shape[0]
             final_hidden_states = final_hidden_states[:num_tokens]
 
@@ -157,11 +152,7 @@ class GraniteMoeAttention(nn.Module):
         self.head_dim = hidden_size // self.total_num_heads
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
-        self.scaling = (
-            attention_multiplier
-            if attention_multiplier is not None
-            else self.head_dim**-1
-        )
+        self.scaling = attention_multiplier if attention_multiplier is not None else self.head_dim**-1
         self.rope_theta = rope_theta
 
         self.qkv_proj = QKVParallelLinear(
@@ -251,9 +242,7 @@ class GraniteMoeDecoderLayer(nn.Module):
         )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.residual_multiplier = config.residual_multiplier
 
@@ -289,11 +278,7 @@ class GraniteMoeModel(nn.Module):
 
         self.config = config
         self.quant_config = quant_config  # Required by MixtralModel
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -367,15 +352,11 @@ class GraniteMoeModel(nn.Module):
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -385,9 +366,7 @@ class GraniteMoeModel(nn.Module):
                     continue
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -410,9 +389,7 @@ class GraniteMoeModel(nn.Module):
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
                         continue
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
@@ -426,9 +403,7 @@ class GraniteMoeModel(nn.Module):
                     break
                 else:
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
@@ -439,9 +414,7 @@ class GraniteMoeModel(nn.Module):
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -512,9 +485,7 @@ class GraniteMoeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.config = config
         self.lora_config = lora_config
 
-        self.model = GraniteMoeModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = GraniteMoeModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -549,9 +520,7 @@ class GraniteMoeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
@@ -563,9 +532,7 @@ class GraniteMoeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     ) -> IntermediateTensors:
         return IntermediateTensors(
             {
-                "hidden_states": torch.zeros(
-                    (batch_size, self.config.hidden_size), dtype=dtype, device=device
-                ),
+                "hidden_states": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device),
             }
         )
 

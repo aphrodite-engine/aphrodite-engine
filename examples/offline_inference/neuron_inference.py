@@ -3,9 +3,9 @@ import os
 from aphrodite import LLM, SamplingParams
 
 # creates XLA hlo graphs for all the context length buckets.
-os.environ['NEURON_CONTEXT_LENGTH_BUCKETS'] = "128,512,1024,2048"
+os.environ["NEURON_CONTEXT_LENGTH_BUCKETS"] = "128,512,1024,2048"
 # creates XLA hlo graphs for all the token gen buckets.
-os.environ['NEURON_TOKEN_GEN_BUCKETS'] = "128,512,1024,2048"
+os.environ["NEURON_TOKEN_GEN_BUCKETS"] = "128,512,1024,2048"
 
 # Sample prompts.
 prompts = [
@@ -32,7 +32,8 @@ llm = LLM(
     # The device argument can be either unspecified for automated detection,
     # or explicitly assigned.
     device="neuron",
-    tensor_parallel_size=2)
+    tensor_parallel_size=2,
+)
 # Generate texts from the prompts. The output is a list of RequestOutput objects
 # that contain the prompt, generated text, and other information.
 outputs = llm.generate(prompts, sampling_params)

@@ -4,8 +4,7 @@ from collections.abc import Sequence
 from transformers import PreTrainedTokenizerBase
 
 from aphrodite.endpoints.harmony_utils import parse_chat_output
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.endpoints.tool_server import ToolServer
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
@@ -67,9 +66,7 @@ class GptOssReasoningParser(ReasoningParser):
 
     def __init__(self, tokenizer: PreTrainedTokenizerBase, *args, **kwargs):
         super().__init__(tokenizer, *args, **kwargs)
-        self.reasoning_end_token_ids = self.model_tokenizer.encode(
-            "<|start|>assistant<|channel|>final<|message|>"
-        )
+        self.reasoning_end_token_ids = self.model_tokenizer.encode("<|start|>assistant<|channel|>final<|message|>")
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
         end_token_ids = self.reasoning_end_token_ids
@@ -126,9 +123,7 @@ class GptOssReasoningParser(ReasoningParser):
         )
 
     # This function prepares the structural tag to format reasoning output
-    def prepare_structured_tag(
-        self, original_tag: str | None, tool_server: ToolServer | None
-    ) -> str:
+    def prepare_structured_tag(self, original_tag: str | None, tool_server: ToolServer | None) -> str:
         if original_tag is None:
             if tool_server is None:
                 return json.dumps(no_func_reaonsing_tag)
@@ -143,9 +138,7 @@ class GptOssReasoningParser(ReasoningParser):
 
                 if len(builtin_tool_list) > 0:
                     logger.info("Builtin_tool_list: %s", builtin_tool_list)
-                    func_tag = json.dumps(
-                        tag_with_builtin_funcs(no_func_reaonsing_tag, builtin_tool_list)
-                    )
+                    func_tag = json.dumps(tag_with_builtin_funcs(no_func_reaonsing_tag, builtin_tool_list))
                 else:
                     logger.info("Builtin_tool_list is empty")
                     func_tag = json.dumps(no_func_reaonsing_tag)

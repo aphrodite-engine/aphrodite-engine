@@ -66,7 +66,7 @@ def suppress_c_lib_output():
     if not envs.APHRODITE_SUPPRESS_C_LIB_OUTPUT:
         yield
         return
- 
+
     stdout_fd = sys.stdout.fileno()
     stderr_fd = sys.stderr.fileno()
     stdout_dup = os.dup(stdout_fd)
@@ -176,7 +176,7 @@ def set_process_title(
 
 def _simplify_process_name(process_name: str) -> str:
     """Simplify process names to match the desired format.
-    
+
     Examples:
         EngineCore -> Engine
         EngineCore_DP0 -> Engine (DP0)
@@ -190,19 +190,19 @@ def _simplify_process_name(process_name: str) -> str:
             suffix = process_name.split("_", 1)[1]
             return f"Engine ({suffix})"
         return "Engine"
-    
+
     if process_name.startswith("Worker"):
         if "_" in process_name:
             suffix = process_name.split("_", 1)[1]
             return f"Worker ({suffix})"
         return "Worker"
-    
+
     if process_name.startswith("APIServer"):
         if "_" in process_name:
             suffix = process_name.split("_", 1)[1]
             return f"API ({suffix})"
         return "API"
-    
+
     return process_name
 
 
@@ -235,7 +235,7 @@ def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
 
 def decorate_logs(process_name: str | None = None) -> None:
     """Decorate stdout/stderr with process name and PID prefix."""
-    if os.environ.get('APHRODITE_DECORATE_LOGS', '0') not in ('1', 'true', 'True'):
+    if os.environ.get("APHRODITE_DECORATE_LOGS", "0") not in ("1", "true", "True"):
         return
 
     if process_name is None:

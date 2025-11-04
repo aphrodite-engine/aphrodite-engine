@@ -1,8 +1,7 @@
 import pytest
 
 from aphrodite.config import ModelConfig
-from aphrodite.endpoints.chat_utils import (apply_hf_chat_template,
-                                            load_chat_template)
+from aphrodite.endpoints.chat_utils import apply_hf_chat_template, load_chat_template
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
@@ -99,9 +98,7 @@ def test_no_load_chat_template_literallike():
     "model,template,add_generation_prompt,continue_final_message,expected_output",
     MODEL_TEMPLATE_GENERATION_OUTPUT,
 )
-def test_get_gen_prompt(
-    model, template, add_generation_prompt, continue_final_message, expected_output
-):
+def test_get_gen_prompt(model, template, add_generation_prompt, continue_final_message, expected_output):
     model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
     model_info.check_available_online(on_fail="skip")
 
@@ -129,9 +126,7 @@ def test_get_gen_prompt(
     # Create a mock request object using keyword arguments
     mock_request = ChatCompletionRequest(
         model=model,
-        messages=TEST_MESSAGES + [ASSISTANT_MESSAGE_TO_CONTINUE]
-        if continue_final_message
-        else TEST_MESSAGES,
+        messages=TEST_MESSAGES + [ASSISTANT_MESSAGE_TO_CONTINUE] if continue_final_message else TEST_MESSAGES,
         add_generation_prompt=add_generation_prompt,
         continue_final_message=continue_final_message,
     )
@@ -149,6 +144,5 @@ def test_get_gen_prompt(
 
     # Test assertion
     assert result == expected_output, (
-        f"The generated prompt does not match the expected output for "
-        f"model {model} and template {template}"
+        f"The generated prompt does not match the expected output for model {model} and template {template}"
     )

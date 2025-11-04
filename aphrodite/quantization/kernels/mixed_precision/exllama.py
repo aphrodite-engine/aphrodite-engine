@@ -1,10 +1,8 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          permute_param_layout_)
-from aphrodite.quantization.utils.quant_utils import (
-    pack_quantized_values_into_int32)
+from aphrodite.modeling.parameter import BaseAphroditeParameter, permute_param_layout_
+from aphrodite.quantization.utils.quant_utils import pack_quantized_values_into_int32
 from aphrodite.scalar_type import scalar_types
 
 from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
@@ -89,9 +87,7 @@ class ExllamaLinearKernel(MPLinearKernel):
                     "inference"
                 )
             zeros = pack_quantized_values_into_int32(zeros, c.weight_type, packed_dim=1)
-            setattr(
-                layer, self.w_zp_name, torch.nn.Parameter(zeros, requires_grad=False)
-            )
+            setattr(layer, self.w_zp_name, torch.nn.Parameter(zeros, requires_grad=False))
 
         if c.has_g_idx:
 
@@ -103,9 +99,7 @@ class ExllamaLinearKernel(MPLinearKernel):
             self._transform_param(layer, self.w_gidx_name, transform_w_g_idx)
         else:
             self.w_gidx_name = "g_idx"
-            empty_g_idx = torch.nn.Parameter(
-                torch.empty((0,), dtype=torch.int, device=device), requires_grad=False
-            )
+            empty_g_idx = torch.nn.Parameter(torch.empty((0,), dtype=torch.int, device=device), requires_grad=False)
             setattr(layer, self.w_gidx_name, empty_g_idx)
 
         def transform_w_q(x):
@@ -148,9 +142,7 @@ class ExllamaLinearKernel(MPLinearKernel):
 
         assert w_zp is not None, "Zero points are required by Exllama"
         assert w_g_idx is not None, "Group index is required by Exllama"
-        output = ops.gptq_gemm(
-            x_2d, w_q, w_zp, w_s, w_g_idx, True, use_v2_format, c.weight_type.size_bits
-        )
+        output = ops.gptq_gemm(x_2d, w_q, w_zp, w_s, w_g_idx, True, use_v2_format, c.weight_type.size_bits)
 
         if bias is not None:
             output.add_(bias)

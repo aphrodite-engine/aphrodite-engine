@@ -1,5 +1,6 @@
 """Token blocks."""
-from typing import List, Optional
+
+import builtins
 
 from aphrodite.utils import Device
 
@@ -28,21 +29,22 @@ class PhysicalTokenBlock:
         self.computed = False
 
     def __repr__(self) -> str:
-        return (f'PhysicalTokenBlock(device={self.device}, '
-                f'block_number={self.block_number}, '
-                f'num_hashed_tokens={self.num_hashed_tokens}, '
-                f'ref_count={self.ref_count}, '
-                f'last_accessed={self.last_accessed}, '
-                f'computed={self.computed})')
+        return (
+            f"PhysicalTokenBlock(device={self.device}, "
+            f"block_number={self.block_number}, "
+            f"num_hashed_tokens={self.num_hashed_tokens}, "
+            f"ref_count={self.ref_count}, "
+            f"last_accessed={self.last_accessed}, "
+            f"computed={self.computed})"
+        )
 
 
 class BlockTable:
-    """Holds a list of blocks with caching of their associated block_ids
-    """
+    """Holds a list of blocks with caching of their associated block_ids"""
 
-    def __init__(self, blocks: Optional[List[PhysicalTokenBlock]] = None):
-        self._blocks: List[PhysicalTokenBlock] = []
-        self._block_ids: List[int] = []
+    def __init__(self, blocks: list[PhysicalTokenBlock] | None = None):
+        self._blocks: list[PhysicalTokenBlock] = []
+        self._block_ids: list[int] = []
 
         if blocks is not None:
             for block in blocks:
@@ -75,8 +77,8 @@ class BlockTable:
     def copy(self) -> "BlockTable":
         return BlockTable(self._blocks)
 
-    def list(self) -> List[PhysicalTokenBlock]:
+    def list(self) -> list[PhysicalTokenBlock]:
         return self._blocks
 
-    def ids(self) -> List[int]:
+    def ids(self) -> builtins.list[int]:
         return self._block_ids

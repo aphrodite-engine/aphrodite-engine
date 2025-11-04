@@ -5,10 +5,12 @@ from concurrent.futures import Future
 from concurrent.futures._base import TimeoutError
 from typing import cast
 
-from aphrodite.common.sampling_params import (SamplingParams,
-                                              StructuredOutputsParams)
+from aphrodite.common.sampling_params import SamplingParams, StructuredOutputsParams
 from aphrodite.v1.structured_output.backend_types import (
-    StructuredOutputGrammar, StructuredOutputKey, StructuredOutputOptions)
+    StructuredOutputGrammar,
+    StructuredOutputKey,
+    StructuredOutputOptions,
+)
 
 
 @dataclasses.dataclass
@@ -51,14 +53,10 @@ class StructuredOutputRequest:
     @property
     def grammar(self) -> StructuredOutputGrammar | None:
         completed = self._check_grammar_completion()
-        return (
-            cast(StructuredOutputGrammar | None, self._grammar) if completed else None
-        )
+        return cast(StructuredOutputGrammar | None, self._grammar) if completed else None
 
     @grammar.setter
-    def grammar(
-        self, grammar: StructuredOutputGrammar | Future[StructuredOutputGrammar]
-    ) -> None:
+    def grammar(self, grammar: StructuredOutputGrammar | Future[StructuredOutputGrammar]) -> None:
         self._grammar = grammar
 
     @functools.cached_property

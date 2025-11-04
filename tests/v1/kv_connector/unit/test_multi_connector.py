@@ -8,16 +8,11 @@ import pytest
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.config import KVTransferConfig
-from aphrodite.distributed.kv_transfer.kv_connector.factory import (
-    KVConnectorFactory)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
-    KVConnectorBase_V1)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
-    KVConnectorStats)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import (
-    MultiConnector, MultiKVConnectorStats)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import (
-    NixlKVConnectorStats)
+from aphrodite.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
+from aphrodite.distributed.kv_transfer.kv_connector.v1.base import KVConnectorBase_V1
+from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
+from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import MultiConnector, MultiKVConnectorStats
+from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import NixlKVConnectorStats
 
 MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
 
@@ -41,9 +36,7 @@ class MockConnector(KVConnectorBase_V1):
     """Mock connector that implements build_kv_connector_stats for testing."""
 
     @classmethod
-    def build_kv_connector_stats(
-        cls, data: dict[str, Any] | None = None
-    ) -> KVConnectorStats | None:
+    def build_kv_connector_stats(cls, data: dict[str, Any] | None = None) -> KVConnectorStats | None:
         return MockConnectorStats(data=data) if data is not None else None
 
 
@@ -121,15 +114,10 @@ def test_multi_shared_storage_connector_consistency():
     local_subdirs = list(storage_1_path.iterdir())
     external_subdirs = list(storage_2_path.iterdir())
 
-    assert len(local_subdirs) > 0, (
-        f"Local storage path {storage_1_path} is empty after generation."
-    )
-    assert len(external_subdirs) > 0, (
-        f"External storage path {storage_2_path} is empty after generation."
-    )
+    assert len(local_subdirs) > 0, f"Local storage path {storage_1_path} is empty after generation."
+    assert len(external_subdirs) > 0, f"External storage path {storage_2_path} is empty after generation."
     assert len(local_subdirs) == len(external_subdirs), (
-        f"Mismatch in number of cache entries: "
-        f"Local={len(local_subdirs)}, External={len(external_subdirs)}"
+        f"Mismatch in number of cache entries: Local={len(local_subdirs)}, External={len(external_subdirs)}"
     )
 
     # The subdirectories should correspond to the prompt hashes
@@ -143,11 +131,8 @@ def test_multi_shared_storage_connector_consistency():
     # Compare the contents of each corresponding cache directory
     for subdir_name in local_subdir_names:
         print(f"Comparing contents of cache directory: {subdir_name}")
-        assert _compare_directories(
-            storage_1_path / subdir_name, storage_2_path / subdir_name
-        ), (
-            f"Contents differ for cache directory '{subdir_name}' between "
-            f"{storage_1_path} and {storage_2_path}"
+        assert _compare_directories(storage_1_path / subdir_name, storage_2_path / subdir_name), (
+            f"Contents differ for cache directory '{subdir_name}' between {storage_1_path} and {storage_2_path}"
         )
 
     events = get_connector_events()
@@ -253,9 +238,7 @@ def get_connector_events() -> dict[str, list[str]]:
 def test_engine_id_conflict():
     configs = [KVTransferConfig() for _ in range(2)]
     ids = [config.engine_id for config in configs]
-    assert ids[0] != ids[1], (
-        f"Engine IDs should be different for different configs. Got {ids}"
-    )
+    assert ids[0] != ids[1], f"Engine IDs should be different for different configs. Got {ids}"
 
 
 class TestMultiConnectorStats:
@@ -350,9 +333,7 @@ class TestMultiConnectorStats:
             },
         }
 
-        with pytest.raises(
-            ValueError, match="Connector 'UnknownConnector' is not registered."
-        ):
+        with pytest.raises(ValueError, match="Connector 'UnknownConnector' is not registered."):
             MultiConnector.build_kv_connector_stats(data=serialized_data)
 
     def test_build_kv_connector_stats_with_already_instantiated_objects(self):
@@ -445,9 +426,7 @@ class TestMultiConnectorStats:
 
     def test_build_kv_connector_stats_handles_malformed_data(self):
         """Test that malformed data raises appropriate errors."""
-        serialized_data = {
-            "NixlConnector": {"wrong_field": {"transfer_duration": [1.5]}}
-        }
+        serialized_data = {"NixlConnector": {"wrong_field": {"transfer_duration": [1.5]}}}
 
         with pytest.raises(AssertionError, match="Expected a dict with a 'data' field"):
             MultiConnector.build_kv_connector_stats(data=serialized_data)
@@ -496,8 +475,7 @@ class TestMultiConnectorStats:
 
     def test_aggregate_new_connector(self):
         """Test aggregating stats when a new connector type appears."""
-        from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
-            KVConnectorStats)
+        from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 
         stats1 = MultiKVConnectorStats(
             data={
@@ -514,9 +492,7 @@ class TestMultiConnectorStats:
             }
         )
 
-        stats2 = MultiKVConnectorStats(
-            data={"SharedStorageConnector": KVConnectorStats(data={"field": [1, 2]})}
-        )
+        stats2 = MultiKVConnectorStats(data={"SharedStorageConnector": KVConnectorStats(data={"field": [1, 2]})})
 
         result = stats1.aggregate(stats2)
 

@@ -11,17 +11,19 @@ from prometheus_client import start_http_server
 from tqdm import tqdm
 
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (BatchRequestInput,
-                                                 BatchRequestOutput,
-                                                 BatchResponseData,
-                                                 ChatCompletionResponse,
-                                                 EmbeddingResponse,
-                                                 ErrorResponse, RerankResponse,
-                                                 ScoreResponse)
+from aphrodite.endpoints.openai.protocol import (
+    BatchRequestInput,
+    BatchRequestOutput,
+    BatchResponseData,
+    ChatCompletionResponse,
+    EmbeddingResponse,
+    ErrorResponse,
+    RerankResponse,
+    ScoreResponse,
+)
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
 from aphrodite.endpoints.openai.serving_embedding import OpenAIServingEmbedding
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.endpoints.openai.serving_score import ServingScores
 from aphrodite.engine.args_tools import AsyncEngineArgs, optional_type
 from aphrodite.engine.protocol import EngineClient
@@ -57,8 +59,7 @@ def make_arg_parser(parser: FlexibleArgumentParser):
         "--output-tmp-dir",
         type=str,
         default=None,
-        help="The directory to store the output file before uploading it "
-        "to the output URL.",
+        help="The directory to store the output file before uploading it to the output URL.",
     )
     parser.add_argument(
         "--response-role",
@@ -73,27 +74,21 @@ def make_arg_parser(parser: FlexibleArgumentParser):
         "--max-log-len",
         type=int,
         default=None,
-        help="Max number of prompt characters or prompt "
-        "ID numbers being printed in log."
-        "\n\nDefault: Unlimited",
+        help="Max number of prompt characters or prompt ID numbers being printed in log.\n\nDefault: Unlimited",
     )
 
-    parser.add_argument(
-        "--enable-metrics", action="store_true", help="Enable Prometheus metrics"
-    )
+    parser.add_argument("--enable-metrics", action="store_true", help="Enable Prometheus metrics")
     parser.add_argument(
         "--url",
         type=str,
         default="0.0.0.0",
-        help="URL to the Prometheus metrics server "
-        "(only needed if enable-metrics is set).",
+        help="URL to the Prometheus metrics server (only needed if enable-metrics is set).",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8000,
-        help="Port number for the Prometheus metrics server "
-        "(only needed if enable-metrics is set).",
+        help="Port number for the Prometheus metrics server (only needed if enable-metrics is set).",
     )
     parser.add_argument(
         "--enable-prompt-tokens-details",
@@ -105,8 +100,7 @@ def make_arg_parser(parser: FlexibleArgumentParser):
         "--enable-force-include-usage",
         action="store_true",
         default=False,
-        help="If set to True, include usage on every request "
-        "(even when stream_options is not specified)",
+        help="If set to True, include usage on every request (even when stream_options is not specified)",
     )
 
     return parser
@@ -137,9 +131,7 @@ class BatchProgressTracker:
             self._pbar.update()
 
     def pbar(self) -> tqdm:
-        enable_tqdm = (
-            not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
-        )
+        enable_tqdm = not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
         self._pbar = tqdm(
             total=self._total,
             unit="req",
@@ -160,9 +152,7 @@ async def read_file(path_or_url: str) -> str:
             return f.read()
 
 
-async def write_local_file(
-    output_path: str, batch_outputs: list[BatchRequestOutput]
-) -> None:
+async def write_local_file(output_path: str, batch_outputs: list[BatchRequestOutput]) -> None:
     """
     Write the responses to a local file.
     output_path: The path to write the responses to.
@@ -192,25 +182,19 @@ async def upload_data(output_url: str, data_or_file: str, from_file: bool) -> No
         try:
             # We increase the timeout to 1000 seconds to allow
             # for large files (default is 300).
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=1000)
-            ) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=1000)) as session:
                 if from_file:
                     with open(data_or_file, "rb") as file:
                         async with session.put(output_url, data=file) as response:
                             if response.status != 200:
                                 raise Exception(
-                                    f"Failed to upload file.\n"
-                                    f"Status: {response.status}\n"
-                                    f"Response: {response.text()}"
+                                    f"Failed to upload file.\nStatus: {response.status}\nResponse: {response.text()}"
                                 )
                 else:
                     async with session.put(output_url, data=data_or_file) as response:
                         if response.status != 200:
                             raise Exception(
-                                f"Failed to upload data.\n"
-                                f"Status: {response.status}\n"
-                                f"Response: {response.text()}"
+                                f"Failed to upload data.\nStatus: {response.status}\nResponse: {response.text()}"
                             )
 
         except Exception as e:
@@ -228,9 +212,7 @@ async def upload_data(output_url: str, data_or_file: str, from_file: bool) -> No
                 ) from e
 
 
-async def write_file(
-    path_or_url: str, batch_outputs: list[BatchRequestOutput], output_tmp_dir: str
-) -> None:
+async def write_file(path_or_url: str, batch_outputs: list[BatchRequestOutput], output_tmp_dir: str) -> None:
     """
     Write batch_outputs to a file or upload to a URL.
     path_or_url: The path or URL to write batch_outputs to.
@@ -269,9 +251,7 @@ async def write_file(
         await write_local_file(path_or_url, batch_outputs)
 
 
-def make_error_request_output(
-    request: BatchRequestInput, error_msg: str
-) -> BatchRequestOutput:
+def make_error_request_output(request: BatchRequestInput, error_msg: str) -> BatchRequestOutput:
     batch_output = BatchRequestOutput(
         id=f"aphrodite-{random_uuid()}",
         custom_id=request.custom_id,
@@ -284,9 +264,7 @@ def make_error_request_output(
     return batch_output
 
 
-async def make_async_error_request_output(
-    request: BatchRequestInput, error_msg: str
-) -> BatchRequestOutput:
+async def make_async_error_request_output(request: BatchRequestInput, error_msg: str) -> BatchRequestOutput:
     return make_error_request_output(request, error_msg)
 
 
@@ -304,9 +282,7 @@ async def run_request(
         batch_output = BatchRequestOutput(
             id=f"aphrodite-{random_uuid()}",
             custom_id=request.custom_id,
-            response=BatchResponseData(
-                body=response, request_id=f"aphrodite-batch-{random_uuid()}"
-            ),
+            response=BatchResponseData(body=response, request_id=f"aphrodite-batch-{random_uuid()}"),
             error=None,
         )
     elif isinstance(response, ErrorResponse):
@@ -320,9 +296,7 @@ async def run_request(
             error=response,
         )
     else:
-        batch_output = make_error_request_output(
-            request, error_msg="Request must not be sent in stream mode"
-        )
+        batch_output = make_error_request_output(request, error_msg="Request must not be sent in stream mode")
 
     tracker.completed()
     return batch_output
@@ -334,8 +308,7 @@ def validate_run_batch_args(args):
         reasoning_parser := args.structured_outputs_config.reasoning_parser
     ) and reasoning_parser not in valid_reasoning_parses:
         raise KeyError(
-            f"invalid reasoning parser: {reasoning_parser} "
-            f"(chose from {{ {','.join(valid_reasoning_parses)} }})"
+            f"invalid reasoning parser: {reasoning_parser} (chose from {{ {','.join(valid_reasoning_parses)} }})"
         )
 
 
@@ -353,9 +326,7 @@ async def run_batch(
     else:
         request_logger = None
 
-    base_model_paths = [
-        BaseModelPath(name=name, model_path=args.model) for name in served_model_names
-    ]
+    base_model_paths = [BaseModelPath(name=name, model_path=args.model) for name in served_model_names]
 
     model_config = engine_client.model_config
     supported_tasks = await engine_client.get_supported_tasks()
@@ -396,10 +367,7 @@ async def run_batch(
         else None
     )
 
-    enable_serving_reranking = (
-        "classify" in supported_tasks
-        and getattr(model_config.hf_config, "num_labels", 0) == 1
-    )
+    enable_serving_reranking = "classify" in supported_tasks and getattr(model_config.hf_config, "num_labels", 0) == 1
 
     openai_serving_scores = (
         ServingScores(
@@ -426,11 +394,7 @@ async def run_batch(
 
         # Determine the type of request and run it.
         if request.url == "/v1/chat/completions":
-            chat_handler_fn = (
-                openai_serving_chat.create_chat_completion
-                if openai_serving_chat is not None
-                else None
-            )
+            chat_handler_fn = openai_serving_chat.create_chat_completion if openai_serving_chat is not None else None
             if chat_handler_fn is None:
                 response_futures.append(
                     make_async_error_request_output(
@@ -444,9 +408,7 @@ async def run_batch(
             tracker.submitted()
         elif request.url == "/v1/embeddings":
             embed_handler_fn = (
-                openai_serving_embedding.create_embedding
-                if openai_serving_embedding is not None
-                else None
+                openai_serving_embedding.create_embedding if openai_serving_embedding is not None else None
             )
             if embed_handler_fn is None:
                 response_futures.append(
@@ -460,11 +422,7 @@ async def run_batch(
             response_futures.append(run_request(embed_handler_fn, request, tracker))
             tracker.submitted()
         elif request.url.endswith("/score"):
-            score_handler_fn = (
-                openai_serving_scores.create_score
-                if openai_serving_scores is not None
-                else None
-            )
+            score_handler_fn = openai_serving_scores.create_score if openai_serving_scores is not None else None
             if score_handler_fn is None:
                 response_futures.append(
                     make_async_error_request_output(
@@ -477,11 +435,7 @@ async def run_batch(
             response_futures.append(run_request(score_handler_fn, request, tracker))
             tracker.submitted()
         elif request.url.endswith("/rerank"):
-            rerank_handler_fn = (
-                openai_serving_scores.do_rerank
-                if openai_serving_scores is not None
-                else None
-            )
+            rerank_handler_fn = openai_serving_scores.do_rerank if openai_serving_scores is not None else None
             if rerank_handler_fn is None:
                 response_futures.append(
                     make_async_error_request_output(

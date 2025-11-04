@@ -1,8 +1,8 @@
 """
 Implementation of AutoencoderKL (VAE) for Stable Diffusion in Aphrodite.
 """
+
 from collections.abc import Iterable
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -44,7 +44,7 @@ class Upsample2D(nn.Module):
         self.conv = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.interpolate(x, scale_factor=2.0, mode='nearest')
+        x = F.interpolate(x, scale_factor=2.0, mode="nearest")
         return self.conv(x)
 
 
@@ -119,18 +119,20 @@ class VAEAttentionBlock(nn.Module):
         # Match diffusers naming exactly
         self.group_norm = nn.GroupNorm(groups, channels)
 
-                # Use Linear layers to match diffusers exactly (with bias)
+        # Use Linear layers to match diffusers exactly (with bias)
         self.to_q = nn.Linear(channels, channels, bias=True)
         self.to_k = nn.Linear(channels, channels, bias=True)
         self.to_v = nn.Linear(channels, channels, bias=True)
 
         # Diffusers uses ModuleList for to_out: [Linear, Dropout]
-        self.to_out = nn.ModuleList([
-            nn.Linear(channels, channels, bias=True),
-            nn.Identity(),  # Dropout placeholder (usually disabled)
-        ])
+        self.to_out = nn.ModuleList(
+            [
+                nn.Linear(channels, channels, bias=True),
+                nn.Identity(),  # Dropout placeholder (usually disabled)
+            ]
+        )
 
-        self.scale = channels ** -0.5
+        self.scale = channels**-0.5
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
@@ -184,9 +186,7 @@ class VAEDownEncoderBlock(nn.Module):
 
         # Downsampler (matching diffusers structure)
         if add_downsample:
-            self.downsamplers = nn.ModuleList([
-                Downsample2D(out_channels)
-            ])
+            self.downsamplers = nn.ModuleList([Downsample2D(out_channels)])
         else:
             self.downsamplers = None
 
@@ -222,9 +222,7 @@ class VAEUpDecoderBlock(nn.Module):
 
         # Upsampler (matching diffusers structure)
         if add_upsample:
-            self.upsamplers = nn.ModuleList([
-                Upsample2D(out_channels)
-            ])
+            self.upsamplers = nn.ModuleList([Upsample2D(out_channels)])
         else:
             self.upsamplers = None
 
@@ -246,14 +244,18 @@ class VAEMidBlock(nn.Module):
     def __init__(self, channels: int):
         super().__init__()
 
-        self.resnets = nn.ModuleList([
-            VAEResidualBlock(channels, channels),
-            VAEResidualBlock(channels, channels),
-        ])
+        self.resnets = nn.ModuleList(
+            [
+                VAEResidualBlock(channels, channels),
+                VAEResidualBlock(channels, channels),
+            ]
+        )
 
-        self.attentions = nn.ModuleList([
-            VAEAttentionBlock(channels),
-        ])
+        self.attentions = nn.ModuleList(
+            [
+                VAEAttentionBlock(channels),
+            ]
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # First resnet
@@ -296,7 +298,7 @@ class VAEEncoder(nn.Module):
 
         for i, out_ch in enumerate(block_out_channels):
             # All blocks except the last have downsamplers
-            add_downsample = (i < len(block_out_channels) - 1)
+            add_downsample = i < len(block_out_channels) - 1
 
             block = VAEDownEncoderBlock(
                 in_ch,
@@ -314,7 +316,10 @@ class VAEEncoder(nn.Module):
         self.conv_norm_out = nn.GroupNorm(32, in_ch)
         self.conv_act = nn.SiLU()
         self.conv_out = nn.Conv2d(
-            in_ch, latent_channels * 2, kernel_size=3, padding=1,
+            in_ch,
+            latent_channels * 2,
+            kernel_size=3,
+            padding=1,
         )  # *2 for mean and logvar
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -356,7 +361,10 @@ class VAEDecoder(nn.Module):
 
         # Initial conv
         self.conv_in = nn.Conv2d(
-            latent_channels, decoder_channels[0], kernel_size=3, padding=1,
+            latent_channels,
+            decoder_channels[0],
+            kernel_size=3,
+            padding=1,
         )
 
         # Middle block with attention
@@ -368,7 +376,7 @@ class VAEDecoder(nn.Module):
 
         for i, out_ch in enumerate(decoder_channels):
             # All blocks except the last have upsampling
-            add_upsample = (i < len(decoder_channels) - 1)
+            add_upsample = i < len(decoder_channels) - 1
 
             # All decoder blocks have 3 resnets
             num_layers = 3
@@ -423,14 +431,16 @@ class AutoencoderKL(nn.Module, SupportsQuant):
         config = aphrodite_config.model_config.hf_config
 
         # Extract config parameters
-        self.in_channels = getattr(config, 'in_channels', 3)
-        self.out_channels = getattr(config, 'out_channels', 3)
-        self.latent_channels = getattr(config, 'latent_channels', 4)
+        self.in_channels = getattr(config, "in_channels", 3)
+        self.out_channels = getattr(config, "out_channels", 3)
+        self.latent_channels = getattr(config, "latent_channels", 4)
         self.block_out_channels = getattr(
-            config, 'block_out_channels', [128, 256, 512, 512],
+            config,
+            "block_out_channels",
+            [128, 256, 512, 512],
         )
-        self.layers_per_block = getattr(config, 'layers_per_block', 2)
-        self.scaling_factor = getattr(config, 'scaling_factor', 0.18215)
+        self.layers_per_block = getattr(config, "layers_per_block", 2)
+        self.scaling_factor = getattr(config, "scaling_factor", 0.18215)
 
         # Build encoder and decoder
         self.encoder = VAEEncoder(
@@ -449,10 +459,14 @@ class AutoencoderKL(nn.Module, SupportsQuant):
 
         # Quantization layers for latent distribution
         self.quant_conv = nn.Conv2d(
-            self.latent_channels * 2, self.latent_channels * 2, kernel_size=1,
+            self.latent_channels * 2,
+            self.latent_channels * 2,
+            kernel_size=1,
         )
         self.post_quant_conv = nn.Conv2d(
-            self.latent_channels, self.latent_channels, kernel_size=1,
+            self.latent_channels,
+            self.latent_channels,
+            kernel_size=1,
         )
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
@@ -509,8 +523,8 @@ class AutoencoderKL(nn.Module, SupportsQuant):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Forward pass for compatibility with Aphrodite model interface.
@@ -538,44 +552,53 @@ class AutoencoderKL(nn.Module, SupportsQuant):
             mapped_name = name
             if "attentions.0.key." in name:
                 mapped_name = name.replace(
-                    "attentions.0.key.", "attentions.0.to_k.",
+                    "attentions.0.key.",
+                    "attentions.0.to_k.",
                 )
             elif "attentions.0.query." in name:
                 mapped_name = name.replace(
-                    "attentions.0.query.", "attentions.0.to_q.",
+                    "attentions.0.query.",
+                    "attentions.0.to_q.",
                 )
             elif "attentions.0.value." in name:
                 mapped_name = name.replace(
-                    "attentions.0.value.", "attentions.0.to_v.",
+                    "attentions.0.value.",
+                    "attentions.0.to_v.",
                 )
             elif "attentions.0.proj_attn." in name:
                 mapped_name = name.replace(
-                    "attentions.0.proj_attn.", "attentions.0.to_out.0.",
+                    "attentions.0.proj_attn.",
+                    "attentions.0.to_out.0.",
                 )
 
             if mapped_name in params_dict:
                 param = params_dict[mapped_name]
                 weight_loader = getattr(
-                    param, "weight_loader", default_weight_loader,
+                    param,
+                    "weight_loader",
+                    default_weight_loader,
                 )
                 weight_loader(param, loaded_weight)
                 loaded_params.add(mapped_name)
             elif name in params_dict:
                 param = params_dict[name]
                 weight_loader = getattr(
-                    param, "weight_loader", default_weight_loader,
+                    param,
+                    "weight_loader",
+                    default_weight_loader,
                 )
                 weight_loader(param, loaded_weight)
                 loaded_params.add(name)
             else:
                 logger.debug(
-                    f"Weight {name} (mapped to {mapped_name}) not found in "
-                    "model parameters",
+                    "Weight %s (mapped to %s) not found in model parameters",
+                    name,
+                    mapped_name,
                 )
 
         unloaded = set(params_dict.keys()) - loaded_params
         if unloaded:
-            logger.debug(f"Unloaded parameters: {list(unloaded)[:10]}")
+            logger.debug("Unloaded parameters: %s", list(unloaded)[:10])
 
         return loaded_params
 

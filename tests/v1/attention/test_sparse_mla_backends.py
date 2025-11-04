@@ -11,15 +11,15 @@ from aphrodite import _custom_ops as ops
 from aphrodite.attention.ops import flashmla
 from aphrodite.modeling.layers.linear import ColumnParallelLinear
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.v1.attention.backends.mla.flashmla_sparse import (
-    FlashMLASparseBackend)
+from aphrodite.v1.attention.backends.mla.flashmla_sparse import FlashMLASparseBackend
 from aphrodite.v1.attention.backends.mla.indexer import split_prefill_chunks
 from tests.v1.attention.test_mla_backends import (
-    BATCH_SPECS, BatchSpec, MockAttentionLayer,
-    create_and_prepopulate_kv_cache)
-from tests.v1.attention.utils import (create_aphrodite_config,
-                                      create_common_attn_metadata,
-                                      create_standard_kv_cache_spec)
+    BATCH_SPECS,
+    BatchSpec,
+    MockAttentionLayer,
+    create_and_prepopulate_kv_cache,
+)
+from tests.v1.attention.utils import create_aphrodite_config, create_common_attn_metadata, create_standard_kv_cache_spec
 
 SPARSE_BACKEND_BATCH_SPECS = {
     name: BATCH_SPECS[name]
@@ -32,12 +32,8 @@ SPARSE_BACKEND_BATCH_SPECS = {
     ]
 }
 
-SPARSE_BACKEND_BATCH_SPECS["large_q_prefill"] = BatchSpec(
-    seq_lens=[1024] * 2, query_lens=[256] * 2
-)
-SPARSE_BACKEND_BATCH_SPECS["large_q_pure_prefill"] = BatchSpec(
-    seq_lens=[256] * 2, query_lens=[256] * 2
-)
+SPARSE_BACKEND_BATCH_SPECS["large_q_prefill"] = BatchSpec(seq_lens=[1024] * 2, query_lens=[256] * 2)
+SPARSE_BACKEND_BATCH_SPECS["large_q_pure_prefill"] = BatchSpec(seq_lens=[256] * 2, query_lens=[256] * 2)
 
 
 def _dequantize_fp8_ds_mla_entry(
@@ -79,14 +75,10 @@ def _quantize_dequantize_fp8_ds_mla(
     num_blocks = max(1, math.ceil(num_tokens / block_size))
     entry_size = kv_lora_rank + 4 * 4 + 2 * rope_dim
 
-    tmp_cache = torch.zeros(
-        num_blocks, block_size, entry_size, dtype=torch.uint8, device=kv_c.device
-    )
+    tmp_cache = torch.zeros(num_blocks, block_size, entry_size, dtype=torch.uint8, device=kv_c.device)
     slot_mapping = torch.arange(num_tokens, dtype=torch.long, device=kv_c.device)
 
-    ops.concat_and_cache_mla(
-        kv_c, k_pe, tmp_cache, slot_mapping, kv_cache_dtype="fp8_ds_mla", scale=scale
-    )
+    ops.concat_and_cache_mla(kv_c, k_pe, tmp_cache, slot_mapping, kv_cache_dtype="fp8_ds_mla", scale=scale)
 
     dequant_kv_c = torch.empty_like(kv_c)
     dequant_k_pe = torch.empty_like(k_pe)
@@ -96,9 +88,7 @@ def _quantize_dequantize_fp8_ds_mla(
         block_idx = slot // block_size
         block_offset = slot % block_size
         cache_slice = tmp_cache[block_idx, block_offset]
-        latent, rope_vals = _dequantize_fp8_ds_mla_entry(
-            cache_slice, kv_lora_rank, rope_dim, kv_c.dtype
-        )
+        latent, rope_vals = _dequantize_fp8_ds_mla_entry(cache_slice, kv_lora_rank, rope_dim, kv_c.dtype)
         dequant_kv_c[token_idx] = latent
         dequant_k_pe[token_idx] = rope_vals
 
@@ -149,12 +139,8 @@ def test_sparse_backend_decode_correctness(dist_init, batch_name, kv_cache_dtype
         model_type="deepseek_v2",
     )
     model_config.dtype = dtype
-    model_config.get_num_attention_heads = MethodType(
-        lambda self, parallel_config: num_heads, model_config
-    )
-    model_config.get_num_kv_heads = MethodType(
-        lambda self, parallel_config: 1, model_config
-    )
+    model_config.get_num_attention_heads = MethodType(lambda self, parallel_config: num_heads, model_config)
+    model_config.get_num_kv_heads = MethodType(lambda self, parallel_config: 1, model_config)
     model_config.get_head_size = MethodType(lambda self: head_size, model_config)
     model_config.get_sliding_window = MethodType(lambda self: None, model_config)
 
@@ -165,9 +151,7 @@ def test_sparse_backend_decode_correctness(dist_init, batch_name, kv_cache_dtype
     scale = 1.0 / math.sqrt(head_size)
 
     # Shared MLA projection weights to keep reference and backend in sync
-    W_UK = torch.randn(
-        kv_lora_rank, num_heads, qk_nope_head_dim, dtype=dtype, device=device
-    )
+    W_UK = torch.randn(kv_lora_rank, num_heads, qk_nope_head_dim, dtype=dtype, device=device)
     W_UV = torch.randn(kv_lora_rank, num_heads, v_head_dim, dtype=dtype, device=device)
 
     # Build synthetic decode-only workload
@@ -263,15 +247,11 @@ def test_sparse_backend_decode_correctness(dist_init, batch_name, kv_cache_dtype
 
     builder_cls = FlashMLASparseBackend.get_builder_cls()
     builder = builder_cls(kv_cache_spec, ["placeholder"], aphrodite_config, device)
-    metadata = builder.build(
-        common_prefix_len=0, common_attn_metadata=common_attn_metadata
-    )
+    metadata = builder.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)
 
     starts = np.asarray(common_attn_metadata.query_start_loc_cpu, dtype=np.int32)
     seg_lengths = np.diff(starts)
-    positions = np.arange(starts[-1], dtype=np.int32) - np.repeat(
-        starts[:-1], seg_lengths
-    )
+    positions = np.arange(starts[-1], dtype=np.int32) - np.repeat(starts[:-1], seg_lengths)
     seq_lengths = np.asarray(common_attn_metadata.seq_lens_cpu, dtype=np.int32)
     prefix_lengths = seq_lengths - seg_lengths
     positions += np.repeat(prefix_lengths, seg_lengths)
@@ -281,9 +261,7 @@ def test_sparse_backend_decode_correctness(dist_init, batch_name, kv_cache_dtype
     debug_indices = torch.arange(topk, device=device, dtype=torch.int32).unsqueeze(0)
     token_positions = pos_gpu.unsqueeze(1)
     causal_mask = debug_indices <= token_positions
-    debug_indices = torch.where(
-        causal_mask, debug_indices, torch.full_like(debug_indices, -1)
-    )
+    debug_indices = torch.where(causal_mask, debug_indices, torch.full_like(debug_indices, -1))
 
     # FlashMLASparseImpl now reads top-k indices from the indexer-provided
     # buffer, so emulate that contract with a simple namespace mock.
@@ -295,9 +273,7 @@ def test_sparse_backend_decode_correctness(dist_init, batch_name, kv_cache_dtype
         pytest.skip(reason)
 
     kv_b_proj_weight = torch.cat([W_UK, W_UV], dim=-1)
-    kv_b_proj_weight = kv_b_proj_weight.view(
-        kv_lora_rank, num_heads * (qk_nope_head_dim + v_head_dim)
-    )
+    kv_b_proj_weight = kv_b_proj_weight.view(kv_lora_rank, num_heads * (qk_nope_head_dim + v_head_dim))
 
     mock_kv_b_proj = ColumnParallelLinear(
         input_size=kv_lora_rank,
@@ -331,9 +307,7 @@ def test_sparse_backend_decode_correctness(dist_init, batch_name, kv_cache_dtype
     impl.process_weights_after_loading(dtype)
 
     layer = MockAttentionLayer(device)
-    out_buffer = torch.empty(
-        metadata.num_actual_tokens, num_heads * v_head_dim, dtype=dtype, device=device
-    )
+    out_buffer = torch.empty(metadata.num_actual_tokens, num_heads * v_head_dim, dtype=dtype, device=device)
 
     with torch.inference_mode():
         backend_output = impl.forward(

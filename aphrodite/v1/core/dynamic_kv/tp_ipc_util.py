@@ -1,12 +1,13 @@
 import asyncio
+import json
 import os
-import pickle
 import socket
 import threading
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 try:
     from aphrodite.v1.core.dynamic_kv import vmm_ops
+
     _vmm_ops_available = True
 except ImportError:
     _vmm_ops_available = False
@@ -19,13 +20,13 @@ def get_worker_socket_path(rank: int) -> str:
     return os.path.join(SOCKET_DIR, f"worker_{rank}.sock")
 
 
-Message = Dict[str, Any]
+Message = dict[str, Any]
 
 
 def send_msg(sock: socket.socket, msg: Message) -> None:
     """Send a message through the socket."""
-    data = pickle.dumps(msg)
-    sock.sendall(len(data).to_bytes(4, 'big') + data)
+    data = json.dumps(msg).encode("utf-8")
+    sock.sendall(len(data).to_bytes(4, "big") + data)
 
 
 def recv_msg(sock: socket.socket) -> Message:
@@ -35,26 +36,25 @@ def recv_msg(sock: socket.socket) -> Message:
         raise ConnectionError("Socket connection closed")
     if not len(length_bytes) == 4:
         raise ValueError("Received incomplete length bytes from socket")
-    length = int.from_bytes(length_bytes, 'big')
+    length = int.from_bytes(length_bytes, "big")
     if length <= 0:
         raise ValueError("Received invalid length for message")
     data = b""
     while len(data) < length:
         chunk = sock.recv(length - len(data))
         if not chunk:
-            raise ConnectionError(
-                "Socket connection closed while receiving data")
+            raise ConnectionError("Socket connection closed while receiving data")
         data += chunk
     if len(data) != length:
         raise ValueError("Received data length does not match expected length")
-    return cast(Message, pickle.loads(data))
+    return cast(Message, json.loads(data.decode("utf-8")))
 
 
 def start_worker_listener_thread(rank: int):
     """Start a thread that listens for messages on the worker socket."""
     if not _vmm_ops_available:
         raise RuntimeError("vmm_ops module not available")
-    
+
     os.makedirs(SOCKET_DIR, exist_ok=True)
     socket_path = get_worker_socket_path(rank)
 
@@ -84,10 +84,7 @@ def start_worker_listener_thread(rank: int):
                     created: bool = vmm_ops.kv_tensors_created()
                     send_msg(conn, {"status": "success", "created": created})
                 else:
-                    send_msg(conn, {
-                        "status": "error",
-                        "message": "Unknown command"
-                    })
+                    send_msg(conn, {"status": "error", "message": "Unknown command"})
             except Exception as e:
                 print(f"Worker {rank} error processing message: {e}")
                 send_msg(conn, {"status": "error", "message": str(e)})
@@ -104,75 +101,52 @@ async def _send_and_receive_message(rank: int, message: Message) -> Message:
     reader, writer = await asyncio.open_unix_connection(socket_path)
 
     try:
-        data = pickle.dumps(message)
-        writer.write(len(data).to_bytes(4, 'big') + data)
+        data = json.dumps(message).encode("utf-8")
+        writer.write(len(data).to_bytes(4, "big") + data)
         await writer.drain()
 
         length_bytes = await reader.readexactly(4)
-        length = int.from_bytes(length_bytes, 'big')
+        length = int.from_bytes(length_bytes, "big")
 
         data = await reader.readexactly(length)
-        return cast(Message, pickle.loads(data))
+        return cast(Message, json.loads(data.decode("utf-8")))
     finally:
         writer.close()
         await writer.wait_closed()
 
 
-async def _broadcast_map_to_kv_tensors(tp_size: int,
-                                       offsets: list[int]) -> None:
+async def _broadcast_map_to_kv_tensors(tp_size: int, offsets: list[int]) -> None:
     """Broadcast the "map_to_kv_tensors" operation to all workers concurrently."""
     map_message = {"cmd": "map_to_kv_tensors", "offsets": offsets}
-    tasks = [
-        _send_and_receive_message(rank, map_message) for rank in range(tp_size)
-    ]
+    tasks = [_send_and_receive_message(rank, map_message) for rank in range(tp_size)]
 
     responses = await asyncio.gather(*tasks, return_exceptions=True)
     for rank, response in enumerate(responses):
-        if isinstance(response, Exception):
-            raise RuntimeError(f"Worker {rank} failed to map: {response}")
-        elif not isinstance(response,
-                            dict) or response.get("status") != "success":
+        if isinstance(response, Exception) or not isinstance(response, dict) or response.get("status") != "success":
             raise RuntimeError(f"Worker {rank} failed to map: {response}")
 
 
-async def _broadcast_unmap_from_kv_tensors(tp_size: int,
-                                           offsets: list[int]) -> None:
+async def _broadcast_unmap_from_kv_tensors(tp_size: int, offsets: list[int]) -> None:
     """Broadcast the "unmap_from_kv_tensors" operation to all workers concurrently."""
     unmap_message = {"cmd": "unmap_from_kv_tensors", "offsets": offsets}
-    tasks = [
-        _send_and_receive_message(rank, unmap_message)
-        for rank in range(tp_size)
-    ]
+    tasks = [_send_and_receive_message(rank, unmap_message) for rank in range(tp_size)]
 
     responses = await asyncio.gather(*tasks, return_exceptions=True)
     for rank, response in enumerate(responses):
-        if isinstance(response, Exception):
-            raise RuntimeError(f"Worker {rank} failed to unmap: {response}")
-        elif not isinstance(response,
-                            dict) or response.get("status") != "success":
+        if isinstance(response, Exception) or not isinstance(response, dict) or response.get("status") != "success":
             raise RuntimeError(f"Worker {rank} failed to unmap: {response}")
 
 
 async def _broadcast_kv_tensors_created(tp_size: int) -> bool:
     """Broadcast the "kv_tensors_created" operation to all workers concurrently."""
     check_message = {"cmd": "kv_tensors_created"}
-    tasks = [
-        _send_and_receive_message(rank, check_message)
-        for rank in range(tp_size)
-    ]
+    tasks = [_send_and_receive_message(rank, check_message) for rank in range(tp_size)]
 
     responses = await asyncio.gather(*tasks, return_exceptions=True)
     all_created = True
     for rank, response in enumerate(responses):
-        if isinstance(response, Exception):
-            raise RuntimeError(
-                f"Worker {rank} failed to check KV tensors created: {response}"
-            )
-        elif not isinstance(response,
-                            dict) or response.get("status") != "success":
-            raise RuntimeError(
-                f"Worker {rank} failed to check KV tensors created: {response}"
-            )
+        if isinstance(response, Exception) or not isinstance(response, dict) or response.get("status") != "success":
+            raise RuntimeError(f"Worker {rank} failed to check KV tensors created: {response}")
         elif not response.get("created", False):
             all_created = False
 
@@ -189,4 +163,3 @@ def broadcast_unmap_from_kv_tensors(tp_size: int, offsets: list[int]) -> None:
 
 def broadcast_kv_tensors_created(tp_size: int) -> bool:
     return asyncio.run(_broadcast_kv_tensors_created(tp_size))
-

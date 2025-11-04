@@ -249,9 +249,7 @@ async def send_request(
     start_time: int = time.perf_counter_ns()
     most_recent_timestamp: int = start_time
 
-    async with session.post(
-        url=chat_url, json=payload, headers=headers, timeout=timeout
-    ) as response:
+    async with session.post(url=chat_url, json=payload, headers=headers, timeout=timeout) as response:
         http_status = HTTPStatus(response.status)
         if http_status == HTTPStatus.OK:
             async for chunk_bytes in response.content:
@@ -291,8 +289,7 @@ async def send_request(
             valid_response = False
             content = await response.text()
             logger.warning(
-                f"{Color.YELLOW}Received HTTP status {http_status.value} "
-                f"({http_status.phrase}): {content}{Color.RESET}"
+                f"{Color.YELLOW}Received HTTP status {http_status.value} ({http_status.phrase}): {content}{Color.RESET}"
             )
 
     if latency is None:
@@ -334,9 +331,7 @@ def get_token_count(tokenizer: AutoTokenizer, text: str) -> int:
     return len(tokenizer(text, add_special_tokens=False).input_ids)
 
 
-def get_messages_token_count(
-    tokenizer: AutoTokenizer, messages: list[dict[str, str]]
-) -> int:
+def get_messages_token_count(tokenizer: AutoTokenizer, messages: list[dict[str, str]]) -> int:
     token_count = 0
     for m in messages:
         token_count += get_token_count(tokenizer, m["content"])
@@ -366,14 +361,11 @@ async def send_turn(
     # Verify that the message has only two keys, "role" and "content"
     assert len(messages[index].keys()) == 2
     assert "role" in messages[index] and "content" in messages[index]
-    assert messages[index]["role"] == "user", (
-        f"Failed on conversation ID {conv_id}, message role should be user"
-    )
+    assert messages[index]["role"] == "user", f"Failed on conversation ID {conv_id}, message role should be user"
 
     if verbose:
         print(
-            f"{Color.CYAN}Messages (conversation ID {conv_id},"
-            f" {len(messages)} turns):{Color.RESET}",
+            f"{Color.CYAN}Messages (conversation ID {conv_id}, {len(messages)} turns):{Color.RESET}",
             messages,
         )
 
@@ -383,10 +375,7 @@ async def send_turn(
 
     if len(conversation_messages) > messages_to_use:
         # The conversation contains an assistant answer for the next user prompt
-        if (
-            min_tokens == NUM_TOKENS_FROM_DATASET
-            or max_tokens == NUM_TOKENS_FROM_DATASET
-        ):
+        if min_tokens == NUM_TOKENS_FROM_DATASET or max_tokens == NUM_TOKENS_FROM_DATASET:
             # Compute number of tokens in the answer (from the input conversation)
             assistant_answer = conversation_messages[messages_to_use]
             answer_num_tokens = get_token_count(tokenizer, assistant_answer["content"])
@@ -430,9 +419,7 @@ async def send_turn(
     output_num_tokens = get_token_count(tokenizer, output_content)
 
     # Prefix caching approximated cached percent
-    approx_cached_percent = (
-        100.0 * (history_num_tokens / input_num_tokens) if input_num_tokens > 0 else 0.0
-    )
+    approx_cached_percent = 100.0 * (history_num_tokens / input_num_tokens) if input_num_tokens > 0 else 0.0
 
     # Compute the correct TTFT and TPOT (based on tokens and not chunks).
     # Required because multiple output tokens may be bundled in a single chunk.
@@ -555,27 +542,15 @@ async def client_main(
         while task_queue_empty is False:
             result = None
 
-            if (
-                args.max_num_requests
-                and num_successes + num_failures == args.max_num_requests
-            ):
-                logger.info(
-                    f"{Color.YELLOW}Client {client_id} reached "
-                    f"request limit{Color.RESET}"
-                )
+            if args.max_num_requests and num_successes + num_failures == args.max_num_requests:
+                logger.info(f"{Color.YELLOW}Client {client_id} reached request limit{Color.RESET}")
                 break
 
             if stop_event.is_set():  # type: ignore
-                logger.info(
-                    f"{Color.YELLOW}Client {client_id} received "
-                    f"a termination signal{Color.RESET}"
-                )
+                logger.info(f"{Color.YELLOW}Client {client_id} received a termination signal{Color.RESET}")
                 break
 
-            while (
-                len(active_convs) < args.max_active_conversations
-                and task_queue_empty is False
-            ):
+            while len(active_convs) < args.max_active_conversations and task_queue_empty is False:
                 # Get a new conversation from the task queue
                 conv_id, messages = task_queue.get()
 
@@ -607,9 +582,7 @@ async def client_main(
                     )
 
             if len(active_convs) == 0 or task_queue_empty:
-                logger.info(
-                    f"{Color.YELLOW}Client {client_id} has no more work{Color.RESET}"
-                )
+                logger.info(f"{Color.YELLOW}Client {client_id} has no more work{Color.RESET}")
                 break
 
             # Pick an active conversation for the next request
@@ -636,9 +609,7 @@ async def client_main(
                 curr_time_sec: float = time.perf_counter()
                 time_since_last_turn: str | float = "N/A"
                 if conv_id in time_of_last_turn:
-                    time_since_last_turn = round(
-                        curr_time_sec - time_of_last_turn[conv_id], 3
-                    )
+                    time_since_last_turn = round(curr_time_sec - time_of_last_turn[conv_id], 3)
                 logger.info(
                     f"Client {client_id} using conversation ID {conv_id} (turn: {current_turn}, time since last turn [sec]: {time_since_last_turn})"  # noqa: E501
                 )
@@ -703,10 +674,7 @@ async def client_main(
                     # save the updated conversation (with the LLM server's answer)
                     conv_queue.put((conv_id, active_convs.pop(conv_id)))
                     if args.verbose:
-                        logger.info(
-                            f"{Color.GREEN}Client {client_id} finished "
-                            f"conversation ID {conv_id}{Color.RESET}"
-                        )
+                        logger.info(f"{Color.GREEN}Client {client_id} finished conversation ID {conv_id}{Color.RESET}")
                 else:
                     # Conversation is not finished, insert it at the back of the queue
                     conv_id_queue.appendleft(conv_id)
@@ -718,10 +686,7 @@ async def client_main(
     # Send indication that the client is done
     conv_queue.put((TERM_SIGNAL, TERM_SIGNAL))
 
-    logger.info(
-        f"{Color.CYAN}Client {client_id} is done "
-        f"({num_successes=}, {num_failures=}){Color.RESET}"
-    )
+    logger.info(f"{Color.CYAN}Client {client_id} is done ({num_successes=}, {num_failures=}){Color.RESET}")
 
 
 def worker_function(
@@ -748,16 +713,12 @@ def worker_function(
     )
 
 
-def get_client_config(
-    args: argparse.Namespace, input_conv: ConversationsMap
-) -> tuple[ClientArgs, RequestArgs]:
+def get_client_config(args: argparse.Namespace, input_conv: ConversationsMap) -> tuple[ClientArgs, RequestArgs]:
     if args.num_clients < 1:
         raise ValueError("Number of clients must be a positive number")
 
     if len(input_conv) < args.num_clients:
-        raise ValueError(
-            "Number of conversations must be equal or larger than the number of clients"
-        )
+        raise ValueError("Number of conversations must be equal or larger than the number of clients")
 
     max_req_per_client: int | None = None
     if args.max_num_requests is not None:
@@ -782,8 +743,7 @@ def get_client_config(
     max_active_conv_per_client = max_active_conversations // args.num_clients
     if max_active_conv_per_client < 1:
         raise ValueError(
-            f"Max active conversations {max_active_conversations} "
-            "must be equal or greater than the number of clients"
+            f"Max active conversations {max_active_conversations} must be equal or greater than the number of clients"
         )
 
     # Skip the first user turn (as part of the warmup)
@@ -805,13 +765,9 @@ def get_client_config(
 
     if args.limit_min_tokens > 0 or args.limit_max_tokens > 0:
         if args.limit_min_tokens < 1 or args.limit_max_tokens < 1:
-            raise ValueError(
-                "Invalid min/max tokens limits (both limits should be provided)"
-            )
+            raise ValueError("Invalid min/max tokens limits (both limits should be provided)")
         if args.limit_min_tokens > args.limit_max_tokens:
-            raise ValueError(
-                "Invalid min/max tokens limits (min should not be larger than max)"
-            )
+            raise ValueError("Invalid min/max tokens limits (min should not be larger than max)")
 
     # Arguments for API requests
     chat_url = f"{args.url}/v1/chat/completions"
@@ -899,16 +855,13 @@ async def main_mp(
         if conv_id is TERM_SIGNAL:
             num_clients_finished += 1
             logger.info(
-                f"{Color.CYAN}{num_clients_finished} out of "
-                f"{bench_args.num_clients} clients finished{Color.RESET}"
+                f"{Color.CYAN}{num_clients_finished} out of {bench_args.num_clients} clients finished{Color.RESET}"
             )
 
             if bench_args.early_stop and not stop_event.is_set():
                 # Once one client finished, stop all other clients.
                 # there is no reason to continue the benchmark with fewer clients.
-                logger.info(
-                    f"{Color.YELLOW}Sending termination signal to clients{Color.RESET}"
-                )
+                logger.info(f"{Color.YELLOW}Sending termination signal to clients{Color.RESET}")
                 stop_event.set()
         else:
             output_conv[conv_id] = messages
@@ -946,9 +899,7 @@ async def main_mp(
                 )
                 debug_stats.print()
 
-    logger.info(
-        f"{Color.CYAN}All {bench_args.num_clients} clients finished{Color.RESET}"
-    )
+    logger.info(f"{Color.CYAN}All {bench_args.num_clients} clients finished{Color.RESET}")
 
     # At this point all the clients finished,
     # collect results (TTFT, TPOT, etc.) from all the clients.
@@ -961,25 +912,17 @@ async def main_mp(
 
     # Wait for all clients to finish
     for client in clients:
-        logger.info(
-            f"{Color.CYAN}Waiting for client {client.name} "
-            f"(is alive: {client.is_alive()}){Color.RESET}"
-        )
+        logger.info(f"{Color.CYAN}Waiting for client {client.name} (is alive: {client.is_alive()}){Color.RESET}")
 
         client.join(timeout=120)
 
         if client.is_alive():
-            logger.warning(
-                f"{Color.YELLOW}Client {client.name} will be terminated{Color.RESET}"
-            )
+            logger.warning(f"{Color.YELLOW}Client {client.name} will be terminated{Color.RESET}")
             client.terminate()
 
         exitcode = client.exitcode
         if exitcode != 0:
-            logger.error(
-                f"{Color.RED}Client {client.name} exited "
-                f"with exit code {exitcode}{Color.RESET}"
-            )
+            logger.error(f"{Color.RED}Client {client.name} exited with exit code {exitcode}{Color.RESET}")
 
     logger.info(
         f"All {bench_args.num_clients} clients exited (successfully "
@@ -1036,14 +979,10 @@ def process_statistics(
     if verbose:
         # Calculate the time between user turns in each conversation (in a new column)
         raw_data = raw_data.sort_values(by=["conversation_id", "start_time_ms"])
-        raw_data["time_between_user_turns_sec"] = raw_data.groupby("conversation_id")[
-            "start_time_ms"
-        ].diff()
+        raw_data["time_between_user_turns_sec"] = raw_data.groupby("conversation_id")["start_time_ms"].diff()
 
         # Convert milliseconds to seconds
-        raw_data["time_between_user_turns_sec"] = (
-            raw_data["time_between_user_turns_sec"] / 1000.0
-        )
+        raw_data["time_between_user_turns_sec"] = raw_data["time_between_user_turns_sec"] / 1000.0
 
     # Final raw data should be sorted by time
     raw_data = raw_data.sort_values(by=["start_time_ms"])
@@ -1084,9 +1023,7 @@ def process_statistics(
         gen_params = {
             "text_files": ", ".join(gen_conv_args.text_files),
             "input_num_turns": str(gen_conv_args.input_num_turns),
-            "input_common_prefix_num_tokens": str(
-                gen_conv_args.input_common_prefix_num_tokens
-            ),
+            "input_common_prefix_num_tokens": str(gen_conv_args.input_common_prefix_num_tokens),
             "input_prefix_num_tokens": str(gen_conv_args.input_prefix_num_tokens),
             "input_num_tokens": str(gen_conv_args.input_num_tokens),
             "output_num_tokens": str(gen_conv_args.output_num_tokens),
@@ -1129,10 +1066,7 @@ def process_statistics(
 
         # Print the statistics summary
         if percent > 0 or len(warmup_percentages) > 1:
-            print(
-                f"{Color.YELLOW}Statistics summary "
-                f"(assuming {percent:.0%} warmup samples):{Color.RESET}"
-            )
+            print(f"{Color.YELLOW}Statistics summary (assuming {percent:.0%} warmup samples):{Color.RESET}")
         else:
             print(f"{Color.YELLOW}Statistics summary:{Color.RESET}")
 
@@ -1152,34 +1086,24 @@ def process_statistics(
         with pd.ExcelWriter(filename, engine="xlsxwriter") as writer:
             startrow = 0
             test_params_df = pd.DataFrame([test_params])
-            test_params_df.to_excel(
-                writer, sheet_name="Summary", index=False, startrow=startrow
-            )
+            test_params_df.to_excel(writer, sheet_name="Summary", index=False, startrow=startrow)
             startrow += len(test_params_df) + 3
 
             if gen_conv_args is not None:
                 gen_params_df = pd.DataFrame([gen_params])
-                gen_params_df.to_excel(
-                    writer, sheet_name="Summary", index=False, startrow=(startrow - 1)
-                )
+                gen_params_df.to_excel(writer, sheet_name="Summary", index=False, startrow=(startrow - 1))
                 startrow += len(gen_params_df) + 3
 
             for params, df_stats in zip(params_list, df_list):
                 df_params = pd.DataFrame([params])
-                df_params.to_excel(
-                    writer, sheet_name="Summary", index=False, startrow=startrow
-                )
+                df_params.to_excel(writer, sheet_name="Summary", index=False, startrow=startrow)
                 startrow += len(df_params) + 2
-                df_stats.to_excel(
-                    writer, sheet_name="Summary", index=True, startrow=startrow
-                )
+                df_stats.to_excel(writer, sheet_name="Summary", index=True, startrow=startrow)
                 startrow += len(df_stats) + 3
 
             raw_data.to_excel(writer, sheet_name="Raw data", index=False, startrow=0)
 
-        logger.info(
-            f"{Color.GREEN}Client metrics exported to file: {filename}{Color.RESET}"
-        )
+        logger.info(f"{Color.GREEN}Client metrics exported to file: {filename}{Color.RESET}")
 
 
 async def get_server_info(url: str) -> None:
@@ -1203,9 +1127,7 @@ async def get_server_info(url: str) -> None:
                 for model in models_list:
                     model_id = model["id"]
                     max_model_len = model.get("max_model_len", "N/A")
-                    logger.info(
-                        f"{Color.BLUE}\t{model_id=}, {max_model_len=}{Color.RESET}"
-                    )
+                    logger.info(f"{Color.BLUE}\t{model_id=}, {max_model_len=}{Color.RESET}")
             else:
                 logger.info(f"{Color.RED}Failed to get models{Color.RESET}")
 
@@ -1240,9 +1162,7 @@ async def main() -> None:
         help="Seed for random number generators (default: 0)",
     )
 
-    parser.add_argument(
-        "-m", "--model", type=str, required=True, help="Path of the LLM model"
-    )
+    parser.add_argument("-m", "--model", type=str, required=True, help="Path of the LLM model")
     parser.add_argument(
         "--served-model-name",
         type=str,
@@ -1302,8 +1222,7 @@ async def main() -> None:
         "--no-early-stop",
         default=False,
         action="store_true",
-        help="By default, the benchmark will stop if at least one client exits."
-        " Use this flag to disable this behavior",
+        help="By default, the benchmark will stop if at least one client exits. Use this flag to disable this behavior",
     )
 
     parser.add_argument(
@@ -1415,14 +1334,10 @@ async def main() -> None:
             # Sort from high to low warmup percentage
             warmup_percentages.sort()
 
-            logger.info(
-                f"Warmup percentages (percentage of samples): {warmup_percentages}"
-            )
+            logger.info(f"Warmup percentages (percentage of samples): {warmup_percentages}")
 
     except Exception:
-        raise ValueError(
-            f"Invalid --warmup-percentage={args.warmup_percentage}"
-        ) from None
+        raise ValueError(f"Invalid --warmup-percentage={args.warmup_percentage}") from None
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -1451,9 +1366,7 @@ async def main() -> None:
         # The input file is a configuration file
         # (type is determined by the field 'filetype')
         if "filetype" not in input_data:
-            raise Exception(
-                f"Input file {args.input_file} is invalid (missing 'filetype')"
-            )
+            raise Exception(f"Input file {args.input_file} is invalid (missing 'filetype')")
 
         logger.info(f"Using input file with filetype: {input_data['filetype']}")
 
@@ -1472,17 +1385,12 @@ async def main() -> None:
     if args.max_turns is not None:
         if args.max_turns < 1:
             raise ValueError("Max turns must be a positive number")
-        logger.info(
-            f"{Color.PURPLE}Max turns per conversation "
-            f"is limited to {args.max_turns}{Color.RESET}"
-        )
+        logger.info(f"{Color.PURPLE}Max turns per conversation is limited to {args.max_turns}{Color.RESET}")
 
     # Create benchmark configurations
     client_args, req_args = get_client_config(args, conversations)
 
-    bench_args = BenchmarkArgs(
-        url=args.url, num_clients=args.num_clients, early_stop=not args.no_early_stop
-    )
+    bench_args = BenchmarkArgs(url=args.url, num_clients=args.num_clients, early_stop=not args.no_early_stop)
 
     # Warm-up step
     if args.warmup_step:
@@ -1490,25 +1398,19 @@ async def main() -> None:
         # max_active_conversations must be 1,
         # otherwise the clients may exit after sending a single request
         # (because the task queue is empty).
-        warmup_client_args = client_args._replace(
-            skip_first_turn=False, max_turns=1, max_active_conversations=1
-        )
+        warmup_client_args = client_args._replace(skip_first_turn=False, max_turns=1, max_active_conversations=1)
 
         # Early stop should be disabled,
         # all clients should finish their work before exiting
         warmup_bench_args = bench_args._replace(early_stop=False)
 
         logger.info(f"{Color.PURPLE}Warmup start{Color.RESET}")
-        conversations, _ = await main_mp(
-            warmup_client_args, req_args, warmup_bench_args, tokenizer, conversations
-        )
+        conversations, _ = await main_mp(warmup_client_args, req_args, warmup_bench_args, tokenizer, conversations)
         logger.info(f"{Color.PURPLE}Warmup done{Color.RESET}")
 
     # Run the benchmark
     start_time = time.perf_counter_ns()
-    client_convs, client_metrics = await main_mp(
-        client_args, req_args, bench_args, tokenizer, conversations
-    )
+    client_convs, client_metrics = await main_mp(client_args, req_args, bench_args, tokenizer, conversations)
     total_runtime_ms = nanosec_to_millisec(time.perf_counter_ns() - start_time)
 
     # Calculate requests per second
@@ -1548,9 +1450,7 @@ async def main() -> None:
         # Write a JSON file with the updated conversations
         # The "assistant" content will contain the answers from the tested LLM
         output_data: ShareGptConversations = conversations_dict_to_list(client_convs)
-        logger.info(
-            f"{Color.GREEN}Writing conversations file: {args.output_file}{Color.RESET}"
-        )
+        logger.info(f"{Color.GREEN}Writing conversations file: {args.output_file}{Color.RESET}")
         with open(args.output_file, "w") as f:
             json.dump(output_data, f, indent=4)
 

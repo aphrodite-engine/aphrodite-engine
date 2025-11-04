@@ -9,8 +9,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -33,62 +33,50 @@ namespace exl2 {
 
 #define MAX_SUPERGROUPS 16
 
-class QMatrix
-{
-public:
+class QMatrix {
+ public:
+  int device;
+  bool is_gptq;
 
-    int device;
-    bool is_gptq;
+  int height;
+  int width;
+  int groups;
+  int gptq_groupsize;
 
-    int height;
-    int width;
-    int groups;
-    int gptq_groupsize;
+  int rows_8;
+  int rows_6;
+  int rows_5;
+  int rows_4;
+  int rows_3;
+  int rows_2;
 
-    int rows_8;
-    int rows_6;
-    int rows_5;
-    int rows_4;
-    int rows_3;
-    int rows_2;
+  uint32_t* cuda_q_weight = NULL;
+  uint16_t* cuda_q_perm = NULL;
+  uint16_t* cuda_q_invperm = NULL;
+  uint32_t* cuda_q_scale = NULL;
+  half* cuda_q_scale_max = NULL;
+  uint16_t* cuda_q_groups = NULL;
+  uint16_t* cuda_q_group_map = NULL;
+  uint32_t* cuda_gptq_qzeros = NULL;
+  half* cuda_gptq_scales = NULL;
 
-    uint32_t* cuda_q_weight = NULL;
-    uint16_t* cuda_q_perm = NULL;
-    uint16_t* cuda_q_invperm = NULL;
-    uint32_t* cuda_q_scale = NULL;
-    half* cuda_q_scale_max = NULL;
-    uint16_t* cuda_q_groups = NULL;
-    uint16_t* cuda_q_group_map = NULL;
-    uint32_t* cuda_gptq_qzeros = NULL;
-    half* cuda_gptq_scales = NULL;
+  half* temp_dq;
 
-    half* temp_dq;
+  bool failed;
 
-    bool failed;
+  QMatrix(const int _device, const int _height, const int _width,
+          const int _groups,
 
-    QMatrix
-    (
-        const int _device,
-        const int _height,
-        const int _width,
-        const int _groups,
+          uint32_t* _q_weight, uint16_t* _q_perm, uint16_t* _q_invperm,
+          uint32_t* _q_scale, half* _q_scale_max, uint16_t* _q_groups,
+          uint16_t* _q_group_map);
 
-        uint32_t* _q_weight,
-        uint16_t* _q_perm,
-        uint16_t* _q_invperm,
-        uint32_t* _q_scale,
-        half* _q_scale_max,
-        uint16_t* _q_groups,
-        uint16_t* _q_group_map
-    );
+  ~QMatrix();
 
-    ~QMatrix();
+  void reconstruct(half* out);
+  bool make_sequential(const uint32_t* cpu_g_idx);
 
-    void reconstruct(half* out);
-    bool make_sequential(const uint32_t* cpu_g_idx);
-
-private:
-
+ private:
 };
 
 }  // namespace exl2

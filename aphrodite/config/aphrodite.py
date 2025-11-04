@@ -77,13 +77,9 @@ class AphroditeConfig:
     """LoRA configuration."""
     speculative_config: SpeculativeConfig | None = None
     """Speculative decoding configuration."""
-    structured_outputs_config: StructuredOutputsConfig = Field(
-        default_factory=StructuredOutputsConfig
-    )
+    structured_outputs_config: StructuredOutputsConfig = Field(default_factory=StructuredOutputsConfig)
     """Structured outputs configuration."""
-    observability_config: ObservabilityConfig = Field(
-        default_factory=ObservabilityConfig
-    )
+    observability_config: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     """Observability configuration."""
     quant_config: QuantizationConfig | None = None
     """Quantization configuration."""
@@ -193,9 +189,7 @@ class AphroditeConfig:
             aphrodite_factors.append("None")
         factors.append(aphrodite_factors)
 
-        hash_str = hashlib.md5(
-            str(factors).encode(), usedforsecurity=False
-        ).hexdigest()[:10]
+        hash_str = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()[:10]
         return hash_str
 
     def pad_for_cudagraph(self, batch_size: int) -> int:
@@ -228,15 +222,12 @@ class AphroditeConfig:
             enable_trace_function_call(log_path)
 
     @staticmethod
-    def _get_quantization_config(
-        model_config: ModelConfig, load_config: LoadConfig
-    ) -> QuantizationConfig | None:
+    def _get_quantization_config(model_config: ModelConfig, load_config: LoadConfig) -> QuantizationConfig | None:
         """Get the quantization config."""
         from aphrodite.platforms import current_platform
 
         if model_config.quantization is not None:
-            from aphrodite.modeling.model_loader.weight_utils import (
-                get_quant_config)
+            from aphrodite.modeling.model_loader.weight_utils import get_quant_config
 
             quant_config = get_quant_config(model_config, load_config)
             capability_tuple = current_platform.get_device_capability()
@@ -262,16 +253,12 @@ class AphroditeConfig:
         return None
 
     @staticmethod
-    def get_quantization_config(
-        model_config: ModelConfig, load_config: LoadConfig
-    ) -> QuantizationConfig | None:
+    def get_quantization_config(model_config: ModelConfig, load_config: LoadConfig) -> QuantizationConfig | None:
         import copy
 
         # For some reason, the _ version of this modifies the model_config
         # object, so using deepcopy to avoid this problem.
-        return AphroditeConfig._get_quantization_config(
-            copy.deepcopy(model_config), load_config
-        )
+        return AphroditeConfig._get_quantization_config(copy.deepcopy(model_config), load_config)
 
     def with_hf_config(
         self,
@@ -305,9 +292,7 @@ class AphroditeConfig:
             self.lora_config.verify_with_model_config(self.model_config)
 
         if self.quant_config is None and self.model_config is not None:
-            self.quant_config = AphroditeConfig._get_quantization_config(
-                self.model_config, self.load_config
-            )
+            self.quant_config = AphroditeConfig._get_quantization_config(self.model_config, self.load_config)
 
         from aphrodite.platforms import current_platform
 
@@ -338,10 +323,7 @@ class AphroditeConfig:
         # If user does not set custom ops via none or all set it here based on
         # compilation mode and backend.
         if all(s not in self.compilation_config.custom_ops for s in ("all", "none")):
-            if (
-                self.compilation_config.backend == "inductor"
-                and self.compilation_config.mode > CompilationMode.NONE
-            ):
+            if self.compilation_config.backend == "inductor" and self.compilation_config.mode > CompilationMode.NONE:
                 self.compilation_config.custom_ops.append("none")
             else:
                 self.compilation_config.custom_ops.append("all")
@@ -359,9 +341,7 @@ class AphroditeConfig:
             if self.compilation_config.cudagraph_mode is None:
                 if self.compilation_config.mode == CompilationMode.APHRODITE_COMPILE:
                     # default to full and piecewise for most models
-                    self.compilation_config.cudagraph_mode = (
-                        CUDAGraphMode.FULL_AND_PIECEWISE
-                    )
+                    self.compilation_config.cudagraph_mode = CUDAGraphMode.FULL_AND_PIECEWISE
                 else:
                     self.compilation_config.cudagraph_mode = CUDAGraphMode.NONE
 
@@ -378,8 +358,7 @@ class AphroditeConfig:
                 elif self.model_config is not None:
                     if self.model_config.pooler_config is not None:
                         logger.warning_once(
-                            "Pooling models do not support full cudagraphs. "
-                            "Overriding cudagraph_mode to PIECEWISE."
+                            "Pooling models do not support full cudagraphs. Overriding cudagraph_mode to PIECEWISE."
                         )
                         self.compilation_config.cudagraph_mode = CUDAGraphMode.PIECEWISE
                     elif self.model_config.is_encoder_decoder:
@@ -419,15 +398,12 @@ class AphroditeConfig:
             # Handle single_user_mode: In single user mode, we only need CUDA
             # graphs for batch size 1 (padded to 2 for cudagraph capture)
             if self.scheduler_config.single_user_mode:
-                original_cudagraph_capture_sizes = (
-                    self.compilation_config.cudagraph_capture_sizes.copy()
-                )
+                original_cudagraph_capture_sizes = self.compilation_config.cudagraph_capture_sizes.copy()
                 if self.compilation_config.cudagraph_capture_sizes != [2]:
                     self.compilation_config.cudagraph_capture_sizes = [2]
                     self.compilation_config.max_cudagraph_capture_size = 2
                     logger.info(
-                        "Single user mode: Setting cudagraph_capture_sizes "
-                        "from %s to [2].",
+                        "Single user mode: Setting cudagraph_capture_sizes from %s to [2].",
                         original_cudagraph_capture_sizes,
                     )
                     # Reinitialize after changing sizes
@@ -436,10 +412,7 @@ class AphroditeConfig:
             self.compilation_config.cudagraph_mode = CUDAGraphMode.NONE
 
         if self.cache_config.kv_sharing_fast_prefill:
-            if (
-                self.speculative_config is not None
-                and self.speculative_config.use_eagle()
-            ):
+            if self.speculative_config is not None and self.speculative_config.use_eagle():
                 raise NotImplementedError(
                     "Fast prefill optimization for KV sharing is not "
                     "compatible with EAGLE as EAGLE requires correct logits "
@@ -459,8 +432,7 @@ class AphroditeConfig:
                 pooling_type = self.model_config.pooler_config.pooling_type
                 if pooling_type is None or pooling_type.lower() != "last":
                     disable_chunked_prefill_reasons.append(
-                        'Only "last" pooling supports chunked '
-                        "prefill and prefix caching; disabling both."
+                        'Only "last" pooling supports chunked prefill and prefix caching; disabling both.'
                     )
                 if not getattr(self.model_config.hf_config, "is_causal", True):
                     disable_chunked_prefill_reasons.append(
@@ -470,12 +442,11 @@ class AphroditeConfig:
             elif self.model_config.is_encoder_decoder:
                 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
-                self.scheduler_config.max_num_encoder_input_tokens = (
-                    MULTIMODAL_REGISTRY.get_encdec_max_encoder_len(self.model_config)
+                self.scheduler_config.max_num_encoder_input_tokens = MULTIMODAL_REGISTRY.get_encdec_max_encoder_len(
+                    self.model_config
                 )
                 logger.debug(
-                    "Encoder-decoder model detected: setting "
-                    "`max_num_encoder_input_tokens` to encoder length (%s)",
+                    "Encoder-decoder model detected: setting `max_num_encoder_input_tokens` to encoder length (%s)",
                     self.scheduler_config.max_num_encoder_input_tokens,
                 )
                 if (
@@ -493,16 +464,11 @@ class AphroditeConfig:
         # Disable for (a) collected blockers, (b) encoder–decoder, or
         # (c) explicit CP=False when APC wasn't requested.
         # Do NOT disable merely because the resolved CP flag is False.
-        apc_requested = (
-            self.cache_config is not None and self.cache_config.enable_prefix_caching
-        )
+        apc_requested = self.cache_config is not None and self.cache_config.enable_prefix_caching
         if (
             disable_chunked_prefill_reasons
             or (self.model_config is not None and self.model_config.is_encoder_decoder)
-            or (
-                self.scheduler_config.enable_chunked_prefill is False
-                and not apc_requested
-            )
+            or (self.scheduler_config.enable_chunked_prefill is False and not apc_requested)
         ):
             for reason in disable_chunked_prefill_reasons:
                 logger.info(reason)
@@ -518,8 +484,7 @@ class AphroditeConfig:
             and not self.cache_config.enable_prefix_caching
         ):
             logger.warning(
-                "KV cache events are on, but prefix caching is not enabled."
-                "Use --enable-prefix-caching to enable."
+                "KV cache events are on, but prefix caching is not enabled.Use --enable-prefix-caching to enable."
             )
         if (
             self.kv_events_config is not None
@@ -560,12 +525,8 @@ class AphroditeConfig:
                 )
 
             # final migrate the deprecated flags
-            self.compilation_config.use_cudagraph = (
-                self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
-            )
-            self.compilation_config.full_cuda_graph = (
-                self.compilation_config.cudagraph_mode.has_full_cudagraphs()
-            )
+            self.compilation_config.use_cudagraph = self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
+            self.compilation_config.full_cuda_graph = self.compilation_config.cudagraph_mode.has_full_cudagraphs()
 
         if self.parallel_config.enable_dbo:
             a2a_backend = self.parallel_config.all2all_backend
@@ -608,14 +569,8 @@ class AphroditeConfig:
             if self.kv_events_config is not None:
                 # Hybrid KV cache manager is not compatible with KV events.
                 self.scheduler_config.disable_hybrid_kv_cache_manager = True
-            if (
-                self.model_config is not None
-                and self.model_config.attention_chunk_size is not None
-            ):
-                if (
-                    self.speculative_config is not None
-                    and self.speculative_config.use_eagle()
-                ):
+            if self.model_config is not None and self.model_config.attention_chunk_size is not None:
+                if self.speculative_config is not None and self.speculative_config.use_eagle():
                     # Hybrid KV cache manager is not yet supported with chunked
                     # local attention + eagle.
                     self.scheduler_config.disable_hybrid_kv_cache_manager = True
@@ -631,15 +586,12 @@ class AphroditeConfig:
                     self.scheduler_config.disable_hybrid_kv_cache_manager = True
 
         if self.compilation_config.debug_dump_path:
-            self.compilation_config.debug_dump_path = (
-                self.compilation_config.debug_dump_path.absolute().expanduser()
-            )
+            self.compilation_config.debug_dump_path = self.compilation_config.debug_dump_path.absolute().expanduser()
         if envs.APHRODITE_DEBUG_DUMP_PATH is not None:
             env_path = Path(envs.APHRODITE_DEBUG_DUMP_PATH).absolute().expanduser()
             if self.compilation_config.debug_dump_path:
                 logger.warning(
-                    "Config-specified debug dump path is overridden"
-                    " by APHRODITE_DEBUG_DUMP_PATH to %s",
+                    "Config-specified debug dump path is overridden by APHRODITE_DEBUG_DUMP_PATH to %s",
                     env_path,
                 )
             self.compilation_config.debug_dump_path = env_path
@@ -664,11 +616,7 @@ class AphroditeConfig:
     def update_sizes_for_sequence_parallelism(self, possible_sizes: list) -> list:
         # remove the sizes that not multiple of tp_size when
         # enable sequence parallelism
-        removed_sizes = [
-            size
-            for size in possible_sizes
-            if size % self.parallel_config.tensor_parallel_size != 0
-        ]
+        removed_sizes = [size for size in possible_sizes if size % self.parallel_config.tensor_parallel_size != 0]
         if removed_sizes:
             logger.warning(
                 "Batch sizes %s are removed because they are not "
@@ -678,11 +626,7 @@ class AphroditeConfig:
                 self.parallel_config.tensor_parallel_size,
             )
 
-        return [
-            size
-            for size in possible_sizes
-            if size % self.parallel_config.tensor_parallel_size == 0
-        ]
+        return [size for size in possible_sizes if size % self.parallel_config.tensor_parallel_size == 0]
 
     def _set_cudagraph_sizes(self):
         """
@@ -730,26 +674,20 @@ class AphroditeConfig:
             and self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
         ):
             # determine the initial max_cudagraph_capture_size
-            max_cudagraph_capture_size = (
-                self.compilation_config.max_cudagraph_capture_size
-            )
+            max_cudagraph_capture_size = self.compilation_config.max_cudagraph_capture_size
             if max_cudagraph_capture_size is None:
-                max_cudagraph_capture_size = min(
-                    self.scheduler_config.max_num_seqs * 2, 512
-                )
+                max_cudagraph_capture_size = min(self.scheduler_config.max_num_seqs * 2, 512)
             max_num_tokens = self.scheduler_config.max_num_batched_tokens
             max_cudagraph_capture_size = min(max_num_tokens, max_cudagraph_capture_size)
 
             assert max_cudagraph_capture_size >= 1, (
-                "Maximum cudagraph size should be greater than or equal to 1 "
-                "when using cuda graph."
+                "Maximum cudagraph size should be greater than or equal to 1 when using cuda graph."
             )
 
             # determine the cudagraph_capture_sizes
             if self.compilation_config.cudagraph_capture_sizes is not None:
                 assert len(self.compilation_config.cudagraph_capture_sizes) > 0, (
-                    "cudagraph_capture_sizes should contain at least one element "
-                    "when using cuda graph."
+                    "cudagraph_capture_sizes should contain at least one element when using cuda graph."
                 )
                 # de-duplicate the sizes provided by the config
                 dedup_sizes = list(set(self.compilation_config.cudagraph_capture_sizes))
@@ -757,33 +695,23 @@ class AphroditeConfig:
                 # sort to make sure the sizes are in ascending order
                 cudagraph_capture_sizes.sort()
             else:
-                cudagraph_capture_sizes = [
-                    i for i in [1, 2, 4] if i <= max_cudagraph_capture_size
-                ]
+                cudagraph_capture_sizes = [i for i in [1, 2, 4] if i <= max_cudagraph_capture_size]
                 if max_cudagraph_capture_size >= 8:
                     # Step size 8 for small batch sizes, up to 256(not included)
-                    cudagraph_capture_sizes += list(
-                        range(8, min(max_cudagraph_capture_size + 1, 256), 8)
-                    )
+                    cudagraph_capture_sizes += list(range(8, min(max_cudagraph_capture_size + 1, 256), 8))
                 if max_cudagraph_capture_size >= 256:
                     # Step size 16 for larger batch sizes
-                    cudagraph_capture_sizes += list(
-                        range(256, max_cudagraph_capture_size + 1, 16)
-                    )
+                    cudagraph_capture_sizes += list(range(256, max_cudagraph_capture_size + 1, 16))
 
             if (
                 self.parallel_config.tensor_parallel_size > 1
                 and self.compilation_config.pass_config.enable_sequence_parallelism
             ):
-                cudagraph_capture_sizes = self.update_sizes_for_sequence_parallelism(
-                    cudagraph_capture_sizes
-                )
+                cudagraph_capture_sizes = self.update_sizes_for_sequence_parallelism(cudagraph_capture_sizes)
 
             # user-specific compilation_config.max_cudagraph_capture_size get
             # truncated to valid_max_size when they are inconsistent.
-            valid_max_size = (
-                cudagraph_capture_sizes[-1] if cudagraph_capture_sizes else 0
-            )
+            valid_max_size = cudagraph_capture_sizes[-1] if cudagraph_capture_sizes else 0
             if (
                 self.compilation_config.max_cudagraph_capture_size is not None
                 and self.compilation_config.max_cudagraph_capture_size != valid_max_size
@@ -805,17 +733,14 @@ class AphroditeConfig:
             # always set the final max_cudagraph_capture_size
             self.compilation_config.max_cudagraph_capture_size = valid_max_size
 
-            if self.compilation_config.cudagraph_capture_sizes is not None and len(
-                cudagraph_capture_sizes
-            ) < len(self.compilation_config.cudagraph_capture_sizes):
+            if self.compilation_config.cudagraph_capture_sizes is not None and len(cudagraph_capture_sizes) < len(
+                self.compilation_config.cudagraph_capture_sizes
+            ):
                 # If users have specified capture sizes, we only need to
                 # compare the lens before and after modification since the modified
                 # list is only the subset of the original list.
                 logger.warning(
-                    (
-                        "cudagraph_capture_sizes specified in compilation_config"
-                        " %s is overridden by config %s"
-                    ),
+                    ("cudagraph_capture_sizes specified in compilation_config %s is overridden by config %s"),
                     self.compilation_config.cudagraph_capture_sizes,
                     cudagraph_capture_sizes,
                 )
@@ -850,8 +775,7 @@ class AphroditeConfig:
         if architecture is None:
             return
 
-        from aphrodite.modeling.models.config import (
-            MODELS_CONFIG_MAP, HybridAttentionMambaModelConfig)
+        from aphrodite.modeling.models.config import MODELS_CONFIG_MAP, HybridAttentionMambaModelConfig
 
         cls = MODELS_CONFIG_MAP.get(architecture, None)
         if cls is not None:
@@ -862,19 +786,13 @@ class AphroditeConfig:
 
         if self.model_config.convert_type == "classify":
             # Maybe convert ForCausalLM into ForSequenceClassification model.
-            from aphrodite.modeling.models.adapters import (
-                SequenceClassificationConfig)
+            from aphrodite.modeling.models.adapters import SequenceClassificationConfig
 
             SequenceClassificationConfig.verify_and_update_config(self)
 
-        if hasattr(self.model_config, "model_weights") and is_runai_obj_uri(
-            self.model_config.model_weights
-        ):
+        if hasattr(self.model_config, "model_weights") and is_runai_obj_uri(self.model_config.model_weights):
             if self.load_config.load_format == "auto":
-                logger.info(
-                    "Detected Run:ai model config. "
-                    "Overriding `load_format` to 'runai_streamer'"
-                )
+                logger.info("Detected Run:ai model config. Overriding `load_format` to 'runai_streamer'")
                 self.load_config.load_format = "runai_streamer"
             elif self.load_config.load_format not in (
                 "runai_streamer",
@@ -896,11 +814,7 @@ class AphroditeConfig:
         tp_rank = self.parallel_config.rank
         dp_rank = self.parallel_config.data_parallel_rank
         data_parallel_size = self.parallel_config.data_parallel_size
-        append_path = (
-            f"rank_{tp_rank}"
-            if data_parallel_size == 1
-            else f"rank_{tp_rank}_dp_{dp_rank}"
-        )
+        append_path = f"rank_{tp_rank}" if data_parallel_size == 1 else f"rank_{tp_rank}_dp_{dp_rank}"
         path = self.compilation_config.debug_dump_path / append_path
         return path
 
@@ -945,9 +859,7 @@ class AphroditeConfig:
             and self.cache_config.mamba_block_size != self.model_config.max_model_len
         )
         if mamba_block_size_is_set and not self.cache_config.enable_prefix_caching:
-            raise ValueError(
-                "--mamba-block-size can only be set with --enable-prefix-caching"
-            )
+            raise ValueError("--mamba-block-size can only be set with --enable-prefix-caching")
         return self
 
 
@@ -956,9 +868,7 @@ _current_prefix: str | None = None
 
 
 @contextmanager
-def set_current_aphrodite_config(
-    aphrodite_config: AphroditeConfig, check_compile=False, prefix: str | None = None
-):
+def set_current_aphrodite_config(aphrodite_config: AphroditeConfig, check_compile=False, prefix: str | None = None):
     """
     Temporarily set the current Aphrodite config.
     Used during model initialization.

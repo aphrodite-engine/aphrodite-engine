@@ -1,11 +1,8 @@
 from collections.abc import Sequence
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage,
-                                                 ResponsesRequest)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, ResponsesRequest
 from aphrodite.logger import init_logger
-from aphrodite.reasoning.abs_reasoning_parsers import (ReasoningParser,
-                                                       ReasoningParserManager)
+from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParser, ReasoningParserManager
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 

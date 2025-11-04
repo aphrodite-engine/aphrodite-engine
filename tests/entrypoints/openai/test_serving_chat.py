@@ -11,8 +11,7 @@ from openai import OpenAI
 from aphrodite.config.multimodal import MultiModalConfig
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.v1.engine.async_llm import AsyncLLM
 
@@ -63,14 +62,10 @@ def default_server_args(with_tool_parser: bool):
 
 
 @pytest.fixture(scope="module")
-def gptoss_server(
-    monkeypatch_module: pytest.MonkeyPatch, default_server_args: list[str]
-):
+def gptoss_server(monkeypatch_module: pytest.MonkeyPatch, default_server_args: list[str]):
     with monkeypatch_module.context() as m:
         m.setenv("APHRODITE_ATTENTION_BACKEND", "TRITON_ATTN")
-        with RemoteOpenAIServer(
-            GPT_OSS_MODEL_NAME, default_server_args
-        ) as remote_server:
+        with RemoteOpenAIServer(GPT_OSS_MODEL_NAME, default_server_args) as remote_server:
             yield remote_server
 
 
@@ -81,9 +76,7 @@ async def gptoss_client(gptoss_server):
 
 
 @pytest.mark.asyncio
-async def test_gpt_oss_chat_tool_call_streaming(
-    gptoss_client: OpenAI, with_tool_parser: bool
-):
+async def test_gpt_oss_chat_tool_call_streaming(gptoss_client: OpenAI, with_tool_parser: bool):
     tools = [
         {
             "type": "function",
@@ -185,9 +178,7 @@ async def test_gpt_oss_multi_turn_chat(gptoss_client: OpenAI, with_tool_parser: 
     assert not first_msg.content
 
     messages.append({"role": "assistant", "content": args1})
-    messages.append(
-        {"role": "user", "content": "Now convert to celsius and return JSON only"}
-    )
+    messages.append({"role": "user", "content": "Now convert to celsius and return JSON only"})
 
     second = await gptoss_client.chat.completions.create(
         model=GPT_OSS_MODEL_NAME,
@@ -202,9 +193,7 @@ async def test_gpt_oss_multi_turn_chat(gptoss_client: OpenAI, with_tool_parser: 
 
 
 @pytest.mark.asyncio
-async def test_gpt_oss_tool_message_array_content(
-    gptoss_client: OpenAI, with_tool_parser: bool
-):
+async def test_gpt_oss_tool_message_array_content(gptoss_client: OpenAI, with_tool_parser: bool):
     """Test that tool messages support both string and array content formats."""
     if not with_tool_parser:
         pytest.skip("skip non-tool for array content tests")
@@ -274,9 +263,7 @@ async def test_gpt_oss_tool_message_array_content(
         },
         {
             "role": "tool",
-            "content": [
-                {"type": "text", "text": "f2e897a7-2705-4337-8193-2a8f57b81618"}
-            ],
+            "content": [{"type": "text", "text": "f2e897a7-2705-4337-8193-2a8f57b81618"}],
         },
     ]
 

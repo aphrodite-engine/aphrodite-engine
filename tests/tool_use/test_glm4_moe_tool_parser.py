@@ -25,14 +25,10 @@ def glm4_moe_tool_parser(glm4_moe_tokenizer):
     return Glm4MoeModelToolParser(glm4_moe_tokenizer)
 
 
-def assert_tool_calls(
-    actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]
-):
+def assert_tool_calls(actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]):
     assert len(actual_tool_calls) == len(expected_tool_calls)
 
-    for actual_tool_call, expected_tool_call in zip(
-        actual_tool_calls, expected_tool_calls
-    ):
+    for actual_tool_call, expected_tool_call in zip(actual_tool_calls, expected_tool_calls):
         assert isinstance(actual_tool_call.id, str)
         assert len(actual_tool_call.id) > 0
 
@@ -46,9 +42,7 @@ def assert_tool_calls(
 
 def test_extract_tool_calls_no_tools(glm4_moe_tool_parser):
     model_output = "This is a test"
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert not extracted_tool_calls.tools_called
     assert extracted_tool_calls.tool_calls == []
     assert extracted_tool_calls.content == model_output
@@ -208,12 +202,8 @@ def test_extract_tool_calls_no_tools(glm4_moe_tool_parser):
         ),
     ],
 )
-def test_extract_tool_calls(
-    glm4_moe_tool_parser, model_output, expected_tool_calls, expected_content
-):
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+def test_extract_tool_calls(glm4_moe_tool_parser, model_output, expected_tool_calls, expected_content):
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert extracted_tool_calls.tools_called
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
 
@@ -232,9 +222,7 @@ I will help you get the weather.
 <arg_value>2025-08-01</arg_value>
 </tool_call>"""
 
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     assert len(extracted_tool_calls.tool_calls) == 1
@@ -255,9 +243,7 @@ def test_extract_tool_calls_malformed_xml(glm4_moe_tool_parser):
 <arg_value>value</arg_value>
 </tool_call>"""
 
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     # Should handle malformed XML gracefully
     # The parser should either extract what it can or return no tool calls
@@ -271,9 +257,7 @@ def test_extract_tool_calls_empty_arguments(glm4_moe_tool_parser):
     model_output = """<tool_call>get_current_time
 </tool_call>"""
 
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     assert len(extracted_tool_calls.tool_calls) == 1
@@ -302,9 +286,7 @@ meaningwhile, I will also check the weather in Shanghai.
 <arg_value>2025-08-01</arg_value>
 </tool_call>"""
 
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     assert len(extracted_tool_calls.tool_calls) == 2
@@ -415,9 +397,7 @@ def test_extract_tool_calls_special_characters(glm4_moe_tool_parser):
 <arg_value>high</arg_value>
 </tool_call>"""
 
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     assert len(extracted_tool_calls.tool_calls) == 1
@@ -437,9 +417,7 @@ def test_extract_tool_calls_incomplete_tool_call(glm4_moe_tool_parser):
 <arg_key>date</arg_key>
 <arg_value>2025-08-01</arg_value>"""
 
-    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = glm4_moe_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     # Incomplete tool calls should not be extracted
     assert not extracted_tool_calls.tools_called

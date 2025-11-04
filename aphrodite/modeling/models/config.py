@@ -7,8 +7,7 @@ from aphrodite.logger import init_logger
 from aphrodite.modeling.models import ModelRegistry
 from aphrodite.utils.math_utils import cdiv, round_up
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
-from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, MambaSpec,
-                                             MLAAttentionSpec)
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec, MambaSpec, MLAAttentionSpec
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
@@ -92,9 +91,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
 
         assert config.__class__.__name__ == "NomicBertConfig"
         assert config.activation_function in ["swiglu", "gelu"]
-        config.position_embedding_type = getattr(
-            config, "position_embedding_type", "rope"
-        )
+        config.position_embedding_type = getattr(config, "position_embedding_type", "rope")
 
         if config.activation_function == "swiglu":
             config.hidden_act = "silu"
@@ -137,9 +134,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
             # nomic-embed-text-v2-moe the length is set to 512
             # by sentence_bert_config.json.
             max_model_len_before = aphrodite_config.model_config.max_model_len
-            max_model_len = min(
-                aphrodite_config.model_config.max_model_len, max_trained_positions
-            )
+            max_model_len = min(aphrodite_config.model_config.max_model_len, max_trained_positions)
 
             aphrodite_config.recalculate_max_model_len(max_model_len)
             logger.warning(
@@ -204,9 +199,7 @@ class Qwen3ForSequenceClassificationConfig(VerifyAndUpdateConfig):
     def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
         config = aphrodite_config.model_config.hf_config
 
-        is_original_qwen3_reranker = getattr(
-            config, "is_original_qwen3_reranker", False
-        )
+        is_original_qwen3_reranker = getattr(config, "is_original_qwen3_reranker", False)
 
         if not is_original_qwen3_reranker:
             return
@@ -262,16 +255,11 @@ class GptOssForCausalLMConfig(VerifyAndUpdateConfig):
         compilation_config = aphrodite_config.compilation_config
         # Only override when the user has not set either of
         # cudagraph_capture_sizes or max_cudagraph_capture_size.
-        if (
-            compilation_config.cudagraph_capture_sizes is None
-            and compilation_config.max_cudagraph_capture_size is None
-        ):
+        if compilation_config.cudagraph_capture_sizes is None and compilation_config.max_cudagraph_capture_size is None:
             # FIXME(woosuk): When using full cuda graph with FA3, the max
             # supported size is 992.
             compilation_config.max_cudagraph_capture_size = 992
-            logger.info(
-                "Overriding max cuda graph capture size to %d for performance.", 992
-            )
+            logger.info("Overriding max cuda graph capture size to %d for performance.", 992)
 
 
 class MambaModelConfig(VerifyAndUpdateConfig):
@@ -302,16 +290,11 @@ class MambaModelConfig(VerifyAndUpdateConfig):
                     "Please report any issues you may observe."
                 )
             else:
-                logger.info(
-                    "Hybrid or mamba-based model detected without "
-                    "support for prefix caching: disabling."
-                )
+                logger.info("Hybrid or mamba-based model detected without support for prefix caching: disabling.")
                 cache_config.enable_prefix_caching = False
 
         # TODO(tdoublep): remove once cascade attention is supported
-        logger.info(
-            "Disabling cascade attention since it is not supported for hybrid models."
-        )
+        logger.info("Disabling cascade attention since it is not supported for hybrid models.")
         model_config.disable_cascade_attn = True
 
 
@@ -333,7 +316,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
             return
 
         # Save the user input before it gets modified by MambaModelConfig
-        mamba_block_size = aphrodite_config.cache_config.mamba_block_size
+        # mamba_block_size = aphrodite_config.cache_config.mamba_block_size
         # Enable FULL_AND_PIECEWISE by default
         MambaModelConfig.verify_and_update_config(aphrodite_config)
 
@@ -427,8 +410,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
         if cache_config.block_size is None or cache_config.block_size < attn_block_size:
             cache_config.block_size = attn_block_size
             logger.info(
-                "Setting attention block size to %d tokens "
-                "to ensure that attention page size is >= mamba page size.",
+                "Setting attention block size to %d tokens to ensure that attention page size is >= mamba page size.",
                 attn_block_size,
             )
 
@@ -442,14 +424,9 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
             return
 
         # pad mamba page size to exactly match attention
-        if (
-            cache_config.mamba_page_size_padded is None
-            or cache_config.mamba_page_size_padded != attn_page_size
-        ):
+        if cache_config.mamba_page_size_padded is None or cache_config.mamba_page_size_padded != attn_page_size:
             cache_config.mamba_page_size_padded = attn_page_size
-            mamba_padding_pct = (
-                100 * (attn_page_size - mamba_page_size) / mamba_page_size
-            )
+            mamba_padding_pct = 100 * (attn_page_size - mamba_page_size) / mamba_page_size
             logger.info(
                 "Padding mamba page size by %.2f%% to ensure "
                 "that mamba page size and attention page size are "

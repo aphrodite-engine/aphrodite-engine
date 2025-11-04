@@ -9,8 +9,7 @@ import torch
 
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.utils.mem_utils import MemorySnapshot
-from aphrodite.v1.worker.gpu_worker import (
-    Worker, init_worker_distributed_environment)
+from aphrodite.v1.worker.gpu_worker import Worker, init_worker_distributed_environment
 
 # Global queue to track operation order across processes
 _QUEUE: Queue | None = None
@@ -79,9 +78,7 @@ def worker_process(
         # Apply minimal patches to track operation order
         init_patch = patch(
             "aphrodite.v1.worker.gpu_worker.init_worker_distributed_environment",
-            side_effect=make_operation_tracker(
-                "init_distributed", original_init_worker
-            ),
+            side_effect=make_operation_tracker("init_distributed", original_init_worker),
         )
         memory_patch = patch.object(
             MemorySnapshot,
@@ -108,9 +105,7 @@ def worker_process(
         raise
 
 
-@pytest.mark.skipif(
-    torch.cuda.device_count() < 2, reason="Need at least 2 GPUs for tensor parallelism"
-)
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="Need at least 2 GPUs for tensor parallelism")
 def test_init_distributed_is_called_before_memory_snapshot():
     """Test that distributed env is setup before memory snapshot.
 

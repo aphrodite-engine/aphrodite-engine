@@ -150,10 +150,7 @@ class Platform:
         # Treat empty device control env var as unset. This is a valid
         # configuration in Ray setups where the engine is launched in
         # a CPU-only placement group located on a GPU node.
-        if (
-            cls.device_control_env_var in os.environ
-            and os.environ[cls.device_control_env_var] != ""
-        ):
+        if cls.device_control_env_var in os.environ and os.environ[cls.device_control_env_var] != "":
             device_ids = os.environ[cls.device_control_env_var].split(",")
             physical_device_id = device_ids[device_id]
             return int(physical_device_id)
@@ -295,9 +292,7 @@ class Platform:
         raise NotImplementedError
 
     @classmethod
-    def pre_register_and_update(
-        cls, parser: FlexibleArgumentParser | None = None
-    ) -> None:
+    def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         """
         Do some pre-registration or update action for the current platform.
 
@@ -341,9 +336,7 @@ class Platform:
         Verify whether the quantization is supported by the current platform.
         """
         if cls.supported_quantization and quant not in cls.supported_quantization:
-            raise ValueError(
-                f"{quant} quantization is currently not supported in {cls.device_name}."
-            )
+            raise ValueError(f"{quant} quantization is currently not supported in {cls.device_name}.")
 
     @classmethod
     def get_cpu_architecture(cls) -> CpuArchEnum:
@@ -372,17 +365,12 @@ class Platform:
         if in_wsl():
             # Pinning memory in WSL is not supported.
             # https://docs.nvidia.com/cuda/wsl-user-guide/index.html#known-limitations-for-linux-cuda-applications
-            logger.warning(
-                "Using 'pin_memory=False' as WSL is detected. "
-                "This may slow down the performance."
-            )
+            logger.warning("Using 'pin_memory=False' as WSL is detected. This may slow down the performance.")
             return False
         return True
 
     @classmethod
-    def get_current_memory_usage(
-        cls, device: torch.types.Device | None = None
-    ) -> float:
+    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
         """
         Return the memory usage in bytes.
         """
@@ -469,10 +457,7 @@ class Platform:
         from aphrodite.config import get_current_aphrodite_config
 
         parallel_config = get_current_aphrodite_config().parallel_config
-        return (
-            envs.APHRODITE_USE_V1
-            or parallel_config.distributed_executor_backend == "external_launcher"
-        )
+        return envs.APHRODITE_USE_V1 or parallel_config.distributed_executor_backend == "external_launcher"
 
     @classmethod
     def use_custom_allreduce(cls) -> bool:

@@ -83,9 +83,7 @@ class TPUSupportedSamplingMetadata:
                 we want to pre-compile a graph with sampling parameters, even if
                 they are not strictly needed for greedy decoding.
         """
-        needs_logprobs = (
-            input_batch.max_num_logprobs > 0 if input_batch.max_num_logprobs else False
-        )
+        needs_logprobs = input_batch.max_num_logprobs > 0 if input_batch.max_num_logprobs else False
         # Early return to avoid unnecessary cpu to tpu copy
         if input_batch.all_greedy is True and generate_params_if_all_greedy is False:
             return cls(all_greedy=True, logprobs=needs_logprobs)
@@ -96,18 +94,14 @@ class TPUSupportedSamplingMetadata:
             # Pad value is the default one.
             cpu_tensor[num_reqs:padded_num_reqs] = fill_val
 
-        fill_slice(
-            input_batch.temperature_cpu_tensor, DEFAULT_SAMPLING_PARAMS["temperature"]
-        )
+        fill_slice(input_batch.temperature_cpu_tensor, DEFAULT_SAMPLING_PARAMS["temperature"])
         fill_slice(input_batch.min_p_cpu_tensor, DEFAULT_SAMPLING_PARAMS["min_p"])
         fill_slice(input_batch.top_k_cpu_tensor, DEFAULT_SAMPLING_PARAMS["top_k"])
         fill_slice(input_batch.top_p_cpu_tensor, DEFAULT_SAMPLING_PARAMS["top_p"])
 
         # Slice persistent device tensors to a fixed pre-compiled padded shape.
         return cls(
-            temperature=input_batch.temperature_cpu_tensor[:padded_num_reqs].to(
-                xla_device
-            ),
+            temperature=input_batch.temperature_cpu_tensor[:padded_num_reqs].to(xla_device),
             all_greedy=input_batch.all_greedy,
             all_random=input_batch.all_random,
             # TODO enable more and avoid returning None values

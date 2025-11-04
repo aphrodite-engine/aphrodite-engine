@@ -10,29 +10,37 @@ from typing_extensions import assert_never, override
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (EmbeddingBytesResponse,
-                                                 EmbeddingChatRequest,
-                                                 EmbeddingCompletionRequest,
-                                                 EmbeddingRequest,
-                                                 EmbeddingResponse,
-                                                 EmbeddingResponseData,
-                                                 ErrorResponse, UsageInfo)
-from aphrodite.endpoints.openai.serving_engine import (EmbeddingServeContext,
-                                                       OpenAIServing,
-                                                       ServeContext,
-                                                       TextTokensPrompt)
+from aphrodite.endpoints.openai.protocol import (
+    EmbeddingBytesResponse,
+    EmbeddingChatRequest,
+    EmbeddingCompletionRequest,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    EmbeddingResponseData,
+    ErrorResponse,
+    UsageInfo,
+)
+from aphrodite.endpoints.openai.serving_engine import (
+    EmbeddingServeContext,
+    OpenAIServing,
+    ServeContext,
+    TextTokensPrompt,
+)
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.renderer import RenderConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
 from aphrodite.logger import init_logger
-from aphrodite.outputs import (EmbeddingRequestOutput, PoolingOutput,
-                               PoolingRequestOutput, RequestOutput)
+from aphrodite.outputs import EmbeddingRequestOutput, PoolingOutput, PoolingRequestOutput, RequestOutput
 from aphrodite.utils.async_utils import merge_async_iterators
 from aphrodite.utils.collection_utils import chunk_list
-from aphrodite.utils.serial_utils import (EmbedDType, EncodingFormat,
-                                          Endianness, encode_pooling_bytes,
-                                          encode_pooling_output)
+from aphrodite.utils.serial_utils import (
+    EmbedDType,
+    EncodingFormat,
+    Endianness,
+    encode_pooling_bytes,
+    encode_pooling_output,
+)
 
 logger = init_logger(__name__)
 
@@ -44,14 +52,8 @@ class EmbeddingMixin(OpenAIServing):
         pooler_config = self.model_config.pooler_config
 
         # Avoid repeated attribute lookups
-        self.supports_chunked_processing = bool(
-            pooler_config and pooler_config.enable_chunked_processing
-        )
-        self.max_embed_len = (
-            pooler_config.max_embed_len
-            if pooler_config and pooler_config.max_embed_len
-            else None
-        )
+        self.supports_chunked_processing = bool(pooler_config and pooler_config.enable_chunked_processing)
+        self.max_embed_len = pooler_config.max_embed_len if pooler_config and pooler_config.max_embed_len else None
 
     @override
     async def _preprocess(
@@ -179,8 +181,7 @@ class EmbeddingMixin(OpenAIServing):
     def _should_use_chunked_processing(self, request) -> bool:
         """Check if chunked processing should be used for this request."""
         return (
-            isinstance(request, (EmbeddingCompletionRequest, EmbeddingChatRequest))
-            and self.supports_chunked_processing
+            isinstance(request, (EmbeddingCompletionRequest, EmbeddingChatRequest)) and self.supports_chunked_processing
         )
 
     async def _process_chunked_request(
@@ -198,9 +199,7 @@ class EmbeddingMixin(OpenAIServing):
         # Split into chunks using max_position_embeddings
         max_pos_embeddings = self._get_max_position_embeddings()
         # Process all chunks for MEAN aggregation
-        for chunk_idx, chunk_tokens in enumerate(
-            chunk_list(token_ids, max_pos_embeddings)
-        ):
+        for chunk_idx, chunk_tokens in enumerate(chunk_list(token_ids, max_pos_embeddings)):
             # Create a request ID for this chunk
             chunk_request_id = f"{ctx.request_id}-prompt-{prompt_idx}-chunk-{chunk_idx}"
 
@@ -209,9 +208,7 @@ class EmbeddingMixin(OpenAIServing):
 
             # Create chunk request prompt for logging
             chunk_text = ""
-            chunk_request_prompt = TextTokensPrompt(
-                prompt=chunk_text, prompt_token_ids=chunk_tokens
-            )
+            chunk_request_prompt = TextTokensPrompt(prompt=chunk_text, prompt_token_ids=chunk_tokens)
 
             # Log the chunk
             self._log_inputs(
@@ -291,8 +288,7 @@ class EmbeddingMixin(OpenAIServing):
                 if enable_chunked:
                     # Allow long inputs when chunked processing is enabled
                     logger.info(
-                        "Input length %s exceeds max_position_embeddings "
-                        "%s, will use chunked processing",
+                        "Input length %s exceeds max_position_embeddings %s, will use chunked processing",
                         token_num,
                         max_pos_embeddings,
                     )
@@ -312,11 +308,7 @@ class EmbeddingMixin(OpenAIServing):
 
     def _is_text_tokens_prompt(self, prompt) -> bool:
         """Check if a prompt is a TextTokensPrompt (has prompt_token_ids)."""
-        return (
-            isinstance(prompt, dict)
-            and "prompt_token_ids" in prompt
-            and "prompt_embeds" not in prompt
-        )
+        return isinstance(prompt, dict) and "prompt_token_ids" in prompt and "prompt_embeds" not in prompt
 
     async def _create_single_prompt_generator(
         self,
@@ -362,16 +354,10 @@ class EmbeddingMixin(OpenAIServing):
             return await super()._prepare_generators(ctx)
 
         # Custom logic for chunked processing
-        generators: list[
-            AsyncGenerator[RequestOutput | PoolingRequestOutput, None]
-        ] = []
+        generators: list[AsyncGenerator[RequestOutput | PoolingRequestOutput, None]] = []
 
         try:
-            trace_headers = (
-                None
-                if ctx.raw_request is None
-                else await self._get_trace_headers(ctx.raw_request.headers)
-            )
+            trace_headers = None if ctx.raw_request is None else await self._get_trace_headers(ctx.raw_request.headers)
 
             pooling_params = self._create_pooling_params(ctx)
             if isinstance(pooling_params, ErrorResponse):
@@ -474,9 +460,7 @@ class EmbeddingMixin(OpenAIServing):
                     # for embedding processing
                     if not isinstance(result, PoolingRequestOutput):
                         return self.create_error_response(
-                            f"Expected PoolingRequestOutput for "
-                            f"chunked embedding, got "
-                            f"{type(result).__name__}"
+                            f"Expected PoolingRequestOutput for chunked embedding, got {type(result).__name__}"
                         )
 
                     # Handle both PoolingOutput and
@@ -489,19 +473,13 @@ class EmbeddingMixin(OpenAIServing):
                         # convert embedding list to tensor
                         embedding_data = result.outputs.embedding
                     else:
-                        return self.create_error_response(
-                            f"Unsupported output type: {type(result.outputs).__name__}"
-                        )
+                        return self.create_error_response(f"Unsupported output type: {type(result.outputs).__name__}")
 
                     if not isinstance(embedding_data, torch.Tensor):
-                        embedding_data = torch.tensor(
-                            embedding_data, dtype=torch.float32
-                        )
+                        embedding_data = torch.tensor(embedding_data, dtype=torch.float32)
 
                     if result.prompt_token_ids is None:
-                        return self.create_error_response(
-                            "prompt_token_ids cannot be None for chunked processing"
-                        )
+                        return self.create_error_response("prompt_token_ids cannot be None for chunked processing")
                     weight = len(result.prompt_token_ids)
 
                     weighted_embedding = embedding_data.to(dtype=torch.float32) * weight
@@ -524,9 +502,7 @@ class EmbeddingMixin(OpenAIServing):
                     except (ValueError, IndexError):
                         prompt_idx = result_idx  # Fallback to result_idx
 
-                    short_prompts_results[prompt_idx] = cast(
-                        PoolingRequestOutput, result
-                    )
+                    short_prompts_results[prompt_idx] = cast(PoolingRequestOutput, result)
 
             # Finalize aggregated results
             final_res_batch: list[PoolingRequestOutput | EmbeddingRequestOutput] = []
@@ -556,13 +532,9 @@ class EmbeddingMixin(OpenAIServing):
                         # Get original prompt token IDs for this prompt
                         original_prompt = ctx.engine_prompts[prompt_idx]
                         if not self._is_text_tokens_prompt(original_prompt):
-                            return self.create_error_response(
-                                f"Chunked prompt {prompt_idx} is not a TextTokensPrompt"
-                            )
+                            return self.create_error_response(f"Chunked prompt {prompt_idx} is not a TextTokensPrompt")
 
-                        original_token_ids = cast(TextTokensPrompt, original_prompt)[
-                            "prompt_token_ids"
-                        ]
+                        original_token_ids = cast(TextTokensPrompt, original_prompt)["prompt_token_ids"]
 
                         pooling_request_output = PoolingRequestOutput(
                             request_id=aggregator["request_id"],
@@ -574,21 +546,13 @@ class EmbeddingMixin(OpenAIServing):
 
                         final_res_batch.append(pooling_request_output)
                     else:
-                        return self.create_error_response(
-                            f"Failed to aggregate chunks for prompt {prompt_idx}"
-                        )
+                        return self.create_error_response(f"Failed to aggregate chunks for prompt {prompt_idx}")
                 elif prompt_idx in short_prompts_results:
-                    final_res_batch.append(
-                        cast(PoolingRequestOutput, short_prompts_results[prompt_idx])
-                    )
+                    final_res_batch.append(cast(PoolingRequestOutput, short_prompts_results[prompt_idx]))
                 else:
-                    return self.create_error_response(
-                        f"Result not found for prompt {prompt_idx}"
-                    )
+                    return self.create_error_response(f"Result not found for prompt {prompt_idx}")
 
-            ctx.final_res_batch = cast(
-                list[RequestOutput | PoolingRequestOutput], final_res_batch
-            )
+            ctx.final_res_batch = cast(list[RequestOutput | PoolingRequestOutput], final_res_batch)
 
             return None
 
@@ -635,10 +599,7 @@ class OpenAIServingEmbedding(EmbeddingMixin):
         for the API specification. This API mimics the OpenAI Embedding API.
         """
         model_name = self.models.model_name()
-        request_id = (
-            f"{self.request_id_prefix}-"
-            f"{self._base_request_id(raw_request, request.request_id)}"
-        )
+        request_id = f"{self.request_id_prefix}-{self._base_request_id(raw_request, request.request_id)}"
 
         ctx = EmbeddingServeContext(
             request=request,

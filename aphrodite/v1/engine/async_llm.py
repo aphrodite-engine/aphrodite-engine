@@ -24,10 +24,8 @@ from aphrodite.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.plugins.io_processors import get_io_processor
 from aphrodite.tasks import SupportedTask
 from aphrodite.tracing import init_tracer
-from aphrodite.transformers_utils.config import (
-    maybe_register_config_serialize_by_value)
-from aphrodite.transformers_utils.tokenizer import (
-    AnyTokenizer, init_tokenizer_from_configs)
+from aphrodite.transformers_utils.config import maybe_register_config_serialize_by_value
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, init_tokenizer_from_configs
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.async_utils import cancel_task_threadsafe
 from aphrodite.utils.collection_utils import as_list
@@ -36,13 +34,11 @@ from aphrodite.utils.math_utils import cdiv
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.core_client import EngineCoreClient
 from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError
-from aphrodite.v1.engine.output_processor import (OutputProcessor,
-                                                  RequestOutputCollector)
+from aphrodite.v1.engine.output_processor import OutputProcessor, RequestOutputCollector
 from aphrodite.v1.engine.parallel_sampling import ParentRequest
 from aphrodite.v1.engine.processor import Processor
 from aphrodite.v1.executor import Executor
-from aphrodite.v1.metrics.loggers import (StatLoggerFactory, StatLoggerManager,
-                                          load_stat_logger_plugin_factories)
+from aphrodite.v1.metrics.loggers import StatLoggerFactory, StatLoggerManager, load_stat_logger_plugin_factories
 from aphrodite.v1.metrics.prometheus import shutdown_prometheus
 from aphrodite.v1.metrics.stats import IterationStats
 
@@ -126,9 +122,7 @@ class AsyncLLM(EngineClient):
         )
 
         # OutputProcessor (converts EngineCoreOutputs --> RequestOutput).
-        self.output_processor = OutputProcessor(
-            self.tokenizer, log_stats=self.log_stats
-        )
+        self.output_processor = OutputProcessor(self.tokenizer, log_stats=self.log_stats)
         endpoint = self.observability_config.otlp_traces_endpoint
         if endpoint is not None:
             tracer = init_tracer("aphrodite.llm_engine", endpoint)
@@ -186,9 +180,7 @@ class AsyncLLM(EngineClient):
     @classmethod
     @deprecate_kwargs(
         "disable_log_requests",
-        additional_message=(
-            "This argument will have no effect. Use `enable_log_requests` instead."
-        ),
+        additional_message=("This argument will have no effect. Use `enable_log_requests` instead."),
     )
     def from_aphrodite_config(
         cls,
@@ -299,8 +291,7 @@ class AsyncLLM(EngineClient):
         else:
             assert prompt_text is None
             logger.warning_once(
-                "Processor has been moved under OpenAIServing and will "
-                "be removed from AsyncLLM in v0.13."
+                "Processor has been moved under OpenAIServing and will be removed from AsyncLLM in v0.13."
             )
             request = self.processor.process_inputs(
                 request_id,
@@ -334,9 +325,7 @@ class AsyncLLM(EngineClient):
             child_request = request if idx == parent_params.n - 1 else copy(request)
             child_request.request_id = request_id
             child_request.sampling_params = child_params
-            await self._add_request(
-                child_request, prompt_text, parent_request, idx, queue
-            )
+            await self._add_request(child_request, prompt_text, parent_request, idx, queue)
         return queue
 
     async def _add_request(
@@ -389,10 +378,7 @@ class AsyncLLM(EngineClient):
         returning the RequestOutput back to the caller.
         """
 
-        if (
-            self.aphrodite_config.cache_config.kv_sharing_fast_prefill
-            and sampling_params.prompt_logprobs
-        ):
+        if self.aphrodite_config.cache_config.kv_sharing_fast_prefill and sampling_params.prompt_logprobs:
             raise ValueError(
                 "--kv-sharing-fast-prefill produces incorrect logprobs for "
                 "prompt tokens, please disable it when the requests need "
@@ -490,9 +476,7 @@ class AsyncLLM(EngineClient):
                     outputs = await engine_core.get_output_async()
                     num_outputs = len(outputs.outputs)
 
-                    iteration_stats = (
-                        IterationStats() if (log_stats and num_outputs) else None
-                    )
+                    iteration_stats = IterationStats() if (log_stats and num_outputs) else None
 
                     # Split outputs into chunks of at most
                     # APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE, so that we don't block the
@@ -518,9 +502,7 @@ class AsyncLLM(EngineClient):
                             await asyncio.sleep(0)
 
                         # 3) Abort any reqs that finished due to stop strings.
-                        await engine_core.abort_requests_async(
-                            processed_outputs.reqs_to_abort
-                        )
+                        await engine_core.abort_requests_async(processed_outputs.reqs_to_abort)
 
                     # 4) Logging.
                     # TODO(rob): make into a coroutine and launch it in
@@ -541,9 +523,7 @@ class AsyncLLM(EngineClient):
     async def abort(self, request_id: str | Iterable[str]) -> None:
         """Abort RequestId in OutputProcessor and EngineCore."""
 
-        request_ids = (
-            (request_id,) if isinstance(request_id, str) else as_list(request_id)
-        )
+        request_ids = (request_id,) if isinstance(request_id, str) else as_list(request_id)
         all_request_ids = self.output_processor.abort_requests(request_ids)
         await self.engine_core.abort_requests_async(all_request_ids)
 
@@ -649,9 +629,7 @@ class AsyncLLM(EngineClient):
 
     async def get_tokenizer(self) -> AnyTokenizer:
         if self.tokenizer is None:
-            raise ValueError(
-                "Unable to get tokenizer because skip_tokenizer_init is True"
-            )
+            raise ValueError("Unable to get tokenizer because skip_tokenizer_init is True")
 
         return self.tokenizer
 
@@ -730,9 +708,7 @@ class AsyncLLM(EngineClient):
         """
         Perform a collective RPC call to the given path.
         """
-        return await self.engine_core.collective_rpc_async(
-            method, timeout, args, kwargs
-        )
+        return await self.engine_core.collective_rpc_async(method, timeout, args, kwargs)
 
     async def wait_for_requests_to_drain(self, drain_timeout: int = 300):
         """Wait for all requests to be drained."""
@@ -745,14 +721,9 @@ class AsyncLLM(EngineClient):
             logger.info("Engines are still running, waiting for requests to drain...")
             await asyncio.sleep(1)  # Wait 1 second before checking again
 
-        raise TimeoutError(
-            f"Timeout reached after {drain_timeout} seconds "
-            "waiting for requests to drain."
-        )
+        raise TimeoutError(f"Timeout reached after {drain_timeout} seconds waiting for requests to drain.")
 
-    async def scale_elastic_ep(
-        self, new_data_parallel_size: int, drain_timeout: int = 300
-    ):
+    async def scale_elastic_ep(self, new_data_parallel_size: int, drain_timeout: int = 300):
         """
         Scale up or down the data parallel size by adding or removing
         engine cores.

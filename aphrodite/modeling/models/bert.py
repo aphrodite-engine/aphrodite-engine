@@ -4,21 +4,22 @@ import torch
 from torch import nn
 from transformers import BertConfig
 
-from aphrodite.attention.layers.encoder_only_attention import (
-    EncoderOnlyAttention)
+from aphrodite.attention.layers.encoder_only_attention import EncoderOnlyAttention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, PoolerConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
-from aphrodite.modeling.layers.pooler import (ClassifierPooler, DispatchPooler,
-                                              Pooler, PoolingMethod,
-                                              PoolingParamsUpdate, PoolingType)
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
+from aphrodite.modeling.layers.pooler import (
+    ClassifierPooler,
+    DispatchPooler,
+    Pooler,
+    PoolingMethod,
+    PoolingParamsUpdate,
+    PoolingType,
+)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.tasks import PoolingTask
 from aphrodite.v1.pool.metadata import PoolingMetadata
@@ -32,15 +33,9 @@ class BertEmbedding(nn.Module):
     def __init__(self, config: BertConfig):
         super().__init__()
         self.size = config.hidden_size
-        self.word_embeddings = VocabParallelEmbedding(
-            config.vocab_size, config.hidden_size
-        )
-        self.position_embeddings = VocabParallelEmbedding(
-            config.max_position_embeddings, config.hidden_size
-        )
-        self.token_type_embeddings = VocabParallelEmbedding(
-            config.type_vocab_size, config.hidden_size
-        )
+        self.word_embeddings = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
+        self.position_embeddings = VocabParallelEmbedding(config.max_position_embeddings, config.hidden_size)
+        self.token_type_embeddings = VocabParallelEmbedding(config.type_vocab_size, config.hidden_size)
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         self.register_buffer(
@@ -49,9 +44,7 @@ class BertEmbedding(nn.Module):
         )
         self.position_embedding_type = config.position_embedding_type
         if self.position_embedding_type != "absolute":
-            raise ValueError(
-                "Only 'absolute' position_embedding_type" + " is supported"
-            )
+            raise ValueError("Only 'absolute' position_embedding_type" + " is supported")
 
     def forward(
         self,
@@ -285,9 +278,7 @@ class BertSelfOutput(nn.Module):
         )
         self.LayerNorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
 
-    def forward(
-        self, hidden_states: torch.Tensor, input_tensor: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         hidden_states, _ = self.dense(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
@@ -339,9 +330,7 @@ class BertOutput(nn.Module):
 
         self.LayerNorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
 
-    def forward(
-        self, hidden_states: torch.Tensor, input_tensor: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         hidden_states, _ = self.dense(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
@@ -473,9 +462,7 @@ class BertEmbeddingModel(nn.Module, SupportsQuant):
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
-        self.model = self._build_model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = self._build_model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.pooler = self._build_pooler(pooler_config)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
@@ -506,9 +493,7 @@ class BertEmbeddingModel(nn.Module, SupportsQuant):
         return loader.load_weights(weights_list, mapper=mapper)
 
     def _build_model(self, aphrodite_config: AphroditeConfig, prefix: str = "") -> BertModel:
-        return BertModel(
-            aphrodite_config=aphrodite_config, prefix=prefix, embedding_class=BertEmbedding
-        )
+        return BertModel(aphrodite_config=aphrodite_config, prefix=prefix, embedding_class=BertEmbedding)
 
     def _build_pooler(self, pooler_config: PoolerConfig) -> Pooler:
         return DispatchPooler(
@@ -543,18 +528,13 @@ class BertEmbeddingModel(nn.Module, SupportsQuant):
 TOKEN_TYPE_SHIFT = 30
 
 
-def _encode_token_type_ids(
-    input_ids: torch.Tensor, token_type_ids: torch.Tensor
-) -> None:
+def _encode_token_type_ids(input_ids: torch.Tensor, token_type_ids: torch.Tensor) -> None:
     # input_ids can be padded to the right
     input_ids[: token_type_ids.shape[0]].bitwise_or_(token_type_ids << TOKEN_TYPE_SHIFT)
 
 
 def _decode_token_type_ids(input_ids: torch.Tensor) -> torch.Tensor:
-    ids_mask = (
-        torch.ones_like(input_ids, dtype=torch.int32, device=input_ids.device)
-        << TOKEN_TYPE_SHIFT
-    )
+    ids_mask = torch.ones_like(input_ids, dtype=torch.int32, device=input_ids.device) << TOKEN_TYPE_SHIFT
     tokens_mask = ids_mask.bitwise_not()
 
     token_type_ids = input_ids.bitwise_and(ids_mask) >> TOKEN_TYPE_SHIFT
@@ -565,9 +545,7 @@ def _decode_token_type_ids(input_ids: torch.Tensor) -> torch.Tensor:
 
 
 class BertMLMHead(nn.Module):
-    def __init__(
-        self, hidden_size: int, vocab_size: int, layer_norm_eps: float = 1e-12
-    ):
+    def __init__(self, hidden_size: int, vocab_size: int, layer_norm_eps: float = 1e-12):
         super().__init__()
         self.dense = nn.Linear(hidden_size, hidden_size)
         self.activation = nn.GELU()
@@ -642,15 +620,9 @@ class SPLADESparsePooler(Pooler):
             start_idx = 0
             end_idx = L
             if self.remove_cls_sep and token_ids is not None:
-                if (
-                    self.cls_token_id is not None
-                    and token_ids[i, 0].item() == self.cls_token_id
-                ):
+                if self.cls_token_id is not None and token_ids[i, 0].item() == self.cls_token_id:
                     start_idx = 1
-                if (
-                    self.sep_token_id is not None
-                    and token_ids[i, L - 1].item() == self.sep_token_id
-                ):
+                if self.sep_token_id is not None and token_ids[i, L - 1].item() == self.sep_token_id:
                     end_idx = max(start_idx, L - 1)
 
             if end_idx <= start_idx:
@@ -681,9 +653,7 @@ class BertSpladeSparseEmbeddingModel(BertEmbeddingModel):
     - pooler: SPLADESparsePooler(mlm_head...)
     """
 
-    def __init__(
-        self, *, aphrodite_config: AphroditeConfig, prefix: str = "", splade_pooling: str = "max"
-    ):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", splade_pooling: str = "max"):
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
         cfg = aphrodite_config.model_config.hf_config
 
@@ -761,12 +731,8 @@ class BertSpladeSparseEmbeddingModel(BertEmbeddingModel):
             name_map = {
                 "cls.predictions.transform.dense.weight": "mlm_head.dense.weight",
                 "cls.predictions.transform.dense.bias": "mlm_head.dense.bias",
-                ("cls.predictions.transform.LayerNorm.weight"): (
-                    "mlm_head.layer_norm.weight"
-                ),
-                ("cls.predictions.transform.LayerNorm.bias"): (
-                    "mlm_head.layer_norm.bias"
-                ),
+                ("cls.predictions.transform.LayerNorm.weight"): ("mlm_head.layer_norm.weight"),
+                ("cls.predictions.transform.LayerNorm.bias"): ("mlm_head.layer_norm.bias"),
                 "cls.predictions.decoder.weight": "mlm_head.decoder.weight",
                 "cls.predictions.decoder.bias": "mlm_head.decoder.bias",
             }
@@ -813,17 +779,13 @@ class BertForSequenceClassification(nn.Module, SupportsCrossEncoding, SupportsQu
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config, classifier=self.classifier
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config, classifier=self.classifier),
                 "classify": ClassifierPooler(
                     pooling=self.bert.pooler,
                     classifier=self.classifier,
                     act_fn="classify",
                 ),
-                "score": ClassifierPooler(
-                    pooling=self.bert.pooler, classifier=self.classifier, act_fn="score"
-                ),
+                "score": ClassifierPooler(pooling=self.bert.pooler, classifier=self.classifier, act_fn="score"),
             }
         )
 
@@ -870,18 +832,14 @@ class BertForTokenClassification(nn.Module):
             prefix=maybe_prefix(prefix, "bert"),
             embedding_class=BertEmbedding,
         )
-        self.classifier = nn.Linear(
-            config.hidden_size, config.num_labels, dtype=self.head_dtype
-        )
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels, dtype=self.head_dtype)
 
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config=pooler_config
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config=pooler_config),
             }
         )
 

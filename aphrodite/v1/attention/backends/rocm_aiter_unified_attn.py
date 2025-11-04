@@ -3,15 +3,16 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.attention.backends.abstract import (AttentionMetadata,
-                                                   AttentionType)
+from aphrodite.attention.backends.abstract import AttentionMetadata, AttentionType
 from aphrodite.logger import init_logger
-from aphrodite.quantization.utils.quant_utils import (QuantKey,
-                                                      kFp8StaticTensorSym)
+from aphrodite.quantization.utils.quant_utils import QuantKey, kFp8StaticTensorSym
 from aphrodite.v1.attention.backends.flash_attn import FlashAttentionMetadata
 from aphrodite.v1.attention.backends.rocm_attn import (
-    RocmAttentionBackend, RocmAttentionImpl, RocmAttentionMetadata,
-    RocmAttentionMetadataBuilder)
+    RocmAttentionBackend,
+    RocmAttentionImpl,
+    RocmAttentionMetadata,
+    RocmAttentionMetadataBuilder,
+)
 
 logger = init_logger(__name__)
 
@@ -83,9 +84,7 @@ class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
             kv_sharing_target_layer_name,
             sinks,
         )
-        logger.info_once(
-            "Using aiter unified attention for RocmAiterUnifiedAttentionImpl"
-        )
+        logger.info_once("Using aiter unified attention for RocmAiterUnifiedAttentionImpl")
         from aiter.ops.triton.unified_attention import unified_attention
 
         self.unified_attention = unified_attention
@@ -118,8 +117,7 @@ class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
 
         if output_block_scale is not None:
             raise NotImplementedError(
-                "fused block_scale output quantization is not yet supported"
-                " for RocmAttentionImpl"
+                "fused block_scale output quantization is not yet supported for RocmAttentionImpl"
             )
 
         if attn_metadata is None:
@@ -158,9 +156,7 @@ class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
         if self.kv_cache_dtype.startswith("fp8"):
             key_cache = key_cache.view(self.fp8_dtype)
             value_cache = value_cache.view(self.fp8_dtype)
-            assert layer._q_scale_float == 1.0, (
-                "A non 1.0 q_scale is not currently supported."
-            )
+            assert layer._q_scale_float == 1.0, "A non 1.0 q_scale is not currently supported."
 
         cu_seqlens_q = attn_metadata.query_start_loc
         seqused_k = attn_metadata.seq_lens

@@ -10,13 +10,15 @@ import pytest
 import ray
 import torch
 
-from aphrodite.distributed import (broadcast_tensor_dict, get_pp_group,
-                                   tensor_model_parallel_all_gather,
-                                   tensor_model_parallel_all_reduce,
-                                   tensor_model_parallel_reduce_scatter)
+from aphrodite.distributed import (
+    broadcast_tensor_dict,
+    get_pp_group,
+    tensor_model_parallel_all_gather,
+    tensor_model_parallel_all_reduce,
+    tensor_model_parallel_reduce_scatter,
+)
 
-from ..utils import (init_test_distributed_environment, multi_gpu_test,
-                     multi_process_parallel)
+from ..utils import init_test_distributed_environment, multi_gpu_test, multi_process_parallel
 
 
 @ray.remote(num_gpus=1, max_calls=1)
@@ -36,10 +38,7 @@ def all_reduce_test_worker(
     torch.cuda.set_device(device)
     init_test_distributed_environment(tp_size, pp_size, rank, distributed_init_port)
     num_elements = 8
-    all_tensors = [
-        torch.arange(num_elements, dtype=torch.float32, device="cuda") * (r + 1)
-        for r in range(tp_size)
-    ]
+    all_tensors = [torch.arange(num_elements, dtype=torch.float32, device="cuda") * (r + 1) for r in range(tp_size)]
     expected = torch.sum(torch.stack(all_tensors, dim=0), dim=0)
     t = all_tensors[rank % tp_size]
     t = tensor_model_parallel_all_reduce(t)
@@ -63,10 +62,7 @@ def reduce_scatter_test_worker(
     init_test_distributed_environment(tp_size, pp_size, rank, distributed_init_port)
 
     num_elements = 8
-    all_tensors = [
-        torch.arange(num_elements, dtype=torch.float32, device="cuda") * (r + 1)
-        for r in range(tp_size)
-    ]
+    all_tensors = [torch.arange(num_elements, dtype=torch.float32, device="cuda") * (r + 1) for r in range(tp_size)]
 
     index = rank % tp_size
     partition_size = num_elements // tp_size
@@ -99,10 +95,7 @@ def all_gather_test_worker(
         total_size *= s
     for all_gather_dimension in range(num_dimensions):
         all_tensors = [
-            torch.arange(total_size, dtype=torch.float32, device="cuda").reshape(
-                tensor_size
-            )
-            * (r + 1)
+            torch.arange(total_size, dtype=torch.float32, device="cuda").reshape(tensor_size) * (r + 1)
             for r in range(tp_size)
         ]
         expected = torch.cat(all_tensors, dim=all_gather_dimension)
@@ -234,9 +227,7 @@ def test_multi_process_tensor_parallel(
 
 @multi_gpu_test(num_gpus=2)
 @pytest.mark.parametrize("pp_size", [2])
-@pytest.mark.parametrize(
-    "test_target", [send_recv_test_worker, send_recv_tensor_dict_test_worker]
-)
+@pytest.mark.parametrize("test_target", [send_recv_test_worker, send_recv_tensor_dict_test_worker])
 def test_multi_process_pipeline_parallel(
     monkeypatch: pytest.MonkeyPatch,
     pp_size: int,

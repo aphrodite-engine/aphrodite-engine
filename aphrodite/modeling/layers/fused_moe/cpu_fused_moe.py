@@ -11,9 +11,7 @@ def silu_and_mul(x: torch.Tensor) -> torch.Tensor:
     return F.silu(x[..., :d]) * x[..., d:]
 
 
-def swigluoai_and_mul(
-    x: torch.Tensor, alpha: float = 1.702, limit: float = 7.0
-) -> torch.Tensor:
+def swigluoai_and_mul(x: torch.Tensor, alpha: float = 1.702, limit: float = 7.0) -> torch.Tensor:
     d = x.shape[-1] // 2
     gate, up = x[..., :d], x[..., d:]
     gate = gate.clamp(max=limit)
@@ -47,16 +45,10 @@ def grouped_topk(
     if e_score_correction_bias is not None:
         original_scores = scores
         scores = scores + e_score_correction_bias.unsqueeze(0)
-        group_scores = (
-            scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
-        )
+        group_scores = scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
     else:
-        group_scores = (
-            scores.view(num_token, num_expert_group, -1).max(dim=-1).values
-        )  # [n, n_group]
-    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[
-        1
-    ]  # [n, top_k_group]
+        group_scores = scores.view(num_token, num_expert_group, -1).max(dim=-1).values  # [n, n_group]
+    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[1]  # [n, top_k_group]
     group_mask = torch.zeros_like(group_scores)  # [n, n_group]
     group_mask.scatter_(1, group_idx, 1)  # [n, n_group]
     score_mask = (
@@ -109,9 +101,7 @@ def select_experts(
         )
     elif custom_routing_function is None:
         assert scoring_func == "softmax"
-        topk_logit_vals, topk_idx = torch.topk(
-            router_logits, k=top_k, dim=-1, sorted=False
-        )
+        topk_logit_vals, topk_idx = torch.topk(router_logits, k=top_k, dim=-1, sorted=False)
         if renormalize:
             topk_vals = torch.softmax(topk_logit_vals, dim=-1)
         else:
@@ -158,9 +148,7 @@ class IPEXFusedMOE:
     ) -> torch.Tensor:
         assert activation == "silu", f"{activation} is not supported."
         assert not apply_router_weight_on_input
-        assert routed_scaling_factor == 1.0, (
-            f"routed_scaling_factor {routed_scaling_factor} is not supported."
-        )
+        assert routed_scaling_factor == 1.0, f"routed_scaling_factor {routed_scaling_factor} is not supported."
         return layer.ipex_fusion(
             x,
             use_grouped_topk,
@@ -299,9 +287,7 @@ class CPUFusedMOE:
             layer_w2_weight = layer.w2_weight[i]
             layer_w2_bias = layer.w2_bias[i] if has_w2_bias else None
 
-            gate_up = F.linear(
-                tokens_for_this_expert, layer_w13_weight, bias=layer_w13_bias
-            )
+            gate_up = F.linear(tokens_for_this_expert, layer_w13_weight, bias=layer_w13_bias)
             if activation == "swigluoai":
                 gate_up = swigluoai_and_mul(gate_up)
             else:

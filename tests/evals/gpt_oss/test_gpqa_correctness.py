@@ -56,16 +56,13 @@ def run_gpqa_eval(model_name: str, base_url: str) -> float:
             return float(match.group(1))
 
         # If we still can't find it, raise an error
-        raise ValueError(
-            f"Could not parse score from evaluation output:\n{result.stdout}"
-        )
+        raise ValueError(f"Could not parse score from evaluation output:\n{result.stdout}")
 
     except subprocess.TimeoutExpired as e:
         raise RuntimeError("Evaluation timed out") from e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            f"Evaluation failed with exit code {e.returncode}:\n"
-            f"stdout: {e.stdout}\nstderr: {e.stderr}"
+            f"Evaluation failed with exit code {e.returncode}:\nstdout: {e.stdout}\nstderr: {e.stderr}"
         ) from e
 
 
@@ -94,9 +91,7 @@ def test_gpqa_correctness(request):
     print(f"Server args: {' '.join(server_args)}")
 
     # Launch server and run evaluation
-    with RemoteOpenAIServer(
-        model_name, server_args, max_wait_seconds=1800
-    ) as remote_server:
+    with RemoteOpenAIServer(model_name, server_args, max_wait_seconds=1800) as remote_server:
         base_url = remote_server.url_for("v1")
         print(f"Server started at: {base_url}")
 

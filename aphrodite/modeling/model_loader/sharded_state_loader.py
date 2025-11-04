@@ -11,8 +11,7 @@ from aphrodite.config import ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
-from aphrodite.modeling.model_loader.weight_utils import (
-    download_weights_from_hf, runai_safetensors_weights_iterator)
+from aphrodite.modeling.model_loader.weight_utils import download_weights_from_hf, runai_safetensors_weights_iterator
 from aphrodite.transformers_utils.s3_utils import glob as s3_glob
 from aphrodite.transformers_utils.utils import is_s3
 
@@ -34,9 +33,7 @@ class ShardedStateLoader(BaseModelLoader):
         super().__init__(load_config)
 
         extra_config = (
-            {}
-            if load_config.model_loader_extra_config is None
-            else load_config.model_loader_extra_config.copy()
+            {} if load_config.model_loader_extra_config is None else load_config.model_loader_extra_config.copy()
         )
         self.pattern = extra_config.pop("pattern", self.DEFAULT_PATTERN)
         if extra_config:
@@ -54,9 +51,7 @@ class ShardedStateLoader(BaseModelLoader):
         Filter out all tensors that share the same memory or a subset of the
         memory of another tensor.
         """
-        same_storage_groups: dict[Any, list[tuple[str, torch.Tensor]]] = (
-            collections.defaultdict(list)
-        )
+        same_storage_groups: dict[Any, list[tuple[str, torch.Tensor]]] = collections.defaultdict(list)
         for key, tensor in tensors.items():
             if tensor.numel():
                 ptr = tensor.untyped_storage().data_ptr()
@@ -123,8 +118,7 @@ class ShardedStateLoader(BaseModelLoader):
         if not filepaths:
             # TODO: support un-sharded checkpoints too
             raise ValueError(
-                f"Could not find checkpoint files '{pattern}', only "
-                f"pre-sharded checkpoints are currently supported!"
+                f"Could not find checkpoint files '{pattern}', only pre-sharded checkpoints are currently supported!"
             )
         state_dict = self._filter_subtensors(model.state_dict())
         for key, tensor in self.iterate_over_files(filepaths):
@@ -148,9 +142,7 @@ class ShardedStateLoader(BaseModelLoader):
         if state_dict:
             raise ValueError(f"Missing keys {tuple(state_dict)} in loaded state!")
 
-    def iterate_over_files(
-        self, paths
-    ) -> Generator[tuple[str, torch.Tensor], None, None]:
+    def iterate_over_files(self, paths) -> Generator[tuple[str, torch.Tensor], None, None]:
         if self.load_config.load_format == "runai_streamer_sharded":
             yield from runai_safetensors_weights_iterator(paths, True)
         else:

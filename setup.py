@@ -2,16 +2,14 @@ import ctypes
 import importlib.util
 import logging
 import os
-import re
 import subprocess
 import sys
 import warnings
+from contextlib import suppress
 from pathlib import Path
 from shutil import which
 
 import torch
-from typing import Optional
-from contextlib import suppress
 from packaging.version import Version, parse
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -33,10 +31,8 @@ logger = logging.getLogger(__name__)
 
 def embed_commit_hash():
     try:
-        commit_id = subprocess.check_output(["git", "rev-parse", "HEAD"],
-                                            encoding="utf-8").strip()
-        short_commit_id = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], encoding="utf-8").strip()
+        commit_id = subprocess.check_output(["git", "rev-parse", "HEAD"], encoding="utf-8").strip()
+        short_commit_id = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], encoding="utf-8").strip()
 
         commit_contents = f'__commit__ = "{commit_id}"\n'
         short_commit_contents = f'__short_commit__ = "{short_commit_id}"\n'
@@ -47,38 +43,36 @@ def embed_commit_hash():
             f.write(short_commit_contents)
 
     except subprocess.CalledProcessError as e:
-        warnings.warn(f"Failed to get commit hash:\n{e}",
-                      RuntimeWarning,
-                      stacklevel=2)
+        warnings.warn(f"Failed to get commit hash:\n{e}", RuntimeWarning, stacklevel=2)
     except Exception as e:
-        warnings.warn(f"Failed to embed commit hash:\n{e}",
-                      RuntimeWarning,
-                      stacklevel=2)
+        warnings.warn(f"Failed to embed commit hash:\n{e}", RuntimeWarning, stacklevel=2)
 
 
 embed_commit_hash()
 
 # cannot import envs directly because it depends on aphrodite,
 #  which is not installed yet
-envs = load_module_from_path(
-    'envs', os.path.join(ROOT_DIR, 'aphrodite', 'envs.py'))
+envs = load_module_from_path("envs", os.path.join(ROOT_DIR, "aphrodite", "envs.py"))
 
 APHRODITE_TARGET_DEVICE = envs.APHRODITE_TARGET_DEVICE
 
 if sys.platform.startswith("darwin") and APHRODITE_TARGET_DEVICE != "cpu":
-    logger.warning(
-        "APHRODITE_TARGET_DEVICE automatically set to `cpu` due to macOS")
+    logger.warning("APHRODITE_TARGET_DEVICE automatically set to `cpu` due to macOS")
     APHRODITE_TARGET_DEVICE = "cpu"
-elif not (sys.platform.startswith("linux")
-          or sys.platform.startswith("darwin")):
+elif not (sys.platform.startswith("linux") or sys.platform.startswith("darwin")):
     logger.warning(
         "Aphrodite only supports Linux platform (including WSL) and MacOS."
         "Building on {}, "
-        "so Aphrodite may not be able to run correctly", sys.platform)
+        "so Aphrodite may not be able to run correctly",
+        sys.platform,
+    )
     APHRODITE_TARGET_DEVICE = "empty"
-elif (sys.platform.startswith("linux") and torch.version.cuda is None
-      and os.getenv("APHRODITE_TARGET_DEVICE") is None
-      and torch.version.hip is None):
+elif (
+    sys.platform.startswith("linux")
+    and torch.version.cuda is None
+    and os.getenv("APHRODITE_TARGET_DEVICE") is None
+    and torch.version.hip is None
+):
     # if cuda or hip is not available and APHRODITE_TARGET_DEVICE is not set,
     # fallback to cpu
     APHRODITE_TARGET_DEVICE = "cpu"
@@ -86,7 +80,7 @@ elif (sys.platform.startswith("linux") and torch.version.cuda is None
 MAIN_CUDA_VERSION = "12.8"
 
 
-def _get_available_memory_bytes() -> Optional[int]:
+def _get_available_memory_bytes() -> int | None:
     """Return available system memory in bytes, or None if unknown.
 
     Tries multiple strategies in order:
@@ -98,18 +92,19 @@ def _get_available_memory_bytes() -> Optional[int]:
     # Try psutil if available
     with suppress(Exception):
         import psutil  # type: ignore
+
         return int(psutil.virtual_memory().available)
 
     # Try POSIX sysconf for available pages
     with suppress(Exception):
-        page_size = os.sysconf('SC_PAGE_SIZE')  # type: ignore[arg-type]
-        avail_pages = os.sysconf('SC_AVPHYS_PAGES')  # type: ignore[arg-type]
+        page_size = os.sysconf("SC_PAGE_SIZE")  # type: ignore[arg-type]
+        avail_pages = os.sysconf("SC_AVPHYS_PAGES")  # type: ignore[arg-type]
         return int(page_size) * int(avail_pages)
 
     # Linux fallback: /proc/meminfo
     with suppress(Exception):
         if sys.platform.startswith("linux"):
-            with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            with open("/proc/meminfo", encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("MemAvailable:"):
                         parts = line.split()
@@ -125,31 +120,22 @@ def _get_available_memory_bytes() -> Optional[int]:
                 if "page size of" in line and "bytes" in line:
                     # e.g., "Mach VM Stats: (page size of 16384 bytes)"
                     with suppress(Exception):
-                        page_size_bytes = int(
-                            line.split("page size of")[1]
-                            .split("bytes")[0]
-                            .strip()
-                        )
+                        page_size_bytes = int(line.split("page size of")[1].split("bytes")[0].strip())
                     break
             pages_free = 0
             pages_inactive = 0
             for line in out.splitlines():
                 if line.strip().startswith("Pages free"):
-                    pages_free = int(
-                        line.split(":")[1].strip().strip(". ")
-                    )
+                    pages_free = int(line.split(":")[1].strip().strip(". "))
                 elif line.strip().startswith("Pages inactive"):
-                    pages_inactive = int(
-                        line.split(":")[1].strip().strip(". ")
-                    )
+                    pages_inactive = int(line.split(":")[1].strip().strip(". "))
             return (pages_free + pages_inactive) * page_size_bytes
 
     return None
 
 
 def is_sccache_available() -> bool:
-    return which("sccache") is not None and \
-        not bool(int(os.getenv("APHRODITE_DISABLE_SCCACHE", "0")))
+    return which("sccache") is not None and not bool(int(os.getenv("APHRODITE_DISABLE_SCCACHE", "0")))
 
 
 def is_ccache_available() -> bool:
@@ -173,8 +159,7 @@ def is_url_available(url: str) -> bool:
 
 
 class CMakeExtension(Extension):
-
-    def __init__(self, name: str, cmake_lists_dir: str = '.', **kwa) -> None:
+    def __init__(self, name: str, cmake_lists_dir: str = ".", **kwa) -> None:
         super().__init__(name, sources=[], py_limited_api=True, **kwa)
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
 
@@ -193,7 +178,7 @@ class cmake_build_ext(build_ext):
         num_jobs = envs.MAX_JOBS
         if num_jobs is not None:
             num_jobs = int(num_jobs)
-            logger.info(f"Using MAX_JOBS={num_jobs} as the number of jobs.")
+            logger.info("Using MAX_JOBS=%d as the number of jobs.", num_jobs)
         else:
             available_bytes = _get_available_memory_bytes()
             if available_bytes is not None and available_bytes > 0:
@@ -201,26 +186,20 @@ class cmake_build_ext(build_ext):
                 # Heuristic: 8 GiB per job
                 num_jobs = max(1, int(available_gib // 8))
                 logger.info(
-                    (
-                        f"RAM heuristic: ~{available_gib} GiB avail -> "
-                        f"num_jobs={num_jobs} (8 GiB/job). If you think this "
-                        "is too low or too high, set MAX_JOBS to a higher "
-                        "value."
-                    )
+                    "RAM heuristic: ~%d GiB avail -> num_jobs=%d (8 GiB/job). If you think this is too low or too high,"
+                    " set MAX_JOBS to a higher value.",
+                    available_gib,
+                    num_jobs,
                 )
             else:
                 try:
                     # os.sched_getaffinity() not always available; fallback to
                     # os.cpu_count() when needed.
                     num_jobs = len(os.sched_getaffinity(0))
-                    logger.info(
-                        f"CPU heuristic: {num_jobs} jobs (RAM unknown)."
-                    )
+                    logger.info("CPU heuristic: %d jobs (RAM unknown).", num_jobs)
                 except AttributeError:
                     num_jobs = os.cpu_count()
-                    logger.info(
-                        f"CPU heuristic: os.cpu_count()={num_jobs} (RAM unk)."
-                    )
+                    logger.info("CPU heuristic: os.cpu_count()=%d (RAM unk).", num_jobs)
 
         nvcc_threads = None
         if _is_cuda() and get_nvcc_cuda_version() >= Version("11.2"):
@@ -231,8 +210,7 @@ class cmake_build_ext(build_ext):
             nvcc_threads = envs.NVCC_THREADS
             if nvcc_threads is not None:
                 nvcc_threads = int(nvcc_threads)
-                logger.info(f"Using NVCC_THREADS={nvcc_threads} as the number"
-                            " of nvcc threads.")
+                logger.info("Using NVCC_THREADS=%d as the number of nvcc threads.", nvcc_threads)
             else:
                 nvcc_threads = 1
             num_jobs = max(1, num_jobs // nvcc_threads)
@@ -258,38 +236,36 @@ class cmake_build_ext(build_ext):
         cfg = envs.CMAKE_BUILD_TYPE or default_cfg
 
         cmake_args = [
-            '-DCMAKE_BUILD_TYPE={}'.format(cfg),
-            '-DAPHRODITE_TARGET_DEVICE={}'.format(APHRODITE_TARGET_DEVICE),
+            "-DCMAKE_BUILD_TYPE={}".format(cfg),
+            "-DAPHRODITE_TARGET_DEVICE={}".format(APHRODITE_TARGET_DEVICE),
         ]
 
         verbose = envs.VERBOSE
         if verbose:
-            cmake_args += ['-DCMAKE_VERBOSE_MAKEFILE=ON']
+            cmake_args += ["-DCMAKE_VERBOSE_MAKEFILE=ON"]
 
         if is_sccache_available():
             cmake_args += [
-                '-DCMAKE_C_COMPILER_LAUNCHER=sccache',
-                '-DCMAKE_CXX_COMPILER_LAUNCHER=sccache',
-                '-DCMAKE_CUDA_COMPILER_LAUNCHER=sccache',
-                '-DCMAKE_HIP_COMPILER_LAUNCHER=sccache',
+                "-DCMAKE_C_COMPILER_LAUNCHER=sccache",
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache",
+                "-DCMAKE_CUDA_COMPILER_LAUNCHER=sccache",
+                "-DCMAKE_HIP_COMPILER_LAUNCHER=sccache",
             ]
         elif is_ccache_available():
             cmake_args += [
-                '-DCMAKE_C_COMPILER_LAUNCHER=ccache',
-                '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache',
-                '-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache',
-                '-DCMAKE_HIP_COMPILER_LAUNCHER=ccache',
+                "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+                "-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache",
+                "-DCMAKE_HIP_COMPILER_LAUNCHER=ccache",
             ]
 
         # Pass the python executable to cmake so it can find an exact
         # match.
-        cmake_args += [
-            '-DAPHRODITE_PYTHON_EXECUTABLE={}'.format(sys.executable)
-        ]
+        cmake_args += ["-DAPHRODITE_PYTHON_EXECUTABLE={}".format(sys.executable)]
 
         # Pass the python path to cmake so it can reuse the build dependencies
         # on subsequent calls to python.
-        cmake_args += ['-DAPHRODITE_PYTHON_PATH={}'.format(":".join(sys.path))]
+        cmake_args += ["-DAPHRODITE_PYTHON_PATH={}".format(":".join(sys.path))]
 
         # Override the base directory for FetchContent downloads to $ROOT/.deps
         # This allows sharing dependencies between profiles,
@@ -297,18 +273,18 @@ class cmake_build_ext(build_ext):
         # To override this, set the FETCHCONTENT_BASE_DIR environment variable.
         fc_base_dir = os.path.join(ROOT_DIR, ".deps")
         fc_base_dir = os.environ.get("FETCHCONTENT_BASE_DIR", fc_base_dir)
-        cmake_args += ['-DFETCHCONTENT_BASE_DIR={}'.format(fc_base_dir)]
+        cmake_args += ["-DFETCHCONTENT_BASE_DIR={}".format(fc_base_dir)]
 
         num_jobs, nvcc_threads = self.compute_num_jobs()
 
         if nvcc_threads:
-            cmake_args += ['-DNVCC_THREADS={}'.format(nvcc_threads)]
+            cmake_args += ["-DNVCC_THREADS={}".format(nvcc_threads)]
 
         if is_ninja_available():
-            build_tool = ['-G', 'Ninja']
+            build_tool = ["-G", "Ninja"]
             cmake_args += [
-                '-DCMAKE_JOB_POOL_COMPILE:STRING=compile',
-                '-DCMAKE_JOB_POOLS:STRING=compile={}'.format(num_jobs),
+                "-DCMAKE_JOB_POOL_COMPILE:STRING=compile",
+                "-DCMAKE_JOB_POOLS:STRING=compile={}".format(num_jobs),
             ]
         else:
             # Default build tool to whatever cmake picks.
@@ -321,16 +297,14 @@ class cmake_build_ext(build_ext):
         if other_cmake_args:
             cmake_args += other_cmake_args.split()
 
-        subprocess.check_call(
-            ['cmake', ext.cmake_lists_dir, *build_tool, *cmake_args],
-            cwd=self.build_temp)
+        subprocess.check_call(["cmake", ext.cmake_lists_dir, *build_tool, *cmake_args], cwd=self.build_temp)
 
     def build_extensions(self) -> None:
         # Ensure that CMake is present and working
         try:
-            subprocess.check_output(['cmake', '--version'])
+            subprocess.check_output(["cmake", "--version"])
         except OSError as e:
-            raise RuntimeError('Cannot find CMake executable') from e
+            raise RuntimeError("Cannot find CMake executable") from e
 
         # Create build directory if it does not exist.
         if not os.path.exists(self.build_temp):
@@ -339,8 +313,7 @@ class cmake_build_ext(build_ext):
         targets = []
 
         def target_name(s: str) -> str:
-            return s.removeprefix("aphrodite.").removeprefix(
-                "aphrodite_flash_attn.")
+            return s.removeprefix("aphrodite.").removeprefix("aphrodite_flash_attn.")
 
         # Build all the extensions
         for ext in self.extensions:
@@ -373,14 +346,11 @@ class cmake_build_ext(build_ext):
             # CMake, this is currently true for current extensions but may not
             # always be the case.
             prefix = outdir
-            for _ in range(ext.name.count('.')):
+            for _ in range(ext.name.count(".")):
                 prefix = prefix.parent
 
             # prefix here should actually be the same for all components
-            install_args = [
-                "cmake", "--install", ".", "--prefix", prefix, "--component",
-                target_name(ext.name)
-            ]
+            install_args = ["cmake", "--install", ".", "--prefix", prefix, "--component", target_name(ext.name)]
             subprocess.check_call(install_args, cwd=self.build_temp)
 
     def run(self):
@@ -402,11 +372,9 @@ def _is_hpu() -> bool:
     except (FileNotFoundError, PermissionError, subprocess.CalledProcessError):
         if sys.platform.startswith("linux"):
             try:
-                output = subprocess.check_output(
-                    'lsmod | grep habanalabs | wc -l', shell=True)
+                output = subprocess.check_output("lsmod | grep habanalabs | wc -l", shell=True)
                 is_hpu_available = int(output) > 0
-            except (ValueError, FileNotFoundError, PermissionError,
-                    subprocess.CalledProcessError):
+            except (ValueError, FileNotFoundError, PermissionError, subprocess.CalledProcessError):
                 pass
     return is_hpu_available
 
@@ -421,14 +389,11 @@ def _is_windows() -> bool:
 
 def _is_cuda() -> bool:
     has_cuda = torch.version.cuda is not None
-    return (APHRODITE_TARGET_DEVICE == "cuda" and has_cuda
-            and not (_is_tpu() or _is_hpu()))
+    return APHRODITE_TARGET_DEVICE == "cuda" and has_cuda and not (_is_tpu() or _is_hpu())
 
 
 def _is_hip() -> bool:
-    return (APHRODITE_TARGET_DEVICE == "cuda"
-            or APHRODITE_TARGET_DEVICE == "rocm") \
-            and torch.version.hip is not None
+    return (APHRODITE_TARGET_DEVICE == "cuda" or APHRODITE_TARGET_DEVICE == "rocm") and torch.version.hip is not None
 
 
 def _is_tpu() -> bool:
@@ -470,8 +435,7 @@ def get_rocm_version():
         minor = ctypes.c_uint32()
         patch = ctypes.c_uint32()
 
-        if (get_rocm_core_version(ctypes.byref(major), ctypes.byref(minor),
-                                  ctypes.byref(patch)) == 0):
+        if get_rocm_core_version(ctypes.byref(major), ctypes.byref(minor), ctypes.byref(patch)) == 0:
             return f"{major.value}.{minor.value}.{patch.value}"
         return None
     except Exception:
@@ -484,8 +448,7 @@ def get_nvcc_cuda_version() -> Version:
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
     assert CUDA_HOME is not None, "CUDA_HOME is not set"
-    nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V"],
-                                          universal_newlines=True)
+    nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V"], universal_newlines=True)
     output = nvcc_output.split()
     release_idx = output.index("release") + 1
     nvcc_cuda_version = parse(output[release_idx].split(",")[0])
@@ -497,14 +460,9 @@ def get_gaudi_sw_version():
     Returns the driver version.
     """
     # Enable console printing for `hl-smi` check
-    output = subprocess.run("hl-smi",
-                            shell=True,
-                            text=True,
-                            capture_output=True,
-                            env={"ENABLE_CONSOLE": "true"})
+    output = subprocess.run("hl-smi", shell=True, text=True, capture_output=True, env={"ENABLE_CONSOLE": "true"})
     if output.returncode == 0 and output.stdout:
-        return output.stdout.split("\n")[2].replace(
-            " ", "").split(":")[1][:-1].split("-")[0]
+        return output.stdout.split("\n")[2].replace(" ", "").split(":")[1][:-1].split("-")[0]
     return "0.0.0"  # when hl-smi is not available
 
 
@@ -565,8 +523,7 @@ def get_requirements() -> list[str]:
         for line in requirements:
             if line.startswith("-r "):
                 resolved_requirements += _read_requirements(line.split()[1])
-            elif not line.startswith("--") and not line.startswith(
-                    "#") and line.strip() != "":
+            elif not line.startswith("--") and not line.startswith("#") and line.strip() != "":
                 resolved_requirements.append(line)
         return resolved_requirements
 
@@ -577,7 +534,7 @@ def get_requirements() -> list[str]:
         cuda_major, cuda_minor = torch.version.cuda.split(".")
         modified_requirements = []
         for req in requirements:
-            if ("aphrodite-flash-attn" in req and cuda_major != "12"):
+            if "aphrodite-flash-attn" in req and cuda_major != "12":
                 # aphrodite-flash-attn is built only for CUDA 12.x.
                 # Skip for other versions.
                 continue
@@ -594,8 +551,7 @@ def get_requirements() -> list[str]:
     elif _is_xpu():
         requirements = _read_requirements("xpu.txt")
     else:
-        raise ValueError(
-            "Unsupported platform, please use CUDA, ROCm, or CPU.")
+        raise ValueError("Unsupported platform, please use CUDA, ROCm, or CPU.")
     return requirements
 
 
@@ -611,25 +567,17 @@ if not envs.APHRODITE_USE_PRECOMPILED:
 
     if _is_cuda():
         if not envs.APHRODITE_DISABLE_FLASH_ATTN_COMPILE:
-            ext_modules.append(CMakeExtension(
-                name="aphrodite.aphrodite_flash_attn._vllm_fa2_C"))
+            ext_modules.append(CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa2_C"))
             # Build FA3 when using precompiled artifacts or nvcc >= 12.3.
-            if envs.APHRODITE_USE_PRECOMPILED or \
-                    get_nvcc_cuda_version() >= Version("12.3"):
-                ext_modules.append(
-                    CMakeExtension(
-                        name="aphrodite.aphrodite_flash_attn._vllm_fa3_C"))
+            if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
+                ext_modules.append(CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa3_C"))
 
         # Build flashmla when using precompiled artifacts or nvcc >= 12.3.
         # Optional since this doesn't get built (produce an .so file) when
         # not targeting a hopper system
-        if envs.APHRODITE_USE_PRECOMPILED or \
-                get_nvcc_cuda_version() >= Version("12.3"):
-            ext_modules.append(
-                CMakeExtension(name="aphrodite._flashmla_C", optional=True))
-            ext_modules.append(
-                CMakeExtension(name="aphrodite._flashmla_extension_C",
-                optional=True))
+        if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
+            ext_modules.append(CMakeExtension(name="aphrodite._flashmla_C", optional=True))
+            ext_modules.append(CMakeExtension(name="aphrodite._flashmla_extension_C", optional=True))
         ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
 
     if _build_custom_ops():
@@ -637,8 +585,10 @@ if not envs.APHRODITE_USE_PRECOMPILED:
 
 package_data = {
     "aphrodite": [
-        "endpoints/kobold/klite.embd", "quantization/hadamard.safetensors",
-        "py.typed", "modeling/layers/fused_moe/configs/*.json"
+        "endpoints/kobold/klite.embd",
+        "quantization/hadamard.safetensors",
+        "py.typed",
+        "modeling/layers/fused_moe/configs/*.json",
     ]
 }
 

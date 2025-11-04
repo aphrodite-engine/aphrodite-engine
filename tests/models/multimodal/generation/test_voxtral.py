@@ -3,8 +3,7 @@ import json
 import pytest
 import pytest_asyncio
 from mistral_common.audio import Audio
-from mistral_common.protocol.instruct.chunk import (AudioChunk, RawAudio,
-                                                    TextChunk)
+from mistral_common.protocol.instruct.chunk import AudioChunk, RawAudio, TextChunk
 from mistral_common.protocol.instruct.messages import UserMessage
 
 from aphrodite.transformers_utils.tokenizer import MistralTokenizer
@@ -32,9 +31,7 @@ def server(request, audio_assets: AudioTestAssets):
         json.dumps({"audio": len(audio_assets)}),
     ] + MISTRAL_FORMAT_ARGS
 
-    with RemoteOpenAIServer(
-        MODEL_NAME, args, env_dict={"APHRODITE_AUDIO_FETCH_TIMEOUT": "30"}
-    ) as remote_server:
+    with RemoteOpenAIServer(MODEL_NAME, args, env_dict={"APHRODITE_AUDIO_FETCH_TIMEOUT": "30"}) as remote_server:
         yield remote_server
 
 
@@ -47,13 +44,8 @@ async def client(server):
 def _get_prompt(audio_assets, question):
     tokenizer = MistralTokenizer.from_pretrained(MODEL_NAME)
 
-    audios = [
-        Audio.from_file(str(audio_assets[i].get_local_path()), strict=False)
-        for i in range(len(audio_assets))
-    ]
-    audio_chunks = [
-        AudioChunk(input_audio=RawAudio.from_audio(audio)) for audio in audios
-    ]
+    audios = [Audio.from_file(str(audio_assets[i].get_local_path()), strict=False) for i in range(len(audio_assets))]
+    audio_chunks = [AudioChunk(input_audio=RawAudio.from_audio(audio)) for audio in audios]
 
     text_chunk = TextChunk(text=question)
     messages = [UserMessage(content=[*audio_chunks, text_chunk]).to_openai()]
@@ -103,9 +95,7 @@ async def test_online_serving(client, audio_assets: AudioTestAssets):
         }
     ]
 
-    chat_completion = await client.chat.completions.create(
-        model=MODEL_NAME, messages=messages, max_tokens=10
-    )
+    chat_completion = await client.chat.completions.create(model=MODEL_NAME, messages=messages, max_tokens=10)
 
     assert len(chat_completion.choices) == 1
     choice = chat_completion.choices[0]

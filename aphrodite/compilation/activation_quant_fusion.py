@@ -2,19 +2,15 @@ from abc import ABC, abstractmethod
 
 import torch
 from torch._higher_order_ops.auto_functionalize import auto_functionalized
-from torch._inductor.pattern_matcher import (PatternMatcherPass, fwd_only,
-                                             register_replacement)
+from torch._inductor.pattern_matcher import PatternMatcherPass, fwd_only, register_replacement
 from torch._ops import OpOverload
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import (QuantKey,
-                                                      kFp8StaticTensorSym,
-                                                      kNvfp4Quant)
+from aphrodite.quantization.utils.quant_utils import QuantKey, kFp8StaticTensorSym, kNvfp4Quant
 
-from .aphrodite_inductor_pass import (AphroditeInductorPass,
-                                      AphroditePatternMatcherPass)
+from .aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
 from .fusion import QUANT_OPS, empty_bf16, empty_fp32, empty_i32
 from .inductor_pass import enable_fake_mode
 from .matcher_utils import MatcherQuantFP8, MatcherSiluAndMul
@@ -29,9 +25,7 @@ SILU_MUL_OP = torch.ops._C.silu_and_mul.default
 FUSED_OPS: dict[QuantKey, OpOverload] = {
     kFp8StaticTensorSym: torch.ops._C.silu_and_mul_quant.default,  # noqa: E501
 }
-silu_and_mul_nvfp4_quant_supported = current_platform.is_cuda() and hasattr(
-    torch.ops._C, "silu_and_mul_nvfp4_quant"
-)
+silu_and_mul_nvfp4_quant_supported = current_platform.is_cuda() and hasattr(torch.ops._C, "silu_and_mul_nvfp4_quant")
 if silu_and_mul_nvfp4_quant_supported:
     FUSED_OPS[kNvfp4Quant] = torch.ops._C.silu_and_mul_nvfp4_quant.default  # noqa: E501
 
@@ -49,14 +43,10 @@ class ActivationQuantPattern(ABC):
         self.quant_key = quant_key
         self.quant_dtype = quant_key.dtype
 
-        assert self.quant_key in QUANT_OPS, (
-            f"unsupported quantization scheme {self.quant_key}"
-        )
+        assert self.quant_key in QUANT_OPS, f"unsupported quantization scheme {self.quant_key}"
         self.QUANT_OP = QUANT_OPS[self.quant_key]
 
-        assert self.quant_key in FUSED_OPS, (
-            f"unsupported fusion scheme {self.quant_key}"
-        )
+        assert self.quant_key in FUSED_OPS, f"unsupported fusion scheme {self.quant_key}"
         self.FUSED_OP = FUSED_OPS[self.quant_key]
 
         self.silu_and_mul_matcher = MatcherSiluAndMul()
@@ -94,12 +84,8 @@ class SiluMulFp8StaticQuantPattern(ActivationQuantPattern):
         ):
             d = input.shape[-1] // 2
             output_shape = input.shape[:-1] + (d,)
-            result = torch.empty(
-                output_shape, device=input.device, dtype=self.quant_dtype
-            )
-            at = auto_functionalized(
-                self.FUSED_OP, result=result, input=input, scale=scale
-            )
+            result = torch.empty(output_shape, device=input.device, dtype=self.quant_dtype)
+            at = auto_functionalized(self.FUSED_OP, result=result, input=input, scale=scale)
             return at[1]
 
         inputs = [
@@ -175,9 +161,7 @@ class ActivationQuantFusionPass(AphroditePatternMatcherPass):
     def __init__(self, config: AphroditeConfig):
         super().__init__(config)
 
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="activation_quant_fusion_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="activation_quant_fusion_pass")
 
         pattern_silu_mul_fp8 = SiluMulFp8StaticQuantPattern()
         pattern_silu_mul_fp8.register(self.patterns)

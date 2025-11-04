@@ -6,8 +6,7 @@ import pytest
 from aphrodite.v1.core.sched.scheduler import Scheduler
 from aphrodite.v1.request import Request, RequestStatus
 
-from .utils import (create_aphrodite_config, create_model_runner_output,
-                    create_request, create_scheduler)
+from .utils import create_aphrodite_config, create_model_runner_output, create_request, create_scheduler
 
 
 def _make_get_num_new_matched_tokens(
@@ -62,8 +61,8 @@ def test_async_load_failure(
     }
 
     scheduler.connector = Mock()
-    scheduler.connector.get_num_new_matched_tokens.side_effect = (
-        _make_get_num_new_matched_tokens(req_num_new_matched_tokens, async_load=True)
+    scheduler.connector.get_num_new_matched_tokens.side_effect = _make_get_num_new_matched_tokens(
+        req_num_new_matched_tokens, async_load=True
     )
     scheduler.connector.take_events.return_value = ()
 
@@ -92,9 +91,7 @@ def test_async_load_failure(
     assert len(scheduler.waiting) == 3
     for request in scheduler.waiting:
         if request.request_id == request2.request_id:
-            assert request.num_computed_tokens == (
-                min_invalid_block_idx * scheduler.block_size
-            )
+            assert request.num_computed_tokens == (min_invalid_block_idx * scheduler.block_size)
         else:
             assert request.num_computed_tokens == 0
         assert request.status == RequestStatus.WAITING_FOR_REMOTE_KVS
@@ -137,8 +134,8 @@ def test_sync_load_failure(
     }
 
     scheduler.connector = Mock()
-    scheduler.connector.get_num_new_matched_tokens.side_effect = (
-        _make_get_num_new_matched_tokens(req_num_new_matched_tokens, async_load=False)
+    scheduler.connector.get_num_new_matched_tokens.side_effect = _make_get_num_new_matched_tokens(
+        req_num_new_matched_tokens, async_load=False
     )
     scheduler.connector.request_finished.return_value = (False, None)
     scheduler.connector.take_events.return_value = ()
@@ -171,18 +168,13 @@ def test_sync_load_failure(
 
     assert len(scheduler.running) == 1
     assert scheduler.running[0].request_id == request2.request_id
-    assert scheduler.running[0].num_computed_tokens == (
-        min(invalid_block_idxs) * scheduler.block_size
-    )
+    assert scheduler.running[0].num_computed_tokens == (min(invalid_block_idxs) * scheduler.block_size)
     assert scheduler.connector.get_num_new_matched_tokens.call_count == 3
     assert scheduler.connector.request_finished.call_count == 2
 
 
 @pytest.mark.parametrize(
-    "num_prompt_blocks,"
-    "num_external_computed_blocks,"
-    "num_common_prefix_blocks,"
-    "invalid_block_idxs",
+    "num_prompt_blocks,num_external_computed_blocks,num_common_prefix_blocks,invalid_block_idxs",
     [
         (100, 99, 50, {0, 49}),
         (100, 99, 50, {25, 49}),
@@ -202,13 +194,9 @@ def test_sync_load_failure_with_shared_blocks(
     num_external_computed_tokens = num_external_computed_blocks * scheduler.block_size
     common_prefix_len = num_common_prefix_blocks * scheduler.block_size
 
-    request1 = create_request(
-        num_tokens=num_prompt_tokens, common_prefix_len=common_prefix_len
-    )
+    request1 = create_request(num_tokens=num_prompt_tokens, common_prefix_len=common_prefix_len)
     scheduler.add_request(request=request1)
-    request2 = create_request(
-        num_tokens=num_prompt_tokens, common_prefix_len=common_prefix_len
-    )
+    request2 = create_request(num_tokens=num_prompt_tokens, common_prefix_len=common_prefix_len)
     scheduler.add_request(request=request2)
 
     # Mock KV connector method.
@@ -218,8 +206,8 @@ def test_sync_load_failure_with_shared_blocks(
     }
 
     scheduler.connector = Mock()
-    scheduler.connector.get_num_new_matched_tokens.side_effect = (
-        _make_get_num_new_matched_tokens(req_num_new_matched_tokens, async_load=False)
+    scheduler.connector.get_num_new_matched_tokens.side_effect = _make_get_num_new_matched_tokens(
+        req_num_new_matched_tokens, async_load=False
     )
     scheduler.connector.take_events.return_value = ()
 
@@ -255,9 +243,7 @@ def test_sync_load_failure_with_shared_blocks(
 
     assert len(scheduler.running) == 2
     for request in scheduler.running:
-        assert (
-            request.num_computed_tokens == expected_computed_tokens[request.request_id]
-        )
+        assert request.num_computed_tokens == expected_computed_tokens[request.request_id]
     assert scheduler.connector.get_num_new_matched_tokens.call_count == 2
 
 
@@ -289,8 +275,8 @@ def test_async_progressive_load_failure(
     }
 
     scheduler.connector = Mock()
-    scheduler.connector.get_num_new_matched_tokens.side_effect = (
-        _make_get_num_new_matched_tokens(req_num_new_matched_tokens, async_load=True)
+    scheduler.connector.get_num_new_matched_tokens.side_effect = _make_get_num_new_matched_tokens(
+        req_num_new_matched_tokens, async_load=True
     )
     scheduler.connector.take_events.return_value = ()
 
@@ -320,9 +306,7 @@ def test_async_progressive_load_failure(
 
         assert len(scheduler.waiting) == 1
         assert scheduler.waiting.peek_request().request_id == request.request_id
-        assert request.num_computed_tokens == (
-            min_invalid_block_idx * scheduler.block_size
-        )
+        assert request.num_computed_tokens == (min_invalid_block_idx * scheduler.block_size)
         assert request.status == RequestStatus.WAITING_FOR_REMOTE_KVS
         assert scheduler.failed_recving_kv_req_ids == {request.request_id}
         assert scheduler.connector.get_num_new_matched_tokens.call_count == 1

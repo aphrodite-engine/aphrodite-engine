@@ -19,12 +19,14 @@ from aphrodite.modeling.models.transformers.causal import CausalMixin
 from aphrodite.modeling.models.transformers.legacy import LegacyMixin
 from aphrodite.modeling.models.transformers.moe import MoEMixin
 from aphrodite.modeling.models.transformers.multimodal import (
-    DYNAMIC_ARG_DIMS, MultiModalDummyInputsBuilder, MultiModalMixin,
-    MultiModalProcessingInfo, MultiModalProcessor)
-from aphrodite.modeling.models.transformers.pooling import (
-    EmbeddingMixin, SequenceClassificationMixin)
-from aphrodite.modeling.models.transformers.utils import (
-    can_enable_torch_compile)
+    DYNAMIC_ARG_DIMS,
+    MultiModalDummyInputsBuilder,
+    MultiModalMixin,
+    MultiModalProcessingInfo,
+    MultiModalProcessor,
+)
+from aphrodite.modeling.models.transformers.pooling import EmbeddingMixin, SequenceClassificationMixin
+from aphrodite.modeling.models.transformers.utils import can_enable_torch_compile
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
 
@@ -43,9 +45,7 @@ class TransformersMoEForCausalLM(MoEMixin, CausalMixin, Base): ...
     info=MultiModalProcessingInfo,
     dummy_inputs=MultiModalDummyInputsBuilder,
 )
-@support_torch_compile(
-    dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
-)
+@support_torch_compile(dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile)
 class TransformersMultiModalForCausalLM(MultiModalMixin, CausalMixin, Base): ...
 
 
@@ -54,12 +54,8 @@ class TransformersMultiModalForCausalLM(MultiModalMixin, CausalMixin, Base): ...
     info=MultiModalProcessingInfo,
     dummy_inputs=MultiModalDummyInputsBuilder,
 )
-@support_torch_compile(
-    dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
-)
-class TransformersMultiModalMoEForCausalLM(
-    MoEMixin, MultiModalMixin, CausalMixin, Base
-): ...
+@support_torch_compile(dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile)
+class TransformersMultiModalMoEForCausalLM(MoEMixin, MultiModalMixin, CausalMixin, Base): ...
 
 
 # Embedding models
@@ -76,23 +72,17 @@ class TransformersMoEEmbeddingModel(EmbeddingMixin, MoEMixin, Base): ...
     info=MultiModalProcessingInfo,
     dummy_inputs=MultiModalDummyInputsBuilder,
 )
-@support_torch_compile(
-    dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
-)
+@support_torch_compile(dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile)
 class TransformersMultiModalEmbeddingModel(EmbeddingMixin, MultiModalMixin, Base): ...
 
 
 # Sequence classification models
 @support_torch_compile(enable_if=can_enable_torch_compile)
-class TransformersForSequenceClassification(
-    SequenceClassificationMixin, LegacyMixin, Base
-): ...
+class TransformersForSequenceClassification(SequenceClassificationMixin, LegacyMixin, Base): ...
 
 
 @support_torch_compile(enable_if=can_enable_torch_compile)
-class TransformersMoEForSequenceClassification(
-    SequenceClassificationMixin, MoEMixin, Base
-): ...
+class TransformersMoEForSequenceClassification(SequenceClassificationMixin, MoEMixin, Base): ...
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -100,12 +90,8 @@ class TransformersMoEForSequenceClassification(
     info=MultiModalProcessingInfo,
     dummy_inputs=MultiModalDummyInputsBuilder,
 )
-@support_torch_compile(
-    dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
-)
-class TransformersMultiModalForSequenceClassification(
-    SequenceClassificationMixin, MultiModalMixin, Base
-): ...
+@support_torch_compile(dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile)
+class TransformersMultiModalForSequenceClassification(SequenceClassificationMixin, MultiModalMixin, Base): ...
 
 
 def __getattr__(name: str):

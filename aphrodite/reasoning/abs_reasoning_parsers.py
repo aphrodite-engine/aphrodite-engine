@@ -10,9 +10,7 @@ from aphrodite.utils.collection_utils import is_list_of
 from aphrodite.utils.import_utils import import_from_path
 
 if TYPE_CHECKING:
-    from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                     DeltaMessage,
-                                                     ResponsesRequest)
+    from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, ResponsesRequest
     from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 else:
     ChatCompletionRequest = Any
@@ -146,9 +144,7 @@ class ReasoningParserManager:
         force: bool = True,
     ) -> None:
         if not issubclass(module, ReasoningParser):
-            raise TypeError(
-                f"module must be subclass of ReasoningParser, but got {type(module)}"
-            )
+            raise TypeError(f"module must be subclass of ReasoningParser, but got {type(module)}")
         if module_name is None:
             module_name = module.__name__
         if isinstance(module_name, str):
@@ -156,9 +152,7 @@ class ReasoningParserManager:
         for name in module_name:
             if not force and name in cls.reasoning_parsers:
                 existed_module = cls.reasoning_parsers[name]
-                raise KeyError(
-                    f"{name} is already registered at {existed_module.__module__}"
-                )
+                raise KeyError(f"{name} is already registered at {existed_module.__module__}")
             cls.reasoning_parsers[name] = module
 
     @classmethod
@@ -178,10 +172,7 @@ class ReasoningParserManager:
 
         # raise the error ahead of time
         if not (name is None or isinstance(name, str) or is_list_of(name, str)):
-            raise TypeError(
-                "name must be None, an instance of str, or a sequence of str, "
-                f"but got {type(name)}"
-            )
+            raise TypeError(f"name must be None, an instance of str, or a sequence of str, but got {type(name)}")
 
         # use it as a normal method: x.register_module(module=SomeClass)
         if module is not None:
@@ -206,7 +197,5 @@ class ReasoningParserManager:
         try:
             import_from_path(module_name, plugin_path)
         except Exception:
-            logger.exception(
-                "Failed to load module '%s' from %s.", module_name, plugin_path
-            )
+            logger.exception("Failed to load module '%s' from %s.", module_name, plugin_path)
             return

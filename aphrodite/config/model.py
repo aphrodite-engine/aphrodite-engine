@@ -7,29 +7,33 @@ from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import torch
-from pydantic import (ConfigDict, SkipValidation, field_validator,
-                      model_validator)
+from pydantic import ConfigDict, SkipValidation, field_validator, model_validator
 from pydantic.dataclasses import dataclass
 from safetensors.torch import _TYPES as _SAFETENSORS_TO_TORCH_DTYPE
 
 import aphrodite.envs as envs
-from aphrodite.config.multimodal import (MMCacheType, MMEncoderTPMode,
-                                         MultiModalConfig)
+from aphrodite.config.multimodal import MMCacheType, MMEncoderTPMode, MultiModalConfig
 from aphrodite.config.pooler import PoolerConfig
 from aphrodite.config.scheduler import RunnerType
 from aphrodite.config.utils import assert_hashable, config, getattr_iter
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.config import (
-    ConfigFormat, get_config, get_hf_image_processor_config,
-    get_hf_text_config, get_pooling_config,
-    get_sentence_transformer_tokenizer_config, is_encoder_decoder,
-    try_get_dense_modules, try_get_generation_config,
-    try_get_safetensors_metadata, try_get_tokenizer_config, uses_mrope)
-from aphrodite.transformers_utils.runai_utils import (ObjectStorageModel,
-                                                      is_runai_obj_uri)
+    ConfigFormat,
+    get_config,
+    get_hf_image_processor_config,
+    get_hf_text_config,
+    get_pooling_config,
+    get_sentence_transformer_tokenizer_config,
+    is_encoder_decoder,
+    try_get_dense_modules,
+    try_get_generation_config,
+    try_get_safetensors_metadata,
+    try_get_tokenizer_config,
+    uses_mrope,
+)
+from aphrodite.transformers_utils.runai_utils import ObjectStorageModel, is_runai_obj_uri
 from aphrodite.transformers_utils.utils import maybe_model_redirect
 from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.utils.torch_utils import common_broadcastable_dtype
@@ -48,9 +52,7 @@ else:
     PretrainedConfig = Any
 
     _Backend = Any
-    me_quant = LazyLoader(
-        "modeling", globals(), "aphrodite.quantization"
-    )
+    me_quant = LazyLoader("modeling", globals(), "aphrodite.quantization")
     me_models = LazyLoader("modeling", globals(), "aphrodite.modeling.models")
     LoadConfig = Any
     ParallelConfig = Any
@@ -75,9 +77,7 @@ TaskOption = Literal[
 ]
 TokenizerMode = Literal["auto", "slow", "mistral", "custom"]
 ModelDType = Literal["auto", "half", "float16", "bfloat16", "float", "float32"]
-LogprobsMode = Literal[
-    "raw_logits", "raw_logprobs", "processed_logits", "processed_logprobs"
-]
+LogprobsMode = Literal["raw_logits", "raw_logprobs", "processed_logits", "processed_logprobs"]
 HfOverrides = dict[str, Any] | Callable[[PretrainedConfig], PretrainedConfig]
 ModelImpl = Literal["auto", "aphrodite", "transformers", "terratorch"]
 LayerBlockType = Literal["attention", "linear_attention", "mamba"]
@@ -349,9 +349,7 @@ class ModelConfig:
             hf_config_json = (
                 json.dumps(
                     json_map_leaves(
-                        lambda v: v.to_dict()
-                        if isinstance(v, PretrainedConfig)
-                        else str(v),
+                        lambda v: v.to_dict() if isinstance(v, PretrainedConfig) else str(v),
                         self.hf_config.to_dict(),
                     ),
                     indent=2,
@@ -382,8 +380,7 @@ class ModelConfig:
 
                 # If nested target exists and can be updated recursively
                 if nested_target is not None and (
-                    isinstance(nested_target, dict)
-                    or hasattr(nested_target, "__dict__")
+                    isinstance(nested_target, dict) or hasattr(nested_target, "__dict__")
                 ):
                     self._update_nested(nested_target, value)
                     continue
@@ -449,9 +446,7 @@ class ModelConfig:
                 )
 
         # Keep set served_model_name before maybe_model_redirect(self.model)
-        self.served_model_name = get_served_model_name(
-            self.model, self.served_model_name
-        )
+        self.served_model_name = get_served_model_name(self.model, self.served_model_name)
         self.model = maybe_model_redirect(self.model)
         # The tokenizer is consistent with the model by default.
         if self.tokenizer is None:
@@ -537,9 +532,7 @@ class ModelConfig:
         if dict_overrides:
             self._apply_dict_overrides(hf_config, dict_overrides)
         self.hf_text_config = get_hf_text_config(self.hf_config)
-        self.attention_chunk_size = getattr(
-            self.hf_text_config, "attention_chunk_size", None
-        )
+        self.attention_chunk_size = getattr(self.hf_text_config, "attention_chunk_size", None)
         self.encoder_config = self._get_encoder_config()
         self.hf_image_processor_config = get_hf_image_processor_config(
             self.model, hf_token=self.hf_token, revision=self.revision
@@ -567,8 +560,7 @@ class ModelConfig:
             runner: RunnerOption = "auto"
             convert: ConvertOption = "auto"
             msg_prefix = (
-                "The 'task' option has been deprecated and will be "
-                "removed in v0.13.0 or v1.0, whichever comes first."
+                "The 'task' option has been deprecated and will be removed in v0.13.0 or v1.0, whichever comes first."
             )
             msg_hint = "Please remove this option."
 
@@ -628,9 +620,7 @@ class ModelConfig:
             warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
         self.runner_type = self._get_runner_type(architectures, self.runner)
-        self.convert_type = self._get_convert_type(
-            architectures, self.runner_type, self.convert
-        )
+        self.convert_type = self._get_convert_type(architectures, self.runner_type, self.convert)
 
         if self.runner_type == "generate" and not is_generative_model:
             generate_converts = _RUNNER_CONVERTS["generate"]
@@ -694,10 +684,7 @@ class ModelConfig:
         self.max_model_len = self.get_and_verify_max_len(self.max_model_len)
         # Init multimodal config if needed
         if self._model_info.supports_multimodal:
-            if (
-                mm_encoder_tp_mode == "data"
-                and not self._model_info.supports_multimodal_encoder_tp_data
-            ):
+            if mm_encoder_tp_mode == "data" and not self._model_info.supports_multimodal_encoder_tp_data:
                 logger.warning_once(
                     "This model does not support `--mm-encoder-tp-mode data`. "
                     "Falling back to `--mm-encoder-tp-mode weights`."
@@ -719,9 +706,7 @@ class ModelConfig:
                 video_pruning_rate=video_pruning_rate,
             )
 
-            mm_config_kwargs = {
-                k: v for k, v in mm_config_kwargs.items() if v is not None
-            }
+            mm_config_kwargs = {k: v for k, v in mm_config_kwargs.items() if v is not None}
 
             self.multimodal_config = MultiModalConfig(**mm_config_kwargs)
 
@@ -815,9 +800,7 @@ class ModelConfig:
 
         if is_runai_obj_uri(model):
             object_storage_model = ObjectStorageModel(url=model)
-            object_storage_model.pull_files(
-                model, allow_pattern=["*.model", "*.py", "*.json"]
-            )
+            object_storage_model.pull_files(model, allow_pattern=["*.model", "*.py", "*.json"])
             self.model_weights = model
             self.model = object_storage_model.dir
 
@@ -852,8 +835,7 @@ class ModelConfig:
         tokenizer_mode = cast(TokenizerMode, self.tokenizer_mode.lower())
         if tokenizer_mode not in get_args(TokenizerMode):
             raise ValueError(
-                f"Unknown tokenizer mode: {self.tokenizer_mode}. Must be "
-                f"one of {get_args(TokenizerMode)}."
+                f"Unknown tokenizer mode: {self.tokenizer_mode}. Must be one of {get_args(TokenizerMode)}."
             )
         self.tokenizer_mode = tokenizer_mode
 
@@ -894,8 +876,7 @@ class ModelConfig:
         # Don't log the most common case
         if runner_type != "generate":
             logger.info(
-                "Resolved `--runner auto` to `--runner %s`. "
-                "Pass the value explicitly to silence this message.",
+                "Resolved `--runner auto` to `--runner %s`. Pass the value explicitly to silence this message.",
                 runner_type,
             )
 
@@ -910,13 +891,9 @@ class ModelConfig:
 
         for arch in architectures:
             if arch in registry.get_supported_archs():
-                if runner_type == "generate" and registry.is_text_generation_model(
-                    architectures, self
-                ):
+                if runner_type == "generate" and registry.is_text_generation_model(architectures, self):
                     return "none"
-                if runner_type == "pooling" and registry.is_pooling_model(
-                    architectures, self
-                ):
+                if runner_type == "pooling" and registry.is_pooling_model(architectures, self):
                     return "none"
 
             match = try_match_architecture_defaults(arch, runner_type=runner_type)
@@ -946,8 +923,7 @@ class ModelConfig:
         # Don't log the most common case
         if convert_type != "none":
             logger.info(
-                "Resolved `--convert auto` to `--convert %s`. "
-                "Pass the value explicitly to silence this message.",
+                "Resolved `--convert auto` to `--convert %s`. Pass the value explicitly to silence this message.",
                 convert_type,
             )
 
@@ -992,15 +968,11 @@ class ModelConfig:
     def _verify_quantization(self) -> None:
         supported_quantization = me_quant.QUANTIZATION_METHODS
         if self.quantization is not None:
-            self.quantization = cast(
-                me_quant.QuantizationMethods, self.quantization
-            )
+            self.quantization = cast(me_quant.QuantizationMethods, self.quantization)
 
         # Parse quantization method from the HF model config, if available.
         quant_cfg = self._parse_quant_hf_config(self.hf_config)
-        if quant_cfg is None and (
-            text_config := getattr(self.hf_config, "text_config", None)
-        ):
+        if quant_cfg is None and (text_config := getattr(self.hf_config, "text_config", None)):
             # Check the text config as well for multi-modal models.
             quant_cfg = self._parse_quant_hf_config(text_config)
 
@@ -1009,9 +981,7 @@ class ModelConfig:
             quant_method = quant_cfg.get("quant_method", "").lower()
 
             # Normalize library names
-            quant_method = quant_method.replace(
-                "compressed_tensors", "compressed-tensors"
-            )
+            quant_method = quant_method.replace("compressed_tensors", "compressed-tensors")
 
             quant_cfg["quant_method"] = quant_method
 
@@ -1033,9 +1003,7 @@ class ModelConfig:
                 # imports during override detection (e.g., MXFP4 imports Triton)
                 "mxfp4",
             ]
-            quantization_methods = [
-                q for q in supported_quantization if q not in overrides
-            ]
+            quantization_methods = [q for q in supported_quantization if q not in overrides]
             # Any custom overrides will be in quantization_methods so we place
             # them at the start of the list so custom overrides have preference
             # over the built-in ones.
@@ -1044,17 +1012,12 @@ class ModelConfig:
             # Detect which checkpoint is it
             for name in quantization_methods:
                 method = me_quant.get_quantization_config(name)
-                quantization_override = method.override_quantization_method(
-                    quant_cfg, self.quantization
-                )
+                quantization_override = method.override_quantization_method(quant_cfg, self.quantization)
                 if quantization_override is not None:
                     # Raise error if the override is not custom (custom would
                     # be in QUANTIZATION_METHODS but not QuantizationMethods)
                     # and hasn't been added to the overrides list.
-                    if (
-                        name in get_args(me_quant.QuantizationMethods)
-                        and name not in overrides
-                    ):
+                    if name in get_args(me_quant.QuantizationMethods) and name not in overrides:
                         raise ValueError(
                             f"Quantization method {name} is an override but "
                             "is has not been added to the `overrides` list "
@@ -1080,8 +1043,7 @@ class ModelConfig:
         if self.quantization is not None:
             if self.quantization not in supported_quantization:
                 raise ValueError(
-                    f"Unknown quantization method: {self.quantization}. Must "
-                    f"be one of {supported_quantization}."
+                    f"Unknown quantization method: {self.quantization}. Must be one of {supported_quantization}."
                 )
             from aphrodite.platforms import current_platform
 
@@ -1096,18 +1058,19 @@ class ModelConfig:
             7: 3,
         }
         online_quant_methods = ["fp2", "fp3", "fp4", "fp5", "fp6", "fp7"]
-        if self.quantization is not None and self.quantization in \
-            online_quant_methods:
+        if self.quantization is not None and self.quantization in online_quant_methods:
             fp_bits = int(self.quantization[2])
             if fp_bits in [2, 3]:
-                logger.warning("FP2 and FP3 quantization methods lead to "
-                               "significant accuracy loss. Use them with "
-                               "caution. Model may be incoherent.")
+                logger.warning(
+                    "FP2 and FP3 quantization methods lead to "
+                    "significant accuracy loss. Use them with "
+                    "caution. Model may be incoherent."
+                )
             exp_bits = DEFAULT_EXP_BITS[fp_bits]
             self.hf_config.quantization_config = {
                 "bits": fp_bits,
                 "exp_bits": exp_bits,
-                "quant_method": self.quantization
+                "quant_method": self.quantization,
             }
             self.dtype = torch.float16
 
@@ -1116,8 +1079,7 @@ class ModelConfig:
         unsupported_rocm = self.is_encoder_decoder
         if unsupported_rocm and not self.enforce_eager and current_platform.is_rocm():
             logger.warning(
-                "CUDA graph is not supported for %s on ROCm yet, fallback "
-                "to eager mode.",
+                "CUDA graph is not supported for %s on ROCm yet, fallback to eager mode.",
                 self.hf_config.model_type,
             )
             self.enforce_eager = True
@@ -1129,14 +1091,8 @@ class ModelConfig:
         # TODO Remove this when bitsandbytes supports.
         """
         is_bitsandbytes = self.quantization == "bitsandbytes"
-        has_quantization_config = (
-            getattr(self.hf_config, "quantization_config", None) is not None
-        )
-        is_8bit = (
-            self.hf_config.quantization_config.get("load_in_8bit", False)
-            if has_quantization_config
-            else False
-        )
+        has_quantization_config = getattr(self.hf_config, "quantization_config", None) is not None
+        is_8bit = self.hf_config.quantization_config.get("load_in_8bit", False) if has_quantization_config else False
         if all(
             [
                 is_bitsandbytes,
@@ -1145,10 +1101,7 @@ class ModelConfig:
                 not self.enforce_eager,
             ]
         ):
-            logger.warning(
-                "CUDA graph is not supported on BitsAndBytes 8bit yet, "
-                "fallback to the eager mode."
-            )
+            logger.warning("CUDA graph is not supported on BitsAndBytes 8bit yet, fallback to the eager mode.")
 
             self.enforce_eager = True
 
@@ -1156,8 +1109,7 @@ class ModelConfig:
         num_experts = self.get_num_experts()
         if num_experts < 1:
             raise ValueError(
-                "Number of experts in the model must be greater than 0 "
-                "when expert parallelism is enabled."
+                "Number of experts in the model must be greater than 0 when expert parallelism is enabled."
             )
 
     def verify_dual_chunk_attention_config(
@@ -1166,21 +1118,13 @@ class ModelConfig:
     ) -> None:
         if hasattr(self.hf_config, "dual_chunk_attention_config"):
             # Try loading the sparse attention config
-            from aphrodite.modeling.model_loader.weight_utils import (
-                get_sparse_attention_config)
+            from aphrodite.modeling.model_loader.weight_utils import get_sparse_attention_config
 
             sparse_attn_config = get_sparse_attention_config(self, load_config)
             if sparse_attn_config:
-                self.hf_config.dual_chunk_attention_config[
-                    "sparse_attention_config"
-                ] = sparse_attn_config
-                if (
-                    "sparse_attention_enabled"
-                    not in self.hf_config.dual_chunk_attention_config
-                ):
-                    self.hf_config.dual_chunk_attention_config[
-                        "sparse_attention_enabled"
-                    ] = True
+                self.hf_config.dual_chunk_attention_config["sparse_attention_config"] = sparse_attn_config
+                if "sparse_attention_enabled" not in self.hf_config.dual_chunk_attention_config:
+                    self.hf_config.dual_chunk_attention_config["sparse_attention_enabled"] = True
 
     def verify_with_parallel_config(
         self,
@@ -1192,9 +1136,7 @@ class ModelConfig:
                 "make sure sampling results are the same across workers."
             )
 
-        total_num_attention_heads = getattr(
-            self.hf_text_config, "num_attention_heads", 0
-        )
+        total_num_attention_heads = getattr(self.hf_text_config, "num_attention_heads", 0)
         tensor_parallel_size = parallel_config.tensor_parallel_size
         if total_num_attention_heads % tensor_parallel_size != 0:
             raise ValueError(
@@ -1207,9 +1149,7 @@ class ModelConfig:
             self._verify_with_expert_parallelism()
 
         pipeline_parallel_size = parallel_config.pipeline_parallel_size
-        if pipeline_parallel_size > 1 and not self.registry.is_pp_supported_model(
-            self.architectures, self
-        ):
+        if pipeline_parallel_size > 1 and not self.registry.is_pp_supported_model(self.architectures, self):
             raise NotImplementedError(
                 "Pipeline parallelism is not supported for this model. "
                 "Supported models implement the `SupportsPP` interface."
@@ -1260,8 +1200,7 @@ class ModelConfig:
             # if the model is an EAGLE module, check for the
             # underlying architecture
             return (
-                self.hf_text_config.model.model_type
-                in ("deepseek_v2", "deepseek_v3", "deepseek_v32")
+                self.hf_text_config.model.model_type in ("deepseek_v2", "deepseek_v3", "deepseek_v32")
                 and self.hf_text_config.kv_lora_rank is not None
             )
         return False
@@ -1277,9 +1216,7 @@ class ModelConfig:
                 if qk_rope_head_dim and qk_nope_head_dim:
                     return qk_rope_head_dim + qk_nope_head_dim
 
-        if hasattr(self.hf_text_config, "model_type") and (
-            self.hf_text_config.model_type == "zamba2"
-        ):
+        if hasattr(self.hf_text_config, "model_type") and (self.hf_text_config.model_type == "zamba2"):
             return self.hf_text_config.attention_head_dim
 
         if self.is_attention_free:
@@ -1294,9 +1231,7 @@ class ModelConfig:
             return self.hf_text_config.hidden_size_per_head
 
         # FIXME(woosuk): This may not be true for all models.
-        return (
-            self.hf_text_config.hidden_size // self.hf_text_config.num_attention_heads
-        )
+        return self.hf_text_config.hidden_size // self.hf_text_config.num_attention_heads
 
     def get_total_num_kv_heads(self) -> int:
         """Returns the total number of KV heads."""
@@ -1305,13 +1240,10 @@ class ModelConfig:
         # multi_query flag is ignored and we use n_head_kv for the number of
         # KV heads.
         falcon_model_types = ["falcon", "RefinedWeb", "RefinedWebModel"]
-        new_decoder_arch_falcon = (
-            self.hf_config.model_type in falcon_model_types
-            and getattr(self.hf_config, "new_decoder_architecture", False)
+        new_decoder_arch_falcon = self.hf_config.model_type in falcon_model_types and getattr(
+            self.hf_config, "new_decoder_architecture", False
         )
-        if not new_decoder_arch_falcon and getattr(
-            self.hf_text_config, "multi_query", False
-        ):
+        if not new_decoder_arch_falcon and getattr(self.hf_text_config, "multi_query", False):
             # Multi-query attention, only one KV head.
             # Currently, tensor parallelism is not supported in this case.
             return 1
@@ -1331,10 +1263,7 @@ class ModelConfig:
         if self.hf_config.model_type == "nemotron-nas":
             for block in self.hf_config.block_configs:
                 if not block.attention.no_op:
-                    return (
-                        self.hf_config.num_attention_heads
-                        // block.attention.n_heads_in_group
-                    )
+                    return self.hf_config.num_attention_heads // block.attention.n_heads_in_group
 
             raise RuntimeError("Couldn't determine number of kv heads")
 
@@ -1391,9 +1320,7 @@ class ModelConfig:
             return num_experts[0]
         return num_experts
 
-    def get_layers_start_end_indices(
-        self, parallel_config: ParallelConfig
-    ) -> tuple[int, int]:
+    def get_layers_start_end_indices(self, parallel_config: ParallelConfig) -> tuple[int, int]:
         from aphrodite.distributed.utils import get_pp_indices
 
         if (
@@ -1403,17 +1330,11 @@ class ModelConfig:
             or self.hf_config.model_type == "ernie_mtp"
             or self.hf_config.model_type == "qwen3_next_mtp"
         ):
-            total_num_hidden_layers = getattr(
-                self.hf_text_config, "num_nextn_predict_layers", 0
-            )
+            total_num_hidden_layers = getattr(self.hf_text_config, "num_nextn_predict_layers", 0)
         elif self.hf_config.model_type == "longcat_flash_mtp":
-            total_num_hidden_layers = getattr(
-                self.hf_text_config, "num_nextn_predict_layers", 1
-            )
+            total_num_hidden_layers = getattr(self.hf_text_config, "num_nextn_predict_layers", 1)
         else:
-            total_num_hidden_layers = getattr(
-                self.hf_text_config, "num_hidden_layers", 0
-            )
+            total_num_hidden_layers = getattr(self.hf_text_config, "num_hidden_layers", 0)
         # the layout order is: DP x PP x TP
         pp_rank = (
             parallel_config.rank // parallel_config.tensor_parallel_size
@@ -1434,9 +1355,7 @@ class ModelConfig:
         # This function relies on 'layers_block_type' in hf_config,
         # for w/o this attribute, we will need to have workarounds like so
         attn_block_type = block_type == "attention"
-        is_transformer = (
-            not self.is_hybrid and not self.has_noops and not self.is_attention_free
-        )
+        is_transformer = not self.is_hybrid and not self.has_noops and not self.is_attention_free
         start, end = self.get_layers_start_end_indices(parallel_config)
 
         if is_transformer:
@@ -1452,17 +1371,11 @@ class ModelConfig:
             return sum(not bc.attention.no_op for bc in block_configs[start:end])
         else:
             # Hybrid model Jamba
-            layers_block_type_value = getattr(
-                self.hf_text_config, "layers_block_type", None
-            )
+            layers_block_type_value = getattr(self.hf_text_config, "layers_block_type", None)
             if layers_block_type_value is not None:
-                if hasattr(self.hf_text_config, "model_type") and (
-                    self.hf_text_config.model_type == "zamba2"
-                ):
+                if hasattr(self.hf_text_config, "model_type") and (self.hf_text_config.model_type == "zamba2"):
                     if attn_block_type:
-                        return sum(
-                            t == "hybrid" for t in layers_block_type_value[start:end]
-                        )
+                        return sum(t == "hybrid" for t in layers_block_type_value[start:end])
                     else:
                         return self.get_num_layers(parallel_config)
                 return sum(t == block_type for t in layers_block_type_value[start:end])
@@ -1476,21 +1389,13 @@ class ModelConfig:
             layer_types_value = getattr(self.hf_config, "layer_types", None)
             if layer_types_value is not None:
                 if block_type == "attention":
-                    return sum(
-                        t == "full_attention" for t in layer_types_value[start:end]
-                    )
+                    return sum(t == "full_attention" for t in layer_types_value[start:end])
                 elif block_type == "linear_attention":
-                    return sum(
-                        t == "linear_attention" for t in layer_types_value[start:end]
-                    )
+                    return sum(t == "linear_attention" for t in layer_types_value[start:end])
                 else:
                     return sum(t == block_type for t in layer_types_value[start:end])
 
-            if (
-                layers_block_type_value is None
-                and attn_type_list is None
-                and layer_types_value is None
-            ):
+            if layers_block_type_value is None and attn_type_list is None and layer_types_value is None:
                 raise ValueError(
                     "The model is an hybrid without a layers_block_type or an "
                     "attn_type_list, or a layer_types in the hf_config, "
@@ -1583,15 +1488,11 @@ class ModelConfig:
             "max_new_tokens",
         ]
         if any(p in config for p in available_params):
-            diff_sampling_param = {
-                p: config.get(p) for p in available_params if config.get(p) is not None
-            }
+            diff_sampling_param = {p: config.get(p) for p in available_params if config.get(p) is not None}
             # Huggingface definition of max_new_tokens is equivalent
             # to Aphrodite's max_tokens
             if "max_new_tokens" in diff_sampling_param:
-                diff_sampling_param["max_tokens"] = diff_sampling_param.pop(
-                    "max_new_tokens"
-                )
+                diff_sampling_param["max_tokens"] = diff_sampling_param.pop("max_new_tokens")
         else:
             diff_sampling_param = {}
 
@@ -1619,14 +1520,8 @@ class ModelConfig:
             or (
                 hasattr(cfg, "attn_config")  # MPT
                 and (
-                    (
-                        isinstance(cfg.attn_config, dict)
-                        and cfg.attn_config.get("alibi", False)
-                    )
-                    or (
-                        not isinstance(cfg.attn_config, dict)
-                        and getattr(cfg.attn_config, "alibi", False)
-                    )
+                    (isinstance(cfg.attn_config, dict) and cfg.attn_config.get("alibi", False))
+                    or (not isinstance(cfg.attn_config, dict) and getattr(cfg.attn_config, "alibi", False))
                 )
             )
         )
@@ -1645,9 +1540,7 @@ class ModelConfig:
 
     @property
     def is_cross_encoder(self) -> bool:
-        return (
-            self._model_info.supports_cross_encoding or self.convert_type == "classify"
-        )
+        return self._model_info.supports_cross_encoding or self.convert_type == "classify"
 
     @property
     def is_pp_supported(self) -> bool:
@@ -1705,22 +1598,18 @@ class ModelConfig:
         you can use --hf-overrides '{"head_dtype": "model"}' to disable it.
         """
 
-        head_dtype = _get_head_dtype(
-            config=self.hf_config, dtype=self.dtype, runner_type=self.runner_type
-        )
+        head_dtype = _get_head_dtype(config=self.hf_config, dtype=self.dtype, runner_type=self.runner_type)
 
         if self.runner_type != "pooling" and head_dtype != self.dtype:
             logger.warning_once(
-                "`head_dtype` currently only supports pooling models."
-                "fallback to model dtype [%s].",
+                "`head_dtype` currently only supports pooling models.fallback to model dtype [%s].",
                 self.dtype,
             )
             return self.dtype
 
         if head_dtype not in current_platform.supported_dtypes:
             logger.warning_once(
-                "The current platform does not support [%s] head dtype, "
-                "fallback to model dtype [%s].",
+                "The current platform does not support [%s] head dtype, fallback to model dtype [%s].",
                 head_dtype,
                 self.dtype,
             )
@@ -1747,10 +1636,7 @@ class ModelConfig:
         # Consider max_model_len in tokenizer_config only when
         # pooling models use absolute position_embedding.
         tokenizer_config = None
-        if (
-            self.runner_type == "pooling"
-            and getattr(self.hf_config, "position_embedding_type", "") == "absolute"
-        ):
+        if self.runner_type == "pooling" and getattr(self.hf_config, "position_embedding_type", "") == "absolute":
             tokenizer_config = try_get_tokenizer_config(
                 self.tokenizer,
                 trust_remote_code=self.trust_remote_code,
@@ -1858,9 +1744,7 @@ def _is_valid_dtype(model_type: str, dtype: torch.dtype):
 def _check_valid_dtype(model_type: str, dtype: torch.dtype):
     if model_type in _FLOAT16_NOT_SUPPORTED_MODELS and dtype == torch.float16:
         reason = _FLOAT16_NOT_SUPPORTED_MODELS[model_type]
-        raise ValueError(
-            f"The model type {model_type!r} does not support float16. Reason: {reason}"
-        )
+        raise ValueError(f"The model type {model_type!r} does not support float16. Reason: {reason}")
 
     return True
 
@@ -1913,11 +1797,7 @@ def _resolve_auto_dtype(
 ):
     from aphrodite.platforms import current_platform
 
-    supported_dtypes = [
-        dtype
-        for dtype in current_platform.supported_dtypes
-        if _is_valid_dtype(model_type, dtype)
-    ]
+    supported_dtypes = [dtype for dtype in current_platform.supported_dtypes if _is_valid_dtype(model_type, dtype)]
 
     if is_pooling_model and torch.float16 in supported_dtypes:
         preferred_dtype = torch.float16
@@ -1996,9 +1876,7 @@ def _get_and_verify_dtype(
     return torch_dtype
 
 
-def _get_head_dtype(
-    config: PretrainedConfig, dtype: torch.dtype, runner_type: str
-) -> torch.dtype:
+def _get_head_dtype(config: PretrainedConfig, dtype: torch.dtype, runner_type: str) -> torch.dtype:
     head_dtype: str | torch.dtype | None = getattr(config, "head_dtype", None)
 
     if head_dtype == "model":
@@ -2063,19 +1941,13 @@ def _get_and_verify_max_len(
 
     # If sliding window is manually disabled, max_length should be less
     # than the sliding window length in the model config.
-    if (
-        disable_sliding_window
-        and sliding_window is not None
-        and sliding_window < derived_max_model_len
-    ):
+    if disable_sliding_window and sliding_window is not None and sliding_window < derived_max_model_len:
         max_len_key = "sliding_window"
         derived_max_model_len = sliding_window
 
     # Consider model_max_length in tokenizer_config
     if tokenizer_config:
-        tokenizer_model_max_length = tokenizer_config.get(
-            "model_max_length", derived_max_model_len
-        )
+        tokenizer_model_max_length = tokenizer_config.get("model_max_length", derived_max_model_len)
         derived_max_model_len = min(derived_max_model_len, tokenizer_model_max_length)
 
     # If none of the keys were found in the config, use a default and
@@ -2135,11 +2007,7 @@ def _get_and_verify_max_len(
         # For LongRoPE, default to original_max_position_embeddings to avoid
         # performance degradation for shorter sequences
         if rope_scaling is not None and rope_scaling["rope_type"] == "longrope":
-            max_model_len = int(
-                getattr(
-                    hf_config, "original_max_position_embeddings", derived_max_model_len
-                )
-            )
+            max_model_len = int(getattr(hf_config, "original_max_position_embeddings", derived_max_model_len))
         else:
             max_model_len = int(derived_max_model_len)
         max_model_len = current_platform.check_max_model_len(max_model_len)

@@ -32,10 +32,7 @@ def run_radio_test(
     # Using `self.get_nearest_supported_resolution`, for assets 432x642 the
     # nearest supported resolution is 432x640.
     pixel_values = [
-        img_processor(image, return_tensors="pt").pixel_values.to(torch_dtype)[
-            :, :, :, :640
-        ]
-        for image in images
+        img_processor(image, return_tensors="pt").pixel_values.to(torch_dtype)[:, :, :, :640] for image in images
     ]
 
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
@@ -48,20 +45,14 @@ def run_radio_test(
     ).to("cuda")
     hf_model.eval()
 
-    hf_outputs_per_image = [
-        hf_model(pixel_value.to("cuda")).features for pixel_value in pixel_values
-    ]
+    hf_outputs_per_image = [hf_model(pixel_value.to("cuda")).features for pixel_value in pixel_values]
 
-    radio_config = RadioConfig(
-        model_name=config.args["model"], reg_tokens=config.args["register_multiple"]
-    )
+    radio_config = RadioConfig(model_name=config.args["model"], reg_tokens=config.args["register_multiple"])
     aphrodite_model = RadioModel(radio_config)
     aphrodite_model.load_weights(hf_model.state_dict())
     aphrodite_model = aphrodite_model.to("cuda", torch_dtype)
 
-    aphrodite_outputs_per_image = [
-        aphrodite_model(pixel_values=pixel_value.to("cuda")) for pixel_value in pixel_values
-    ]
+    aphrodite_outputs_per_image = [aphrodite_model(pixel_values=pixel_value.to("cuda")) for pixel_value in pixel_values]
     del aphrodite_model, hf_model
     cleanup_dist_env_and_memory()
 

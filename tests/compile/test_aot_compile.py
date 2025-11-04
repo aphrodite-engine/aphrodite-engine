@@ -5,8 +5,7 @@ import pytest
 import torch
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, set_current_aphrodite_config)
+from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, set_current_aphrodite_config
 from aphrodite.forward_context import set_forward_context
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 
@@ -42,9 +41,7 @@ def use_aphrodite_config(aphrodite_config: AphroditeConfig):
         yield
 
 
-@pytest.mark.skipif(
-    not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10"
-)
+@pytest.mark.skipif(not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10")
 def test_no_dynamo_cache_entry(monkeypatch: pytest.MonkeyPatch):
     with monkeypatch.context() as m:
         aphrodite_config = make_aphrodite_config()
@@ -65,9 +62,7 @@ def test_no_dynamo_cache_entry(monkeypatch: pytest.MonkeyPatch):
             assert torch.allclose(actual, expected)
 
 
-@pytest.mark.skipif(
-    not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10"
-)
+@pytest.mark.skipif(not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10")
 def test_force_aot_load(monkeypatch: pytest.MonkeyPatch):
     with tempfile.TemporaryDirectory() as tmpdirname, monkeypatch.context() as m:
         args = (torch.randn(10, 10),)
@@ -79,9 +74,7 @@ def test_force_aot_load(monkeypatch: pytest.MonkeyPatch):
             CompiledMod(aphrodite_config=aphrodite_config)(*args)
 
 
-@pytest.mark.skipif(
-    not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10"
-)
+@pytest.mark.skipif(not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10")
 def test_save_and_load(monkeypatch: pytest.MonkeyPatch):
     with monkeypatch.context() as m:
         args = (torch.randn(10, 10),)
@@ -100,9 +93,7 @@ def test_save_and_load(monkeypatch: pytest.MonkeyPatch):
             assert torch.allclose(ret, expected)
 
 
-@pytest.mark.skipif(
-    not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10"
-)
+@pytest.mark.skipif(not is_torch_equal_or_newer("2.10.0.dev"), reason="requires torch 2.10")
 def test_shape_env(monkeypatch: pytest.MonkeyPatch):
     """
     Test that the shape environment is correctly serialized and preserved

@@ -6,8 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from aphrodite.config import (AphroditeConfig, CompilationMode, CUDAGraphMode,
-                              get_layers_from_aphrodite_config)
+from aphrodite.config import AphroditeConfig, CompilationMode, CUDAGraphMode, get_layers_from_aphrodite_config
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.forward_context import set_forward_context
 from aphrodite.logger import init_logger
@@ -20,11 +19,9 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.platforms import current_platform
 from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.attention.backends.flash_attn import FlashAttentionMetadata
-from aphrodite.v1.attention.backends.tree_attn import (
-    TreeAttentionMetadata, TreeAttentionMetadataBuilder)
+from aphrodite.v1.attention.backends.tree_attn import TreeAttentionMetadata, TreeAttentionMetadataBuilder
 from aphrodite.v1.attention.backends.triton_attn import TritonAttentionMetadata
-from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata)
+from aphrodite.v1.attention.backends.utils import AttentionMetadataBuilder, CommonAttentionMetadata
 from aphrodite.v1.kv_cache_interface import KVCacheConfig
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.sampler import _SAMPLING_EPS
@@ -65,9 +62,7 @@ class EagleProposer:
 
         # Multi-modal data support
         self.mm_registry = MULTIMODAL_REGISTRY
-        self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(
-            aphrodite_config.model_config
-        )
+        self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(aphrodite_config.model_config)
 
         self.attn_metadata_builder: AttentionMetadataBuilder | None = None
         self.draft_indexer_metadata_builder: AttentionMetadataBuilder | None = None
@@ -79,9 +74,7 @@ class EagleProposer:
         compilation_config = self.aphrodite_config.compilation_config
         if compilation_config.mode == CompilationMode.APHRODITE_COMPILE:
             cudagraph_mode = compilation_config.cudagraph_mode
-            if cudagraph_mode != CUDAGraphMode.NONE and not cudagraph_mode.has_mode(
-                CUDAGraphMode.PIECEWISE
-            ):
+            if cudagraph_mode != CUDAGraphMode.NONE and not cudagraph_mode.has_mode(CUDAGraphMode.PIECEWISE):
                 logger.warning(
                     "Currently the eagle proposer only supports cudagraph_mode "
                     "PIECEWISE, if you want the drafter to use cuda graphs, "
@@ -89,46 +82,31 @@ class EagleProposer:
                     "or FULL_AND_PIECEWISE"
                 )
             self.use_cuda_graph = (
-                cudagraph_mode.has_mode(CUDAGraphMode.PIECEWISE)
-                and not self.speculative_config.enforce_eager
+                cudagraph_mode.has_mode(CUDAGraphMode.PIECEWISE) and not self.speculative_config.enforce_eager
             )
 
         self.cudagraph_batch_sizes = (
-            (sorted(self.aphrodite_config.compilation_config.cudagraph_capture_sizes))
-            if self.use_cuda_graph
-            else []
+            (sorted(self.aphrodite_config.compilation_config.cudagraph_capture_sizes)) if self.use_cuda_graph else []
         )
 
         # persistent buffers for cuda graph
-        self.input_ids = torch.zeros(
-            self.max_num_tokens, dtype=torch.int32, device=device
-        )
+        self.input_ids = torch.zeros(self.max_num_tokens, dtype=torch.int32, device=device)
         self.uses_mrope = self.aphrodite_config.model_config.uses_mrope
         if self.uses_mrope:
             # M-RoPE need (3, max_num_tokens)
-            self.mrope_positions = torch.zeros(
-                (3, self.max_num_tokens), dtype=torch.int64, device=device
-            )
+            self.mrope_positions = torch.zeros((3, self.max_num_tokens), dtype=torch.int64, device=device)
         else:
             # RoPE need (max_num_tokens,)
-            self.positions = torch.zeros(
-                self.max_num_tokens, dtype=torch.int64, device=device
-            )
-        self.hidden_states = torch.zeros(
-            (self.max_num_tokens, self.hidden_size), dtype=self.dtype, device=device
-        )
+            self.positions = torch.zeros(self.max_num_tokens, dtype=torch.int64, device=device)
+        self.hidden_states = torch.zeros((self.max_num_tokens, self.hidden_size), dtype=self.dtype, device=device)
 
         # We need +1 here because the arange is used to set query_start_loc,
         # which has one more element than batch_size.
         max_batch_size = aphrodite_config.scheduler_config.max_num_seqs
         max_num_slots_for_arange = max(max_batch_size + 1, self.max_num_tokens)
-        self.arange = torch.arange(
-            max_num_slots_for_arange, device=device, dtype=torch.int32
-        )
+        self.arange = torch.arange(max_num_slots_for_arange, device=device, dtype=torch.int32)
 
-        self.inputs_embeds = torch.zeros(
-            (self.max_num_tokens, self.hidden_size), dtype=self.dtype, device=device
-        )
+        self.inputs_embeds = torch.zeros((self.max_num_tokens, self.hidden_size), dtype=self.dtype, device=device)
 
         self.backup_next_token_ids = CpuGpuBuffer(
             max_batch_size,
@@ -144,8 +122,7 @@ class EagleProposer:
             rocm_types = [TritonAttentionMetadata, FlashAttentionMetadata]
             # aphrodite.v1.attention.backends.rocm_aiter_fa is an optional backend
             if find_spec("aphrodite.v1.attention.backends.rocm_aiter_fa"):
-                from aphrodite.v1.attention.backends.rocm_aiter_fa import (
-                    AiterFlashAttentionMetadata)
+                from aphrodite.v1.attention.backends.rocm_aiter_fa import AiterFlashAttentionMetadata
 
                 rocm_types.append(AiterFlashAttentionMetadata)
             self.allowed_attn_types = tuple(rocm_types)
@@ -161,12 +138,8 @@ class EagleProposer:
         self.cu_drafts_per_level = [num_drafts_per_level[0]]
         self.child_drafts_per_level = [num_drafts_per_level[0]]
         for level in range(1, tree_depth):
-            self.cu_drafts_per_level.append(
-                self.cu_drafts_per_level[-1] + num_drafts_per_level[level]
-            )
-            self.child_drafts_per_level.append(
-                num_drafts_per_level[level] // num_drafts_per_level[level - 1]
-            )
+            self.cu_drafts_per_level.append(self.cu_drafts_per_level[-1] + num_drafts_per_level[level])
+            self.child_drafts_per_level.append(num_drafts_per_level[level] // num_drafts_per_level[level - 1])
         # Precompute draft position offsets in flattened tree.
         self.tree_draft_pos_offsets = torch.arange(
             1,
@@ -209,9 +182,7 @@ class EagleProposer:
 
         if self.method == "eagle3":
             assert isinstance(self.model, Eagle3LlamaForCausalLM)
-            target_hidden_states = self.model.combine_hidden_states(
-                target_hidden_states
-            )
+            target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
             assert target_hidden_states.shape[-1] == self.hidden_size
         # Shift the input ids by one token.
         # E.g., [a1, b1, b2, c1, c2, c3] -> [b1, b2, c1, c2, c3, c3]
@@ -232,11 +203,9 @@ class EagleProposer:
         )
         # FIXME: support hybrid kv for draft model (remove separate indexer)
         if self.draft_indexer_metadata_builder:
-            draft_indexer_metadata = (
-                self.draft_indexer_metadata_builder.build_for_drafting(
-                    common_attn_metadata=common_attn_metadata,
-                    draft_index=0,
-                )
+            draft_indexer_metadata = self.draft_indexer_metadata_builder.build_for_drafting(
+                common_attn_metadata=common_attn_metadata,
+                draft_index=0,
             )
         else:
             draft_indexer_metadata = None
@@ -323,9 +292,7 @@ class EagleProposer:
 
         draft_token_ids = logits.argmax(dim=-1)
 
-        if self.allowed_attn_types is not None and not isinstance(
-            attn_metadata, self.allowed_attn_types
-        ):
+        if self.allowed_attn_types is not None and not isinstance(attn_metadata, self.allowed_attn_types):
             raise ValueError(
                 f"Unsupported attention metadata type for speculative "
                 "decoding with num_speculative_tokens > 1: "
@@ -346,9 +313,7 @@ class EagleProposer:
         common_attn_metadata.num_actual_tokens = batch_size
         common_attn_metadata.max_query_len = 1
         common_attn_metadata.query_start_loc = self.arange[: batch_size + 1]
-        common_attn_metadata.query_start_loc_cpu = torch.from_numpy(
-            self.token_arange_np[: batch_size + 1]
-        ).clone()
+        common_attn_metadata.query_start_loc_cpu = torch.from_numpy(self.token_arange_np[: batch_size + 1]).clone()
         for token_index in range(self.num_speculative_tokens - 1):
             # Update the inputs.
             # cast to int32 is crucial when eagle model is compiled.
@@ -385,9 +350,7 @@ class EagleProposer:
 
             common_attn_metadata.seq_lens.masked_fill_(exceeds_max_model_len, 1)
 
-            common_attn_metadata.num_computed_tokens_cpu = (
-                common_attn_metadata.seq_lens_cpu - 1
-            )
+            common_attn_metadata.num_computed_tokens_cpu = common_attn_metadata.seq_lens_cpu - 1
 
             # Compute the slot mapping.
             if self.uses_mrope:
@@ -395,24 +358,16 @@ class EagleProposer:
                 block_numbers = clamped_positions[0] // self.block_size
             else:
                 block_numbers = clamped_positions // self.block_size
-            block_ids = common_attn_metadata.block_table_tensor.gather(
-                dim=1, index=block_numbers.view(-1, 1)
-            )
+            block_ids = common_attn_metadata.block_table_tensor.gather(dim=1, index=block_numbers.view(-1, 1))
             block_ids = block_ids.view(-1)
             if self.uses_mrope:
-                common_attn_metadata.slot_mapping = (
-                    block_ids * self.block_size + clamped_positions[0] % self.block_size
-                )
+                common_attn_metadata.slot_mapping = block_ids * self.block_size + clamped_positions[0] % self.block_size
             else:
-                common_attn_metadata.slot_mapping = (
-                    block_ids * self.block_size + clamped_positions % self.block_size
-                )
+                common_attn_metadata.slot_mapping = block_ids * self.block_size + clamped_positions % self.block_size
             # Mask out the slot mappings that exceed the max model length.
             # Otherwise, the KV cache will be inadvertently updated with the
             # padding tokens.
-            common_attn_metadata.slot_mapping.masked_fill_(
-                exceeds_max_model_len, PADDING_SLOT_ID
-            )
+            common_attn_metadata.slot_mapping.masked_fill_(exceeds_max_model_len, PADDING_SLOT_ID)
 
             # Rebuild attention metadata
             attn_metadata = attn_metadata_builder.build_for_drafting(  # type: ignore
@@ -426,9 +381,7 @@ class EagleProposer:
             self._set_positions(batch_size, clamped_positions)
             self.hidden_states[:batch_size] = hidden_states
             if self.supports_mm_inputs:
-                self.inputs_embeds[:batch_size] = self.model.get_input_embeddings(
-                    input_ids
-                )
+                self.inputs_embeds[:batch_size] = self.model.get_input_embeddings(input_ids)
 
                 input_ids = None
                 inputs_embeds = self.inputs_embeds[:input_batch_size]
@@ -491,9 +444,7 @@ class EagleProposer:
                 seq_len = req_state.num_computed_tokens + num_scheduled_tokens[req_id]
                 next_token_id = req_state.get_token_id(seq_len)
             next_token_ids.append(next_token_id)
-        next_token_ids = torch.tensor(
-            next_token_ids, dtype=torch.int32, device=self.input_ids.device
-        )
+        next_token_ids = torch.tensor(next_token_ids, dtype=torch.int32, device=self.input_ids.device)
         return next_token_ids
 
     def prepare_next_token_ids_padded(
@@ -520,28 +471,20 @@ class EagleProposer:
         num_reqs = gpu_input_batch.num_reqs
         self.backup_next_token_ids.np[:num_reqs] = np.array(
             [
-                requests[gpu_input_batch.req_ids[i]].get_token_id(
-                    common_attn_metadata.seq_lens_cpu[i].item()
-                )
+                requests[gpu_input_batch.req_ids[i]].get_token_id(common_attn_metadata.seq_lens_cpu[i].item())
                 for i in range(num_reqs)
             ]
         )
         self.backup_next_token_ids.copy_to_gpu(num_reqs)
 
         # Mask out the sampled tokens indices that should not be sampled.
-        discard_sampled_tokens_req_indices = discard_request_indices[
-            :num_discarded_requests
-        ]
+        discard_sampled_tokens_req_indices = discard_request_indices[:num_discarded_requests]
 
         valid_sampled_token_ids_gpu = sampled_token_ids.clone()
-        valid_sampled_token_ids_gpu.index_fill_(
-            0, discard_sampled_tokens_req_indices, -1
-        )
+        valid_sampled_token_ids_gpu.index_fill_(0, discard_sampled_tokens_req_indices, -1)
 
         # Generate a mask for all valid tokens within those requests
-        valid_mask = (valid_sampled_token_ids_gpu != -1) & (
-            valid_sampled_token_ids_gpu < gpu_input_batch.vocab_size
-        )
+        valid_mask = (valid_sampled_token_ids_gpu != -1) & (valid_sampled_token_ids_gpu < gpu_input_batch.vocab_size)
 
         # Count the number of valid tokens in each request
         valid_sampled_tokens_count = valid_mask.sum(dim=1)
@@ -552,9 +495,7 @@ class EagleProposer:
 
         # Get last valid token from each row
         # (assume undefined state where there is no valid token)
-        selected_tokens = torch.gather(
-            valid_sampled_token_ids_gpu, 1, last_valid_indices_safe.unsqueeze(1)
-        ).squeeze(1)
+        selected_tokens = torch.gather(valid_sampled_token_ids_gpu, 1, last_valid_indices_safe.unsqueeze(1)).squeeze(1)
 
         # Use last token if valid, pre-computed backup if not
         batch_size = valid_sampled_token_ids_gpu.shape[0]
@@ -583,8 +524,7 @@ class EagleProposer:
         num_draft_tokens_gpu = torch.cat(
             [
                 spec_decode_metadata.cu_num_draft_tokens[0:1],
-                spec_decode_metadata.cu_num_draft_tokens[1:]
-                - spec_decode_metadata.cu_num_draft_tokens[:-1],
+                spec_decode_metadata.cu_num_draft_tokens[1:] - spec_decode_metadata.cu_num_draft_tokens[:-1],
             ]
         )
 
@@ -617,9 +557,7 @@ class EagleProposer:
             dcp_local_seq_lens=common_attn_metadata.dcp_local_seq_lens,
         )
 
-        token_indices_to_sample = (
-            common_attn_metadata.query_start_loc[1:] - 1 - num_rejected_tokens_gpu
-        )
+        token_indices_to_sample = common_attn_metadata.query_start_loc[1:] - 1 - num_rejected_tokens_gpu
 
         return spec_common_attn_metadata, token_indices, token_indices_to_sample
 
@@ -634,9 +572,7 @@ class EagleProposer:
         hidden_states: torch.Tensor,
         common_attn_metadata: CommonAttentionMetadata,
     ) -> list[torch.Tensor]:
-        tree_attn_metadata_builder = self.runner.attn_groups[0][
-            0
-        ].get_metadata_builder()
+        tree_attn_metadata_builder = self.runner.attn_groups[0][0].get_metadata_builder()
         assert isinstance(tree_attn_metadata_builder, TreeAttentionMetadataBuilder)
 
         total_num_drafts = self.cu_drafts_per_level[0]
@@ -646,26 +582,16 @@ class EagleProposer:
         if num_children == 1:
             draft_token_ids = logits.argmax(dim=-1).view(batch_size, -1)
         else:
-            draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(
-                batch_size, -1
-            )
+            draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(batch_size, -1)
         draft_token_ids_list = [draft_token_ids]
         draft_hidden_states = hidden_states.view(batch_size, 1, -1)
 
         # Initialize empty tensors for concatenation with the level outputs.
-        tree_input_ids = torch.empty(
-            0, device=self.input_ids.device, dtype=self.input_ids.dtype
-        )
-        tree_positions = torch.empty(
-            0, device=self.positions.device, dtype=self.positions.dtype
-        )
-        tree_hidden_states = torch.empty(
-            0, device=self.hidden_states.device, dtype=self.hidden_states.dtype
-        )
+        tree_input_ids = torch.empty(0, device=self.input_ids.device, dtype=self.input_ids.dtype)
+        tree_positions = torch.empty(0, device=self.positions.device, dtype=self.positions.dtype)
+        tree_hidden_states = torch.empty(0, device=self.hidden_states.device, dtype=self.hidden_states.dtype)
         # Precompute the draft token positions.
-        flattened_draft_positions = (
-            positions.view(batch_size, -1) + self.tree_draft_pos_offsets[:batch_size, :]
-        )
+        flattened_draft_positions = positions.view(batch_size, -1) + self.tree_draft_pos_offsets[:batch_size, :]
         tree_depth = len(self.cu_drafts_per_level)
         for level in range(tree_depth - 1):
             # Get draft positions for RoPE.
@@ -681,22 +607,16 @@ class EagleProposer:
 
             if level_num_drafts > 1:
                 # Repeat the positions for each draft at this level.
-                draft_positions = draft_positions.repeat_interleave(
-                    level_num_drafts, dim=1
-                )
+                draft_positions = draft_positions.repeat_interleave(level_num_drafts, dim=1)
 
             if num_children > 1:
                 # Repeat draft hidden states for each child.
-                draft_hidden_states = draft_hidden_states.repeat_interleave(
-                    num_children, dim=1
-                )
+                draft_hidden_states = draft_hidden_states.repeat_interleave(num_children, dim=1)
 
             # Concatenate the draft tokens, positions, and hidden states.
             tree_input_ids = torch.cat([tree_input_ids, draft_token_ids], dim=1)
             tree_positions = torch.cat([tree_positions, draft_positions], dim=1)
-            tree_hidden_states = torch.cat(
-                [tree_hidden_states, draft_hidden_states], dim=1
-            )
+            tree_hidden_states = torch.cat([tree_hidden_states, draft_hidden_states], dim=1)
 
             # Build new attention metadata for the next level of drafts.
             # This is necessary to support tree attention.
@@ -719,9 +639,7 @@ class EagleProposer:
                 per_layer_attn_metadata[layer_name] = attn_metadata
 
             # Consider max model length.
-            attn_metadata.max_seq_len = min(
-                attn_metadata.max_seq_len, self.max_model_len
-            )
+            attn_metadata.max_seq_len = min(attn_metadata.max_seq_len, self.max_model_len)
             # For the requests that exceed the max model length, we set the
             # sequence length to 1 to minimize their overheads in attention.
             attn_metadata.seq_lens.masked_fill_(exceeds_max_model_len, 1)
@@ -730,9 +648,7 @@ class EagleProposer:
             query_positions = flattened_draft_positions[:, level : level + query_len]
             block_numbers = query_positions // self.block_size
             block_ids = attn_metadata.block_table.gather(dim=1, index=block_numbers)
-            slot_mapping = (
-                block_ids * self.block_size + query_positions % self.block_size
-            )
+            slot_mapping = block_ids * self.block_size + query_positions % self.block_size
             # Mask out the slot mappings that exceed the max model length.
             # Otherwise, the KV cache will be inadvertently updated with the
             # padding tokens.
@@ -767,26 +683,20 @@ class EagleProposer:
                 )
 
             # Get the output hidden states for the draft tokens.
-            draft_hidden_states = hidden_states[:num_tokens].view(
-                batch_size, query_len, -1
-            )[:, -level_num_drafts:]
-            draft_last_hidden_states = last_hidden_states[:num_tokens].view(
-                batch_size, query_len, -1
-            )[:, -level_num_drafts:]
+            draft_hidden_states = hidden_states[:num_tokens].view(batch_size, query_len, -1)[:, -level_num_drafts:]
+            draft_last_hidden_states = last_hidden_states[:num_tokens].view(batch_size, query_len, -1)[
+                :, -level_num_drafts:
+            ]
 
             # Get the output logits for the draft tokens.
-            logits = self.model.compute_logits(
-                draft_last_hidden_states.reshape(batch_size * level_num_drafts, -1)
-            )
+            logits = self.model.compute_logits(draft_last_hidden_states.reshape(batch_size * level_num_drafts, -1))
 
             # Sample a draft token for each child at the next tree level.
             num_children = self.child_drafts_per_level[level + 1]
             if num_children == 1:
                 draft_token_ids = logits.argmax(dim=-1).view(batch_size, -1)
             else:
-                draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(
-                    batch_size, -1
-                )
+                draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(batch_size, -1)
             draft_token_ids_list.append(draft_token_ids)
 
             # Update the # drafts counters for the next tree level.
@@ -823,8 +733,7 @@ class EagleProposer:
         #                 q1 + q2, q1 + q2 + 1, ..., q1 + q2 + q3 - n3 - 1]
 
         num_rejected_tokens = [
-            n + 1 - len(sampled_token_ids[i]) if n > 0 else 0
-            for i, n in enumerate(num_draft_tokens)
+            n + 1 - len(sampled_token_ids[i]) if n > 0 else 0 for i, n in enumerate(num_draft_tokens)
         ]
         num_rejected_tokens = torch.tensor(num_rejected_tokens, dtype=torch.int32)
 
@@ -854,23 +763,17 @@ class EagleProposer:
         # [0, 2, 6, 9] ->
         # [0, 0, 2, 2, 2, 2, 6, 6, 6]
         #  _r1_  ____r2____  ___r3__
-        new_query_start_locs_expanded = np.repeat(
-            new_query_start_loc_np[:-1], new_num_tokens_per_req_np
-        )
+        new_query_start_locs_expanded = np.repeat(new_query_start_loc_np[:-1], new_num_tokens_per_req_np)
         # [0, 1, 2, 3, 4, 5, 6, 7, 8] ->
         # [0, 1, 0, 1, 2, 3, 0, 1, 2]
         #  _r1_  ____r2____  ___r3__
-        token_offests = (
-            self.token_arange_np[:total_num_tokens] - new_query_start_locs_expanded
-        )
+        token_offests = self.token_arange_np[:total_num_tokens] - new_query_start_locs_expanded
 
         # Expand starting positions to match token pattern
         # [0, q1, q1 + q2] ->
         # [0, 0, q1, q1, q1, q1, q1 + q2, q1 + q2, q1 + q2]
         #  _r1_  _____r2_______  ___________r3____________
-        old_query_start_locs_expanded = np.repeat(
-            query_start_loc_cpu[:-1].numpy(), new_num_tokens_per_req_np
-        )
+        old_query_start_locs_expanded = np.repeat(query_start_loc_cpu[:-1].numpy(), new_num_tokens_per_req_np)
         # Final token indices are:
         # [0, 1,                                // req 1
         #  q1 + 0, q1 + 1, q1 + 2, q1 + 3,       // req 2
@@ -908,25 +811,18 @@ class EagleProposer:
         )
         # FIXME: support hybrid kv for draft model
         target_indexer_layer_names = set(
-            get_layers_from_aphrodite_config(
-                self.aphrodite_config, DeepseekV32IndexerCache
-            ).keys()
+            get_layers_from_aphrodite_config(self.aphrodite_config, DeepseekV32IndexerCache).keys()
         )
 
         from aphrodite.compilation.backends import set_model_tag
 
         with set_model_tag("eagle_head"):
-            self.model = get_model(
-                aphrodite_config=self.aphrodite_config, model_config=draft_model_config
-            )
+            self.model = get_model(aphrodite_config=self.aphrodite_config, model_config=draft_model_config)
 
         draft_attn_layer_names = (
-            get_layers_from_aphrodite_config(self.aphrodite_config, AttentionLayerBase).keys()
-            - target_attn_layer_names
+            get_layers_from_aphrodite_config(self.aphrodite_config, AttentionLayerBase).keys() - target_attn_layer_names
         )
-        indexer_layers = get_layers_from_aphrodite_config(
-            self.aphrodite_config, DeepseekV32IndexerCache
-        )
+        indexer_layers = get_layers_from_aphrodite_config(self.aphrodite_config, DeepseekV32IndexerCache)
         draft_indexer_layer_names = indexer_layers.keys() - target_indexer_layer_names
         self.attn_layer_names = list(draft_attn_layer_names)
         self.indexer_layer_names = list(draft_indexer_layer_names)
@@ -951,27 +847,17 @@ class EagleProposer:
             # text-only draft models
             try:
                 dummy_input_ids = torch.tensor([[1]], device=self.input_ids.device)
-                self.model.get_input_embeddings(
-                    dummy_input_ids, multimodal_embeddings=None
-                )
+                self.model.get_input_embeddings(dummy_input_ids, multimodal_embeddings=None)
             except (NotImplementedError, AttributeError, TypeError):
-                logger.warning(
-                    "Draft model does not support multimodal inputs, "
-                    "falling back to text-only mode"
-                )
+                logger.warning("Draft model does not support multimodal inputs, falling back to text-only mode")
                 self.supports_mm_inputs = False
 
         if supports_multimodal(target_model):
             # handle multimodality
-            if (
-                self.get_model_name(target_model)
-                == "Qwen2_5_VLForConditionalGeneration"
-            ):
+            if self.get_model_name(target_model) == "Qwen2_5_VLForConditionalGeneration":
                 self.model.config.image_token_index = target_model.config.image_token_id
             else:
-                self.model.config.image_token_index = (
-                    target_model.config.image_token_index
-                )
+                self.model.config.image_token_index = target_model.config.image_token_index
             target_language_model = target_model.get_language_model()
         else:
             target_language_model = target_model
@@ -982,30 +868,19 @@ class EagleProposer:
             elif hasattr(target_language_model.model, "embedding"):
                 target_embed_tokens = target_language_model.model.embedding
             else:
-                raise AttributeError(
-                    "Target model does not have 'embed_tokens' or 'embedding' attribute"
-                )
+                raise AttributeError("Target model does not have 'embed_tokens' or 'embedding' attribute")
 
             # Check if shapes match and we found the embedding
             eagle_shape = self.model.model.embed_tokens.weight.shape
             target_shape = target_embed_tokens.weight.shape
             if eagle_shape == target_shape:
-                logger.info(
-                    "Assuming the EAGLE head shares the same vocab embedding"
-                    " with the target model."
-                )
+                logger.info("Assuming the EAGLE head shares the same vocab embedding with the target model.")
                 del self.model.model.embed_tokens
                 self.model.model.embed_tokens = target_embed_tokens
             else:
-                logger.info(
-                    "The EAGLE head's vocab embedding will be loaded separately"
-                    " from the target model."
-                )
+                logger.info("The EAGLE head's vocab embedding will be loaded separately from the target model.")
         else:
-            logger.info(
-                "The EAGLE head's vocab embedding will be loaded separately"
-                " from the target model."
-            )
+            logger.info("The EAGLE head's vocab embedding will be loaded separately from the target model.")
 
         # share lm_head with the target model if needed
         # some model definition do not define lm_head explicitly
@@ -1018,20 +893,13 @@ class EagleProposer:
             if (
                 hasattr(self.model, "lm_head")
                 and hasattr(target_language_model, "lm_head")
-                and self.model.lm_head.weight.shape
-                == target_language_model.lm_head.weight.shape
+                and self.model.lm_head.weight.shape == target_language_model.lm_head.weight.shape
             ):
-                logger.info(
-                    "Assuming the EAGLE head shares the same lm_head"
-                    " with the target model."
-                )
+                logger.info("Assuming the EAGLE head shares the same lm_head with the target model.")
                 del self.model.lm_head
                 self.model.lm_head = target_language_model.lm_head
             else:
-                logger.info(
-                    "The EAGLE head's lm_head will be loaded separately"
-                    " from the target model."
-                )
+                logger.info("The EAGLE head's lm_head will be loaded separately from the target model.")
 
     @torch.inference_mode()
     def dummy_run(
@@ -1046,9 +914,7 @@ class EagleProposer:
             None,
             self.aphrodite_config,
             num_tokens=num_tokens,
-            cudagraph_runtime_mode=CUDAGraphMode.PIECEWISE
-            if use_cudagraphs
-            else CUDAGraphMode.NONE,
+            cudagraph_runtime_mode=CUDAGraphMode.PIECEWISE if use_cudagraphs else CUDAGraphMode.NONE,
         ):
             if self.supports_mm_inputs:
                 input_ids = None
@@ -1084,9 +950,7 @@ class EagleProposer:
             if builder is not None:
                 break
 
-        assert builder is not None, (
-            "Failed to find attention metadata builder for EAGLE layers."
-        )
+        assert builder is not None, "Failed to find attention metadata builder for EAGLE layers."
         return builder
 
     def validate_same_kv_cache_group(self, kv_cache_config: KVCacheConfig) -> None:
@@ -1100,17 +964,9 @@ class EagleProposer:
         for id, kv_cache_group in enumerate(kv_cache_config.kv_cache_groups):
             for layer_name in kv_cache_group.layer_names:
                 kv_cache_groups[layer_name] = id
-        assert (
-            len(
-                set(
-                    [
-                        kv_cache_groups[layer_name]
-                        for layer_name in self.attn_layer_names
-                    ]
-                )
-            )
-            == 1
-        ), "All eagle layers should belong to the same kv cache group"
+        assert len(set([kv_cache_groups[layer_name] for layer_name in self.attn_layer_names])) == 1, (
+            "All eagle layers should belong to the same kv cache group"
+        )
 
 
 # NOTE(woosuk): Currently, the below code is not used and we always use argmax

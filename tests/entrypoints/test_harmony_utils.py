@@ -1,7 +1,6 @@
 from openai_harmony import Role
 
-from aphrodite.endpoints.harmony_utils import (has_custom_tools,
-                                               parse_input_to_harmony_message)
+from aphrodite.endpoints.harmony_utils import has_custom_tools, parse_input_to_harmony_message
 
 
 class TestParseInputToHarmonyMessage:
@@ -78,9 +77,7 @@ class TestParseInputToHarmonyMessage:
         assert len(messages) == 1
         assert messages[0].author.role == Role.TOOL
         assert messages[0].author.name == "functions.get_weather"
-        assert (
-            messages[0].content[0].text == "The weather in San Francisco is sunny, 72°F"
-        )
+        assert messages[0].content[0].text == "The weather in San Francisco is sunny, 72°F"
         assert messages[0].channel == "commentary"
 
     def test_tool_message_with_array_content(self):
@@ -256,6 +253,4 @@ def test_has_custom_tools() -> None:
     assert not has_custom_tools(set())
     assert not has_custom_tools({"web_search_preview", "code_interpreter", "container"})
     assert has_custom_tools({"others"})
-    assert has_custom_tools(
-        {"web_search_preview", "code_interpreter", "container", "others"}
-    )
+    assert has_custom_tools({"web_search_preview", "code_interpreter", "container", "others"})

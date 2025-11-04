@@ -2,10 +2,8 @@ import torch
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (
-    FUSED_MOE_UNQUANTIZED_CONFIG, FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceNoOP)
+from aphrodite.modeling.layers.fused_moe.config import FUSED_MOE_UNQUANTIZED_CONFIG, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceNoOP
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.import_utils import has_triton_kernels
 
@@ -14,15 +12,12 @@ logger = init_logger(__name__)
 if has_triton_kernels():
     try:
         import triton_kernels.swiglu
-        from triton_kernels.matmul_ogs import (FnSpecs, FusedActivation,
-                                               matmul_ogs)
-        from triton_kernels.routing import (RoutingData, routing,
-                                            routing_from_bitmatrix)
+        from triton_kernels.matmul_ogs import FnSpecs, FusedActivation, matmul_ogs
+        from triton_kernels.routing import RoutingData, routing, routing_from_bitmatrix
         from triton_kernels.tensor import Bitmatrix
     except (AttributeError, ImportError) as e:
         logger.error(
-            "Failed to import Triton kernels. Please make sure your triton "
-            "version is compatible. Error: %s",
+            "Failed to import Triton kernels. Please make sure your triton version is compatible. Error: %s",
             e,
         )
 
@@ -58,9 +53,7 @@ def pack_bitmatrix(
         offs = tl.arange(0, BLOCK_SIZE_K // 32) + i * (BLOCK_SIZE_K // 32)
         # All topks that need to go into this column has the correct bit set.
         # Other bits are 0. x is a 2D tensor.
-        x = tl.where(
-            div[:, :, None] == offs[None, None, :], (one << rem)[:, :, None], 0
-        )
+        x = tl.where(div[:, :, None] == offs[None, None, :], (one << rem)[:, :, None], 0)
         # Reduce x to get a single int32_t bitpack.
         y = tl.reduce_or(x, axis=1)
         bitmatrix_ptrs = bitmatrix + offsets_m[:, None] * bm_cols + offs[None, :]
@@ -80,9 +73,7 @@ def triton_kernel_moe_forward(
     global_num_experts: int = -1,
     expert_map: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    routing_data, gather_idx, scatter_idx = routing(
-        gating_output, topk, sm_first=not renormalize
-    )
+    routing_data, gather_idx, scatter_idx = routing(gating_output, topk, sm_first=not renormalize)
 
     return triton_kernel_fused_experts(
         None,
@@ -180,9 +171,7 @@ def make_routing_data(
     BLOCK_SIZE_K = 32
 
     bm_cols = triton.cdiv(num_local_experts, BLOCK_SIZE_K)  # n_bitpacks
-    bitmatrix = torch.zeros(
-        (n_rows, bm_cols), dtype=torch.uint32, device=topk_ids.device
-    )
+    bitmatrix = torch.zeros((n_rows, bm_cols), dtype=torch.uint32, device=topk_ids.device)
 
     grid = (triton.cdiv(n_rows, BLOCK_SIZE_M),)
     pack_bitmatrix[grid](
@@ -197,9 +186,7 @@ def make_routing_data(
 
     bitmatrix_shape = [n_rows, bm_cols * 32]
     bitmatrix_shape_max = [n_rows, None]
-    bitmatrix = Bitmatrix(
-        bitmatrix, shape=bitmatrix_shape, shape_max=bitmatrix_shape_max, scratchpad=None
-    )
+    bitmatrix = Bitmatrix(bitmatrix, shape=bitmatrix_shape, shape_max=bitmatrix_shape_max, scratchpad=None)
 
     # matmul_ogs expects invalid topk_weights to be -1s
     topk_weights = torch.where(topk_ids == -1, -1.0, topk_weights)
@@ -289,9 +276,7 @@ class OAITritonExperts(BaseOAITritonExperts):
         if global_num_experts == -1:
             global_num_experts = local_num_experts
 
-        routing_data, gather_indx, scatter_indx = self._make_routing_data(
-            topk_ids, topk_weights, local_num_experts
-        )
+        routing_data, gather_indx, scatter_indx = self._make_routing_data(topk_ids, topk_weights, local_num_experts)
 
         experts_output = triton_kernel_fused_experts(
             None,

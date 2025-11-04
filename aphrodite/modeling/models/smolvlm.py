@@ -4,9 +4,8 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
 from .idefics3 import Idefics3DummyInputsBuilder as SmolVLMDummyInputsBuilder
-from .idefics3 import Idefics3ForConditionalGeneration
+from .idefics3 import Idefics3ForConditionalGeneration, Idefics3ProcessingInfo
 from .idefics3 import Idefics3MultiModalProcessor as SmolVLMMultiModalProcessor
-from .idefics3 import Idefics3ProcessingInfo
 
 
 class SmolVLMProcessingInfo(Idefics3ProcessingInfo):

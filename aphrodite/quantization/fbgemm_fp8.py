@@ -5,20 +5,18 @@ from torch.nn import Module
 from torch.nn.parameter import Parameter
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          ModelWeightParameter)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
+from aphrodite.modeling.parameter import ChannelQuantScaleParameter, ModelWeightParameter
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
-from aphrodite.quantization.utils.marlin_utils_fp8 import (
-    apply_fp8_marlin_linear, prepare_fp8_layer_for_marlin)
-from aphrodite.quantization.utils.quant_utils import (GroupShape,
-                                                      is_layer_skipped)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
+from aphrodite.quantization.utils.marlin_utils_fp8 import apply_fp8_marlin_linear, prepare_fp8_layer_for_marlin
+from aphrodite.quantization.utils.quant_utils import GroupShape, is_layer_skipped
 from aphrodite.quantization.utils.w8a8_utils import (
-    Fp8LinearOp, maybe_create_device_identity, normalize_e4m3fn_to_e4m3fnuz)
+    Fp8LinearOp,
+    maybe_create_device_identity,
+    normalize_e4m3fn_to_e4m3fnuz,
+)
 
 logger = init_logger(__name__)
 
@@ -57,9 +55,7 @@ class FBGEMMFp8Config(QuantizationConfig):
         input_scale_ub = cls.get_from_keys(config, ["activation_scale_ub"])
         return cls(ignore_list=ignore_list, input_scale_ub=input_scale_ub)
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, LinearBase):
             if is_layer_skipped(
                 prefix=prefix,
@@ -74,9 +70,7 @@ class FBGEMMFp8Config(QuantizationConfig):
 class FBGEMMFp8LinearMethod(LinearMethodBase):
     def __init__(self, quant_config: FBGEMMFp8Config):
         self.quant_config = quant_config
-        self.fp8_linear = Fp8LinearOp(
-            act_quant_static=False, act_quant_group_shape=GroupShape.PER_TOKEN
-        )
+        self.fp8_linear = Fp8LinearOp(act_quant_static=False, act_quant_group_shape=GroupShape.PER_TOKEN)
         self.out_dtype = torch.get_default_dtype()
 
     def create_weights(

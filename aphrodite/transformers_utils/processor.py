@@ -1,8 +1,7 @@
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
-from transformers import (AutoFeatureExtractor, AutoImageProcessor,
-                          AutoProcessor, AutoVideoProcessor)
+from transformers import AutoFeatureExtractor, AutoImageProcessor, AutoProcessor, AutoVideoProcessor
 from transformers.feature_extraction_utils import FeatureExtractionMixin
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.processing_utils import ProcessorMixin
@@ -127,9 +126,7 @@ def get_processor(
 
     if not isinstance(processor, processor_cls):
         raise TypeError(
-            "Invalid type of HuggingFace processor. "
-            f"Expected type: {processor_cls}, but "
-            f"found type: {type(processor)}"
+            f"Invalid type of HuggingFace processor. Expected type: {processor_cls}, but found type: {type(processor)}"
         )
 
     return processor

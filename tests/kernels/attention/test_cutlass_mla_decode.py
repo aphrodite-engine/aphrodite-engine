@@ -59,9 +59,7 @@ CUTLASS_MLA_UNSUPPORTED_REASON = (
     ],
 )
 @torch.inference_mode()
-def test_cutlass_mla_decode(
-    b, s_q, mean_sk, h_q, h_kv, d, dv, block_size, causal, varlen, torch_dtype
-):
+def test_cutlass_mla_decode(b, s_q, mean_sk, h_q, h_kv, d, dv, block_size, causal, varlen, torch_dtype):
     device = torch.device("cuda:0")
     init_dtype = torch.bfloat16 if torch_dtype == torch.float8_e4m3fn else torch_dtype
     torch.set_default_dtype(init_dtype)
@@ -70,10 +68,7 @@ def test_cutlass_mla_decode(
     torch.manual_seed(42)
     random.seed(42)
 
-    print(
-        f"{b=}, {s_q=}, {mean_sk=}, {h_q=}, {h_kv=}, "
-        f"{d=}, {dv=}, {causal=}, {varlen=}, {torch_dtype=}"
-    )
+    print(f"{b=}, {s_q=}, {mean_sk=}, {h_q=}, {h_kv=}, {d=}, {dv=}, {causal=}, {varlen=}, {torch_dtype=}")
 
     use_fp8 = torch_dtype == torch.float8_e4m3fn
     scale = math.sqrt(d) ** (-1)
@@ -86,9 +81,9 @@ def test_cutlass_mla_decode(
     max_seqlen_pad = triton.cdiv(max_seqlen, 256) * 256
 
     q = torch.randn(b, s_q, h_q, d)
-    block_table = torch.arange(
-        b * max_seqlen_pad // block_size, dtype=torch.int32
-    ).view(b, max_seqlen_pad // block_size)
+    block_table = torch.arange(b * max_seqlen_pad // block_size, dtype=torch.int32).view(
+        b, max_seqlen_pad // block_size
+    )
     blocked_k = torch.randn(block_table.numel(), block_size, h_kv, d)
     blocked_v = blocked_k[..., :dv]
 
@@ -124,15 +119,11 @@ def test_cutlass_mla_decode(
         kv_cache_flat = blocked_k.squeeze(2)
         device_properties = torch.cuda.get_device_properties(torch.device("cuda:0"))
         sm_count = device_properties.multi_processor_count
-        workspace_size = ops.sm100_cutlass_mla_get_workspace_size(
-            max_seqlen * block_size, b, sm_count, num_kv_splits=1
-        )
+        workspace_size = ops.sm100_cutlass_mla_get_workspace_size(max_seqlen * block_size, b, sm_count, num_kv_splits=1)
         workspace = torch.empty(workspace_size, device="cuda", dtype=torch.uint8)
 
         out_ans = torch.empty(b, MAX_HEADS, dv, dtype=init_dtype)
-        output_lse = torch.empty(
-            (b, MAX_HEADS), dtype=torch.float32, device=q_nope.device
-        )
+        output_lse = torch.empty((b, MAX_HEADS), dtype=torch.float32, device=q_nope.device)
         ops.sm100_cutlass_mla_decode(
             out_ans,
             output_lse,
@@ -168,16 +159,8 @@ def test_cutlass_mla_decode(
 
     def ref_mla():
         q_ = (q.to(torch.float) * descale_q).to(init_dtype) if use_fp8 else q
-        blocked_k_ = (
-            (blocked_k.to(torch.float) * descale_k).to(init_dtype)
-            if use_fp8
-            else blocked_k
-        )
-        blocked_v_ = (
-            (blocked_v.to(torch.float) * descale_k).to(init_dtype)
-            if use_fp8
-            else blocked_v
-        )
+        blocked_k_ = (blocked_k.to(torch.float) * descale_k).to(init_dtype) if use_fp8 else blocked_k
+        blocked_v_ = (blocked_v.to(torch.float) * descale_k).to(init_dtype) if use_fp8 else blocked_v
         out = torch.empty(b, s_q, h_q, dv, dtype=torch.float32)
         lse = torch.empty(b, h_q, s_q, dtype=torch.float32)
         for i in range(b):
@@ -204,9 +187,7 @@ def test_cutlass_mla_decode(
 
     t = triton.testing.do_bench(cutlass_mla)
     FLOPS = s_q * total_seqlens * h_q * (d + dv) * 2
-    bytes = (total_seqlens * h_kv * d + b * s_q * h_q * d) * (
-        torch.finfo(torch_dtype).bits // 8
-    ) + (b * s_q * h_q * dv) * (torch.finfo(init_dtype).bits // 8)
-    print(
-        f"{t:.3f} ms, {FLOPS / 10**9 / t:.0f} TFLOPS,", f"{bytes / 10**6 / t:.0f} GB/s"
-    )
+    bytes = (total_seqlens * h_kv * d + b * s_q * h_q * d) * (torch.finfo(torch_dtype).bits // 8) + (
+        b * s_q * h_q * dv
+    ) * (torch.finfo(init_dtype).bits // 8)
+    print(f"{t:.3f} ms, {FLOPS / 10**9 / t:.0f} TFLOPS,", f"{bytes / 10**6 / t:.0f} GB/s")

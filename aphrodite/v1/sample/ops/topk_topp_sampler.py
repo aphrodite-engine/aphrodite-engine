@@ -10,8 +10,7 @@ from aphrodite.platforms import CpuArchEnum, current_platform
 logger = init_logger(__name__)
 
 try:
-    from aphrodite.distributed.parallel_state import (
-        get_tensor_model_parallel_rank)
+    from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
 except Exception:
     get_tensor_model_parallel_rank = lambda: 0
 
@@ -29,10 +28,7 @@ class TopKTopPSampler(nn.Module):
         self.logprobs_mode = logprobs_mode
         # flashinfer optimization does not apply if intermediate
         # logprobs/logits after top_k/top_p need to be returned
-        if (
-            logprobs_mode not in ("processed_logits", "processed_logprobs")
-            and current_platform.is_cuda()
-        ):
+        if logprobs_mode not in ("processed_logits", "processed_logprobs") and current_platform.is_cuda():
             if envs.APHRODITE_USE_FLASHINFER_SAMPLER:
                 # Users must opt in explicitly via APHRODITE_USE_FLASHINFER_SAMPLER=1.
                 logger.info_once(
@@ -254,7 +250,7 @@ def flashinfer_sample(
     Statistically, this function is equivalent to the `random_sample` function.
     However, this function is faster because it avoids sorting the logits tensor
     via rejection sampling.
-    
+
     NOTE: The outputs of this function do not necessarily match the outputs of
     the `random_sample` function. It only guarantees that the outputs are
     statistically equivalent.
@@ -266,24 +262,19 @@ def flashinfer_sample(
     import flashinfer
 
     if version.parse(flashinfer.__version__) < version.parse("0.2.3"):
-        raise ImportError(
-            "FlashInfer version >= 0.2.3 required for top-k and top-p sampling. "
-        )
+        raise ImportError("FlashInfer version >= 0.2.3 required for top-k and top-p sampling. ")
 
     assert not (k is None and p is None)
 
     if k is None:
         # Top-p only.
         probs = logits.softmax(dim=-1, dtype=torch.float32)
-        next_token_ids = flashinfer.sampling.top_p_sampling_from_probs(
-            probs, p, deterministic=True)
+        next_token_ids = flashinfer.sampling.top_p_sampling_from_probs(probs, p, deterministic=True)
     elif p is None:
         # Top-k only.
         probs = logits.softmax(dim=-1, dtype=torch.float32)
-        next_token_ids = flashinfer.sampling.top_k_sampling_from_probs(
-            probs, k, deterministic=True)
+        next_token_ids = flashinfer.sampling.top_k_sampling_from_probs(probs, k, deterministic=True)
     else:
         # Both top-k and top-p.
-        next_token_ids = flashinfer.sampling.top_k_top_p_sampling_from_logits(
-            logits, k, p, deterministic=True)
+        next_token_ids = flashinfer.sampling.top_k_top_p_sampling_from_logits(logits, k, p, deterministic=True)
     return next_token_ids.view(-1)

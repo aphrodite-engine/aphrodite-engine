@@ -31,9 +31,7 @@ class All2AllManagerBase:
         self.cpu_group = cpu_group
 
         # compute some common properties
-        from aphrodite.distributed.parallel_state import (get_dp_group,
-                                                          get_tp_group,
-                                                          in_the_same_node_as)
+        from aphrodite.distributed.parallel_state import get_dp_group, get_tp_group, in_the_same_node_as
 
         # all2all lives in ep group, which is merged from dp and tp group
         self.dp_group = get_dp_group()
@@ -137,18 +135,14 @@ class DeviceCommunicatorBase:
         # torch.compile . see https://github.com/pytorch/pytorch/issues/138795
         output_size = (input_size[0] * self.world_size,) + input_size[1:]
         # Allocate output tensor.
-        output_tensor = torch.empty(
-            output_size, dtype=input_.dtype, device=input_.device
-        )
+        output_tensor = torch.empty(output_size, dtype=input_.dtype, device=input_.device)
         # All-gather.
         dist.all_gather_into_tensor(output_tensor, input_, group=self.device_group)
         # Reshape
         output_tensor = output_tensor.reshape((self.world_size,) + input_size)
         output_tensor = output_tensor.movedim(0, dim)
         output_tensor = output_tensor.reshape(
-            input_size[:dim]
-            + (self.world_size * input_size[dim],)
-            + input_size[dim + 1 :]
+            input_size[:dim] + (self.world_size * input_size[dim],) + input_size[dim + 1 :]
         )
         return output_tensor
 
@@ -165,9 +159,7 @@ class DeviceCommunicatorBase:
         # Bypass the function if we are using only 1 GPU.
         if world_size == 1:
             return input_
-        assert -input_.dim() <= dim < input_.dim(), (
-            f"Invalid dim ({dim}) for input tensor with shape {input_.size()}"
-        )
+        assert -input_.dim() <= dim < input_.dim(), f"Invalid dim ({dim}) for input tensor with shape {input_.size()}"
 
         if dim < 0:
             # Convert negative dim to positive.
@@ -181,35 +173,25 @@ class DeviceCommunicatorBase:
         chunk_size = input_tensor.shape[0] // world_size
         output_shape = (chunk_size,) + input_tensor.shape[1:]
 
-        output_tensor = torch.empty(
-            output_shape, dtype=input_tensor.dtype, device=input_tensor.device
-        )
+        output_tensor = torch.empty(output_shape, dtype=input_tensor.dtype, device=input_tensor.device)
 
         # Perform reduce-scatter operation
-        torch.distributed.reduce_scatter_tensor(
-            output_tensor, input_tensor, group=self.device_group
-        )
+        torch.distributed.reduce_scatter_tensor(output_tensor, input_tensor, group=self.device_group)
 
         # Reshape before returning
         return output_tensor.movedim(0, dim).contiguous()
 
-    def reduce_scatterv(
-        self, input_: torch.Tensor, dim: int = -1, sizes: list[int] | None = None
-    ) -> torch.Tensor:
+    def reduce_scatterv(self, input_: torch.Tensor, dim: int = -1, sizes: list[int] | None = None) -> torch.Tensor:
         raise NotImplementedError
 
-    def gather(
-        self, input_: torch.Tensor, dst: int = 0, dim: int = -1
-    ) -> torch.Tensor | None:
+    def gather(self, input_: torch.Tensor, dst: int = 0, dim: int = -1) -> torch.Tensor | None:
         """
         NOTE: We assume that the input tensor is on the same device across
         all the ranks.
         NOTE: `dst` is the local rank of the destination rank.
         """
         world_size = self.world_size
-        assert -input_.dim() <= dim < input_.dim(), (
-            f"Invalid dim ({dim}) for input tensor with shape {input_.size()}"
-        )
+        assert -input_.dim() <= dim < input_.dim(), f"Invalid dim ({dim}) for input tensor with shape {input_.size()}"
         if dim < 0:
             # Convert negative dim to positive.
             dim += input_.dim()
@@ -220,9 +202,7 @@ class DeviceCommunicatorBase:
         else:
             gather_list = None
         # Gather.
-        torch.distributed.gather(
-            input_, gather_list, dst=self.ranks[dst], group=self.device_group
-        )
+        torch.distributed.gather(input_, gather_list, dst=self.ranks[dst], group=self.device_group)
         if self.rank_in_group == dst:
             output_tensor = torch.cat(gather_list, dim=dim)
         else:
@@ -236,9 +216,7 @@ class DeviceCommunicatorBase:
             dst = (self.rank_in_group + 1) % self.world_size
         torch.distributed.send(tensor, self.ranks[dst], self.device_group)
 
-    def recv(
-        self, size: torch.Size, dtype: torch.dtype, src: int | None = None
-    ) -> torch.Tensor:
+    def recv(self, size: torch.Size, dtype: torch.dtype, src: int | None = None) -> torch.Tensor:
         """Receives a tensor from the source rank."""
         """NOTE: `src` is the local rank of the source rank."""
         if src is None:
@@ -263,10 +241,7 @@ class DeviceCommunicatorBase:
             for module in model.modules()
             # TODO(bnell): Should use isinstance but can't.  Maybe search for
             # presence of quant_method.init_prepare_finalize?
-            if (
-                module.__class__.__name__ == "FusedMoE"
-                or module.__class__.__name__ == "SharedFusedMoE"
-            )
+            if (module.__class__.__name__ == "FusedMoE" or module.__class__.__name__ == "SharedFusedMoE")
         ]
         for module in moe_modules:
             module.quant_method.init_prepare_finalize(module)
@@ -283,9 +258,7 @@ class DeviceCommunicatorBase:
         """
         return hidden_states, router_logits
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         """
         Combine the hidden states and router logits from the appropriate device.
         This is a no-op in the base class.

@@ -62,9 +62,7 @@ def test_rms_norm(
             (x, residual, layer.weight.data, layer.variance_epsilon),
         )
     else:
-        opcheck(
-            torch.ops._C.rms_norm, (out, x, layer.weight.data, layer.variance_epsilon)
-        )
+        opcheck(torch.ops._C.rms_norm, (out, x, layer.weight.data, layer.variance_epsilon))
 
 
 @pytest.mark.parametrize("num_tokens", NUM_TOKENS)
@@ -119,9 +117,7 @@ def test_fused_rms_norm_quant(
         x_unfused = x_unfused_base[..., :hidden_size]
         assert x_unfused.is_contiguous() != strided_input
         torch.ops._C.fused_add_rms_norm(x_unfused, residual, weight, 1e-6)
-        torch.ops._C.static_scaled_fp8_quant(
-            out_quant, x_unfused.contiguous(), quant_scale_t
-        )
+        torch.ops._C.static_scaled_fp8_quant(out_quant, x_unfused.contiguous(), quant_scale_t)
 
         torch.cuda.synchronize()
         torch.testing.assert_close(residual_fused, residual, atol=1e-2, rtol=1e-2)
@@ -130,9 +126,7 @@ def test_fused_rms_norm_quant(
             (out_quant_fused, x, residual_fused, weight, quant_scale_t, 1e-6),
         )
     else:
-        torch.ops._C.rms_norm_static_fp8_quant(
-            out_quant_fused, x, weight, quant_scale_t, 1e-6
-        )
+        torch.ops._C.rms_norm_static_fp8_quant(out_quant_fused, x, weight, quant_scale_t, 1e-6)
 
         torch.ops._C.rms_norm(out_norm, x, weight, 1e-6)
         torch.ops._C.static_scaled_fp8_quant(out_quant, out_norm, quant_scale_t)

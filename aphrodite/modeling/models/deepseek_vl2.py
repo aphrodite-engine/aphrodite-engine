@@ -17,31 +17,35 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.models.transformers.utils import replace_linear_class
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             MultiModalProcessingInfo,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+)
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    MultiModalProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs.deepseek_vl2 import (
-    DeepseekVLV2Config, MlpProjectorConfig, VisionEncoderConfig)
-from aphrodite.transformers_utils.processors.deepseek_vl2 import (
-    DeepseekVLV2Processor)
+    DeepseekVLV2Config,
+    MlpProjectorConfig,
+    VisionEncoderConfig,
+)
+from aphrodite.transformers_utils.processors.deepseek_vl2 import DeepseekVLV2Processor
 from aphrodite.transformers_utils.tokenizer import cached_tokenizer_from_config
 from aphrodite.utils.collection_utils import is_list_of
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from aphrodite.utils.torch_utils import set_default_torch_dtype
 
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
 
 # The image token id may be various
 _IMAGE_TOKEN = "<image>"
@@ -74,9 +78,7 @@ class DeepseekVL2VImageEmbeddingInputs(TensorSchema):
     data: Annotated[torch.Tensor | list[torch.Tensor], TensorShape("bn", "f", "h")]
 
 
-DeepseekVL2ImageInputs: TypeAlias = (
-    DeepseekVL2ImagePixelInputs | DeepseekVL2VImageEmbeddingInputs
-)
+DeepseekVL2ImageInputs: TypeAlias = DeepseekVL2ImagePixelInputs | DeepseekVL2VImageEmbeddingInputs
 
 
 class MlpProjector(nn.Module):
@@ -98,18 +100,14 @@ class MlpProjector(nn.Module):
             ]
             for _ in range(1, mlp_depth - 1):
                 modules.append(nn.GELU())
-                modules.append(
-                    nn.Linear(cfg.n_embed * mlp_ratio, cfg.n_embed * mlp_ratio)
-                )
+                modules.append(nn.Linear(cfg.n_embed * mlp_ratio, cfg.n_embed * mlp_ratio))
             modules.append(nn.GELU())
             modules.append(nn.Linear(cfg.n_embed * mlp_ratio, cfg.n_embed))
             modules = nn.Sequential(*modules)
         elif self.projector_type == "linear":
             modules = nn.Linear(cfg.input_dim, cfg.n_embed)
         else:
-            raise NotImplementedError(
-                f"Unsupported projector type: {cfg.projector_type}"
-            )
+            raise NotImplementedError(f"Unsupported projector type: {cfg.projector_type}")
 
         self.layers = modules
 
@@ -148,18 +146,14 @@ class DeepseekVL2ProcessingInfo(BaseProcessingInfo):
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"image": None}
 
-    def get_num_image_tokens(
-        self, *, image_width: int, image_height: int, cropping: bool = True
-    ) -> int:
+    def get_num_image_tokens(self, *, image_width: int, image_height: int, cropping: bool = True) -> int:
         hf_processor = self.get_hf_processor()
         image_size = hf_processor.image_size
         patch_size = hf_processor.patch_size
         downsample_ratio = hf_processor.downsample_ratio
 
         if cropping:
-            best_width, best_height = hf_processor.select_best_resolution(
-                (image_width, image_height)
-            )
+            best_width, best_height = hf_processor.select_best_resolution((image_width, image_height))
             num_width_tiles, num_height_tiles = (
                 best_width // image_size,
                 best_height // image_size,
@@ -178,9 +172,7 @@ class DeepseekVL2ProcessingInfo(BaseProcessingInfo):
         candidate_resolutions = hf_config.candidate_resolutions
         height, width = max(
             candidate_resolutions,
-            key=lambda x: self.get_num_image_tokens(
-                image_width=x[1], image_height=x[0]
-            ),
+            key=lambda x: self.get_num_image_tokens(image_width=x[1], image_height=x[0]),
         )
         return ImageSize(width=width, height=height)
 
@@ -216,9 +208,7 @@ class DeepseekVL2DummyInputsBuilder(BaseDummyInputsBuilder[DeepseekVL2Processing
         }
 
 
-class DeepseekVL2MultiModalProcessor(
-    BaseMultiModalProcessor[DeepseekVL2ProcessingInfo]
-):
+class DeepseekVL2MultiModalProcessor(BaseMultiModalProcessor[DeepseekVL2ProcessingInfo]):
     def _call_hf_processor(
         self,
         prompt: str,
@@ -237,9 +227,7 @@ class DeepseekVL2MultiModalProcessor(
             tok_kwargs=tok_kwargs,
         )
 
-        processed_outputs["num_patches"] = (
-            processed_outputs["images_spatial_crop"].prod(-1) + 1
-        )
+        processed_outputs["num_patches"] = processed_outputs["images_spatial_crop"].prod(-1) + 1
 
         return processed_outputs
 
@@ -268,9 +256,7 @@ class DeepseekVL2MultiModalProcessor(
         assert isinstance(image_token_id, int)
 
         def get_replacement_deepseek_vl2(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 num_image_tokens = images.get_feature_size(item_idx)
@@ -360,31 +346,21 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         tokenizer = cached_tokenizer_from_config(model_config)
         self.image_token_id: int = tokenizer.vocab[_IMAGE_TOKEN]
 
-        self.vision = self._init_vision_module(
-            self.vision_config, quant_config, maybe_prefix(prefix, "vision")
-        )
+        self.vision = self._init_vision_module(self.vision_config, quant_config, maybe_prefix(prefix, "vision"))
 
         self.projector = MlpProjector(self.projector_config)
         self.tile_tag = config.tile_tag
         self.global_view_pos = config.global_view_pos
 
         # special token for image token sequence format
-        embed_std = 1 / torch.sqrt(
-            torch.tensor(self.projector_config.n_embed, dtype=torch.float32)
-        )
+        embed_std = 1 / torch.sqrt(torch.tensor(self.projector_config.n_embed, dtype=torch.float32))
         if self.tile_tag == "2D":
             # <|view_seperator|>, <|\n|>
-            self.image_newline = nn.Parameter(
-                torch.randn(self.projector_config.n_embed) * embed_std
-            )
+            self.image_newline = nn.Parameter(torch.randn(self.projector_config.n_embed) * embed_std)
             # This is a typo in original implementation
-            self.view_seperator = nn.Parameter(
-                torch.randn(self.projector_config.n_embed) * embed_std
-            )
+            self.view_seperator = nn.Parameter(torch.randn(self.projector_config.n_embed) * embed_std)
         else:
-            raise ValueError(
-                f"Only 2D tile_tag is supported currently, got: {self.tile_tag}"
-            )
+            raise ValueError(f"Only 2D tile_tag is supported currently, got: {self.tile_tag}")
 
         if self.text_config.topk_method == "noaux_tc":
             architectures = ["DeepseekV3ForCausalLM"]
@@ -400,9 +376,7 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             architectures=architectures,
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     def _get_parent_and_attr(self, root: torch.nn.Module, dotted_name: str):
         """Return (parent_module, final_attr_name) for a dotted module path."""
@@ -423,14 +397,10 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             if isinstance(module, nn.Linear):
                 parent, attr_name = self._get_parent_and_attr(vit, name)
                 if isinstance(parent, timm.layers.Mlp) and attr_name == "fc1":
-                    new_linear = replace_linear_class(
-                        module, "colwise", quant_config, prefix=name
-                    )
+                    new_linear = replace_linear_class(module, "colwise", quant_config, prefix=name)
                     setattr(parent, attr_name, new_linear)
                 elif isinstance(parent, timm.layers.Mlp) and attr_name == "fc2":
-                    new_linear = replace_linear_class(
-                        module, "rowwise", quant_config, prefix=name
-                    )
+                    new_linear = replace_linear_class(module, "rowwise", quant_config, prefix=name)
                     setattr(parent, attr_name, new_linear)
 
         return vit
@@ -462,9 +432,7 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         model = model.to(dtype=torch.get_default_dtype())
         return model
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> DeepseekVL2ImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> DeepseekVL2ImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         images_spatial_crop = kwargs.pop("images_spatial_crop", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -520,9 +488,7 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             global_features = images_embeds[tile_index]
 
             # [num_height_tiles * num_width_tiles, hw, D]
-            local_features = images_embeds[
-                tile_index + 1 : tile_index + 1 + num_tiles_in_image
-            ]
+            local_features = images_embeds[tile_index + 1 : tile_index + 1 + num_tiles_in_image]
             tile_index += num_tiles_in_image + 1
 
             # format global and local features
@@ -552,9 +518,7 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             )
 
             # [D] -> [num_height_tiles * h, 1, D]
-            new_lines_in_local = repeat(
-                self.image_newline, "d -> (th h) 1 d", th=num_height_tiles, h=h
-            )
+            new_lines_in_local = repeat(self.image_newline, "d -> (th h) 1 d", th=num_height_tiles, h=h)
 
             # [num_height_tiles * h, num_width_tiles * w + 1, D]
             local_features = torch.cat([local_features, new_lines_in_local], dim=1)
@@ -584,9 +548,7 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             vision_embeddings.append(global_local_features)
         return vision_embeddings
 
-    def _process_image_input(
-        self, image_input: DeepseekVL2ImageInputs
-    ) -> list[torch.Tensor]:
+    def _process_image_input(self, image_input: DeepseekVL2ImageInputs) -> list[torch.Tensor]:
         if image_input["type"] == "image_embeds":
             image_data = image_input["data"]
             if is_list_of(image_data, torch.Tensor):
@@ -596,16 +558,13 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
                 # 3D tensor
                 return list(torch.unbind(image_data, dim=0))
             raise ValueError(
-                "We expect batched 2D tensors; "
-                "this can be either a list of 2D tensors or a single 3D tensor."
+                "We expect batched 2D tensors; this can be either a list of 2D tensors or a single 3D tensor."
             )
 
         pixel_values = image_input["data"]
         images_spatial_crop = image_input["images_spatial_crop"]
 
-        return self._pixel_values_to_embedding(
-            pixel_values=pixel_values, images_spatial_crop=images_spatial_crop
-        )
+        return self._pixel_values_to_embedding(pixel_values=pixel_values, images_spatial_crop=images_spatial_crop)
 
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
@@ -628,9 +587,7 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        hidden_states = self.language_model(
-            input_ids, positions, intermediate_tensors, inputs_embeds=inputs_embeds
-        )
+        hidden_states = self.language_model(input_ids, positions, intermediate_tensors, inputs_embeds=inputs_embeds)
 
         return hidden_states
 

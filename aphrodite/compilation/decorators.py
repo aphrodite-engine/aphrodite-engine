@@ -15,11 +15,13 @@ from torch._dynamo.symbolic_convert import InliningInstructionTranslator
 import aphrodite.envs as envs
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.counter import compilation_counter
-from aphrodite.compilation.wrapper import (
-    TorchCompileWrapperWithCustomDispatcher)
-from aphrodite.config import (AphroditeConfig, CompilationMode,
-                              get_current_aphrodite_config,
-                              set_current_aphrodite_config)
+from aphrodite.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationMode,
+    get_current_aphrodite_config,
+    set_current_aphrodite_config,
+)
 from aphrodite.logger import init_logger
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.utils.torch_utils import supports_dynamo
@@ -190,12 +192,8 @@ def support_torch_compile(
 
         for k in inferred_dynamic_arg_dims:
             if k not in sig.parameters:
-                raise ValueError(
-                    f"Argument {k} not found in the forward method of {cls}"
-                )
-        return _support_torch_compile(
-            cls, inferred_dynamic_arg_dims, mark_unbacked_dims, enable_if
-        )
+                raise ValueError(f"Argument {k} not found in the forward method of {cls}")
+        return _support_torch_compile(cls, inferred_dynamic_arg_dims, mark_unbacked_dims, enable_if)
 
     if cls is not None:
         # use `support_torch_compile` as a decorator without arguments
@@ -227,9 +225,7 @@ def _verify_source_unchanged(source_info, aphrodite_config) -> None:
     expected_checksum = _compute_code_hash_with_content(file_contents)
     actual_checksum = _compute_code_hash(set(file_contents.keys()))
     if expected_checksum != actual_checksum:
-        raise RuntimeError(
-            "Source code has changed since the last compilation. Recompiling the model."
-        )
+        raise RuntimeError("Source code has changed since the last compilation. Recompiling the model.")
 
 
 def _support_torch_compile(
@@ -254,9 +250,7 @@ def _support_torch_compile(
 
     setattr(cls, IGNORE_COMPILE_KEY, False)
 
-    def __init__(
-        self, *, aphrodite_config: AphroditeConfig | None = None, prefix: str = "", **kwargs
-    ):
+    def __init__(self, *, aphrodite_config: AphroditeConfig | None = None, prefix: str = "", **kwargs):
         if aphrodite_config is None:
             aphrodite_config = get_current_aphrodite_config()
 
@@ -275,8 +269,7 @@ def _support_torch_compile(
         # for CompilationMode.STOCK_TORCH_COMPILE , the upper level model runner
         # will handle the compilation, so we don't need to do anything here.
         self.do_not_compile = (
-            aphrodite_config.compilation_config.mode
-            in [CompilationMode.NONE, CompilationMode.STOCK_TORCH_COMPILE]
+            aphrodite_config.compilation_config.mode in [CompilationMode.NONE, CompilationMode.STOCK_TORCH_COMPILE]
             or not supports_dynamo()
             or _should_ignore_torch_compile(self.__class__)
             or not enable_compile
@@ -352,9 +345,7 @@ def _support_torch_compile(
                 if envs.APHRODITE_FORCE_AOT_LOAD:
                     raise e
             if getattr(self, "aot_compiled_fn", None) is not None:
-                logger.info(
-                    "Directly load AOT compilation from path %s", aot_compilation_path
-                )
+                logger.info("Directly load AOT compilation from path %s", aot_compilation_path)
                 return self.aot_compiled_fn(self, *args, **kwargs)
 
         # the first compilation needs to have dynamic shapes marked
@@ -373,14 +364,11 @@ def _support_torch_compile(
                     elif isinstance(arg, IntermediateTensors):
                         for tensor in arg.tensors.values():
                             # In case dims is specified with negative indexing
-                            dims = [
-                                tensor.ndim + dim if dim < 0 else dim for dim in dims
-                            ]
+                            dims = [tensor.ndim + dim if dim < 0 else dim for dim in dims]
                             torch._dynamo.mark_dynamic(tensor, dims)
                     else:
                         raise ValueError(
-                            "Unsupported dynamic dimensions"
-                            f" {dims} for argument {k} with type {type(arg)}."
+                            f"Unsupported dynamic dimensions {dims} for argument {k} with type {type(arg)}."
                         )
             if mark_unbacked_dims:
                 for k, dims in mark_unbacked_dims.items():
@@ -409,9 +397,7 @@ def _support_torch_compile(
             # properly when any of these files change.
 
             # 1. the file containing the top-level forward function
-            self.aphrodite_config.compilation_config.traced_files.add(
-                self.original_code_object.co_filename
-            )
+            self.aphrodite_config.compilation_config.traced_files.add(self.original_code_object.co_filename)
 
             # 2. every time Dynamo sees a function call, it will inline
             # the function by calling InliningInstructionTranslator.inline_call_
@@ -438,9 +424,7 @@ def _support_torch_compile(
                 logger.debug("enable_cpp_symbolic_shape_guards config not available")
 
             with (
-                patch.object(
-                    InliningInstructionTranslator, "inline_call_", patched_inline_call
-                ),
+                patch.object(InliningInstructionTranslator, "inline_call_", patched_inline_call),
                 torch._dynamo.config.patch(**dynamo_config_patches),
                 maybe_use_cudagraph_partition_wrapper(self.aphrodite_config),
                 _torch27_patch_tensor_subclasses(),
@@ -452,9 +436,7 @@ def _support_torch_compile(
                     assert cache_dir is not None
                     try:
                         os.makedirs(cache_dir, exist_ok=True)
-                        self.aot_compiled_fn.save_compiled_function(
-                            aot_compilation_path
-                        )
+                        self.aot_compiled_fn.save_compiled_function(aot_compilation_path)
                     except Exception as e:
                         logger.warning(
                             "Cannot save aot compilation to path %s, error: %s",
@@ -491,18 +473,13 @@ def maybe_use_cudagraph_partition_wrapper(aphrodite_config: AphroditeConfig):
     from aphrodite.config import CUDAGraphMode
 
     compilation_config = aphrodite_config.compilation_config
-    if (
-        compilation_config.cudagraph_mode.has_piecewise_cudagraphs()
-        and compilation_config.use_inductor_graph_partition
-    ):
+    if compilation_config.cudagraph_mode.has_piecewise_cudagraphs() and compilation_config.use_inductor_graph_partition:
         from torch._inductor.utils import CUDAGraphWrapperMetadata
 
         from aphrodite.compilation.cuda_graph import CUDAGraphOptions
         from aphrodite.platforms import current_platform
 
-        static_graph_wrapper_class = resolve_obj_by_qualname(
-            current_platform.get_static_graph_wrapper_cls()
-        )
+        static_graph_wrapper_class = resolve_obj_by_qualname(current_platform.get_static_graph_wrapper_cls())
 
         def customized_cudagraph_wrapper(f, metadata: CUDAGraphWrapperMetadata):
             partition_id = metadata.partition_index
@@ -518,16 +495,11 @@ def maybe_use_cudagraph_partition_wrapper(aphrodite_config: AphroditeConfig):
                 ),
             )
 
-        torch._inductor.utils.set_customized_partition_wrappers(
-            customized_cudagraph_wrapper
-        )
+        torch._inductor.utils.set_customized_partition_wrappers(customized_cudagraph_wrapper)
 
     yield
 
-    if (
-        compilation_config.cudagraph_mode.has_piecewise_cudagraphs()
-        and compilation_config.use_inductor_graph_partition
-    ):
+    if compilation_config.cudagraph_mode.has_piecewise_cudagraphs() and compilation_config.use_inductor_graph_partition:
         torch._inductor.utils.set_customized_partition_wrappers(None)
 
 
@@ -539,10 +511,12 @@ def _torch27_patch_tensor_subclasses():
     `BaseAphroditeParameters` without having to replace them with regular tensors
     before `torch.compile`-time.
     """
-    from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                              ModelWeightParameter,
-                                              RowAphroditeParameter,
-                                              _ColumnAphroditeParameter)
+    from aphrodite.modeling.parameter import (
+        BaseAphroditeParameter,
+        ModelWeightParameter,
+        RowAphroditeParameter,
+        _ColumnAphroditeParameter,
+    )
 
     def return_false(*args, **kwargs):
         return False
@@ -561,8 +535,6 @@ def _torch27_patch_tensor_subclasses():
                 RowAphroditeParameter,
             ],
         ),
-        patch(
-            "torch._dynamo.variables.torch.can_dispatch_torch_function", return_false
-        ),
+        patch("torch._dynamo.variables.torch.can_dispatch_torch_function", return_false),
     ):
         yield

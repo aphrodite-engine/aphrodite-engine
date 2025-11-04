@@ -1,7 +1,6 @@
 import time
 
-from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
-    KVConnectorPrometheus)
+from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorPrometheus
 from aphrodite.v1.metrics.loggers import PrometheusStatLogger
 from aphrodite.v1.spec_decode.metrics import SpecDecodingProm
 
@@ -72,9 +71,7 @@ class RayGaugeWrapper(RayPrometheusMetric):
         del multiprocess_mode
         labelnames_tuple = tuple(labelnames) if labelnames else None
         name = self._get_sanitized_opentelemetry_name(name)
-        self.metric = ray_metrics.Gauge(
-            name=name, description=documentation, tag_keys=labelnames_tuple
-        )
+        self.metric = ray_metrics.Gauge(name=name, description=documentation, tag_keys=labelnames_tuple)
 
     def set(self, value: int | float):
         return self.metric.set(value)
@@ -96,9 +93,7 @@ class RayCounterWrapper(RayPrometheusMetric):
     ):
         labelnames_tuple = tuple(labelnames) if labelnames else None
         name = self._get_sanitized_opentelemetry_name(name)
-        self.metric = ray_metrics.Counter(
-            name=name, description=documentation, tag_keys=labelnames_tuple
-        )
+        self.metric = ray_metrics.Counter(name=name, description=documentation, tag_keys=labelnames_tuple)
 
     def inc(self, value: int | float = 1.0):
         if value == 0:

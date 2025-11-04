@@ -94,9 +94,7 @@ def get_lock(model_name_or_path: str | Path, cache_dir: str | None = None):
 
 
 @contextmanager
-def atomic_writer(
-    filepath: str | Path, mode: str = "w", encoding: str | None = None
-) -> Generator[IO]:
+def atomic_writer(filepath: str | Path, mode: str = "w", encoding: str | None = None) -> Generator[IO]:
     """
     Context manager that provides an atomic file writing routine.
 
@@ -126,9 +124,7 @@ def atomic_writer(
         os.replace(temp_path, filepath)
 
     except Exception:
-        logger.exception(
-            "Error during atomic write. Original file '%s' not modified", filepath
-        )
+        logger.exception("Error during atomic write. Original file '%s' not modified", filepath)
         raise
     finally:
         # Clean up the temporary file if it still exists.
@@ -220,9 +216,7 @@ def convert_bin_to_safetensor_file(
 
 
 # TODO(woosuk): Move this to other place.
-def get_quant_config(
-    model_config: ModelConfig, load_config: LoadConfig
-) -> QuantizationConfig:
+def get_quant_config(model_config: ModelConfig, load_config: LoadConfig) -> QuantizationConfig:
     quant_cls = get_quantization_config(model_config.quantization)
 
     # GGUF doesn't have config file
@@ -301,16 +295,11 @@ def get_quant_config(
 
     config_files = glob.glob(os.path.join(hf_folder, "*.json"))
 
-    quant_config_files = [
-        f for f in config_files if any(f.endswith(x) for x in possible_config_filenames)
-    ]
+    quant_config_files = [f for f in config_files if any(f.endswith(x) for x in possible_config_filenames)]
     if len(quant_config_files) == 0:
         raise ValueError(f"Cannot find the config file for {model_config.quantization}")
     if len(quant_config_files) > 1:
-        raise ValueError(
-            f"Found multiple config files for {model_config.quantization}: "
-            f"{quant_config_files}"
-        )
+        raise ValueError(f"Found multiple config files for {model_config.quantization}: {quant_config_files}")
 
     quant_config_file = quant_config_files[0]
     with open(quant_config_file) as f:
@@ -322,10 +311,7 @@ def get_quant_config(
             if config["producer"]["name"] == "modelopt":
                 return quant_cls.from_config(config)
             else:
-                raise ValueError(
-                    f"Unsupported quantization config"
-                    f" found for {model_config.quantization} in {f}."
-                )
+                raise ValueError(f"Unsupported quantization config found for {model_config.quantization} in {f}.")
 
     return quant_cls.from_config(config)
 
@@ -480,9 +466,7 @@ def download_safetensors_index_file_from_hf(
 # Passing both of these to the weight loader functionality breaks.
 # So, we use the index_file to
 # look up which safetensors files should be used.
-def filter_duplicate_safetensors_files(
-    hf_weights_files: list[str], hf_folder: str, index_file: str
-) -> list[str]:
+def filter_duplicate_safetensors_files(hf_weights_files: list[str], hf_folder: str, index_file: str) -> list[str]:
     # model.safetensors.index.json is a mapping from keys in the
     # torch state_dict to safetensors file holding that weight.
     index_file_name = os.path.join(hf_folder, index_file)
@@ -514,9 +498,7 @@ def filter_files_not_needed_for_inference(hf_weights_files: list[str]) -> list[s
         "scheduler.pt",
         "scaler.pt",
     ]
-    hf_weights_files = [
-        f for f in hf_weights_files if not any(f.endswith(x) for x in blacklist)
-    ]
+    hf_weights_files = [f for f in hf_weights_files if not any(f.endswith(x) for x in blacklist)]
     return hf_weights_files
 
 
@@ -528,9 +510,7 @@ _BAR_FORMAT = "{desc}: {percentage:3.0f}% Completed | {n_fmt}/{total_fmt} [{elap
 
 
 def enable_tqdm(use_tqdm_on_load: bool):
-    return use_tqdm_on_load and (
-        not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
-    )
+    return use_tqdm_on_load and (not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0)
 
 
 def np_cache_weights_iterator(
@@ -592,7 +572,7 @@ def safetensors_weights_iterator(
     for st_file in tqdm(
         hf_weights_files,
         desc=loading_desc,
-        disable=True, #not enable_tqdm(use_tqdm_on_load),
+        disable=True,  # not enable_tqdm(use_tqdm_on_load),
         bar_format=_BAR_FORMAT,
     ):
         if safetensors_load_strategy == "eager":
@@ -605,8 +585,7 @@ def safetensors_weights_iterator(
                     "Please use torchao version >= 0.14.0 \
                         to load torchao safetensors checkpoint"
                 )
-            from torchao.prototype.safetensors.safetensors_support import (
-                unflatten_tensor_state_dict)
+            from torchao.prototype.safetensors.safetensors_support import unflatten_tensor_state_dict
 
             with safe_open(st_file, framework="pt") as f:
                 state_dict = {}
@@ -656,28 +635,21 @@ def runai_safetensors_weights_iterator(
     """Iterate over the weights in the model safetensor files."""
     with SafetensorsStreamer() as streamer:
         is_cuda_alike = current_platform.is_cuda_alike()
-        device = (
-            f"cuda:{current_platform.current_device()}"
-            if is_distributed and is_cuda_alike
-            else "cpu"
-        )
+        device = f"cuda:{current_platform.current_device()}" if is_distributed and is_cuda_alike else "cpu"
 
         streamer.stream_files(
             hf_weights_files,
             device=device,
             is_distributed=is_distributed,
         )
-        total_tensors = sum(
-            len(tensors_meta)
-            for tensors_meta in streamer.files_to_tensors_metadata.values()
-        )
+        total_tensors = sum(len(tensors_meta) for tensors_meta in streamer.files_to_tensors_metadata.values())
 
         tensor_iter = tqdm(
             streamer.get_tensors(),
             total=total_tensors,
             desc="Loading safetensors using Runai Model Streamer",
             bar_format=_BAR_FORMAT,
-            disable=True, #not enable_tqdm(use_tqdm_on_load),
+            disable=True,  # not enable_tqdm(use_tqdm_on_load),
             mininterval=2,
         )
 
@@ -709,17 +681,14 @@ def fastsafetensors_weights_iterator(
         pg = SingleGroup()
 
     device = torch.device(f"cuda:{pg.rank()}")
-    weight_files_sub_lists = [
-        hf_weights_files[i : i + pg.size()]
-        for i in range(0, len(hf_weights_files), pg.size())
-    ]
+    weight_files_sub_lists = [hf_weights_files[i : i + pg.size()] for i in range(0, len(hf_weights_files), pg.size())]
 
     nogds = False
 
     for f_list in tqdm(
         weight_files_sub_lists,
         desc="Loading safetensors using Fastsafetensor loader",
-        disable=True, #not enable_tqdm(use_tqdm_on_load),
+        disable=True,  # not enable_tqdm(use_tqdm_on_load),
         bar_format=_BAR_FORMAT,
     ):
         loader = _init_loader(pg, device, f_list, nogds=nogds)
@@ -762,9 +731,7 @@ def pt_weights_iterator(
         disable=not enable_tqdm(use_tqdm_on_load),
         bar_format=_BAR_FORMAT,
     ):
-        state = torch.load(
-            bin_file, map_location=pt_load_map_location, weights_only=True
-        )
+        state = torch.load(bin_file, map_location=pt_load_map_location, weights_only=True)
         yield from state.items()
         del state
 
@@ -778,14 +745,10 @@ def multi_thread_pt_weights_iterator(
     """Multi-Thread iterate over the weights in the model bin/pt files."""
 
     def _load_file(bin_file: str):
-        return torch.load(
-            bin_file, map_location=pt_load_map_location, weights_only=True
-        )
+        return torch.load(bin_file, map_location=pt_load_map_location, weights_only=True)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(_load_file, bin_file) for bin_file in hf_weights_files
-        ]
+        futures = [executor.submit(_load_file, bin_file) for bin_file in hf_weights_files]
         futures_iter = tqdm(
             concurrent.futures.as_completed(futures),
             total=len(hf_weights_files),
@@ -800,9 +763,7 @@ def multi_thread_pt_weights_iterator(
             del state
 
 
-def get_gguf_extra_tensor_names(
-    gguf_file: str, gguf_to_hf_name_map: dict[str, str]
-) -> list[str]:
+def get_gguf_extra_tensor_names(gguf_file: str, gguf_to_hf_name_map: dict[str, str]) -> list[str]:
     reader = gguf.GGUFReader(gguf_file)
     expected_gguf_keys = set(gguf_to_hf_name_map.keys())
     exact_gguf_keys = set([tensor.name for tensor in reader.tensors])
@@ -810,9 +771,7 @@ def get_gguf_extra_tensor_names(
     return [gguf_to_hf_name_map[key] for key in extra_keys]
 
 
-def get_gguf_weight_type_map(
-    gguf_file: str, gguf_to_hf_name_map: dict[str, str]
-) -> dict[str, str]:
+def get_gguf_weight_type_map(gguf_file: str, gguf_to_hf_name_map: dict[str, str]) -> dict[str, str]:
     """
     Return GGUF mapped weight's name and its quant type
     """
@@ -870,9 +829,7 @@ def convert_pyslice_to_tensor(x: Any) -> torch.Tensor:
     return x
 
 
-def get_model_config_yaml(
-    model_name_or_path: str, cache_dir: str | None = None
-) -> dict[str, Any] | None:
+def get_model_config_yaml(model_name_or_path: str, cache_dir: str | None = None) -> dict[str, Any] | None:
     """Look for aphrodite_config.yaml in model directory or HF repo.
 
     Args:
@@ -888,9 +845,7 @@ def get_model_config_yaml(
     if is_local:
         # Check for both .yaml and .yml extensions
         for ext in ["yaml", "yml"]:
-            candidate_path = os.path.join(
-                model_name_or_path, f"aphrodite_config.{ext}"
-            )
+            candidate_path = os.path.join(model_name_or_path, f"aphrodite_config.{ext}")
             if os.path.exists(candidate_path):
                 config_path = candidate_path
                 break
@@ -928,12 +883,13 @@ def get_model_config_yaml(
         with open(config_path) as f:
             config = yaml.safe_load(f)
         logger.info(
-            f"Loaded aphrodite_config from {config_path} with keys: "
-            f"{list(config.keys()) if config else 'none'}"
+            "Loaded aphrodite_config from %s with keys: %s",
+            config_path,
+            list(config.keys()) if config else "none",
         )
         return config
     except Exception as e:
-        logger.warning(f"Failed to load aphrodite_config.yaml: {e}")
+        logger.warning("Failed to load aphrodite_config.yaml: %s", e)
         return None
 
 
@@ -947,8 +903,7 @@ def default_weight_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> N
             param.data.fill_(loaded_weight.item())
         else:
             assert param.size() == loaded_weight.size(), (
-                f"Attempted to load weight ({loaded_weight.size()}) "
-                f"into parameter ({param.size()})"
+                f"Attempted to load weight ({loaded_weight.size()}) into parameter ({param.size()})"
             )
 
             param.data.copy_(loaded_weight)
@@ -958,9 +913,7 @@ def default_weight_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> N
         raise
 
 
-def row_parallel_weight_loader(
-    param: torch.Tensor, loaded_weight: torch.Tensor
-) -> None:
+def row_parallel_weight_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
     """Load weights that are row-parallelized."""
     tp_rank = get_tensor_model_parallel_rank()
     shard_dim = 0 if param.dim() != 1 else None
@@ -991,9 +944,7 @@ def sharded_weight_loader(shard_axis: int) -> LoaderFunction:
     return loader
 
 
-def composed_weight_loader(
-    loader: LoaderFunction, fn: Callable[[torch.Tensor], torch.Tensor]
-) -> LoaderFunction:
+def composed_weight_loader(loader: LoaderFunction, fn: Callable[[torch.Tensor], torch.Tensor]) -> LoaderFunction:
     """Create a weight loader that post-processes the weights after loading"""
 
     def composed_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
@@ -1097,10 +1048,7 @@ def maybe_remap_kv_scale_name(name: str, params_dict: dict) -> str | None:
 
     if any("mla_attn" in key for key in params_dict):
         attn_str = "mla_attn.mla_attn"
-        logger.debug_once(
-            f"Found mla_attn with k_scale and v_scale in "
-            f"the checkpoint, using {attn_str} as attn_str"
-        )
+        logger.debug_once(f"Found mla_attn with k_scale and v_scale in the checkpoint, using {attn_str} as attn_str")
     else:
         attn_str = "attn"
     # Define scale name mapping patterns in order of precedence

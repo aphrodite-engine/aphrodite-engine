@@ -140,9 +140,7 @@ def test_invalid_function_call_fallback():
     # Missing required field 'call_id'
     request_data = {
         "model": "gpt-oss",
-        "input": [
-            {"type": "function_call", "name": "incomplete_function", "arguments": "{}"}
-        ],
+        "input": [{"type": "function_call", "name": "incomplete_function", "arguments": "{}"}],
     }
 
     # This should not raise an error during model creation

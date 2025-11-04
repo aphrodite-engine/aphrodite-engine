@@ -20,9 +20,7 @@ DEFAULT_TP_SIZES = [1]
 
 
 # bench
-def bench_fn(
-    label: str, sub_label: str, description: str, fn: Callable, *args, **kwargs
-) -> TMeasurement:
+def bench_fn(label: str, sub_label: str, description: str, fn: Callable, *args, **kwargs) -> TMeasurement:
     min_run_time = 1
 
     globals = {
@@ -39,18 +37,14 @@ def bench_fn(
     ).blocked_autorange(min_run_time=min_run_time)
 
 
-def bench_int8(
-    dtype: torch.dtype, m: int, k: int, n: int, label: str, sub_label: str
-) -> Iterable[TMeasurement]:
+def bench_int8(dtype: torch.dtype, m: int, k: int, n: int, label: str, sub_label: str) -> Iterable[TMeasurement]:
     assert dtype == torch.int8
     b_compressed, e, a, b = make_rand_sparse_tensors(torch.int8, m, n, k)
     scale_a = torch.tensor(1.0, device="cuda", dtype=torch.float32)
     scale_b = torch.tensor(1.0, device="cuda", dtype=torch.float32)
     bias = torch.zeros((n,), device="cuda", dtype=torch.bfloat16)
 
-    out = ops.cutlass_scaled_sparse_mm(
-        a, b_compressed, e, scale_a, scale_b, torch.bfloat16
-    )
+    out = ops.cutlass_scaled_sparse_mm(a, b_compressed, e, scale_a, scale_b, torch.bfloat16)
     out_ref = ops.cutlass_scaled_mm(a, b, scale_a, scale_b, torch.bfloat16)
 
     if not torch.allclose(out, out_ref):
@@ -152,18 +146,14 @@ def bench_int8(
     return timers
 
 
-def bench_fp8(
-    dtype: torch.dtype, m: int, k: int, n: int, label: str, sub_label: str
-) -> Iterable[TMeasurement]:
+def bench_fp8(dtype: torch.dtype, m: int, k: int, n: int, label: str, sub_label: str) -> Iterable[TMeasurement]:
     assert dtype == torch.float8_e4m3fn
     b_compressed, e, a, b = make_rand_sparse_tensors(torch.float8_e4m3fn, m, n, k)
     scale_a = torch.tensor(1.0, device="cuda", dtype=torch.float32)
     scale_b = torch.tensor(1.0, device="cuda", dtype=torch.float32)
     bias = torch.zeros((n,), device="cuda", dtype=torch.bfloat16)
 
-    out = ops.cutlass_scaled_sparse_mm(
-        a, b_compressed, e, scale_a, scale_b, torch.bfloat16
-    )
+    out = ops.cutlass_scaled_sparse_mm(a, b_compressed, e, scale_a, scale_b, torch.bfloat16)
     out_ref = ops.cutlass_scaled_mm(a, b, scale_a, scale_b, torch.bfloat16)
 
     if not torch.allclose(out, out_ref):
@@ -333,9 +323,7 @@ def bench_fp8(
     return timers
 
 
-def bench(
-    dtype: torch.dtype, m: int, k: int, n: int, label: str, sub_label: str
-) -> Iterable[TMeasurement]:
+def bench(dtype: torch.dtype, m: int, k: int, n: int, label: str, sub_label: str) -> Iterable[TMeasurement]:
     if dtype == torch.int8:
         return bench_int8(dtype, m, k, n, label, sub_label)
     if dtype == torch.float8_e4m3fn:
@@ -349,9 +337,7 @@ def print_timers(timers: Iterable[TMeasurement]):
     compare.print()
 
 
-def run(
-    dtype: torch.dtype, MKNs: Iterable[tuple[int, int, int]]
-) -> Iterable[TMeasurement]:
+def run(dtype: torch.dtype, MKNs: Iterable[tuple[int, int, int]]) -> Iterable[TMeasurement]:
     results = []
     for m, k, n in MKNs:
         timers = bench(dtype, m, k, n, f"scaled-{dtype}-gemm", f"MKN=({m}x{k}x{n})")
@@ -500,12 +486,8 @@ Benchmark Cutlass GEMM.
         default=DEFAULT_MODELS,
         choices=WEIGHT_SHAPES.keys(),
     )
-    model_parser.add_argument(
-        "--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES
-    )
-    model_parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    model_parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
+    model_parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     model_parser.set_defaults(func=run_model_bench)
 
     args = parser.parse_args()

@@ -8,31 +8,36 @@ from torch.nn import Parameter
 import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    fused_marlin_moe)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import fused_marlin_moe
 from aphrodite.modeling.layers.fused_moe.layer import (
-    FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported,
-    UnquantizedFusedMoEMethod)
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod,
-                                              set_weight_attrs)
+    FusedMoE,
+    FusedMoEMethodBase,
+    FusedMoeWeightScaleSupported,
+    UnquantizedFusedMoEMethod,
+)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod, set_weight_attrs
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
-from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
+from aphrodite.modeling.parameter import GroupQuantScaleParameter, PackedAphroditeParameter
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.awq import AWQConfig
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.marlin_utils import (
-    apply_awq_marlin_linear, awq_to_marlin_zero_points, check_marlin_supported,
-    check_marlin_supports_layer, check_moe_marlin_supports_layer,
-    marlin_make_empty_g_idx, marlin_make_workspace_new,
-    marlin_moe_permute_scales, marlin_permute_bias, marlin_permute_scales,
-    moe_awq_to_marlin_zero_points, verify_marlin_supported,
-    verify_marlin_supports_shape)
+    apply_awq_marlin_linear,
+    awq_to_marlin_zero_points,
+    check_marlin_supported,
+    check_marlin_supports_layer,
+    check_moe_marlin_supports_layer,
+    marlin_make_empty_g_idx,
+    marlin_make_workspace_new,
+    marlin_moe_permute_scales,
+    marlin_permute_bias,
+    marlin_permute_scales,
+    moe_awq_to_marlin_zero_points,
+    verify_marlin_supported,
+    verify_marlin_supports_shape,
+)
 from aphrodite.quantization.utils.quant_utils import is_layer_skipped
 from aphrodite.scalar_type import scalar_types
 from aphrodite.transformers_utils.config import get_safetensors_params_metadata
@@ -72,16 +77,11 @@ class AWQMarlinConfig(QuantizationConfig):
         self.full_config = full_config
 
         if self.weight_bits not in self.TYPE_MAP:
-            raise ValueError(
-                f"Unsupported num_bits = {self.weight_bits}. "
-                f"Supported num_bits = {self.TYPE_MAP.keys()}"
-            )
+            raise ValueError(f"Unsupported num_bits = {self.weight_bits}. Supported num_bits = {self.TYPE_MAP.keys()}")
 
         self.quant_type = self.TYPE_MAP[self.weight_bits]
 
-        verify_marlin_supported(
-            self.quant_type, group_size=self.group_size, has_zp=self.zero_point
-        )
+        verify_marlin_supported(self.quant_type, group_size=self.group_size, has_zp=self.zero_point)
 
     def __repr__(self) -> str:
         return (
@@ -114,9 +114,7 @@ class AWQMarlinConfig(QuantizationConfig):
         group_size = cls.get_from_keys(config, ["group_size"])
         zero_point = cls.get_from_keys(config, ["zero_point"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        modules_to_not_convert = cls.get_from_keys_or(
-            config, ["modules_to_not_convert"], None
-        )
+        modules_to_not_convert = cls.get_from_keys_or(config, ["modules_to_not_convert"], None)
         return cls(
             weight_bits,
             group_size,
@@ -127,18 +125,13 @@ class AWQMarlinConfig(QuantizationConfig):
         )
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> Optional["QuantizationMethods"]:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> Optional["QuantizationMethods"]:
         can_convert = cls.is_awq_marlin_compatible(hf_quant_cfg)
-        is_valid_user_quant = (
-            user_quant is None or user_quant == "marlin" or user_quant == "awq_marlin"
-        )
+        is_valid_user_quant = user_quant is None or user_quant == "marlin" or user_quant == "awq_marlin"
 
         if can_convert and is_valid_user_quant:
-            msg = (
-                "The model is convertible to {} during runtime."
-                " Using {} kernel.".format(cls.get_name(), cls.get_name())
+            msg = "The model is convertible to {} during runtime. Using {} kernel.".format(
+                cls.get_name(), cls.get_name()
             )
             logger.info(msg)
             return cls.get_name()
@@ -152,12 +145,8 @@ class AWQMarlinConfig(QuantizationConfig):
             )
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
-        if isinstance(layer, LinearBase) or (
-            isinstance(layer, ParallelLMHead) and self.lm_head_quantized
-        ):
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
+        if isinstance(layer, LinearBase) or (isinstance(layer, ParallelLMHead) and self.lm_head_quantized):
             if is_layer_skipped(
                 prefix,
                 self.modules_to_not_convert,
@@ -171,9 +160,7 @@ class AWQMarlinConfig(QuantizationConfig):
                     "Layer '%s' is not supported by AWQMarlin. Falling back to unoptimized AWQ kernels.",  # noqa: E501
                     prefix,
                 )
-                return AWQConfig.from_config(self.full_config).get_quant_method(
-                    layer, prefix
-                )
+                return AWQConfig.from_config(self.full_config).get_quant_method(layer, prefix)
             return AWQMarlinLinearMethod(self)
         elif isinstance(layer, FusedMoE):
             from aphrodite.quantization.moe_wna16 import MoeWNA16Config
@@ -186,12 +173,9 @@ class AWQMarlinConfig(QuantizationConfig):
                 return UnquantizedFusedMoEMethod(layer.moe_config)
             if not check_moe_marlin_supports_layer(layer, self.group_size):
                 logger.warning_once(
-                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels."
+                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. Falling back to Moe WNA16 kernels."
                 )
-                return MoeWNA16Config.from_config(self.full_config).get_quant_method(
-                    layer, prefix
-                )
+                return MoeWNA16Config.from_config(self.full_config).get_quant_method(layer, prefix)
             return AWQMoEMethod(self, layer.moe_config)
         return None
 
@@ -216,15 +200,11 @@ class AWQMarlinConfig(QuantizationConfig):
         if num_bits not in cls.TYPE_MAP:
             return False
 
-        return check_marlin_supported(
-            quant_type=cls.TYPE_MAP[num_bits], group_size=group_size, has_zp=zero_point
-        )
+        return check_marlin_supported(quant_type=cls.TYPE_MAP[num_bits], group_size=group_size, has_zp=zero_point)
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.modules_to_not_convert:
-            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(
-                self.modules_to_not_convert
-            )
+            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(self.modules_to_not_convert)
 
     def maybe_update_config(self, model_name: str, revision: str | None = None):
         if self.modules_to_not_convert:
@@ -236,8 +216,7 @@ class AWQMarlinConfig(QuantizationConfig):
         quant_layers: set[str] = {
             param_name.rsplit(".", 1)[0]
             for param_name, info in metadata.items()
-            if (dtype := info.get("dtype", None))
-            and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
+            if (dtype := info.get("dtype", None)) and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
         }
         self.modules_to_not_convert = list(layers - quant_layers)
 
@@ -570,9 +549,7 @@ class AWQMoEMethod(FusedMoEMethodBase):
         if hasattr(layer, "w2_bias") and layer.w2_bias is not None:
             layer.w2_bias.data = marlin_permute_bias(layer.w2_bias)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return None
 
     def apply(

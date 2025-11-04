@@ -2,8 +2,9 @@ import inspect
 import math
 import uuid
 import warnings
+from collections.abc import Iterable
 from functools import wraps
-from typing import Any, Iterable, TypeVar
+from typing import Any, TypeVar
 
 import torch
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
@@ -139,13 +140,14 @@ def length_from_prompt_token_ids_or_embeds(
 def get_progress_log_prefix() -> str:
     """
     Generate a log-like prefix for progress bars to match log formatting.
-    
+
     When APHRODITE_LOGGING_VERBOSE=True: "INFO 11-01 19:11:35 [      ...      ]"
     When APHRODITE_LOGGING_VERBOSE=False: "INFO 19:11:35"
     """
     import datetime
-    from aphrodite.logging_utils.formatter import Colors, _supports_color
+
     from aphrodite import envs
+    from aphrodite.logging_utils.formatter import Colors, _supports_color
 
     verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
 
@@ -162,8 +164,7 @@ def get_progress_log_prefix() -> str:
             path_color = Colors.PATH
             reset = Colors.RESET
 
-            return (f"{level_color}INFO{reset} {time_color}{timestamp}{reset} "
-                    f"{path_color}[{placeholder}]{reset}")
+            return f"{level_color}INFO{reset} {time_color}{timestamp}{reset} {path_color}[{placeholder}]{reset}"
         else:
             return f"INFO {timestamp} [{placeholder}]"
     else:
@@ -179,29 +180,27 @@ def get_progress_log_prefix() -> str:
             return f"INFO {timestamp}"
 
 
-def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]],
-                        final_bytes: int,
-                        desc="Processing"):
+def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]], final_bytes: int, desc="Processing"):
     from aphrodite.distributed.parallel_state import is_global_first_rank
-    
+
     show_progress = is_global_first_rank()
-    units = 1024**(int(math.log2(final_bytes)) // 10)
+    units = 1024 ** (int(math.log2(final_bytes)) // 10)
 
     if show_progress:
         log_prefix = get_progress_log_prefix()
-        
+
         with Progress(
-                TextColumn(log_prefix + " [progress.description]{task.description}"),
-                BarColumn(),
-                # MofNCompleteColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TextColumn("{task.completed:.2f}/{task.total:.2f} GiB"),
-                TimeElapsedColumn(),
+            TextColumn(log_prefix + " [progress.description]{task.description}"),
+            BarColumn(),
+            # MofNCompleteColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("{task.completed:.2f}/{task.total:.2f} GiB"),
+            TimeElapsedColumn(),
         ) as progress:
             task = progress.add_task(desc, total=final_bytes / units)
             for item in iterable:
                 # Only update progress for tensor values, skip dicts/OrderedDicts
-                if hasattr(item[1], 'element_size'):
+                if hasattr(item[1], "element_size"):
                     steps = item[1].element_size() * item[1].nelement() / units
                     progress.update(task, advance=steps)
                 yield item
@@ -220,16 +219,16 @@ def generate_phrase_variants(phrase: str) -> list[str]:
     variants.append(phrase)
 
     # Add space at beginning if not present
-    if not phrase.startswith(' '):
-        variants.append(' ' + phrase)
+    if not phrase.startswith(" "):
+        variants.append(" " + phrase)
 
     # Add space at end if not present
-    if not phrase.endswith(' '):
-        variants.append(phrase + ' ')
+    if not phrase.endswith(" "):
+        variants.append(phrase + " ")
 
     # Add space at both ends if not present
-    if not phrase.startswith(' ') and not phrase.endswith(' '):
-        variants.append(' ' + phrase + ' ')
+    if not phrase.startswith(" ") and not phrase.endswith(" "):
+        variants.append(" " + phrase + " ")
 
     # Capitalize first letter if not already
     if phrase and phrase[0].islower():
@@ -237,12 +236,12 @@ def generate_phrase_variants(phrase: str) -> list[str]:
         variants.append(capitalized)
 
         # Also add capitalized versions with spaces
-        if not phrase.startswith(' '):
-            variants.append(' ' + capitalized)
-        if not phrase.endswith(' '):
-            variants.append(capitalized + ' ')
-        if not phrase.startswith(' ') and not phrase.endswith(' '):
-            variants.append(' ' + capitalized + ' ')
+        if not phrase.startswith(" "):
+            variants.append(" " + capitalized)
+        if not phrase.endswith(" "):
+            variants.append(capitalized + " ")
+        if not phrase.startswith(" ") and not phrase.endswith(" "):
+            variants.append(" " + capitalized + " ")
 
     # Remove duplicates while preserving order
     seen = set()

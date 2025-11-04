@@ -7,23 +7,16 @@ import torch
 from torch import nn
 from torch.nn.parameter import Parameter
 
-from aphrodite.config import (CacheConfig, ModelConfig,
-                              get_current_aphrodite_config)
-from aphrodite.distributed.parallel_state import (
-    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
+from aphrodite.config import CacheConfig, ModelConfig, get_current_aphrodite_config
+from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.modeling._custom_op import CustomOp
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.mamba.abstract import MambaBase
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
-from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
-    causal_conv1d_fn, causal_conv1d_update)
-from aphrodite.modeling.layers.mamba.ops.mamba_ssm import (
-    selective_scan_fn, selective_state_update)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
+from aphrodite.modeling.layers.mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
+from aphrodite.modeling.layers.mamba.ops.mamba_ssm import selective_scan_fn, selective_state_update
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.utils.torch_utils import direct_register_custom_op
 from aphrodite.v1.attention.backends.mamba1_attn import Mamba1AttentionMetadata
@@ -80,9 +73,7 @@ class MambaMixer(MambaBase, CustomOp):
         # doesn't allow to override it
         self.conv1d.weight.data = self.conv1d.weight.data.unsqueeze(1)
 
-        self.in_proj = MergedColumnParallelLinear(
-            hidden_size, [intermediate_size] * 2, bias=use_bias
-        )
+        self.in_proj = MergedColumnParallelLinear(hidden_size, [intermediate_size] * 2, bias=use_bias)
 
         # selective projection used to make dt, B and C input dependent
         self.x_proj = RowParallelLinear(
@@ -93,18 +84,12 @@ class MambaMixer(MambaBase, CustomOp):
         # time step projection (discretization) -
         # In the forward we need to apply dt_proj without the bias,
         # as the bias is added in the selective scan kernel.
-        self.dt_proj = ColumnParallelLinear(
-            time_step_rank, intermediate_size, bias=True, skip_bias_add=True
-        )
+        self.dt_proj = ColumnParallelLinear(time_step_rank, intermediate_size, bias=True, skip_bias_add=True)
 
         def weight_loader(param: Parameter, loaded_weight: torch.Tensor):
             tp_rank = get_tensor_model_parallel_rank()
             tp_size = get_tensor_model_parallel_world_size()
-            param.data.copy_(
-                loaded_weight.data.split(loaded_weight.shape[0] // tp_size, dim=0)[
-                    tp_rank
-                ]
-            )
+            param.data.copy_(loaded_weight.data.split(loaded_weight.shape[0] // tp_size, dim=0)[tp_rank])
 
         def A_weight_loader(param: Parameter, loaded_weight: torch.Tensor):
             weight_loader(param, -torch.exp(loaded_weight.float()))
@@ -170,9 +155,7 @@ class MambaMixer(MambaBase, CustomOp):
         self.cache_config = cache_config
         self.prefix = prefix
 
-    def _ssm_transform(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _ssm_transform(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if self.is_lora_enabled:
             #  Lora kernel requires contiguous tensor.
             ssm_params = self.x_proj(x.contiguous())[0]
@@ -246,9 +229,7 @@ class MambaMixer(MambaBase, CustomOp):
         projected_states = self.in_proj(hidden_states)[0].transpose(-2, -1)
         hidden_states_BC, gate = projected_states.chunk(2, dim=-2)
 
-        conv_weights = self.conv1d.weight.view(
-            self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-        )
+        conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
 
         if attn_metadata is None:
             # V1 profile run
@@ -299,9 +280,7 @@ class MambaMixer(MambaBase, CustomOp):
                 query_start_loc=query_start_loc_p,
             )
             # 3. State Space Model sequence transformations.
-            discrete_time_step_p, B_p, C_p = self._ssm_transform(
-                conv_out_p.transpose(-2, -1)
-            )
+            discrete_time_step_p, B_p, C_p = self._ssm_transform(conv_out_p.transpose(-2, -1))
             time_proj_bias = self._time_proj_bias()
 
             # 4. Perform the recurrence y ← SSM(A, B, C, Δ)(x)
@@ -334,9 +313,7 @@ class MambaMixer(MambaBase, CustomOp):
             ).transpose(0, 1)
 
             # 3. State Space Model sequence transformation.
-            discrete_time_step_d, B_d, C_d = self._ssm_transform(
-                conv_out_d.transpose(-2, -1)
-            )
+            discrete_time_step_d, B_d, C_d = self._ssm_transform(conv_out_d.transpose(-2, -1))
             time_proj_bias = self._time_proj_bias()
 
             # 4. Perform the recurrence y ← SSM(A, B, C, Δ)(x)
@@ -359,9 +336,7 @@ class MambaMixer(MambaBase, CustomOp):
 
             ssm_outputs.insert(0, scan_outputs_d)
 
-        scan_outputs_combined = (
-            ssm_outputs[0] if len(ssm_outputs) == 1 else torch.cat(ssm_outputs, dim=-1)
-        )
+        scan_outputs_combined = ssm_outputs[0] if len(ssm_outputs) == 1 else torch.cat(ssm_outputs, dim=-1)
 
         # 5. Final output projection
         if self.is_lora_enabled:  # Lora kernel requires contiguous tensor.
@@ -394,8 +369,7 @@ class MambaMixer(MambaBase, CustomOp):
         return "mamba1"
 
     def get_attn_backend(self) -> type["AttentionBackend"]:
-        from aphrodite.v1.attention.backends.mamba1_attn import (
-            Mamba1AttentionBackend)
+        from aphrodite.v1.attention.backends.mamba1_attn import Mamba1AttentionBackend
 
         return Mamba1AttentionBackend
 
@@ -436,9 +410,7 @@ def split_batch_to_prefill_and_decode(
         [num_padded_decodes, num_prefill_tokens],
         dim=-1,
     )
-    gate_d, gate_p = torch.split(
-        gate[..., :num_actual_tokens], [num_padded_decodes, num_prefill_tokens], dim=-1
-    )
+    gate_d, gate_p = torch.split(gate[..., :num_actual_tokens], [num_padded_decodes, num_prefill_tokens], dim=-1)
 
     # num_padded_decodes accounts for CUDA graph padding when applicable
     state_indices_tensor_d, state_indices_tensor_p = torch.split(
@@ -446,15 +418,9 @@ def split_batch_to_prefill_and_decode(
         [num_padded_decodes, num_prefills],
         dim=0,
     )
-    query_start_loc_p = (
-        query_start_loc[-num_prefills - 1 :] - num_padded_decodes
-        if num_prefills > 0
-        else None
-    )
+    query_start_loc_p = query_start_loc[-num_prefills - 1 :] - num_padded_decodes if num_prefills > 0 else None
     has_initial_states_p = (
-        has_initial_states[-num_prefills:]
-        if (has_initial_states is not None and num_prefills > 0)
-        else None
+        has_initial_states[-num_prefills:] if (has_initial_states is not None and num_prefills > 0) else None
     )
 
     return PrefillDecodeSplit(

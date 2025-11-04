@@ -11,28 +11,35 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.datastructures import State
 
 import aphrodite.envs as envs
-from aphrodite.endpoints.anthropic.protocol import (AnthropicErrorResponse,
-                                                    AnthropicMessagesRequest,
-                                                    AnthropicMessagesResponse)
-from aphrodite.endpoints.anthropic.serving_messages import (
-    AnthropicServingMessages)
+from aphrodite.endpoints.anthropic.protocol import (
+    AnthropicErrorResponse,
+    AnthropicMessagesRequest,
+    AnthropicMessagesResponse,
+)
+from aphrodite.endpoints.anthropic.serving_messages import AnthropicServingMessages
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.api_server import (build_async_engine_client,
-                                                   create_server_socket,
-                                                   lifespan, load_log_config,
-                                                   validate_api_server_args,
-                                                   validate_json_request)
-from aphrodite.endpoints.openai.args import (make_arg_parser,
-                                             validate_parsed_serve_args)
+from aphrodite.endpoints.openai.api_server import (
+    build_async_engine_client,
+    create_server_socket,
+    lifespan,
+    load_log_config,
+    validate_api_server_args,
+    validate_json_request,
+)
+from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
 from aphrodite.endpoints.openai.protocol import ErrorResponse
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
+
 #
 # yapf: enable
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
-from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
-                                       process_chat_template,
-                                       process_lora_modules, with_cancellation)
+from aphrodite.endpoints.utils import (
+    cli_env_setup,
+    load_aware_call,
+    process_chat_template,
+    process_lora_modules,
+    with_cancellation,
+)
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.logger import init_logger
 from aphrodite.server.launch import serve_http
@@ -88,9 +95,7 @@ async def ping(raw_request: Request) -> Response:
 async def create_messages(request: AnthropicMessagesRequest, raw_request: Request):
     handler = messages(raw_request)
     if handler is None:
-        return messages(raw_request).create_error_response(
-            message="The model does not support Messages API"
-        )
+        return messages(raw_request).create_error_response(message="The model does not support Messages API")
 
     generator = await handler.create_messages(request, raw_request)
 
@@ -98,9 +103,7 @@ async def create_messages(request: AnthropicMessagesRequest, raw_request: Reques
         return JSONResponse(content=generator.model_dump())
 
     elif isinstance(generator, AnthropicMessagesResponse):
-        logger.debug(
-            "Anthropic Messages Response: %s", generator.model_dump(exclude_none=True)
-        )
+        logger.debug("Anthropic Messages Response: %s", generator.model_dump(exclude_none=True))
         return JSONResponse(content=generator.model_dump(exclude_none=True))
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -123,25 +126,17 @@ async def init_app_state(
     else:
         request_logger = RequestLogger(max_log_len=args.max_log_len)
 
-    base_model_paths = [
-        BaseModelPath(name=name, model_path=args.model) for name in served_model_names
-    ]
+    base_model_paths = [BaseModelPath(name=name, model_path=args.model) for name in served_model_names]
 
     state.engine_client = engine_client
     state.log_stats = not args.disable_log_stats
     state.aphrodite_config = aphrodite_config
     model_config = aphrodite_config.model_config
 
-    default_mm_loras = (
-        aphrodite_config.lora_config.default_mm_loras
-        if aphrodite_config.lora_config is not None
-        else {}
-    )
+    default_mm_loras = aphrodite_config.lora_config.default_mm_loras if aphrodite_config.lora_config is not None else {}
     lora_modules = process_lora_modules(args.lora_modules, default_mm_loras)
 
-    resolved_chat_template = await process_chat_template(
-        args.chat_template, engine_client, model_config
-    )
+    resolved_chat_template = await process_chat_template(args.chat_template, engine_client, model_config)
 
     state.openai_serving_models = OpenAIServingModels(
         engine_client=engine_client,
@@ -222,9 +217,7 @@ def build_app(args: Namespace) -> FastAPI:
     return app
 
 
-async def run_server_worker(
-    listen_address, sock, args, client_config=None, **uvicorn_kwargs
-) -> None:
+async def run_server_worker(listen_address, sock, args, client_config=None, **uvicorn_kwargs) -> None:
     """Run a single API server worker."""
 
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
@@ -270,14 +263,13 @@ async def run_server_worker(
     finally:
         sock.close()
 
+
 if __name__ == "__main__":
     # NOTE(simon):
     # This section should be in sync with aphrodite/endpoints/cli/main.py for CLI
     # endpoints.
     cli_env_setup()
-    parser = FlexibleArgumentParser(
-        description="Aphrodite Anthropic-Compatible RESTful API server."
-    )
+    parser = FlexibleArgumentParser(description="Aphrodite Anthropic-Compatible RESTful API server.")
     parser = make_arg_parser(parser)
     args = parser.parse_args()
     validate_parsed_serve_args(args)

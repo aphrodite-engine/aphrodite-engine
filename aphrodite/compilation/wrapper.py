@@ -8,8 +8,7 @@ from types import CodeType
 import torch
 
 import aphrodite.envs as envs
-from aphrodite.config import (CompilationMode, CUDAGraphMode,
-                              get_current_aphrodite_config)
+from aphrodite.config import CompilationMode, CUDAGraphMode, get_current_aphrodite_config
 from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
@@ -28,9 +27,7 @@ class TorchCompileWrapperWithCustomDispatcher:
         `torch.compile` over the forward method.
     """
 
-    def __init__(
-        self, compiled_callable: Callable | None = None, compilation_mode: int = 0
-    ):
+    def __init__(self, compiled_callable: Callable | None = None, compilation_mode: int = 0):
         aphrodite_config = get_current_aphrodite_config()
         self.aphrodite_config = aphrodite_config
         if compiled_callable is None:
@@ -40,9 +37,7 @@ class TorchCompileWrapperWithCustomDispatcher:
             backend = aphrodite_config.compilation_config.init_backend(aphrodite_config)
             options = None
             if isinstance(backend, str) and backend == "inductor":
-                options = (
-                    get_current_aphrodite_config().compilation_config.inductor_compile_config
-                )
+                options = get_current_aphrodite_config().compilation_config.inductor_compile_config
             if envs.APHRODITE_USE_AOT_COMPILE:
                 options = options or {}
                 # This effectively drop all the guards.
@@ -57,9 +52,7 @@ class TorchCompileWrapperWithCustomDispatcher:
                     msg += "upgrade PyTorch version to use AOT compile."
                     logger.warning(msg)
 
-            compiled_callable = torch.compile(
-                self.forward, fullgraph=True, backend=backend, options=options
-            )
+            compiled_callable = torch.compile(self.forward, fullgraph=True, backend=backend, options=options)
 
         self.compiled_callable = compiled_callable
         self.original_code_object = self.__class__.forward.__code__
@@ -69,9 +62,7 @@ class TorchCompileWrapperWithCustomDispatcher:
         # read the env var to determine whether to use the custom dispatcher
         # subclasses can use this to switch between the custom dispatcher
         # and the default Dynamo guard mechanism.
-        self.use_custom_dispatcher: bool = (
-            compilation_mode >= CompilationMode.DYNAMO_TRACE_ONCE
-        )
+        self.use_custom_dispatcher: bool = compilation_mode >= CompilationMode.DYNAMO_TRACE_ONCE
 
     def aot_compile(self, *args, **kwargs):
         if not hasattr(self.compiled_callable, "aot_compile"):

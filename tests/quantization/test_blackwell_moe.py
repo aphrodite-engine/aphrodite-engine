@@ -8,9 +8,7 @@ from aphrodite.platforms import current_platform
 from tests.utils import RemoteOpenAIServer
 
 if not current_platform.is_device_capability(100):
-    pytest.skip(
-        "This test only runs on Blackwell GPUs (SM100).", allow_module_level=True
-    )
+    pytest.skip("This test only runs on Blackwell GPUs (SM100).", allow_module_level=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -84,33 +82,25 @@ def can_initialize(
 def test_llama4_fp8_tensor_moe_flashinfer_cutlass(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APHRODITE_USE_FLASHINFER_MOE_FP8", "1")
     monkeypatch.setenv("APHRODITE_FLASHINFER_MOE_BACKEND", "throughput")
-    can_initialize(
-        "nvidia/Llama-4-Scout-17B-16E-Instruct-FP8", hf_overrides=HF_OVERRIDE_MM
-    )
+    can_initialize("nvidia/Llama-4-Scout-17B-16E-Instruct-FP8", hf_overrides=HF_OVERRIDE_MM)
 
 
 def test_llama4_fp8_tensor_moe_flashinfer_trtllm(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APHRODITE_USE_FLASHINFER_MOE_FP8", "1")
     monkeypatch.setenv("APHRODITE_FLASHINFER_MOE_BACKEND", "latency")
-    can_initialize(
-        "nvidia/Llama-4-Scout-17B-16E-Instruct-FP8", hf_overrides=HF_OVERRIDE_MM
-    )
+    can_initialize("nvidia/Llama-4-Scout-17B-16E-Instruct-FP8", hf_overrides=HF_OVERRIDE_MM)
 
 
 def test_llama4_nvfp4_moe_flashinfer_cutlass(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APHRODITE_USE_FLASHINFER_MOE_FP4", "1")
     monkeypatch.setenv("APHRODITE_FLASHINFER_MOE_BACKEND", "throughput")
-    can_initialize(
-        "nvidia/Llama-4-Scout-17B-16E-Instruct-FP4", hf_overrides=HF_OVERRIDE_MM
-    )
+    can_initialize("nvidia/Llama-4-Scout-17B-16E-Instruct-FP4", hf_overrides=HF_OVERRIDE_MM)
 
 
 def test_llama4_nvfp4_moe_flashinfer_trtllm(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APHRODITE_USE_FLASHINFER_MOE_FP4", "1")
     monkeypatch.setenv("APHRODITE_FLASHINFER_MOE_BACKEND", "latency")
-    can_initialize(
-        "nvidia/Llama-4-Scout-17B-16E-Instruct-FP4", hf_overrides=HF_OVERRIDE_MM
-    )
+    can_initialize("nvidia/Llama-4-Scout-17B-16E-Instruct-FP4", hf_overrides=HF_OVERRIDE_MM)
 
 
 ## DeepSeekV3 ##
@@ -121,12 +111,7 @@ def test_deepseek_fp8_block_moe_deep_gemm(monkeypatch: pytest.MonkeyPatch):
     can_initialize("deepseek-ai/DeepSeek-V3.1", hf_overrides=HF_OVERRIDE_TEXT)
 
 
-@pytest.mark.skip(
-    reason=(
-        "Known issue: lack of kernel support. "
-        "Expected failure: assert self.block_quant is None"
-    )
-)
+@pytest.mark.skip(reason=("Known issue: lack of kernel support. Expected failure: assert self.block_quant is None"))
 def test_deepseek_fp8_block_moe_flashinfer_cutlass(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APHRODITE_USE_FLASHINFER_MOE_FP8", "1")
     monkeypatch.setenv("APHRODITE_FLASHINFER_MOE_BACKEND", "throughput")

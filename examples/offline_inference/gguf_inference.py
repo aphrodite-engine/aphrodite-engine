@@ -11,18 +11,17 @@ def run_gguf_inference(model_path):
         "How many helicopters can a human eat in one sitting?",
         "What's the future of AI?",
     ]
-    prompts = [
-        PROMPT_TEMPLATE.format(system_message=system_message, prompt=prompt)
-        for prompt in prompts
-    ]
+    prompts = [PROMPT_TEMPLATE.format(system_message=system_message, prompt=prompt) for prompt in prompts]
     # Create a sampling params object.
     sampling_params = SamplingParams(temperature=0, max_tokens=128)
 
     # Create an LLM.
-    llm = LLM(model=model_path,
-              tokenizer="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-              gpu_memory_utilization=0.95,
-              quantization="gguf")
+    llm = LLM(
+        model=model_path,
+        tokenizer="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        gpu_memory_utilization=0.95,
+        quantization="gguf",
+    )
 
     outputs = llm.generate(prompts, sampling_params)
     # Print the outputs.

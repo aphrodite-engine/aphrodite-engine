@@ -7,19 +7,28 @@ from aphrodite.config import ModelConfig
 from aphrodite.logger import init_logger
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from aphrodite.multimodal.cache import BaseMultiModalProcessorCache
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalEncDecInputs,
-                                         MultiModalInputs, MultiModalUUIDDict)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalEncDecInputs, MultiModalInputs, MultiModalUUIDDict
 from aphrodite.multimodal.processing import BaseMultiModalProcessor
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils.jsontree import json_iter_leaves
 from aphrodite.v1.metrics.stats import MultiModalCacheStats
 
-from .data import (DecoderOnlyInputs, EmbedsInputs, EmbedsPrompt,
-                   EncoderDecoderInputs, ExplicitEncoderDecoderPrompt,
-                   ProcessorInputs, PromptType, SingletonInputs,
-                   SingletonPrompt, TextPrompt, TokenInputs, TokensPrompt,
-                   embeds_inputs, token_inputs)
+from .data import (
+    DecoderOnlyInputs,
+    EmbedsInputs,
+    EmbedsPrompt,
+    EncoderDecoderInputs,
+    ExplicitEncoderDecoderPrompt,
+    ProcessorInputs,
+    PromptType,
+    SingletonInputs,
+    SingletonPrompt,
+    TextPrompt,
+    TokenInputs,
+    TokensPrompt,
+    embeds_inputs,
+    token_inputs,
+)
 from .parse import is_explicit_encoder_decoder_prompt, parse_singleton_prompt
 
 logger = init_logger(__name__)
@@ -44,26 +53,20 @@ class InputPreprocessor:
 
     def get_tokenizer(self) -> AnyTokenizer:
         if self.tokenizer is None:
-            raise ValueError(
-                "You cannot pass text prompts when `skip_tokenizer_init` is True"
-            )
+            raise ValueError("You cannot pass text prompts when `skip_tokenizer_init` is True")
 
         return self.tokenizer
 
     def get_bos_token_id(self) -> int | None:
         if self.tokenizer is None:
-            logger.warning_once(
-                "Using None for BOS token id because tokenizer is not initialized"
-            )
+            logger.warning_once("Using None for BOS token id because tokenizer is not initialized")
             return None
 
         return self.tokenizer.bos_token_id
 
     def get_eos_token_id(self) -> int | None:
         if self.tokenizer is None:
-            logger.warning_once(
-                "Using None for EOS token id because tokenizer is not initialized"
-            )
+            logger.warning_once("Using None for EOS token id because tokenizer is not initialized")
             return None
 
         return self.tokenizer.eos_token_id
@@ -76,27 +79,17 @@ class InputPreprocessor:
         """
 
         if not self.model_config.is_encoder_decoder:
-            logger.warning_once(
-                "Using None for decoder start token id because "
-                "this is not an encoder/decoder model."
-            )
+            logger.warning_once("Using None for decoder start token id because this is not an encoder/decoder model.")
             return None
 
         if self.model_config is None or self.model_config.hf_config is None:
-            logger.warning_once(
-                "Using None for decoder start token id because "
-                "model config is not available."
-            )
+            logger.warning_once("Using None for decoder start token id because model config is not available.")
             return None
 
-        dec_start_token_id = getattr(
-            self.model_config.hf_config, "decoder_start_token_id", None
-        )
+        dec_start_token_id = getattr(self.model_config.hf_config, "decoder_start_token_id", None)
         if dec_start_token_id is None:
             logger.warning_once(
-                "Falling back on <BOS> for decoder start token "
-                "id because decoder start token id is not "
-                "available."
+                "Falling back on <BOS> for decoder start token id because decoder start token id is not available."
             )
             dec_start_token_id = self.get_bos_token_id()
 
@@ -167,10 +160,7 @@ class InputPreprocessor:
             # use decoder_start_token_id as decoder_input_ids
             decoder_input_ids = self._get_default_enc_dec_decoder_prompt()
 
-        if (
-            len(decoder_input_ids) == 0
-            or decoder_input_ids[0] != decoder_start_token_id
-        ):
+        if len(decoder_input_ids) == 0 or decoder_input_ids[0] != decoder_start_token_id:
             decoder_input_ids = [decoder_start_token_id] + decoder_input_ids
 
         return decoder_input_ids
@@ -260,9 +250,7 @@ class InputPreprocessor:
         mm_hashes = mm_input["mm_hashes"]
 
         # Validate that all mm items have a string as their hash
-        contains_only_strings = all(
-            isinstance(leaf, str) for leaf in json_iter_leaves(mm_hashes)
-        )
+        contains_only_strings = all(isinstance(leaf, str) for leaf in json_iter_leaves(mm_hashes))
         if not contains_only_strings:
             raise ValueError(
                 f"mm_hashes must contain only strings, got: {mm_hashes}. "
@@ -277,9 +265,7 @@ class InputPreprocessor:
         parsed_content: EmbedsPrompt,
     ) -> EmbedsInputs:
         if not self.model_config.enable_prompt_embeds:
-            raise ValueError(
-                "You must set `--enable-prompt-embeds` to input `prompt_embeds`."
-            )
+            raise ValueError("You must set `--enable-prompt-embeds` to input `prompt_embeds`.")
 
         prompt_embeds = parsed_content["prompt_embeds"]
 
@@ -298,18 +284,10 @@ class InputPreprocessor:
         # hidden device transfer in the critical path of generation.
         prompt_embeds = prompt_embeds.cpu()
 
-        return embeds_inputs(
-            prompt_embeds=prompt_embeds, cache_salt=parsed_content.get("cache_salt")
-        )
+        return embeds_inputs(prompt_embeds=prompt_embeds, cache_salt=parsed_content.get("cache_salt"))
 
-    def _truncate_inputs(
-        self, inputs: list[int], tokenization_kwargs: dict[str, Any] | None = None
-    ) -> list[int]:
-        if (
-            not tokenization_kwargs
-            or "truncation" not in tokenization_kwargs
-            or self.tokenizer is None
-        ):
+    def _truncate_inputs(self, inputs: list[int], tokenization_kwargs: dict[str, Any] | None = None) -> list[int]:
+        if not tokenization_kwargs or "truncation" not in tokenization_kwargs or self.tokenizer is None:
             return inputs
 
         max_length = tokenization_kwargs["max_length"]
@@ -326,9 +304,7 @@ class InputPreprocessor:
         *,
         mm_uuids: MultiModalUUIDDict | None = None,
     ) -> TokenInputs | MultiModalInputs:
-        prompt_token_ids = self._truncate_inputs(
-            parsed_content["prompt_token_ids"], tokenization_kwargs
-        )
+        prompt_token_ids = self._truncate_inputs(parsed_content["prompt_token_ids"], tokenization_kwargs)
 
         inputs: TokenInputs | MultiModalInputs
         if self.model_config.is_multimodal_model:
@@ -430,14 +406,8 @@ class InputPreprocessor:
         encoder_inputs: SingletonInputs,
         decoder_inputs: SingletonInputs | None,
     ) -> EncoderDecoderInputs:
-        if (
-            encoder_inputs["type"] == "embeds"
-            or decoder_inputs
-            and decoder_inputs["type"] == "embeds"
-        ):
-            raise ValueError(
-                "Embedding inputs are not supported for encoder-decoder models"
-            )
+        if encoder_inputs["type"] == "embeds" or decoder_inputs and decoder_inputs["type"] == "embeds":
+            raise ValueError("Embedding inputs are not supported for encoder-decoder models")
 
         # Needed for mypy
         encoder_inputs = cast(TokenInputs | MultiModalInputs, encoder_inputs)
@@ -455,14 +425,9 @@ class InputPreprocessor:
             decoder_inputs = token_inputs(dec_token_ids)
         else:
             if "multi_modal_data" in decoder_inputs:
-                raise ValueError(
-                    "Multi-modal decoder inputs of encoder-"
-                    "decoder models are not supported yet"
-                )
+                raise ValueError("Multi-modal decoder inputs of encoder-decoder models are not supported yet")
 
-            dec_token_ids = self._prepare_decoder_input_ids_for_generation(
-                decoder_inputs["prompt_token_ids"]
-            )
+            dec_token_ids = self._prepare_decoder_input_ids_for_generation(decoder_inputs["prompt_token_ids"])
             decoder_inputs["prompt_token_ids"] = dec_token_ids
 
         return EncoderDecoderInputs(
@@ -479,14 +444,8 @@ class InputPreprocessor:
         For encoder/decoder models only:
         Separate Encoder/Decoder inputs from a MultiModalEncDecInputs
         """
-        if (
-            inputs["type"] == "embeds"
-            or decoder_inputs_to_override
-            and decoder_inputs_to_override["type"] == "embeds"
-        ):
-            raise ValueError(
-                "Embedding inputs are not supported for encoder-decoder models"
-            )
+        if inputs["type"] == "embeds" or decoder_inputs_to_override and decoder_inputs_to_override["type"] == "embeds":
+            raise ValueError("Embedding inputs are not supported for encoder-decoder models")
 
         # Needed for mypy
         inputs = cast(
@@ -504,9 +463,7 @@ class InputPreprocessor:
         if inputs["type"] == "multimodal":  # Multimodal data inputs
             if "encoder_prompt_token_ids" not in inputs:
                 raise RuntimeError(
-                    "You should register an encoder-decoder "
-                    "multi-modal processor for encoder-decoder "
-                    "models."
+                    "You should register an encoder-decoder multi-modal processor for encoder-decoder models."
                 )
             inputs = cast(MultiModalEncDecInputs, inputs)
 
@@ -589,9 +546,7 @@ class InputPreprocessor:
             # For multimodal model, override decoder prompt from processor
             # with explicit decoder prompt.
             if self.model_config.is_multimodal_model:
-                encoder_inputs, decoder_inputs = self._split_enc_dec_mm_inputs(
-                    encoder_inputs, decoder_inputs
-                )
+                encoder_inputs, decoder_inputs = self._split_enc_dec_mm_inputs(encoder_inputs, decoder_inputs)
         else:
             # `cast` is needed for mypy, but not pyright
             inputs = self._prompt_to_llm_inputs(
@@ -613,9 +568,7 @@ class InputPreprocessor:
         prompt_inputs: DecoderOnlyInputs,
     ) -> DecoderOnlyInputs:
         if "prompt_token_ids" in prompt_inputs:
-            prompt_inputs = cast(
-                TokenInputs | MultiModalInputs, prompt_inputs
-            )  # Needed for mypy
+            prompt_inputs = cast(TokenInputs | MultiModalInputs, prompt_inputs)  # Needed for mypy
 
         return prompt_inputs
 
@@ -665,9 +618,7 @@ class InputPreprocessor:
             )
 
         if is_explicit_encoder_decoder_prompt(prompt):
-            raise ValueError(
-                "Cannot pass encoder-decoder prompt to decoder-only models"
-            )
+            raise ValueError("Cannot pass encoder-decoder prompt to decoder-only models")
 
         # Decoder-only operation
         # `cast` is needed for mypy, but not pyright

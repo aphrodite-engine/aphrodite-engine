@@ -6,35 +6,31 @@ from typing import Annotated, Literal, cast
 import numpy as np
 import torch
 from torch import nn
-from transformers import (BatchFeature, WhisperConfig, WhisperFeatureExtractor,
-                          WhisperProcessor)
+from transformers import BatchFeature, WhisperConfig, WhisperFeatureExtractor, WhisperProcessor
 from transformers.models.whisper.modeling_whisper import sinusoids
 
 from aphrodite.attention import Attention, AttentionType
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.attention.layers.cross_attention import CrossAttention
-from aphrodite.config import (AphroditeConfig, CacheConfig, ModelConfig,
-                              SpeechToTextConfig)
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.inputs.data import PromptType
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseProcessingInfo,
-                                             EncDecMultiModalProcessor,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import (
+    BaseProcessingInfo,
+    EncDecMultiModalProcessor,
+    PromptReplacement,
+    PromptUpdate,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.processor import cached_get_processor
@@ -42,10 +38,8 @@ from aphrodite.utils.jsontree import json_map_leaves
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from aphrodite.utils.torch_utils import set_default_torch_dtype
 
-from .interfaces import (MultiModalEmbeddings, SupportsMultiModal,
-                         SupportsTranscription)
-from .utils import (AutoWeightsLoader, WeightsMapper, cast_overflow_tensors,
-                    make_layers, maybe_prefix)
+from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsTranscription
+from .utils import AutoWeightsLoader, WeightsMapper, cast_overflow_tensors, make_layers, maybe_prefix
 
 logger = init_logger(__name__)
 
@@ -471,9 +465,7 @@ class WhisperDecoderLayer(nn.Module):
 
 
 class WhisperEncoder(nn.Module):
-    def __init__(
-        self, *, aphrodite_config: AphroditeConfig, prefix: str = "", init_in_fp32: bool = False
-    ):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", init_in_fp32: bool = False):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         embed_dim = config.d_model
@@ -485,25 +477,19 @@ class WhisperEncoder(nn.Module):
         self.conv2 = nn.Conv1d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1)
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.encoder_layers,
-            lambda prefix: WhisperEncoderLayer(
-                aphrodite_config=aphrodite_config, prefix=f"{prefix}.layers"
-            ),
+            lambda prefix: WhisperEncoderLayer(aphrodite_config=aphrodite_config, prefix=f"{prefix}.layers"),
             prefix=f"{prefix}.layers",
         )
         self.layer_norm = nn.LayerNorm(config.d_model)
 
-        maybe_fp32_init_ctx = (
-            set_default_torch_dtype(torch.float32) if init_in_fp32 else nullcontext()
-        )
+        maybe_fp32_init_ctx = set_default_torch_dtype(torch.float32) if init_in_fp32 else nullcontext()
 
         with (
             torch.no_grad(),
             maybe_fp32_init_ctx,
         ):
             self.embed_positions = nn.Embedding(self.max_source_positions, embed_dim)
-            self.embed_positions.weight.copy_(
-                sinusoids(*self.embed_positions.weight.shape)
-            )
+            self.embed_positions.weight.copy_(sinusoids(*self.embed_positions.weight.shape))
 
     def forward(self, input_features: torch.Tensor | list[torch.Tensor]):
         hidden_states = []
@@ -511,9 +497,7 @@ class WhisperEncoder(nn.Module):
             embeds = nn.functional.gelu(self.conv1(features))
             embeds = nn.functional.gelu(self.conv2(embeds))
             embeds = embeds.transpose(-1, -2)
-            embeds = (embeds + self.embed_positions.weight[: embeds.size(-2), :]).to(
-                embeds.dtype
-            )
+            embeds = (embeds + self.embed_positions.weight[: embeds.size(-2), :]).to(embeds.dtype)
             hidden_states.append(embeds)
         hidden_states = torch.cat(hidden_states)
 
@@ -534,17 +518,11 @@ class WhisperDecoder(nn.Module):
         self.max_source_positions = config.max_source_positions
         self.embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
-        self.embed_tokens = nn.Embedding(
-            config.vocab_size, config.d_model, self.padding_idx
-        )
-        self.embed_positions = WhisperPositionalEmbedding(
-            self.max_target_positions, config.d_model
-        )
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.d_model, self.padding_idx)
+        self.embed_positions = WhisperPositionalEmbedding(self.max_target_positions, config.d_model)
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.decoder_layers,
-            lambda prefix: WhisperDecoderLayer(
-                aphrodite_config=aphrodite_config, prefix=f"{prefix}.layers"
-            ),
+            lambda prefix: WhisperDecoderLayer(aphrodite_config=aphrodite_config, prefix=f"{prefix}.layers"),
             prefix=f"{prefix}.layers",
         )
         self.layer_norm = nn.LayerNorm(config.d_model)
@@ -575,12 +553,8 @@ class WhisperDecoder(nn.Module):
 class WhisperModel(nn.Module):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-        self.encoder = WhisperEncoder(
-            aphrodite_config=aphrodite_config, prefix=f"{prefix}.encoder"
-        )
-        self.decoder = WhisperDecoder(
-            aphrodite_config=aphrodite_config, prefix=f"{prefix}.decoder"
-        )
+        self.encoder = WhisperEncoder(aphrodite_config=aphrodite_config, prefix=f"{prefix}.encoder")
+        self.decoder = WhisperDecoder(aphrodite_config=aphrodite_config, prefix=f"{prefix}.decoder")
 
     def forward(
         self,
@@ -687,11 +661,7 @@ class WhisperDummyInputsBuilder(BaseDummyInputsBuilder[WhisperProcessingInfo]):
 
         audio_overrides = mm_options.get("audio") if mm_options else None
 
-        return {
-            "audio": self._get_dummy_audios(
-                length=audio_len, num_audios=num_audios, overrides=audio_overrides
-            )
-        }
+        return {"audio": self._get_dummy_audios(length=audio_len, num_audios=num_audios, overrides=audio_overrides)}
 
 
 class WhisperMultiModalProcessor(EncDecMultiModalProcessor[WhisperProcessingInfo]):
@@ -766,9 +736,7 @@ class WhisperMultiModalProcessor(EncDecMultiModalProcessor[WhisperProcessingInfo
     info=WhisperProcessingInfo,
     dummy_inputs=WhisperDummyInputsBuilder,
 )
-class WhisperForConditionalGeneration(
-    nn.Module, SupportsTranscription, SupportsMultiModal
-):
+class WhisperForConditionalGeneration(nn.Module, SupportsTranscription, SupportsMultiModal):
     merge_by_field_config = True
     packed_modules_mapping = {
         "self_attn.qkv_proj": [
@@ -779,9 +747,7 @@ class WhisperForConditionalGeneration(
         "encoder_attn.kv_proj": ["encoder_attn.k_proj", "encoder_attn.v_proj"],
     }
 
-    hf_to_aphrodite_mapper = WeightsMapper(
-        orig_to_new_substr={".fc1.": ".mlp.fc1.", ".fc2.": ".mlp.fc2."}
-    )
+    hf_to_aphrodite_mapper = WeightsMapper(orig_to_new_substr={".fc1.": ".mlp.fc1.", ".fc2.": ".mlp.fc2."})
 
     # Whisper only supports audio-conditioned generation.
     supports_transcription_only = True
@@ -813,9 +779,7 @@ class WhisperForConditionalGeneration(
         to_language: str | None,
     ) -> PromptType:
         if language is None:
-            raise ValueError(
-                "Language must be specified when creating the Whisper prompt"
-            )
+            raise ValueError("Language must be specified when creating the Whisper prompt")
         prompt = {
             "encoder_prompt": {
                 # Whisper does not support encoder prompt.
@@ -840,9 +804,7 @@ class WhisperForConditionalGeneration(
         raise ValueError("Only audio modality is supported")
 
     @classmethod
-    def get_speech_to_text_config(
-        cls, model_config: ModelConfig, task_type: str
-    ) -> SpeechToTextConfig:
+    def get_speech_to_text_config(cls, model_config: ModelConfig, task_type: str) -> SpeechToTextConfig:
         processor = cached_get_processor(model_config.model)
 
         return SpeechToTextConfig(
@@ -883,9 +845,7 @@ class WhisperForConditionalGeneration(
         )
         self.proj_out = self.proj_out.tie_weights(self.model.decoder.embed_tokens)
         logit_scale = getattr(config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size, logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size, logit_scale)
 
     def forward(
         self,

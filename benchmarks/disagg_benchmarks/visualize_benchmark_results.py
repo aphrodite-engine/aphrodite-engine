@@ -29,12 +29,8 @@ if __name__ == "__main__":
         "p99_itl_ms",
     ]:
         fig, ax = plt.subplots(figsize=(11, 7))
-        plt.plot(
-            dis_df["qps"], dis_df[key], label="disagg_prefill", marker="o", linewidth=4
-        )
-        plt.plot(
-            chu_df["qps"], chu_df[key], label="chunked_prefill", marker="o", linewidth=4
-        )
+        plt.plot(dis_df["qps"], dis_df[key], label="disagg_prefill", marker="o", linewidth=4)
+        plt.plot(chu_df["qps"], chu_df[key], label="chunked_prefill", marker="o", linewidth=4)
         ax.legend()
 
         ax.set_xlabel("QPS")

@@ -9,13 +9,15 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.utils import (_resize_cache,
-                                                       count_expert_num_tokens,
-                                                       disable_inplace)
+from aphrodite.modeling.layers.fused_moe.utils import _resize_cache, count_expert_num_tokens, disable_inplace
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.v1.worker.ubatching import (dbo_current_ubatch_id, dbo_enabled,
-                                           dbo_maybe_run_recv_hook,
-                                           dbo_register_recv_hook, dbo_yield)
+from aphrodite.v1.worker.ubatching import (
+    dbo_current_ubatch_id,
+    dbo_enabled,
+    dbo_maybe_run_recv_hook,
+    dbo_register_recv_hook,
+    dbo_yield,
+)
 
 #
 # This file defines a set of base classes used to make MoE kernels more modular.
@@ -77,12 +79,8 @@ class ExpertTokensMetadata:
     expert_num_tokens_cpu: torch.Tensor | None
 
     @staticmethod
-    def make_from_list(
-        expert_num_tokens_list: list[int], device: str
-    ) -> "ExpertTokensMetadata":
-        expert_num_tokens_cpu = torch.tensor(
-            expert_num_tokens_list, device="cpu", dtype=torch.int32
-        )
+    def make_from_list(expert_num_tokens_list: list[int], device: str) -> "ExpertTokensMetadata":
+        expert_num_tokens_cpu = torch.tensor(expert_num_tokens_list, device="cpu", dtype=torch.int32)
         return ExpertTokensMetadata(
             expert_num_tokens=expert_num_tokens_cpu.to(device, non_blocking=True),
             expert_num_tokens_cpu=expert_num_tokens_cpu,
@@ -541,9 +539,7 @@ class FusedMoEPermuteExpertsUnpermute(ABC):
         """
         raise NotImplementedError
 
-    def activation(
-        self, activation: str, output: torch.Tensor, input: torch.Tensor
-    ) -> None:
+    def activation(self, activation: str, output: torch.Tensor, input: torch.Tensor) -> None:
         assert output.size(-1) * 2 == input.size(-1)
         if activation == "silu":
             torch.ops._C.silu_and_mul(output, input)
@@ -556,9 +552,7 @@ class FusedMoEPermuteExpertsUnpermute(ABC):
             raise ValueError(f"Unsupported FusedMoe activation: {activation}")
 
     def enable_chunking(self):
-        return (
-            envs.APHRODITE_ENABLE_FUSED_MOE_ACTIVATION_CHUNKING and self.supports_chunking()
-        )
+        return envs.APHRODITE_ENABLE_FUSED_MOE_ACTIVATION_CHUNKING and self.supports_chunking()
 
     def finalize_weight_and_reduce_impl(self) -> TopKWeightAndReduce:
         raise NotImplementedError
@@ -620,9 +614,7 @@ class FusedMoEPermuteExpertsUnpermute(ABC):
         raise NotImplementedError
 
 
-def _slice_scales(
-    scales: torch.Tensor | None, start: int, end: int
-) -> torch.Tensor | None:
+def _slice_scales(scales: torch.Tensor | None, start: int, end: int) -> torch.Tensor | None:
     if scales is not None:
         if scales.numel() == 1:
             return scales
@@ -635,9 +627,7 @@ class SharedResizableBuffer:
     def __init__(self):
         self.buffer = None
 
-    def get(
-        self, shape: tuple[int, ...], device: torch.device, dtype: torch.dtype
-    ) -> torch.Tensor:
+    def get(self, shape: tuple[int, ...], device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         assert shape != ()
         shape_numel = prod(shape)
         if (
@@ -690,9 +680,7 @@ class FusedMoEModularKernel(torch.nn.Module):
         self.prepare_finalize = prepare_finalize
         self.fused_experts = fused_experts
         self.shared_experts = shared_experts
-        assert (
-            prepare_finalize.activation_format == fused_experts.activation_formats[0]
-        ), (
+        assert prepare_finalize.activation_format == fused_experts.activation_formats[0], (
             f"{prepare_finalize.__class__.__name__}."
             f"{prepare_finalize.activation_format} == "
             f"{fused_experts.__class__.__name__}."
@@ -715,11 +703,7 @@ class FusedMoEModularKernel(torch.nn.Module):
         """
         CHUNK_SIZE = max(
             1,
-            (
-                M
-                if not self.fused_experts.supports_chunking()
-                else min(M, envs.APHRODITE_FUSED_MOE_CHUNK_SIZE)
-            ),
+            (M if not self.fused_experts.supports_chunking() else min(M, envs.APHRODITE_FUSED_MOE_CHUNK_SIZE)),
         )
         num_chunks = cdiv(M, CHUNK_SIZE)
         # If there are no tokens, then there should be no loop iterations.
@@ -780,12 +764,8 @@ class FusedMoEModularKernel(torch.nn.Module):
 
         # We can reuse the memory between cache1 and cache3 because by the
         # time we need cache3, we're done with cache1.
-        workspace13 = buffers.workspace13.get(
-            workspace13_shape, device=device, dtype=workspace_dtype
-        )
-        workspace2 = buffers.workspace2.get(
-            workspace2_shape, device=device, dtype=workspace_dtype
-        )
+        workspace13 = buffers.workspace13.get(workspace13_shape, device=device, dtype=workspace_dtype)
+        workspace2 = buffers.workspace2.get(workspace2_shape, device=device, dtype=workspace_dtype)
 
         # Construct the entire output that can then be processed in chunks.
         # Reuse workspace13 for the output in the non-chunked case as long
@@ -794,9 +774,7 @@ class FusedMoEModularKernel(torch.nn.Module):
         if num_chunks == 1 and prod(workspace13_shape) >= prod(fused_out_shape):
             fused_out = _resize_cache(workspace13, fused_out_shape)
         else:
-            fused_out = buffers.fused_out.get(
-                fused_out_shape, device=device, dtype=out_dtype
-            )
+            fused_out = buffers.fused_out.get(fused_out_shape, device=device, dtype=out_dtype)
 
         return workspace13, workspace2, fused_out
 
@@ -832,14 +810,10 @@ class FusedMoEModularKernel(torch.nn.Module):
         # The existing expert_num_tokens is for the entire a1q
         # input. Chunking forces recomputation of the number
         # of tokens assigned to each expert.
-        c_expert_num_tokens = count_expert_num_tokens(
-            chunk_topk_ids, local_num_experts, expert_map
-        )
+        c_expert_num_tokens = count_expert_num_tokens(chunk_topk_ids, local_num_experts, expert_map)
 
         c_expert_num_tokens_cpu = None
-        need_expert_num_tokens_cpu = (
-            full_expert_tokens_meta.expert_num_tokens_cpu is not None
-        )
+        need_expert_num_tokens_cpu = full_expert_tokens_meta.expert_num_tokens_cpu is not None
         if need_expert_num_tokens_cpu:
             # This is blocking as some implementations need the count
             # on the CPU to determine appropriate input/out fused-moe
@@ -907,9 +881,7 @@ class FusedMoEModularKernel(torch.nn.Module):
             # TODO(lucas): refactor this in the alternative schedules followup
             # currently unpack if we have hook + receiver pair or just
             # receiver (see finalize_async docstring)
-            hook, receiver = (
-                prepare_ret if isinstance(prepare_ret, tuple) else (None, prepare_ret)
-            )
+            hook, receiver = prepare_ret if isinstance(prepare_ret, tuple) else (None, prepare_ret)
 
             if hook is not None:
                 if dbo_enabled():
@@ -931,9 +903,7 @@ class FusedMoEModularKernel(torch.nn.Module):
 
         # Maybe prepare gathered topk_ids and topk_weights from other EP ranks.
         topk_ids = topk_ids if _expert_topk_ids is None else _expert_topk_ids
-        topk_weights = (
-            topk_weights if _expert_topk_weights is None else _expert_topk_weights
-        )
+        topk_weights = topk_weights if _expert_topk_weights is None else _expert_topk_weights
 
         return a1q, a1q_scale, expert_tokens_meta, topk_ids, topk_weights
 
@@ -953,9 +923,7 @@ class FusedMoEModularKernel(torch.nn.Module):
         apply_router_weight_on_input: bool,
         expert_tokens_meta: ExpertTokensMetadata | None,
     ) -> torch.Tensor:
-        _, M_full, N, K, top_k = self.fused_experts.moe_problem_size(
-            a1q, w1, w2, topk_ids
-        )
+        _, M_full, N, K, top_k = self.fused_experts.moe_problem_size(a1q, w1, w2, topk_ids)
 
         num_chunks, CHUNK_SIZE = self._chunk_info(M_full)
 
@@ -1006,9 +974,7 @@ class FusedMoEModularKernel(torch.nn.Module):
                 expert_map,
             )
 
-            c_fused_out = self._slice_output_tensor(
-                fused_out, chunk_idx, num_chunks, CHUNK_SIZE, M_full
-            )
+            c_fused_out = self._slice_output_tensor(fused_out, chunk_idx, num_chunks, CHUNK_SIZE, M_full)
 
             self.fused_experts.apply(
                 output=c_fused_out,
@@ -1074,11 +1040,7 @@ class FusedMoEModularKernel(torch.nn.Module):
             # TODO(lucas): refactor this in the alternative schedules followup
             # currently unpack if we have hook + receiver pair or just
             # receiver (see finalize_async docstring)
-            hook, receiver = (
-                finalize_ret
-                if isinstance(finalize_ret, tuple)
-                else (None, finalize_ret)
-            )
+            hook, receiver = finalize_ret if isinstance(finalize_ret, tuple) else (None, finalize_ret)
 
             if hook is not None:
                 if dbo_enabled():

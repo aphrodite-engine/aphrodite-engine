@@ -4,14 +4,14 @@ import torch
 from torch.nn import Parameter
 
 from aphrodite import _custom_ops as ops
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
-from aphrodite.quantization.gptq_marlin_24 import (GPTQ_MARLIN_24_MAX_PARALLEL,
-                                                   GPTQ_MARLIN_24_MIN_THREAD_N)
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+)
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
+from aphrodite.quantization.gptq_marlin_24 import GPTQ_MARLIN_24_MAX_PARALLEL, GPTQ_MARLIN_24_MIN_THREAD_N
 from aphrodite.scalar_type import scalar_types
 
 __all__ = ["CompressedTensorsW4A16Sparse24"]
@@ -28,10 +28,7 @@ class CompressedTensorsW4A16Sparse24(CompressedTensorsScheme):
         self.tile_size = 16
 
         if num_bits not in W4A16SPARSE24_SUPPORTED_TYPES_MAP:
-            raise ValueError(
-                f"Unsupported num_bits = {num_bits}. "
-                f"Supported num_bits = {W4A16SPARSE24_SUPPORTED_BITS}"
-            )
+            raise ValueError(f"Unsupported num_bits = {num_bits}. Supported num_bits = {W4A16SPARSE24_SUPPORTED_BITS}")
 
         self.quant_type = W4A16SPARSE24_SUPPORTED_TYPES_MAP[num_bits]
 
@@ -80,11 +77,7 @@ class CompressedTensorsW4A16Sparse24(CompressedTensorsScheme):
             weight_loader=weight_loader,
         )
 
-        input_groups = (
-            1
-            if self.group_size is None
-            else input_size_per_partition // self.group_size
-        )
+        input_groups = 1 if self.group_size is None else input_size_per_partition // self.group_size
 
         weight_scale_args = {
             "data": torch.empty(
@@ -96,15 +89,11 @@ class CompressedTensorsW4A16Sparse24(CompressedTensorsScheme):
         }
 
         if self.group_size is not None:
-            scales = GroupQuantScaleParameter(
-                output_dim=1, input_dim=0, **weight_scale_args
-            )
+            scales = GroupQuantScaleParameter(output_dim=1, input_dim=0, **weight_scale_args)
         else:
             scales = ChannelQuantScaleParameter(output_dim=1, **weight_scale_args)
 
-        weight_shape = BaseAphroditeParameter(
-            data=torch.empty(2, dtype=torch.int64), weight_loader=weight_loader
-        )
+        weight_shape = BaseAphroditeParameter(data=torch.empty(2, dtype=torch.int64), weight_loader=weight_loader)
 
         meta = PackedAphroditeParameter(
             data=torch.empty(
@@ -125,18 +114,12 @@ class CompressedTensorsW4A16Sparse24(CompressedTensorsScheme):
         layer.register_parameter("scale_packed", scales)
         layer.register_parameter("meta", meta)
 
-        max_workspace_size = (
-            output_size_per_partition // GPTQ_MARLIN_24_MIN_THREAD_N
-        ) * GPTQ_MARLIN_24_MAX_PARALLEL
+        max_workspace_size = (output_size_per_partition // GPTQ_MARLIN_24_MIN_THREAD_N) * GPTQ_MARLIN_24_MAX_PARALLEL
 
-        workspace = Parameter(
-            torch.zeros(max_workspace_size, dtype=torch.int), requires_grad=False
-        )
+        workspace = Parameter(torch.zeros(max_workspace_size, dtype=torch.int), requires_grad=False)
         layer.workspace = workspace
 
-    def apply_weights(
-        self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None
-    ) -> torch.Tensor:
+    def apply_weights(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None) -> torch.Tensor:
         qweight = layer.weight_packed
         meta = layer.meta
         scales = layer.scale_packed

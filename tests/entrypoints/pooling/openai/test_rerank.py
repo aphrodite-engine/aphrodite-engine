@@ -100,22 +100,16 @@ def test_invocations(server: RemoteOpenAIServer):
     rerank_response = requests.post(server.url_for("rerank"), json=request_args)
     rerank_response.raise_for_status()
 
-    invocation_response = requests.post(
-        server.url_for("invocations"), json=request_args
-    )
+    invocation_response = requests.post(server.url_for("invocations"), json=request_args)
     invocation_response.raise_for_status()
 
     rerank_output = rerank_response.json()
     invocation_output = invocation_response.json()
 
     assert rerank_output.keys() == invocation_output.keys()
-    for rerank_result, invocations_result in zip(
-        rerank_output["results"], invocation_output["results"]
-    ):
+    for rerank_result, invocations_result in zip(rerank_output["results"], invocation_output["results"]):
         assert rerank_result.keys() == invocations_result.keys()
-        assert rerank_result["relevance_score"] == pytest.approx(
-            invocations_result["relevance_score"], rel=0.05
-        )
+        assert rerank_result["relevance_score"] == pytest.approx(invocations_result["relevance_score"], rel=0.05)
         # TODO: reset this tolerance to 0.01 once we find
         # an alternative to flash_attn with bfloat16
 
@@ -147,12 +141,8 @@ async def test_use_activation(server: RemoteOpenAIServer, model_name: str):
     w_activation = await get_outputs(use_activation=True)
     wo_activation = await get_outputs(use_activation=False)
 
-    assert torch.allclose(default, w_activation, atol=1e-2), (
-        "Default should use activation."
-    )
-    assert not torch.allclose(w_activation, wo_activation, atol=1e-2), (
-        "wo_activation should not use activation."
-    )
+    assert torch.allclose(default, w_activation, atol=1e-2), "Default should use activation."
+    assert not torch.allclose(w_activation, wo_activation, atol=1e-2), "wo_activation should not use activation."
     assert torch.allclose(F.sigmoid(wo_activation), w_activation, atol=1e-2), (
         "w_activation should be close to activation(wo_activation)."
     )
@@ -196,9 +186,7 @@ async def test_pooling_token_classify(server: RemoteOpenAIServer, model_name: st
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 @pytest.mark.parametrize("task", ["embed", "token_embed", "plugin"])
-async def test_pooling_not_supported(
-    server: RemoteOpenAIServer, model_name: str, task: str
-):
+async def test_pooling_not_supported(server: RemoteOpenAIServer, model_name: str, task: str):
     response = requests.post(
         server.url_for("pooling"),
         json={
@@ -209,6 +197,4 @@ async def test_pooling_not_supported(
         },
     )
     assert response.json()["error"]["type"] == "BadRequestError"
-    assert response.json()["error"]["message"].startswith(
-        f"Task {task} is not supported"
-    )
+    assert response.json()["error"]["message"].startswith(f"Task {task} is not supported")

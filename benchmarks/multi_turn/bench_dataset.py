@@ -43,9 +43,7 @@ class UniformDistribution(Distribution):
 
     def sample(self, size: int = 1) -> np.ndarray:
         if self.is_integer:
-            return np.random.randint(
-                int(self.min_val), int(self.max_val + 1), size=size
-            )
+            return np.random.randint(int(self.min_val), int(self.max_val + 1), size=size)
         else:
             return np.random.uniform(self.min_val, self.max_val, size=size)
 
@@ -113,9 +111,7 @@ class LognormalDistribution(Distribution):
                 raise ValueError("Lognormal average must be positive")
 
             if mean or sigma:
-                raise ValueError(
-                    "When using lognormal average, you can't provide mean/sigma"
-                )
+                raise ValueError("When using lognormal average, you can't provide mean/sigma")
 
             if self.median_ratio is None:
                 # Default value that provides relatively wide range of values
@@ -127,14 +123,10 @@ class LognormalDistribution(Distribution):
             )
         else:
             if mean is None or sigma is None:
-                raise ValueError(
-                    "Must provide both mean and sigma if average is not used"
-                )
+                raise ValueError("Must provide both mean and sigma if average is not used")
 
             if mean <= 0 or sigma < 0:
-                raise ValueError(
-                    "Lognormal mean must be positive and sigma must be non-negative"
-                )
+                raise ValueError("Lognormal mean must be positive and sigma must be non-negative")
 
         # Mean and standard deviation of the underlying normal distribution
         # Based on numpy.random.lognormal
@@ -142,9 +134,7 @@ class LognormalDistribution(Distribution):
         self.sigma = sigma
 
     @staticmethod
-    def _generate_lognormal_by_median(
-        target_average: int, median_ratio: float
-    ) -> tuple[float, float]:
+    def _generate_lognormal_by_median(target_average: int, median_ratio: float) -> tuple[float, float]:
         """
         Compute (mu, sigma) for a lognormal distribution given:
         - a target average (mean of the distribution)
@@ -191,10 +181,7 @@ class LognormalDistribution(Distribution):
 
     def __repr__(self) -> str:
         if self.average:
-            return (
-                f"LognormalDistribution[{self.average}, "
-                f"{self.median_ratio}, {self.max_val}]"
-            )
+            return f"LognormalDistribution[{self.average}, {self.median_ratio}, {self.max_val}]"
         return f"LognormalDistribution[{self.mean}, {self.sigma}, {self.max_val}]"
 
 
@@ -209,18 +196,12 @@ class GenConvArgs(NamedTuple):
     print_stats: bool
 
 
-def verify_field_exists(
-    conf: dict, field_name: str, section: str, subsection: str
-) -> None:
+def verify_field_exists(conf: dict, field_name: str, section: str, subsection: str) -> None:
     if field_name not in conf:
-        raise ValueError(
-            f"Missing field '{field_name}' in {section=} and {subsection=}"
-        )
+        raise ValueError(f"Missing field '{field_name}' in {section=} and {subsection=}")
 
 
-def get_random_distribution(
-    conf: dict, section: str, subsection: str, optional: bool = False
-) -> Distribution:
+def get_random_distribution(conf: dict, section: str, subsection: str, optional: bool = False) -> Distribution:
     # section can be "prompt_input" or "prompt_output" (both required)
     conf = conf[section]
 
@@ -236,9 +217,7 @@ def get_random_distribution(
 
     distribution = conf.get("distribution")
     if distribution is None:
-        raise ValueError(
-            f"Missing field 'distribution' in {section=} and {subsection=}"
-        )
+        raise ValueError(f"Missing field 'distribution' in {section=} and {subsection=}")
 
     if distribution == "constant":
         verify_field_exists(conf, "value", section, subsection)
@@ -260,16 +239,12 @@ def get_random_distribution(
         if "average" in conf:
             # Infer lognormal mean/sigma (numpy) from input average
             median_ratio = conf.get("median_ratio", None)
-            return LognormalDistribution(
-                average=conf["average"], median_ratio=median_ratio, max_val=max_val
-            )
+            return LognormalDistribution(average=conf["average"], median_ratio=median_ratio, max_val=max_val)
 
         # Use mean/sigma directly (for full control over the distribution)
         verify_field_exists(conf, "mean", section, subsection)
         verify_field_exists(conf, "sigma", section, subsection)
-        return LognormalDistribution(
-            mean=conf["mean"], sigma=conf["sigma"], max_val=max_val
-        )
+        return LognormalDistribution(mean=conf["mean"], sigma=conf["sigma"], max_val=max_val)
 
     elif distribution == "uniform":
         verify_field_exists(conf, "min", section, subsection)
@@ -307,9 +282,7 @@ def parse_input_json_file(conf: dict) -> GenConvArgs:
     text_files = conf["text_files"]
 
     assert isinstance(text_files, list), "Field 'text_files' should be a list"
-    assert len(text_files) > 0, (
-        "Field 'text_files' should be a list with at least one file"
-    )
+    assert len(text_files) > 0, "Field 'text_files' should be a list with at least one file"
 
     # Parse the parameters for the prompt input/output workload
     input_num_turns = get_random_distribution(conf, "prompt_input", "num_turns")
@@ -317,15 +290,11 @@ def parse_input_json_file(conf: dict) -> GenConvArgs:
     input_common_prefix_num_tokens = get_random_distribution(
         conf, "prompt_input", "common_prefix_num_tokens", optional=True
     )
-    input_prefix_num_tokens = get_random_distribution(
-        conf, "prompt_input", "prefix_num_tokens"
-    )
+    input_prefix_num_tokens = get_random_distribution(conf, "prompt_input", "prefix_num_tokens")
     output_num_tokens = get_random_distribution(conf, "prompt_output", "num_tokens")
 
     print_stats: bool = conf.get("print_stats", False)
-    assert isinstance(print_stats, bool), (
-        "Field 'print_stats' should be either 'true' or 'false'"
-    )
+    assert isinstance(print_stats, bool), "Field 'print_stats' should be either 'true' or 'false'"
 
     args = GenConvArgs(
         num_conversations=conf["num_conversations"],
@@ -394,15 +363,11 @@ def print_conv_stats(conversations: ConversationsMap, tokenizer: AutoTokenizer) 
     print(TEXT_SEPARATOR)
 
 
-def generate_conversations(
-    args: GenConvArgs, tokenizer: AutoTokenizer
-) -> ConversationsMap:
+def generate_conversations(args: GenConvArgs, tokenizer: AutoTokenizer) -> ConversationsMap:
     # Text for all user prompts
     # (text from the input text files will be appended to this line)
     base_prompt_text = "Please rewrite the following text and add more content: "
-    base_prompt_token_count = len(
-        tokenizer.encode(base_prompt_text, add_special_tokens=False)
-    )
+    base_prompt_token_count = len(tokenizer.encode(base_prompt_text, add_special_tokens=False))
 
     logger.info(f"{Color.PURPLE}Generating conversations...{Color.RESET}")
     logger.info(args)
@@ -429,9 +394,7 @@ def generate_conversations(
     turn_count = turn_count + (turn_count % 2)
 
     # Generate number of prefix tokens for every conversation
-    conv_prefix_tokens: np.ndarray = args.input_prefix_num_tokens.sample(
-        args.num_conversations
-    )
+    conv_prefix_tokens: np.ndarray = args.input_prefix_num_tokens.sample(args.num_conversations)
 
     # Used to reduce shared text between conversations
     # (jump/skip over text sections between conversations)
@@ -442,9 +405,7 @@ def generate_conversations(
     common_prefix_tokens: int = args.input_common_prefix_num_tokens.sample(1)[0]
     if common_prefix_tokens > 0:
         # Using "." at the end to separate sentences
-        common_prefix_text = (
-            tokenizer.decode(list_of_tokens[: common_prefix_tokens - 2]) + "."
-        )
+        common_prefix_text = tokenizer.decode(list_of_tokens[: common_prefix_tokens - 2]) + "."
         base_offset += common_prefix_tokens
 
     for conv_id in range(args.num_conversations):
@@ -490,9 +451,7 @@ def generate_conversations(
                             f"prefix text ({start_offset=}, {end_offset=})"
                         )
 
-                        content += f"{conv_id}, " + tokenizer.decode(
-                            list_of_tokens[start_offset:end_offset]
-                        )
+                        content += f"{conv_id}, " + tokenizer.decode(list_of_tokens[start_offset:end_offset])
                         base_offset += prefix_num_tokens
 
                 # Add the actual user prompt/question after the prefix text
@@ -518,8 +477,7 @@ def generate_conversations(
                 # (inputs to the LLM server).
                 num_tokens = output_token_count[turn_id]
                 assert len(list_of_tokens) > num_tokens, (
-                    f"Not enough input text to generate {num_tokens} "
-                    "tokens for assistant content"
+                    f"Not enough input text to generate {num_tokens} tokens for assistant content"
                 )
                 content = tokenizer.decode(list_of_tokens[:num_tokens])
 
@@ -546,14 +504,10 @@ def conversations_list_to_dict(input_list: ShareGptConversations) -> Conversatio
         conv_id: str = item["id"]
         assert isinstance(conv_id, str)
 
-        assert conv_id not in conversations, (
-            f"Conversation ID {conv_id} found more than once in the input"
-        )
+        assert conv_id not in conversations, f"Conversation ID {conv_id} found more than once in the input"
 
         messages: MessagesList = item["messages"]
-        assert isinstance(messages, list), (
-            f"Conversation messages should be a list (ID: {conv_id})"
-        )
+        assert isinstance(messages, list), f"Conversation messages should be a list (ID: {conv_id})"
         assert len(messages) > 0, f"Conversation with no messages (ID: {conv_id})"
 
         conversations[conv_id] = messages

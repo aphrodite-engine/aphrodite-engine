@@ -7,8 +7,11 @@ import pytest
 
 from aphrodite.endpoints.tool_server import ToolServer
 from aphrodite.reasoning.gptoss_reasoning_parser import (
-    GptOssReasoningParser, from_builtin_tool_to_tag, no_func_reaonsing_tag,
-    tag_with_builtin_funcs)
+    GptOssReasoningParser,
+    from_builtin_tool_to_tag,
+    no_func_reaonsing_tag,
+    tag_with_builtin_funcs,
+)
 
 
 class TestGptOssReasoningParser:
@@ -44,9 +47,7 @@ class TestGptOssReasoningParser:
     def mock_tool_server_with_all_tools(self):
         """Create a mock ToolServer with all builtin tools."""
         tool_server = Mock(spec=ToolServer)
-        tool_server.has_tool = Mock(
-            side_effect=lambda tool: tool in ["browser", "python", "container"]
-        )
+        tool_server.has_tool = Mock(side_effect=lambda tool: tool in ["browser", "python", "container"])
         return tool_server
 
     def test_prepare_structured_tag_no_tool_server(self, reasoning_parser):
@@ -64,13 +65,9 @@ class TestGptOssReasoningParser:
         assert parsed["format"]["tags"][0]["begin"] == "<|channel|>analysis<|message|>"
         assert parsed["format"]["triggers"] == ["<|channel|>analysis"]
 
-    def test_prepare_structured_tag_with_all_tools(
-        self, reasoning_parser, mock_tool_server_with_all_tools
-    ):
+    def test_prepare_structured_tag_with_all_tools(self, reasoning_parser, mock_tool_server_with_all_tools):
         """Test prepare_structured_tag with all builtin tools."""
-        result = reasoning_parser.prepare_structured_tag(
-            None, mock_tool_server_with_all_tools
-        )
+        result = reasoning_parser.prepare_structured_tag(None, mock_tool_server_with_all_tools)
         parsed = json.loads(result)
 
         # Should have analysis tag + tags for all 3 tools (2 tags each)
@@ -129,9 +126,7 @@ class TestGptOssReasoningParser:
         assert analysis_tag["content"]["type"] == "any_text"
         assert analysis_tag["end"] == "<|end|>"
 
-    def test_json_serialization_valid(
-        self, reasoning_parser, mock_tool_server_with_all_tools
-    ):
+    def test_json_serialization_valid(self, reasoning_parser, mock_tool_server_with_all_tools):
         """Test that all generated tags produce valid JSON."""
         # Test with no tool server
         result1 = reasoning_parser.prepare_structured_tag(None, None)
@@ -144,9 +139,7 @@ class TestGptOssReasoningParser:
         json.loads(result2)  # Should not raise
 
         # Test with tools
-        result3 = reasoning_parser.prepare_structured_tag(
-            None, mock_tool_server_with_all_tools
-        )
+        result3 = reasoning_parser.prepare_structured_tag(None, mock_tool_server_with_all_tools)
         json.loads(result3)  # Should not raise
 
     @pytest.mark.parametrize("tool_name", ["browser", "python", "container"])

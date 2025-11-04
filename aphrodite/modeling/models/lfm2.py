@@ -10,29 +10,32 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.mamba.short_conv import ShortConv
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA, SupportsPP,
-                         SupportsQuant)
-from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .interfaces import HasInnerState, IsHybrid, SupportsLoRA, SupportsPP, SupportsQuant
+from .utils import (
+    AutoWeightsLoader,
+    PPMissingLayer,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class Lfm2MLP(nn.Module):
@@ -190,12 +193,8 @@ class Lfm2AttentionDecoderLayer(nn.Module):
 
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        if rope_scaling is not None and getattr(
-            config, "original_max_position_embeddings", None
-        ):
-            rope_scaling["original_max_position_embeddings"] = (
-                config.original_max_position_embeddings
-            )
+        if rope_scaling is not None and getattr(config, "original_max_position_embeddings", None):
+            rope_scaling["original_max_position_embeddings"] = config.original_max_position_embeddings
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
 
         self.self_attn = Lfm2Attention(
@@ -307,11 +306,7 @@ class Lfm2Model(nn.Module):
         lora_config = aphrodite_config.lora_config
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -322,9 +317,7 @@ class Lfm2Model(nn.Module):
         def get_layer(prefix: str):
             layer_idx = extract_layer_index(prefix)
             is_attn = self.config.layer_types[layer_idx] == "full_attention"
-            layer_class = (
-                Lfm2AttentionDecoderLayer if is_attn else Lfm2ShortConvDecoderLayer
-            )
+            layer_class = Lfm2AttentionDecoderLayer if is_attn else Lfm2ShortConvDecoderLayer
             return layer_class(
                 config,
                 layer_idx,
@@ -374,9 +367,7 @@ class Lfm2Model(nn.Module):
                 residual=residual,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.embedding_norm(hidden_states, residual)
         return hidden_states
 
@@ -412,9 +403,7 @@ class Lfm2Model(nn.Module):
         return loaded_params
 
 
-class Lfm2ForCausalLM(
-    nn.Module, HasInnerState, SupportsLoRA, SupportsPP, IsHybrid, SupportsQuant
-):
+class Lfm2ForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, IsHybrid, SupportsQuant):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -472,15 +461,11 @@ class Lfm2ForCausalLM(
         quant_config = aphrodite_config.quant_config
         cache_config = aphrodite_config.cache_config
         lora_config = aphrodite_config.lora_config
-        assert not cache_config.enable_prefix_caching, (
-            "Lfm2 currently does not support prefix caching"
-        )
+        assert not cache_config.enable_prefix_caching, "Lfm2 currently does not support prefix caching"
 
         super().__init__()
         self.config = config
-        self.model = Lfm2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Lfm2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
             self.unpadded_vocab_size = self.config.vocab_size
@@ -505,13 +490,9 @@ class Lfm2ForCausalLM(
         else:
             self.lm_head = PPMissingLayer()
 
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -524,9 +505,7 @@ class Lfm2ForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:

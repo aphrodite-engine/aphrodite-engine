@@ -41,11 +41,7 @@ def _correct_attn_cp_out_kernel(
     num_n_offsets = tl.arange(0, N_ROUNDED)
 
     # shape = [N]
-    lse_offsets = (
-        num_n_offsets * lses_stride_N
-        + batch_idx * lses_stride_B
-        + head_idx * lses_stride_H
-    )
+    lse_offsets = num_n_offsets * lses_stride_N + batch_idx * lses_stride_B + head_idx * lses_stride_H
 
     # calc final lse
     lse = tl.load(lses_ptr + lse_offsets)
@@ -61,16 +57,10 @@ def _correct_attn_cp_out_kernel(
     tl.store(vlse_ptr + lse_offsets, lse)
 
     # shape = [D]
-    output_offsets = (
-        batch_idx * outputs_stride_B
-        + head_idx * outputs_stride_H
-        + d_offsets * outputs_stride_D
-    )
+    output_offsets = batch_idx * outputs_stride_B + head_idx * outputs_stride_H + d_offsets * outputs_stride_D
 
     # correct output
-    lse_offset = (
-        lse_idx * lses_stride_N + batch_idx * lses_stride_B + head_idx * lses_stride_H
-    )
+    lse_offset = lse_idx * lses_stride_N + batch_idx * lses_stride_B + head_idx * lses_stride_H
     lse_tmp = tl.load(lses_ptr + lse_offset)
     lse_finally = lse_tmp - lse
     lse_finally = tl.where(
@@ -124,10 +114,7 @@ def correct_attn_out(
         lses = lses.squeeze(-1)
     if lses.ndim == 4 and lses.shape[1] == 1:
         lses = lses.squeeze(1)
-    assert lses.ndim == 3, (
-        f"expected lses [N,B,H] (optionally with a 1-sized extra dim), "
-        f"got {tuple(lses.shape)}"
-    )
+    assert lses.ndim == 3, f"expected lses [N,B,H] (optionally with a 1-sized extra dim), got {tuple(lses.shape)}"
 
     B, H, D = out.shape
     N = lses.shape[0]
@@ -140,9 +127,7 @@ def correct_attn_out(
 
     # Allocate LSE with the same B/H strides as `lses` so writes land correctly
     # even when `lses` is a non-contiguous view (e.g., 4-D to 3-D squeeze).
-    lse = torch.empty_strided(
-        (B, H), (l_sB, l_sH), device=lses.device, dtype=lses.dtype
-    )
+    lse = torch.empty_strided((B, H), (l_sB, l_sH), device=lses.device, dtype=lses.dtype)
 
     # Kernel launch config
     grid = (B, H, 1)

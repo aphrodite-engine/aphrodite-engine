@@ -4,10 +4,17 @@ from fastapi import Request
 
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (
-    ErrorResponse, RequestResponseMetadata, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResponseStreamChoice,
-    TranscriptionStreamResponse, TranslationRequest, TranslationResponse,
-    TranslationResponseStreamChoice, TranslationStreamResponse)
+    ErrorResponse,
+    RequestResponseMetadata,
+    TranscriptionRequest,
+    TranscriptionResponse,
+    TranscriptionResponseStreamChoice,
+    TranscriptionStreamResponse,
+    TranslationRequest,
+    TranslationResponse,
+    TranslationResponseStreamChoice,
+    TranslationStreamResponse,
+)
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.openai.speech_to_text import OpenAISpeechToText
 from aphrodite.engine.protocol import EngineClient

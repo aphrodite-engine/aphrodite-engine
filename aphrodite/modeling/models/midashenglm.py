@@ -38,36 +38,31 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs.midashenglm import DashengConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
-from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
-                    maybe_prefix)
+from .utils import AutoWeightsLoader, init_aphrodite_registered_model, maybe_prefix
 
 _Tuple2: TypeAlias = int | tuple[int, int] | Sequence[int]
 
 
 def _resolve_tuple2(x: _Tuple2) -> tuple[int, int]:
     if isinstance(x, collections.abc.Sequence):
-        assert len(x) == 2, (
-            f"Expected a sequence of length 2, got {x} with length {len(x)}"
-        )
+        assert len(x) == 2, f"Expected a sequence of length 2, got {x} with length {len(x)}"
         return cast(tuple[int, int], tuple(x))
     return (x, x)
 
@@ -84,11 +79,7 @@ def calculate_mel_frames_dasheng(
     if center:
         audio_length_samples = audio_length_samples + n_fft
 
-    return (
-        int(1 + ((audio_length_samples - n_fft) / hop_size))
-        // dasheng_subsampling
-        // model_subsampling
-    )
+    return int(1 + ((audio_length_samples - n_fft) / hop_size)) // dasheng_subsampling // model_subsampling
 
 
 class AudioPatchEmbed(nn.Module):
@@ -124,9 +115,7 @@ class AudioPatchEmbed(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.proj(x)
         if self.flatten:
-            x = torch.permute(
-                torch.flatten(x, 2, 3), (0, 2, 1)
-            )  # rearrange(x, "b c f t -> b (f t) c")
+            x = torch.permute(torch.flatten(x, 2, 3), (0, 2, 1))  # rearrange(x, "b c f t -> b (f t) c")
         x = self.norm(x)
         return x
 
@@ -260,9 +249,7 @@ class DashengBlock(nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.attn",
         )
-        self.ls1 = (
-            LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        )
+        self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
 
         self.norm2 = nn.LayerNorm(dim, eps=1e-6)
         self.mlp = DashengMlp(
@@ -271,9 +258,7 @@ class DashengBlock(nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.mlp",
         )
-        self.ls2 = (
-            LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        )
+        self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
 
     # Kwargs usually has a mask parameter that is passed to Attention
     def forward(
@@ -364,12 +349,8 @@ class DashengAudioTransformer(nn.Module):
             patch_stride=config.patch_stride,
         )
 
-        self.time_pos_embed = nn.Parameter(
-            torch.empty(1, config.embed_dim, 1, self.patch_embed.grid_size[1])
-        )
-        self.freq_pos_embed = nn.Parameter(
-            torch.empty(1, config.embed_dim, self.patch_embed.grid_size[0], 1)
-        )
+        self.time_pos_embed = nn.Parameter(torch.empty(1, config.embed_dim, 1, self.patch_embed.grid_size[1]))
+        self.freq_pos_embed = nn.Parameter(torch.empty(1, config.embed_dim, self.patch_embed.grid_size[0], 1))
         self.blocks = nn.ModuleList(
             DashengBlock(
                 dim=config.embed_dim,
@@ -391,12 +372,8 @@ class DashengAudioTransformer(nn.Module):
     ) -> torch.Tensor:
         t = x.shape[-1]
         x = x + self.time_pos_embed[:, :, :, :t]
-        x = (
-            x + self.freq_pos_embed[:, :, :, :]
-        )  # Just to support __getitem__ in posembed
-        x = torch.permute(
-            torch.flatten(x, 2, 3), (0, 2, 1)
-        )  # rearrange(x, "b c f t -> b (f t) c")
+        x = x + self.freq_pos_embed[:, :, :, :]  # Just to support __getitem__ in posembed
+        x = torch.permute(torch.flatten(x, 2, 3), (0, 2, 1))  # rearrange(x, "b c f t -> b (f t) c")
         for block in self.blocks:
             x = block(x, mask)
         x = self.norm(x)
@@ -428,9 +405,7 @@ class DashengAudioTransformer(nn.Module):
         input_splits = x.split(target_length_in_patches, dim=-1)
 
         if x_length is not None:
-            assert len(x_length) == len(x), (
-                "batchsizes of input x and x_length need to be same"
-            )
+            assert len(x_length) == len(x), "batchsizes of input x and x_length need to be same"
             assert x_length.ndim == 1, "Lengths are of size (B,)"
             scaled_lengths = (x_length / (self.hop_length * 4)).long()
             mask = self._to_mask(max_length=t, lengths=scaled_lengths)
@@ -489,14 +464,10 @@ class AudioProjectorSubsample(nn.Module):
                 mask = mask[:, :-num_frames_to_discard]
         if mask is None:
             mask = torch.ones(x.shape[:-1], dtype=torch.long, device=x.device)
-        x = x.reshape(
-            batch_size, -1, self.k * dim
-        )  # rearrange(x, "b (s k) d -> b s (k d)", k=self.k)
+        x = x.reshape(batch_size, -1, self.k * dim)  # rearrange(x, "b (s k) d -> b s (k d)", k=self.k)
         for layer in self.net:
             x = layer(x)
-        mask = mask.reshape(
-            batch_size, -1, self.k
-        )  # rearrange(mask, "b (s k) -> b s k", k=self.k)
+        mask = mask.reshape(batch_size, -1, self.k)  # rearrange(mask, "b (s k) -> b s k", k=self.k)
         mask = mask.any(dim=-1).long()
         return x, mask
 
@@ -564,9 +535,7 @@ class MiDashengLMDummyInputsBuilder(BaseDummyInputsBuilder[MiDashengLMProcessing
         }
 
 
-class MiDashengLMMultiModalProcessor(
-    BaseMultiModalProcessor[MiDashengLMProcessingInfo]
-):
+class MiDashengLMMultiModalProcessor(BaseMultiModalProcessor[MiDashengLMProcessingInfo]):
     def _get_data_parser(self) -> MultiModalDataParser:
         feature_extractor = self.info.get_feature_extractor()
         return MultiModalDataParser(target_sr=feature_extractor.sampling_rate)
@@ -641,11 +610,7 @@ class MiDashengLMMultiModalProcessor(
         if audio_length is None:
             audio_output_lengths = []
         else:
-            audio_length_np = (
-                audio_length.cpu().numpy()
-                if isinstance(audio_length, torch.Tensor)
-                else audio_length
-            )
+            audio_length_np = audio_length.cpu().numpy() if isinstance(audio_length, torch.Tensor) else audio_length
             audio_output_lengths = [
                 max(1, calculate_mel_frames_dasheng(int(length)))  # at least one frame
                 for length in audio_length_np
@@ -725,13 +690,9 @@ class MiDashengLMModel(nn.Module, SupportsMultiModal, SupportsPP):
         )
 
         self.quant_config = quant_config
-        self.make_empty_intermediate_tensors = (
-            self.decoder.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.decoder.make_empty_intermediate_tensors
 
-    def _parse_and_validate_audio_input(
-        self, **kwargs: object
-    ) -> MiDashengLMAudioInputs | None:
+    def _parse_and_validate_audio_input(self, **kwargs: object) -> MiDashengLMAudioInputs | None:
         input_values = kwargs.pop("input_values", None)
         audio_length = kwargs.pop("audio_length", None)
 
@@ -771,9 +732,7 @@ class MiDashengLMModel(nn.Module, SupportsMultiModal, SupportsPP):
             device=audio_embeddings.device,
         )
 
-        audio_feature_mask = torch.arange(
-            max_audio_tokens, device=audio_embeddings.device
-        ).unsqueeze(0).expand(
+        audio_feature_mask = torch.arange(max_audio_tokens, device=audio_embeddings.device).unsqueeze(0).expand(
             batch_size, max_audio_tokens
         ) < audio_output_lengths.unsqueeze(1)
 

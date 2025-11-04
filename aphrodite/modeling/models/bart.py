@@ -16,9 +16,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch BART model."""
+
 import math
 from collections.abc import Iterable
-from typing import Optional
 
 import torch
 from torch import nn
@@ -30,20 +30,20 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, CacheConfig, LoRAConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVCrossParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    QKVCrossParallelLinear,
+    QKVParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization.base_config import QuantizationConfig
 
 from .interfaces import SupportsQuant, SupportsV0Only
-from .utils import (AutoWeightsLoader, WeightsMapper, cast_overflow_tensors,
-                    maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, cast_overflow_tensors, maybe_prefix
 
 logger = logging.get_logger(__name__)
 
@@ -80,14 +80,11 @@ class BartLearnedPositionalEmbedding(VocabParallelEmbedding):
 
 class BartScaledWordEmbedding(VocabParallelEmbedding):
     """
-    This module overrides VocabParallelEmbedding's 
+    This module overrides VocabParallelEmbedding's
     forward by multiplying with embeddings scale.
     """
 
-    def __init__(self,
-                 num_embeddings: int,
-                 embedding_dim: int,
-                 embed_scale: float = 1.0):
+    def __init__(self, num_embeddings: int, embedding_dim: int, embed_scale: float = 1.0):
         super().__init__(num_embeddings, embedding_dim)
         self.embed_scale = embed_scale
 
@@ -103,10 +100,7 @@ class BartParallelLMHead(ParallelLMHead):
     BartScaledWordEmbedding
     """
 
-    def __init__(self,
-                 num_embeddings: int,
-                 embedding_dim: int,
-                 embed_scale: float = 1.0):
+    def __init__(self, num_embeddings: int, embedding_dim: int, embed_scale: float = 1.0):
         super().__init__(num_embeddings, embedding_dim)
         self.embed_scale = embed_scale
 
@@ -115,15 +109,14 @@ class BartParallelLMHead(ParallelLMHead):
 
 
 class BartEncoderAttention(nn.Module):
-
     def __init__(
         self,
         embed_dim: int,
         num_heads: int,
         bias: bool = True,
-        config: Optional[BartConfig] = None,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        config: BartConfig | None = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -135,9 +128,11 @@ class BartEncoderAttention(nn.Module):
         self.config = config
 
         if (self.head_dim * num_heads) != self.embed_dim:
-            raise ValueError(f"embed_dim must be divisible by num_heads "
-                             f"(got `embed_dim`: {self.embed_dim}"
-                             f" and `num_heads`: {num_heads}).")
+            raise ValueError(
+                f"embed_dim must be divisible by num_heads "
+                f"(got `embed_dim`: {self.embed_dim}"
+                f" and `num_heads`: {num_heads})."
+            )
         self.scaling = self.head_dim**-0.5
 
         self.qkv_proj = QKVParallelLinear(
@@ -172,14 +167,16 @@ class BartEncoderAttention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
 
-        self.attn = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config,
-                              prefix=f"{prefix}.attn",
-                              attn_type=AttentionType.ENCODER)
+        self.attn = Attention(
+            self.num_heads,
+            self.head_dim,
+            self.scaling,
+            num_kv_heads=self.num_kv_heads,
+            cache_config=cache_config,
+            quant_config=quant_config,
+            prefix=f"{prefix}.attn",
+            attn_type=AttentionType.ENCODER,
+        )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Input shape: Batch x Time x Channel"""
@@ -194,15 +191,14 @@ class BartEncoderAttention(nn.Module):
 
 
 class BartDecoderSelfAttention(nn.Module):
-
     def __init__(
         self,
         embed_dim: int,
         num_heads: int,
         bias: bool = True,
-        config: Optional[BartConfig] = None,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        config: BartConfig | None = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -214,9 +210,11 @@ class BartDecoderSelfAttention(nn.Module):
         self.config = config
 
         if (self.head_dim * num_heads) != self.embed_dim:
-            raise ValueError(f"embed_dim must be divisible by num_heads "
-                             f"(got `embed_dim`: {self.embed_dim}"
-                             f" and `num_heads`: {num_heads}).")
+            raise ValueError(
+                f"embed_dim must be divisible by num_heads "
+                f"(got `embed_dim`: {self.embed_dim}"
+                f" and `num_heads`: {num_heads})."
+            )
         self.scaling = self.head_dim**-0.5
 
         self.qkv_proj = QKVParallelLinear(
@@ -251,14 +249,16 @@ class BartDecoderSelfAttention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
 
-        self.attn = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config,
-                              prefix=f"{prefix}.attn",
-                              attn_type=AttentionType.DECODER)
+        self.attn = Attention(
+            self.num_heads,
+            self.head_dim,
+            self.scaling,
+            num_kv_heads=self.num_kv_heads,
+            cache_config=cache_config,
+            quant_config=quant_config,
+            prefix=f"{prefix}.attn",
+            attn_type=AttentionType.DECODER,
+        )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """Input shape: Batch x Time x Channel"""
@@ -273,15 +273,14 @@ class BartDecoderSelfAttention(nn.Module):
 
 
 class BartCrossAttention(nn.Module):
-
     def __init__(
         self,
         embed_dim: int,
         num_heads: int,
         bias: bool = True,
-        config: Optional[BartConfig] = None,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        config: BartConfig | None = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -293,19 +292,22 @@ class BartCrossAttention(nn.Module):
         self.config = config
 
         if (self.head_dim * num_heads) != self.embed_dim:
-            raise ValueError(f"embed_dim must be divisible by num_heads "
-                             f"(got `embed_dim`: {self.embed_dim}"
-                             f" and `num_heads`: {num_heads}).")
+            raise ValueError(
+                f"embed_dim must be divisible by num_heads "
+                f"(got `embed_dim`: {self.embed_dim}"
+                f" and `num_heads`: {num_heads})."
+            )
         self.scaling = self.head_dim**-0.5
 
         # TP sharding sizes is accounted for within "*Parallel" layers.
-        self.qkv_proj = QKVCrossParallelLinear(self.d_model,
-                                               self.d_model //
-                                               self.total_num_heads,
-                                               self.total_num_heads,
-                                               self.total_num_kv_heads,
-                                               bias,
-                                               quant_config=quant_config)
+        self.qkv_proj = QKVCrossParallelLinear(
+            self.d_model,
+            self.d_model // self.total_num_heads,
+            self.total_num_heads,
+            self.total_num_kv_heads,
+            bias,
+            quant_config=quant_config,
+        )
 
         self.out_proj = RowParallelLinear(
             embed_dim,
@@ -327,19 +329,21 @@ class BartCrossAttention(nn.Module):
             # the KV heads across multiple tensor parallel GPUs.
             assert tp_world_size % self.total_num_kv_heads == 0
         self.num_kv_heads = self.num_heads  # No GQA in bart
-        self.attn = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config,
-                              prefix=f"{prefix}.attn",
-                              attn_type=AttentionType.ENCODER_DECODER)
+        self.attn = Attention(
+            self.num_heads,
+            self.head_dim,
+            self.scaling,
+            num_kv_heads=self.num_kv_heads,
+            cache_config=cache_config,
+            quant_config=quant_config,
+            prefix=f"{prefix}.attn",
+            attn_type=AttentionType.ENCODER_DECODER,
+        )
 
     def forward(
         self,
         decoder_hidden_states: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Input shape: Batch x Time x Channel"""
 
@@ -352,12 +356,11 @@ class BartCrossAttention(nn.Module):
 
 
 class BartEncoderLayer(nn.Module):
-
     def __init__(
         self,
         config: BartConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -417,20 +420,19 @@ class BartEncoderLayer(nn.Module):
         hidden_states = self.final_layer_norm(hidden_states)
 
         if hidden_states.dtype == torch.float16 and (
-                torch.isinf(hidden_states).any()
-                or torch.isnan(hidden_states).any()):
+            torch.isinf(hidden_states).any() or torch.isnan(hidden_states).any()
+        ):
             hidden_states = cast_overflow_tensors(hidden_states)
 
         return hidden_states
 
 
 class BartDecoderLayer(nn.Module):
-
     def __init__(
         self,
         config: BartConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -447,11 +449,11 @@ class BartDecoderLayer(nn.Module):
         self.activation_fn = get_act_fn(config.activation_function)
 
         self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
-        '''
+        """
         afeldman-nm: personally I would call this "cross-attention",
         however I left the name as "encoder_attn" to maintain consistency
         with the name of the pretrained weights.
-        '''
+        """
         self.encoder_attn = BartCrossAttention(
             self.embed_dim,
             config.decoder_attention_heads,
@@ -481,7 +483,7 @@ class BartDecoderLayer(nn.Module):
     def forward(
         self,
         decoder_hidden_states: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -534,13 +536,15 @@ class BartEncoder(nn.Module):
         embed_tokens (nn.Embedding): output embedding
     """
 
-    def __init__(self,
-                 config: BartConfig,
-                 cache_config: Optional[CacheConfig] = None,
-                 quant_config: Optional[QuantizationConfig] = None,
-                 lora_config: Optional[LoRAConfig] = None,
-                 embed_tokens: Optional[nn.Embedding] = None,
-                 prefix: str = ""):
+    def __init__(
+        self,
+        config: BartConfig,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
+        lora_config: LoRAConfig | None = None,
+        embed_tokens: nn.Embedding | None = None,
+        prefix: str = "",
+    ):
         super().__init__()
 
         self.cache_config = cache_config
@@ -550,9 +554,7 @@ class BartEncoder(nn.Module):
         self.max_source_positions = config.max_position_embeddings
         embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
-        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size,
-                                                    embed_dim,
-                                                    embed_scale=embed_scale)
+        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size, embed_dim, embed_scale=embed_scale)
 
         if embed_tokens is not None:
             self.embed_tokens.weight = embed_tokens.weight
@@ -561,13 +563,12 @@ class BartEncoder(nn.Module):
             config.max_position_embeddings,
             embed_dim,
         )
-        self.layers = nn.ModuleList([
-            BartEncoderLayer(config,
-                             cache_config,
-                             quant_config,
-                             prefix=f"{prefix}.layers.{layer_idx}")
-            for layer_idx in range(config.encoder_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                BartEncoderLayer(config, cache_config, quant_config, prefix=f"{prefix}.layers.{layer_idx}")
+                for layer_idx in range(config.encoder_layers)
+            ]
+        )
 
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
 
@@ -575,7 +576,7 @@ class BartEncoder(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -616,10 +617,10 @@ class BartDecoder(nn.Module):
     def __init__(
         self,
         config: BartConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        lora_config: Optional[LoRAConfig] = None,
-        embed_tokens: Optional[nn.Embedding] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
+        lora_config: LoRAConfig | None = None,
+        embed_tokens: nn.Embedding | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -627,12 +628,9 @@ class BartDecoder(nn.Module):
         self.quant_config = quant_config
         self.lora_config = lora_config
         self.max_target_positions = config.max_position_embeddings
-        embed_scale = math.sqrt(
-            config.d_model) if config.scale_embedding else 1.0
+        embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
-        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size,
-                                                    config.d_model,
-                                                    embed_scale=embed_scale)
+        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size, config.d_model, embed_scale=embed_scale)
 
         if embed_tokens is not None:
             self.embed_tokens.weight = embed_tokens.weight
@@ -643,9 +641,11 @@ class BartDecoder(nn.Module):
         )
 
         self.layers = nn.ModuleList(
-            [BartDecoderLayer(config,cache_config,quant_config,
-            prefix=f"{prefix}.layers.{layer_idx}") \
-             for layer_idx in range(config.decoder_layers)])
+            [
+                BartDecoderLayer(config, cache_config, quant_config, prefix=f"{prefix}.layers.{layer_idx}")
+                for layer_idx in range(config.decoder_layers)
+            ]
+        )
 
         self.layernorm_embedding = nn.LayerNorm(config.d_model)
 
@@ -653,8 +653,8 @@ class BartDecoder(nn.Module):
         self,
         decoder_input_ids: torch.Tensor,
         decoder_positions: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor],
-        inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -708,23 +708,20 @@ class BartModel(nn.Module, SupportsQuant):
 
         self.config = config
 
-        lora_vocab = (lora_config.lora_extra_vocab_size *
-                      (lora_config.max_loras or 1)) if lora_config else 0
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
-        self.encoder = BartEncoder(config,
-                                   cache_config,
-                                   quant_config=quant_config,
-                                   prefix=f"{prefix}.encoder")
-        self.decoder = BartDecoder(config,
-                                   cache_config,
-                                   quant_config=quant_config,
-                                   prefix=f"{prefix}.decoder")
+        self.encoder = BartEncoder(config, cache_config, quant_config=quant_config, prefix=f"{prefix}.encoder")
+        self.decoder = BartDecoder(config, cache_config, quant_config=quant_config, prefix=f"{prefix}.decoder")
 
-    def forward(self, input_ids: torch.Tensor, positions: torch.Tensor,
-                encoder_input_ids: torch.Tensor,
-                encoder_positions: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        encoder_input_ids: torch.Tensor,
+        encoder_positions: torch.Tensor,
+    ) -> torch.Tensor:
         r"""
         Args:
             input_ids
@@ -746,20 +743,17 @@ class BartModel(nn.Module, SupportsQuant):
         if encoder_input_ids.numel() > 0:
             # Run encoder attention if a non-zero number of encoder tokens
             # are provided as input
-            encoder_hidden_states = self.encoder(input_ids=encoder_input_ids,
-                                                 positions=encoder_positions)
+            encoder_hidden_states = self.encoder(input_ids=encoder_input_ids, positions=encoder_positions)
 
         # decoder outputs consists of
         # (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
-            decoder_input_ids=input_ids,
-            decoder_positions=positions,
-            encoder_hidden_states=encoder_hidden_states)
+            decoder_input_ids=input_ids, decoder_positions=positions, encoder_hidden_states=encoder_hidden_states
+        )
 
         return decoder_outputs
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -772,7 +766,7 @@ class BartModel(nn.Module, SupportsQuant):
         model_params_dict = dict(self.named_parameters())
 
         for name, loaded_weight in weights:
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
+            for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
@@ -795,11 +789,7 @@ class BartModel(nn.Module, SupportsQuant):
 
 class BartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
     hf_to_aphrodite_mapper = WeightsMapper(
-        orig_to_new_prefix={
-            "decoder.": "model.decoder.",
-            "encoder.": "model.encoder.",
-            "shared.": "model.shared."
-        },
+        orig_to_new_prefix={"decoder.": "model.decoder.", "encoder.": "model.encoder.", "shared.": "model.shared."},
         orig_to_new_substr={
             "beta": "bias",
             "gamma": "weight",
@@ -808,34 +798,28 @@ class BartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
     )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         lora_config = aphrodite_config.lora_config
         # currently all existing BART models have `tie_word_embeddings` enabled
         assert config.tie_word_embeddings
         self.config = config
-        self.model = BartModel(aphrodite_config=aphrodite_config,
-                               prefix=maybe_prefix(prefix, "model"))
+        self.model = BartModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
 
-        embed_scale = math.sqrt(
-            config.d_model) if config.scale_embedding else 1.0
+        embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
-        self.lm_head = BartParallelLMHead(config.vocab_size,
-                                          config.d_model,
-                                          embed_scale=embed_scale)
-        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
-                                                config.vocab_size)
+        self.lm_head = BartParallelLMHead(config.vocab_size, config.d_model, embed_scale=embed_scale)
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
+        intermediate_tensors: IntermediateTensors | None = None,
         *,
         encoder_input_ids: torch.Tensor,
         encoder_positions: torch.Tensor,
@@ -854,56 +838,50 @@ class BartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
         Returns:
             Output torch.Tensor
         """
-        return self.model(input_ids, positions, encoder_input_ids,
-                          encoder_positions)
+        return self.model(input_ids, positions, encoder_input_ids, encoder_positions)
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
         return logits
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         weights_tuple_list = list(weights)
 
         shared_embedding_weight = None
         for name, loaded_weight in weights_tuple_list:
-            if ('shared.weight' in name
-                    or 'encoder.embed_tokens.weight' in name
-                    or 'decoder.embed_tokens.weight' in name
-                    or 'lm_head.weight' in name):
-                assert shared_embedding_weight is None, (
-                    "Conflicting embedding weights.")
+            if (
+                "shared.weight" in name
+                or "encoder.embed_tokens.weight" in name
+                or "decoder.embed_tokens.weight" in name
+                or "lm_head.weight" in name
+            ):
+                assert shared_embedding_weight is None, "Conflicting embedding weights."
                 shared_embedding_weight = loaded_weight
 
         loader = AutoWeightsLoader(
             self,
             skip_prefixes=(["cls.", "pooler."]),
         )
-        loaded_params = loader.load_weights(weights_tuple_list,
-                                            mapper=self.hf_to_aphrodite_mapper)
+        loaded_params = loader.load_weights(weights_tuple_list, mapper=self.hf_to_aphrodite_mapper)
 
         if shared_embedding_weight is not None:
-            weight_loader = getattr(self.lm_head.weight, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(self.lm_head.weight, "weight_loader", default_weight_loader)
             weight_loader(self.lm_head.weight, shared_embedding_weight)
 
             self.model.encoder.embed_tokens.weight = self.lm_head.weight
             self.model.decoder.embed_tokens.weight = self.lm_head.weight
-            loaded_params.update({
-                'model.encoder.embed_tokens.weight', 'lm_head.weight',
-                'model.decoder.embed_tokens.weight'
-            })
+            loaded_params.update(
+                {"model.encoder.embed_tokens.weight", "lm_head.weight", "model.decoder.embed_tokens.weight"}
+            )
 
         return loaded_params
 
 
 class MBartEncoderLayer(BartEncoderLayer):
-
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         r"""
         Args:
@@ -928,19 +906,18 @@ class MBartEncoderLayer(BartEncoderLayer):
         hidden_states = residual + hidden_states
 
         if hidden_states.dtype == torch.float16 and (
-                torch.isinf(hidden_states).any()
-                or torch.isnan(hidden_states).any()):
+            torch.isinf(hidden_states).any() or torch.isnan(hidden_states).any()
+        ):
             hidden_states = cast_overflow_tensors(hidden_states)
 
         return hidden_states
 
 
 class MBartDecoderLayer(BartDecoderLayer):
-
     def forward(
         self,
         decoder_hidden_states: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
     ) -> torch.Tensor:
         residual = decoder_hidden_states
         hidden_states = self.self_attn_layer_norm(decoder_hidden_states)
@@ -984,13 +961,15 @@ class MBartEncoder(nn.Module):
         embed_tokens (nn.Embedding): output embedding
     """
 
-    def __init__(self,
-                 config: BartConfig,
-                 cache_config: Optional[CacheConfig] = None,
-                 quant_config: Optional[QuantizationConfig] = None,
-                 lora_config: Optional[LoRAConfig] = None,
-                 embed_tokens: Optional[nn.Embedding] = None,
-                 prefix: str = ""):
+    def __init__(
+        self,
+        config: BartConfig,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
+        lora_config: LoRAConfig | None = None,
+        embed_tokens: nn.Embedding | None = None,
+        prefix: str = "",
+    ):
         super().__init__()
 
         self.cache_config = cache_config
@@ -1000,9 +979,7 @@ class MBartEncoder(nn.Module):
         self.max_source_positions = config.max_position_embeddings
         embed_scale = math.sqrt(embed_dim) if config.scale_embedding else 1.0
 
-        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size,
-                                                    embed_dim,
-                                                    embed_scale=embed_scale)
+        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size, embed_dim, embed_scale=embed_scale)
 
         if embed_tokens is not None:
             self.embed_tokens.weight = embed_tokens.weight
@@ -1011,13 +988,12 @@ class MBartEncoder(nn.Module):
             config.max_position_embeddings,
             embed_dim,
         )
-        self.layers = nn.ModuleList([
-            MBartEncoderLayer(config,
-                              cache_config,
-                              quant_config,
-                              prefix=f"{prefix}.layers.{layer_idx}")
-            for layer_idx in range(config.encoder_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                MBartEncoderLayer(config, cache_config, quant_config, prefix=f"{prefix}.layers.{layer_idx}")
+                for layer_idx in range(config.encoder_layers)
+            ]
+        )
 
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
         self.layer_norm = nn.LayerNorm(config.d_model)  # 改动
@@ -1026,7 +1002,7 @@ class MBartEncoder(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -1068,10 +1044,10 @@ class MBartDecoder(nn.Module):
     def __init__(
         self,
         config: BartConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        lora_config: Optional[LoRAConfig] = None,
-        embed_tokens: Optional[nn.Embedding] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
+        lora_config: LoRAConfig | None = None,
+        embed_tokens: nn.Embedding | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -1079,12 +1055,9 @@ class MBartDecoder(nn.Module):
         self.quant_config = quant_config
         self.lora_config = lora_config
         self.max_target_positions = config.max_position_embeddings
-        embed_scale = math.sqrt(
-            config.d_model) if config.scale_embedding else 1.0
+        embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
-        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size,
-                                                    config.d_model,
-                                                    embed_scale=embed_scale)
+        self.embed_tokens = BartScaledWordEmbedding(config.vocab_size, config.d_model, embed_scale=embed_scale)
 
         if embed_tokens is not None:
             self.embed_tokens.weight = embed_tokens.weight
@@ -1095,9 +1068,11 @@ class MBartDecoder(nn.Module):
         )
 
         self.layers = nn.ModuleList(
-            [MBartDecoderLayer(config, cache_config, quant_config,
-                               prefix=f"{prefix}.layers.{layer_idx}") \
-             for layer_idx in range(config.decoder_layers)])
+            [
+                MBartDecoderLayer(config, cache_config, quant_config, prefix=f"{prefix}.layers.{layer_idx}")
+                for layer_idx in range(config.decoder_layers)
+            ]
+        )
 
         self.layernorm_embedding = nn.LayerNorm(config.d_model)
         self.layer_norm = nn.LayerNorm(config.d_model)
@@ -1106,8 +1081,8 @@ class MBartDecoder(nn.Module):
         self,
         decoder_input_ids: torch.Tensor,
         decoder_positions: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor],
-        inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -1147,9 +1122,7 @@ class MBartDecoder(nn.Module):
 
 
 class MBartModel(nn.Module, SupportsQuant):
-    _tied_weights_keys = [
-        "encoder.embed_tokens.weight", "decoder.embed_tokens.weight"
-    ]
+    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
@@ -1161,23 +1134,20 @@ class MBartModel(nn.Module, SupportsQuant):
 
         self.config = config
 
-        lora_vocab = (lora_config.lora_extra_vocab_size *
-                      (lora_config.max_loras or 1)) if lora_config else 0
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
-        self.encoder = MBartEncoder(config,
-                                    cache_config,
-                                    quant_config=quant_config,
-                                    prefix=f"{prefix}.encoder")
-        self.decoder = MBartDecoder(config,
-                                    cache_config,
-                                    quant_config=quant_config,
-                                    prefix=f"{prefix}.decoder")
+        self.encoder = MBartEncoder(config, cache_config, quant_config=quant_config, prefix=f"{prefix}.encoder")
+        self.decoder = MBartDecoder(config, cache_config, quant_config=quant_config, prefix=f"{prefix}.decoder")
 
-    def forward(self, input_ids: torch.Tensor, positions: torch.Tensor,
-                encoder_input_ids: torch.Tensor,
-                encoder_positions: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        encoder_input_ids: torch.Tensor,
+        encoder_positions: torch.Tensor,
+    ) -> torch.Tensor:
         r"""
         Args:
             input_ids
@@ -1199,15 +1169,13 @@ class MBartModel(nn.Module, SupportsQuant):
         if encoder_input_ids.numel() > 0:
             # Run encoder attention if a non-zero number of encoder tokens
             # are provided as input
-            encoder_hidden_states = self.encoder(input_ids=encoder_input_ids,
-                                                 positions=encoder_positions)
+            encoder_hidden_states = self.encoder(input_ids=encoder_input_ids, positions=encoder_positions)
 
         # decoder outputs consists of
         # (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
-            decoder_input_ids=input_ids,
-            decoder_positions=positions,
-            encoder_hidden_states=encoder_hidden_states)
+            decoder_input_ids=input_ids, decoder_positions=positions, encoder_hidden_states=encoder_hidden_states
+        )
 
         return decoder_outputs
 
@@ -1216,11 +1184,7 @@ class MBartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
     base_model_prefix = "model"
 
     hf_to_aphrodite_mapper = WeightsMapper(
-        orig_to_new_prefix={
-            "decoder.": "model.decoder.",
-            "encoder.": "model.encoder.",
-            "shared.": "model.shared."
-        },
+        orig_to_new_prefix={"decoder.": "model.decoder.", "encoder.": "model.encoder.", "shared.": "model.shared."},
         orig_to_new_substr={
             "beta": "bias",
             "gamma": "weight",
@@ -1234,47 +1198,39 @@ class MBartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
         lora_config = aphrodite_config.lora_config
         assert config.tie_word_embeddings
         self.config = config
-        self.model = MBartModel(aphrodite_config=aphrodite_config,
-                                prefix=maybe_prefix(prefix, "model"))
+        self.model = MBartModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
 
-        embed_scale = math.sqrt(
-            config.d_model) if config.scale_embedding else 1.0
+        embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
-        self.lm_head = BartParallelLMHead(config.vocab_size,
-                                          config.d_model,
-                                          embed_scale=embed_scale)
+        self.lm_head = BartParallelLMHead(config.vocab_size, config.d_model, embed_scale=embed_scale)
 
-        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
-                                                config.vocab_size)
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
+        intermediate_tensors: IntermediateTensors | None = None,
         *,
         encoder_input_ids: torch.Tensor,
         encoder_positions: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
-        return self.model(input_ids, positions, encoder_input_ids,
-                          encoder_positions)
+        return self.model(input_ids, positions, encoder_input_ids, encoder_positions)
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
         return logits
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             ("qkv_proj", "q_proj", "q"),
             ("qkv_proj", "k_proj", "k"),
@@ -1286,13 +1242,12 @@ class MBartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
         shared_embedding_weight = None
 
         for name, loaded_weight in weights:
-            if any(skip in name
-                   for skip in ["cls.", "pooler.", "final_logits_bias"]):
+            if any(skip in name for skip in ["cls.", "pooler.", "final_logits_bias"]):
                 continue
-            if any(embed_name in name for embed_name in [
-                    'shared.weight', 'encoder.embed_tokens.weight',
-                    'decoder.embed_tokens.weight'
-            ]):
+            if any(
+                embed_name in name
+                for embed_name in ["shared.weight", "encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+            ):
                 if shared_embedding_weight is None:
                     shared_embedding_weight = loaded_weight
                 continue
@@ -1301,19 +1256,16 @@ class MBartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
                 if weight_name not in name:
                     continue
                 aphrodite_name = name
-                for src, dst in self.hf_to_aphrodite_mapper.orig_to_new_substr.items(
-                ):
+                for src, dst in self.hf_to_aphrodite_mapper.orig_to_new_substr.items():
                     aphrodite_name = aphrodite_name.replace(src, dst)
-                for src, dst in self.hf_to_aphrodite_mapper.orig_to_new_prefix.items(
-                ):
+                for src, dst in self.hf_to_aphrodite_mapper.orig_to_new_prefix.items():
                     if aphrodite_name.startswith(src):
-                        aphrodite_name = dst + aphrodite_name[len(src):]
+                        aphrodite_name = dst + aphrodite_name[len(src) :]
                         break
                 aphrodite_name = aphrodite_name.replace(weight_name, param_name)
                 if aphrodite_name in model_params_dict:
                     param = model_params_dict[aphrodite_name]
-                    weight_loader = getattr(param, "weight_loader",
-                                            default_weight_loader)
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight, shard_id)
                     loaded_params.add(aphrodite_name)
                 is_stacked = True
@@ -1321,18 +1273,15 @@ class MBartForConditionalGeneration(nn.Module, SupportsV0Only, SupportsQuant):
             if not is_stacked:
                 remaining_weights.append((name, loaded_weight))
         loader = AutoWeightsLoader(self, skip_prefixes=["cls.", "pooler."])
-        auto_loaded_params = loader.load_weights(remaining_weights,
-                                                 mapper=self.hf_to_aphrodite_mapper)
+        auto_loaded_params = loader.load_weights(remaining_weights, mapper=self.hf_to_aphrodite_mapper)
         loaded_params.update(auto_loaded_params)
         if shared_embedding_weight is not None:
             lm_head_param = self.lm_head.weight
-            weight_loader = getattr(lm_head_param, "weight_loader",
-                                    default_weight_loader)
+            weight_loader = getattr(lm_head_param, "weight_loader", default_weight_loader)
             weight_loader(lm_head_param, shared_embedding_weight)
             self.model.encoder.embed_tokens.weight = self.lm_head.weight
             self.model.decoder.embed_tokens.weight = self.lm_head.weight
-            loaded_params.update({
-                'model.encoder.embed_tokens.weight', 'lm_head.weight',
-                'model.decoder.embed_tokens.weight'
-            })
+            loaded_params.update(
+                {"model.encoder.embed_tokens.weight", "lm_head.weight", "model.decoder.embed_tokens.weight"}
+            )
         return loaded_params

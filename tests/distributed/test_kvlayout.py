@@ -1,7 +1,5 @@
-from aphrodite.config import (AphroditeConfig, DeviceConfig, KVTransferConfig,
-                              ModelConfig, set_current_aphrodite_config)
-from aphrodite.distributed.kv_transfer.kv_connector.utils import (
-    get_kv_connector_cache_layout)
+from aphrodite.config import AphroditeConfig, DeviceConfig, KVTransferConfig, ModelConfig, set_current_aphrodite_config
+from aphrodite.distributed.kv_transfer.kv_connector.utils import get_kv_connector_cache_layout
 from aphrodite.logger import init_logger
 
 logger = init_logger("test_expert_parallel")
@@ -20,9 +18,7 @@ def test_get_kv_connector_cache_layout_with_lmcache_connector():
         kv_connector="LMCacheConnectorV1",
         kv_role="kv_both",
     )
-    aphrodite_config = AphroditeConfig(
-        device_config=DeviceConfig("cpu"), kv_transfer_config=kv_transfer_config
-    )
+    aphrodite_config = AphroditeConfig(device_config=DeviceConfig("cpu"), kv_transfer_config=kv_transfer_config)
     with set_current_aphrodite_config(aphrodite_config):
         # Test with default settings
         layout = get_kv_connector_cache_layout()

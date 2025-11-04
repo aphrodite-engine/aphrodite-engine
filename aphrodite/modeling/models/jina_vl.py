@@ -8,16 +8,17 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.inputs import TokensPrompt
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
-from .interfaces import (SupportsCrossEncoding, SupportsMultiModal,
-                         SupportsScoreTemplate)
-from .qwen2_vl import (Qwen2VLDummyInputsBuilder,
-                       Qwen2VLForConditionalGeneration,
-                       Qwen2VLMultiModalProcessor, Qwen2VLProcessingInfo)
+from .interfaces import SupportsCrossEncoding, SupportsMultiModal, SupportsScoreTemplate
+from .qwen2_vl import (
+    Qwen2VLDummyInputsBuilder,
+    Qwen2VLForConditionalGeneration,
+    Qwen2VLMultiModalProcessor,
+    Qwen2VLProcessingInfo,
+)
 from .utils import AutoWeightsLoader, WeightsMapper, maybe_prefix
 
 logger = init_logger(__name__)
@@ -28,12 +29,8 @@ class JinaVLScorer(nn.Module):
         super().__init__()
         config = model_config.hf_config
         head_dtype = model_config.head_dtype
-        self.dense = ColumnParallelLinear(
-            config.hidden_size, config.hidden_size, params_dtype=head_dtype, bias=True
-        )
-        self.out_proj = RowParallelLinear(
-            config.hidden_size, config.num_labels, params_dtype=head_dtype, bias=True
-        )
+        self.dense = ColumnParallelLinear(config.hidden_size, config.hidden_size, params_dtype=head_dtype, bias=True)
+        self.out_proj = RowParallelLinear(config.hidden_size, config.num_labels, params_dtype=head_dtype, bias=True)
 
     def forward(self, x, **kwargs):
         x, _ = self.dense(x)
@@ -85,24 +82,16 @@ class JinaVLForSequenceClassification(
     )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-        super().__init__(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "qwen2_vl")
-        )
+        super().__init__(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "qwen2_vl"))
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
         self.score = JinaVLScorer(aphrodite_config.model_config)
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config, classifier=self.score
-                ),
-                "classify": Pooler.for_classify(
-                    pooler_config, classifier=self.score, act_fn="classify"
-                ),
-                "score": Pooler.for_classify(
-                    pooler_config, classifier=self.score, act_fn="score"
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config, classifier=self.score),
+                "classify": Pooler.for_classify(pooler_config, classifier=self.score, act_fn="classify"),
+                "score": Pooler.for_classify(pooler_config, classifier=self.score, act_fn="score"),
             }
         )
 

@@ -107,17 +107,10 @@ def test_on_the_fly_quant_config_dict_json(aphrodite_runner):
     import json
 
     from torchao.core.config import config_to_dict
-    from torchao.quantization import (
-        Float8DynamicActivationFloat8WeightConfig, PerRow)
+    from torchao.quantization import Float8DynamicActivationFloat8WeightConfig, PerRow
 
-    torchao_quant_config = Float8DynamicActivationFloat8WeightConfig(
-        granularity=PerRow()
-    )
-    hf_overrides = {
-        "quantization_config_dict_json": json.dumps(
-            config_to_dict(torchao_quant_config)
-        )
-    }
+    torchao_quant_config = Float8DynamicActivationFloat8WeightConfig(granularity=PerRow())
+    hf_overrides = {"quantization_config_dict_json": json.dumps(config_to_dict(torchao_quant_config))}
     with aphrodite_runner(
         model_name=model_name,
         dtype="bfloat16",
@@ -142,8 +135,7 @@ def test_on_the_fly_quant_config_file(aphrodite_runner):
     from tempfile import NamedTemporaryFile
 
     from torchao.core.config import config_to_dict
-    from torchao.quantization import (
-        Float8DynamicActivationFloat8WeightConfig, PerRow)
+    from torchao.quantization import Float8DynamicActivationFloat8WeightConfig, PerRow
 
     config = Float8DynamicActivationFloat8WeightConfig(granularity=PerRow())
 
@@ -172,20 +164,13 @@ def test_reload_weights():
     import json
 
     from torchao.core.config import config_to_dict
-    from torchao.quantization import (
-        Float8DynamicActivationFloat8WeightConfig, PerRow)
+    from torchao.quantization import Float8DynamicActivationFloat8WeightConfig, PerRow
 
     from aphrodite import LLM, SamplingParams
 
-    torchao_quant_config = Float8DynamicActivationFloat8WeightConfig(
-        granularity=PerRow()
-    )
+    torchao_quant_config = Float8DynamicActivationFloat8WeightConfig(granularity=PerRow())
 
-    hf_overrides = {
-        "quantization_config_dict_json": json.dumps(
-            config_to_dict(torchao_quant_config)
-        )
-    }
+    hf_overrides = {"quantization_config_dict_json": json.dumps(config_to_dict(torchao_quant_config))}
 
     llm = LLM(
         model="Qwen/Qwen3-0.6B",
@@ -196,9 +181,7 @@ def test_reload_weights():
         hf_overrides=hf_overrides,
     )
     # Update load format from `dummy` to `auto`
-    llm.collective_rpc(
-        "update_config", args=({"load_config": {"load_format": "auto"}},)
-    )
+    llm.collective_rpc("update_config", args=({"load_config": {"load_format": "auto"}},))
     # Now reload real weights inplace
     llm.collective_rpc("reload_weights")
     prompts = [
@@ -230,9 +213,7 @@ def test_reload_weights():
 )
 def test_opt_125m_float8_weight_only_safetensors_model_loading_with_params(aphrodite_runner):
     torch._dynamo.reset()
-    model_name = (
-        "torchao-testing/opt-125m-Float8WeightOnlyConfig-v2-0.14.0.dev-safetensors"
-    )
+    model_name = "torchao-testing/opt-125m-Float8WeightOnlyConfig-v2-0.14.0.dev-safetensors"
     with aphrodite_runner(model_name=model_name, dtype="bfloat16") as llm:
         output = llm.generate_greedy(["The capital of France is"], max_tokens=4)
 
@@ -248,9 +229,7 @@ def test_opt_125m_float8_weight_only_safetensors_model_loading_with_params(aphro
 def test_opt_125m_module_fqn_to_config_regex_model(aphrodite_runner):
     torch._dynamo.reset()
     model_name = "torchao-testing/opt-125m-ModuleFqnToConfig-v1-regex-0.14.0.dev"
-    with aphrodite_runner(
-        model_name=model_name, dtype="bfloat16", pt_load_map_location="cuda:0"
-    ) as llm:
+    with aphrodite_runner(model_name=model_name, dtype="bfloat16", pt_load_map_location="cuda:0") as llm:
         output = llm.generate_greedy(["The capital of France is"], max_tokens=4)
 
         assert output

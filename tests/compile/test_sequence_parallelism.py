@@ -3,21 +3,23 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.compilation.aphrodite_inductor_pass import AphroditeInductorPass
-from aphrodite.compilation.fix_functionalization import (
-    FixFunctionalizationPass)
+from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.compilation.fusion import RMSNormQuantFusionPass
-from aphrodite.compilation.fx_utils import (find_auto_fn, find_auto_fn_maybe,
-                                            is_func)
+from aphrodite.compilation.fx_utils import find_auto_fn, find_auto_fn_maybe, is_func
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
 from aphrodite.compilation.sequence_parallelism import SequenceParallelismPass
-from aphrodite.config import (AphroditeConfig, CompilationConfig, DeviceConfig,
-                              ModelConfig, PassConfig,
-                              get_current_aphrodite_config,
-                              set_current_aphrodite_config)
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationConfig,
+    DeviceConfig,
+    ModelConfig,
+    PassConfig,
+    get_current_aphrodite_config,
+    set_current_aphrodite_config,
+)
 from aphrodite.distributed import tensor_model_parallel_all_reduce
-from aphrodite.distributed.parallel_state import (init_distributed_environment,
-                                                  initialize_model_parallel)
+from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
@@ -40,9 +42,7 @@ class TestModel(torch.nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
-        self.gate_proj = torch.nn.Parameter(
-            torch.empty((intermediate_size, hidden_size))
-        )
+        self.gate_proj = torch.nn.Parameter(torch.empty((intermediate_size, hidden_size)))
         self.norm = RMSNorm(intermediate_size, 1e-05)
         # Initialize weights
         torch.nn.init.normal_(self.gate_proj, std=0.02)
@@ -92,9 +92,7 @@ class TestQuantModel(torch.nn.Module):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.aphrodite_config = get_current_aphrodite_config()
-        self.gate_proj = torch.nn.Parameter(
-            torch.empty((intermediate_size, hidden_size)), requires_grad=False
-        )
+        self.gate_proj = torch.nn.Parameter(torch.empty((intermediate_size, hidden_size)), requires_grad=False)
         self.norm = RMSNorm(intermediate_size, 1e-05)
         # Initialize weights
         torch.nn.init.normal_(self.gate_proj, std=0.02)
@@ -144,10 +142,7 @@ class TestQuantModel(torch.nn.Module):
     def ops_in_model_before(self):
         ops_to_remove = [torch.ops.aphrodite.all_reduce.default]  # Always removed by SP
         # The following are only removed if fusion happens
-        if (
-            self.aphrodite_config
-            and self.aphrodite_config.compilation_config.pass_config.enable_fusion
-        ):
+        if self.aphrodite_config and self.aphrodite_config.compilation_config.pass_config.enable_fusion:
             ops_to_remove.extend(
                 [
                     torch.ops._C.fused_add_rms_norm.default,
@@ -162,18 +157,12 @@ class TestQuantModel(torch.nn.Module):
             torch.ops.aphrodite.all_gather.default,
         ]
         # The following is only added if fusion happens
-        if (
-            self.aphrodite_config
-            and self.aphrodite_config.compilation_config.pass_config.enable_fusion
-        ):
+        if self.aphrodite_config and self.aphrodite_config.compilation_config.pass_config.enable_fusion:
             ops_to_add.append(torch.ops._C.fused_add_rms_norm_static_fp8_quant.default)
         return ops_to_add
 
     def ops_in_model(self):
-        if (
-            self.aphrodite_config
-            and self.aphrodite_config.compilation_config.pass_config.enable_fusion
-        ):
+        if self.aphrodite_config and self.aphrodite_config.compilation_config.pass_config.enable_fusion:
             # If fusion happens, the fused op is the one
             # we check for (de)functionalization
             return [torch.ops._C.fused_add_rms_norm_static_fp8_quant.default]
@@ -268,9 +257,7 @@ def sequence_parallelism_pass_on_test_model(
     # this is a fake model name to construct the model config
     # in the aphrodite_config, it's not really used.
     model_name = "RedHatAI/Llama-3.2-1B-Instruct-FP8"
-    model_config = ModelConfig(
-        model=model_name, trust_remote_code=True, dtype=dtype, seed=42
-    )
+    model_config = ModelConfig(model=model_name, trust_remote_code=True, dtype=dtype, seed=42)
 
     aphrodite_config = AphroditeConfig(
         model_config=model_config,

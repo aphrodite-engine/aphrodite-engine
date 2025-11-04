@@ -4,12 +4,9 @@ import pytest
 import torch
 
 from aphrodite.v1.core.block_pool import BlockPool
-from aphrodite.v1.core.kv_cache_utils import (BlockHash, KVCacheBlock,
-                                              make_block_hash_with_group_id)
-from aphrodite.v1.core.single_type_kv_cache_manager import (
-    ChunkedLocalAttentionManager, SlidingWindowManager)
-from aphrodite.v1.kv_cache_interface import (ChunkedLocalAttentionSpec,
-                                             SlidingWindowSpec)
+from aphrodite.v1.core.kv_cache_utils import BlockHash, KVCacheBlock, make_block_hash_with_group_id
+from aphrodite.v1.core.single_type_kv_cache_manager import ChunkedLocalAttentionManager, SlidingWindowManager
+from aphrodite.v1.kv_cache_interface import ChunkedLocalAttentionSpec, SlidingWindowSpec
 
 pytestmark = pytest.mark.cpu_test
 
@@ -19,9 +16,7 @@ def get_sliding_window_manager(sliding_window_spec, block_pool):
 
 
 def get_chunked_local_attention_manager(chunked_local_attention_spec, block_pool):
-    return ChunkedLocalAttentionManager(
-        chunked_local_attention_spec, block_pool, kv_cache_group_id=0
-    )
+    return ChunkedLocalAttentionManager(chunked_local_attention_spec, block_pool, kv_cache_group_id=0)
 
 
 def test_chunked_local_attention_possible_cached_prefix():
@@ -35,21 +30,15 @@ def test_chunked_local_attention_possible_cached_prefix():
     )
 
     block_pool = BlockPool(num_gpu_blocks=100, enable_caching=True)
-    manager = get_chunked_local_attention_manager(
-        chunked_local_attention_spec, block_pool
-    )
+    manager = get_chunked_local_attention_manager(chunked_local_attention_spec, block_pool)
 
     def run_one_case(block_is_cached, tail_token, expect_length):
-        block_hash_list = [
-            BlockHash(str(i).encode()) for i in range(len(block_is_cached))
-        ]
+        block_hash_list = [BlockHash(str(i).encode()) for i in range(len(block_is_cached))]
 
         block_pool.cached_block_hash_to_block._cache.clear()
 
         # Mock the block pool with the cached blocks
-        for i, (block_hash, is_cached) in enumerate(
-            zip(block_hash_list, block_is_cached)
-        ):
+        for i, (block_hash, is_cached) in enumerate(zip(block_hash_list, block_is_cached)):
             if is_cached:
                 block_pool.cached_block_hash_to_block.insert(
                     make_block_hash_with_group_id(block_hash, 0),
@@ -66,10 +55,7 @@ def test_chunked_local_attention_possible_cached_prefix():
         )[0]
         assert len(computed_blocks) == expect_length
 
-        assert all(
-            block == block_pool.null_block
-            for block in computed_blocks[: (expect_length - 1) // 2]
-        )
+        assert all(block == block_pool.null_block for block in computed_blocks[: (expect_length - 1) // 2])
 
     run_one_case([True], 0, 1)
     run_one_case([True], 1, 1)
@@ -108,16 +94,12 @@ def test_sliding_window_possible_cached_prefix():
     manager = get_sliding_window_manager(sliding_window_spec, block_pool)
 
     def run_one_case(block_is_cached, expect_length):
-        block_hash_list = [
-            BlockHash(str(i).encode()) for i in range(len(block_is_cached))
-        ]
+        block_hash_list = [BlockHash(str(i).encode()) for i in range(len(block_is_cached))]
 
         block_pool.cached_block_hash_to_block._cache.clear()
 
         # Mock the block pool with the cached blocks
-        for i, (block_hash, is_cached) in enumerate(
-            zip(block_hash_list, block_is_cached)
-        ):
+        for i, (block_hash, is_cached) in enumerate(zip(block_hash_list, block_is_cached)):
             if is_cached:
                 block_pool.cached_block_hash_to_block.insert(
                     make_block_hash_with_group_id(block_hash, 0),
@@ -134,10 +116,7 @@ def test_sliding_window_possible_cached_prefix():
         )[0]
         assert len(computed_blocks) == expect_length
 
-        assert all(
-            block == block_pool.null_block
-            for block in computed_blocks[: expect_length - 2]
-        )
+        assert all(block == block_pool.null_block for block in computed_blocks[: expect_length - 2])
         for i in range(2):
             if i < expect_length:
                 block_index = expect_length - i - 1
@@ -150,12 +129,8 @@ def test_sliding_window_possible_cached_prefix():
     run_one_case([True, True, False], 2)
     run_one_case([True, True, True], 3)
     run_one_case([True, True, True, False], 3)
-    run_one_case(
-        [True, True, False, True, False, False, True, True, False, True, True, True], 12
-    )
-    run_one_case(
-        [True, True, False, True, False, False, True, True, False, False, False], 8
-    )
+    run_one_case([True, True, False, True, False, False, True, True, False, True, True, True], 12)
+    run_one_case([True, True, False, True, False, False, True, True, False, False, False], 8)
     run_one_case(
         [True, True, False, True, False, False, True, True, False, False, False, True],
         8,
@@ -178,10 +153,7 @@ def test_chunked_local_attention_remove_skipped_blocks():
     null_block_id = block_pool.null_block.block_id
 
     def id_to_block_table(ids) -> list[KVCacheBlock]:
-        return [
-            KVCacheBlock(id_) if id_ != null_block_id else block_pool.null_block
-            for id_ in ids
-        ]
+        return [KVCacheBlock(id_) if id_ != null_block_id else block_pool.null_block for id_ in ids]
 
     def assert_block_id(block_table: list[KVCacheBlock], ids: list[int]):
         for block, id_ in zip(block_table, ids):
@@ -239,10 +211,7 @@ def test_sliding_window_remove_skipped_blocks():
     null_block_id = block_pool.null_block.block_id
 
     def id_to_block_table(ids) -> list[KVCacheBlock]:
-        return [
-            KVCacheBlock(id_) if id_ != null_block_id else block_pool.null_block
-            for id_ in ids
-        ]
+        return [KVCacheBlock(id_) if id_ != null_block_id else block_pool.null_block for id_ in ids]
 
     def assert_block_id(block_table: list[KVCacheBlock], ids: list[int]):
         for block, id_ in zip(block_table, ids):
@@ -312,16 +281,10 @@ def test_get_num_blocks_to_allocate():
     block_pool = BlockPool(num_gpu_blocks=100, enable_caching=True)
     manager = get_sliding_window_manager(sliding_window_spec, block_pool)
     cached_blocks_1 = [KVCacheBlock(i + 1) for i in range(10)]
-    cached_blocks_2 = [block_pool.null_block for _ in range(5)] + [
-        KVCacheBlock(i + 1) for i in range(5)
-    ]
+    cached_blocks_2 = [block_pool.null_block for _ in range(5)] + [KVCacheBlock(i + 1) for i in range(5)]
 
-    assert (
-        manager.get_num_blocks_to_allocate("1", 20 * block_size, cached_blocks_1) == 20
-    )
-    assert (
-        manager.get_num_blocks_to_allocate("2", 20 * block_size, cached_blocks_2) == 15
-    )
+    assert manager.get_num_blocks_to_allocate("1", 20 * block_size, cached_blocks_1) == 20
+    assert manager.get_num_blocks_to_allocate("2", 20 * block_size, cached_blocks_2) == 15
 
 
 def test_chunked_local_attention_get_num_blocks_to_allocate():
@@ -337,13 +300,7 @@ def test_chunked_local_attention_get_num_blocks_to_allocate():
     block_pool = BlockPool(num_gpu_blocks=100, enable_caching=True)
     manager = get_chunked_local_attention_manager(attention_spec, block_pool)
     cached_blocks_1 = [KVCacheBlock(i + 1) for i in range(10)]
-    cached_blocks_2 = [block_pool.null_block for _ in range(5)] + [
-        KVCacheBlock(i + 1) for i in range(5)
-    ]
+    cached_blocks_2 = [block_pool.null_block for _ in range(5)] + [KVCacheBlock(i + 1) for i in range(5)]
 
-    assert (
-        manager.get_num_blocks_to_allocate("1", 20 * block_size, cached_blocks_1) == 20
-    )
-    assert (
-        manager.get_num_blocks_to_allocate("2", 20 * block_size, cached_blocks_2) == 15
-    )
+    assert manager.get_num_blocks_to_allocate("1", 20 * block_size, cached_blocks_1) == 20
+    assert manager.get_num_blocks_to_allocate("2", 20 * block_size, cached_blocks_2) == 15

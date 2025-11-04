@@ -25,9 +25,7 @@ class MedusaProposer:
         self.aphrodite_config = aphrodite_config
         self.device = device
         self.max_num_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
-        self.hidden_size = (
-            aphrodite_config.speculative_config.draft_model_config.get_hidden_size()
-        )
+        self.hidden_size = aphrodite_config.speculative_config.draft_model_config.get_hidden_size()
         self.dtype = aphrodite_config.model_config.dtype
 
     def propose(

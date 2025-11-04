@@ -24,9 +24,7 @@ class BenchmarkSubcommand(CLISubcommand):
     def validate(self, args: argparse.Namespace) -> None:
         pass
 
-    def subparser_init(
-        self, subparsers: argparse._SubParsersAction
-    ) -> FlexibleArgumentParser:
+    def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         bench_parser = subparsers.add_parser(
             self.name,
             description=self.help,
@@ -43,9 +41,7 @@ class BenchmarkSubcommand(CLISubcommand):
             )
             cmd_subparser.set_defaults(dispatch_function=cmd_cls.cmd)
             cmd_cls.add_cli_args(cmd_subparser)
-            cmd_subparser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(
-                subcmd=f"{self.name} {cmd_cls.name}"
-            )
+            cmd_subparser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd=f"{self.name} {cmd_cls.name}")
         return bench_parser
 
 

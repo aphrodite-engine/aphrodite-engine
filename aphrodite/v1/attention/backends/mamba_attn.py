@@ -4,9 +4,7 @@ from typing import ClassVar, TypeVar
 import torch
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata)
+from aphrodite.v1.attention.backends.utils import AttentionCGSupport, AttentionMetadataBuilder, CommonAttentionMetadata
 from aphrodite.v1.kv_cache_interface import AttentionSpec, MambaSpec
 
 M = TypeVar("M")
@@ -14,9 +12,7 @@ M = TypeVar("M")
 
 class BaseMambaAttentionMetadataBuilder(AttentionMetadataBuilder[M], abc.ABC):
     reorder_batch_threshold: int = 1
-    cudagraph_support: ClassVar[AttentionCGSupport] = (
-        AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
-    )
+    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
 
     def __init__(
         self,
@@ -39,9 +35,7 @@ class BaseMambaAttentionMetadataBuilder(AttentionMetadataBuilder[M], abc.ABC):
             device=device,
         )
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ) -> M:
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata) -> M:
         """
         This method builds the metadata for full cudagraph capture.
         Currently, only decode is supported for full cudagraphs with Mamba.

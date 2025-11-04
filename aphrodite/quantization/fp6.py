@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -10,9 +10,7 @@ from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
-from aphrodite.quantization.utils.fp6_utils import (_SPLIT_K_MAP,
-                                                    from_scaled_tc_fpx,
-                                                    to_scaled_tc_fpx)
+from aphrodite.quantization.utils.fp6_utils import _SPLIT_K_MAP, from_scaled_tc_fpx, to_scaled_tc_fpx
 
 logger = init_logger(__name__)
 
@@ -46,21 +44,21 @@ class QuantLLMFPConfig(QuantizationConfig):
                 "Currently, only 4-bit, 5-bit, 6-bit, and 7-bit "
                 "quantization are "
                 f"supported for QuantLLM FP quantizaiton, but got "
-                f"{self.weight_bits} bits.")
+                f"{self.weight_bits} bits."
+            )
 
         # Defer logging until model parallel groups are initialized
         self._logged = False
 
     def __repr__(self) -> str:
-        return (f"QuantLLMFPConfig(weight_bits={self.weight_bits}), "
-                f"exponent_bits={self.exponent_bits}")
+        return f"QuantLLMFPConfig(weight_bits={self.weight_bits}), exponent_bits={self.exponent_bits}"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
         return "QuantLLMFP"
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "QuantLLMFPConfig":
+    def from_config(cls, config: dict[str, Any]) -> "QuantLLMFPConfig":
         weight_bits = cls.get_from_keys(config, ["bits"])
         exp_bits = cls.get_from_keys(config, ["exp_bits"])
         return cls(weight_bits=weight_bits, exp_bits=exp_bits)
@@ -68,9 +66,8 @@ class QuantLLMFPConfig(QuantizationConfig):
     def get_linear_method(self) -> "QuantLLMFPLinearMethod":
         return QuantLLMFPLinearMethod(self)
 
-
     @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
         return [torch.half]
 
     @classmethod
@@ -79,16 +76,13 @@ class QuantLLMFPConfig(QuantizationConfig):
         return 80
 
     @staticmethod
-    def get_config_filenames() -> List[str]:
+    def get_config_filenames() -> list[str]:
         return [
             "quant_config.json",
             "quantize_config.json",
         ]
 
-    def get_quant_method(
-            self,
-            layer: torch.nn.Module,
-            prefix: str) -> Optional["QuantLLMFPLinearMethod"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantLLMFPLinearMethod"]:
         if isinstance(layer, LinearBase):
             # Log quantization info when the first linear layer is encountered
             self._log_if_needed()
@@ -98,13 +92,17 @@ class QuantLLMFPConfig(QuantizationConfig):
     def _log_if_needed(self):
         """Log quantization info only once from rank 0 after model parallel groups are initialized."""
         if not self._logged:
-            from aphrodite.distributed.parallel_state import (
-                model_parallel_is_initialized)
+            from aphrodite.distributed.parallel_state import model_parallel_is_initialized
+
             if model_parallel_is_initialized():
                 try:
                     if get_tensor_model_parallel_rank() == 0:
-                        logger.info(f"Loading model in FP{self.weight_bits}_E"
-                                    f"{self.exponent_bits}M{self.mantissa_bits} format.")
+                        logger.info(
+                            "Loading model in FP%d_E%dM%d format.",
+                            self.weight_bits,
+                            self.exponent_bits,
+                            self.mantissa_bits,
+                        )
                         self._logged = True
                 except AssertionError:
                     # Still not initialized, skip logging
@@ -121,15 +119,17 @@ class QuantLLMFPLinearMethod(LinearMethodBase):
         self.quant_config = quant_config
         self.weight = None
 
-    def create_weights(self,
-                       layer: torch.nn.Module,
-                       input_size_per_partition: int,
-                       output_partition_sizes: List[int],
-                       input_size: int,
-                       output_size: int,
-                       params_dtype: torch.dtype,
-                       weight_loader=None,
-                       **extra_weight_attrs):
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        input_size_per_partition: int,
+        output_partition_sizes: list[int],
+        input_size: int,
+        output_size: int,
+        params_dtype: torch.dtype,
+        weight_loader=None,
+        **extra_weight_attrs,
+    ):
         del output_size
         del input_size
         output_size_per_partition = sum(output_partition_sizes)
@@ -138,10 +138,13 @@ class QuantLLMFPLinearMethod(LinearMethodBase):
             params_dtype=params_dtype,
             quant_config=self.quant_config,
         )
-        set_weight_attrs(weight, {
-            "input_dim": 1,
-            "output_dim": 0,
-        })
+        set_weight_attrs(
+            weight,
+            {
+                "input_dim": 1,
+                "output_dim": 0,
+            },
+        )
         layer.register_parameter("weight", weight)
 
         def quant_weight_loader(param, loaded_weight, *args, **kwargs):
@@ -157,27 +160,25 @@ class QuantLLMFPLinearMethod(LinearMethodBase):
         extra_weight_attrs["weight_loader"] = quant_weight_loader
         set_weight_attrs(weight, extra_weight_attrs)
 
-    def apply(self,
-              layer,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def apply(self, layer, x: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
         weight = layer.weight
         weights = weight.data
         scales = weight.scales
         out_dim, in_dim = weights.shape
         bsize = x.shape[0]
-        splitK = _SPLIT_K_MAP[(bsize - 1) // 64].get(
-            out_dim, 1) if bsize <= 768 else 1
+        splitK = _SPLIT_K_MAP[(bsize - 1) // 64].get(out_dim, 1) if bsize <= 768 else 1
         if bias is None:
             return ops.fp_eXmY_linear_forward_cuda(
-                self.quant_config.exponent_bits,
-                self.quant_config.mantissa_bits,
-                x, weights, scales, splitK)
+                self.quant_config.exponent_bits, self.quant_config.mantissa_bits, x, weights, scales, splitK
+            )
         else:
-            return ops.fp_eXmY_linear_forward_cuda(
-                self.quant_config.exponent_bits,
-                self.quant_config.mantissa_bits,
-                x, weights, scales, splitK) + bias
+            return (
+                ops.fp_eXmY_linear_forward_cuda(
+                    self.quant_config.exponent_bits, self.quant_config.mantissa_bits, x, weights, scales, splitK
+                )
+                + bias
+            )
+
 
 class QuantLLMFPParameter(nn.Parameter):
     """
@@ -186,31 +187,25 @@ class QuantLLMFPParameter(nn.Parameter):
     GPUs, and can be directly applied to float16 activations.
     """
 
-    def __new__(cls, orig_shape: torch.Size, params_dtype: torch.dtype,
-                quant_config: QuantLLMFPConfig):
-
-        data = torch.empty(torch.Size((orig_shape[0],
-                            orig_shape[1] * quant_config.weight_bits // 8)),
-                                   dtype=torch.uint8)
-
+    def __new__(cls, orig_shape: torch.Size, params_dtype: torch.dtype, quant_config: QuantLLMFPConfig):
+        data = torch.empty(
+            torch.Size((orig_shape[0], orig_shape[1] * quant_config.weight_bits // 8)), dtype=torch.uint8
+        )
 
         self = torch.Tensor._make_subclass(cls, data, data.requires_grad)
-        self.scales = torch.empty(orig_shape[0],
-                                  dtype=torch.float16)
+        self.scales = torch.empty(orig_shape[0], dtype=torch.float16)
         self.quant_config = quant_config
         self.orig_shape = orig_shape
         return self
 
     def quant_llmquantize_(self, tensor: torch.Tensor):
         assert tensor.device.type == "cuda" and tensor.dtype != torch.int8
-        data, scales = to_scaled_tc_fpx(
-            tensor.data, self.quant_config.exponent_bits,
-            self.quant_config.mantissa_bits)
+        data, scales = to_scaled_tc_fpx(tensor.data, self.quant_config.exponent_bits, self.quant_config.mantissa_bits)
         self.data.copy_(data)
         self.scales.copy_(scales)
 
     def quant_llmdequantize(self, output_dtype=None):
         output_dtype = output_dtype or torch.get_default_dtype()
-        return from_scaled_tc_fpx(self.data, self.quant_config.exponent_bits,
-                        self.quant_config.mantissa_bits, self.scales
-                        ).to(output_dtype)
+        return from_scaled_tc_fpx(
+            self.data, self.quant_config.exponent_bits, self.quant_config.mantissa_bits, self.scales
+        ).to(output_dtype)

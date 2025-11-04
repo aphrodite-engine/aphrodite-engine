@@ -161,9 +161,7 @@ class BaseRenderer(ABC):
     ) -> list[EngineEmbedsPrompt]:
         """Load and validate base64-encoded embeddings into prompt objects."""
         if not self.model_config.enable_prompt_embeds:
-            raise ValueError(
-                "You must set `--enable-prompt-embeds` to input `prompt_embeds`."
-            )
+            raise ValueError("You must set `--enable-prompt-embeds` to input `prompt_embeds`.")
 
         def _load_and_validate_embed(embed: bytes) -> EngineEmbedsPrompt:
             tensor = torch.load(
@@ -198,8 +196,7 @@ class CompletionRenderer(BaseRenderer):
         self,
         model_config: ModelConfig,
         tokenizer: AnyTokenizer | None = None,
-        async_tokenizer_pool: dict[AnyTokenizer, AsyncMicrobatchTokenizer]
-        | None = None,
+        async_tokenizer_pool: dict[AnyTokenizer, AsyncMicrobatchTokenizer] | None = None,
     ):
         super().__init__(model_config, tokenizer)
         self.async_tokenizer_pool = async_tokenizer_pool
@@ -249,11 +246,7 @@ class CompletionRenderer(BaseRenderer):
         rendered: list[EngineTokensPrompt | EngineEmbedsPrompt] = []
 
         if prompt_embeds is not None:
-            rendered.extend(
-                self.load_prompt_embeds(
-                    prompt_embeds, truncate_prompt_tokens, config.cache_salt
-                )
-            )
+            rendered.extend(self.load_prompt_embeds(prompt_embeds, truncate_prompt_tokens, config.cache_salt))
         if prompt_or_prompts is None or prompt_or_prompts == "":
             return rendered
 
@@ -265,9 +258,7 @@ class CompletionRenderer(BaseRenderer):
 
         return rendered
 
-    def _maybe_apply_truncation(
-        self, token_ids: list[int], truncate_prompt_tokens: int | None
-    ) -> list[int]:
+    def _maybe_apply_truncation(self, token_ids: list[int], truncate_prompt_tokens: int | None) -> list[int]:
         """Apply truncation to token sequence."""
         if truncate_prompt_tokens is None:
             return token_ids
@@ -319,9 +310,8 @@ class CompletionRenderer(BaseRenderer):
         async_tokenizer = self._get_async_tokenizer()
 
         # Handle encoder-specific preprocessing
-        if (
-            self.model_config.encoder_config is not None
-            and self.model_config.encoder_config.get("do_lower_case", False)
+        if self.model_config.encoder_config is not None and self.model_config.encoder_config.get(
+            "do_lower_case", False
         ):
             text = text.lower()
 
@@ -336,9 +326,7 @@ class CompletionRenderer(BaseRenderer):
                 max_length=truncate_prompt_tokens,
             )
 
-        return self._create_tokens_prompt(
-            encoded.input_ids, max_length, cache_salt, text
-        )
+        return self._create_tokens_prompt(encoded.input_ids, max_length, cache_salt, text)
 
     async def _create_prompt_from_token_ids(
         self,

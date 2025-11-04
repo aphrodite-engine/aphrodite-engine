@@ -53,9 +53,7 @@ def test_engine_core():
     executor_class = Executor.get_class(aphrodite_config)
 
     with set_default_torch_num_threads(1):
-        engine_core = EngineCore(
-            aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True
-        )
+        engine_core = EngineCore(aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True)
     """Test basic request lifecycle."""
 
     # First request.
@@ -186,9 +184,7 @@ def test_engine_core_advanced_sampling():
     executor_class = Executor.get_class(aphrodite_config)
 
     with set_default_torch_num_threads(1):
-        engine_core = EngineCore(
-            aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True
-        )
+        engine_core = EngineCore(aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True)
     """Test basic request lifecycle."""
     # First request.
     request: EngineCoreRequest = make_request()
@@ -280,9 +276,7 @@ def test_engine_core_concurrent_batches():
     )
     aphrodite_config = engine_args.create_engine_config()
     with set_default_torch_num_threads(1):
-        engine_core = EngineCore(
-            aphrodite_config=aphrodite_config, log_stats=False, executor_class=DummyExecutor
-        )
+        engine_core = EngineCore(aphrodite_config=aphrodite_config, log_stats=False, executor_class=DummyExecutor)
     assert engine_core.batch_queue is not None
 
     # Add two requests in a row. Each request have 12 prompt tokens.
@@ -348,10 +342,7 @@ def test_engine_core_concurrent_batches():
         assert output is not None
         assert len(output[0].outputs) == 1
         if req_id in engine_core.scheduler.requests:
-            assert (
-                engine_core.scheduler.requests[req_id].num_tokens
-                == expected_num_tokens[req_id]
-            )
+            assert engine_core.scheduler.requests[req_id].num_tokens == expected_num_tokens[req_id]
         expected_num_tokens[req_id] += 1
         req_id = (req_id + 1) % 2
 
@@ -373,19 +364,13 @@ def test_engine_core_tp():
     executor_class = Executor.get_class(aphrodite_config)
 
     with set_default_torch_num_threads(1):
-        engine_core = EngineCore(
-            aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True
-        )
+        engine_core = EngineCore(aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True)
 
     def get_worker_cache_config_field(worker, key: str):
         return getattr(worker.cache_config, key)
 
-    num_gpu_blocks = engine_core.collective_rpc(
-        get_worker_cache_config_field, args=("num_gpu_blocks",)
-    )
-    num_cpu_blocks = engine_core.collective_rpc(
-        get_worker_cache_config_field, args=("num_cpu_blocks",)
-    )
+    num_gpu_blocks = engine_core.collective_rpc(get_worker_cache_config_field, args=("num_gpu_blocks",))
+    num_cpu_blocks = engine_core.collective_rpc(get_worker_cache_config_field, args=("num_cpu_blocks",))
     assert all(x is not None for x in num_gpu_blocks)
     assert all(x is not None for x in num_cpu_blocks)
 
@@ -398,9 +383,7 @@ def test_engine_core_invalid_request_id_type():
     executor_class = Executor.get_class(aphrodite_config)
 
     with set_default_torch_num_threads(1):
-        engine_core = EngineCore(
-            aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True
-        )
+        engine_core = EngineCore(aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=True)
 
     # Test with UUID object (common mistake)
     uuid_request = make_request()

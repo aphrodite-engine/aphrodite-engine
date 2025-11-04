@@ -3,16 +3,16 @@ from collections.abc import Generator
 
 import pytest
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 ChatCompletionToolsParam,
-                                                 DeltaMessage, FunctionCall,
-                                                 ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.qwen3coder_tool_parser import (
-    Qwen3CoderToolParser)
-from aphrodite.endpoints.openai.tool_parsers.qwen3xml_tool_parser import (
-    Qwen3XMLToolParser)
-from aphrodite.transformers_utils.detokenizer_utils import (
-    detokenize_incrementally)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    ChatCompletionToolsParam,
+    DeltaMessage,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.qwen3coder_tool_parser import Qwen3CoderToolParser
+from aphrodite.endpoints.openai.tool_parsers.qwen3xml_tool_parser import Qwen3XMLToolParser
+from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 pytestmark = pytest.mark.cpu_test
@@ -81,20 +81,14 @@ def sample_tools():
     ]
 
 
-def assert_tool_calls(
-    actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]
-):
+def assert_tool_calls(actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]):
     assert len(actual_tool_calls) == len(expected_tool_calls)
 
-    for actual_tool_call, expected_tool_call in zip(
-        actual_tool_calls, expected_tool_calls
-    ):
+    for actual_tool_call, expected_tool_call in zip(actual_tool_calls, expected_tool_calls):
         # Qwen3 parser doesn't generate IDs during extraction
         assert actual_tool_call.type == "function"
         assert actual_tool_call.function.name == expected_tool_call.function.name
-        assert json.loads(actual_tool_call.function.arguments) == json.loads(
-            expected_tool_call.function.arguments
-        )
+        assert json.loads(actual_tool_call.function.arguments) == json.loads(expected_tool_call.function.arguments)
 
 
 def stream_delta_message_generator(
@@ -114,16 +108,14 @@ def stream_delta_message_generator(
         previous_token_ids = all_token_ids[:i]
         current_token_ids = all_token_ids[: i + 1]
 
-        (new_tokens, delta_text, new_prefix_offset, new_read_offset) = (
-            detokenize_incrementally(
-                tokenizer=qwen3_tokenizer,
-                all_input_ids=current_token_ids,
-                prev_tokens=previous_tokens,
-                prefix_offset=prefix_offset,
-                read_offset=read_offset,
-                skip_special_tokens=False,
-                spaces_between_special_tokens=True,
-            )
+        (new_tokens, delta_text, new_prefix_offset, new_read_offset) = detokenize_incrementally(
+            tokenizer=qwen3_tokenizer,
+            all_input_ids=current_token_ids,
+            prev_tokens=previous_tokens,
+            prefix_offset=prefix_offset,
+            read_offset=read_offset,
+            skip_special_tokens=False,
+            spaces_between_special_tokens=True,
         )
 
         current_text = previous_text + delta_text
@@ -141,18 +133,14 @@ def stream_delta_message_generator(
             yield delta_message
 
         previous_text = current_text
-        previous_tokens = (
-            previous_tokens + new_tokens if previous_tokens else new_tokens
-        )
+        previous_tokens = previous_tokens + new_tokens if previous_tokens else new_tokens
         prefix_offset = new_prefix_offset
         read_offset = new_read_offset
 
 
 def test_extract_tool_calls_no_tools(qwen3_tool_parser_parametrized):
     model_output = "This is a test response without any tool calls"
-    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert not extracted_tool_calls.tools_called
     assert extracted_tool_calls.tool_calls == []
     assert extracted_tool_calls.content == model_output
@@ -186,9 +174,7 @@ fahrenheit
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Dallas", "state": "TX", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Dallas", "state": "TX", "unit": "fahrenheit"}),
                     )
                 )
             ],
@@ -212,9 +198,7 @@ fahrenheit
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Dallas", "state": "TX", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Dallas", "state": "TX", "unit": "fahrenheit"}),
                     )
                 )
             ],
@@ -282,17 +266,13 @@ fahrenheit
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Dallas", "state": "TX", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Dallas", "state": "TX", "unit": "fahrenheit"}),
                     )
                 ),
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Orlando", "state": "FL", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Orlando", "state": "FL", "unit": "fahrenheit"}),
                     )
                 ),
             ],
@@ -338,9 +318,7 @@ def test_extract_tool_calls(
     expected_content,
 ):
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=sample_tools)
-    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(
-        model_output, request=request
-    )
+    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(model_output, request=request)
     assert extracted_tool_calls.tools_called
 
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
@@ -348,9 +326,7 @@ def test_extract_tool_calls(
     assert extracted_tool_calls.content == expected_content
 
 
-def test_extract_tool_calls_fallback_no_tags(
-    qwen3_tool_parser_parametrized, sample_tools
-):
+def test_extract_tool_calls_fallback_no_tags(qwen3_tool_parser_parametrized, sample_tools):
     """Test fallback parsing when XML tags are missing"""
     model_output = """<function=get_current_weather>
 <parameter=city>
@@ -362,9 +338,7 @@ TX
 </function>"""
 
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=sample_tools)
-    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(
-        model_output, request=request
-    )
+    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(model_output, request=request)
 
     assert extracted_tool_calls.tools_called
     assert len(extracted_tool_calls.tool_calls) == 1
@@ -413,9 +387,7 @@ hello world
 </tool_call>"""
 
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=tools)
-    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(
-        model_output, request=request
-    )
+    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(model_output, request=request)
 
     args = json.loads(extracted_tool_calls.tool_calls[0].function.arguments)
     assert args["int_param"] == 42
@@ -455,9 +427,7 @@ fahrenheit
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Dallas", "state": "TX", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Dallas", "state": "TX", "unit": "fahrenheit"}),
                     )
                 )
             ],
@@ -481,9 +451,7 @@ fahrenheit
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Dallas", "state": "TX", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Dallas", "state": "TX", "unit": "fahrenheit"}),
                     )
                 )
             ],
@@ -551,17 +519,13 @@ celsius
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Dallas", "state": "TX", "unit": "fahrenheit"}
-                        ),
+                        arguments=json.dumps({"city": "Dallas", "state": "TX", "unit": "fahrenheit"}),
                     )
                 ),
                 ToolCall(
                     function=FunctionCall(
                         name="get_current_weather",
-                        arguments=json.dumps(
-                            {"city": "Orlando", "state": "FL", "unit": "celsius"}
-                        ),
+                        arguments=json.dumps({"city": "Orlando", "state": "FL", "unit": "celsius"}),
                     )
                 ),
             ],
@@ -659,9 +623,7 @@ def test_extract_tool_calls_streaming(
 
     # Verify we got all expected tool calls
     assert len(tool_states) == len(expected_tool_calls)
-    assert len(qwen3_tool_parser_parametrized.prev_tool_call_arr) == len(
-        expected_tool_calls
-    )
+    assert len(qwen3_tool_parser_parametrized.prev_tool_call_arr) == len(expected_tool_calls)
 
     # Verify each tool call
     for idx, expected_tool in enumerate(expected_tool_calls):
@@ -678,9 +640,7 @@ def test_extract_tool_calls_streaming(
         assert actual_args == expected_args
 
 
-def test_extract_tool_calls_missing_closing_parameter_tag(
-    qwen3_tool_parser_parametrized, sample_tools
-):
+def test_extract_tool_calls_missing_closing_parameter_tag(qwen3_tool_parser_parametrized, sample_tools):
     """Test handling of missing closing </parameter> tag"""
     # Using get_current_weather from sample_tools but with malformed XML
     model_output = """Let me check the weather for you:
@@ -698,9 +658,7 @@ fahrenheit
 </tool_call>"""
 
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=sample_tools)
-    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(
-        model_output, request=request
-    )
+    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(model_output, request=request)
 
     # The parser should handle the malformed XML gracefully
     assert extracted_tool_calls.tools_called
@@ -795,9 +753,7 @@ fahrenheit
     assert args["unit"] == "fahrenheit"
 
 
-def test_extract_tool_calls_streaming_incremental(
-    qwen3_tool_parser_parametrized, qwen3_tokenizer, sample_tools
-):
+def test_extract_tool_calls_streaming_incremental(qwen3_tool_parser_parametrized, qwen3_tokenizer, sample_tools):
     """Test that streaming is truly incremental"""
     model_output = """I'll check the weather.<tool_call>
 <function=get_current_weather>
@@ -885,9 +841,7 @@ def test_extract_tool_calls_complex_type_with_single_quote(
 </tool_call>"""
 
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=tools)
-    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(
-        model_output, request=request
-    )
+    extracted_tool_calls = qwen3_tool_parser_parametrized.extract_tool_calls(model_output, request=request)
 
     args = json.loads(extracted_tool_calls.tool_calls[0].function.arguments)
     assert args["obj_param"] == {"key": "value"}

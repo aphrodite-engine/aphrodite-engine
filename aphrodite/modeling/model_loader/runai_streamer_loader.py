@@ -10,10 +10,11 @@ from aphrodite.config import ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
-    download_safetensors_index_file_from_hf, download_weights_from_hf,
-    runai_safetensors_weights_iterator)
-from aphrodite.transformers_utils.runai_utils import (is_runai_obj_uri,
-                                                      list_safetensors)
+    download_safetensors_index_file_from_hf,
+    download_weights_from_hf,
+    runai_safetensors_weights_iterator,
+)
+from aphrodite.transformers_utils.runai_utils import is_runai_obj_uri, list_safetensors
 
 
 class RunaiModelStreamerLoader(BaseModelLoader):
@@ -29,33 +30,21 @@ class RunaiModelStreamerLoader(BaseModelLoader):
         if load_config.model_loader_extra_config:
             extra_config = load_config.model_loader_extra_config
 
-            if "distributed" in extra_config and isinstance(
-                extra_config.get("distributed"), bool
-            ):
+            if "distributed" in extra_config and isinstance(extra_config.get("distributed"), bool):
                 self._is_distributed = extra_config.get("distributed")
 
-            if "concurrency" in extra_config and isinstance(
-                extra_config.get("concurrency"), int
-            ):
-                os.environ["RUNAI_STREAMER_CONCURRENCY"] = str(
-                    extra_config.get("concurrency")
-                )
+            if "concurrency" in extra_config and isinstance(extra_config.get("concurrency"), int):
+                os.environ["RUNAI_STREAMER_CONCURRENCY"] = str(extra_config.get("concurrency"))
 
-            if "memory_limit" in extra_config and isinstance(
-                extra_config.get("memory_limit"), int
-            ):
-                os.environ["RUNAI_STREAMER_MEMORY_LIMIT"] = str(
-                    extra_config.get("memory_limit")
-                )
+            if "memory_limit" in extra_config and isinstance(extra_config.get("memory_limit"), int):
+                os.environ["RUNAI_STREAMER_MEMORY_LIMIT"] = str(extra_config.get("memory_limit"))
 
             runai_streamer_s3_endpoint = os.getenv("RUNAI_STREAMER_S3_ENDPOINT")
             aws_endpoint_url = os.getenv("AWS_ENDPOINT_URL")
             if runai_streamer_s3_endpoint is None and aws_endpoint_url is not None:
                 os.environ["RUNAI_STREAMER_S3_ENDPOINT"] = aws_endpoint_url
 
-    def _prepare_weights(
-        self, model_name_or_path: str, revision: str | None
-    ) -> list[str]:
+    def _prepare_weights(self, model_name_or_path: str, revision: str | None) -> list[str]:
         """Prepare weights for the model.
 
         If the model is not local, it will be downloaded."""
@@ -84,9 +73,7 @@ class RunaiModelStreamerLoader(BaseModelLoader):
             )
 
         if not hf_weights_files:
-            raise RuntimeError(
-                f"Cannot find any safetensors model weights with `{model_name_or_path}`"
-            )
+            raise RuntimeError(f"Cannot find any safetensors model weights with `{model_name_or_path}`")
 
         return hf_weights_files
 
@@ -108,6 +95,4 @@ class RunaiModelStreamerLoader(BaseModelLoader):
         model_weights = model_config.model
         if hasattr(model_config, "model_weights"):
             model_weights = model_config.model_weights
-        model.load_weights(
-            self._get_weights_iterator(model_weights, model_config.revision)
-        )
+        model.load_weights(self._get_weights_iterator(model_weights, model_config.revision))

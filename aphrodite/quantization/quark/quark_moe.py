@@ -6,24 +6,25 @@ import torch
 import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEConfig,
-                                                 FusedMoEMethodBase,
-                                                 FusedMoeWeightScaleSupported)
+from aphrodite.modeling.layers.fused_moe import (
+    FusedMoE,
+    FusedMoEConfig,
+    FusedMoEMethodBase,
+    FusedMoeWeightScaleSupported,
+)
 from aphrodite.modeling.layers.fused_moe.config import (
-    FusedMoEQuantConfig, fp8_w8a8_moe_quant_config, ocp_mx_moe_quant_config)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    fused_marlin_moe)
-from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import (
-    is_rocm_aiter_moe_enabled, use_mxfp4_aiter_moe)
+    FusedMoEQuantConfig,
+    fp8_w8a8_moe_quant_config,
+    ocp_mx_moe_quant_config,
+)
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import fused_marlin_moe
+from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import is_rocm_aiter_moe_enabled, use_mxfp4_aiter_moe
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.marlin_utils_fp8 import (
-    prepare_moe_fp8_layer_for_marlin)
-from aphrodite.quantization.utils.ocp_mx_utils import (OCP_MX_BLOCK_SIZE,
-                                                       OCP_MX_Scheme)
+from aphrodite.quantization.utils.marlin_utils_fp8 import prepare_moe_fp8_layer_for_marlin
+from aphrodite.quantization.utils.ocp_mx_utils import OCP_MX_BLOCK_SIZE, OCP_MX_Scheme
 from aphrodite.quantization.utils.quant_utils import GroupShape
-from aphrodite.quantization.utils.w8a8_utils import (
-    all_close_1d, normalize_e4m3fn_to_e4m3fnuz, per_tensor_dequantize)
+from aphrodite.quantization.utils.w8a8_utils import all_close_1d, normalize_e4m3fn_to_e4m3fnuz, per_tensor_dequantize
 from aphrodite.scalar_type import scalar_types
 
 logger = init_logger(__name__)
@@ -45,9 +46,7 @@ class QuarkMoEMethod(FusedMoEMethodBase):
 
         if layer_quant_config.get("output_tensors") or layer_quant_config.get("bias"):
             raise NotImplementedError(
-                "Currently, Quark models with "
-                "output_tensors and bias "
-                "quantized are not supported"
+                "Currently, Quark models with output_tensors and bias quantized are not supported"
             )
         weight_config = layer_quant_config.get("weight")
         input_config = layer_quant_config.get("input_tensors")
@@ -73,15 +72,9 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
 
         self.weight_qscheme = self.weight_quant.get("qscheme")
         self.input_qscheme = self.input_quant.get("qscheme")
-        per_tensor = (
-            self.weight_qscheme == "per_tensor" and self.input_qscheme == "per_tensor"
-        )
-        per_channel = (
-            self.weight_qscheme == "per_channel" and self.input_qscheme == "per_channel"
-        )
-        self.act_quant_group_shape = (
-            GroupShape.PER_TOKEN if per_channel else GroupShape.PER_TENSOR
-        )
+        per_tensor = self.weight_qscheme == "per_tensor" and self.input_qscheme == "per_tensor"
+        per_channel = self.weight_qscheme == "per_channel" and self.input_qscheme == "per_channel"
+        self.act_quant_group_shape = GroupShape.PER_TOKEN if per_channel else GroupShape.PER_TENSOR
         if not (per_tensor or per_channel):
             raise ValueError(
                 "For FP8 Fused MoE layers, only per-tensor and per-channel "
@@ -92,16 +85,12 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
         self.static_input_scales = not self.input_quant.get("is_dynamic")
         if self.static_input_scales and per_channel:
             raise ValueError(
-                "For FP8 Fused MoE layer, we require either per tensor or "
-                "channelwise, dynamic per token quantization."
+                "For FP8 Fused MoE layer, we require either per tensor or channelwise, dynamic per token quantization."
             )
 
         # For GPUs that lack FP8 hardware support, we can leverage the Marlin
         # kernel for fast weight-only FP8 quantization
-        self.use_marlin = (
-            not current_platform.has_device_capability(89)
-            or envs.APHRODITE_TEST_FORCE_FP8_MARLIN
-        )
+        self.use_marlin = not current_platform.has_device_capability(89) or envs.APHRODITE_TEST_FORCE_FP8_MARLIN
         # Disable marlin for rocm
         if current_platform.is_rocm():
             self.use_marlin = False
@@ -153,18 +142,12 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
         if self.weight_qscheme == "per_tensor":
             # Allocate 2 scales for w1 and w3 respectively.
             # They are combined to a single scale after weight loading.
-            w13_weight_scale = torch.nn.Parameter(
-                torch.ones(num_experts, 2, dtype=torch.float32), requires_grad=False
-            )
+            w13_weight_scale = torch.nn.Parameter(torch.ones(num_experts, 2, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w13_weight_scale", w13_weight_scale)
-            w2_weight_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w2_weight_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w2_weight_scale", w2_weight_scale)
             # Add PER-TENSOR quantization for FusedMoE.weight_loader.
-            extra_weight_attrs.update(
-                {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value}
-            )
+            extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.TENSOR.value})
             set_weight_attrs(w13_weight_scale, extra_weight_attrs)
             set_weight_attrs(w2_weight_scale, extra_weight_attrs)
         elif self.weight_qscheme == "per_channel":
@@ -184,23 +167,17 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
             )
             layer.register_parameter("w2_weight_scale", w2_weight_scale)
             # Add PER-CHANNEL quantization for FusedMoE.weight_loader.
-            extra_weight_attrs.update(
-                {"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value}
-            )
+            extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value})
             set_weight_attrs(w13_weight_scale, extra_weight_attrs)
             set_weight_attrs(w2_weight_scale, extra_weight_attrs)
 
         # INPUT_SCALES
         if self.static_input_scales:
-            w13_input_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w13_input_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w13_input_scale", w13_input_scale)
             set_weight_attrs(w13_input_scale, extra_weight_attrs)
 
-            w2_input_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w2_input_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w2_input_scale", w2_input_scale)
             set_weight_attrs(w2_input_scale, extra_weight_attrs)
         else:
@@ -212,52 +189,33 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
         # We take the max of all the scales in case they differ.
         if self.static_input_scales:
             if layer.w13_input_scale is None or layer.w2_input_scale is None:
-                raise ValueError(
-                    "QuantConfig has static quantization, but found "
-                    "activation scales are None."
-                )
-            if not all_close_1d(layer.w13_input_scale) or not all_close_1d(
-                layer.w2_input_scale
-            ):
+                raise ValueError("QuantConfig has static quantization, but found activation scales are None.")
+            if not all_close_1d(layer.w13_input_scale) or not all_close_1d(layer.w2_input_scale):
                 logger.warning_once(
                     "Found input_scales that are not equal for "
                     "fp8 MoE layer. Using the maximum across experts "
                     "for each layer. "
                 )
-            layer.w13_input_scale = torch.nn.Parameter(
-                layer.w13_input_scale.max(), requires_grad=False
-            )
-            layer.w2_input_scale = torch.nn.Parameter(
-                layer.w2_input_scale.max(), requires_grad=False
-            )
+            layer.w13_input_scale = torch.nn.Parameter(layer.w13_input_scale.max(), requires_grad=False)
+            layer.w2_input_scale = torch.nn.Parameter(layer.w2_input_scale.max(), requires_grad=False)
 
         if current_platform.is_fp8_fnuz():
             # Normalize the weights and scales
-            w13_weight, w13_weight_scale, w13_input_scale = (
-                normalize_e4m3fn_to_e4m3fnuz(
-                    layer.w13_weight, layer.w13_weight_scale, layer.w13_input_scale
-                )
+            w13_weight, w13_weight_scale, w13_input_scale = normalize_e4m3fn_to_e4m3fnuz(
+                layer.w13_weight, layer.w13_weight_scale, layer.w13_input_scale
             )
             w2_weight, w2_weight_scale, w2_input_scale = normalize_e4m3fn_to_e4m3fnuz(
                 layer.w2_weight, layer.w2_weight_scale, layer.w2_input_scale
             )
             # Reset the parameter
             layer.w13_weight = torch.nn.Parameter(w13_weight, requires_grad=False)
-            layer.w13_weight_scale = torch.nn.Parameter(
-                w13_weight_scale, requires_grad=False
-            )
+            layer.w13_weight_scale = torch.nn.Parameter(w13_weight_scale, requires_grad=False)
             if w13_input_scale is not None:
-                layer.w13_input_scale = torch.nn.Parameter(
-                    w13_input_scale, requires_grad=False
-                )
+                layer.w13_input_scale = torch.nn.Parameter(w13_input_scale, requires_grad=False)
             layer.w2_weight = torch.nn.Parameter(w2_weight, requires_grad=False)
-            layer.w2_weight_scale = torch.nn.Parameter(
-                w2_weight_scale, requires_grad=False
-            )
+            layer.w2_weight_scale = torch.nn.Parameter(w2_weight_scale, requires_grad=False)
             if w2_input_scale is not None:
-                layer.w2_input_scale = torch.nn.Parameter(
-                    w2_input_scale, requires_grad=False
-                )
+                layer.w2_input_scale = torch.nn.Parameter(w2_input_scale, requires_grad=False)
 
         # For per-tensor case, Fp8 moe kernel needs single weight scale
         # for w13 per expert. Use max then dequant and requant each expert.
@@ -272,34 +230,28 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
                         layer.w13_weight[expert_id][start : start + shard_size, :],
                         layer.w13_weight_scale[expert_id][shard_id],
                     )
-                    layer.w13_weight[expert_id][start : start + shard_size, :], _ = (
-                        ops.scaled_fp8_quant(dq_weight, max_w13_scales[expert_id])
+                    layer.w13_weight[expert_id][start : start + shard_size, :], _ = ops.scaled_fp8_quant(
+                        dq_weight, max_w13_scales[expert_id]
                     )
                     start += shard_size
 
-            layer.w13_weight_scale = torch.nn.Parameter(
-                max_w13_scales, requires_grad=False
-            )
+            layer.w13_weight_scale = torch.nn.Parameter(max_w13_scales, requires_grad=False)
         # quark's scale is 1 dim.
         elif self.weight_qscheme == "per_channel":
             if self.act_quant_group_shape == GroupShape.PER_TOKEN:
                 w13_weight_scale = layer.w13_weight_scale.unsqueeze(-1)
-                layer.w13_weight_scale = torch.nn.Parameter(
-                    w13_weight_scale, requires_grad=False
-                )
+                layer.w13_weight_scale = torch.nn.Parameter(w13_weight_scale, requires_grad=False)
                 w2_weight_scale = layer.w2_weight_scale.unsqueeze(-1)
-                layer.w2_weight_scale = torch.nn.Parameter(
-                    w2_weight_scale, requires_grad=False
-                )
+                layer.w2_weight_scale = torch.nn.Parameter(w2_weight_scale, requires_grad=False)
         # Property to determine if AITER is used
         if self.rocm_aiter_moe_enabled:
             from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import (  # noqa E501
-                rocm_aiter_fused_experts, shuffle_weights)
+                rocm_aiter_fused_experts,
+                shuffle_weights,
+            )
 
             # reshaping weights is required for aiter moe kernel.
-            shuffled_w13, shuffled_w2 = shuffle_weights(
-                layer.w13_weight.data, layer.w2_weight.data
-            )
+            shuffled_w13, shuffled_w2 = shuffle_weights(layer.w13_weight.data, layer.w2_weight.data)
 
             layer.w13_weight = torch.nn.Parameter(shuffled_w13, requires_grad=False)
             layer.w2_weight = torch.nn.Parameter(shuffled_w2, requires_grad=False)
@@ -316,9 +268,7 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
 
             self.fused_experts_func = fused_experts
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return fp8_w8a8_moe_quant_config(
             w1_scale=layer.w13_weight_scale,
             w2_scale=layer.w2_weight_scale,
@@ -354,9 +304,7 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
         assert self.fused_experts is None
 
         if enable_eplb:
-            raise NotImplementedError(
-                "EPLB not supported for `QuarkW8A8Fp8MoEMethod` yet."
-            )
+            raise NotImplementedError("EPLB not supported for `QuarkW8A8Fp8MoEMethod` yet.")
 
         topk_weights, topk_ids, _ = FusedMoE.select_experts(
             hidden_states=x,
@@ -446,14 +394,11 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
         self.weight_dtype = self.weight_quant["dtype"].replace("fp", "mxfp")
         self.input_dtype = self.input_quant["dtype"].replace("fp", "mxfp")
 
-        self.ocp_mx_scheme = OCP_MX_Scheme.from_quant_dtype(
-            self.input_dtype, self.weight_dtype
-        )
+        self.ocp_mx_scheme = OCP_MX_Scheme.from_quant_dtype(self.input_dtype, self.weight_dtype)
 
         if self.static_input_scales:
             raise NotImplementedError(
-                "QuarkOCP_MX_MoEMethod with static input scales is currently "
-                "not implemented. Please open an issue."
+                "QuarkOCP_MX_MoEMethod with static input scales is currently not implemented. Please open an issue."
             )
 
         self.emulate = not current_platform.supports_mx() or not (
@@ -470,9 +415,7 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
                 "layers computed in high precision."
             )
         else:
-            logger.warning_once(
-                "The current mode supports native MoE MXFP4 computation"
-            )
+            logger.warning_once("The current mode supports native MoE MXFP4 computation")
 
     def get_packed_dim(self, dim: int, quant_dtype: str):
         if quant_dtype == "mxfp4":
@@ -494,9 +437,7 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
     ):
         # Add the quantization method used (per tensor/grouped/channel)
         # to ensure the weight scales are loaded in properly
-        extra_weight_attrs.update(
-            {"quant_method": FusedMoeWeightScaleSupported.BLOCK.value}
-        )
+        extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.BLOCK.value})
 
         params_dtype = torch.uint8
 
@@ -570,9 +511,7 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
         layer.w2_weight_scale.data = w2_weight_scale.view(s0, s1, -1)
         torch.cuda.empty_cache()
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return ocp_mx_moe_quant_config(
             quant_dtype=self.input_dtype,
             weight_dtype=self.weight_dtype,
@@ -609,9 +548,7 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
         assert self.fused_experts is None
 
         if enable_eplb:
-            raise NotImplementedError(
-                "EPLB not supported for `QuarkOCP_MX_MoEMethod` yet."
-            )
+            raise NotImplementedError("EPLB not supported for `QuarkOCP_MX_MoEMethod` yet.")
 
         topk_weights, topk_ids, _ = FusedMoE.select_experts(
             hidden_states=x,
@@ -637,9 +574,7 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
                 ActivationType.Silu.name.lower(): ActivationType.Silu,
                 ActivationType.Gelu.name.lower(): ActivationType.Gelu,
             }
-            assert activation in aiter_acts, (
-                f"Aiter CK fp4 MoE doesn't support activation {activation}"
-            )
+            assert activation in aiter_acts, f"Aiter CK fp4 MoE doesn't support activation {activation}"
             out = fused_moe(
                 x,
                 layer.w13_weight,

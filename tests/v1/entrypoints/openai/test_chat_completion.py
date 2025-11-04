@@ -56,10 +56,7 @@ async def test_invalid_json_schema(client: openai.AsyncOpenAI, model_name: str) 
         "title": "CarDescription",
         "type": "object",
     }
-    prompt = (
-        "Generate a JSON with the brand, model and car_type of"
-        "the most iconic car from the 90's"
-    )
+    prompt = "Generate a JSON with the brand, model and car_type ofthe most iconic car from the 90's"
     with pytest.raises((openai.BadRequestError, openai.APIError)):
         await client.chat.completions.create(
             model=model_name,
@@ -118,10 +115,7 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
         number ::= "1 " | "2 "
     """
 
-    prompt = (
-        "Generate an SQL query to show the 'username' and 'email'"
-        "from the 'users' table."
-    )
+    prompt = "Generate an SQL query to show the 'username' and 'email'from the 'users' table."
     with pytest.raises((openai.BadRequestError, openai.APIError)):
         await client.chat.completions.create(
             model=model_name,
@@ -131,7 +125,5 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
                     "content": prompt,
                 }
             ],
-            extra_body={
-                "structured_outputs": {"grammar": invalid_simplified_sql_grammar}
-            },
+            extra_body={"structured_outputs": {"grammar": invalid_simplified_sql_grammar}},
         )

@@ -4,15 +4,12 @@ from copy import deepcopy
 import pytest
 from transformers import AutoTokenizer
 
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    get_cached_tokenizer)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_cached_tokenizer
 
 
 @pytest.mark.parametrize("model_id", ["gpt2", "zai-org/chatglm3-6b"])
 def test_cached_tokenizer(model_id: str):
-    reference_tokenizer = AutoTokenizer.from_pretrained(
-        model_id, trust_remote_code=True
-    )
+    reference_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     reference_tokenizer.add_special_tokens({"cls_token": "<CLS>"})
     reference_tokenizer.add_special_tokens({"additional_special_tokens": ["<SEP>"]})
 
@@ -35,8 +32,6 @@ def _check_consistency(target: AnyTokenizer, expected: AnyTokenizer):
     assert len(target) == len(expected)
 
     # Other attributes
-    assert getattr(target, "padding_side", None) == getattr(
-        expected, "padding_side", None
-    )
+    assert getattr(target, "padding_side", None) == getattr(expected, "padding_side", None)
 
     assert target.encode("prompt") == expected.encode("prompt")

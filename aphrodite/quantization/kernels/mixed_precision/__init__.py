@@ -1,23 +1,17 @@
 import aphrodite.envs as envs
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.kernels.mixed_precision.allspark import (  # noqa: E501
-    AllSparkLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.bitblas import (  # noqa: E501
-    BitBLASLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.conch import (  # noqa: E501
-    ConchLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.cutlass import (  # noqa: E501
-    CutlassW4A8LinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.dynamic_4bit import (  # noqa: E501
-    Dynamic4bitLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.exllama import (  # noqa: E501
-    ExllamaLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.machete import (  # noqa: E501
-    MacheteLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.marlin import (  # noqa: E501
-    MarlinLinearKernel)
+from aphrodite.quantization.kernels.mixed_precision.allspark import AllSparkLinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.bitblas import BitBLASLinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.conch import ConchLinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.cutlass import CutlassW4A8LinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.dynamic_4bit import Dynamic4bitLinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.exllama import ExllamaLinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.machete import MacheteLinearKernel  # noqa: E501
+from aphrodite.quantization.kernels.mixed_precision.marlin import MarlinLinearKernel  # noqa: E501
 from aphrodite.quantization.kernels.mixed_precision.MPLinearKernel import (  # noqa: E501
-    MPLinearKernel, MPLinearLayerConfig)
+    MPLinearKernel,
+    MPLinearLayerConfig,
+)
 
 # in priority/performance order (when available)
 _POSSIBLE_KERNELS: list[type[MPLinearKernel]] = [
@@ -32,9 +26,7 @@ _POSSIBLE_KERNELS: list[type[MPLinearKernel]] = [
 ]
 
 
-def choose_mp_linear_kernel(
-    config: MPLinearLayerConfig, compute_capability: int | None = None
-) -> type[MPLinearKernel]:
+def choose_mp_linear_kernel(config: MPLinearLayerConfig, compute_capability: int | None = None) -> type[MPLinearKernel]:
     """
     Choose an MPLinearKernel that can implement the given config for the given
      compute capability. Attempts to choose the best kernel in terms of
@@ -63,14 +55,9 @@ def choose_mp_linear_kernel(
     failure_reasons = []
     for kernel in _POSSIBLE_KERNELS:
         if kernel.__name__ in envs.APHRODITE_DISABLED_KERNELS:
-            failure_reasons.append(
-                f" {kernel.__name__} disabled by environment variable"
-            )
+            failure_reasons.append(f" {kernel.__name__} disabled by environment variable")
             continue
-        if (
-            compute_capability is not None
-            and kernel.get_min_capability() > compute_capability
-        ):
+        if compute_capability is not None and kernel.get_min_capability() > compute_capability:
             failure_reasons.append(
                 f"{kernel.__name__} requires capability "
                 f"{kernel.get_min_capability()}, current compute "
@@ -82,11 +69,8 @@ def choose_mp_linear_kernel(
         if can_implement:
             return kernel
         else:
-            failure_reasons.append(
-                f" {kernel.__name__} cannot implement due to: {failure_reason}"
-            )
+            failure_reasons.append(f" {kernel.__name__} cannot implement due to: {failure_reason}")
 
     raise ValueError(
-        "Failed to find a kernel that can implement the "
-        "WNA16 linear layer. Reasons: \n" + "\n".join(failure_reasons)
+        "Failed to find a kernel that can implement the WNA16 linear layer. Reasons: \n" + "\n".join(failure_reasons)
     )

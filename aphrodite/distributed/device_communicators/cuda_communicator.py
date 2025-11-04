@@ -2,12 +2,9 @@ import torch
 from torch.distributed import ProcessGroup
 
 import aphrodite.envs as envs
-from aphrodite.distributed.device_communicators.all_reduce_utils import (
-    should_nccl_symm_mem_allreduce)
-from aphrodite.distributed.device_communicators.pynccl import (
-    register_nccl_symmetric_ops)
-from aphrodite.distributed.device_communicators.pynccl_allocator import (
-    is_symmetric_memory_enabled)
+from aphrodite.distributed.device_communicators.all_reduce_utils import should_nccl_symm_mem_allreduce
+from aphrodite.distributed.device_communicators.pynccl import register_nccl_symmetric_ops
+from aphrodite.distributed.device_communicators.pynccl_allocator import is_symmetric_memory_enabled
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 
@@ -30,8 +27,7 @@ class CudaCommunicator(DeviceCommunicatorBase):
             use_custom_allreduce = False
             use_torch_symm_mem = False
         else:
-            from aphrodite.distributed.parallel_state import (
-                _ENABLE_CUSTOM_ALL_REDUCE)
+            from aphrodite.distributed.parallel_state import _ENABLE_CUSTOM_ALL_REDUCE
 
             use_custom_allreduce = _ENABLE_CUSTOM_ALL_REDUCE
             use_torch_symm_mem = envs.APHRODITE_ALLREDUCE_USE_SYMM_MEM
@@ -40,14 +36,10 @@ class CudaCommunicator(DeviceCommunicatorBase):
         self.use_torch_symm_mem = use_torch_symm_mem
 
         # lazy import to avoid documentation build error
-        from aphrodite.distributed.device_communicators.custom_all_reduce import (
-            CustomAllreduce)
-        from aphrodite.distributed.device_communicators.pynccl import (
-            PyNcclCommunicator)
-        from aphrodite.distributed.device_communicators.quick_all_reduce import (
-            QuickAllReduce)
-        from aphrodite.distributed.device_communicators.symm_mem import (
-            SymmMemCommunicator)
+        from aphrodite.distributed.device_communicators.custom_all_reduce import CustomAllreduce
+        from aphrodite.distributed.device_communicators.pynccl import PyNcclCommunicator
+        from aphrodite.distributed.device_communicators.quick_all_reduce import QuickAllReduce
+        from aphrodite.distributed.device_communicators.symm_mem import SymmMemCommunicator
 
         self.pynccl_comm: PyNcclCommunicator | None = None
         if self.world_size > 1:
@@ -72,9 +64,7 @@ class CudaCommunicator(DeviceCommunicatorBase):
             self.ca_comm = CustomAllreduce(
                 group=self.cpu_group,
                 device=self.device,
-                symm_mem_enabled=(
-                    self.symm_mem_comm is not None and not self.symm_mem_comm.disabled
-                ),
+                symm_mem_enabled=(self.symm_mem_comm is not None and not self.symm_mem_comm.disabled),
             )
 
             if current_platform.is_rocm():
@@ -122,29 +112,19 @@ class CudaCommunicator(DeviceCommunicatorBase):
     def all_reduce(self, input_):
         # since currently we perform copy input -> symm_input -> out-of-place AR
         # return symm_output, we don't need to check if input is symmetric
-        if self.pynccl_comm is not None and should_nccl_symm_mem_allreduce(
-            self.pynccl_comm.world_size, input_
-        ):
+        if self.pynccl_comm is not None and should_nccl_symm_mem_allreduce(self.pynccl_comm.world_size, input_):
             out = torch.ops.aphrodite.all_reduce_symmetric_with_copy(input_)
             if out is not None:
                 return out
         # always try quick reduce first, then custom allreduce,
         # and then pynccl. (quick reduce just for ROCM MI3*)
         qr_comm = self.qr_comm
-        if (
-            qr_comm is not None
-            and not qr_comm.disabled
-            and qr_comm.should_quick_allreduce(input_)
-        ):
+        if qr_comm is not None and not qr_comm.disabled and qr_comm.should_quick_allreduce(input_):
             out = qr_comm.quick_all_reduce(input_)
             assert out is not None
             return out
         ca_comm = self.ca_comm
-        if (
-            ca_comm is not None
-            and not ca_comm.disabled
-            and ca_comm.should_custom_ar(input_)
-        ):
+        if ca_comm is not None and not ca_comm.disabled and ca_comm.should_custom_ar(input_):
             out = ca_comm.custom_all_reduce(input_)
             assert out is not None
             return out
@@ -185,18 +165,14 @@ class CudaCommunicator(DeviceCommunicatorBase):
         chunk_size = input_tensor.shape[0] // world_size
         output_shape = (chunk_size,) + input_tensor.shape[1:]
 
-        output = torch.empty(
-            output_shape, dtype=input_tensor.dtype, device=input_tensor.device
-        )
+        output = torch.empty(output_shape, dtype=input_tensor.dtype, device=input_tensor.device)
 
         pynccl_comm.reduce_scatter(output, input_tensor)
 
         # Reshape before returning
         return output.movedim(0, dim).contiguous()
 
-    def reduce_scatterv(
-        self, input_: torch.Tensor, dim: int = -1, sizes: list[int] | None = None
-    ):
+    def reduce_scatterv(self, input_: torch.Tensor, dim: int = -1, sizes: list[int] | None = None):
         world_size = self.world_size
         pynccl_comm = self.pynccl_comm
         assert pynccl_comm is not None
@@ -217,9 +193,7 @@ class CudaCommunicator(DeviceCommunicatorBase):
             chunk_size = input_tensor.shape[0] // world_size
         output_shape = (chunk_size,) + input_tensor.shape[1:]
 
-        output = torch.empty(
-            output_shape, dtype=input_tensor.dtype, device=input_tensor.device
-        )
+        output = torch.empty(output_shape, dtype=input_tensor.dtype, device=input_tensor.device)
 
         if sizes is not None:
             pynccl_comm.reduce_scatterv(output, input_tensor, sizes=sizes)
@@ -241,9 +215,7 @@ class CudaCommunicator(DeviceCommunicatorBase):
         else:
             torch.distributed.send(tensor, self.ranks[dst], self.device_group)
 
-    def recv(
-        self, size: torch.Size, dtype: torch.dtype, src: int | None = None
-    ) -> torch.Tensor:
+    def recv(self, size: torch.Size, dtype: torch.dtype, src: int | None = None) -> torch.Tensor:
         """Receives a tensor from the source rank."""
         """NOTE: `src` is the local rank of the source rank."""
         if src is None:
@@ -294,9 +266,7 @@ class CudaCommunicator(DeviceCommunicatorBase):
             else:
                 output_size = (input_size[0] * world_size,) + input_size[1:]
             # Allocate output tensor.
-            output_tensor = torch.empty(
-                output_size, dtype=input_.dtype, device=input_.device
-            )
+            output_tensor = torch.empty(output_size, dtype=input_.dtype, device=input_.device)
             if sizes is not None:
                 pynccl_comm.all_gatherv(output_tensor, input_, sizes=sizes)
             else:
@@ -321,16 +291,10 @@ class CudaCommunicator(DeviceCommunicatorBase):
         is_sequence_parallel: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         assert self.all2all_manager is not None
-        hidden_states, router_logits = self.all2all_manager.dispatch(
-            hidden_states, router_logits, is_sequence_parallel
-        )
+        hidden_states, router_logits = self.all2all_manager.dispatch(hidden_states, router_logits, is_sequence_parallel)
         return hidden_states, router_logits
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         assert self.all2all_manager is not None
-        hidden_states = self.all2all_manager.combine(
-            hidden_states, is_sequence_parallel
-        )
+        hidden_states = self.all2all_manager.combine(hidden_states, is_sequence_parallel)
         return hidden_states

@@ -8,44 +8,49 @@ from pydantic import ValidationError
 from tqdm.auto import tqdm
 from typing_extensions import TypeVar, deprecated
 
-from aphrodite.common.beam_search import (BeamSearchInstance, BeamSearchOutput,
-                                          BeamSearchSequence,
-                                          create_sort_beams_key_function)
+from aphrodite.common.beam_search import (
+    BeamSearchInstance,
+    BeamSearchOutput,
+    BeamSearchSequence,
+    create_sort_beams_key_function,
+)
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import (BeamSearchParams,
-                                              RequestOutputKind,
-                                              SamplingParams)
-from aphrodite.config import (CompilationConfig, PoolerConfig,
-                              StructuredOutputsConfig, is_init_field)
-from aphrodite.config.model import (ConvertOption, HfOverrides, ModelDType,
-                                    RunnerOption, TokenizerMode)
+from aphrodite.common.sampling_params import BeamSearchParams, RequestOutputKind, SamplingParams
+from aphrodite.config import CompilationConfig, PoolerConfig, StructuredOutputsConfig, is_init_field
+from aphrodite.config.model import ConvertOption, HfOverrides, ModelDType, RunnerOption, TokenizerMode
 from aphrodite.endpoints.chat_utils import (
-    ChatCompletionMessageParam, ChatTemplateContentFormatOption,
-    apply_hf_chat_template, apply_mistral_chat_template, parse_chat_messages,
-    resolve_chat_template_content_format)
-from aphrodite.endpoints.score_utils import (ScoreContentPartParam,
-                                             ScoreMultiModalParam,
-                                             _cosine_similarity,
-                                             _validate_score_input_lens,
-                                             compress_token_type_ids,
-                                             get_score_prompt)
-from aphrodite.endpoints.utils import (_validate_truncation_size,
-                                       log_non_default_args)
+    ChatCompletionMessageParam,
+    ChatTemplateContentFormatOption,
+    apply_hf_chat_template,
+    apply_mistral_chat_template,
+    parse_chat_messages,
+    resolve_chat_template_content_format,
+)
+from aphrodite.endpoints.score_utils import (
+    ScoreContentPartParam,
+    ScoreMultiModalParam,
+    _cosine_similarity,
+    _validate_score_input_lens,
+    compress_token_type_ids,
+    get_score_prompt,
+)
+from aphrodite.endpoints.utils import _validate_truncation_size, log_non_default_args
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.protocol import Device
-from aphrodite.inputs import (DataPrompt, PromptType, SingletonPrompt,
-                              TextPrompt, TokensPrompt)
+from aphrodite.inputs import DataPrompt, PromptType, SingletonPrompt, TextPrompt, TokensPrompt
 from aphrodite.inputs.parse import get_prompt_components
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
-from aphrodite.outputs import (ClassificationRequestOutput,
-                               EmbeddingRequestOutput, PoolingRequestOutput,
-                               RequestOutput, ScoringRequestOutput)
+from aphrodite.outputs import (
+    ClassificationRequestOutput,
+    EmbeddingRequestOutput,
+    PoolingRequestOutput,
+    RequestOutput,
+    ScoringRequestOutput,
+)
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.tasks import PoolingTask
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    MistralTokenizer,
-                                                    get_cached_tokenizer)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer, get_cached_tokenizer
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.collection_utils import as_iter, is_list_of
 from aphrodite.utils.counter import Counter
@@ -185,9 +190,7 @@ class LLM:
         mm_processor_kwargs: dict[str, Any] | None = None,
         pooler_config: PoolerConfig | None = None,
         override_pooler_config: PoolerConfig | None = None,
-        structured_outputs_config: dict[str, Any]
-        | StructuredOutputsConfig
-        | None = None,
+        structured_outputs_config: dict[str, Any] | StructuredOutputsConfig | None = None,
         kv_cache_memory_bytes: int | None = None,
         compilation_config: int | dict[str, Any] | CompilationConfig | None = None,
         logits_processors: list[str | type[LogitsProcessor]] | None = None,
@@ -205,9 +208,7 @@ class LLM:
             if isinstance(worker_cls, type):
                 kwargs["worker_cls"] = cloudpickle.dumps(worker_cls)
 
-        if "kv_transfer_config" in kwargs and isinstance(
-            kwargs["kv_transfer_config"], dict
-        ):
+        if "kv_transfer_config" in kwargs and isinstance(kwargs["kv_transfer_config"], dict):
             from aphrodite.config.kv_transfer import KVTransferConfig
 
             raw_config_dict = kwargs["kv_transfer_config"]
@@ -215,8 +216,7 @@ class LLM:
                 kwargs["kv_transfer_config"] = KVTransferConfig(**raw_config_dict)
             except ValidationError as e:
                 logger.error(
-                    "Failed to convert 'kv_transfer_config' dict to "
-                    "KVTransferConfig object. Dict: %s. Error: %s",
+                    "Failed to convert 'kv_transfer_config' dict to KVTransferConfig object. Dict: %s. Error: %s",
                     raw_config_dict,
                     e,
                 )
@@ -232,11 +232,7 @@ class LLM:
                 compilation_config_instance = CompilationConfig(mode=compilation_config)
             elif isinstance(compilation_config, dict):
                 compilation_config_instance = CompilationConfig(
-                    **{
-                        k: v
-                        for k, v in compilation_config.items()
-                        if is_init_field(CompilationConfig, k)
-                    }
+                    **{k: v for k, v in compilation_config.items() if is_init_field(CompilationConfig, k)}
                 )
             else:
                 compilation_config_instance = compilation_config
@@ -246,11 +242,7 @@ class LLM:
         if structured_outputs_config is not None:
             if isinstance(structured_outputs_config, dict):
                 structured_outputs_instance = StructuredOutputsConfig(
-                    **{
-                        k: v
-                        for k, v in structured_outputs_config.items()
-                        if is_init_field(StructuredOutputsConfig, k)
-                    }
+                    **{k: v for k, v in structured_outputs_config.items() if is_init_field(StructuredOutputsConfig, k)}
                 )
             else:
                 structured_outputs_instance = structured_outputs_config
@@ -304,9 +296,7 @@ class LLM:
         log_non_default_args(engine_args)
 
         # Create the Engine (autoselects V0 vs V1)
-        self.llm_engine = LLMEngine.from_engine_args(
-            engine_args=engine_args, usage_context=UsageContext.LLM_CLASS
-        )
+        self.llm_engine = LLMEngine.from_engine_args(engine_args=engine_args, usage_context=UsageContext.LLM_CLASS)
         self.engine_class = type(self.llm_engine)
 
         self.request_counter = Counter()
@@ -433,11 +423,7 @@ class LLM:
         if not isinstance(prompts, Sequence):
             prompts = [prompts]
 
-        optional_loras = (
-            [lora_request] * len(prompts)
-            if not isinstance(lora_request, Sequence)
-            else lora_request
-        )
+        optional_loras = [lora_request] * len(prompts) if not isinstance(lora_request, Sequence) else lora_request
 
         return [
             self._resolve_single_prompt_mm_lora(
@@ -553,9 +539,7 @@ class LLM:
     ) -> list[LoRARequest | None]:
         """Get the optional lora request corresponding to each prompt."""
         if isinstance(lora_request, Sequence) and len(lora_request) != len(prompts):
-            raise ValueError(
-                "Lora request list should be the same length as the prompts"
-            )
+            raise ValueError("Lora request list should be the same length as the prompts")
 
         if lora_request is None or isinstance(lora_request, LoRARequest):
             return [lora_request] * len(prompts)
@@ -599,10 +583,7 @@ class LLM:
         )
 
         if use_tqdm and concurrency_limit is not None:
-            logger.warning(
-                "Progress bar is not supported when using concurrency_limit. "
-                "Disabling progress bar."
-            )
+            logger.warning("Progress bar is not supported when using concurrency_limit. Disabling progress bar.")
             use_tqdm = False
 
         if concurrency_limit is None:
@@ -620,9 +601,7 @@ class LLM:
         # generate 2 * beam_width candidates at each step
         # following the huggingface transformers implementation
         # at https://github.com/huggingface/transformers/blob/e15687fffe5c9d20598a19aeab721ae0a7580f8a/src/transformers/generation/beam_search.py#L534 # noqa
-        beam_search_params = SamplingParams(
-            logprobs=2 * beam_width, max_tokens=1, temperature=temperature
-        )
+        beam_search_params = SamplingParams(logprobs=2 * beam_width, max_tokens=1, temperature=temperature)
         instances: list[BeamSearchInstance] = []
 
         for lora_req, prompt in zip(lora_requests, prompts):
@@ -653,36 +632,23 @@ class LLM:
 
             token_iter = range(max_tokens)
             if use_tqdm:
-                token_iter = tqdm(
-                    token_iter, desc="Beam search", unit="token", unit_scale=False
-                )
+                token_iter = tqdm(token_iter, desc="Beam search", unit="token", unit_scale=False)
                 logger.warning(
                     "The progress bar shows the upper bound on token steps and "
                     "may finish early due to stopping conditions. It does not "
                     "reflect instance-level progress."
                 )
             for _ in token_iter:
-                all_beams: list[BeamSearchSequence] = list(
-                    sum((instance.beams for instance in instances_batch), [])
-                )
-                pos = [0] + list(
-                    itertools.accumulate(
-                        len(instance.beams) for instance in instances_batch
-                    )
-                )
-                instance_start_and_end: list[tuple[int, int]] = list(
-                    zip(pos[:-1], pos[1:])
-                )
+                all_beams: list[BeamSearchSequence] = list(sum((instance.beams for instance in instances_batch), []))
+                pos = [0] + list(itertools.accumulate(len(instance.beams) for instance in instances_batch))
+                instance_start_and_end: list[tuple[int, int]] = list(zip(pos[:-1], pos[1:]))
 
                 if len(all_beams) == 0:
                     break
 
                 # create corresponding batch entries for prompt & optional lora
                 prompts_batch, lora_req_batch = zip(
-                    *[
-                        (create_tokens_prompt_from_beam(beam), beam.lora_request)
-                        for beam in all_beams
-                    ]
+                    *[(create_tokens_prompt_from_beam(beam), beam.lora_request) for beam in all_beams]
                 )
 
                 # only runs for one step
@@ -694,9 +660,7 @@ class LLM:
                     lora_request=lora_req_batch,
                 )
 
-                for (start, end), instance in zip(
-                    instance_start_and_end, instances_batch
-                ):
+                for (start, end), instance in zip(instance_start_and_end, instances_batch):
                     instance_new_beams = []
                     for i in range(start, end):
                         current_beam = all_beams[i]
@@ -713,30 +677,22 @@ class LLM:
                                     tokens=current_beam.tokens + [token_id],
                                     logprobs=current_beam.logprobs + [logprobs],
                                     lora_request=current_beam.lora_request,
-                                    cum_logprob=current_beam.cum_logprob
-                                    + logprob_obj.logprob,
+                                    cum_logprob=current_beam.cum_logprob + logprob_obj.logprob,
                                     multi_modal_data=current_beam.multi_modal_data,
                                     mm_processor_kwargs=current_beam.mm_processor_kwargs,
                                 )
 
-                                if (
-                                    token_id == tokenizer.eos_token_id
-                                    and not ignore_eos
-                                ):
+                                if token_id == tokenizer.eos_token_id and not ignore_eos:
                                     instance.completed.append(new_beam)
                                 else:
                                     instance_new_beams.append(new_beam)
-                    sorted_beams = sorted(
-                        instance_new_beams, key=sort_beams_key, reverse=True
-                    )
+                    sorted_beams = sorted(instance_new_beams, key=sort_beams_key, reverse=True)
                     instance.beams = sorted_beams[:beam_width]
 
         outputs = []
         for instance in instances:
             instance.completed.extend(instance.beams)
-            sorted_completed = sorted(
-                instance.completed, key=sort_beams_key, reverse=True
-            )
+            sorted_completed = sorted(instance.completed, key=sort_beams_key, reverse=True)
             best_beams = sorted_completed[:beam_width]
 
             for beam in best_beams:
@@ -747,8 +703,7 @@ class LLM:
 
     def preprocess_chat(
         self,
-        messages: list[ChatCompletionMessageParam]
-        | list[list[ChatCompletionMessageParam]],
+        messages: list[ChatCompletionMessageParam] | list[list[ChatCompletionMessageParam]],
         chat_template: str | None = None,
         chat_template_content_format: ChatTemplateContentFormatOption = "auto",
         add_generation_prompt: bool = True,
@@ -823,9 +778,7 @@ class LLM:
                 )
                 # Special tokens are already included in chat templates so
                 # should not be added by the tokenizer in this case.
-                prompt_token_ids = tokenizer.encode(
-                    prompt_str, add_special_tokens=False
-                )
+                prompt_token_ids = tokenizer.encode(prompt_str, add_special_tokens=False)
 
             prompt = TokensPrompt(prompt_token_ids=prompt_token_ids)
 
@@ -844,8 +797,7 @@ class LLM:
 
     def chat(
         self,
-        messages: list[ChatCompletionMessageParam]
-        | list[list[ChatCompletionMessageParam]],
+        messages: list[ChatCompletionMessageParam] | list[list[ChatCompletionMessageParam]],
         sampling_params: SamplingParams | list[SamplingParams] | None = None,
         use_tqdm: bool | Callable[..., tqdm] = True,
         lora_request: LoRARequest | None = None,
@@ -1019,15 +971,11 @@ class LLM:
             if is_list_of(pooling_params, PoolingParams):
                 validated_pooling_params: list[PoolingParams] = []
                 for param in as_iter(pooling_params):
-                    validated_pooling_params.append(
-                        self.io_processor.validate_or_generate_params(param)
-                    )
+                    validated_pooling_params.append(self.io_processor.validate_or_generate_params(param))
                 pooling_params = validated_pooling_params
             else:
                 assert not isinstance(pooling_params, Sequence)
-                pooling_params = self.io_processor.validate_or_generate_params(
-                    pooling_params
-                )
+                pooling_params = self.io_processor.validate_or_generate_params(pooling_params)
         else:
             if pooling_params is None:
                 # Use default pooling params.
@@ -1051,24 +999,18 @@ class LLM:
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
 
-        model_outputs = self.engine_class.validate_outputs(
-            outputs, PoolingRequestOutput
-        )
+        model_outputs = self.engine_class.validate_outputs(outputs, PoolingRequestOutput)
 
         if io_processor_prompt:
             # get the post-processed model outputs
             assert self.io_processor is not None
-            processed_outputs = self.io_processor.post_process(
-                model_output=model_outputs
-            )
+            processed_outputs = self.io_processor.post_process(model_output=model_outputs)
 
             return [
                 PoolingRequestOutput[Any](
                     request_id="",
                     outputs=processed_outputs,
-                    num_cached_tokens=getattr(
-                        processed_outputs, "num_cached_tokens", 0
-                    ),
+                    num_cached_tokens=getattr(processed_outputs, "num_cached_tokens", 0),
                     prompt_token_ids=[],
                     finished=True,
                 )
@@ -1110,8 +1052,7 @@ class LLM:
         """
         if "embed" not in self.supported_tasks:
             raise ValueError(
-                "Embedding API is not supported by this model. "
-                "Try converting the model using `--convert embed`."
+                "Embedding API is not supported by this model. Try converting the model using `--convert embed`."
             )
 
         items = self.encode(
@@ -1234,9 +1175,7 @@ class LLM:
         if len(encoded_output_1) == 1:
             encoded_output_1 = encoded_output_1 * len(encoded_output_2)
 
-        scores = _cosine_similarity(
-            tokenizer=tokenizer, embed_1=encoded_output_1, embed_2=encoded_output_2
-        )
+        scores = _cosine_similarity(tokenizer=tokenizer, embed_1=encoded_output_1, embed_2=encoded_output_2)
 
         items = self.engine_class.validate_outputs(scores, PoolingRequestOutput)
         return [ScoringRequestOutput.from_base(item) for item in items]
@@ -1267,9 +1206,7 @@ class LLM:
 
         tokenization_kwargs: dict[str, Any] = {}
 
-        _validate_truncation_size(
-            model_config.max_model_len, truncate_prompt_tokens, tokenization_kwargs
-        )
+        _validate_truncation_size(model_config.max_model_len, truncate_prompt_tokens, tokenization_kwargs)
 
         prompts = list[PromptType]()
 
@@ -1369,10 +1306,7 @@ class LLM:
                 "`--convert embed` or `--convert classify`."
             )
 
-        if (
-            model_config.is_cross_encoder
-            and getattr(model_config.hf_config, "num_labels", 0) != 1
-        ):
+        if model_config.is_cross_encoder and getattr(model_config.hf_config, "num_labels", 0) != 1:
             raise ValueError("Score API is only enabled for num_labels == 1.")
 
         # the tokenizer for models such as
@@ -1383,15 +1317,10 @@ class LLM:
         if not model_config.is_multimodal_model:
 
             def check_data_type(
-                data: SingletonPrompt
-                | Sequence[SingletonPrompt]
-                | ScoreMultiModalParam,
+                data: SingletonPrompt | Sequence[SingletonPrompt] | ScoreMultiModalParam,
             ):
                 if isinstance(data, dict) and "content" in data:
-                    raise ValueError(
-                        "ScoreMultiModalParam is not supported "
-                        f"for {model_config.architecture}"
-                    )
+                    raise ValueError(f"ScoreMultiModalParam is not supported for {model_config.architecture}")
 
             check_data_type(data_1)
             check_data_type(data_2)
@@ -1399,13 +1328,9 @@ class LLM:
             def ensure_str(prompt: SingletonPrompt):
                 if isinstance(prompt, dict):
                     if "multi_modal_data" in prompt:
-                        raise ValueError(
-                            "Multi-modal prompt is not supported for scoring"
-                        )
+                        raise ValueError("Multi-modal prompt is not supported for scoring")
                     elif "prompt_token_ids" in prompt:
-                        prompt = tokenizer.decode(
-                            cast(TokensPrompt, prompt)["prompt_token_ids"]
-                        )
+                        prompt = tokenizer.decode(cast(TokensPrompt, prompt)["prompt_token_ids"])
                     elif "prompt" in prompt:
                         prompt = cast(TextPrompt, prompt)["prompt"]
                 assert type(prompt) is str
@@ -1516,10 +1441,7 @@ class LLM:
     def _validate_and_add_requests(
         self,
         prompts: PromptType | Sequence[PromptType] | DataPrompt,
-        params: SamplingParams
-        | Sequence[SamplingParams]
-        | PoolingParams
-        | Sequence[PoolingParams],
+        params: SamplingParams | Sequence[SamplingParams] | PoolingParams | Sequence[PoolingParams],
         *,
         use_tqdm: bool | Callable[..., tqdm] = True,
         lora_request: Sequence[LoRARequest] | LoRARequest | None,
@@ -1533,14 +1455,10 @@ class LLM:
         if isinstance(params, Sequence) and len(params) != num_requests:
             raise ValueError("The lengths of prompts and params must be the same.")
         if isinstance(lora_request, Sequence) and len(lora_request) != num_requests:
-            raise ValueError(
-                "The lengths of prompts and lora_request must be the same."
-            )
+            raise ValueError("The lengths of prompts and lora_request must be the same.")
         if priority is not None and len(priority) != num_requests:
             raise ValueError(
-                "The lengths of prompts "
-                f"({num_requests}) and priority ({len(priority)}) "
-                "must be the same."
+                f"The lengths of prompts ({num_requests}) and priority ({len(priority)}) must be the same."
             )
 
         for sp in params if isinstance(params, Sequence) else (params,):
@@ -1556,16 +1474,12 @@ class LLM:
 
         for i, prompt in enumerate(it):
             if isinstance(prompt, dict):
-                self._validate_mm_data_and_uuids(
-                    prompt.get("multi_modal_data"), prompt.get("multi_modal_uuids")
-                )
+                self._validate_mm_data_and_uuids(prompt.get("multi_modal_data"), prompt.get("multi_modal_uuids"))
 
             self._add_request(
                 prompt,
                 params[i] if isinstance(params, Sequence) else params,
-                lora_request=lora_request[i]
-                if isinstance(lora_request, Sequence)
-                else lora_request,
+                lora_request=lora_request[i] if isinstance(lora_request, Sequence) else lora_request,
                 priority=priority[i] if priority else 0,
             )
 
@@ -1593,29 +1507,17 @@ class LLM:
                             ]
                             is None
                         ):
-                            raise ValueError(
-                                f"Multi-modal data for {modality} is None "
-                                f"but UUID is not provided"
-                            )
+                            raise ValueError(f"Multi-modal data for {modality} is None but UUID is not provided")
                         else:
-                            if (
-                                len(multi_modal_uuids[modality]) <= i
-                                or multi_modal_uuids[modality][i] is None
-                            ):
-                                raise ValueError(
-                                    f"Multi-modal data for {modality} is None "
-                                    f"but UUID is not provided"
-                                )
+                            if len(multi_modal_uuids[modality]) <= i or multi_modal_uuids[modality][i] is None:
+                                raise ValueError(f"Multi-modal data for {modality} is None but UUID is not provided")
             else:
                 if data is None and (
                     multi_modal_uuids is None
                     or modality not in multi_modal_uuids
                     or multi_modal_uuids[modality] is None
                 ):
-                    raise ValueError(
-                        f"Multi-modal data for {modality} is None"
-                        f" but UUID is not provided"
-                    )
+                    raise ValueError(f"Multi-modal data for {modality} is None but UUID is not provided")
 
     def _process_inputs(
         self,
@@ -1672,9 +1574,7 @@ class LLM:
             prompt_text=prompt_text,
         )
 
-    def _run_engine(
-        self, *, use_tqdm: bool | Callable[..., tqdm] = True
-    ) -> list[RequestOutput | PoolingRequestOutput]:
+    def _run_engine(self, *, use_tqdm: bool | Callable[..., tqdm] = True) -> list[RequestOutput | PoolingRequestOutput]:
         # Initialize tqdm.
         if use_tqdm:
             num_requests = self.llm_engine.get_num_unfinished_requests()
@@ -1702,14 +1602,9 @@ class LLM:
                             assert output.prompt_token_ids is not None
                             total_in_toks += len(output.prompt_token_ids) * n
                             in_spd = total_in_toks / pbar.format_dict["elapsed"]
-                            total_out_toks += sum(
-                                len(stp.token_ids) for stp in output.outputs
-                            )
+                            total_out_toks += sum(len(stp.token_ids) for stp in output.outputs)
                             out_spd = total_out_toks / pbar.format_dict["elapsed"]
-                            pbar.postfix = (
-                                f"est. speed input: {in_spd:.2f} toks/s, "
-                                f"output: {out_spd:.2f} toks/s"
-                            )
+                            pbar.postfix = f"est. speed input: {in_spd:.2f} toks/s, output: {out_spd:.2f} toks/s"
                             pbar.update(n)
                         else:
                             pbar.update(1)

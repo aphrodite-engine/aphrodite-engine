@@ -129,20 +129,15 @@ class TpuPlatform(Platform):
 
         if (
             compilation_config.cudagraph_mode is None
-            or compilation_config.cudagraph_mode.max_cudagraph_mode()
-            != CUDAGraphMode.NONE
+            or compilation_config.cudagraph_mode.max_cudagraph_mode() != CUDAGraphMode.NONE
         ):
-            logger.info(
-                "[TPU] CUDA graph is not supported on TPU, disabling cudagraphs."
-            )
+            logger.info("[TPU] CUDA graph is not supported on TPU, disabling cudagraphs.")
             compilation_config.cudagraph_mode = CUDAGraphMode.NONE
 
         if compilation_config.backend == "":
             compilation_config.backend = "openxla"
 
-        assert aphrodite_config.speculative_config is None, (
-            "TPU does not support speculative decoding"
-        )
+        assert aphrodite_config.speculative_config is None, "TPU does not support speculative decoding"
 
         model_config = aphrodite_config.model_config
         if model_config is not None and model_config.dtype in (
@@ -150,14 +145,12 @@ class TpuPlatform(Platform):
             torch.float32,
         ):
             logger.warning(
-                "The TPU backend currently does not support %s. "
-                "Using bfloat16 instead.",
+                "The TPU backend currently does not support %s. Using bfloat16 instead.",
                 model_config.dtype,
             )
             model_config.dtype = torch.bfloat16
 
-        from aphrodite.v1.attention.backends.pallas import (
-            PallasAttentionBackend)
+        from aphrodite.v1.attention.backends.pallas import PallasAttentionBackend
 
         cache_config.block_size = PallasAttentionBackend.get_page_size(aphrodite_config)  # type: ignore[assignment]
 
@@ -166,14 +159,9 @@ class TpuPlatform(Platform):
         if parallel_config.worker_cls == "auto":
             parallel_config.worker_cls = "aphrodite.v1.worker.tpu_worker.TPUWorker"
 
-        assert not aphrodite_config.speculative_config, (
-            "Speculative decoding is not yet supported for TPU backend"
-        )
+        assert not aphrodite_config.speculative_config, "Speculative decoding is not yet supported for TPU backend"
 
-        if (
-            scheduler_config.is_multimodal_model
-            and not scheduler_config.disable_chunked_mm_input
-        ):
+        if scheduler_config.is_multimodal_model and not scheduler_config.disable_chunked_mm_input:
             logger.warning(
                 "TPU does not support running Multimodal models"
                 " without setting `--disable_chunked_mm_input`. "
@@ -183,8 +171,7 @@ class TpuPlatform(Platform):
 
         if model_config and model_config.use_mla:
             logger.info(
-                "MLA is enabled on a non-GPU platform; forcing chunked "
-                "prefill and prefix caching to be disabled."
+                "MLA is enabled on a non-GPU platform; forcing chunked prefill and prefix caching to be disabled."
             )
             aphrodite_config.scheduler_config.enable_chunked_prefill = False
             aphrodite_config.scheduler_config.chunked_prefill_enabled = False
@@ -214,10 +201,7 @@ class TpuPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
-        if (
-            isinstance(params, SamplingParams)
-            and params.sampling_type == SamplingType.RANDOM_SEED
-        ):
+        if isinstance(params, SamplingParams) and params.sampling_type == SamplingType.RANDOM_SEED:
             raise ValueError("Torch XLA does not support per-request seed.")
 
     @classmethod

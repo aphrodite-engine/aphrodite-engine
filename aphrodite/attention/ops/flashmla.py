@@ -36,8 +36,7 @@ def _is_flashmla_available() -> tuple[bool, str | None]:
     if not _flashmla_extension_C_AVAILABLE:
         return (
             False,
-            "aphrodite._flashmla_extension_C is not available, likely "
-            "was not compiled due to a build error.",
+            "aphrodite._flashmla_extension_C is not available, likely was not compiled due to a build error.",
         )
 
     return True, None
@@ -168,9 +167,7 @@ def flash_mla_with_kvcache(
         # since it only attend to the tokens before
         # but here `causal` should not be specified
         assert not causal, "causal must be `false` if sparse attention is enabled."
-    assert (descale_q is None) == (descale_k is None), (
-        "descale_q and descale_k should be both None or both not None"
-    )
+    assert (descale_q is None) == (descale_k is None), "descale_q and descale_k should be both None or both not None"
 
     if indices is None and q.element_size() == 1:
         out, softmax_lse = torch.ops._flashmla_extension_C.fwd_kvcache_mla_fp8(

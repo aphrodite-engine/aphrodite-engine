@@ -3,8 +3,7 @@ from typing import Any
 
 from transformers import PretrainedConfig
 
-from aphrodite.transformers_utils.configs.speculators.algos import (
-    SUPPORTED_SPECULATORS_TYPES)
+from aphrodite.transformers_utils.configs.speculators.algos import SUPPORTED_SPECULATORS_TYPES
 
 __all__ = ["SpeculatorsConfig"]
 
@@ -25,9 +24,7 @@ class SpeculatorsConfig(PretrainedConfig):
         return cls(**aphrodite_config)
 
     @classmethod
-    def extract_aphrodite_speculative_config(
-        cls, config_dict: dict[str, Any]
-    ) -> dict[str, Any]:
+    def extract_aphrodite_speculative_config(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
         speculators_model_type = config_dict.get("speculators_model_type")
         if speculators_model_type not in SUPPORTED_SPECULATORS_TYPES:
             raise ValueError(
@@ -61,14 +58,10 @@ class SpeculatorsConfig(PretrainedConfig):
             raise ValueError("Must provide transformer_layer_config")
 
         if not isinstance(config_dict["transformer_layer_config"], dict):
-            raise TypeError(
-                "'transformer_layer_config' must be a dictionary if provided"
-            )
+            raise TypeError("'transformer_layer_config' must be a dictionary if provided")
 
     @classmethod
-    def build_aphrodite_speculative_config(
-        cls, config_dict: dict[str, Any]
-    ) -> dict[str, Any]:
+    def build_aphrodite_speculative_config(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
         """
         Build Aphrodite-compatible speculative configuration from speculators format.
 
@@ -93,9 +86,7 @@ class SpeculatorsConfig(PretrainedConfig):
         num_speculative_tokens = first_method.get("speculative_tokens")
 
         if num_speculative_tokens is None:
-            raise ValueError(
-                f"Missing 'speculative_tokens' in proposal method. Got: {first_method}"
-            )
+            raise ValueError(f"Missing 'speculative_tokens' in proposal method. Got: {first_method}")
 
         # Build base Aphrodite speculative configuration
         aphrodite_config = {

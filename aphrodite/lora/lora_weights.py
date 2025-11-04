@@ -55,9 +55,7 @@ class LoRALayerWeights:
 
     @property
     def extra_vocab_size(self) -> int:
-        return (
-            self.embeddings_tensor.shape[0] if self.embeddings_tensor is not None else 0
-        )
+        return self.embeddings_tensor.shape[0] if self.embeddings_tensor is not None else 0
 
     @classmethod
     def from_config(
@@ -89,12 +87,8 @@ class LoRALayerWeights:
         embeddings_tensor_dim: int | None = None,
     ) -> "LoRALayerWeights":
         pin_memory = str(device) == "cpu" and is_pin_memory_available()
-        lora_a = torch.zeros(
-            [rank, input_dim], dtype=dtype, device=device, pin_memory=pin_memory
-        )
-        lora_b = torch.zeros(
-            [output_dim, rank], dtype=dtype, device=device, pin_memory=pin_memory
-        )
+        lora_a = torch.zeros([rank, input_dim], dtype=dtype, device=device, pin_memory=pin_memory)
+        lora_b = torch.zeros([output_dim, rank], dtype=dtype, device=device, pin_memory=pin_memory)
 
         embeddings_tensor = (
             torch.rand(
@@ -146,9 +140,7 @@ class PackedLoRALayerWeights(LoRALayerWeights):
             ]
 
     @classmethod
-    def pack(
-        cls, loras: GenericSequence[Optional["LoRALayerWeights"]]
-    ) -> "PackedLoRALayerWeights":
+    def pack(cls, loras: GenericSequence[Optional["LoRALayerWeights"]]) -> "PackedLoRALayerWeights":
         """Pack a list of LoRAs into a single LoRA.
 
         If LoRA is None, it signifies that the submodule does not have a LoRA.

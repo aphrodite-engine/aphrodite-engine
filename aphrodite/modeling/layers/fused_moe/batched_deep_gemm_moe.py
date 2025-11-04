@@ -3,14 +3,15 @@ import torch
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate)
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceDelegate
 from aphrodite.modeling.layers.fused_moe.utils import _resize_cache
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
-from aphrodite.utils.deep_gemm import (fp8_m_grouped_gemm_nt_masked,
-                                       get_mk_alignment_for_contiguous_layout,
-                                       is_deep_gemm_e8m0_used)
+from aphrodite.utils.deep_gemm import (
+    fp8_m_grouped_gemm_nt_masked,
+    get_mk_alignment_for_contiguous_layout,
+    is_deep_gemm_e8m0_used,
+)
 
 logger = init_logger(__name__)
 
@@ -71,9 +72,7 @@ def _silu_mul_fp8_quant_deep_gemm(
     base_ys_offset = e * stride_ys_e + g * stride_ys_g
 
     for t in tl.range(0, n_tokens, num_stages=NUM_STAGES):
-        gate = tl.load(
-            input_ptr + base_gate_offset + t * stride_i_t, mask=mask, other=0.0
-        ).to(tl.float32)
+        gate = tl.load(input_ptr + base_gate_offset + t * stride_i_t, mask=mask, other=0.0).to(tl.float32)
         up = tl.load(input_ptr + base_up_offset + t * stride_i_t, mask=mask, other=0.0)
 
         gate = gate * (1.0 / (1.0 + tl.exp(-gate)))
@@ -160,14 +159,10 @@ def persistent_masked_m_silu_mul_quant(
 
     use_ue8m0 = is_deep_gemm_e8m0_used()
 
-    cuda_arch = current_platform.get_device_capability(
-        device_id=y.device.index
-    ).to_int()
+    cuda_arch = current_platform.get_device_capability(device_id=y.device.index).to_int()
 
     if cuda_arch >= 80:
-        torch.ops._C.persistent_masked_m_silu_mul_quant(
-            y, tokens_per_expert, y_q, y_s, use_ue8m0
-        )
+        torch.ops._C.persistent_masked_m_silu_mul_quant(y, tokens_per_expert, y_q, y_s, use_ue8m0)
     else:
         stride_cnt_e = tokens_per_expert.stride()[0]
 
@@ -297,9 +292,7 @@ class BatchedDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
 
         assert w2.size(1) == K
 
-        E, max_num_tokens, N, K, _ = self.moe_problem_size(
-            hidden_states, w1, w2, topk_ids
-        )
+        E, max_num_tokens, N, K, _ = self.moe_problem_size(hidden_states, w1, w2, topk_ids)
 
         workspace1 = _resize_cache(workspace13, (E, max_num_tokens, N))
 
@@ -315,10 +308,6 @@ class BatchedDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
             expected_m,
         )
 
-        a2q, a2q_scale = persistent_masked_m_silu_mul_quant(
-            workspace1, expert_num_tokens
-        )
+        a2q, a2q_scale = persistent_masked_m_silu_mul_quant(workspace1, expert_num_tokens)
 
-        fp8_m_grouped_gemm_nt_masked(
-            (a2q, a2q_scale), (w2, self.w2_scale), output, expert_num_tokens, expected_m
-        )
+        fp8_m_grouped_gemm_nt_masked((a2q, a2q_scale), (w2, self.w2_scale), output, expert_num_tokens, expected_m)

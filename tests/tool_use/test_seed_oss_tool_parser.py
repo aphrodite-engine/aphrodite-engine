@@ -5,13 +5,15 @@ from collections.abc import Generator
 
 import pytest
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 ChatCompletionToolsParam,
-                                                 DeltaMessage, FunctionCall,
-                                                 ToolCall)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    ChatCompletionToolsParam,
+    DeltaMessage,
+    FunctionCall,
+    ToolCall,
+)
 from aphrodite.endpoints.openai.tool_parsers import SeedOssToolParser
-from aphrodite.transformers_utils.detokenizer_utils import (
-    detokenize_incrementally)
+from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 pytestmark = pytest.mark.cpu_test
@@ -70,29 +72,21 @@ def sample_tools():
     ]
 
 
-def assert_tool_calls(
-    actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]
-):
+def assert_tool_calls(actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]):
     assert len(actual_tool_calls) == len(expected_tool_calls)
 
-    for actual_tool_call, expected_tool_call in zip(
-        actual_tool_calls, expected_tool_calls
-    ):
+    for actual_tool_call, expected_tool_call in zip(actual_tool_calls, expected_tool_calls):
         # Seed-OSS tool call will not generate id
         assert actual_tool_call.type == "function"
         assert actual_tool_call.function == expected_tool_call.function
 
         assert actual_tool_call.function.name == expected_tool_call.function.name
-        assert (
-            actual_tool_call.function.arguments == expected_tool_call.function.arguments
-        )
+        assert actual_tool_call.function.arguments == expected_tool_call.function.arguments
 
 
 def test_extract_tool_calls_no_tools(seed_oss_tool_parser):
     model_output = "This is a test response without any tool calls"
-    extracted_tool_calls = seed_oss_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = seed_oss_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert not extracted_tool_calls.tools_called
     assert extracted_tool_calls.tool_calls == []
@@ -221,9 +215,7 @@ def test_extract_tool_calls(
     expected_content,
 ):
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=sample_tools)
-    extracted_tool_calls = seed_oss_tool_parser.extract_tool_calls(
-        model_output, request=request
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = seed_oss_tool_parser.extract_tool_calls(model_output, request=request)  # type: ignore[arg-type]
     assert extracted_tool_calls.tools_called
 
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
@@ -267,16 +259,14 @@ def stream_delta_message_generator(
         previous_token_ids = all_token_ids[:i]
         current_token_ids = all_token_ids[: i + 1]
 
-        (new_tokens, delta_text, new_prefix_offset, new_read_offset) = (
-            detokenize_incrementally(
-                tokenizer=seed_oss_tokenizer,
-                all_input_ids=current_token_ids,
-                prev_tokens=previous_tokens,
-                prefix_offset=prefix_offset,
-                read_offset=read_offset,
-                skip_special_tokens=False,
-                spaces_between_special_tokens=True,
-            )
+        (new_tokens, delta_text, new_prefix_offset, new_read_offset) = detokenize_incrementally(
+            tokenizer=seed_oss_tokenizer,
+            all_input_ids=current_token_ids,
+            prev_tokens=previous_tokens,
+            prefix_offset=prefix_offset,
+            read_offset=read_offset,
+            skip_special_tokens=False,
+            spaces_between_special_tokens=True,
         )
 
         current_text = previous_text + delta_text
@@ -294,9 +284,7 @@ def stream_delta_message_generator(
             yield delta_message
 
         previous_text = current_text
-        previous_tokens = (
-            previous_tokens + new_tokens if previous_tokens else new_tokens
-        )
+        previous_tokens = previous_tokens + new_tokens if previous_tokens else new_tokens
         prefix_offset = new_prefix_offset
         read_offset = new_read_offset
 

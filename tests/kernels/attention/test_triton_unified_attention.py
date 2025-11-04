@@ -9,11 +9,7 @@ HEAD_SIZES = [128, 256]
 BLOCK_SIZES = [16]
 
 DTYPES = [torch.bfloat16]
-QDTYPES = (
-    [None, torch.float8_e4m3fn]
-    if not current_platform.is_rocm()
-    else [None, torch.float8_e4m3fnuz]
-)
+QDTYPES = [None, torch.float8_e4m3fn] if not current_platform.is_rocm() else [None, torch.float8_e4m3fnuz]
 # one value large enough to test overflow in index calculation.
 # one value small enough to test the schema op check
 NUM_BLOCKS = [32768, 2048]
@@ -58,11 +54,7 @@ def ref_paged_attn(
         mask = torch.triu(empty_mask, diagonal=kv_len - query_len + 1).bool()
         if sliding_window is not None:
             sliding_window_mask = (
-                torch.triu(
-                    empty_mask, diagonal=kv_len - (query_len + sliding_window) + 1
-                )
-                .bool()
-                .logical_not()
+                torch.triu(empty_mask, diagonal=kv_len - (query_len + sliding_window) + 1).bool().logical_not()
             )
             mask |= sliding_window_mask
         if soft_cap is not None and soft_cap > 0:
@@ -77,9 +69,7 @@ def ref_paged_attn(
     return torch.cat(outputs, dim=0)
 
 
-@pytest.mark.parametrize(
-    "seq_lens", [[(1, 1328), (5, 18), (129, 463)], [(1, 523), (1, 37), (1, 2011)]]
-)
+@pytest.mark.parametrize("seq_lens", [[(1, 1328), (5, 18), (129, 463)], [(1, 523), (1, 37), (1, 2011)]])
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
 @pytest.mark.parametrize("block_size", BLOCK_SIZES)
@@ -115,19 +105,13 @@ def test_triton_unified_attn(
     scale = head_size**-0.5
 
     query = torch.randn(sum(query_lens), num_query_heads, head_size, dtype=dtype)
-    key_cache = torch.randn(
-        num_blocks, block_size, num_kv_heads, head_size, dtype=dtype
-    )
+    key_cache = torch.randn(num_blocks, block_size, num_kv_heads, head_size, dtype=dtype)
     value_cache = torch.randn_like(key_cache)
-    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(
-        dim=0, dtype=torch.int32
-    )
+    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(dim=0, dtype=torch.int32)
     kv_lens = torch.tensor(kv_lens, dtype=torch.int32)
 
     max_num_blocks_per_seq = (max_kv_len + block_size - 1) // block_size
-    block_tables = torch.randint(
-        0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32
-    )
+    block_tables = torch.randint(0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32)
 
     output = torch.empty_like(query)
 

@@ -18,8 +18,7 @@ def main():
     import aphrodite.endpoints.cli.run
     import aphrodite.endpoints.cli.run_batch
     import aphrodite.endpoints.cli.tokenizer
-    from aphrodite.endpoints.utils import (APHRODITE_SUBCMD_PARSER_EPILOG,
-                                           cli_env_setup)
+    from aphrodite.endpoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG, cli_env_setup
     from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
     CMD_MODULES = [
@@ -45,27 +44,24 @@ def main():
             from aphrodite.platforms.cpu import CpuPlatform
 
             platforms.current_platform = CpuPlatform()
-            logger.info(
-                "Unspecified platform detected, switching to CPU Platform instead."
-            )
+            logger.info("Unspecified platform detected, switching to CPU Platform instead.")
 
     parser = FlexibleArgumentParser(
         description="Aphrodite CLI",
         epilog=APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd="[subcommand]"),
     )
     parser.add_argument(
-        '-v',
-        '--version',
-        action='version',
-        version=importlib.metadata.version('aphrodite-engine'),
+        "-v",
+        "--version",
+        action="version",
+        version=importlib.metadata.version("aphrodite-engine"),
     )
     subparsers = parser.add_subparsers(required=False, dest="subparser")
     cmds = {}
     for cmd_module in CMD_MODULES:
         new_cmds = cmd_module.cmd_init()
         for cmd in new_cmds:
-            cmd.subparser_init(subparsers).set_defaults(
-                dispatch_function=cmd.cmd)
+            cmd.subparser_init(subparsers).set_defaults(dispatch_function=cmd.cmd)
             cmds[cmd.name] = cmd
     args = parser.parse_args()
     if args.subparser in cmds:

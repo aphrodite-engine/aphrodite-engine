@@ -15,17 +15,18 @@ import torch
 from aphrodite import LLM
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import KVTransferConfig
-from aphrodite.distributed.kv_transfer.kv_connector.utils import (
-    KVOutputAggregator)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
-    KVConnectorStats)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import (
-    MultiKVConnectorStats)
+from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
+from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
+from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import MultiKVConnectorStats
 from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import (
-    KVConnectorRole, NixlAgentMetadata, NixlConnector, NixlConnectorMetadata,
-    NixlConnectorWorker, NixlKVConnectorStats)
-from aphrodite.distributed.kv_transfer.kv_transfer_state import (
-    ensure_kv_transfer_shutdown, has_kv_transfer_group)
+    KVConnectorRole,
+    NixlAgentMetadata,
+    NixlConnector,
+    NixlConnectorMetadata,
+    NixlConnectorWorker,
+    NixlKVConnectorStats,
+)
+from aphrodite.distributed.kv_transfer.kv_transfer_state import ensure_kv_transfer_shutdown, has_kv_transfer_group
 from aphrodite.forward_context import ForwardContext
 from aphrodite.platforms.interface import Platform
 from aphrodite.v1.attention.backends.flash_attn import FlashAttentionBackend
@@ -233,9 +234,7 @@ def test_basic_interface():
 
     for block_id, block in zip(
         req_meta.local_block_ids,
-        scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks[
-            request_id
-        ],
+        scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks[request_id],
     ):
         assert block_id == block.block_id
 
@@ -277,16 +276,12 @@ def test_prompt_less_than_block_size():
 class FakeNixlConnectorWorker(NixlConnectorWorker):
     REMOTE_ENGINE_ID = "remote_engine"
 
-    def __init__(
-        self, *args, hand_shake_latency: float = 1.8, kv_cache_layout="HND", **kwargs
-    ):
+    def __init__(self, *args, hand_shake_latency: float = 1.8, kv_cache_layout="HND", **kwargs):
         super().__init__(*args, **kwargs)
         self._hand_shake_latency = hand_shake_latency
         self.kv_cache_layout = kv_cache_layout
 
-    def _nixl_handshake(
-        self, host: str, port: int, remote_tp_size: int, expected_engine_id: str
-    ) -> dict[int, str]:
+    def _nixl_handshake(self, host: str, port: int, remote_tp_size: int, expected_engine_id: str) -> dict[int, str]:
         # Mimic slow _nixl_handshake, as well as bypass zmq communication.
         time.sleep(self._hand_shake_latency)
         # These should've been done in register_kv_caches(), called by
@@ -378,9 +373,7 @@ class TestNixlHandshake:
             _before_load = time.perf_counter()
             connector.start_load_kv(dummy_ctx)
             _after_load = time.perf_counter()
-            assert _after_load - _before_load < 0.1, (
-                f"start_load_kv took {_after_load - _before_load} seconds"
-            )
+            assert _after_load - _before_load < 0.1, f"start_load_kv took {_after_load - _before_load} seconds"
 
             # Mimic get_finished_kv_transfers in gpu_model_runner.
             _, done_recving = connector.get_finished(finished_req_ids=set())
@@ -418,9 +411,7 @@ class TestNixlHandshake:
 
         # Test worker role in decode server.
         connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
-        connector.connector_worker = FakeNixlConnectorWorker(
-            aphrodite_config, connector.engine_id
-        )
+        connector.connector_worker = FakeNixlConnectorWorker(aphrodite_config, connector.engine_id)
         metadata = NixlConnectorMetadata()
         metadata.add_new_req(
             request_id="id",
@@ -446,9 +437,7 @@ class TestNixlHandshake:
             _before_load = time.perf_counter()
             connector.start_load_kv(dummy_ctx)
             _after_load = time.perf_counter()
-            assert _after_load - _before_load < 0.1, (
-                f"start_load_kv took {_after_load - _before_load} seconds"
-            )
+            assert _after_load - _before_load < 0.1, f"start_load_kv took {_after_load - _before_load} seconds"
             time.sleep(0.5)  # backoff for the async handshake to complete.
             connector.bind_connector_metadata(NixlConnectorMetadata())
             _, done_recving = connector.get_finished(finished_req_ids=set())
@@ -471,9 +460,7 @@ class TestNixlHandshake:
 
         # Test worker role in decode server.
         connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
-        connector.connector_worker = FakeNixlConnectorWorker(
-            aphrodite_config, connector.engine_id
-        )
+        connector.connector_worker = FakeNixlConnectorWorker(aphrodite_config, connector.engine_id)
         metadata = NixlConnectorMetadata()
         total_reqs = 5
         for i in range(total_reqs):
@@ -502,9 +489,7 @@ class TestNixlHandshake:
             _before_load = time.perf_counter()
             connector.start_load_kv(dummy_ctx)
             _after_load = time.perf_counter()
-            assert _after_load - _before_load < 0.1, (
-                f"start_load_kv took {_after_load - _before_load} seconds"
-            )
+            assert _after_load - _before_load < 0.1, f"start_load_kv took {_after_load - _before_load} seconds"
             time.sleep(0.5)  # backoff for the async handshake to complete.
             connector.bind_connector_metadata(NixlConnectorMetadata())
             _, done_recving = connector.get_finished(finished_req_ids=set())
@@ -566,9 +551,7 @@ class TestNixlHandshake:
         "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.NixlWrapper",
         FakeNixlWrapper,
     )
-    def test_handshake_succeed_on_kv_cache_layout_mismatch_with_experimental(
-        self, dist_init
-    ):
+    def test_handshake_succeed_on_kv_cache_layout_mismatch_with_experimental(self, dist_init):
         """
         Verify that adding a remote agent fails if kv_cache_layout differs.
         This test is only relevant for heterogeneous TP.
@@ -627,9 +610,7 @@ def test_kv_connector_stats(dist_init):
 
     # Test worker role in decode server.
     connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
-    connector.connector_worker = FakeNixlConnectorWorker(
-        aphrodite_config, connector.engine_id, hand_shake_latency=0
-    )
+    connector.connector_worker = FakeNixlConnectorWorker(aphrodite_config, connector.engine_id, hand_shake_latency=0)
 
     # Verify that xfer_stats starts empty
     initial_stats = connector.get_kv_connector_stats()
@@ -711,9 +692,7 @@ def test_kv_connector_stats_aggregation():
     worker2_stats.record_transfer(stats)
 
     # Worker 3: 3 transfers
-    stats = get_default_xfer_telemetry(
-        xferDurationS=2, postDurationS=2, totalBytes=2, descCount=2
-    )
+    stats = get_default_xfer_telemetry(xferDurationS=2, postDurationS=2, totalBytes=2, descCount=2)
     worker3_stats.record_transfer(stats)
     worker3_stats.record_transfer(stats)
     worker3_stats.record_transfer(stats)
@@ -729,12 +708,8 @@ def test_kv_connector_stats_aggregation():
             prompt_logprobs_dict={},
             pooler_output=[None],
             kv_connector_output=KVConnectorOutput(
-                finished_sending=set([f"req_{i}_send"])
-                if i < 2
-                else None,  # Workers 0,1 finished sending
-                finished_recving=set([f"req_{i}_recv"])
-                if i > 0
-                else None,  # Workers 1,2 finished receiving
+                finished_sending=set([f"req_{i}_send"]) if i < 2 else None,  # Workers 0,1 finished sending
+                finished_recving=set([f"req_{i}_recv"]) if i > 0 else None,  # Workers 1,2 finished receiving
                 kv_connector_stats=worker_stats,
             ),
         )
@@ -856,9 +831,7 @@ def test_scheduler_kv_connector_stats_aggregation():
     )
 
     # Mock the scheduler connector's stats method
-    scheduler.connector.get_kv_connector_stats = lambda: MultiKVConnectorStats(
-        data={"NixlConnector": scheduler_stats}
-    )
+    scheduler.connector.get_kv_connector_stats = lambda: MultiKVConnectorStats(data={"NixlConnector": scheduler_stats})
 
     model_output = ModelRunnerOutput(
         req_ids=["req_0"],
@@ -868,9 +841,7 @@ def test_scheduler_kv_connector_stats_aggregation():
         prompt_logprobs_dict={},
         pooler_output=[None],
         kv_connector_output=KVConnectorOutput(
-            kv_connector_stats=MultiKVConnectorStats(
-                data={"NixlConnector": worker_stats}
-            )
+            kv_connector_stats=MultiKVConnectorStats(data={"NixlConnector": worker_stats})
         ),
     )
     scheduler_output = SchedulerOutput(
@@ -889,9 +860,7 @@ def test_scheduler_kv_connector_stats_aggregation():
 
     engine_core_outputs = scheduler.update_from_output(scheduler_output, model_output)
 
-    final_stats = next(
-        iter(engine_core_outputs.values())
-    ).scheduler_stats.kv_connector_stats
+    final_stats = next(iter(engine_core_outputs.values())).scheduler_stats.kv_connector_stats
     nixl_stats = final_stats["NixlConnector"]
     assert nixl_stats.num_successful_transfers == 2
     assert nixl_stats.data["remote_tokens"] == [128]
@@ -974,9 +943,7 @@ def _run_abort_timeout_test(llm: LLM, timeout: int):
         extra_args={"kv_transfer_params": remote_prefill_opts},
     )
     scheduler = llm.llm_engine.engine_core.engine_core.scheduler
-    req_to_blocks = scheduler.kv_cache_manager.coordinator.single_type_managers[
-        0
-    ].req_to_blocks
+    req_to_blocks = scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks
 
     padding = "Just making this request a little longer so that we're sure "
     "we're not hitting the small-request lower bound beneath which we don't "
@@ -1013,9 +980,7 @@ def test_register_kv_caches(dist_init):
     aphrodite_config = create_aphrodite_config()
 
     # Create test kv cache tensors using proper backend shape
-    kv_cache_shape = FlashAttentionBackend.get_kv_cache_shape(
-        num_blocks=2, block_size=16, num_kv_heads=4, head_size=64
-    )
+    kv_cache_shape = FlashAttentionBackend.get_kv_cache_shape(num_blocks=2, block_size=16, num_kv_heads=4, head_size=64)
     shared_tensor = torch.zeros(*kv_cache_shape, dtype=torch.float16)
     unique_tensor = torch.zeros(*kv_cache_shape, dtype=torch.float16)
     kv_caches = {
@@ -1034,15 +999,9 @@ def test_register_kv_caches(dist_init):
     ]
 
     with (
-        patch(
-            "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.NixlWrapper"
-        ) as mock_nixl_wrapper,
-        patch(
-            "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Event"
-        ),
-        patch(
-            "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Thread"
-        ) as mock_thread,
+        patch("aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.NixlWrapper") as mock_nixl_wrapper,
+        patch("aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Event"),
+        patch("aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Thread") as mock_thread,
     ):  # noqa: E501
         # Create connector
         connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
@@ -1067,12 +1026,9 @@ def test_register_kv_caches(dist_init):
 
         for i, cache_entry in enumerate(caches_data):
             base_addr, size, _tp_rank, _ = cache_entry
-            assert size == expected_tensor_size, (
-                f"Entry {i}: Expected tensor size {expected_tensor_size}, got {size}"
-            )
+            assert size == expected_tensor_size, f"Entry {i}: Expected tensor size {expected_tensor_size}, got {size}"
             assert base_addr == expected_base_addrs[i], (
-                f"Entry {i}: Expected base address {expected_base_addrs[i]}, "
-                f"got {base_addr}"
+                f"Entry {i}: Expected base address {expected_base_addrs[i]}, got {base_addr}"
             )
 
         # Verify get_xfer_descs was called with blocks_data
@@ -1089,8 +1045,7 @@ def test_register_kv_caches(dist_init):
         for i, block_entry in enumerate(blocks_data):
             block_start_addr, block_len, tp_rank = block_entry
             assert block_len == expected_block_len, (
-                f"Block entry {i}: Expected block len {expected_block_len}, "
-                f"got {block_len}"
+                f"Block entry {i}: Expected block len {expected_block_len}, got {block_len}"
             )
 
 
@@ -1127,21 +1082,14 @@ def test_kv_buffer_to_nixl_memory_types(dist_init, kv_buffer_device, nixl_memory
     aphrodite_config = create_aphrodite_config()
     # Override the default memory types in the config
     aphrodite_config.kv_transfer_config.kv_buffer_device = kv_buffer_device
-    from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import (
-        _NIXL_SUPPORTED_DEVICE)
+    from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import _NIXL_SUPPORTED_DEVICE
 
     _NIXL_SUPPORTED_DEVICE.update(FakePlatform.get_nixl_supported_devices())
 
     with (
-        patch(
-            "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.NixlWrapper"
-        ),
-        patch(
-            "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Event"
-        ),
-        patch(
-            "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Thread"
-        ),
+        patch("aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.NixlWrapper"),
+        patch("aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Event"),
+        patch("aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.threading.Thread"),
         patch(
             "aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector.current_platform",
             FakePlatform,
@@ -1222,9 +1170,7 @@ def test_aborted_request_removed_from_worker_in_batch(dist_init):
     scheduler = create_scheduler(aphrodite_config)
     # KVConnector Worker in P
     connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
-    connector.connector_worker = FakeNixlConnectorWorker(
-        aphrodite_config, connector.engine_id, hand_shake_latency=0
-    )
+    connector.connector_worker = FakeNixlConnectorWorker(aphrodite_config, connector.engine_id, hand_shake_latency=0)
 
     # Create a request that triggers do_remote_decode so that
     # the scheduler adds it to reqs_in_batch
@@ -1325,9 +1271,7 @@ def test_handshake_failure_returns_finished(dist_init):
     aphrodite_config = create_aphrodite_config()
 
     connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
-    connector.connector_worker = FakeNixlConnectorWorker(
-        aphrodite_config, connector.engine_id, hand_shake_latency=0.1
-    )
+    connector.connector_worker = FakeNixlConnectorWorker(aphrodite_config, connector.engine_id, hand_shake_latency=0.1)
     connector.connector_worker.nixl_wrapper.fail_handshake = True
 
     request_id = "test_handshake_fail"
@@ -1374,9 +1318,7 @@ def test_transfer_setup_failure_returns_finished(dist_init):
     aphrodite_config = create_aphrodite_config()
 
     connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER)
-    connector.connector_worker = FakeNixlConnectorWorker(
-        aphrodite_config, connector.engine_id, hand_shake_latency=0
-    )
+    connector.connector_worker = FakeNixlConnectorWorker(aphrodite_config, connector.engine_id, hand_shake_latency=0)
     connector.connector_worker.nixl_wrapper.fail_transfer_setup = True
 
     request_id = "test_transfer_fail"

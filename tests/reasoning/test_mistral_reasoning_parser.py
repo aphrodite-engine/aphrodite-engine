@@ -9,9 +9,7 @@ parser_name = "mistral"
 
 @pytest.fixture(scope="module")
 def mistral_tokenizer():
-    mistral_tokenizer = MistralTokenizer.from_pretrained(
-        "mistralai/Magistral-Small-2509"
-    )
+    mistral_tokenizer = MistralTokenizer.from_pretrained("mistralai/Magistral-Small-2509")
     return mistral_tokenizer
 
 
@@ -263,46 +261,30 @@ def test_mistral_reasoning(
     output_tokens = []
     if index_think != -1:
         output_before_think = output[:index_think]
-        output_tokens += mistral_tokenizer.tokenizer.encode(
-            output_before_think, False, False
-        )
+        output_tokens += mistral_tokenizer.tokenizer.encode(output_before_think, False, False)
         output_tokens += [mistral_tokenizer.instruct.BEGIN_THINK]
 
         if index_end_think != -1:
             output_middle = output[index_think + len_think : index_end_think]
             output_after_think = output[index_end_think + len_end_think :]
-            output_tokens += mistral_tokenizer.tokenizer.encode(
-                output_middle, False, False
-            )
+            output_tokens += mistral_tokenizer.tokenizer.encode(output_middle, False, False)
             output_tokens += [mistral_tokenizer.instruct.END_THINK]
-            output_tokens += mistral_tokenizer.tokenizer.encode(
-                output_after_think, False, False
-            )
+            output_tokens += mistral_tokenizer.tokenizer.encode(output_after_think, False, False)
         else:
             output_middle = output[index_think + len_think :]
-            output_tokens += mistral_tokenizer.tokenizer.encode(
-                output_middle, False, False
-            )
+            output_tokens += mistral_tokenizer.tokenizer.encode(output_middle, False, False)
     elif index_end_think != -1:
         output_before_think = output[:index_end_think]
         output_after_think = output[index_end_think + len_end_think :]
-        output_tokens += mistral_tokenizer.tokenizer.encode(
-            output_before_think, False, False
-        )
+        output_tokens += mistral_tokenizer.tokenizer.encode(output_before_think, False, False)
         output_tokens += [mistral_tokenizer.instruct.END_THINK]
-        output_tokens += mistral_tokenizer.tokenizer.encode(
-            output_after_think, False, False
-        )
+        output_tokens += mistral_tokenizer.tokenizer.encode(output_after_think, False, False)
     else:
         output_tokens += mistral_tokenizer.tokenizer.encode(output, False, False)
 
-    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(
-        mistral_tokenizer
-    )
+    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(mistral_tokenizer)
 
-    reasoning, content = run_reasoning_extraction_mistral(
-        parser, output_tokens, streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction_mistral(parser, output_tokens, streaming=streaming)
 
     assert reasoning == param_dict["reasoning_content"]
     assert content == param_dict["content"]
@@ -314,9 +296,7 @@ def test_mistral_reasoning(
     # Test extract_content
     if param_dict["content"] is not None:
         content = parser.extract_content_ids(output_tokens)
-        assert content == mistral_tokenizer.tokenizer.encode(
-            param_dict["content"], bos=False, eos=False
-        )
+        assert content == mistral_tokenizer.tokenizer.encode(param_dict["content"], bos=False, eos=False)
     else:
         content = parser.extract_content_ids(output_tokens)
         assert content == []

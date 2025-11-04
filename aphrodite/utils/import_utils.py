@@ -95,11 +95,7 @@ def get_aphrodite_optional_dependencies():
     extras = metadata.get_all("Provides-Extra", [])
 
     return {
-        extra: [
-            re.split(r";|>=|<=|==", req)[0]
-            for req in requirements
-            if req.endswith(f'extra == "{extra}"')
-        ]
+        extra: [re.split(r";|>=|<=|==", req)[0] for req in requirements if req.endswith(f'extra == "{extra}"')]
         for extra in extras
     }
 
@@ -290,10 +286,7 @@ class PlaceholderModule(_PlaceholderBase):
 
             raise exc
 
-        raise AssertionError(
-            "PlaceholderModule should not be used "
-            "when the original module can be imported"
-        )
+        raise AssertionError("PlaceholderModule should not be used when the original module can be imported")
 
 
 class _PlaceholderModuleAttr(_PlaceholderBase):
@@ -310,10 +303,7 @@ class _PlaceholderModuleAttr(_PlaceholderBase):
     def __getattr__(self, key: str) -> Never:
         getattr(self.__module, f"{self.__attr_path}.{key}")
 
-        raise AssertionError(
-            "PlaceholderModule should not be used "
-            "when the original module can be imported"
-        )
+        raise AssertionError("PlaceholderModule should not be used when the original module can be imported")
 
 
 class LazyLoader(ModuleType):

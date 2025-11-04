@@ -5,8 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from aphrodite.compilation.backends import AphroditeBackend
-from aphrodite.config import (AphroditeConfig, ModelConfig, PoolerConfig,
-                              update_config)
+from aphrodite.config import AphroditeConfig, ModelConfig, PoolerConfig, update_config
 from aphrodite.config.load import LoadConfig
 from aphrodite.config.utils import get_field
 from aphrodite.modeling.layers.pooler import PoolingType
@@ -86,9 +85,7 @@ def test_update_config():
         ("openai/whisper-small", "generate", "none", "transcription"),
     ],
 )
-def test_auto_task(
-    model_id, expected_runner_type, expected_convert_type, expected_task
-):
+def test_auto_task(model_id, expected_runner_type, expected_convert_type, expected_task):
     config = ModelConfig(model_id, task="auto")
 
     assert config.runner_type == expected_runner_type
@@ -107,9 +104,7 @@ def test_auto_task(
         ("openai/whisper-small", "pooling", "embed", "embed"),
     ],
 )
-def test_score_task(
-    model_id, expected_runner_type, expected_convert_type, expected_task
-):
+def test_score_task(model_id, expected_runner_type, expected_convert_type, expected_task):
     config = ModelConfig(model_id, task="score")
 
     assert config.runner_type == expected_runner_type
@@ -123,9 +118,7 @@ def test_score_task(
         ("openai/whisper-small", "generate", "none", "transcription"),
     ],
 )
-def test_transcription_task(
-    model_id, expected_runner_type, expected_convert_type, expected_task
-):
+def test_transcription_task(model_id, expected_runner_type, expected_convert_type, expected_task):
     config = ModelConfig(model_id, task="transcription")
 
     assert config.runner_type == expected_runner_type
@@ -195,9 +188,7 @@ def test_disable_sliding_window(model_id_expected):
     assert model_config.max_model_len == expected
 
 
-@pytest.mark.skipif(
-    current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm."
-)
+@pytest.mark.skipif(current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm.")
 def test_get_pooling_config():
     model_id = "sentence-transformers/all-MiniLM-L12-v2"
     model_config = ModelConfig(model_id)
@@ -207,9 +198,7 @@ def test_get_pooling_config():
     assert model_config.pooler_config.pooling_type == PoolingType.MEAN.name
 
 
-@pytest.mark.skipif(
-    current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm."
-)
+@pytest.mark.skipif(current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm.")
 def test_get_pooling_config_from_args():
     model_id = "sentence-transformers/all-MiniLM-L12-v2"
     pooler_config = PoolerConfig(pooling_type="CLS", normalize=True)
@@ -233,9 +222,7 @@ def test_default_pooling_type(model_id, default_pooling_type, pooling_type):
     assert model_config.pooler_config.pooling_type == pooling_type
 
 
-@pytest.mark.skipif(
-    current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm."
-)
+@pytest.mark.skipif(current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm.")
 def test_get_bert_tokenization_sentence_transformer_config():
     model_id = "BAAI/bge-base-en-v1.5"
     bge_model_config = ModelConfig(model_id)
@@ -263,17 +250,14 @@ def test_rope_customization():
             "rope_theta": TEST_ROPE_THETA,
         },
     )
-    assert (
-        getattr(llama_model_config.hf_config, "rope_scaling", None) == TEST_ROPE_SCALING
-    )
+    assert getattr(llama_model_config.hf_config, "rope_scaling", None) == TEST_ROPE_SCALING
     assert getattr(llama_model_config.hf_config, "rope_theta", None) == TEST_ROPE_THETA
     assert llama_model_config.max_model_len == 16384
 
     longchat_model_config = ModelConfig("lmsys/longchat-13b-16k")
     # Check if LONGCHAT_ROPE_SCALING entries are in longchat_model_config
     assert all(
-        longchat_model_config.hf_config.rope_scaling.get(key) == value
-        for key, value in LONGCHAT_ROPE_SCALING.items()
+        longchat_model_config.hf_config.rope_scaling.get(key) == value for key, value in LONGCHAT_ROPE_SCALING.items()
     )
     assert longchat_model_config.max_model_len == 16384
 
@@ -283,10 +267,7 @@ def test_rope_customization():
             "rope_scaling": TEST_ROPE_SCALING,
         },
     )
-    assert (
-        getattr(longchat_model_config.hf_config, "rope_scaling", None)
-        == TEST_ROPE_SCALING
-    )
+    assert getattr(longchat_model_config.hf_config, "rope_scaling", None) == TEST_ROPE_SCALING
     assert longchat_model_config.max_model_len == 4096
 
 
@@ -321,9 +302,7 @@ def test_nested_hf_overrides():
     assert model_config.hf_config.vision_config.hidden_size == 512
 
 
-@pytest.mark.skipif(
-    current_platform.is_rocm(), reason="Encoder Decoder models not supported on ROCm."
-)
+@pytest.mark.skipif(current_platform.is_rocm(), reason="Encoder Decoder models not supported on ROCm.")
 @pytest.mark.parametrize(
     ("model_id", "is_encoder_decoder"),
     [
@@ -421,9 +400,7 @@ def test_load_config_pt_load_map_location(pt_load_map_location):
         ("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", 131073, 131072, True),
     ],
 )
-def test_get_and_verify_max_len(
-    model_id, max_model_len, expected_max_len, should_raise
-):
+def test_get_and_verify_max_len(model_id, max_model_len, expected_max_len, should_raise):
     """Test get_and_verify_max_len with different configurations."""
     model_config = ModelConfig(model_id)
 
@@ -463,24 +440,14 @@ def test_s3_url_model_tokenizer_paths(mock_pull_files, s3_url):
     ModelConfig.maybe_pull_model_tokenizer_for_runai(config1, s3_url, s3_url)
 
     # Check that model and tokenizer point to existing directories
-    assert os.path.exists(config1.model), (
-        f"Model directory does not exist: {config1.model}"
-    )
-    assert os.path.isdir(config1.model), (
-        f"Model path is not a directory: {config1.model}"
-    )
-    assert os.path.exists(config1.tokenizer), (
-        f"Tokenizer directory does not exist: {config1.tokenizer}"
-    )
-    assert os.path.isdir(config1.tokenizer), (
-        f"Tokenizer path is not a directory: {config1.tokenizer}"
-    )
+    assert os.path.exists(config1.model), f"Model directory does not exist: {config1.model}"
+    assert os.path.isdir(config1.model), f"Model path is not a directory: {config1.model}"
+    assert os.path.exists(config1.tokenizer), f"Tokenizer directory does not exist: {config1.tokenizer}"
+    assert os.path.isdir(config1.tokenizer), f"Tokenizer path is not a directory: {config1.tokenizer}"
 
     # Verify that the paths are different from the original S3 URL
     assert config1.model != s3_url, "Model path should be converted to local directory"
-    assert config1.tokenizer != s3_url, (
-        "Tokenizer path should be converted to local directory"
-    )
+    assert config1.tokenizer != s3_url, "Tokenizer path should be converted to local directory"
 
     # Store the original paths
     created_model_dir = config1.model
@@ -491,27 +458,17 @@ def test_s3_url_model_tokenizer_paths(mock_pull_files, s3_url):
     ModelConfig.maybe_pull_model_tokenizer_for_runai(config2, s3_url, s3_url)
 
     # Check that the new directories exist
-    assert os.path.exists(config2.model), (
-        f"Model directory does not exist: {config2.model}"
-    )
-    assert os.path.isdir(config2.model), (
-        f"Model path is not a directory: {config2.model}"
-    )
-    assert os.path.exists(config2.tokenizer), (
-        f"Tokenizer directory does not exist: {config2.tokenizer}"
-    )
-    assert os.path.isdir(config2.tokenizer), (
-        f"Tokenizer path is not a directory: {config2.tokenizer}"
-    )
+    assert os.path.exists(config2.model), f"Model directory does not exist: {config2.model}"
+    assert os.path.isdir(config2.model), f"Model path is not a directory: {config2.model}"
+    assert os.path.exists(config2.tokenizer), f"Tokenizer directory does not exist: {config2.tokenizer}"
+    assert os.path.isdir(config2.tokenizer), f"Tokenizer path is not a directory: {config2.tokenizer}"
 
     # Verify that the paths are deterministic (same as before)
     assert config2.model == created_model_dir, (
-        f"Model paths are not deterministic. "
-        f"Original: {created_model_dir}, New: {config2.model}"
+        f"Model paths are not deterministic. Original: {created_model_dir}, New: {config2.model}"
     )
     assert config2.tokenizer == create_tokenizer_dir, (
-        f"Tokenizer paths are not deterministic. "
-        f"Original: {create_tokenizer_dir}, New: {config2.tokenizer}"
+        f"Tokenizer paths are not deterministic. Original: {create_tokenizer_dir}, New: {config2.tokenizer}"
     )
 
 

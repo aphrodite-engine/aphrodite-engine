@@ -20,30 +20,22 @@ def test_basic_rebalance():
     num_nodes = 2
     num_gpus = 8
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Verify output shapes
     assert phy2log.shape == (
         2,
         16,
     ), f"Expected `phy2log` shape (2, 16), got {phy2log.shape}"
-    assert log2phy.shape[0] == 2, (
-        f"Expected `log2phy` first dimension 2, got {log2phy.shape[0]}"
-    )
-    assert log2phy.shape[1] == 12, (
-        f"Expected `log2phy` second dimension 12, got {log2phy.shape[1]}"
-    )
+    assert log2phy.shape[0] == 2, f"Expected `log2phy` first dimension 2, got {log2phy.shape[0]}"
+    assert log2phy.shape[1] == 12, f"Expected `log2phy` second dimension 12, got {log2phy.shape[1]}"
     assert logcnt.shape == (
         2,
         12,
     ), f"Expected `logcnt` shape (2, 12), got {logcnt.shape}"
 
     # Verify physical to logical expert mapping range is correct
-    assert torch.all(phy2log >= 0) and torch.all(phy2log < 12), (
-        "Physical to logical mapping should be in range [0, 12)"
-    )
+    assert torch.all(phy2log >= 0) and torch.all(phy2log < 12), "Physical to logical mapping should be in range [0, 12)"
 
     # Verify expert count reasonableness
     assert torch.all(logcnt >= 1), "Each logical expert should have at least 1 replica"
@@ -60,9 +52,7 @@ def test_basic_rebalance():
     )
     assert torch.all(phy2log == expected_phy2log)
 
-    expected_logcnt = torch.tensor(
-        [[1, 2, 1, 1, 2, 2, 1, 1, 1, 1, 2, 1], [1, 2, 1, 1, 1, 2, 2, 1, 2, 1, 1, 1]]
-    )
+    expected_logcnt = torch.tensor([[1, 2, 1, 1, 2, 2, 1, 1, 1, 1, 2, 1], [1, 2, 1, 1, 1, 2, 2, 1, 2, 1, 1, 1]])
     assert torch.all(logcnt == expected_logcnt)
 
 
@@ -74,9 +64,7 @@ def test_single_gpu_case():
     num_nodes = 1
     num_gpus = 1
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Verify shapes
     assert phy2log.shape == (1, 4)
@@ -96,19 +84,14 @@ def test_equal_weights():
     num_nodes = 2
     num_gpus = 4
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Verify shapes
     assert phy2log.shape == (1, 8)
     assert logcnt.shape == (1, 8)
 
     # With equal weights, each expert should have exactly one replica
-    assert torch.all(logcnt == 1), (
-        "With equal weights and no replication, "
-        "each expert should have exactly 1 replica"
-    )
+    assert torch.all(logcnt == 1), "With equal weights and no replication, each expert should have exactly 1 replica"
 
 
 def test_extreme_weight_imbalance():
@@ -119,18 +102,14 @@ def test_extreme_weight_imbalance():
     num_nodes = 2
     num_gpus = 4
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Verify shapes
     assert phy2log.shape == (1, 12)
     assert logcnt.shape == (1, 8)
 
     # Expert with highest weight (index 0) should have more replicas
-    assert logcnt[0, 0] > logcnt[0, 1], (
-        "Expert with highest weight should have more replicas"
-    )
+    assert logcnt[0, 0] > logcnt[0, 1], "Expert with highest weight should have more replicas"
 
 
 def test_multiple_layers():
@@ -147,9 +126,7 @@ def test_multiple_layers():
     num_nodes = 2
     num_gpus = 4
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Verify shapes
     assert phy2log.shape == (3, 8)
@@ -160,9 +137,7 @@ def test_multiple_layers():
         assert torch.all(phy2log[layer] >= 0) and torch.all(phy2log[layer] < 6), (
             f"Layer {layer} physical to logical mappingshould be in range [0, 6)"
         )
-        assert torch.sum(logcnt[layer]) == num_replicas, (
-            f"Layer {layer} total replicas should be {num_replicas}"
-        )
+        assert torch.sum(logcnt[layer]) == num_replicas, f"Layer {layer} total replicas should be {num_replicas}"
 
 
 def test_parameter_validation():
@@ -194,9 +169,7 @@ def test_small_scale_hierarchical():
     num_nodes = 2  # 2 nodes
     num_gpus = 4  # 4 GPUs
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Verify basic constraints
     assert phy2log.shape == (1, 12)
@@ -206,9 +179,7 @@ def test_small_scale_hierarchical():
 
     # Expert with highest weight should have more replicas
     max_weight_expert = torch.argmax(weight[0])
-    assert logcnt[0, max_weight_expert] >= 2, (
-        "Highest weight expert should have multiple replicas"
-    )
+    assert logcnt[0, max_weight_expert] >= 2, "Highest weight expert should have multiple replicas"
 
 
 def test_global_load_balance_fallback():
@@ -221,9 +192,7 @@ def test_global_load_balance_fallback():
     num_nodes = 2
     num_gpus = 4
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Should work normally, just using global load balancing strategy
     assert phy2log.shape == (1, 8)
@@ -243,9 +212,7 @@ def test_device_compatibility(device):
     num_nodes = 1
     num_gpus = 2
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
 
     # Function will convert to CPU internally, but should handle different
     # device inputs normally
@@ -257,9 +224,7 @@ def test_additional_cases():
     """Test more edge cases and different parameter combinations"""
 
     # Test case 1: Large-scale distributed setup
-    weight1 = torch.tensor(
-        [[50, 100, 75, 120, 90, 60, 80, 110, 40, 70, 95, 85, 65, 55, 45, 35]]
-    )
+    weight1 = torch.tensor([[50, 100, 75, 120, 90, 60, 80, 110, 40, 70, 95, 85, 65, 55, 45, 35]])
     phy2log1, log2phy1, logcnt1 = rebalance_experts(weight1, 24, 8, 4, 8)
 
     assert phy2log1.shape == (1, 24)
@@ -297,9 +262,7 @@ if __name__ == "__main__":
     num_nodes = 2
     num_gpus = 8
 
-    phy2log, log2phy, logcnt = rebalance_experts(
-        weight, num_replicas, num_groups, num_nodes, num_gpus
-    )
+    phy2log, log2phy, logcnt = rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
     print(phy2log)
 
     test_basic_rebalance()

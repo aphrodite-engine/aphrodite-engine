@@ -1,21 +1,15 @@
-
 import torch
 
 from aphrodite.platforms import current_platform
-from aphrodite.utils.torch_utils import (direct_register_custom_op,
-                                         is_torch_equal_or_newer)
+from aphrodite.utils.torch_utils import direct_register_custom_op, is_torch_equal_or_newer
 
 
 def get_aiter_mla_metadata(
     max_batch_size: int, block_size: int, max_block_per_batch: int, device: torch.device
 ) -> tuple[torch.Tensor, ...]:
-    paged_kv_indices = torch.zeros(
-        max_batch_size * max_block_per_batch, dtype=torch.int32, device=device
-    )
+    paged_kv_indices = torch.zeros(max_batch_size * max_block_per_batch, dtype=torch.int32, device=device)
     paged_kv_indptr = torch.zeros(max_batch_size + 1, dtype=torch.int32, device=device)
-    paged_kv_last_page_lens = torch.full(
-        (max_batch_size,), block_size, dtype=torch.int32
-    )
+    paged_kv_last_page_lens = torch.full((max_batch_size,), block_size, dtype=torch.int32)
     qo_indptr = torch.zeros(max_batch_size + 1, dtype=torch.int, device=device)
     return paged_kv_indices, paged_kv_indptr, paged_kv_last_page_lens, qo_indptr
 

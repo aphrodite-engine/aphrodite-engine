@@ -13,21 +13,22 @@ QUARK_MXFP4_AVAILABLE = find_spec("quark") is not None and version.parse(
     importlib.metadata.version("amd-quark")
 ) >= version.parse("0.8.99")
 
-TRTLLM_GEN_MXFP4_AVAILABLE = (
-    current_platform.is_cuda() and current_platform.is_device_capability(100)
-)
+TRTLLM_GEN_MXFP4_AVAILABLE = current_platform.is_cuda() and current_platform.is_device_capability(100)
 
 HOPPER_MXFP4_BF16_AVAILABLE = (
-    current_platform.is_cuda()
-    and current_platform.is_device_capability(90)
-    and has_flashinfer()
+    current_platform.is_cuda() and current_platform.is_device_capability(90) and has_flashinfer()
 )
 
 if TRTLLM_GEN_MXFP4_AVAILABLE:
-    from flashinfer import (fp4_quantize, mxfp8_quantize,
-                            next_positive_power_of_2,
-                            reorder_rows_for_gated_act_gemm, shuffle_matrix_a,
-                            shuffle_matrix_sf_a, trtllm_fp4_block_scale_moe)
+    from flashinfer import (
+        fp4_quantize,
+        mxfp8_quantize,
+        next_positive_power_of_2,
+        reorder_rows_for_gated_act_gemm,
+        shuffle_matrix_a,
+        shuffle_matrix_sf_a,
+        trtllm_fp4_block_scale_moe,
+    )
     from flashinfer.fp4_quantization import nvfp4_block_scale_interleave
     from flashinfer.fused_moe.core import get_w2_permute_indices_with_cache
 
@@ -57,10 +58,7 @@ def enable_pickle(monkeypatch):
 @pytest.mark.skipif(not QUARK_MXFP4_AVAILABLE, reason="amd-quark>=0.9 is not available")
 def test_mxfp4_loading_and_execution_moe(aphrodite_runner, model_case: ModelCase):
     if torch.cuda.device_count() < model_case.tp:
-        pytest.skip(
-            f"This test requires >={model_case.tp} gpus, got only "
-            f"{torch.cuda.device_count()}"
-        )
+        pytest.skip(f"This test requires >={model_case.tp} gpus, got only {torch.cuda.device_count()}")
 
     # `cuda_graph_sizes=[16]` to reduce load time.
     with aphrodite_runner(
@@ -110,9 +108,7 @@ fp4_lookup_table = [0, 0.5, 1, 1.5, 2, 3, 4, 6, -0, -0.5, -1, -1.5, -2, -3, -4, 
 def mxfp4_dequantize(x, scale):
     assert x.dtype == torch.uint8
     x = x.view(torch.uint8).to(torch.int32)
-    x_unpacked = torch.zeros(
-        *x.shape[:-1], x.shape[-1] * 2, dtype=torch.int32, device=x.device
-    )
+    x_unpacked = torch.zeros(*x.shape[:-1], x.shape[-1] * 2, dtype=torch.int32, device=x.device)
     x_unpacked[..., 0::2].copy_(x & 0xF)
     x_unpacked[..., 1::2].copy_((x >> 4) & 0xF)
 
@@ -166,9 +162,7 @@ def reference_moe(
     t = swiglu(t, alpha=alpha, beta=beta, limit=limit)
 
     if act_type == "mxfp8":
-        t_quantized, t_scale = mxfp8_quantize(
-            t.to(torch.bfloat16), is_sf_swizzled_layout=False
-        )
+        t_quantized, t_scale = mxfp8_quantize(t.to(torch.bfloat16), is_sf_swizzled_layout=False)
         t = mxfp8_dequantize(t_quantized, t_scale)
     # MLP #2
     mlp2_weight = w2[expert_indices, ...]
@@ -248,16 +242,8 @@ def tg_mxfp4_moe(
         and w2_weight_scale.shape[1] == hidden_size
         and w2_weight_scale.shape[2] == intermediate_size // sf_block_size
     )
-    assert (
-        w13_bias.dim() == 2
-        and w13_bias.shape[0] == num_experts
-        and w13_bias.shape[1] == intermediate_size * 2
-    )
-    assert (
-        w2_bias.dim() == 2
-        and w2_bias.shape[0] == num_experts
-        and w2_bias.shape[1] == hidden_size
-    )
+    assert w13_bias.dim() == 2 and w13_bias.shape[0] == num_experts and w13_bias.shape[1] == intermediate_size * 2
+    assert w2_bias.dim() == 2 and w2_bias.shape[0] == num_experts and w2_bias.shape[1] == hidden_size
 
     # Swap w1 and w3 as the definition of
     # swiglu is different in the trtllm-gen
@@ -266,12 +252,8 @@ def tg_mxfp4_moe(
     w13_bias_ = w13_bias.clone()
     w13_weight[:, :intermediate_size, :].copy_(w13_weight_[:, intermediate_size:, :])
     w13_weight[:, intermediate_size:, :].copy_(w13_weight_[:, :intermediate_size, :])
-    w13_weight_scale[:, :intermediate_size, :].copy_(
-        w13_weight_scale_[:, intermediate_size:, :]
-    )
-    w13_weight_scale[:, intermediate_size:, :].copy_(
-        w13_weight_scale_[:, :intermediate_size, :]
-    )
+    w13_weight_scale[:, :intermediate_size, :].copy_(w13_weight_scale_[:, intermediate_size:, :])
+    w13_weight_scale[:, intermediate_size:, :].copy_(w13_weight_scale_[:, :intermediate_size, :])
     w13_bias[:, :intermediate_size].copy_(w13_bias_[:, intermediate_size:])
     w13_bias[:, intermediate_size:].copy_(w13_bias_[:, :intermediate_size])
 
@@ -280,24 +262,14 @@ def tg_mxfp4_moe(
     w13_weight_scale_interleaved = []
     w13_bias_interleaved = []
     for i in range(num_experts):
-        w13_weight_interleaved.append(
-            reorder_rows_for_gated_act_gemm(w13_weight[i].clone())
-        )
-        w13_weight_scale_interleaved.append(
-            reorder_rows_for_gated_act_gemm(w13_weight_scale[i].clone())
-        )
-        w13_bias_interleaved.append(
-            reorder_rows_for_gated_act_gemm(w13_bias[i].clone().reshape(-1, 1))
-        )
-    w13_weight = torch.stack(w13_weight_interleaved).reshape(
-        num_experts, 2 * intermediate_size, hidden_size // 2
-    )
+        w13_weight_interleaved.append(reorder_rows_for_gated_act_gemm(w13_weight[i].clone()))
+        w13_weight_scale_interleaved.append(reorder_rows_for_gated_act_gemm(w13_weight_scale[i].clone()))
+        w13_bias_interleaved.append(reorder_rows_for_gated_act_gemm(w13_bias[i].clone().reshape(-1, 1)))
+    w13_weight = torch.stack(w13_weight_interleaved).reshape(num_experts, 2 * intermediate_size, hidden_size // 2)
     w13_weight_scale = torch.stack(w13_weight_scale_interleaved).reshape(
         num_experts, 2 * intermediate_size, hidden_size // 32
     )
-    w13_bias = torch.stack(w13_bias_interleaved).reshape(
-        num_experts, 2 * intermediate_size
-    )
+    w13_bias = torch.stack(w13_bias_interleaved).reshape(num_experts, 2 * intermediate_size)
 
     # Shuffle weights and scaling factors for transposed mma output
     gemm1_weights_shuffled = []
@@ -317,9 +289,7 @@ def tg_mxfp4_moe(
                 epilogue_tile_m,
             )
             gemm1_weights_shuffled.append(
-                w13_weight[i]
-                .view(torch.uint8)[permute_indices.to(w13_weight.device)]
-                .contiguous()
+                w13_weight[i].view(torch.uint8)[permute_indices.to(w13_weight.device)].contiguous()
             )
             # w13 scale shuffling
             permute_sf_indices = get_w2_permute_indices_with_cache(
@@ -330,9 +300,7 @@ def tg_mxfp4_moe(
             )
             gemm1_scales_shuffled.append(
                 nvfp4_block_scale_interleave(
-                    w13_weight_scale[i]
-                    .view(torch.uint8)[permute_sf_indices.to(w13_weight_scale.device)]
-                    .contiguous()
+                    w13_weight_scale[i].view(torch.uint8)[permute_sf_indices.to(w13_weight_scale.device)].contiguous()
                 )
             )
             # w13 bias shuffling
@@ -342,10 +310,7 @@ def tg_mxfp4_moe(
                 epilogue_tile_m,
             )
             gemm1_bias_shuffled.append(
-                w13_bias[i]
-                .clone()
-                .reshape(-1, 1)[permute_bias_indices.to(w13_bias.device)]
-                .contiguous()
+                w13_bias[i].clone().reshape(-1, 1)[permute_bias_indices.to(w13_bias.device)].contiguous()
             )
             # w2 weight shuffling
             permute_indices = get_w2_permute_indices_with_cache(
@@ -354,9 +319,7 @@ def tg_mxfp4_moe(
                 epilogue_tile_m,
             )
             gemm2_weights_shuffled.append(
-                w2_weight[i]
-                .view(torch.uint8)[permute_indices.to(w2_weight.device)]
-                .contiguous()
+                w2_weight[i].view(torch.uint8)[permute_indices.to(w2_weight.device)].contiguous()
             )
             # w2 scale shuffling
             permute_sf_indices = get_w2_permute_indices_with_cache(
@@ -367,9 +330,7 @@ def tg_mxfp4_moe(
             )
             gemm2_scales_shuffled.append(
                 nvfp4_block_scale_interleave(
-                    w2_weight_scale[i]
-                    .view(torch.uint8)[permute_sf_indices.to(w2_weight_scale.device)]
-                    .contiguous()
+                    w2_weight_scale[i].view(torch.uint8)[permute_sf_indices.to(w2_weight_scale.device)].contiguous()
                 )
             )
             # w2 bias shuffling
@@ -379,37 +340,18 @@ def tg_mxfp4_moe(
                 epilogue_tile_m,
             )
             gemm2_bias_shuffled.append(
-                w2_bias[i]
-                .clone()
-                .reshape(-1, 1)[permute_indices.to(w2_bias.device)]
-                .contiguous()
+                w2_bias[i].clone().reshape(-1, 1)[permute_indices.to(w2_bias.device)].contiguous()
             )
 
     else:
         for i in range(num_experts):
-            gemm1_weights_shuffled.append(
-                shuffle_matrix_a(w13_weight[i].view(torch.uint8), epilogue_tile_m)
-            )
-            gemm1_scales_shuffled.append(
-                shuffle_matrix_sf_a(
-                    w13_weight_scale[i].view(torch.uint8), epilogue_tile_m
-                )
-            )
+            gemm1_weights_shuffled.append(shuffle_matrix_a(w13_weight[i].view(torch.uint8), epilogue_tile_m))
+            gemm1_scales_shuffled.append(shuffle_matrix_sf_a(w13_weight_scale[i].view(torch.uint8), epilogue_tile_m))
 
-            gemm2_weights_shuffled.append(
-                shuffle_matrix_a(w2_weight[i].view(torch.uint8), epilogue_tile_m)
-            )
-            gemm2_scales_shuffled.append(
-                shuffle_matrix_sf_a(
-                    w2_weight_scale[i].view(torch.uint8), epilogue_tile_m
-                )
-            )
-            gemm1_bias_shuffled.append(
-                shuffle_matrix_a(w13_bias[i].reshape(-1, 1), epilogue_tile_m)
-            )
-            gemm2_bias_shuffled.append(
-                shuffle_matrix_a(w2_bias[i].reshape(-1, 1), epilogue_tile_m)
-            )
+            gemm2_weights_shuffled.append(shuffle_matrix_a(w2_weight[i].view(torch.uint8), epilogue_tile_m))
+            gemm2_scales_shuffled.append(shuffle_matrix_sf_a(w2_weight_scale[i].view(torch.uint8), epilogue_tile_m))
+            gemm1_bias_shuffled.append(shuffle_matrix_a(w13_bias[i].reshape(-1, 1), epilogue_tile_m))
+            gemm2_bias_shuffled.append(shuffle_matrix_a(w2_bias[i].reshape(-1, 1), epilogue_tile_m))
 
     w13_weight = torch.stack(gemm1_weights_shuffled)
     w13_weight_scale = (
@@ -476,10 +418,7 @@ def check_accuracy(a, b, atol, rtol, percent):
     count = torch.sum(left > right)
     mismatch_percent = count / a.numel()
     if mismatch_percent > 1 - percent:
-        raise Exception(
-            f"Mismatch percentage is {mismatch_percent:.4f} for rtol {rtol} "
-            f"(threshold: {1 - percent:.4f})"
-        )
+        raise Exception(f"Mismatch percentage is {mismatch_percent:.4f} for rtol {rtol} (threshold: {1 - percent:.4f})")
 
 
 @pytest.mark.parametrize("topk", [1, 4])
@@ -507,9 +446,7 @@ def test_trtllm_gen_mxfp4_fused_moe(
 ):
     seed = 42
     torch.manual_seed(seed)
-    hidden_states = torch.randn(
-        num_tokens, hidden_size, device="cuda:0", dtype=torch.bfloat16
-    )
+    hidden_states = torch.randn(num_tokens, hidden_size, device="cuda:0", dtype=torch.bfloat16)
     w13 = torch.randn(
         num_experts,
         intermediate_size * 2,
@@ -535,9 +472,7 @@ def test_trtllm_gen_mxfp4_fused_moe(
         sf_use_ue8m0=True,
         is_sf_swizzled_layout=False,
     )
-    w13_scale = w13_scale.view(torch.float8_e4m3fn).reshape(
-        num_experts, intermediate_size * 2, hidden_size // 32
-    )
+    w13_scale = w13_scale.view(torch.float8_e4m3fn).reshape(num_experts, intermediate_size * 2, hidden_size // 32)
     w2, w2_scale = fp4_quantize(
         w2,
         torch.tensor(1.0, device="cuda:0"),
@@ -545,13 +480,9 @@ def test_trtllm_gen_mxfp4_fused_moe(
         sf_use_ue8m0=True,
         is_sf_swizzled_layout=False,
     )
-    w2_scale = w2_scale.view(torch.float8_e4m3fn).reshape(
-        num_experts, hidden_size, intermediate_size // 32
-    )
+    w2_scale = w2_scale.view(torch.float8_e4m3fn).reshape(num_experts, hidden_size, intermediate_size // 32)
     if act_type == "mxfp8":
-        hidden_states, hidden_states_scale = mxfp8_quantize(
-            hidden_states, is_sf_swizzled_layout=False
-        )
+        hidden_states, hidden_states_scale = mxfp8_quantize(hidden_states, is_sf_swizzled_layout=False)
         hidden_states_scale = hidden_states_scale.view(torch.float8_e4m3fn).reshape(-1)
     else:
         hidden_states_scale = None
@@ -563,9 +494,7 @@ def test_trtllm_gen_mxfp4_fused_moe(
     bias13_ref = bias13
     bias2_ref = bias2
     if act_type == "mxfp8":
-        hidden_states_ref = mxfp8_dequantize(hidden_states, hidden_states_scale).to(
-            torch.float32
-        )
+        hidden_states_ref = mxfp8_dequantize(hidden_states, hidden_states_scale).to(torch.float32)
     else:
         hidden_states_ref = hidden_states.to(torch.float32)
     # Process tokens in chunks of 32 to reduce memory usage
@@ -657,9 +586,7 @@ def test_flashinfer_cutlass_mxfp4_fused_moe(
     device = "cuda:0"
 
     # Inputs
-    hidden_states = torch.randn(
-        num_tokens, hidden_size, device=device, dtype=torch.bfloat16
-    )
+    hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=torch.bfloat16)
     # Random MXFP4 weights and scales (uint8), contiguous [w1; w3]
     w13_q = torch.randint(
         0,
@@ -691,25 +618,14 @@ def test_flashinfer_cutlass_mxfp4_fused_moe(
         dtype=torch.uint8,
     )
     # Bias contiguous [b1; b3]
-    bias13 = (
-        torch.randn(
-            num_experts, 2 * intermediate_size, device=device, dtype=torch.bfloat16
-        )
-        * 10
-    )
-    bias2 = (
-        torch.randn(num_experts, hidden_size, device=device, dtype=torch.bfloat16) * 10
-    )
-    router_logits = torch.rand(
-        num_tokens, num_experts, dtype=torch.float32, device=device
-    )
+    bias13 = torch.randn(num_experts, 2 * intermediate_size, device=device, dtype=torch.bfloat16) * 10
+    bias2 = torch.randn(num_experts, hidden_size, device=device, dtype=torch.bfloat16) * 10
+    router_logits = torch.rand(num_tokens, num_experts, dtype=torch.float32, device=device)
 
     w13_ref = mxfp4_dequantize(w13_q.clone(), w13_scale.clone()).reshape(
         num_experts, 2 * intermediate_size, hidden_size
     )
-    w2_ref = mxfp4_dequantize(w2_q.clone(), w2_scale.clone()).reshape(
-        num_experts, hidden_size, intermediate_size
-    )
+    w2_ref = mxfp4_dequantize(w2_q.clone(), w2_scale.clone()).reshape(num_experts, hidden_size, intermediate_size)
     ref = reference_moe(
         router_logits.to(torch.float32),
         topk,
@@ -739,15 +655,9 @@ def test_flashinfer_cutlass_mxfp4_fused_moe(
     w13_s_inter = _interleave_scales_lastdim_by4(w13_s)
     w2_s_inter = _interleave_scales_lastdim_by4(w2_scale)
 
-    routing_weights = torch.nn.functional.softmax(
-        router_logits, dim=1, dtype=torch.float32
-    )
-    token_final_scales, token_selected_experts = torch.topk(
-        routing_weights, topk, dim=-1
-    )
-    token_final_scales = token_final_scales / token_final_scales.sum(
-        dim=-1, keepdim=True
-    )
+    routing_weights = torch.nn.functional.softmax(router_logits, dim=1, dtype=torch.float32)
+    token_final_scales, token_selected_experts = torch.topk(routing_weights, topk, dim=-1)
+    token_final_scales = token_final_scales / token_final_scales.sum(dim=-1, keepdim=True)
     token_selected_experts = token_selected_experts.to(torch.int).contiguous()
 
     out = torch.empty_like(hidden_states, dtype=torch.bfloat16)
@@ -789,11 +699,7 @@ def test_flashinfer_cutlass_mxfp4_fused_moe(
 @pytest.mark.parametrize("intermediate_size,hidden_size", [(3072, 3072)])
 @pytest.mark.parametrize("alpha,beta,limit", [(1.0, 1.0, None), (1.702, 1.0, 7.0)])
 @pytest.mark.skipif(
-    not (
-        current_platform.is_cuda()
-        and current_platform.is_device_capability(100)
-        and has_flashinfer()
-    ),
+    not (current_platform.is_cuda() and current_platform.is_device_capability(100) and has_flashinfer()),
     reason="NVIDIA GPU sm100 and flashinfer are required for this test",
 )
 def test_flashinfer_cutlass_mxfp4_mxfp8_fused_moe(
@@ -810,9 +716,7 @@ def test_flashinfer_cutlass_mxfp4_mxfp8_fused_moe(
     device = "cuda:0"
 
     # Inputs
-    hidden_states = torch.randn(
-        num_tokens, hidden_size, device=device, dtype=torch.bfloat16
-    )
+    hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=torch.bfloat16)
     # Float weights in w13 format [w1; w3]
     w13 = (
         torch.randn(
@@ -835,18 +739,9 @@ def test_flashinfer_cutlass_mxfp4_mxfp8_fused_moe(
         / 10
     )
     # Bias contiguous [b1; b3]
-    bias13 = (
-        torch.randn(
-            num_experts, 2 * intermediate_size, device=device, dtype=torch.bfloat16
-        )
-        * 10
-    )
-    bias2 = (
-        torch.randn(num_experts, hidden_size, device=device, dtype=torch.bfloat16) * 10
-    )
-    router_logits = torch.rand(
-        num_tokens, num_experts, dtype=torch.float32, device=device
-    )
+    bias13 = torch.randn(num_experts, 2 * intermediate_size, device=device, dtype=torch.bfloat16) * 10
+    bias2 = torch.randn(num_experts, hidden_size, device=device, dtype=torch.bfloat16) * 10
+    router_logits = torch.rand(num_tokens, num_experts, dtype=torch.float32, device=device)
 
     # Quantize weights to MXFP4 per expert (SM100 path)
     from flashinfer import mxfp4_quantize
@@ -864,29 +759,20 @@ def test_flashinfer_cutlass_mxfp4_mxfp8_fused_moe(
         scale_tensor = scale_tensor.view(num_batches, -1)
         from flashinfer import mxfp4_dequantize
 
-        return torch.stack(
-            [
-                mxfp4_dequantize(mat_fp4[b, :, :], scale_tensor[b, :])
-                for b in range(num_batches)
-            ]
-        )
+        return torch.stack([mxfp4_dequantize(mat_fp4[b, :, :], scale_tensor[b, :]) for b in range(num_batches)])
 
     w13_q, w13_scale = quant_mxfp4_batches(w13, num_experts)
     w2_q, w2_scale = quant_mxfp4_batches(w2, num_experts)
 
     # Reference result using dequantized tensors and reference_moe
     w13_ref = (
-        dequant_mxfp4_batches(
-            w13_q.view(torch.uint8), w13_scale.view(torch.uint8).reshape(-1)
-        )
+        dequant_mxfp4_batches(w13_q.view(torch.uint8), w13_scale.view(torch.uint8).reshape(-1))
         .to(torch.float32)
         .reshape(num_experts, 2 * intermediate_size, hidden_size)
         .to(device)
     )
     w2_ref = (
-        dequant_mxfp4_batches(
-            w2_q.view(torch.uint8), w2_scale.view(torch.uint8).reshape(-1)
-        )
+        dequant_mxfp4_batches(w2_q.view(torch.uint8), w2_scale.view(torch.uint8).reshape(-1))
         .to(torch.float32)
         .reshape(num_experts, hidden_size, intermediate_size)
         .to(device)
@@ -925,15 +811,9 @@ def test_flashinfer_cutlass_mxfp4_mxfp8_fused_moe(
     w13_b = torch.cat([b3, b1], dim=-1).to(torch.bfloat16)
 
     # Build routing for kernel
-    routing_weights = torch.nn.functional.softmax(
-        router_logits, dim=1, dtype=torch.float32
-    )
-    token_final_scales, token_selected_experts = torch.topk(
-        routing_weights, topk, dim=-1
-    )
-    token_final_scales = token_final_scales / token_final_scales.sum(
-        dim=-1, keepdim=True
-    )
+    routing_weights = torch.nn.functional.softmax(router_logits, dim=1, dtype=torch.float32)
+    token_final_scales, token_selected_experts = torch.topk(routing_weights, topk, dim=-1)
+    token_final_scales = token_final_scales / token_final_scales.sum(dim=-1, keepdim=True)
     token_selected_experts = token_selected_experts.to(torch.int).contiguous()
 
     out = torch.empty_like(hidden_states, dtype=torch.bfloat16)

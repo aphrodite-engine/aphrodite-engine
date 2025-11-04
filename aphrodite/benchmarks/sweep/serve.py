@@ -268,9 +268,7 @@ class SweepServeArgs:
     def from_cli_args(cls, args: argparse.Namespace):
         serve_cmd = shlex.split(args.serve_cmd)
         bench_cmd = shlex.split(args.bench_cmd)
-        after_bench_cmd = (
-            [] if args.after_bench_cmd is None else shlex.split(args.after_bench_cmd)
-        )
+        after_bench_cmd = [] if args.after_bench_cmd is None else shlex.split(args.after_bench_cmd)
 
         if args.serve_params:
             serve_params = ParameterSweep.read_json(args.serve_params)
@@ -325,8 +323,7 @@ class SweepServeArgs:
         parser.add_argument(
             "--show-stdout",
             action="store_true",
-            help="If set, logs the standard output of subcommands. "
-            "Useful for debugging but can be quite spammy.",
+            help="If set, logs the standard output of subcommands. Useful for debugging but can be quite spammy.",
         )
         parser.add_argument(
             "--serve-params",
@@ -362,8 +359,7 @@ class SweepServeArgs:
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="If set, prints the commands to run, "
-            "then exits without executing them.",
+            help="If set, prints the commands to run, then exits without executing them.",
         )
         parser.add_argument(
             "--resume",

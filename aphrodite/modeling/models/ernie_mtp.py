@@ -30,8 +30,7 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 
 from .interfaces import SupportsPP
@@ -50,9 +49,7 @@ class ErnieMultiTokenPredictorLayer(nn.Module):
 
         self.mtp_emb_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.mtp_hidden_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.mtp_linear_proj = nn.Linear(
-            config.hidden_size * 2, config.hidden_size, bias=False
-        )
+        self.mtp_linear_proj = nn.Linear(config.hidden_size * 2, config.hidden_size, bias=False)
         self.mtp_block = LlamaDecoderLayer(aphrodite_config, prefix)
 
     def forward(
@@ -69,13 +66,9 @@ class ErnieMultiTokenPredictorLayer(nn.Module):
         inputs_embeds = self.mtp_emb_norm(inputs_embeds)
         previous_hidden_states = self.mtp_hidden_norm(previous_hidden_states)
 
-        hidden_states = self.mtp_linear_proj(
-            torch.cat([inputs_embeds, previous_hidden_states], dim=-1)
-        )
+        hidden_states = self.mtp_linear_proj(torch.cat([inputs_embeds, previous_hidden_states], dim=-1))
 
-        hidden_states, residual = self.mtp_block(
-            positions=positions, hidden_states=hidden_states, residual=None
-        )
+        hidden_states, residual = self.mtp_block(positions=positions, hidden_states=hidden_states, residual=None)
         hidden_states = residual + hidden_states
 
         return hidden_states
@@ -143,9 +136,7 @@ class ErnieMTP(nn.Module, SupportsPP):
         super().__init__()
 
         self.config = aphrodite_config.model_config.hf_config
-        self.model = ErnieMultiTokenPredictor(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = ErnieMultiTokenPredictor(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.lm_head = ParallelLMHead(
             self.config.vocab_size,
             self.config.hidden_size,
@@ -168,9 +159,7 @@ class ErnieMTP(nn.Module, SupportsPP):
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
         assert spec_step_idx == 0, "ernie_mtp only support predict one token"
-        hidden_states = self.model(
-            input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
-        )
+        hidden_states = self.model(input_ids, positions, hidden_states, inputs_embeds, spec_step_idx)
         return hidden_states
 
     def compute_logits(
@@ -215,9 +204,7 @@ class ErnieMTP(nn.Module, SupportsPP):
                     continue
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -229,9 +216,7 @@ class ErnieMTP(nn.Module, SupportsPP):
                 break
             else:
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -239,9 +224,7 @@ class ErnieMTP(nn.Module, SupportsPP):
 
                 # According to DeepSeek-V3 Technical Report, MTP modules
                 # shares embedding layer. We only load the first weights.
-                if "mtp_" not in name and (
-                    "embed_tokens" not in name and "lm_head" not in name
-                ):
+                if "mtp_" not in name and ("embed_tokens" not in name and "lm_head" not in name):
                     continue
 
                 param = params_dict[name]
@@ -268,7 +251,5 @@ class ErnieMTP(nn.Module, SupportsPP):
                     f"model.layers.{layer_idx}.{weight_name}.",
                 )
                 return name
-        name = name.replace(
-            "model.mtp_block.0.", f"model.layers.{layer_idx}.mtp_block."
-        )
+        name = name.replace("model.mtp_block.0.", f"model.layers.{layer_idx}.mtp_block.")
         return name

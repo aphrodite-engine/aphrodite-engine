@@ -61,9 +61,7 @@ class TestReasoningStructuredOutput:
         request.structured_output_request = Mock()
         request.structured_output_request.reasoning_ended = None
         request.structured_output_request.grammar = Mock()
-        request.structured_output_request.grammar.is_terminated = Mock(
-            return_value=False
-        )
+        request.structured_output_request.grammar.is_terminated = Mock(return_value=False)
         request.use_structured_output = True
         request.prompt_token_ids = [1, 2, 3, 4, 5]
         request.all_token_ids = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -102,15 +100,10 @@ class TestReasoningStructuredOutput:
         result = manager.should_fill_bitmask(mock_request_with_structured_output)
 
         # Should set reasoning_ended and return its value
-        assert (
-            mock_request_with_structured_output.structured_output_request.reasoning_ended
-            is False
-        )
+        assert mock_request_with_structured_output.structured_output_request.reasoning_ended is False
         assert result is False
 
-    def test_should_fill_bitmask_no_reasoner(
-        self, mock_aphrodite_config, mock_request_with_structured_output
-    ):
+    def test_should_fill_bitmask_no_reasoner(self, mock_aphrodite_config, mock_request_with_structured_output):
         """Test should_fill_bitmask when no reasoner is configured."""
         manager = StructuredOutputManager(mock_aphrodite_config)
         manager.reasoner = None
@@ -148,9 +141,7 @@ class TestReasoningStructuredOutput:
         manager.reasoner = mock_reasoning_parser
 
         # Set reasoning as not ended
-        (
-            mock_request_with_structured_output.structured_output_request
-        ).reasoning_ended = False
+        (mock_request_with_structured_output.structured_output_request).reasoning_ended = False
         mock_reasoning_parser.is_reasoning_end.return_value = False
 
         result = manager.should_advance(mock_request_with_structured_output)
@@ -169,18 +160,13 @@ class TestReasoningStructuredOutput:
         manager.reasoner = mock_reasoning_parser
 
         # Set reasoning as not ended initially, but ends in this step
-        (
-            mock_request_with_structured_output.structured_output_request
-        ).reasoning_ended = False
+        (mock_request_with_structured_output.structured_output_request).reasoning_ended = False
         mock_reasoning_parser.is_reasoning_end.return_value = True
 
         result = manager.should_advance(mock_request_with_structured_output)
 
         # Should set reasoning_ended to True but return False for this step
-        assert (
-            mock_request_with_structured_output.structured_output_request.reasoning_ended
-            is True
-        )
+        assert mock_request_with_structured_output.structured_output_request.reasoning_ended is True
         assert result is False
 
     def test_should_advance_reasoning_already_ended(
@@ -194,9 +180,7 @@ class TestReasoningStructuredOutput:
         manager.reasoner = mock_reasoning_parser
 
         # Set reasoning as already ended
-        (
-            mock_request_with_structured_output.structured_output_request
-        ).reasoning_ended = True
+        (mock_request_with_structured_output.structured_output_request).reasoning_ended = True
 
         result = manager.should_advance(mock_request_with_structured_output)
 

@@ -3,9 +3,10 @@
 # Copyright (c) Alibaba Cloud.
 # LICENSE: https://huggingface.co/Motif-Technologies/Motif-2.6B/blob/main/LICENSE
 """Inference-only Motif model compatible with HuggingFace weights."""
+
 import math
 from collections.abc import Iterable
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 from torch import nn
@@ -16,27 +17,27 @@ from aphrodite.attention.selector import _Backend
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.layernorm import PolyNorm, RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 
 from .adapters import as_seq_cls_model
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    PPMissingLayer,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class MotifMLP(nn.Module):
@@ -48,7 +49,7 @@ class MotifMLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str = "poly_norm",
-        quant_config: Optional[QuantizationConfig] = None,
+        quant_config: QuantizationConfig | None = None,
         bias: bool = False,
         prefix: str = "",
         reduce_results: bool = True,
@@ -70,26 +71,23 @@ class MotifMLP(nn.Module):
             prefix=f"{prefix}.down_proj",
         )
         if hidden_act != "poly_norm":
-            raise NotImplementedError(f"Unsupported activation: {hidden_act}. "
-                                      "Only poly_norm is supported for now.")
+            raise NotImplementedError(f"Unsupported activation: {hidden_act}. Only poly_norm is supported for now.")
         self.act_fn = PolyNorm()
         self.intermediate_size = intermediate_size
         tp_size = get_tensor_model_parallel_world_size()
         if hidden_act == "poly_norm" and tp_size > 1:
             raise NotImplementedError(
-                "Tensor parallelism for poly_norm is not supported yet. "
-                "Support will be added in the future.")
+                "Tensor parallelism for poly_norm is not supported yet. Support will be added in the future."
+            )
 
     def forward(self, x):
         x, _ = self.gate_up_proj(x)
-        x = self.act_fn(
-            x[..., :self.intermediate_size]) * x[..., self.intermediate_size:]
+        x = self.act_fn(x[..., : self.intermediate_size]) * x[..., self.intermediate_size :]
         x, _ = self.down_proj(x)
         return x
 
 
 class MotifAttention(nn.Module):
-
     def __init__(
         self,
         config: PretrainedConfig,
@@ -97,12 +95,12 @@ class MotifAttention(nn.Module):
         num_heads: int,
         num_kv_heads: int,
         rope_theta: float = 10000,
-        rope_scaling: Optional[dict[str, Any]] = None,
+        rope_scaling: dict[str, Any] | None = None,
         max_position_embeddings: int = 8192,
-        quant_config: Optional[QuantizationConfig] = None,
+        quant_config: QuantizationConfig | None = None,
         bias: bool = False,
         bias_o_proj: bool = False,
-        cache_config: Optional[CacheConfig] = None,
+        cache_config: CacheConfig | None = None,
         prefix: str = "",
         attn_type: str = AttentionType.DECODER,
     ) -> None:
@@ -129,16 +127,15 @@ class MotifAttention(nn.Module):
             head_dim = self.hidden_size // self.total_num_heads
         self.head_dim = head_dim
         # Phi models introduced a partial_rotary_factor parameter in the config
-        self.partial_rotary_factor = getattr(config, "partial_rotary_factor",
-                                             1)
+        self.partial_rotary_factor = getattr(config, "partial_rotary_factor", 1)
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
         self.rope_theta = rope_theta
         self.max_position_embeddings = max_position_embeddings
 
-        assert self.num_heads % 2 == 0, 'num_heads should be even'
-        assert self.num_kv_heads % 2 == 0, 'num_heads should be even'
+        assert self.num_heads % 2 == 0, "num_heads should be even"
+        assert self.num_kv_heads % 2 == 0, "num_heads should be even"
 
         self.qkv_proj = QKVParallelLinear(
             hidden_size=hidden_size,
@@ -158,40 +155,30 @@ class MotifAttention(nn.Module):
             prefix=f"{prefix}.o_proj",
         )
 
-        self._init_rotary_emb(config,
-                              rope_scaling=rope_scaling,
-                              quant_config=quant_config)
+        self._init_rotary_emb(config, rope_scaling=rope_scaling, quant_config=quant_config)
         sliding_window = None
 
         self.lambda_init = self.lambda_init_fn(layer_idx)
-        self.lambda_q1 = nn.Parameter(
-            torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,
-                                                                    std=0.1))
-        self.lambda_k1 = nn.Parameter(
-            torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,
-                                                                    std=0.1))
-        self.lambda_q2 = nn.Parameter(
-            torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,
-                                                                    std=0.1))
-        self.lambda_k2 = nn.Parameter(
-            torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,
-                                                                    std=0.1))
+        self.lambda_q1 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0, std=0.1))
+        self.lambda_k1 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0, std=0.1))
+        self.lambda_q2 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0, std=0.1))
+        self.lambda_k2 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0, std=0.1))
         self.subln = RMSNorm(2 * self.head_dim, eps=config.attn_rms_norm_eps)
 
         params = {
-            'differential_flash_attention_config': {
-                'lambda_init': self.lambda_init,
-                'lambda_q1': self.lambda_q1,
-                'lambda_k1': self.lambda_k1,
-                'lambda_q2': self.lambda_q2,
-                'lambda_k2': self.lambda_k2,
+            "differential_flash_attention_config": {
+                "lambda_init": self.lambda_init,
+                "lambda_q1": self.lambda_q1,
+                "lambda_k1": self.lambda_k1,
+                "lambda_q2": self.lambda_q2,
+                "lambda_k2": self.lambda_k2,
                 "subln": self.subln,
             }
         }
 
         diff_attn_err_msg = (
-            'Set APHRODITE_ATTENTION_BACKEND="DIFFERENTIAL_FLASH_ATTN" '
-            'to enable Differential Flash Attention.')
+            'Set APHRODITE_ATTENTION_BACKEND="DIFFERENTIAL_FLASH_ATTN" to enable Differential Flash Attention.'
+        )
         try:
             self.attn = Attention(
                 self.num_heads,
@@ -207,8 +194,7 @@ class MotifAttention(nn.Module):
             )
         except TypeError as e:
             raise ValueError(diff_attn_err_msg) from e
-        assert (self.attn.backend == _Backend.DIFFERENTIAL_FLASH_ATTN
-                ), diff_attn_err_msg
+        assert self.attn.backend == _Backend.DIFFERENTIAL_FLASH_ATTN, diff_attn_err_msg
 
     def lambda_init_fn(self, depth):
         return 0.8 - 0.6 * math.exp(-0.3 * (depth - 1))
@@ -225,9 +211,9 @@ class MotifAttention(nn.Module):
         output, _ = self.o_proj(attn_output)
         return output
 
-    def _init_rotary_emb(self, config: PretrainedConfig,
-                         rope_scaling: Optional[dict[str, Any]],
-                         quant_config: Optional[QuantizationConfig]) -> None:
+    def _init_rotary_emb(
+        self, config: PretrainedConfig, rope_scaling: dict[str, Any] | None, quant_config: QuantizationConfig | None
+    ) -> None:
         is_neox_style = True
         is_gguf = quant_config and quant_config.get_name() == "gguf"
         if is_gguf and config.model_type == "llama":
@@ -245,28 +231,23 @@ class MotifAttention(nn.Module):
 
 
 class MotifDecoderLayer(nn.Module):
-
     def __init__(
         self,
         config: PretrainedConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        if rope_scaling is not None and getattr(
-                config, "original_max_position_embeddings", None):
-            rope_scaling["original_max_position_embeddings"] = (
-                config.original_max_position_embeddings)
-        max_position_embeddings = getattr(config, "max_position_embeddings",
-                                          8192)
-        attention_bias = getattr(config, "attention_bias", False) or getattr(
-            config, "bias", False)
+        if rope_scaling is not None and getattr(config, "original_max_position_embeddings", None):
+            rope_scaling["original_max_position_embeddings"] = config.original_max_position_embeddings
+        max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
+        attention_bias = getattr(config, "attention_bias", False) or getattr(config, "bias", False)
         bias_o_proj = attention_bias
-        if hasattr(config, 'qkv_bias'):
+        if hasattr(config, "qkv_bias"):
             attention_bias = config.qkv_bias
 
         # By default, Motif uses causal attention as it is a decoder-only model.
@@ -282,8 +263,7 @@ class MotifDecoderLayer(nn.Module):
             config=config,
             hidden_size=self.hidden_size,
             num_heads=config.num_attention_heads,
-            num_kv_heads=getattr(config, "num_key_value_heads",
-                                 config.num_attention_heads),
+            num_kv_heads=getattr(config, "num_key_value_heads", config.num_attention_heads),
             rope_theta=rope_theta,
             rope_scaling=rope_scaling,
             max_position_embeddings=max_position_embeddings,
@@ -302,30 +282,25 @@ class MotifDecoderLayer(nn.Module):
             bias=getattr(config, "mlp_bias", False),
             prefix=f"{prefix}.mlp",
         )
-        self.input_layernorm = RMSNorm(config.hidden_size,
-                                       eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size,
-                                                eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        residual: Optional[torch.Tensor],
+        residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
-            hidden_states, residual = self.input_layernorm(
-                hidden_states, residual)
-        hidden_states = self.self_attn(positions=positions,
-                                       hidden_states=hidden_states)
+            hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        hidden_states = self.self_attn(positions=positions, hidden_states=hidden_states)
 
         # Fully Connected
-        hidden_states, residual = self.post_attention_layernorm(
-            hidden_states, residual)
+        hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
@@ -338,14 +313,16 @@ class MotifDecoderLayer(nn.Module):
         "positions": -1,
         "intermediate_tensors": 0,
         "inputs_embeds": 0,
-    })
+    }
+)
 class MotifModel(nn.Module):
-
-    def __init__(self,
-                 *,
-                 aphrodite_config: AphroditeConfig,
-                 prefix: str = "",
-                 decoder_layer_type: type[nn.Module] = MotifDecoderLayer):
+    def __init__(
+        self,
+        *,
+        aphrodite_config: AphroditeConfig,
+        prefix: str = "",
+        decoder_layer_type: type[nn.Module] = MotifDecoderLayer,
+    ):
         super().__init__()
 
         config = aphrodite_config.model_config.hf_config
@@ -356,8 +333,7 @@ class MotifModel(nn.Module):
         self.quant_config = quant_config
         self.vocab_size = config.vocab_size
 
-        if get_pp_group().is_first_rank or (config.tie_word_embeddings
-                                            and get_pp_group().is_last_rank):
+        if get_pp_group().is_first_rank or (config.tie_word_embeddings and get_pp_group().is_last_rank):
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -371,16 +347,15 @@ class MotifModel(nn.Module):
         decoder_layer_type = decoder_layer_type or MotifDecoderLayer
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: decoder_layer_type(config=config,
-                                              cache_config=cache_config,
-                                              quant_config=quant_config,
-                                              prefix=prefix),
+            lambda prefix: decoder_layer_type(
+                config=config, cache_config=cache_config, quant_config=quant_config, prefix=prefix
+            ),
             prefix=f"{prefix}.layers",
         )
 
-        self.make_empty_intermediate_tensors = (
-            make_empty_intermediate_tensors_factory(
-                ["hidden_states", "residual"], config.hidden_size))
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
+            ["hidden_states", "residual"], config.hidden_size
+        )
         if get_pp_group().is_last_rank:
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:
@@ -393,9 +368,9 @@ class MotifModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -406,22 +381,18 @@ class MotifModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in self.layers[self.start_layer : self.end_layer]:
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
                 residual,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors({
-                "hidden_states": hidden_states,
-                "residual": residual
-            })
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -435,18 +406,15 @@ class MotifModel(nn.Module):
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
                 continue
-            if (self.quant_config is not None and
-                (scale_name := self.quant_config.get_cache_scale(name))):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
-                loaded_weight = (loaded_weight if loaded_weight.dim() == 0 else
-                                 loaded_weight[0])
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
+            for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
@@ -470,8 +438,7 @@ class MotifModel(nn.Module):
                 if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -500,25 +467,24 @@ class MotifForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.lora_config = lora_config
 
         self.quant_config = quant_config
-        self.model = MotifModel(aphrodite_config=aphrodite_config,
-                                prefix=maybe_prefix(prefix, "model"))
+        self.model = MotifModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
             if config.tie_word_embeddings:
                 self.lm_head = self.model.embed_tokens
             else:
-                self.lm_head = ParallelLMHead(config.vocab_size,
-                                              config.hidden_size,
-                                              quant_config=quant_config,
-                                              prefix=maybe_prefix(
-                                                  prefix, "lm_head"))
+                self.lm_head = ParallelLMHead(
+                    config.vocab_size,
+                    config.hidden_size,
+                    quant_config=quant_config,
+                    prefix=maybe_prefix(prefix, "lm_head"),
+                )
         else:
             self.lm_head = PPMissingLayer()
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -527,28 +493,24 @@ class MotifForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
-        hidden_states = self.model(input_ids, positions, intermediate_tensors,
-                                   inputs_embeds)
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
         return logits
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."]
-                           if self.config.tie_word_embeddings else None),
+            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
         return loader.load_weights(weights)
 

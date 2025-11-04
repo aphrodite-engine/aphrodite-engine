@@ -11,8 +11,7 @@ from torch import nn
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 
 from .interfaces import SupportsLoRA, SupportsPP
@@ -47,9 +46,7 @@ class Qwen2RewardBaseModel(nn.Module, SupportsLoRA, SupportsPP):
         self.lora_config = lora_config
 
         self.quant_config = quant_config
-        self.model = Qwen2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Qwen2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.head_dtype = aphrodite_config.model_config.head_dtype
 
         self.score = nn.Sequential(
@@ -69,9 +66,7 @@ class Qwen2RewardBaseModel(nn.Module, SupportsLoRA, SupportsPP):
                 return_bias=False,
             ),
         )
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -83,9 +78,7 @@ class Qwen2RewardBaseModel(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         hidden_states = hidden_states.to(self.head_dtype)
         logits = self.score(hidden_states)
         return logits
@@ -104,9 +97,7 @@ class Qwen2ForRewardModel(Qwen2RewardBaseModel):
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
-        self.pooler = DispatchPooler(
-            {"token_classify": Pooler.for_token_classify(pooler_config)}
-        )
+        self.pooler = DispatchPooler({"token_classify": Pooler.for_token_classify(pooler_config)})
 
 
 @default_pooling_type("STEP")
@@ -118,6 +109,4 @@ class Qwen2ForProcessRewardModel(Qwen2RewardBaseModel):
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
-        self.pooler = DispatchPooler(
-            {"token_classify": Pooler.for_token_classify(pooler_config)}
-        )
+        self.pooler = DispatchPooler({"token_classify": Pooler.for_token_classify(pooler_config)})

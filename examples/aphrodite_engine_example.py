@@ -10,21 +10,19 @@ def main(args: argparse.Namespace):
 
     # Test the following prompts.
     test_prompts = [
-        ("<|system|>Enter chat mode.<|user|>Hello!<|model|>",
-         SamplingParams(temperature=0.0)),
+        ("<|system|>Enter chat mode.<|user|>Hello!<|model|>", SamplingParams(temperature=0.0)),
         (
             "<|system|>Enter RP mode.<|model|>Hello!<|user|>What are you doing?<|model|>",  # noqa: E501
-            SamplingParams(temperature=0.8, top_k=5, presence_penalty=0.2)),
+            SamplingParams(temperature=0.8, top_k=5, presence_penalty=0.2),
+        ),
         (
             "<|system|>Enter chat mode.<|user|>What is the meaning of life?<|model|>",  # noqa: E501
-            SamplingParams(n=2,
-                           best_of=5,
-                           temperature=0.8,
-                           top_p=0.95,
-                           frequency_penalty=0.1)),
-        ("<|system|>Enter QA mode.<|user|>What is a man?<|model|>A miserable",
-         SamplingParams(n=3, best_of=3, use_beam_search=True,
-                        temperature=0.0)),
+            SamplingParams(n=2, best_of=5, temperature=0.8, top_p=0.95, frequency_penalty=0.1),
+        ),
+        (
+            "<|system|>Enter QA mode.<|user|>What is a man?<|model|>A miserable",
+            SamplingParams(n=3, best_of=3, use_beam_search=True, temperature=0.0),
+        ),
     ]
 
     # Run the engine by calling `engine.step()` manually.
@@ -45,9 +43,8 @@ def main(args: argparse.Namespace):
             break
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='Demo on using the AphroditeEngine class directly')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Demo on using the AphroditeEngine class directly")
     parser = EngineArgs.add_cli_args(parser)
     args = parser.parse_args()
     main(args)

@@ -4,16 +4,20 @@ import torch
 
 from aphrodite.config import AphroditeConfig, ModelConfig, ParallelConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.cache import (MultiModalCache,
-                                        MultiModalProcessorCacheItem,
-                                        MultiModalProcessorCacheItemMetadata,
-                                        engine_receiver_cache_from_config,
-                                        processor_cache_from_config)
+from aphrodite.multimodal.cache import (
+    MultiModalCache,
+    MultiModalProcessorCacheItem,
+    MultiModalProcessorCacheItemMetadata,
+    engine_receiver_cache_from_config,
+    processor_cache_from_config,
+)
 from aphrodite.multimodal.hasher import MultiModalHasher
-from aphrodite.multimodal.inputs import (MultiModalFieldElem,
-                                         MultiModalKwargsItem,
-                                         MultiModalKwargsItems,
-                                         MultiModalSharedField)
+from aphrodite.multimodal.inputs import (
+    MultiModalFieldElem,
+    MultiModalKwargsItem,
+    MultiModalKwargsItems,
+    MultiModalSharedField,
+)
 from aphrodite.multimodal.processing import PromptInsertion
 
 pytestmark = pytest.mark.cpu_test
@@ -56,10 +60,7 @@ def _dummy_items(
     rng: np.random.RandomState | None = None,
 ):
     return MultiModalKwargsItems.from_seq(
-        [
-            _dummy_item(modality, size_by_key, rng=rng)
-            for modality, size_by_key in size_by_key_modality.items()
-        ]
+        [_dummy_item(modality, size_by_key, rng=rng) for modality, size_by_key in size_by_key_modality.items()]
     )
 
 
@@ -70,9 +71,7 @@ def _dummy_items(
         (_dummy_item("a", {"a1": 100, "a2": 110}), 210),
         (_dummy_items({"a": {"a1": 100, "a2": 110}, "b": {"b1": 120, "b2": 130}}), 460),  # noqa: E501
         (
-            _dummy_items(
-                {"a": {"a1": 100, "a2": 110}, "b": {"b1": 120, "b2": 130}}
-            ).get_data(),
+            _dummy_items({"a": {"a1": 100, "a2": 110}, "b": {"b1": 120, "b2": 130}}).get_data(),
             460,
         ),  # noqa: E501
     ],
@@ -129,13 +128,8 @@ def _compare_caches(
     item_size_gb = int(cache_size_gb / item_capacity)
 
     rng = np.random.RandomState(seed)
-    all_items = [
-        _dummy_item("item", {"key": item_size_gb}, rng=rng)
-        for _ in range(int(item_capacity / hit_rate))
-    ]
-    all_hashes = [
-        MultiModalHasher.hash_kwargs(item=item.get_data()) for item in all_items
-    ]
+    all_items = [_dummy_item("item", {"key": item_size_gb}, rng=rng) for _ in range(int(item_capacity / hit_rate))]
+    all_hashes = [MultiModalHasher.hash_kwargs(item=item.get_data()) for item in all_items]
 
     # Should not be used since there is nothing to convert to text
     prompt_update = PromptInsertion("dummy", "target", "insertion")

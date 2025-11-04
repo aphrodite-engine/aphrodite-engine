@@ -11,16 +11,13 @@ import numpy as np
 from tqdm import tqdm
 
 import aphrodite.envs as envs
-from aphrodite.benchmarks.lib.utils import (
-    convert_to_pytorch_benchmark_format, write_to_json)
+from aphrodite.benchmarks.lib.utils import convert_to_pytorch_benchmark_format, write_to_json
 from aphrodite.common.sampling_params import BeamSearchParams
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.inputs import PromptType
 
 
-def save_to_pytorch_benchmark_format(
-    args: argparse.Namespace, results: dict[str, Any]
-) -> None:
+def save_to_pytorch_benchmark_format(args: argparse.Namespace, results: dict[str, Any]) -> None:
     pt_records = convert_to_pytorch_benchmark_format(
         args=args,
         metrics={"latency": results["latencies"]},
@@ -48,9 +45,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
         default=10,
         help="Number of iterations to run for warmup.",
     )
-    parser.add_argument(
-        "--num-iters", type=int, default=30, help="Number of iterations to run."
-    )
+    parser.add_argument("--num-iters", type=int, default=30, help="Number of iterations to run.")
     parser.add_argument(
         "--profile",
         action="store_true",
@@ -65,10 +60,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--disable-detokenize",
         action="store_true",
-        help=(
-            "Do not detokenize responses (i.e. do not include "
-            "detokenization time in the latency measurement)"
-        ),
+        help=("Do not detokenize responses (i.e. do not include detokenization time in the latency measurement)"),
     )
 
     parser = EngineArgs.add_cli_args(parser)
@@ -91,11 +83,8 @@ def main(args: argparse.Namespace):
     # NOTE(woosuk): If the request cannot be processed in a single batch,
     # the engine will automatically process the request in multiple batches.
     llm = LLM(**dataclasses.asdict(engine_args))
-    assert llm.llm_engine.model_config.max_model_len >= (
-        args.input_len + args.output_len
-    ), (
-        "Please ensure that max_model_len is greater than"
-        " the sum of input_len and output_len."
+    assert llm.llm_engine.model_config.max_model_len >= (args.input_len + args.output_len), (
+        "Please ensure that max_model_len is greater than the sum of input_len and output_len."
     )
 
     sampling_params = SamplingParams(
@@ -106,12 +95,8 @@ def main(args: argparse.Namespace):
         max_tokens=args.output_len,
         detokenize=not args.disable_detokenize,
     )
-    dummy_prompt_token_ids = np.random.randint(
-        10000, size=(args.batch_size, args.input_len)
-    )
-    dummy_prompts: list[PromptType] = [
-        {"prompt_token_ids": batch} for batch in dummy_prompt_token_ids.tolist()
-    ]
+    dummy_prompt_token_ids = np.random.randint(10000, size=(args.batch_size, args.input_len))
+    dummy_prompts: list[PromptType] = [{"prompt_token_ids": batch} for batch in dummy_prompt_token_ids.tolist()]
 
     def llm_generate():
         if not args.use_beam_search:

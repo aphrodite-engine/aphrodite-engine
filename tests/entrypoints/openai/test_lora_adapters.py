@@ -163,9 +163,7 @@ async def test_dynamic_lora_badrequests(
 
 
 @pytest.mark.asyncio
-async def test_multiple_lora_adapters(
-    client: openai.AsyncOpenAI, tmp_path, zephyr_lora_files
-):
+async def test_multiple_lora_adapters(client: openai.AsyncOpenAI, tmp_path, zephyr_lora_files):
     """Validate that many loras can be dynamically registered and inferenced
     with concurrently"""
 
@@ -195,9 +193,7 @@ async def test_multiple_lora_adapters(
 
 
 @pytest.mark.asyncio
-async def test_loading_invalid_adapters_does_not_break_others(
-    client: openai.AsyncOpenAI, tmp_path, zephyr_lora_files
-):
+async def test_loading_invalid_adapters_does_not_break_others(client: openai.AsyncOpenAI, tmp_path, zephyr_lora_files):
     invalid_files = tmp_path / "invalid_files"
     invalid_files.mkdir()
     (invalid_files / "adapter_config.json").write_text("this is not json")

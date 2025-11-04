@@ -5,21 +5,16 @@ import torch
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate)
-from aphrodite.modeling.layers.fused_moe.utils import (
-    moe_kernel_quantize_input, normalize_batched_scales_shape)
-from aphrodite.v1.worker.ubatching import (dbo_current_ubatch_id, dbo_enabled,
-                                           dbo_maybe_run_recv_hook)
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceDelegate
+from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input, normalize_batched_scales_shape
+from aphrodite.v1.worker.ubatching import dbo_current_ubatch_id, dbo_enabled, dbo_maybe_run_recv_hook
 
 # DeepEP kernels quantize dispatch inputs in 128 element chunks.
 DEEPEP_QUANT_BLOCK_SIZE = 128
 DEEPEP_QUANT_BLOCK_SHAPE = [DEEPEP_QUANT_BLOCK_SIZE, DEEPEP_QUANT_BLOCK_SIZE]
 
 
-def dequant_fp8(
-    expert_x_fp8: torch.Tensor, expert_x_scales: torch.Tensor
-) -> torch.Tensor:
+def dequant_fp8(expert_x_fp8: torch.Tensor, expert_x_scales: torch.Tensor) -> torch.Tensor:
     """
     Return dequantized tensor in fp32
     """
@@ -28,9 +23,7 @@ def dequant_fp8(
     expert_x_scales = expert_x_scales.contiguous()
     num_experts = expert_x_fp8.size(0)
 
-    expert_x_fp32 = expert_x_fp8.to(torch.float32).view(
-        num_experts, -1, DEEPEP_QUANT_BLOCK_SIZE
-    )
+    expert_x_fp32 = expert_x_fp8.to(torch.float32).view(num_experts, -1, DEEPEP_QUANT_BLOCK_SIZE)
     expert_x_scales = expert_x_scales.view(num_experts, -1, 1)
     return (expert_x_fp32 * expert_x_scales).view(expert_x_fp8.size())
 
@@ -52,20 +45,14 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         _supported_hs = DeepEPLLPrepareAndFinalize.SUPPORTED_HIDDEN_SIZES
         # Check sorted
         num_supported_hs = len(_supported_hs)
-        assert all(
-            [
-                _supported_hs[i] < _supported_hs[i + 1]
-                for i in range(num_supported_hs - 1)
-            ]
-        )
+        assert all([_supported_hs[i] < _supported_hs[i + 1] for i in range(num_supported_hs - 1)])
 
         for x in _supported_hs:
             if x >= hidden_size:
                 return x
 
         raise ValueError(
-            f"Hidden Size {hidden_size} is greater than the "
-            f"maximum supported hidden size {_supported_hs[-1]}"
+            f"Hidden Size {hidden_size} is greater than the maximum supported hidden size {_supported_hs[-1]}"
         )
 
     def __init__(
@@ -109,11 +96,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         quant_config: FusedMoEQuantConfig,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         if self.use_fp8_dispatch:
-            block_k = (
-                quant_config.block_shape[1]
-                if quant_config.block_shape is not None
-                else None
-            )
+            block_k = quant_config.block_shape[1] if quant_config.block_shape is not None else None
             if block_k == DEEPEP_QUANT_BLOCK_SIZE:
                 # DeepEP kernels did the quantization for us.
                 x, x_scales = x
@@ -159,36 +142,25 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
     ) -> tuple[Callable, mk.ReceiverType]:
         hidden_size = a1.size(1)
         assert hidden_size in self.SUPPORTED_HIDDEN_SIZES, (
-            f"Hidden Size {hidden_size} not in supported list of hidden sizes"
-            f"{self.SUPPORTED_HIDDEN_SIZES}"
+            f"Hidden Size {hidden_size} not in supported list of hidden sizes{self.SUPPORTED_HIDDEN_SIZES}"
         )
 
         a2a_idx = dbo_current_ubatch_id()
 
         if self.use_fp8_dispatch:
-            assert hidden_size % 128 == 0, (
-                "DeepEP kernels quantize the inputs in blocks of shape 128"
-            )
+            assert hidden_size % 128 == 0, "DeepEP kernels quantize the inputs in blocks of shape 128"
 
         has_per_token_scales = (
             quant_config.a1_scale.numel() != 1
             if quant_config.a1_scale is not None
-            else (
-                quant_config.a2_scale.numel() != 1
-                if quant_config.a2_scale is not None
-                else False
-            )
+            else (quant_config.a2_scale.numel() != 1 if quant_config.a2_scale is not None else False)
         )
-        assert not has_per_token_scales, (
-            "low_latency kernels doesn't support dispatching per-token scales"
-        )
+        assert not has_per_token_scales, "low_latency kernels doesn't support dispatching per-token scales"
 
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             # TODO: this only works for topK=1, will need to update for topK>1
-            assert topk == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
             a1 = a1 * topk_weights.to(a1.dtype)
 
         # Dispatch
@@ -224,9 +196,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
     ) -> mk.PrepareResultType:
         expert_x, expert_x_scale = self._do_quant(expert_x, a1_dtype, quant_config)
 
-        expert_tokens_meta = mk.ExpertTokensMetadata(
-            expert_num_tokens=expert_num_tokens, expert_num_tokens_cpu=None
-        )
+        expert_tokens_meta = mk.ExpertTokensMetadata(expert_num_tokens=expert_num_tokens, expert_num_tokens_cpu=None)
 
         return expert_x, expert_x_scale, expert_tokens_meta, None, None
 

@@ -154,9 +154,7 @@ async def async_request_openai_completions(
     _validate_api_url(api_url, "OpenAI Completions API", "completions")
 
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
         "prompt": request_func_input.prompt,
         "temperature": 0.0,
         "repetition_penalty": 1.0,
@@ -232,8 +230,7 @@ async def async_request_openai_completions(
                 else:
                     output.success = False
                     output.error = (
-                        "Never received a valid chunk to calculate TTFT."
-                        "This response will be marked as failed!"
+                        "Never received a valid chunk to calculate TTFT.This response will be marked as failed!"
                     )
                 output.generated_text = generated_text
                 output.latency = most_recent_timestamp - st
@@ -264,9 +261,7 @@ def _get_chat_content(
         elif isinstance(mm_content, dict):
             mm_contents.append(request_func_input.multi_modal_content)
         else:
-            raise TypeError(
-                "multi_modal_content must be a dict or list[dict] for openai-chat"
-            )
+            raise TypeError("multi_modal_content must be a dict or list[dict] for openai-chat")
 
     if mm_position == "first":
         return mm_contents + text_contents
@@ -286,9 +281,7 @@ async def async_request_openai_chat_completions(
     content = _get_chat_content(request_func_input, mm_position=mm_position)
 
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
         "messages": [
             {"role": "user", "content": content},
         ],
@@ -384,9 +377,7 @@ async def async_request_openai_audio(
 
     content = [{"type": "text", "text": request_func_input.prompt}]
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
         "temperature": 0.0,
         "max_completion_tokens": request_func_input.output_len,
         "stream": True,
@@ -427,9 +418,7 @@ async def async_request_openai_audio(
         output.start_time = st
         most_recent_timestamp = st
         try:
-            async with session.post(
-                url=api_url, data=form, headers=headers
-            ) as response:
+            async with session.post(url=api_url, data=form, headers=headers) as response:
                 if response.status == 200:
                     handler = StreamedResponseHandler()
 
@@ -454,15 +443,11 @@ async def async_request_openai_audio(
 
                                     # Decoding phase
                                     else:
-                                        output.itl.append(
-                                            timestamp - most_recent_timestamp
-                                        )
+                                        output.itl.append(timestamp - most_recent_timestamp)
 
                                     generated_text += content or ""
                                 elif usage := data.get("usage"):
-                                    output.output_tokens = usage.get(
-                                        "completion_tokens"
-                                    )
+                                    output.output_tokens = usage.get("completion_tokens")
 
                                 most_recent_timestamp = timestamp
 
@@ -528,9 +513,7 @@ async def async_request_openai_embeddings(
     _validate_api_url(api_url, "OpenAI Embeddings API", "embeddings")
 
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
         "input": request_func_input.prompt,
         # Many embedding models have short context length,
         # this is to avoid dropping some of the requests.
@@ -561,15 +544,10 @@ async def async_request_aphrodite_rerank(
     api_url = request_func_input.api_url
     _validate_api_url(api_url, "Aphrodite score API", "rerank")
 
-    assert (
-        isinstance(request_func_input.prompt, list)
-        and len(request_func_input.prompt) > 1
-    )
+    assert isinstance(request_func_input.prompt, list) and len(request_func_input.prompt) > 1
 
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
         "query": request_func_input.prompt[0],
         "documents": request_func_input.prompt[1:],
         # Many reranker models have short context length,
@@ -604,9 +582,7 @@ async def async_request_openai_embeddings_chat(
     content = _get_chat_content(request_func_input, mm_position=mm_position)
 
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
         "messages": [
             {"role": "user", "content": content},
         ],
@@ -662,8 +638,7 @@ def _preprocess_vlm2vec(request_func_input: RequestFuncInput):
         else:
             # Text+Image input
             request_func_input.prompt = (
-                f"Represent the given image with the following question: "
-                f"{request_func_input.prompt}"
+                f"Represent the given image with the following question: {request_func_input.prompt}"
             )
 
 
@@ -705,9 +680,7 @@ async def async_request_infinity_embeddings(
     _validate_api_url(api_url, "Infinity Embeddings API", "embeddings")
 
     payload = {
-        "model": request_func_input.model_name
-        if request_func_input.model_name
-        else request_func_input.model,
+        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
     }
 
     if request_func_input.prompt:

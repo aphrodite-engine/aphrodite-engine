@@ -4,17 +4,19 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from aphrodite.common.sampling_params import (SamplingParams,
-                                              StructuredOutputsParams)
-from aphrodite.config import (AphroditeConfig, CacheConfig, KVTransferConfig,
-                              ModelConfig, SchedulerConfig, SpeculativeConfig)
-from aphrodite.multimodal.inputs import (MultiModalFeatureSpec,
-                                         MultiModalKwargsItem,
-                                         PlaceholderRange)
+from aphrodite.common.sampling_params import SamplingParams, StructuredOutputsParams
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    KVTransferConfig,
+    ModelConfig,
+    SchedulerConfig,
+    SpeculativeConfig,
+)
+from aphrodite.multimodal.inputs import MultiModalFeatureSpec, MultiModalKwargsItem, PlaceholderRange
 from aphrodite.v1.core.sched.output import CachedRequestData, SchedulerOutput
 from aphrodite.v1.core.sched.scheduler import Scheduler
-from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheGroupSpec)
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheGroupSpec
 from aphrodite.v1.outputs import DraftTokenIds, ModelRunnerOutput
 from aphrodite.v1.request import Request, RequestStatus
 from aphrodite.v1.structured_output import StructuredOutputManager
@@ -183,9 +185,7 @@ def test_no_mm_input_chunking():
         max_model_len=2048,
     )
     mm_positions = [[PlaceholderRange(offset=400, length=800)]]
-    requests = create_requests(
-        num_requests=1, num_tokens=1200, mm_positions=mm_positions
-    )
+    requests = create_requests(num_requests=1, num_tokens=1200, mm_positions=mm_positions)
     for request in requests:
         scheduler.add_request(request)
 
@@ -561,9 +561,7 @@ def test_check_stop_min_tokens():
     assert result is False, "Should not stop when num_output_tokens<min_tokens"
 
     # Test case 5: min_tokens met, should stop on stop token
-    request_stop.append_output_token_ids(
-        [10, 11, 12, 13, 14, 42]
-    )  # 6 tokens >= min_tokens=5
+    request_stop.append_output_token_ids([10, 11, 12, 13, 14, 42])  # 6 tokens >= min_tokens=5
 
     result = check_stop(request_stop, max_model_len=100)
     assert result is True, "Should stop on stop token when min_tokens met"
@@ -578,9 +576,7 @@ def test_check_stop_min_tokens():
         (True, 5),
     ],
 )
-def test_schedule_concurrent_batches(
-    enable_prefix_caching: bool | None, prompt_logprobs: int | None
-):
+def test_schedule_concurrent_batches(enable_prefix_caching: bool | None, prompt_logprobs: int | None):
     scheduler = create_scheduler(
         max_num_batched_tokens=1024,
         max_num_seqs=2,
@@ -756,24 +752,18 @@ def test_schedule_spec_decoding_stats(spec_tokens, output_tokens, expected):
         assert running_req.num_tokens_with_spec == 2 + len(spec_tokens[i])
 
     # No draft or accepted tokens counted yet
-    assert not engine_core_outputs or (
-        engine_core_outputs[0].scheduler_stats.spec_decoding_stats is None
-    )
+    assert not engine_core_outputs or (engine_core_outputs[0].scheduler_stats.spec_decoding_stats is None)
 
     # Schedule the speculated tokens for validation
     output = scheduler.schedule()
     assert len(output.scheduled_new_reqs) == 0
     # The sampled token and speculated tokens
-    assert output.total_num_scheduled_tokens == len(requests) + sum(
-        len(ids) for ids in spec_tokens
-    )
+    assert output.total_num_scheduled_tokens == len(requests) + sum(len(ids) for ids in spec_tokens)
     for i in range(len(requests)):
         req_id = requests[i].request_id
         assert output.num_scheduled_tokens[req_id] == 1 + len(spec_tokens[i])
         if spec_tokens[i]:
-            assert len(output.scheduled_spec_decode_tokens[req_id]) == len(
-                spec_tokens[i]
-            )
+            assert len(output.scheduled_spec_decode_tokens[req_id]) == len(spec_tokens[i])
         else:
             assert req_id not in output.scheduled_spec_decode_tokens
 
@@ -787,9 +777,7 @@ def test_schedule_spec_decoding_stats(spec_tokens, output_tokens, expected):
     )
     engine_core_outputs = scheduler.update_from_output(output, model_runner_output)
 
-    scheduler_stats = (
-        engine_core_outputs[0].scheduler_stats if engine_core_outputs else None
-    )
+    scheduler_stats = engine_core_outputs[0].scheduler_stats if engine_core_outputs else None
     if expected[0] == 0:
         assert scheduler_stats is not None
         assert scheduler_stats.spec_decoding_stats is None
@@ -831,14 +819,10 @@ def _assert_right_kv_cache_manager(
     # Make sure the request stats are right.
     EXPECTED_TOTAL_BLOCKS = num_tokens // block_size
     for req in requests:
-        blocks = scheduler.kv_cache_manager.coordinator.single_type_managers[
-            0
-        ].req_to_blocks[req.request_id]
+        blocks = scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks[req.request_id]
         hashes = req.block_hashes
         assert (
-            scheduler.kv_cache_manager.coordinator.single_type_managers[
-                0
-            ].num_cached_block[req.request_id]
+            scheduler.kv_cache_manager.coordinator.single_type_managers[0].num_cached_block[req.request_id]
             == EXPECTED_TOTAL_BLOCKS
         )
         assert len(blocks) == EXPECTED_TOTAL_BLOCKS
@@ -847,8 +831,7 @@ def _assert_right_kv_cache_manager(
     # Make sure we actually touched all the blocks.
     BLOCKS_PER_REQ = num_tokens / block_size
     assert (
-        scheduler.kv_cache_manager.block_pool.get_num_free_blocks()
-        == num_total_blocks - num_requests * BLOCKS_PER_REQ
+        scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == num_total_blocks - num_requests * BLOCKS_PER_REQ
     )
 
 
@@ -937,17 +920,13 @@ def test_kv_connector_basic():
     )
 
     # Ensure KVCacheManager is correct.
-    _assert_right_kv_cache_manager(
-        scheduler, requests, NUM_TOKENS, BLOCK_SIZE, NUM_REQUESTS, NUM_TOTAL_BLOCKS
-    )
+    _assert_right_kv_cache_manager(scheduler, requests, NUM_TOKENS, BLOCK_SIZE, NUM_REQUESTS, NUM_TOTAL_BLOCKS)
 
     # Continue Generation until done.
     _step_until_done(scheduler, output, MODEL_RUNNER_OUTPUT)
     _ = scheduler.schedule()
     # Confirm we clean up the memory properly.
-    assert (
-        scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == NUM_TOTAL_BLOCKS
-    )
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == NUM_TOTAL_BLOCKS
 
     ######################################################
     # SECOND SET OF REQUESTS - Local And External Hit
@@ -984,23 +963,17 @@ def test_kv_connector_basic():
         output=output,
         num_requests=NUM_REQUESTS,
         # Just the incremental tokens after local + remote cache hit.
-        expected_num_scheduled_tokens=(
-            NUM_TOKENS - NUM_TOKENS_PREFIX - NUM_MATCHED_NEW_TOKENS
-        ),
+        expected_num_scheduled_tokens=(NUM_TOKENS - NUM_TOKENS_PREFIX - NUM_MATCHED_NEW_TOKENS),
     )
 
     # Ensure KVCacheManager is correct.
-    _assert_right_kv_cache_manager(
-        scheduler, requests, NUM_TOKENS, BLOCK_SIZE, NUM_REQUESTS, NUM_TOTAL_BLOCKS
-    )
+    _assert_right_kv_cache_manager(scheduler, requests, NUM_TOKENS, BLOCK_SIZE, NUM_REQUESTS, NUM_TOTAL_BLOCKS)
 
     # Continue Generation until done.
     _step_until_done(scheduler, output, MODEL_RUNNER_OUTPUT)
     _ = scheduler.schedule()
     # Confirm we clean up the memory properly.
-    assert (
-        scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == NUM_TOTAL_BLOCKS
-    )
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == NUM_TOTAL_BLOCKS
 
 
 def test_external_prefix_cache_metrics():
@@ -1307,23 +1280,9 @@ def assert_scheduler_empty(scheduler: Scheduler):
     assert len(scheduler.encoder_cache_manager.cached) == 0
 
     # KVCache Manager.
-    assert (
-        len(
-            scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks
-        )
-        == 0
-    )
-    assert (
-        len(
-            scheduler.kv_cache_manager.coordinator.single_type_managers[
-                0
-            ].num_cached_block
-        )
-        == 0
-    )
-    num_free_blocks = (
-        scheduler.kv_cache_manager.block_pool.free_block_queue.num_free_blocks
-    )
+    assert len(scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks) == 0
+    assert len(scheduler.kv_cache_manager.coordinator.single_type_managers[0].num_cached_block) == 0
+    num_free_blocks = scheduler.kv_cache_manager.block_pool.free_block_queue.num_free_blocks
     assert num_free_blocks == (scheduler.kv_cache_manager.block_pool.num_gpu_blocks - 1)
 
     # NOTE(rob): just the ref count on blocks will be 0. The hash
@@ -1344,9 +1303,7 @@ def test_memory_leak():
     NUM_REQUESTS = 5
     NUM_TOKENS = 10
     MAX_TOKENS = 10
-    requests = create_requests(
-        num_requests=NUM_REQUESTS, num_tokens=NUM_TOKENS, max_tokens=MAX_TOKENS
-    )
+    requests = create_requests(num_requests=NUM_REQUESTS, num_tokens=NUM_TOKENS, max_tokens=MAX_TOKENS)
 
     # Add each request.
     for request in requests:
@@ -1413,11 +1370,7 @@ def create_scheduler_with_priority(
         seed=42,
     )
     # Cache config, optionally force APC
-    kwargs_cache = (
-        {}
-        if enable_prefix_caching is None
-        else {"enable_prefix_caching": enable_prefix_caching}
-    )
+    kwargs_cache = {} if enable_prefix_caching is None else {"enable_prefix_caching": enable_prefix_caching}
     cache_config = CacheConfig(
         block_size=block_size,
         gpu_memory_utilization=0.9,
@@ -1437,9 +1390,7 @@ def create_scheduler_with_priority(
 
     speculative_config: SpeculativeConfig | None = None
     if num_speculative_tokens is not None:
-        speculative_config = SpeculativeConfig(
-            model="ngram", num_speculative_tokens=num_speculative_tokens
-        )
+        speculative_config = SpeculativeConfig(model="ngram", num_speculative_tokens=num_speculative_tokens)
 
     aphrodite_config = AphroditeConfig(
         scheduler_config=scheduler_config,
@@ -1451,11 +1402,7 @@ def create_scheduler_with_priority(
     kv_cache_config = KVCacheConfig(
         num_blocks=num_blocks,  # A large number of blocks to hold all requests
         kv_cache_tensors=[],
-        kv_cache_groups=[
-            KVCacheGroupSpec(
-                ["layer"], FullAttentionSpec(block_size, 1, 1, torch.float32, False)
-            )
-        ],
+        kv_cache_groups=[KVCacheGroupSpec(["layer"], FullAttentionSpec(block_size, 1, 1, torch.float32, False))],
     )
     cache_config.num_gpu_blocks = num_blocks
     return Scheduler(
@@ -1529,9 +1476,7 @@ def test_priority_scheduling_basic_ordering():
     # Priority 0 (highest), 1, 2 (lowest)
     priorities = [2, 0, 1]  # Add in non-priority order
     arrival_times = [1.0, 2.0, 3.0]  # All different arrival times
-    requests = create_requests_with_priority(
-        num_requests=3, priorities=priorities, arrival_times=arrival_times
-    )
+    requests = create_requests_with_priority(num_requests=3, priorities=priorities, arrival_times=arrival_times)
 
     # Add requests in non-priority order
     for request in requests:
@@ -1557,9 +1502,7 @@ def test_priority_scheduling_arrival_time_tiebreaker():
     # Create requests with same priority but different arrival times
     priorities = [1, 1, 1]  # All same priority
     arrival_times = [3.0, 1.0, 2.0]  # Different arrival times
-    requests = create_requests_with_priority(
-        num_requests=3, priorities=priorities, arrival_times=arrival_times
-    )
+    requests = create_requests_with_priority(num_requests=3, priorities=priorities, arrival_times=arrival_times)
 
     # Add requests in non-arrival order
     for request in requests:
@@ -1584,9 +1527,7 @@ def test_priority_scheduling_mixed_priority_and_arrival():
     # Create requests with mixed priorities and arrival times
     priorities = [2, 1, 1, 0]  # Mixed priorities
     arrival_times = [1.0, 3.0, 2.0, 4.0]  # Mixed arrival times
-    requests = create_requests_with_priority(
-        num_requests=4, priorities=priorities, arrival_times=arrival_times
-    )
+    requests = create_requests_with_priority(num_requests=4, priorities=priorities, arrival_times=arrival_times)
 
     # Add requests
     for request in requests:
@@ -1636,9 +1577,7 @@ def test_priority_scheduling_preemption():
     # Simulate model execution to move requests to running state
     model_output = ModelRunnerOutput(
         req_ids=[req.request_id for req in low_priority_requests],
-        req_id_to_index={
-            req.request_id: i for i, req in enumerate(low_priority_requests)
-        },
+        req_id_to_index={req.request_id: i for i, req in enumerate(low_priority_requests)},
         sampled_token_ids=[[100] for _ in low_priority_requests],
         logprobs=None,
         prompt_logprobs_dict={},
@@ -1705,9 +1644,7 @@ def test_priority_scheduling_no_preemption_when_space_available():
     output = scheduler.schedule()
     model_output = ModelRunnerOutput(
         req_ids=[req.request_id for req in low_priority_requests],
-        req_id_to_index={
-            req.request_id: i for i, req in enumerate(low_priority_requests)
-        },
+        req_id_to_index={req.request_id: i for i, req in enumerate(low_priority_requests)},
         sampled_token_ids=[[100] for _ in low_priority_requests],
         logprobs=None,
         prompt_logprobs_dict={},
@@ -1859,9 +1796,7 @@ def test_priority_scheduling_fcfs_fallback():
     # Create requests with same priority but different arrival times
     priorities = [1, 1, 1, 1]  # All same priority
     arrival_times = [4.0, 1.0, 3.0, 2.0]  # Different arrival times
-    requests = create_requests_with_priority(
-        num_requests=4, priorities=priorities, arrival_times=arrival_times
-    )
+    requests = create_requests_with_priority(num_requests=4, priorities=priorities, arrival_times=arrival_times)
 
     # Add requests
     for request in requests:
@@ -2145,12 +2080,8 @@ def test_chunked_prefill_disabled_for_encoder_decoder(
     # `is_encoder_decoder` should only be used during construction
     # of the config, and otherwise stored in the model config.
     assert "is_encoder_decoder" not in vars(scheduler_config)
-    assert "is_encoder_decoder" not in [
-        f.name for f in dataclasses.fields(scheduler_config)
-    ]
-    _validate_chunked_prefill_settings_for_encoder_decoder(
-        scheduler_config, is_encoder_decoder, expect_enabled
-    )
+    assert "is_encoder_decoder" not in [f.name for f in dataclasses.fields(scheduler_config)]
+    _validate_chunked_prefill_settings_for_encoder_decoder(scheduler_config, is_encoder_decoder, expect_enabled)
 
     # Ensure it is retained in AphroditeConfig, even after its post-init.
     aphrodite_config = AphroditeConfig(scheduler_config=scheduler_config)

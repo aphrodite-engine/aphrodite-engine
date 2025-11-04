@@ -10,14 +10,10 @@ def _histogram(input: torch.Tensor, min: int, max: int) -> torch.Tensor:
     assert input.dtype == torch.int32, "input must be of torch.int32 dtype."
     assert min <= max, "min must be less than or equal to max."
 
-    def searchsorted(
-        sorted_sequence: torch.Tensor, values_to_search: torch.Tensor
-    ) -> torch.Tensor:
+    def searchsorted(sorted_sequence: torch.Tensor, values_to_search: torch.Tensor) -> torch.Tensor:
         return (sorted_sequence.unsqueeze(1) == values_to_search).sum(dim=1)
 
-    bin_edges = torch.linspace(min, max, max - min + 1, dtype=input.dtype).to(
-        input.device
-    )
+    bin_edges = torch.linspace(min, max, max - min + 1, dtype=input.dtype).to(input.device)
     return searchsorted(bin_edges, input).to(torch.int32)
 
 
@@ -49,8 +45,7 @@ def fused_moe(
     device = hidden_states.device
     dtype = hidden_states.dtype
     assert (num_tokens * topk) % 16 == 0, (
-        "The Pallas GMM kernel requires num_tokens * topk to be a multiple of "
-        f"16 but got {num_tokens * topk}"
+        f"The Pallas GMM kernel requires num_tokens * topk to be a multiple of 16 but got {num_tokens * topk}"
     )
 
     hidden_states = hidden_states.view(num_tokens, hidden_size)

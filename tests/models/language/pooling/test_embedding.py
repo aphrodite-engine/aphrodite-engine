@@ -23,9 +23,7 @@ from ...utils import check_embeddings_close
             # CPU v1 doesn't support sliding window
             marks=[pytest.mark.core_model],
         ),
-        pytest.param(
-            "ssmits/Qwen2-7B-Instruct-embed-base", marks=[pytest.mark.cpu_model]
-        ),
+        pytest.param("ssmits/Qwen2-7B-Instruct-embed-base", marks=[pytest.mark.cpu_model]),
         # [Encoder-only]
         pytest.param(
             "BAAI/bge-base-en-v1.5",
@@ -58,9 +56,7 @@ def test_models(
 
     aphrodite_extra_kwargs = {}
     if model == "ssmits/Qwen2-7B-Instruct-embed-base":
-        aphrodite_extra_kwargs["pooler_config"] = PoolerConfig(
-            pooling_type="MEAN", normalize=False
-        )
+        aphrodite_extra_kwargs["pooler_config"] = PoolerConfig(pooling_type="MEAN", normalize=False)
 
     max_model_len: int | None = 512
     if model in [

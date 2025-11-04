@@ -203,9 +203,9 @@ void fatrelu_and_mul(torch::Tensor& out,    // [..., d],
                                            threshold);
 }
 void swigluoai_and_mul(torch::Tensor& out,    // [..., d]
-  torch::Tensor& input,  // [..., 2 * d]
-  double alpha, double limit) {
-LAUNCH_SIGLUOAI_AND_MUL(aphrodite::swigluoai_and_mul, alpha, limit);
+                       torch::Tensor& input,  // [..., 2 * d]
+                       double alpha, double limit) {
+  LAUNCH_SIGLUOAI_AND_MUL(aphrodite::swigluoai_and_mul, alpha, limit);
 }
 namespace aphrodite {
 

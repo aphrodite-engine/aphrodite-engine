@@ -21,10 +21,7 @@ def run_transformers(hf_model, model, text_pairs):
         return hf_model.predict(text_pairs).tolist()
     else:
         hf_embeddings = [hf_model.encode(text_pair) for text_pair in text_pairs]
-        return [
-            F.cosine_similarity(tensor(pair[0]), tensor(pair[1]), dim=0)
-            for pair in hf_embeddings
-        ]
+        return [F.cosine_similarity(tensor(pair[0]), tensor(pair[1]), dim=0) for pair in hf_embeddings]
 
 
 @pytest.fixture(scope="class", params=MODELS)
@@ -44,9 +41,7 @@ def server(model: dict[str, Any]):
 def runner(model: dict[str, Any], hf_runner):
     kwargs = {
         "dtype": DTYPE,
-        "is_cross_encoder"
-        if model["is_cross_encoder"]
-        else "is_sentence_transformer": True,
+        "is_cross_encoder" if model["is_cross_encoder"] else "is_sentence_transformer": True,
     }
 
     with hf_runner(model["name"], **kwargs) as hf_model:
@@ -54,9 +49,7 @@ def runner(model: dict[str, Any], hf_runner):
 
 
 class TestModel:
-    def test_text_1_str_text_2_list(
-        self, server: RemoteOpenAIServer, model: dict[str, Any], runner
-    ):
+    def test_text_1_str_text_2_list(self, server: RemoteOpenAIServer, model: dict[str, Any], runner):
         text_1 = "What is the capital of France?"
         text_2 = [
             "The capital of Brazil is Brasilia.",
@@ -86,9 +79,7 @@ class TestModel:
         for i in range(len(aphrodite_outputs)):
             assert hf_outputs[i] == pytest.approx(aphrodite_outputs[i], rel=0.01)
 
-    def test_text_1_list_text_2_list(
-        self, server: RemoteOpenAIServer, model: dict[str, Any], runner
-    ):
+    def test_text_1_list_text_2_list(self, server: RemoteOpenAIServer, model: dict[str, Any], runner):
         text_1 = [
             "What is the capital of the United States?",
             "What is the capital of France?",
@@ -121,9 +112,7 @@ class TestModel:
         for i in range(len(aphrodite_outputs)):
             assert hf_outputs[i] == pytest.approx(aphrodite_outputs[i], rel=0.01)
 
-    def test_text_1_str_text_2_str(
-        self, server: RemoteOpenAIServer, model: dict[str, Any], runner
-    ):
+    def test_text_1_str_text_2_str(self, server: RemoteOpenAIServer, model: dict[str, Any], runner):
         text_1 = "What is the capital of France?"
         text_2 = "The capital of France is Paris."
 
@@ -150,9 +139,7 @@ class TestModel:
         for i in range(len(aphrodite_outputs)):
             assert hf_outputs[i] == pytest.approx(aphrodite_outputs[i], rel=0.01)
 
-    def test_score_max_model_len(
-        self, server: RemoteOpenAIServer, model: dict[str, Any]
-    ):
+    def test_score_max_model_len(self, server: RemoteOpenAIServer, model: dict[str, Any]):
         text_1 = "What is the capital of France?" * 20
         text_2 = [
             "The capital of Brazil is Brasilia.",
@@ -197,22 +184,16 @@ class TestModel:
         score_response = requests.post(server.url_for("score"), json=request_args)
         score_response.raise_for_status()
 
-        invocation_response = requests.post(
-            server.url_for("invocations"), json=request_args
-        )
+        invocation_response = requests.post(server.url_for("invocations"), json=request_args)
         invocation_response.raise_for_status()
 
         score_output = score_response.json()
         invocation_output = invocation_response.json()
 
         assert score_output.keys() == invocation_output.keys()
-        for score_data, invocation_data in zip(
-            score_output["data"], invocation_output["data"]
-        ):
+        for score_data, invocation_data in zip(score_output["data"], invocation_output["data"]):
             assert score_data.keys() == invocation_data.keys()
-            assert score_data["score"] == pytest.approx(
-                invocation_data["score"], rel=0.05
-            )
+            assert score_data["score"] == pytest.approx(invocation_data["score"], rel=0.05)
             # TODO: reset this tolerance to 0.01 once we find
             # an alternative to flash_attn with bfloat16
 
@@ -240,9 +221,7 @@ class TestModel:
             w_activation = get_outputs(use_activation=True)
             wo_activation = get_outputs(use_activation=False)
 
-            assert torch.allclose(default, w_activation, atol=1e-2), (
-                "Default should use activation."
-            )
+            assert torch.allclose(default, w_activation, atol=1e-2), "Default should use activation."
             assert not torch.allclose(w_activation, wo_activation, atol=1e-2), (
                 "wo_activation should not use activation."
             )

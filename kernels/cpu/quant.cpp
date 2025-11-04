@@ -925,27 +925,30 @@ void int8_scaled_mm_ppc64le(torch::Tensor& c,        // [M, OC], row-major
     TORCH_CHECK(bias->numel() == b.size(1) && bias->is_contiguous() &&
                 bias->dim() == 1);
   }
-  APHRODITE_DISPATCH_FLOATING_TYPES(c.scalar_type(), "int8_scaled_mm_ppc64le", [&] {
-    torch::Tensor tmp_fp32_out = torch::empty_like(c, ::at::ScalarType::Float);
-    // Compute C_inter=s_b * (A@B)
-    DNNLPrimitiveHelper<true>::gemm_s8s8_jit<float, void>(
-        a.data_ptr<int8_t>(), b.data_ptr<int8_t>(),
-        tmp_fp32_out.data_ptr<float>(), nullptr, a.size(0), b.size(1),
-        a.size(1), nullptr, b_scales.data_ptr<float>(), 0, b_scales.numel());
-    if (bias.has_value()) {
-      // Compute C=s_a * C_inter + bias
-      dynamic_quant_epilogue<false, true, true>(
-          tmp_fp32_out.data_ptr<float>(), c.data_ptr<scalar_t>(),
-          a_scales.data_ptr<float>(), nullptr, nullptr, nullptr,
-          bias->data_ptr<scalar_t>(), c.size(0), c.size(1));
-    } else {
-      // Compute C=s_a * C_inter
-      dynamic_quant_epilogue<false, true, false, scalar_t>(
-          tmp_fp32_out.data_ptr<float>(), c.data_ptr<scalar_t>(),
-          a_scales.data_ptr<float>(), nullptr, nullptr, nullptr, nullptr,
-          c.size(0), c.size(1));
-    }
-  });
+  APHRODITE_DISPATCH_FLOATING_TYPES(
+      c.scalar_type(), "int8_scaled_mm_ppc64le", [&] {
+        torch::Tensor tmp_fp32_out =
+            torch::empty_like(c, ::at::ScalarType::Float);
+        // Compute C_inter=s_b * (A@B)
+        DNNLPrimitiveHelper<true>::gemm_s8s8_jit<float, void>(
+            a.data_ptr<int8_t>(), b.data_ptr<int8_t>(),
+            tmp_fp32_out.data_ptr<float>(), nullptr, a.size(0), b.size(1),
+            a.size(1), nullptr, b_scales.data_ptr<float>(), 0,
+            b_scales.numel());
+        if (bias.has_value()) {
+          // Compute C=s_a * C_inter + bias
+          dynamic_quant_epilogue<false, true, true>(
+              tmp_fp32_out.data_ptr<float>(), c.data_ptr<scalar_t>(),
+              a_scales.data_ptr<float>(), nullptr, nullptr, nullptr,
+              bias->data_ptr<scalar_t>(), c.size(0), c.size(1));
+        } else {
+          // Compute C=s_a * C_inter
+          dynamic_quant_epilogue<false, true, false, scalar_t>(
+              tmp_fp32_out.data_ptr<float>(), c.data_ptr<scalar_t>(),
+              a_scales.data_ptr<float>(), nullptr, nullptr, nullptr, nullptr,
+              c.size(0), c.size(1));
+        }
+      });
 }
 
 #endif

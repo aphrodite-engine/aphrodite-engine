@@ -47,9 +47,7 @@ def main(args):
 
 
 def invoke_main() -> None:
-    parser = FlexibleArgumentParser(
-        description="Benchmark the performance of BlockPool for KV Cache."
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the performance of BlockPool for KV Cache.")
     parser.add_argument("--num-gpu-blocks", type=int, default=100000)
     parser.add_argument(
         "--num-iteration",

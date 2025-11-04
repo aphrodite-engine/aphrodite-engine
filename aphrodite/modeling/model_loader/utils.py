@@ -11,16 +11,16 @@ from typing_extensions import assert_never
 
 from aphrodite.attention import Attention
 from aphrodite.attention.layer import MLAAttention
-from aphrodite.config import (AphroditeConfig, ModelConfig,
-                              set_current_aphrodite_config)
+from aphrodite.config import AphroditeConfig, ModelConfig, set_current_aphrodite_config
 from aphrodite.logger import init_logger
 from aphrodite.modeling.models.adapters import (
-    as_embedding_model, as_reward_model, as_seq_cls_model,
-    try_create_mm_pooling_model_cls)
-from aphrodite.modeling.models.interfaces import (SupportsQuant,
-                                                  supports_multimodal)
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+    as_embedding_model,
+    as_reward_model,
+    as_seq_cls_model,
+    try_create_mm_pooling_model_cls,
+)
+from aphrodite.modeling.models.interfaces import SupportsQuant, supports_multimodal
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.utils.platform_utils import is_pin_memory_available
 
 logger = init_logger(__name__)
@@ -80,12 +80,11 @@ def initialize_model(
         return model_class(**kwargs)
 
 
-def process_weights_after_loading(
-    model: nn.Module, model_config: ModelConfig, target_device: torch.device
-) -> None:
+def process_weights_after_loading(model: nn.Module, model_config: ModelConfig, target_device: torch.device) -> None:
     # to avoid circular dependency
     from aphrodite.modeling.model_loader.online_quantization import (
-        maybe_save_metadata_and_attributes_for_weight_reloading)
+        maybe_save_metadata_and_attributes_for_weight_reloading,
+    )
 
     maybe_save_metadata_and_attributes_for_weight_reloading(model, model_config)
 
@@ -103,9 +102,7 @@ def process_weights_after_loading(
     # Initialize post-load attention weights for both Attention and MLA.
     # NOTE: Happens after other modules so we can easily decompress weights.
     for _, module in model.named_modules():
-        if isinstance(module, (Attention, MLAAttention)) and hasattr(
-            module, "process_weights_after_loading"
-        ):
+        if isinstance(module, (Attention, MLAAttention)) and hasattr(module, "process_weights_after_loading"):
             # TODO(lucas): see if there is a way to unify the signatures
             # of process_weights_after_loading
             module.process_weights_after_loading(model_config.dtype)
@@ -258,9 +255,7 @@ class ParamMapping:
         return None
 
 
-def configure_quant_config(
-    quant_config: QuantizationConfig, model_class: type[nn.Module]
-):
+def configure_quant_config(quant_config: QuantizationConfig, model_class: type[nn.Module]):
     """
     Pass packed_modules_mapping by reference to quant_config so that
     quant_config can properly match fused modules

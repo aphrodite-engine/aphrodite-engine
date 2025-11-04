@@ -55,8 +55,6 @@ def _fully_sharded_can_replace(can_replace):
     """
 
     def dec(*args, **kwargs):
-        return (
-            can_replace(*args, **kwargs) and kwargs["lora_config"].fully_sharded_loras
-        )
+        return can_replace(*args, **kwargs) and kwargs["lora_config"].fully_sharded_loras
 
     return dec

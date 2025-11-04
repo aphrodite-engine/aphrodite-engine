@@ -22,8 +22,7 @@ def top_nsigma(
         return logits
 
     std = logits.std(dim=-1, keepdim=True)
-    threshold = (logits.max(dim=-1, keepdim=True).values -
-                 nsigma.unsqueeze(dim=1) * std)
+    threshold = logits.max(dim=-1, keepdim=True).values - nsigma.unsqueeze(dim=1) * std
     logits[logits < threshold] = float("-inf")
 
     return logits

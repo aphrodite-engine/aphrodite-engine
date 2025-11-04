@@ -11,8 +11,7 @@ from einops import rearrange
 from transformers import PretrainedConfig
 from transformers.activations import GELUActivation
 from transformers.feature_extraction_utils import BatchFeature
-from transformers.modeling_outputs import (BaseModelOutput,
-                                           BaseModelOutputWithPooling)
+from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling
 from transformers.utils import torch_int
 
 from aphrodite.attention.backends.registry import _Backend
@@ -22,33 +21,39 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (ImageItem, ModalityData,
-                                         MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems, VideoItem)
-from aphrodite.multimodal.parse import (DictEmbeddingItems, ImageSize,
-                                        ModalityDataItems, MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import (
+    ImageItem,
+    ModalityData,
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalKwargsItems,
+    VideoItem,
+)
+from aphrodite.multimodal.parse import (
+    DictEmbeddingItems,
+    ImageSize,
+    ModalityDataItems,
+    MultiModalDataItems,
+    MultiModalDataParser,
+)
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, BaseProcessingInfo, PromptReplacement, PromptUpdate
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
 from .siglip import SiglipMLP
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, is_pp_missing_parameter,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    init_aphrodite_registered_model,
+    is_pp_missing_parameter,
+    maybe_prefix,
+)
 from .vision import get_vit_attn_backend
 
 logger = init_logger(__name__)
@@ -81,8 +86,7 @@ def smart_resize(
 
     if max(height, width) / min(height, width) > 200:
         raise ValueError(
-            "absolute aspect ratio must be smaller than 200, got "
-            "{max(height, width) / min(height, width)}"
+            "absolute aspect ratio must be smaller than 200, got {max(height, width) / min(height, width)}"
         )
     h_bar = round(height / factor) * factor
     w_bar = round(width / factor) * factor
@@ -108,9 +112,7 @@ class KeyeImagePixelInputs(TensorSchema):
     """
 
     type: Literal["pixel_values"]
-    pixel_values: Annotated[
-        torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})
-    ]
+    pixel_values: Annotated[torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})]
     image_grid_thw: Annotated[torch.Tensor, TensorShape("ni", 3)]
 
 
@@ -143,9 +145,7 @@ class KeyeVideoPixelInputs(TensorSchema):
     """
 
     type: Literal["pixel_values_videos"]
-    pixel_values_videos: Annotated[
-        torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})
-    ]
+    pixel_values_videos: Annotated[torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})]
     video_grid_thw: Annotated[torch.Tensor, TensorShape("nv", 3)]
 
 
@@ -217,9 +217,7 @@ class KeyeVisionEmbeddings(nn.Module):
             new_width = width // self.patch_size
 
         sqrt_num_positions = torch_int(num_positions**0.5)
-        patch_pos_embed = patch_pos_embed.reshape(
-            1, sqrt_num_positions, sqrt_num_positions, dim
-        )
+        patch_pos_embed = patch_pos_embed.reshape(1, sqrt_num_positions, sqrt_num_positions, dim)
         patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
 
         patch_pos_embed = nn.functional.interpolate(
@@ -255,17 +253,14 @@ class KeyeVisionEmbeddings(nn.Module):
         self,
         pixel_values: torch.FloatTensor,
         position_ids: torch.Tensor | None = None,
-        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]]
-        | None = None,
+        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]] | None = None,
         interpolate_pos_encoding=False,
     ) -> torch.Tensor:
         if pixel_values.dim() == 4:
             pixel_values = pixel_values.unsqueeze(0)
         if pixel_values.dim() == 5:
             if position_ids is None:
-                raise ValueError(
-                    "position_ids cannot be None when pixel_values.dim() is 5."
-                )
+                raise ValueError("position_ids cannot be None when pixel_values.dim() is 5.")
             (
                 batch_size,
                 squence_len,
@@ -286,9 +281,7 @@ class KeyeVisionEmbeddings(nn.Module):
                     end = start + t * h * w
                     image_embeddings = embeddings[start:end, :]
                     position_embedding = (
-                        self.interpolate_pos_encoding(image_embeddings, h, w, True)
-                        .squeeze(0)
-                        .repeat(t, 1)
+                        self.interpolate_pos_encoding(image_embeddings, h, w, True).squeeze(0).repeat(t, 1)
                     )
                     image_embeddings = image_embeddings + position_embedding
                     tmp_embeddings.append(image_embeddings)
@@ -298,10 +291,7 @@ class KeyeVisionEmbeddings(nn.Module):
                 embeddings = embeddings + self.packing_position_embedding(position_ids)
             return embeddings
         else:
-            raise ValueError(
-                "Unsupported pixel_values dimension:"
-                f" {pixel_values.dim()}. Expected 4 or 5."
-            )
+            raise ValueError(f"Unsupported pixel_values dimension: {pixel_values.dim()}. Expected 4 or 5.")
 
 
 def apply_rotary_pos_emb_flashatt(
@@ -375,16 +365,12 @@ class KeyeSiglipAttention(nn.Module):
         )
 
         self.use_upstream_fa = False
-        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(
-            torch.get_default_dtype()
-        ):
+        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(torch.get_default_dtype()):
             self.attn_backend = _Backend.FLASH_ATTN
             self.use_upstream_fa = True
 
         if self.attn_backend not in {_Backend.FLASH_ATTN, _Backend.XFORMERS}:
-            raise RuntimeError(
-                f"Keye-VL does not support {self.attn_backend} backend now."
-            )
+            raise RuntimeError(f"Keye-VL does not support {self.attn_backend} backend now.")
 
     def forward(
         self,
@@ -437,8 +423,7 @@ class KeyeSiglipAttention(nn.Module):
             if self.use_upstream_fa:
                 from flash_attn import flash_attn_varlen_func
             else:
-                from aphrodite.aphrodite_flash_attn import (
-                    flash_attn_varlen_func)
+                from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func
 
             q, k, v = (rearrange(x, "b s ... -> (b s) ...") for x in [q, k, v])
 
@@ -458,13 +443,9 @@ class KeyeSiglipAttention(nn.Module):
             from xformers import ops as xops
             from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
-            attn_bias = BlockDiagonalMask.from_seqlens(
-                q_seqlen=seqlens, kv_seqlen=None, device=q.device
-            )
+            attn_bias = BlockDiagonalMask.from_seqlens(q_seqlen=seqlens, kv_seqlen=None, device=q.device)
 
-            context_layer = xops.memory_efficient_attention_forward(
-                q, k, v, attn_bias=attn_bias, p=0, scale=None
-            )
+            context_layer = xops.memory_efficient_attention_forward(q, k, v, attn_bias=attn_bias, p=0, scale=None)
 
         context_layer = rearrange(context_layer, "b s h d -> b s (h d)").contiguous()
 
@@ -480,9 +461,7 @@ class SigLIPRotaryEmbedding(nn.Module):
         self.rope_init()
 
     def rope_init(self):
-        inv_freq = 1.0 / (
-            self.theta ** (torch.arange(0, self.dim, 2, dtype=torch.float) / self.dim)
-        )
+        inv_freq = 1.0 / (self.theta ** (torch.arange(0, self.dim, 2, dtype=torch.float) / self.dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
@@ -592,8 +571,7 @@ class KeyeSiglipEncoder(nn.Module):
         output_attentions: bool | None = None,
         output_hidden_states: bool | None = None,
         cu_seqlens: list[torch.Tensor] | None = None,
-        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]]
-        | None = None,
+        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]] | None = None,
         height_position_ids: torch.Tensor | None = None,
         width_position_ids: torch.Tensor | None = None,
         use_rope: bool | None = False,
@@ -680,8 +658,7 @@ class KeyeSiglipVisionTransformer(nn.Module):
         cu_seqlens: list[torch.Tensor] | None = None,
         padding_mask: torch.Tensor | None = None,
         vision_return_embed_list: bool | None = False,
-        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]]
-        | None = None,
+        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]] | None = None,
         return_pooler_output: bool | None = True,
         use_rope: bool | None = False,
         window_size: bool | None = -1,
@@ -711,10 +688,7 @@ class KeyeSiglipVisionTransformer(nn.Module):
 
         sample_hidden_state = list()
         if cu_seqlens is None:
-            raise ValueError(
-                "cu_seqlens cannot be None for "
-                "SiglipVisionTransformer output processing."
-            )
+            raise ValueError("cu_seqlens cannot be None for SiglipVisionTransformer output processing.")
         for i in range(cu_seqlens.shape[0] - 1):
             start = cu_seqlens[i]
             end = cu_seqlens[i + 1]
@@ -765,8 +739,7 @@ class KeyeSiglipVisionModel(nn.Module):
         interpolate_pos_encoding: bool = False,
         position_ids: torch.Tensor | None = None,
         vision_return_embed_list: bool | None = False,
-        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]]
-        | None = None,
+        image_grid_thw: list[tuple[int, int, int] | list[tuple[int, int, int]]] | None = None,
         cu_seqlens: list[torch.Tensor] | None = None,
         return_pooler_output: bool | None = True,
         use_rope: bool | None = False,
@@ -802,18 +775,14 @@ class KeyeSiglipVisionModel(nn.Module):
                 continue
             if "head.mlp" in name or "head.probe" in name:
                 continue
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 param = params_dict[scale_name]
                 weight_loader = getattr(
                     param,
                     "weight_loader",
                     default_weight_loader,
                 )
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -865,11 +834,7 @@ class Projector(nn.Module):
         self.vision_config = vision_config
         self.merge_kernel_size = (2, 2)
 
-        self.hidden_size = (
-            self.vision_config.hidden_size
-            * self.merge_kernel_size[0]
-            * self.merge_kernel_size[1]
-        )
+        self.hidden_size = self.vision_config.hidden_size * self.merge_kernel_size[0] * self.merge_kernel_size[1]
 
         self.pre_norm = torch.nn.LayerNorm(self.vision_config.hidden_size, eps=1e-05)
         self.act = GELUActivation()
@@ -941,9 +906,7 @@ def _keye_field_config(
         pixel_values=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
         image_embeds=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
         image_grid_thw=MultiModalFieldConfig.batched("image"),
-        pixel_values_videos=MultiModalFieldConfig.flat_from_sizes(
-            "video", video_grid_sizes
-        ),
+        pixel_values_videos=MultiModalFieldConfig.flat_from_sizes("video", video_grid_sizes),
         video_embeds=MultiModalFieldConfig.flat_from_sizes("video", video_grid_sizes),
         video_grid_thw=MultiModalFieldConfig.batched("video"),
     )
@@ -1284,11 +1247,7 @@ class BaseKeyeModule(nn.Module):
         self.config = config
         self.multimodal_config = multimodal_config
 
-        attn_backend_override = (
-            multimodal_config.mm_encoder_attn_backend
-            if multimodal_config is not None
-            else None
-        )
+        attn_backend_override = multimodal_config.mm_encoder_attn_backend if multimodal_config is not None else None
         self.visual = KeyeSiglipVisionModel(
             config.vision_config,
             quant_config=quant_config,
@@ -1309,9 +1268,7 @@ class BaseKeyeModule(nn.Module):
             architectures=["Qwen3ForCausalLM"],
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     @abstractmethod
     def _build_projector(
@@ -1342,17 +1299,11 @@ class BaseKeyeModule(nn.Module):
             cu_seqlens.append(cu_seqlens[-1] + numel)
 
         if image_input["type"] == "image_embeds":
-            raise ValueError(
-                "Image embeddings are not supported for this processing path."
-            )
+            raise ValueError("Image embeddings are not supported for this processing path.")
         else:
             pixel_values = image_input["pixel_values"].type(self.visual.dtype)
-            siglip_position_ids = torch.concat(siglip_position_ids, dim=0).to(
-                pixel_values.device
-            )
-            cu_seqlens = torch.tensor(cu_seqlens, dtype=torch.int32).to(
-                pixel_values.device
-            )
+            siglip_position_ids = torch.concat(siglip_position_ids, dim=0).to(pixel_values.device)
+            cu_seqlens = torch.tensor(cu_seqlens, dtype=torch.int32).to(pixel_values.device)
             sample_indices = torch.concat(sample_indices, dim=0).to(pixel_values.device)
 
             image_embeds = self.visual(
@@ -1392,20 +1343,12 @@ class BaseKeyeModule(nn.Module):
             cu_seqlens.append(cu_seqlens[-1] + numel)
 
         if video_type == "video_embeds":
-            raise ValueError(
-                "Video embeddings are not supported for this processing path."
-            )
+            raise ValueError("Video embeddings are not supported for this processing path.")
         else:
             pixel_values_videos = pixel_values_videos.type(self.visual.dtype)
-            siglip_position_ids = torch.concat(siglip_position_ids, dim=0).to(
-                pixel_values_videos.device
-            )
-            cu_seqlens = torch.tensor(cu_seqlens, dtype=torch.int32).to(
-                pixel_values_videos.device
-            )
-            sample_indices = torch.concat(sample_indices, dim=0).to(
-                pixel_values_videos.device
-            )
+            siglip_position_ids = torch.concat(siglip_position_ids, dim=0).to(pixel_values_videos.device)
+            cu_seqlens = torch.tensor(cu_seqlens, dtype=torch.int32).to(pixel_values_videos.device)
+            sample_indices = torch.concat(sample_indices, dim=0).to(pixel_values_videos.device)
 
             video_embeds = self.visual(
                 pixel_values=pixel_values_videos,
@@ -1425,15 +1368,9 @@ class BaseKeyeModule(nn.Module):
         modalities = {}
 
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values", "image_embeds")
-                and "images" not in modalities
-            ):
+            if input_key in ("pixel_values", "image_embeds") and "images" not in modalities:
                 modalities["images"] = self._parse_and_validate_image_input(**kwargs)
-            if (
-                input_key in ("pixel_values_videos", "video_embeds")
-                and "videos" not in modalities
-            ):
+            if input_key in ("pixel_values_videos", "video_embeds") and "videos" not in modalities:
                 modalities["videos"] = self._parse_and_validate_video_input(**kwargs)
 
         return modalities
@@ -1441,9 +1378,7 @@ class BaseKeyeModule(nn.Module):
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
 
-    def get_multimodal_embeddings(
-        self, **kwargs: object
-    ) -> MultiModalEmbeddings | None:
+    def get_multimodal_embeddings(self, **kwargs: object) -> MultiModalEmbeddings | None:
         modalities = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not modalities:
             return None
@@ -1518,9 +1453,7 @@ class BaseKeyeModule(nn.Module):
     info=KeyeProcessingInfo,
     dummy_inputs=KeyeDummyInputsBuilder,
 )
-class KeyeForConditionalGeneration(
-    BaseKeyeModule, SupportsMultiModal, SupportsLoRA, SupportsPP
-):
+class KeyeForConditionalGeneration(BaseKeyeModule, SupportsMultiModal, SupportsLoRA, SupportsPP):
     def _build_projector(
         self,
         text_config: PretrainedConfig,
@@ -1530,9 +1463,7 @@ class KeyeForConditionalGeneration(
     ) -> nn.Module:
         return Projector(text_config, vision_config, quant_config, prefix)
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> KeyeImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> KeyeImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -1554,9 +1485,7 @@ class KeyeForConditionalGeneration(
                 image_grid_thw=image_grid_thw,
             )
 
-    def _parse_and_validate_video_input(
-        self, **kwargs: object
-    ) -> KeyeVideoInputs | None:
+    def _parse_and_validate_video_input(self, **kwargs: object) -> KeyeVideoInputs | None:
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_embeds = kwargs.pop("video_embeds", None)
         video_grid_thw = kwargs.pop("video_grid_thw", None)
@@ -1578,13 +1507,9 @@ class KeyeForConditionalGeneration(
                 video_grid_thw=video_grid_thw,
             )
 
-    def _process_video_input(
-        self, video_input: KeyeVideoInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_video_input(self, video_input: KeyeVideoInputs) -> tuple[torch.Tensor, ...]:
         video_type = video_input["type"]
         video_grid_thw = video_input["video_grid_thw"]
         pixel_values_videos = video_input.get("pixel_values_videos", None)
 
-        return tuple(
-            self._process_video_embeds(video_type, video_grid_thw, pixel_values_videos)
-        )
+        return tuple(self._process_video_embeds(video_type, video_grid_thw, pixel_values_videos))

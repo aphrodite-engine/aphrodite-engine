@@ -3,8 +3,7 @@ import unittest
 import pytest
 import torch
 
-from aphrodite.distributed.parallel_state import (init_distributed_environment,
-                                                  initialize_model_parallel)
+from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import Mixer2RMSNormGated
 from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import update_environment_variables
@@ -100,13 +99,11 @@ def mixer2_gated_norm_tensor_parallel(
     # - utilize mock patching to disable TP when
     with (
         unittest.mock.patch(
-            "aphrodite.modeling.layers.mamba.mamba_mixer2."
-            "get_tensor_model_parallel_world_size",
+            "aphrodite.modeling.layers.mamba.mamba_mixer2.get_tensor_model_parallel_world_size",
             return_value=1,
         ),
         unittest.mock.patch(
-            "aphrodite.modeling.layers.mamba.mamba_mixer2."
-            "get_tensor_model_parallel_rank",
+            "aphrodite.modeling.layers.mamba.mamba_mixer2.get_tensor_model_parallel_rank",
             return_value=0,
         ),
     ):

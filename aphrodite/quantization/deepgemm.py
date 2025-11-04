@@ -35,7 +35,7 @@ def prepare_block_fp8_matmul_inputs(
     assert triton.cdiv(N, block_n) == Bs.shape[0]
     assert triton.cdiv(K, block_k) == Bs.shape[1]
 
-    C_shape = A.shape[:-1] + (N, )
+    C_shape = A.shape[:-1] + (N,)
     C = A.new_empty(C_shape, dtype=output_dtype)
 
     return M, N, K, C
@@ -49,8 +49,7 @@ def w8a8_block_fp8_matmul_deepgemm(
     block_size: list[int],
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    M, N, K, C = prepare_block_fp8_matmul_inputs(A, B, As, Bs, block_size,
-                                                 output_dtype)
+    M, N, K, C = prepare_block_fp8_matmul_inputs(A, B, As, Bs, block_size, output_dtype)
     # Deepgemm only supports output tensor type as bfloat16
     assert C.dtype == torch.bfloat16
     fp8_gemm_nt((A, As), (B, Bs), C)
@@ -65,8 +64,7 @@ def w8a8_block_fp8_matmul_deepgemm_fake(
     block_size: list[int],
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    M, N, K, C = prepare_block_fp8_matmul_inputs(A, B, As, Bs, block_size,
-                                                 output_dtype)
+    M, N, K, C = prepare_block_fp8_matmul_inputs(A, B, As, Bs, block_size, output_dtype)
     return C
 
 

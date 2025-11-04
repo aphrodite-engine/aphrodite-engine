@@ -30,31 +30,30 @@ from transformers import PretrainedConfig
 
 from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
+
 # from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe import SharedFusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.rotary_embedding.ernie45_vl_rope import (
-    Ernie4_5_VLRotaryEmbedding)
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.rotary_embedding.ernie45_vl_rope import Ernie4_5_VLRotaryEmbedding
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from .ernie45_moe import Ernie4_5_MoeMLP
 from .interfaces import SupportsPP
-from .utils import (PPMissingLayer, extract_layer_index,
-                    is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    PPMissingLayer,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 logger = init_logger(__name__)
 
@@ -194,8 +193,7 @@ class Ernie4_5_VLMoeMoE(nn.Module):
 
         if self.tp_size > max_moe_num_experts:
             raise ValueError(
-                f"Tensor parallel size {self.tp_size} is greater than "
-                f"the number of experts {moe_num_experts}."
+                f"Tensor parallel size {self.tp_size} is greater than the number of experts {moe_num_experts}."
             )
 
         moe_layer_start_index = config.moe_layer_start_index
@@ -211,16 +209,12 @@ class Ernie4_5_VLMoeMoE(nn.Module):
         vision_moe_layer_end_index = moe_layer_end_index[1]
 
         assert config.moe_num_experts[0] == config.moe_num_experts[1]
-        self.e_score_correction_bias = nn.Parameter(
-            torch.empty(2, config.moe_num_experts[0], dtype=torch.float32)
-        )
+        self.e_score_correction_bias = nn.Parameter(torch.empty(2, config.moe_num_experts[0], dtype=torch.float32))
 
         assert text_moe_layer_start_index <= text_moe_layer_end_index
 
         if self.has_shared_experts:
-            intermediate_size = (
-                config.moe_intermediate_size[0] * config.moe_num_shared_experts
-            )
+            intermediate_size = config.moe_intermediate_size[0] * config.moe_num_shared_experts
             self.shared_experts = Ernie4_5_VLMoeMLP(
                 hidden_size=config.hidden_size,
                 intermediate_size=intermediate_size,
@@ -232,10 +226,7 @@ class Ernie4_5_VLMoeMoE(nn.Module):
         else:
             self.shared_experts = None
 
-        if (
-            layer_idx >= text_moe_layer_start_index
-            and layer_idx <= text_moe_layer_end_index
-        ):
+        if layer_idx >= text_moe_layer_start_index and layer_idx <= text_moe_layer_end_index:
             self.text_experts_gate = ReplicatedLinear(
                 config.hidden_size,
                 config.moe_num_experts[0],
@@ -269,10 +260,7 @@ class Ernie4_5_VLMoeMoE(nn.Module):
             )
 
         assert vision_moe_layer_start_index <= vision_moe_layer_end_index
-        if (
-            layer_idx >= vision_moe_layer_start_index
-            and layer_idx <= vision_moe_layer_end_index
-        ):
+        if layer_idx >= vision_moe_layer_start_index and layer_idx <= vision_moe_layer_end_index:
             self.vision_experts_gate = ReplicatedLinear(
                 config.hidden_size,
                 config.moe_num_experts[1],
@@ -317,31 +305,19 @@ class Ernie4_5_VLMoeMoE(nn.Module):
 
         if visual_token_mask is not None and visual_token_mask.all():
             # only vision modal input
-            router_logits, _ = self.vision_experts_gate(
-                hidden_states.to(dtype=torch.float32)
-            )
-            final_hidden_states = self.vision_experts(
-                hidden_states=hidden_states, router_logits=router_logits
-            )
+            router_logits, _ = self.vision_experts_gate(hidden_states.to(dtype=torch.float32))
+            final_hidden_states = self.vision_experts(hidden_states=hidden_states, router_logits=router_logits)
         elif visual_token_mask is not None and visual_token_mask.any():
             # text and vision modals input
             visual_token_mask = visual_token_mask.repeat(1, self.hidden_size).bool()
             text_token_mask = ~visual_token_mask
             final_experts_hidden_states = torch.zeros_like(hidden_states)
-            final_shared_ouput = (
-                torch.zeros_like(hidden_states) if self.has_shared_experts else None
-            )
+            final_shared_ouput = torch.zeros_like(hidden_states) if self.has_shared_experts else None
 
-            text_hidden_states = hidden_states[text_token_mask].reshape(
-                -1, self.hidden_size
-            )
-            vision_hidden_states = hidden_states[visual_token_mask].reshape(
-                -1, self.hidden_size
-            )
+            text_hidden_states = hidden_states[text_token_mask].reshape(-1, self.hidden_size)
+            vision_hidden_states = hidden_states[visual_token_mask].reshape(-1, self.hidden_size)
 
-            text_router_logits, _ = self.text_experts_gate(
-                text_hidden_states.to(dtype=torch.float32)
-            )
+            text_router_logits, _ = self.text_experts_gate(text_hidden_states.to(dtype=torch.float32))
             text_shared_ouput, text_experts_output = self.text_experts(
                 hidden_states=text_hidden_states, router_logits=text_router_logits
             )
@@ -349,28 +325,20 @@ class Ernie4_5_VLMoeMoE(nn.Module):
             if self.has_shared_experts:
                 final_shared_ouput[text_token_mask] = text_shared_ouput.flatten()
 
-            vision_router_logits, _ = self.vision_experts_gate(
-                vision_hidden_states.to(dtype=torch.float32)
-            )
+            vision_router_logits, _ = self.vision_experts_gate(vision_hidden_states.to(dtype=torch.float32))
             vision_shared_ouput, vision_experts_output = self.vision_experts(
                 hidden_states=vision_hidden_states, router_logits=vision_router_logits
             )
-            final_experts_hidden_states[visual_token_mask] = (
-                vision_experts_output.flatten()
-            )
+            final_experts_hidden_states[visual_token_mask] = vision_experts_output.flatten()
             if self.has_shared_experts:
                 final_shared_ouput[visual_token_mask] = vision_shared_ouput.flatten()
 
             final_hidden_states = (final_shared_ouput, final_experts_hidden_states)
         else:
             # only text modal input
-            text_router_logits, _ = self.text_experts_gate(
-                hidden_states.to(dtype=torch.float32)
-            )
+            text_router_logits, _ = self.text_experts_gate(hidden_states.to(dtype=torch.float32))
 
-            final_hidden_states = self.text_experts(
-                hidden_states=hidden_states, router_logits=text_router_logits
-            )
+            final_hidden_states = self.text_experts(hidden_states=hidden_states, router_logits=text_router_logits)
 
         if self.has_shared_experts:
             # for shared_experts model
@@ -380,11 +348,7 @@ class Ernie4_5_VLMoeMoE(nn.Module):
             final_hidden_states = final_hidden_states[1]
 
         if self.tp_size > 1:
-            final_hidden_states = (
-                self.text_experts.maybe_all_reduce_tensor_model_parallel(
-                    final_hidden_states
-                )
-            )
+            final_hidden_states = self.text_experts.maybe_all_reduce_tensor_model_parallel(final_hidden_states)
 
         return final_hidden_states.view(orig_shape)
 
@@ -444,9 +408,7 @@ class Ernie4_5_VLMoeDecoderLayer(nn.Module):
             and layer_idx >= min_moe_layer_start_index
             and layer_idx <= max_moe_layer_end_index
         ):
-            self.mlp = Ernie4_5_VLMoeMoE(
-                config=config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-            )
+            self.mlp = Ernie4_5_VLMoeMoE(config=config, quant_config=quant_config, prefix=f"{prefix}.mlp")
         else:
             self.mlp = Ernie4_5_VLMoeMLP(
                 hidden_size=config.hidden_size,
@@ -458,9 +420,7 @@ class Ernie4_5_VLMoeDecoderLayer(nn.Module):
             )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -571,14 +531,10 @@ class Ernie4_5_VLMoeModel(nn.Module):
             residual = intermediate_tensors["residual"]
 
         for layer in islice(self.layers, self.start_layer, self.end_layer):
-            hidden_states, residual = layer(
-                positions, hidden_states, residual, visual_token_mask, **kwargs
-            )
+            hidden_states, residual = layer(positions, hidden_states, residual, visual_token_mask, **kwargs)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
 
@@ -607,9 +563,7 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.model = Ernie4_5_VLMoeModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Ernie4_5_VLMoeModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
             self.lm_head = ParallelLMHead(
@@ -624,9 +578,7 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -639,9 +591,7 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds, **kwargs)
         return hidden_states
 
     def compute_logits(
@@ -689,9 +639,7 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
                     continue
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -736,9 +684,7 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
                         continue
 
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     param = params_dict[name]
 
@@ -758,18 +704,14 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
                         name = name.replace("gate.weight", "text_experts_gate.weight")
                         loaded_weight = loaded_weight.T
                     elif name.endswith("mlp.gate.weight_1"):
-                        name = name.replace(
-                            "gate.weight_1", "vision_experts_gate.weight"
-                        )
+                        name = name.replace("gate.weight_1", "vision_experts_gate.weight")
                         loaded_weight = loaded_weight.T
 
                     if "e_score_correction_bias" in name:
                         name = name.replace(".moe_statics.", ".")
 
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
@@ -781,9 +723,7 @@ class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
 
                     param = params_dict[name]
 
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params

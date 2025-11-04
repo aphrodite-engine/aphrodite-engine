@@ -22,12 +22,8 @@ def xformers_attn_seqlens_wrapper(
     from xformers import ops as xops
     from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
-    attn_bias = BlockDiagonalMask.from_seqlens(
-        q_seqlen=seqlens.tolist(), kv_seqlen=None, device=q.device
-    )
-    context_layer = xops.memory_efficient_attention_forward(
-        q, k, v, attn_bias=attn_bias, p=0, scale=None
-    )
+    attn_bias = BlockDiagonalMask.from_seqlens(q_seqlen=seqlens.tolist(), kv_seqlen=None, device=q.device)
+    context_layer = xops.memory_efficient_attention_forward(q, k, v, attn_bias=attn_bias, p=0, scale=None)
     context_layer = einops.rearrange(context_layer, "b s h d -> s b (h d)").contiguous()
     return context_layer
 
@@ -46,9 +42,7 @@ direct_register_custom_op(
 )
 
 
-def vit_xformers_attn_wrapper(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, seqlens: torch.Tensor
-) -> torch.Tensor:
+def vit_xformers_attn_wrapper(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, seqlens: torch.Tensor) -> torch.Tensor:
     return torch.ops.aphrodite.xformers_attn_seqlens_wrapper(q, k, v, seqlens)
 
 
@@ -81,9 +75,7 @@ def flash_attn_maxseqlen_wrapper(
         dropout_p=0.0,
         causal=False,
     )
-    context_layer = einops.rearrange(
-        output, "(b s) h d -> s b (h d)", b=batch_size
-    ).contiguous()
+    context_layer = einops.rearrange(output, "(b s) h d -> s b (h d)", b=batch_size).contiguous()
     return context_layer
 
 

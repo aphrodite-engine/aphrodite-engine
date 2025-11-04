@@ -4,9 +4,15 @@ import pytest
 import torch
 
 from aphrodite.attention.backends.registry import _Backend
-from aphrodite.config import (AphroditeConfig, CacheConfig, DeviceConfig,
-                              ModelConfig, ParallelConfig, SchedulerConfig,
-                              SpeculativeConfig)
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    DeviceConfig,
+    ModelConfig,
+    ParallelConfig,
+    SchedulerConfig,
+    SpeculativeConfig,
+)
 from aphrodite.config.load import LoadConfig
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.platforms import current_platform
@@ -14,9 +20,12 @@ from aphrodite.v1.spec_decode.eagle import EagleProposer
 from aphrodite.v1.spec_decode.metadata import SpecDecodeMetadata
 from aphrodite.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 from tests.utils import get_attn_backend_list_based_on_platform
-from tests.v1.attention.utils import (BatchSpec, create_common_attn_metadata,
-                                      create_standard_kv_cache_spec,
-                                      try_get_attention_backend)
+from tests.v1.attention.utils import (
+    BatchSpec,
+    create_common_attn_metadata,
+    create_standard_kv_cache_spec,
+    try_get_attention_backend,
+)
 
 model_dir = "meta-llama/Llama-3.1-8B-Instruct"
 eagle_dir = "yuhuili/EAGLE-LLaMA3.1-Instruct-8B"
@@ -97,15 +106,11 @@ def test_prepare_next_token_ids():
         [-1, -1, -1, -1, -1],  # sampling skipped, use backup token "30"
         [-1, -1, -1, -1, -1],  # this request will be discarded
     ]
-    sampled_token_ids_tensor = torch.tensor(
-        sampled_token_ids, dtype=torch.int32, device=device
-    )
+    sampled_token_ids_tensor = torch.tensor(sampled_token_ids, dtype=torch.int32, device=device)
     sampled_token_ids_cpu = [[i for i in seq if i != -1] for seq in sampled_token_ids]
 
     expected_next_token_ids_cpu = [1, 4, 30, 40]
-    expected_next_token_ids_tensor = torch.tensor(
-        expected_next_token_ids_cpu, dtype=torch.int32, device=device
-    )
+    expected_next_token_ids_tensor = torch.tensor(expected_next_token_ids_cpu, dtype=torch.int32, device=device)
 
     proposer = _create_proposer("eagle", num_speculative_tokens)
 
@@ -127,19 +132,15 @@ def test_prepare_next_token_ids():
     discarded_req_indices = torch.tensor([3], dtype=torch.int64, device=device)
     num_discarded_reqs = 1
 
-    expected_valid_sampled_tokens_count = torch.tensor(
-        [2, 5, 0, 0], dtype=torch.int32, device=device
-    )
+    expected_valid_sampled_tokens_count = torch.tensor([2, 5, 0, 0], dtype=torch.int32, device=device)
 
-    next_token_ids_from_padded, valid_sampled_tokens_count = (
-        proposer.prepare_next_token_ids_padded(
-            common_attn_metadata,
-            sampled_token_ids_tensor,
-            mock_requests,
-            mock_input_batch,
-            discarded_req_indices,
-            num_discarded_reqs,
-        )
+    next_token_ids_from_padded, valid_sampled_tokens_count = proposer.prepare_next_token_ids_padded(
+        common_attn_metadata,
+        sampled_token_ids_tensor,
+        mock_requests,
+        mock_input_batch,
+        discarded_req_indices,
+        num_discarded_reqs,
     )
 
     assert torch.equal(next_token_ids_from_padded, expected_next_token_ids_tensor)
@@ -193,17 +194,13 @@ def test_prepare_inputs():
         ],
         [ACCEPT_TOKEN, ACCEPT_TOKEN, REJECT_TOKEN, REJECT_TOKEN, BONUS_TOKEN],
     ]
-    sampled_token_ids = [
-        [i for i in seq if i != REJECT_TOKEN] for seq in sampled_token_ids
-    ]
+    sampled_token_ids = [[i for i in seq if i != REJECT_TOKEN] for seq in sampled_token_ids]
 
     # Expected calculations:
     # query_len_per_req = [4, 7, 5]
     # num_tokens_per_req = [3, 4, 3]  (after subtracting rejected tokens)
     # Expected cumulative counts: [0, 3, 7, 10]
-    expected_cu_num_tokens = torch.tensor(
-        [0, 3, 7, 10], dtype=torch.int32, device=device
-    )
+    expected_cu_num_tokens = torch.tensor([0, 3, 7, 10], dtype=torch.int32, device=device)
 
     # Expected token indices (mapped from original positions):
     # First request: indices 0, 1, 2      (keeping first 3 from positions 0-3)
@@ -227,9 +224,7 @@ def test_prepare_inputs():
     )
     proposer = _create_proposer("eagle", 1)
 
-    updated_metadata, token_indices = proposer.prepare_inputs(
-        common_attn_metadata, sampled_token_ids, num_draft_tokens
-    )
+    updated_metadata, token_indices = proposer.prepare_inputs(common_attn_metadata, sampled_token_ids, num_draft_tokens)
 
     assert torch.equal(updated_metadata.query_start_loc, expected_cu_num_tokens)
     assert token_indices.shape[0] == expected_cu_num_tokens[-1].item()
@@ -256,12 +251,8 @@ def test_prepare_inputs_padded():
 
     device = torch.device(current_platform.device_type)
 
-    expected_token_indices = torch.tensor(
-        [0, 1, 2, 3, 4, 5, 6, 7, 8], dtype=torch.int32, device=device
-    )
-    expected_token_indices_to_sample = torch.tensor(
-        [1, 5, 6], dtype=torch.int32, device=device
-    )
+    expected_token_indices = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8], dtype=torch.int32, device=device)
+    expected_token_indices_to_sample = torch.tensor([1, 5, 6], dtype=torch.int32, device=device)
 
     num_speculative_tokens = 2
     batch_spec = BatchSpec(
@@ -276,9 +267,7 @@ def test_prepare_inputs_padded():
     )
 
     # Needed for cu_num_draft_tokens, which is expected to be [3, 6, 9]
-    expected_query_start_loc = torch.tensor(
-        [0, 3, 6, 9], dtype=torch.int32, device=device
-    )
+    expected_query_start_loc = torch.tensor([0, 3, 6, 9], dtype=torch.int32, device=device)
     spec_decode_metadata = SpecDecodeMetadata.make_dummy(
         draft_token_ids=[[0] * num_speculative_tokens] * 3,
         device=device,
@@ -287,16 +276,12 @@ def test_prepare_inputs_padded():
     # num_rejected_tokens = [1, 0, 2]
     # num_draft_tokens = [2, 2, 2]
     # valid_sampled_tokens_count = num_draft_tokens + 1 - num_rejected_tokens
-    valid_sampled_tokens_count = torch.tensor(
-        [2, 3, 1], dtype=torch.int32, device=device
-    )
+    valid_sampled_tokens_count = torch.tensor([2, 3, 1], dtype=torch.int32, device=device)
 
     proposer = _create_proposer("eagle", num_speculative_tokens)
 
-    output_metadata, token_indices, token_indices_to_sample = (
-        proposer.prepare_inputs_padded(
-            common_attn_metadata, spec_decode_metadata, valid_sampled_tokens_count
-        )
+    output_metadata, token_indices, token_indices_to_sample = proposer.prepare_inputs_padded(
+        common_attn_metadata, spec_decode_metadata, valid_sampled_tokens_count
     )
 
     assert output_metadata.max_query_len == 3
@@ -325,10 +310,7 @@ def test_load_model(
     monkeypatch.setenv("APHRODITE_ATTENTION_BACKEND", attn_backend)
 
     if attn_backend == "TRITON_ATTN" and not current_platform.is_rocm():
-        pytest.skip(
-            "TRITON_ATTN does not support "
-            "multi-token eagle spec decode on current platform"
-        )
+        pytest.skip("TRITON_ATTN does not support multi-token eagle spec decode on current platform")
 
     if attn_backend == "FLASH_ATTN" and current_platform.is_rocm():
         monkeypatch.setenv("APHRODITE_ROCM_USE_AITER", "1")
@@ -415,16 +397,10 @@ def test_propose(method, attn_backend, num_speculative_tokens, monkeypatch):
     monkeypatch.setenv("APHRODITE_ATTENTION_BACKEND", attn_backend)
 
     if attn_backend == "TRITON_ATTN" and not current_platform.is_rocm():
-        pytest.skip(
-            "TRITON_ATTN does not support "
-            "multi-token eagle spec decode on current platform"
-        )
+        pytest.skip("TRITON_ATTN does not support multi-token eagle spec decode on current platform")
 
     if attn_backend == "TREE_ATTN":
-        pytest.skip(
-            "TREE_ATTN is tested separately in test_propose_tree"
-            "because it requires special input mocking."
-        )
+        pytest.skip("TREE_ATTN is tested separately in test_propose_treebecause it requires special input mocking.")
 
     if attn_backend == "FLASH_ATTN" and current_platform.is_rocm():
         monkeypatch.setenv("APHRODITE_ROCM_USE_AITER", "1")
@@ -512,13 +488,9 @@ def test_propose(method, attn_backend, num_speculative_tokens, monkeypatch):
     )
 
     target_token_ids = torch.randint(0, vocab_size, (total_tokens,), device=device)
-    target_positions = torch.cat(
-        [torch.arange(seq_len_1, device=device), torch.arange(seq_len_2, device=device)]
-    )
+    target_positions = torch.cat([torch.arange(seq_len_1, device=device), torch.arange(seq_len_2, device=device)])
     target_hidden_states = torch.randn(total_tokens, hidden_size, device=device)
-    next_token_ids = torch.randint(
-        0, vocab_size, (batch_size,), dtype=torch.int32, device=device
-    )
+    next_token_ids = torch.randint(0, vocab_size, (batch_size,), dtype=torch.int32, device=device)
     sampling_metadata = mock.MagicMock()
 
     if attn_backend == "FLASH_ATTN":
@@ -540,12 +512,8 @@ def test_propose(method, attn_backend, num_speculative_tokens, monkeypatch):
     # Mock runner for attention metadata building
     proposer.runner = mock.MagicMock()
     proposer.runner.attn_groups.append([mock.MagicMock()])
-    proposer.runner.attn_groups[0][
-        0
-    ].get_metadata_builder.return_value = attn_metadata_builder
-    proposer._get_attention_metadata_builder = mock.MagicMock(
-        return_value=attn_metadata_builder
-    )
+    proposer.runner.attn_groups[0][0].get_metadata_builder.return_value = attn_metadata_builder
+    proposer._get_attention_metadata_builder = mock.MagicMock(return_value=attn_metadata_builder)
 
     result = proposer.propose(
         target_token_ids=target_token_ids,
@@ -563,15 +531,11 @@ def test_propose(method, attn_backend, num_speculative_tokens, monkeypatch):
     if num_speculative_tokens == 1:
         # Example for num_speculative_tokens=1:
         # [[42], [60]]
-        expected_tokens = torch.tensor(
-            [[base_token_ids[0]], [base_token_ids[1]]], device=device
-        )
+        expected_tokens = torch.tensor([[base_token_ids[0]], [base_token_ids[1]]], device=device)
     else:
         # Example for num_speculative_tokens=3:
         # [[42, 43, 44], [60, 61, 62]]
-        expected_tokens = torch.zeros(
-            (batch_size, num_speculative_tokens), dtype=torch.int64, device=device
-        )
+        expected_tokens = torch.zeros((batch_size, num_speculative_tokens), dtype=torch.int64, device=device)
         for i in range(batch_size):
             for j in range(num_speculative_tokens):
                 expected_tokens[i, j] = base_token_ids[i] + j
@@ -603,9 +567,7 @@ def test_propose_tree(spec_token_tree):
     num_speculative_tokens = len(spec_token_tree)
 
     # Create proposer first so we can use its actual hidden_size.
-    proposer = _create_proposer(
-        "eagle", num_speculative_tokens, speculative_token_tree=spec_token_tree
-    )
+    proposer = _create_proposer("eagle", num_speculative_tokens, speculative_token_tree=spec_token_tree)
     # Get the hidden_size from the proposer to ensure consistency.
     hidden_size = proposer.hidden_size
 
@@ -639,18 +601,14 @@ def test_propose_tree(spec_token_tree):
     model_mock.side_effect = forward_returns
 
     # Mock the compute_logits calls.
-    cu_num_drafts_tensor = torch.tensor(
-        [0] + proposer.cu_drafts_per_level, dtype=torch.int32, device=device
-    )
+    cu_num_drafts_tensor = torch.tensor([0] + proposer.cu_drafts_per_level, dtype=torch.int32, device=device)
     logits_returns = []
     for level, num_children in enumerate(proposer.child_drafts_per_level):
         token_ids = base_token_ids + cu_num_drafts_tensor[level]
         level_num_drafts = cu_num_drafts_tensor[level + 1] - cu_num_drafts_tensor[level]
         level_logits = []
         for i in range(level_num_drafts // num_children):
-            level_logits.append(
-                create_deterministic_logits(token_ids + i * num_children, num_children)
-            )
+            level_logits.append(create_deterministic_logits(token_ids + i * num_children, num_children))
         logits_returns.append(torch.stack(level_logits, dim=1))
     model_mock.compute_logits.side_effect = logits_returns
 
@@ -673,22 +631,14 @@ def test_propose_tree(spec_token_tree):
     proposer.runner = mock.MagicMock()
     proposer.runner.attn_groups.append([mock.MagicMock()])
     proposer.runner.attn_groups[0][0].metadata_builders = [attn_metadata_builder]
-    proposer.runner.attn_groups[0][
-        0
-    ].get_metadata_builder.return_value = attn_metadata_builder
-    proposer._get_attention_metadata_builder = mock.MagicMock(
-        return_value=attn_metadata_builder
-    )
+    proposer.runner.attn_groups[0][0].get_metadata_builder.return_value = attn_metadata_builder
+    proposer._get_attention_metadata_builder = mock.MagicMock(return_value=attn_metadata_builder)
 
     # Setup inputs for the proposer.
     target_token_ids = torch.randint(0, vocab_size, (total_tokens,), device=device)
-    target_positions = torch.cat(
-        [torch.arange(seq_len_1, device=device), torch.arange(seq_len_2, device=device)]
-    )
+    target_positions = torch.cat([torch.arange(seq_len_1, device=device), torch.arange(seq_len_2, device=device)])
     target_hidden_states = torch.randn(total_tokens, hidden_size, device=device)
-    next_token_ids = torch.randint(
-        0, vocab_size, (batch_size,), dtype=torch.int32, device=device
-    )
+    next_token_ids = torch.randint(0, vocab_size, (batch_size,), dtype=torch.int32, device=device)
     batch_spec = BatchSpec(
         seq_lens=seq_lens,
         query_lens=seq_lens,
@@ -714,9 +664,7 @@ def test_propose_tree(spec_token_tree):
 
     # The tokens are expected to be consecutive integers starting
     # from the base token IDs.
-    expected_tokens = base_token_ids[:, None] + torch.arange(
-        num_speculative_tokens, dtype=torch.int64, device=device
-    )
+    expected_tokens = base_token_ids[:, None] + torch.arange(num_speculative_tokens, dtype=torch.int64, device=device)
 
     # Verify that the draft tokens match our expectations.
     assert torch.equal(result, expected_tokens)

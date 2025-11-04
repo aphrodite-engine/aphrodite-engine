@@ -2,9 +2,7 @@ from collections import OrderedDict
 from collections.abc import Iterable
 
 from aphrodite.v1.core.kv_cache_utils import BlockHash
-from aphrodite.v1.kv_offload.abstract import (LoadStoreSpec, OffloadingEvent,
-                                              OffloadingManager,
-                                              PrepareStoreOutput)
+from aphrodite.v1.kv_offload.abstract import LoadStoreSpec, OffloadingEvent, OffloadingManager, PrepareStoreOutput
 from aphrodite.v1.kv_offload.backend import Backend, BlockStatus
 
 
@@ -49,17 +47,11 @@ class LRUOffloadingManager(OffloadingManager):
             assert block.ref_cnt > 0
             block.ref_cnt -= 1
 
-    def prepare_store(
-        self, block_hashes: Iterable[BlockHash]
-    ) -> PrepareStoreOutput | None:
+    def prepare_store(self, block_hashes: Iterable[BlockHash]) -> PrepareStoreOutput | None:
         # filter out blocks that are already stored
-        block_hashes_to_store = [
-            block_hash for block_hash in block_hashes if block_hash not in self.blocks
-        ]
+        block_hashes_to_store = [block_hash for block_hash in block_hashes if block_hash not in self.blocks]
 
-        num_blocks_to_evict = (
-            len(block_hashes_to_store) - self.backend.get_num_free_blocks()
-        )
+        num_blocks_to_evict = len(block_hashes_to_store) - self.backend.get_num_free_blocks()
 
         # build list of blocks to evict
         to_evict = []

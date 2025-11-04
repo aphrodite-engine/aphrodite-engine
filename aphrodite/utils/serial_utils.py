@@ -50,9 +50,7 @@ Endianness = Literal["native", "big", "little"]
 EncodingFormat = Literal["float", "base64", "bytes"]
 
 
-def tensor2binary(
-    tensor: torch.Tensor, embed_dtype: EmbedDType, endianness: Endianness
-) -> bytes:
+def tensor2binary(tensor: torch.Tensor, embed_dtype: EmbedDType, endianness: Endianness) -> bytes:
     assert isinstance(tensor, torch.Tensor)
     assert embed_dtype in EMBED_DTYPE_TO_TORCH_DTYPE
     assert endianness in ENDIANNESS
@@ -60,9 +58,7 @@ def tensor2binary(
     torch_dtype = EMBED_DTYPE_TO_TORCH_DTYPE[embed_dtype]
     torch_view_dtype = EMBED_DTYPE_TO_TORCH_DTYPE_VIEW[embed_dtype]
 
-    np_array = (
-        tensor.to(torch_dtype).flatten().contiguous().view(torch_view_dtype).numpy()
-    )
+    np_array = tensor.to(torch_dtype).flatten().contiguous().view(torch_view_dtype).numpy()
 
     if endianness != "native" and endianness != sys_byteorder:
         np_array = np_array.byteswap()

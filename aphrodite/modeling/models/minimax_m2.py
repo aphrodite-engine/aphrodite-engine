@@ -31,27 +31,26 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_reduce)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size, tensor_model_parallel_all_reduce
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.linear_attn import MiniMaxText01RMSNormTP
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsPP
-from .utils import (AutoWeightsLoader, PPMissingLayer, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    PPMissingLayer,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class MiniMaxM2MoE(nn.Module):
@@ -66,17 +65,12 @@ class MiniMaxM2MoE(nn.Module):
 
         if self.tp_size > config.num_local_experts:
             raise ValueError(
-                f"Tensor parallel size {self.tp_size} is greater than "
-                f"the number of experts {config.num_local_experts}."
+                f"Tensor parallel size {self.tp_size} is greater than the number of experts {config.num_local_experts}."
             )
         self.use_routing_bias = getattr(config, "use_routing_bias", False)
         if self.use_routing_bias:
-            self.e_score_correction_bias = nn.Parameter(
-                torch.empty(config.num_local_experts, dtype=torch.float32)
-            )
-            self.e_score_correction_bias.weight_loader = (
-                MiniMaxM2MoE.ebias_weight_loader
-            )
+            self.e_score_correction_bias = nn.Parameter(torch.empty(config.num_local_experts, dtype=torch.float32))
+            self.e_score_correction_bias.weight_loader = MiniMaxM2MoE.ebias_weight_loader
         else:
             self.e_score_correction_bias = None
 
@@ -116,9 +110,7 @@ class MiniMaxM2MoE(nn.Module):
 
         # router_logits: (num_tokens, n_experts)
         router_logits, _ = self.gate(hidden_states.to(torch.float32))
-        final_hidden_states = self.experts(
-            hidden_states=hidden_states, router_logits=router_logits
-        )
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
         final_hidden_states = final_hidden_states
         if self.tp_size > 1:
             final_hidden_states = tensor_model_parallel_all_reduce(final_hidden_states)
@@ -203,12 +195,8 @@ class MiniMaxM2Attention(nn.Module):
             prefix=f"{prefix}.attn",
         )
 
-        self.q_norm = MiniMaxText01RMSNormTP(
-            self.head_dim * self.total_num_heads, eps=rms_norm_eps
-        )
-        self.k_norm = MiniMaxText01RMSNormTP(
-            self.head_dim * self.total_num_kv_heads, eps=rms_norm_eps
-        )
+        self.q_norm = MiniMaxText01RMSNormTP(self.head_dim * self.total_num_heads, eps=rms_norm_eps)
+        self.k_norm = MiniMaxText01RMSNormTP(self.head_dim * self.total_num_kv_heads, eps=rms_norm_eps)
 
     def forward(
         self,
@@ -240,9 +228,7 @@ class MiniMaxM2DecoderLayer(nn.Module):
         rope_scaling = getattr(config, "rope_scaling", None)
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         if hasattr(config, "max_model_len") and isinstance(config.max_model_len, int):
-            max_position_embeddings = max(
-                config.max_position_embeddings, config.max_model_len
-            )
+            max_position_embeddings = max(config.max_position_embeddings, config.max_model_len)
         # DecoderLayers are created with `make_layers` which passes the prefix
         # with the layer's index.
         layer_idx = int(prefix.split(sep=".")[-1])
@@ -270,9 +256,7 @@ class MiniMaxM2DecoderLayer(nn.Module):
             prefix=f"{prefix}.mlp",
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -369,9 +353,7 @@ class MiniMaxM2Model(nn.Module):
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -463,9 +445,7 @@ class MiniMaxM2Model(nn.Module):
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -480,19 +460,13 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsPP):
         self.quant_config = quant_config
         if hasattr(aphrodite_config.model_config, "max_model_len"):
             self.config.max_model_len = aphrodite_config.model_config.max_model_len
-        self.model = MiniMaxM2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = MiniMaxM2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:
-            self.lm_head = ParallelLMHead(
-                config.vocab_size, config.hidden_size, quant_config=None
-            )
+            self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size, quant_config=None)
         else:
             self.lm_head = PPMissingLayer()
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -505,9 +479,7 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
@@ -525,9 +497,7 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsPP):
         return self.model.get_expert_mapping()
 
 
-def get_spec_layer_idx_from_weight_name(
-    config: PretrainedConfig, weight_name: str
-) -> int | None:
+def get_spec_layer_idx_from_weight_name(config: PretrainedConfig, weight_name: str) -> int | None:
     if hasattr(config, "num_mtp_modules") and (config.num_mtp_modules > 0):
         layer_idx = config.num_hidden_layers
         for i in range(config.num_mtp_modules):

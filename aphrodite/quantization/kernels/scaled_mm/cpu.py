@@ -8,8 +8,7 @@ from aphrodite.platforms.interface import CpuArchEnum
 from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.w8a8_utils import convert_to_channelwise
 
-from .ScaledMMLinearKernel import (ScaledMMLinearKernel,
-                                   ScaledMMLinearLayerConfig)
+from .ScaledMMLinearKernel import ScaledMMLinearKernel, ScaledMMLinearLayerConfig
 
 
 class CPUScaledMMLinearKernel(ScaledMMLinearKernel):
@@ -85,16 +84,10 @@ class CPUScaledMMLinearKernel(ScaledMMLinearKernel):
                 range_min = (input_scale * (int8_traits.min - azps)).min()
 
                 scale = (range_max - range_min) / (int8_traits.max - int8_traits.min)
-                replace_parameter(
-                    layer, self.i_s_name, torch.nn.Parameter(scale, requires_grad=False)
-                )
+                replace_parameter(layer, self.i_s_name, torch.nn.Parameter(scale, requires_grad=False))
 
-                azp = (
-                    (int8_traits.min - range_min / scale).round().to(dtype=torch.int32)
-                )
-                replace_parameter(
-                    layer, self.i_zp_name, torch.nn.Parameter(azp, requires_grad=False)
-                )
+                azp = (int8_traits.min - range_min / scale).round().to(dtype=torch.int32)
+                replace_parameter(layer, self.i_zp_name, torch.nn.Parameter(azp, requires_grad=False))
 
         else:
             setattr(layer, self.i_s_name, None)
@@ -137,15 +130,11 @@ class CPUScaledMMLinearKernel(ScaledMMLinearKernel):
         # WEIGHT
         weight = getattr(layer, self.w_q_name)
         packed_weight = torch.ops._C.convert_weight_packed(weight)
-        replace_parameter(
-            layer, self.w_q_name, torch.nn.Parameter(packed_weight, requires_grad=False)
-        )
+        replace_parameter(layer, self.w_q_name, torch.nn.Parameter(packed_weight, requires_grad=False))
 
         if layer.bias is not None:
             bias = layer.bias
-            layer.register_parameter(
-                "bias_fp32", torch.nn.Parameter(bias.float().data, requires_grad=False)
-            )
+            layer.register_parameter("bias_fp32", torch.nn.Parameter(bias.float().data, requires_grad=False))
 
         # WEIGHT SCALE
         # CPU SGL kernels only support per-channel.
@@ -186,9 +175,7 @@ class CPUScaledMMLinearKernel(ScaledMMLinearKernel):
         # ops.scaled_int8_quant supports both dynamic and static quant:
         # * dynamic, i_s is None and x_s computed from x.
         # * static, i_s is scalar and x_s is i_s.
-        x_q, x_s, x_zp = ops.onednn_scaled_int8_quant(
-            x, i_s, i_zp, self.config.input_symmetric
-        )
+        x_q, x_s, x_zp = ops.onednn_scaled_int8_quant(x, i_s, i_zp, self.config.input_symmetric)
 
         m = x.size(0)
         n = self.dnnl_handler.n

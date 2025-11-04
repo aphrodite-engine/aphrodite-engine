@@ -10,7 +10,6 @@ import signal
 import socket
 from argparse import Namespace
 from http import HTTPStatus
-from typing import Optional
 
 import uvloop
 from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -20,14 +19,15 @@ from fastapi.responses import JSONResponse, Response
 from typing_extensions import assert_never
 
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (DetokenizeRequest,
-                                                 DetokenizeResponse, ErrorInfo,
-                                                 ErrorResponse,
-                                                 TokenizeResponse)
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
-from aphrodite.endpoints.openai.serving_tokenization import (
-    OpenAIServingTokenization)
+from aphrodite.endpoints.openai.protocol import (
+    DetokenizeRequest,
+    DetokenizeResponse,
+    ErrorInfo,
+    ErrorResponse,
+    TokenizeResponse,
+)
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
+from aphrodite.endpoints.openai.serving_tokenization import OpenAIServingTokenization
 from aphrodite.endpoints.utils import with_cancellation
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.logger import init_logger
@@ -44,18 +44,17 @@ logger = init_logger(__name__)
 
 
 class MinimalModelConfig:
-    """Minimal model config for tokenizer-only server.
-    """
+    """Minimal model config for tokenizer-only server."""
 
     def __init__(
         self,
         model: str,
-        tokenizer: Optional[str] = None,
+        tokenizer: str | None = None,
         tokenizer_mode: str = "auto",
         trust_remote_code: bool = False,
-        tokenizer_revision: Optional[str] = None,
-        revision: Optional[str] = None,
-        max_model_len: Optional[int] = None,
+        tokenizer_revision: str | None = None,
+        revision: str | None = None,
+        max_model_len: int | None = None,
     ):
         self.model = model
         self.tokenizer = tokenizer or model
@@ -79,7 +78,7 @@ class DummyEngineClient:
 
     def __init__(self, model_config: MinimalModelConfig):
         self.model_config = model_config
-        self._tokenizer: Optional[AnyTokenizer] = None
+        self._tokenizer: AnyTokenizer | None = None
 
     def _ensure_tokenizer(self) -> AnyTokenizer:
         """Lazy-load the tokenizer on first use."""
@@ -92,9 +91,7 @@ class DummyEngineClient:
             )
         return self._tokenizer
 
-    async def get_tokenizer(
-        self, lora_request: Optional[LoRARequest] = None
-    ) -> AnyTokenizer:
+    async def get_tokenizer(self, lora_request: LoRARequest | None = None) -> AnyTokenizer:
         """Get the tokenizer (ignores LoRA for tokenizer-only server)."""
         return self._ensure_tokenizer()
 
@@ -156,8 +153,7 @@ async def tokenize(raw_request: Request):
     try:
         body = await raw_request.json()
         if "prompt" in body:
-            from aphrodite.endpoints.openai.protocol import (
-                TokenizeCompletionRequest)
+            from aphrodite.endpoints.openai.protocol import TokenizeCompletionRequest
 
             request = TokenizeCompletionRequest.model_validate(body)
         elif "messages" in body:
@@ -165,9 +161,7 @@ async def tokenize(raw_request: Request):
 
             request = TokenizeChatRequest.model_validate(body)
         else:
-            raise ValueError(
-                "Request must contain either 'prompt' or 'messages' field"
-            )
+            raise ValueError("Request must contain either 'prompt' or 'messages' field")
     except Exception as e:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST.value,
@@ -179,18 +173,12 @@ async def tokenize(raw_request: Request):
     try:
         generator = await handler.create_tokenize(request, raw_request)
     except NotImplementedError as e:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_IMPLEMENTED.value, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=HTTPStatus.NOT_IMPLEMENTED.value, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(
-            content=generator.model_dump(), status_code=generator.error.code
-        )
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, TokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -224,14 +212,10 @@ async def detokenize(raw_request: Request):
     except OverflowError as e:
         raise RequestValidationError(errors=[str(e)]) from e
     except Exception as e:
-        raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(
-            content=generator.model_dump(), status_code=generator.error.code
-        )
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, DetokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -284,9 +268,7 @@ def build_app(args: Namespace) -> FastAPI:
         return JSONResponse(err.model_dump(), status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(
-        _: Request, exc: RequestValidationError
-    ):
+    async def validation_exception_handler(_: Request, exc: RequestValidationError):
         exc_str = str(exc)
         errors_str = str(exc.errors())
 
@@ -302,9 +284,7 @@ def build_app(args: Namespace) -> FastAPI:
                 code=HTTPStatus.BAD_REQUEST,
             )
         )
-        return JSONResponse(
-            err.model_dump(), status_code=HTTPStatus.BAD_REQUEST
-        )
+        return JSONResponse(err.model_dump(), status_code=HTTPStatus.BAD_REQUEST)
 
     return app
 
@@ -318,10 +298,7 @@ async def init_app_state(
     """Initialize the application state."""
     app.state.engine_client = engine_client
 
-    if (
-        hasattr(args, "served_model_name")
-        and args.served_model_name is not None
-    ):
+    if hasattr(args, "served_model_name") and args.served_model_name is not None:
         served_model_names = args.served_model_name
     else:
         served_model_names = [args.model]
@@ -333,10 +310,7 @@ async def init_app_state(
         max_log_len = getattr(args, "max_log_len", 0)
         request_logger = RequestLogger(max_log_len=max_log_len)
 
-    base_model_paths = [
-        BaseModelPath(name=name, model_path=args.model)
-        for name in served_model_names
-    ]
+    base_model_paths = [BaseModelPath(name=name, model_path=args.model) for name in served_model_names]
 
     app.state.openai_serving_models = OpenAIServingModels(
         engine_client=engine_client,
@@ -346,9 +320,7 @@ async def init_app_state(
     )
 
     chat_template = getattr(args, "chat_template", None)
-    chat_template_content_format = getattr(
-        args, "chat_template_content_format", "auto"
-    )
+    chat_template_content_format = getattr(args, "chat_template_content_format", "auto")
 
     app.state.openai_serving_tokenization = OpenAIServingTokenization(
         engine_client,
@@ -417,11 +389,11 @@ async def run_server(args: Namespace) -> None:
     base_url = f"http://{host_name}:{port_str}"
 
     logger.info("Tokenizer server listening on %s", base_url)
-    logger.info(f"Health check:                    {base_url}/health")
-    logger.info(f"Tokenization API:                {base_url}/v1/tokenize")
-    logger.info(f"Detokenization API:              {base_url}/v1/detokenize")
-    logger.info(f"Tokenizer Info API:              {base_url}/tokenizer_info")
-    logger.info(f"Version API:                     {base_url}/version")
+    logger.info("Health check:                    %s/health", base_url)
+    logger.info("Tokenization API:                %s/v1/tokenize", base_url)
+    logger.info("Detokenization API:              %s/v1/detokenize", base_url)
+    logger.info("Tokenizer Info API:              %s/tokenizer_info", base_url)
+    logger.info("Version API:                     %s/version", base_url)
 
     shutdown_task = await serve_http(
         app,
@@ -442,15 +414,9 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
     # TODO: move this out of here
     """Add tokenizer server arguments to the parser."""
     parser.add_argument("model", type=str, help="Model name or path")
-    parser.add_argument(
-        "--host", type=str, default="0.0.0.0", help="Host to bind the server to"
-    )
-    parser.add_argument(
-        "--port", type=int, default=2242, help="Port to bind the server to"
-    )
-    parser.add_argument(
-        "--tokenizer", type=str, default=None, help="Tokenizer name or path"
-    )
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind the server to")
+    parser.add_argument("--port", type=int, default=2242, help="Port to bind the server to")
+    parser.add_argument("--tokenizer", type=str, default=None, help="Tokenizer name or path")
     parser.add_argument(
         "--tokenizer-mode",
         type=str,
@@ -469,18 +435,14 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         default=None,
         help="Tokenizer revision",
     )
-    parser.add_argument(
-        "--revision", type=str, default=None, help="Model revision"
-    )
+    parser.add_argument("--revision", type=str, default=None, help="Model revision")
     parser.add_argument(
         "--max-model-len",
         type=int,
         default=None,
         help="Maximum model context length",
     )
-    parser.add_argument(
-        "--chat-template", type=str, default=None, help="Chat template to use"
-    )
+    parser.add_argument("--chat-template", type=str, default=None, help="Chat template to use")
     parser.add_argument(
         "--chat-template-content-format",
         type=str,

@@ -25,9 +25,7 @@ class MultiModalHasher:
 
         if isinstance(obj, Image.Image):
             exif = obj.getexif()
-            if Image.ExifTags.Base.ImageID in exif and isinstance(
-                exif[Image.ExifTags.Base.ImageID], uuid.UUID
-            ):
+            if Image.ExifTags.Base.ImageID in exif and isinstance(exif[Image.ExifTags.Base.ImageID], uuid.UUID):
                 # If the image has exif ImageID tag, use that
                 return (exif[Image.ExifTags.Base.ImageID].bytes,)
             data = {"mode": obj.mode, "data": np.asarray(obj)}
@@ -58,9 +56,7 @@ class MultiModalHasher:
             return cls.iter_item_to_bytes("tensor", tensor_obj.numpy())
         if isinstance(obj, np.ndarray):
             # If the array is non-contiguous, we need to copy it first
-            arr_data = (
-                obj.view(np.uint8).data if obj.flags.c_contiguous else obj.tobytes()
-            )
+            arr_data = obj.view(np.uint8).data if obj.flags.c_contiguous else obj.tobytes()
             return cls.iter_item_to_bytes(
                 "ndarray",
                 {
@@ -69,9 +65,7 @@ class MultiModalHasher:
                     "data": arr_data,
                 },
             )
-        logger.warning(
-            "No serialization method found for %s. Falling back to pickle.", type(obj)
-        )
+        logger.warning("No serialization method found for %s. Falling back to pickle.", type(obj))
 
         return (pickle.dumps(obj),)
 

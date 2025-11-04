@@ -3,11 +3,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from aphrodite.endpoints.openai.protocol import FunctionCall
-from aphrodite.endpoints.openai.tool_parsers import (ToolParser,
-                                                     ToolParserManager)
+from aphrodite.endpoints.openai.tool_parsers import ToolParser, ToolParserManager
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
-from tests.entrypoints.openai.tool_parsers.utils import (
-    run_tool_extraction, run_tool_extraction_streaming)
+from tests.entrypoints.openai.tool_parsers.utils import run_tool_extraction, run_tool_extraction_streaming
 
 # Test cases similar to pythonic parser but with Llama4 specific format
 SIMPLE_FUNCTION_OUTPUT = "[get_weather(city='LA', metric='C')]"
@@ -47,28 +45,20 @@ EMPTY_LIST_FUNCTION_CALL = FunctionCall(
     name="do_something_cool",
     arguments='{"steps": []}',
 )
-ESCAPED_STRING_FUNCTION_OUTPUT = (
-    r"[get_weather(city='Martha\'s Vineyard', metric='\"cool units\"')]"
-)
+ESCAPED_STRING_FUNCTION_OUTPUT = r"[get_weather(city='Martha\'s Vineyard', metric='\"cool units\"')]"
 ESCAPED_STRING_FUNCTION_CALL = FunctionCall(
     name="get_weather",
     arguments='{"city": "Martha\'s Vineyard", "metric": "\\"cool units\\""}',
 )
-PYTHON_TAG_FUNCTION_OUTPUT = (
-    "<|python_start|>[get_weather(city='LA', metric='C')]<|python_end|>"
-)
+PYTHON_TAG_FUNCTION_OUTPUT = "<|python_start|>[get_weather(city='LA', metric='C')]<|python_end|>"
 
 
 @pytest.mark.parametrize("streaming", [True, False])
 def test_no_tool_call(streaming: bool, default_tokenizer: AnyTokenizer):
-    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(
-        default_tokenizer
-    )
+    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(default_tokenizer)
     model_output = "How can I help you today?"
 
-    content, tool_calls = run_tool_extraction(
-        tool_parser, model_output, streaming=streaming
-    )
+    content, tool_calls = run_tool_extraction(tool_parser, model_output, streaming=streaming)
 
     assert content == model_output
     assert len(tool_calls) == 0
@@ -84,9 +74,7 @@ TEST_CASES = [
         [ESCAPED_STRING_FUNCTION_CALL],
         id="simple_streaming",
     ),
-    pytest.param(
-        False, SIMPLE_FUNCTION_OUTPUT, [SIMPLE_FUNCTION_CALL], id="simple_nonstreaming"
-    ),
+    pytest.param(False, SIMPLE_FUNCTION_OUTPUT, [SIMPLE_FUNCTION_CALL], id="simple_nonstreaming"),
     pytest.param(
         True,
         MORE_TYPES_FUNCTION_OUTPUT,
@@ -188,8 +176,7 @@ TEST_CASES = [
     ),
     pytest.param(
         False,
-        "<|python_start|>[get_weather(city='LA', metric='C'), "
-        + "register_user(name='Doe', age=9)]",
+        "<|python_start|>[get_weather(city='LA', metric='C'), " + "register_user(name='Doe', age=9)]",
         [
             SIMPLE_FUNCTION_CALL,
             FunctionCall(name="register_user", arguments='{"name": "Doe", "age": 9}'),
@@ -206,13 +193,9 @@ def test_tool_call(
     expected_tool_calls: list[FunctionCall],
     default_tokenizer: AnyTokenizer,
 ):
-    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(
-        default_tokenizer
-    )
+    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(default_tokenizer)
 
-    content, tool_calls = run_tool_extraction(
-        tool_parser, model_output, streaming=streaming
-    )
+    content, tool_calls = run_tool_extraction(tool_parser, model_output, streaming=streaming)
 
     assert len(tool_calls) == len(expected_tool_calls)
     for actual, expected in zip(tool_calls, expected_tool_calls):
@@ -221,18 +204,14 @@ def test_tool_call(
 
 
 def test_streaming_tool_call_with_large_steps(default_tokenizer: AnyTokenizer):
-    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(
-        default_tokenizer
-    )
+    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(default_tokenizer)
     model_output_deltas = [
         "<|python_start|>[get_weather(city='LA', metric='C'), "
         "get_weather(), "
         "do_something_cool(steps=[])]<|python_end|>",
     ]
 
-    reconstructor = run_tool_extraction_streaming(
-        tool_parser, model_output_deltas, assert_one_tool_per_delta=False
-    )
+    reconstructor = run_tool_extraction_streaming(tool_parser, model_output_deltas, assert_one_tool_per_delta=False)
 
     assert reconstructor.other_content == ""
     assert len(reconstructor.tool_calls) == 3
@@ -244,9 +223,7 @@ def test_streaming_tool_call_with_large_steps(default_tokenizer: AnyTokenizer):
 @pytest.mark.parametrize("streaming", [False])
 def test_regex_timeout_handling(streaming: bool, default_tokenizer: AnyTokenizer):
     """test regex timeout is handled gracefully"""
-    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(
-        default_tokenizer
-    )
+    tool_parser: ToolParser = ToolParserManager.get_tool_parser("llama4_pythonic")(default_tokenizer)
 
     fake_problematic_input = "hello world[A(A=" + "\t)A(A=,\t" * 2
 
@@ -255,9 +232,7 @@ def test_regex_timeout_handling(streaming: bool, default_tokenizer: AnyTokenizer
     mock_regex.match.side_effect = TimeoutError("Regex timeout")
 
     with patch.object(tool_parser, "TOOL_CALL_REGEX", mock_regex):
-        content, tool_calls = run_tool_extraction(
-            tool_parser, fake_problematic_input, streaming=streaming
-        )
+        content, tool_calls = run_tool_extraction(tool_parser, fake_problematic_input, streaming=streaming)
 
         # should treat as regular text when regex times out
         assert content == fake_problematic_input

@@ -1,6 +1,5 @@
 from collections.abc import Callable, Iterable, Mapping, MutableSequence
-from typing import (TYPE_CHECKING, ClassVar, Literal, Protocol, TypeAlias,
-                    overload, runtime_checkable)
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, TypeAlias, overload, runtime_checkable
 
 import numpy as np
 import torch
@@ -355,16 +354,14 @@ def supports_lora(
         if getattr(model, "supports_lora", False):
             if missing_attrs:
                 logger.warning(
-                    "The model (%s) sets `supports_lora=True`, "
-                    "but is missing LoRA-specific attributes: %s",
+                    "The model (%s) sets `supports_lora=True`, but is missing LoRA-specific attributes: %s",
                     model,
                     missing_attrs,
                 )
         else:
             if not missing_attrs:
                 logger.warning(
-                    "The model (%s) contains all LoRA-specific attributes, "
-                    "but does not set `supports_lora=True`.",
+                    "The model (%s) contains all LoRA-specific attributes, but does not set `supports_lora=True`.",
                     model,
                 )
 
@@ -463,16 +460,14 @@ def supports_pp(
         if getattr(model, "supports_pp", False):
             if missing_attrs:
                 logger.warning(
-                    "The model (%s) sets `supports_pp=True`, "
-                    "but is missing PP-specific attributes: %s",
+                    "The model (%s) sets `supports_pp=True`, but is missing PP-specific attributes: %s",
                     model,
                     missing_attrs,
                 )
         else:
             if not missing_attrs:
                 logger.warning(
-                    "The model (%s) contains all PP-specific attributes, "
-                    "but does not set `supports_pp=True`.",
+                    "The model (%s) contains all PP-specific attributes, but does not set `supports_pp=True`.",
                     model,
                 )
 
@@ -663,9 +658,7 @@ class MixtureOfExperts(Protocol):
 
 
 def is_mixture_of_experts(model: object) -> TypeIs[MixtureOfExperts]:
-    return (
-        isinstance(model, MixtureOfExperts) and getattr(model, "num_moe_layers", 0) > 0
-    )
+    return isinstance(model, MixtureOfExperts) and getattr(model, "num_moe_layers", 0) > 0
 
 
 @runtime_checkable
@@ -764,9 +757,7 @@ class SupportsQuant:
             if (hf_to_aphrodite_mapper := instance.hf_to_aphrodite_mapper) is not None:
                 instance.quant_config.apply_aphrodite_mapper(hf_to_aphrodite_mapper)
             if instance.packed_modules_mapping is not None:
-                instance.quant_config.packed_modules_mapping.update(
-                    instance.packed_modules_mapping
-                )
+                instance.quant_config.packed_modules_mapping.update(instance.packed_modules_mapping)
 
         return instance
 
@@ -846,8 +837,7 @@ class SupportsTranscription(Protocol):
             return language
         elif language in cls.get_other_languages():
             logger.warning(
-                "Language %r is not natively supported by %s; "
-                "results may be less accurate. Supported languages: %r",
+                "Language %r is not natively supported by %s; results may be less accurate. Supported languages: %r",
                 language,
                 cls.__name__,
                 list(cls.supported_languages.keys()),
@@ -855,8 +845,7 @@ class SupportsTranscription(Protocol):
             return language
         else:
             raise ValueError(
-                f"Unsupported language: {language!r}.  Must be one of "
-                f"{list(cls.supported_languages.keys())}."
+                f"Unsupported language: {language!r}.  Must be one of {list(cls.supported_languages.keys())}."
             )
 
     @classmethod

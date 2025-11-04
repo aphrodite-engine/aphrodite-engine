@@ -71,9 +71,7 @@ def benchmark_prefill(
 
     # Always using 1.0 scale to reflect the real perf in benchmarking
     q_scale = 1.0
-    ref_query = torch.randn(
-        torch.sum(q_lens).item(), num_qo_heads, head_size, dtype=dtype
-    )
+    ref_query = torch.randn(torch.sum(q_lens).item(), num_qo_heads, head_size, dtype=dtype)
     if q_quant_dtype == FP8_DTYPE:
         query, _ = to_float8(ref_query)
     else:
@@ -94,9 +92,7 @@ def benchmark_prefill(
         kv_cache = ref_kv_cache
 
     max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
-    block_tables = torch.randint(
-        0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32
-    )
+    block_tables = torch.randint(0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32)
     kv_indptr = [0]
     kv_indices = []
     kv_last_page_lens = []
@@ -116,9 +112,7 @@ def benchmark_prefill(
     kv_last_page_lens = torch.tensor(kv_last_page_lens, dtype=torch.int32)
     workspace_buffer = torch.zeros(1024 * 1024 * 1024, dtype=torch.int8)
 
-    wrapper = flashinfer.BatchPrefillWithPagedKVCacheWrapper(
-        workspace_buffer, kv_layout
-    )
+    wrapper = flashinfer.BatchPrefillWithPagedKVCacheWrapper(workspace_buffer, kv_layout)
     wrapper.plan(
         q_indptr,
         kv_indptr,
@@ -284,10 +278,7 @@ if __name__ == "__main__":
             f"kv_cache_dtype: {kv_quant_dtype}, "
             f"output_dtype: {o_quant_dtype}"
         )
-        print(
-            "\tbatch_size\tmax_seq_len\ttrtllm_mean\ttrtllm_std\tbaseline_mean\t"
-            "baseline_std\tspeedup_percent"
-        )
+        print("\tbatch_size\tmax_seq_len\ttrtllm_mean\ttrtllm_std\tbaseline_mean\tbaseline_std\tspeedup_percent")
         for max_seq_len in max_seq_lens:
             for bs in batch_sizes:
                 result = benchmark_prefill(

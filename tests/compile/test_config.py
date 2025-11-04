@@ -4,14 +4,12 @@ from contextlib import nullcontext
 import pytest
 
 from aphrodite.compilation.counter import compilation_counter
-from aphrodite.compilation.fix_functionalization import (
-    FixFunctionalizationPass)
+from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.config import AphroditeConfig, CompilationConfig, CUDAGraphMode
 from aphrodite.config.compilation import CompilationMode
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
-from aphrodite.utils.torch_utils import (_is_torch_equal_or_newer,
-                                         is_torch_equal_or_newer)
+from aphrodite.utils.torch_utils import _is_torch_equal_or_newer, is_torch_equal_or_newer
 
 
 def test_version():
@@ -39,10 +37,7 @@ def test_copy_pass():
         copied_inductor_pass.compilation_config.use_inductor_graph_partition
         == aphrodite_config.compilation_config.use_inductor_graph_partition
     )
-    assert (
-        copied_inductor_pass.compilation_config.splitting_ops
-        == aphrodite_config.compilation_config.splitting_ops
-    )
+    assert copied_inductor_pass.compilation_config.splitting_ops == aphrodite_config.compilation_config.splitting_ops
 
 
 def test_custom_op():
@@ -68,9 +63,7 @@ def test_APHRODITE_DISABLE_COMPILE_CACHE(aphrodite_runner, monkeypatch, val):
         "use_cudagraph": False,  # speed things up a bit
     }
     with (
-        compilation_counter.expect(
-            num_cache_entries_updated=0, num_compiled_artifacts_saved=0
-        ),
+        compilation_counter.expect(num_cache_entries_updated=0, num_compiled_artifacts_saved=0),
         # loading the model causes compilation (if enabled) to happen
         aphrodite_runner(
             "facebook/opt-125m",
@@ -152,9 +145,7 @@ def test_enforce_eager(aphrodite_runner, monkeypatch):
     with (
         compilation_counter.expect(num_graphs_seen=0, stock_torch_compile_count=0),
         # loading the model causes compilation (if enabled) to happen
-        aphrodite_runner(
-            "facebook/opt-125m", enforce_eager=True, gpu_memory_utilization=0.4
-        ) as _,
+        aphrodite_runner("facebook/opt-125m", enforce_eager=True, gpu_memory_utilization=0.4) as _,
     ):
         pass
 
@@ -303,6 +294,4 @@ def test_cudagraph_sizes_post_init(
         )
         aphrodite_config = engine_args.create_engine_config()
 
-    assert (
-        aphrodite_config.compilation_config.max_cudagraph_capture_size == expected_max_size
-    )
+    assert aphrodite_config.compilation_config.max_cudagraph_capture_size == expected_max_size

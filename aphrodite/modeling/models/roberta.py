@@ -6,16 +6,16 @@ from transformers import RobertaConfig
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, ModelConfig
-from aphrodite.modeling.layers.pooler import (ClassifierPooler, CLSPool,
-                                              DispatchPooler, Pooler)
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
-from aphrodite.modeling.models.bert import (TOKEN_TYPE_SHIFT,
-                                            BertEmbeddingModel, BertModel,
-                                            _decode_token_type_ids,
-                                            _encode_token_type_ids)
-from aphrodite.modeling.models.utils import (AutoWeightsLoader, WeightsMapper,
-                                             maybe_prefix)
+from aphrodite.modeling.layers.pooler import ClassifierPooler, CLSPool, DispatchPooler, Pooler
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
+from aphrodite.modeling.models.bert import (
+    TOKEN_TYPE_SHIFT,
+    BertEmbeddingModel,
+    BertModel,
+    _decode_token_type_ids,
+    _encode_token_type_ids,
+)
+from aphrodite.modeling.models.utils import AutoWeightsLoader, WeightsMapper, maybe_prefix
 
 from .bert_with_rope import BertWithRope, JinaRobertaModel
 from .interfaces import SupportsCrossEncoding
@@ -26,9 +26,7 @@ class RobertaEmbedding(nn.Module):
     def __init__(self, config: RobertaConfig):
         super().__init__()
         self.size = config.hidden_size
-        self.word_embeddings = VocabParallelEmbedding(
-            config.vocab_size, config.hidden_size
-        )
+        self.word_embeddings = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         self.padding_idx = config.pad_token_id
         self.position_embeddings = nn.Embedding(
             config.max_position_embeddings,
@@ -36,9 +34,7 @@ class RobertaEmbedding(nn.Module):
             padding_idx=self.padding_idx,
         )
 
-        self.token_type_embeddings = nn.Embedding(
-            config.type_vocab_size, config.hidden_size
-        )
+        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.register_buffer(
             "position_ids",
@@ -47,9 +43,7 @@ class RobertaEmbedding(nn.Module):
 
         self.position_embedding_type = config.position_embedding_type
         if self.position_embedding_type != "absolute":
-            raise ValueError(
-                "Only 'absolute' position_embedding_type" + " is supported"
-            )
+            raise ValueError("Only 'absolute' position_embedding_type" + " is supported")
 
     def forward(
         self,
@@ -79,9 +73,7 @@ class RobertaClassificationHead(nn.Module):
         config = model_config.hf_config
         head_dtype = model_config.head_dtype
         self.dense = nn.Linear(config.hidden_size, config.hidden_size, dtype=head_dtype)
-        self.out_proj = nn.Linear(
-            config.hidden_size, config.num_labels, dtype=head_dtype
-        )
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels, dtype=head_dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # CLSPool has already been applied in `pooling`
@@ -109,9 +101,7 @@ class RobertaEmbeddingModel(BertEmbeddingModel):
         # Fix Roberta positions here outside of the CUDA graph.
         # Because we need the to extract the sequences from
         # input_ids the control flow is data dependent.
-        replace_roberta_positions(
-            input_ids=input_ids, position_ids=positions, padding_idx=self.padding_idx
-        )
+        replace_roberta_positions(input_ids=input_ids, position_ids=positions, padding_idx=self.padding_idx)
 
         return self.model(
             input_ids=input_ids,
@@ -120,21 +110,15 @@ class RobertaEmbeddingModel(BertEmbeddingModel):
             intermediate_tensors=intermediate_tensors,
         )
 
-    def _build_model(
-        self, aphrodite_config: AphroditeConfig, prefix: str = ""
-    ) -> BertModel | BertWithRope:
+    def _build_model(self, aphrodite_config: AphroditeConfig, prefix: str = "") -> BertModel | BertWithRope:
         if aphrodite_config.model_config.hf_config.position_embedding_type == "rotary":
             return JinaRobertaModel(aphrodite_config=aphrodite_config, prefix=prefix)
         else:
-            return BertModel(
-                aphrodite_config=aphrodite_config, prefix=prefix, embedding_class=RobertaEmbedding
-            )
+            return BertModel(aphrodite_config=aphrodite_config, prefix=prefix, embedding_class=RobertaEmbedding)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         weights_list = list(weights)
-        has_roberta_prefix = any(
-            name.startswith("roberta.") for name, _ in weights_list
-        )
+        has_roberta_prefix = any(name.startswith("roberta.") for name, _ in weights_list)
         if has_roberta_prefix:
             # For models with the `roberta.` prefix e.g.
             # `FacebookAI/roberta-base`
@@ -192,15 +176,9 @@ class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding):
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config=pooler_config, classifier=self.classifier
-                ),
-                "classify": ClassifierPooler(
-                    pooling=CLSPool(), classifier=self.classifier, act_fn="classify"
-                ),
-                "score": ClassifierPooler(
-                    pooling=CLSPool(), classifier=self.classifier, act_fn="score"
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config=pooler_config, classifier=self.classifier),
+                "classify": ClassifierPooler(pooling=CLSPool(), classifier=self.classifier, act_fn="classify"),
+                "score": ClassifierPooler(pooling=CLSPool(), classifier=self.classifier, act_fn="score"),
             }
         )
 
@@ -219,9 +197,7 @@ class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding):
         inputs_embeds: torch.Tensor | None = None,
         token_type_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        replace_roberta_positions(
-            input_ids=input_ids, position_ids=positions, padding_idx=self.padding_idx
-        )
+        replace_roberta_positions(input_ids=input_ids, position_ids=positions, padding_idx=self.padding_idx)
         if token_type_ids is not None:
             assert self.roberta.config.vocab_size < (1 << TOKEN_TYPE_SHIFT)
             assert input_ids is not None
@@ -234,9 +210,7 @@ class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding):
         )
 
 
-def replace_roberta_positions(
-    input_ids: torch.Tensor, position_ids: torch.Tensor, padding_idx: int
-) -> None:
+def replace_roberta_positions(input_ids: torch.Tensor, position_ids: torch.Tensor, padding_idx: int) -> None:
     # Replace position ids because in RoBERTa models
     # they have to start at padding_idx + 1 and ignore
     # existing padding tokens

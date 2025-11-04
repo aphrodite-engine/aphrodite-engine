@@ -9,9 +9,13 @@ from torch import nn
 
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, CUDAGraphMode,
-                              set_current_aphrodite_config)
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationConfig,
+    CompilationMode,
+    CUDAGraphMode,
+    set_current_aphrodite_config,
+)
 from aphrodite.forward_context import BatchDescriptor, set_forward_context
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 

@@ -1,10 +1,8 @@
 import torch
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceNoOP)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceNoOP
 
 
 class TrtLlmGenExperts(mk.FusedMoEPermuteExpertsUnpermute):
@@ -86,9 +84,7 @@ class TrtLlmGenExperts(mk.FusedMoEPermuteExpertsUnpermute):
         if x_scale is not None:
             x_scale = x_scale.view(torch.float8_e4m3fn).reshape(*x_quant.shape[:-1], -1)
 
-        packed_tensor = (topk_ids.to(torch.int32) << 16) | topk_weights.to(
-            torch.bfloat16
-        ).view(torch.int16)
+        packed_tensor = (topk_ids.to(torch.int32) << 16) | topk_weights.to(torch.bfloat16).view(torch.int16)
 
         assert self.w1_scale is not None
         assert self.w2_scale is not None

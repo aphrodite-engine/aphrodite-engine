@@ -4,18 +4,17 @@ from tqdm import tqdm
 import aphrodite.envs as env
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (
-    FusedMoEQuantConfig, fp8_w8a8_moe_quant_config)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig, fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.deep_gemm_utils import (
-    compute_aligned_M, deepgemm_moe_permute, deepgemm_unpermute_and_reduce)
-from aphrodite.modeling.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoEP)
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceNoOP)
+    compute_aligned_M,
+    deepgemm_moe_permute,
+    deepgemm_unpermute_and_reduce,
+)
+from aphrodite.modeling.layers.fused_moe.prepare_finalize import MoEPrepareAndFinalizeNoEP
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceNoOP
 from aphrodite.modeling.layers.fused_moe.utils import _resize_cache
 from aphrodite.quantization.utils.fp8_utils import per_token_group_quant_fp8
-from aphrodite.utils.deep_gemm import (get_mk_alignment_for_contiguous_layout,
-                                       m_grouped_fp8_gemm_nt_contiguous)
+from aphrodite.utils.deep_gemm import get_mk_alignment_for_contiguous_layout, m_grouped_fp8_gemm_nt_contiguous
 from aphrodite.utils.func_utils import run_once
 from aphrodite.utils.import_utils import has_deep_gemm
 
@@ -27,9 +26,7 @@ def _valid_deep_gemm_shape(M: int, N: int, K: int) -> bool:
     return align <= M and N % align == 0 and K % align == 0
 
 
-def _valid_deep_gemm(
-    hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor
-) -> bool:
+def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor) -> bool:
     """
     Check if the given problem size is supported by the DeepGemm grouped
     gemm kernel.  All of M, N, K and the quantization block_shape must be
@@ -76,11 +73,7 @@ def _valid_deep_gemm(
         )
         return False
 
-    if (
-        not hidden_states.is_contiguous()
-        or not w1.is_contiguous()
-        or not w2.is_contiguous()
-    ):
+    if not hidden_states.is_contiguous() or not w1.is_contiguous() or not w2.is_contiguous():
         logger.debug_once(
             "DeepGemm disabled: weights or activations not contiguous. "
             "hidden_states.is_contiguous(): %s, w1.is_contiguous(): %s, "
@@ -127,22 +120,16 @@ def warmup_deepgemm_gg_contiguous_kernels(
     )
     # Distribute expert-ids evenly.
     MAX_BLOCKS = MAX_M // block_m
-    expert_ids_block = torch.randint(
-        low=0, high=num_experts, size=(MAX_BLOCKS,), device=device, dtype=torch.int32
-    )
+    expert_ids_block = torch.randint(low=0, high=num_experts, size=(MAX_BLOCKS,), device=device, dtype=torch.int32)
     expert_ids = torch.repeat_interleave(expert_ids_block, block_m, dim=0)
 
     def _warmup(w: torch.Tensor, w_scale: torch.Tensor):
         _, n, k = w.size()
         a1q = torch.empty((MAX_M, k), device=device).to(torch.float8_e4m3fn)
-        a1q_scales = torch.empty(
-            (MAX_M, k // block_m), device=device, dtype=torch.float32
-        )
+        a1q_scales = torch.empty((MAX_M, k // block_m), device=device, dtype=torch.float32)
         out = torch.empty((MAX_M, n), device=device, dtype=torch.bfloat16)
 
-        pbar = tqdm(
-            total=MAX_BLOCKS, desc=f"DeepGemmExperts GEMM warmup (MAX_M={MAX_M})"
-        )
+        pbar = tqdm(total=MAX_BLOCKS, desc=f"DeepGemmExperts GEMM warmup (MAX_M={MAX_M})")
         num_tokens = MAX_M
         while num_tokens > 0:
             m_grouped_fp8_gemm_nt_contiguous(
@@ -196,9 +183,7 @@ class DeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
         assert self.block_shape is not None
         block_m = self.block_shape[0]
-        M_sum = compute_aligned_M(
-            M, topk, local_num_experts, block_m, expert_tokens_meta
-        )
+        M_sum = compute_aligned_M(M, topk, local_num_experts, block_m, expert_tokens_meta)
         assert M_sum % block_m == 0
 
         workspace1 = (M_sum, max(N, K))
@@ -250,9 +235,7 @@ class DeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         a1q_perm = _resize_cache(workspace2.view(dtype=torch.float8_e4m3fn), (M_sum, K))
         mm1_out = _resize_cache(workspace13, (M_sum, N))
         act_out = _resize_cache(workspace2, (M_sum, N // 2))
-        quant_out = _resize_cache(
-            workspace13.view(dtype=torch.float8_e4m3fn), (M_sum, N // 2)
-        )
+        quant_out = _resize_cache(workspace13.view(dtype=torch.float8_e4m3fn), (M_sum, N // 2))
         mm2_out = _resize_cache(workspace2, (M_sum, K))
 
         a1q, a1q_scale, expert_ids, inv_perm = deepgemm_moe_permute(
@@ -266,9 +249,7 @@ class DeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         )
         assert a1q.size(0) == M_sum
 
-        m_grouped_fp8_gemm_nt_contiguous(
-            (a1q, a1q_scale), (w1, self.w1_scale), mm1_out, expert_ids
-        )
+        m_grouped_fp8_gemm_nt_contiguous((a1q, a1q_scale), (w1, self.w1_scale), mm1_out, expert_ids)
 
         self.activation(activation, act_out, mm1_out.view(-1, N))
 
@@ -277,9 +258,7 @@ class DeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
             act_out, self.block_shape[1], column_major_scales=True, out_q=quant_out
         )
 
-        m_grouped_fp8_gemm_nt_contiguous(
-            (a2q, a2q_scale), (w2, self.w2_scale), mm2_out, expert_ids
-        )
+        m_grouped_fp8_gemm_nt_contiguous((a2q, a2q_scale), (w2, self.w2_scale), mm2_out, expert_ids)
 
         if apply_router_weight_on_input:
             topk_weights = torch.ones_like(topk_weights)

@@ -15,24 +15,25 @@ from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.layernorm import GemmaRMSNorm
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
 from aphrodite.multimodal.processing import (
-    BaseMultiModalProcessor, BaseProcessingInfo, MultiModalPromptUpdates,
-    MultiModalPromptUpdatesApplyResult, PlaceholderFeaturesInfo,
-    PromptReplacement, PromptUpdate, PromptUpdateDetails,
-    replace_token_matches)
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    MultiModalPromptUpdates,
+    MultiModalPromptUpdatesApplyResult,
+    PlaceholderFeaturesInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+    replace_token_matches,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
 from .siglip import SiglipVisionModel
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
 
 logger = init_logger(__name__)
 
@@ -113,9 +114,7 @@ class Gemma3ProcessingInfo(BaseProcessingInfo):
         do_pan_and_scan = images_kwargs["do_pan_and_scan"]
         pan_and_scan_min_crop_size = images_kwargs["pan_and_scan_min_crop_size"]
         pan_and_scan_max_num_crops = images_kwargs["pan_and_scan_max_num_crops"]
-        pan_and_scan_min_ratio_to_activate = images_kwargs[
-            "pan_and_scan_min_ratio_to_activate"
-        ]
+        pan_and_scan_min_ratio_to_activate = images_kwargs["pan_and_scan_min_ratio_to_activate"]
 
         if not do_pan_and_scan:
             return 0
@@ -217,9 +216,7 @@ class Gemma3ProcessingInfo(BaseProcessingInfo):
     def get_image_size_with_most_features(self) -> ImageSize:
         processor = self.get_hf_processor()
 
-        images_kwargs = self._resolve_image_kwargs(
-            processor, {"pan_and_scan_max_num_crops"}
-        )
+        images_kwargs = self._resolve_image_kwargs(processor, {"pan_and_scan_max_num_crops"})
         max_num_crops = images_kwargs["pan_and_scan_max_num_crops"]
 
         # Result in the max possible feature size (h:w = max_num_crops:1)
@@ -275,13 +272,9 @@ class Gemma3MultiModalProcessor(BaseMultiModalProcessor[Gemma3ProcessingInfo]):
         # HF processor pops the `num_crops` kwarg, which is needed by Aphrodite
         if (images := mm_data.get("images")) is not None:
             parsed_images = (
-                self._get_data_parser()
-                .parse_mm_data({"image": images})
-                .get_items("image", ImageProcessorItems)
+                self._get_data_parser().parse_mm_data({"image": images}).get_items("image", ImageProcessorItems)
             )
-            image_sizes = [
-                parsed_images.get_image_size(i) for i in range(len(parsed_images))
-            ]
+            image_sizes = [parsed_images.get_image_size(i) for i in range(len(parsed_images))]
             hf_processor = self.info.get_hf_processor(**mm_kwargs)
 
             num_crops = [
@@ -421,23 +414,15 @@ class Gemma3MultiModalProjector(nn.Module):
         super().__init__()
 
         self.mm_input_projection_weight = nn.Parameter(
-            torch.zeros(
-                config.vision_config.hidden_size, config.text_config.hidden_size
-            )
+            torch.zeros(config.vision_config.hidden_size, config.text_config.hidden_size)
         )
 
-        self.mm_soft_emb_norm = GemmaRMSNorm(
-            config.vision_config.hidden_size, eps=config.vision_config.layer_norm_eps
-        )
+        self.mm_soft_emb_norm = GemmaRMSNorm(config.vision_config.hidden_size, eps=config.vision_config.layer_norm_eps)
 
-        self.patches_per_image = int(
-            config.vision_config.image_size // config.vision_config.patch_size
-        )
+        self.patches_per_image = int(config.vision_config.image_size // config.vision_config.patch_size)
         self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
         self.kernel_size = self.patches_per_image // self.tokens_per_side
-        self.avg_pool = nn.AvgPool2d(
-            kernel_size=self.kernel_size, stride=self.kernel_size
-        )
+        self.avg_pool = nn.AvgPool2d(kernel_size=self.kernel_size, stride=self.kernel_size)
 
     def forward(self, vision_outputs: torch.Tensor):
         batch_size, _, seq_length = vision_outputs.shape
@@ -454,9 +439,7 @@ class Gemma3MultiModalProjector(nn.Module):
 
         normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
 
-        projected_vision_outputs = torch.matmul(
-            normed_vision_outputs, self.mm_input_projection_weight
-        )
+        projected_vision_outputs = torch.matmul(normed_vision_outputs, self.mm_input_projection_weight)
         return projected_vision_outputs.type_as(vision_outputs)
 
 
@@ -465,9 +448,7 @@ class Gemma3MultiModalProjector(nn.Module):
     info=Gemma3ProcessingInfo,
     dummy_inputs=Gemma3DummyInputsBuilder,
 )
-class Gemma3ForConditionalGeneration(
-    nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
-):
+class Gemma3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA):
     merge_by_field_config = True
 
     packed_modules_mapping = {
@@ -528,17 +509,13 @@ class Gemma3ForConditionalGeneration(
             # automatic conversion to pooling model.
             self.language_model.logits_processor.scale *= logit_scale
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     @property
     def dtype(self):
         return next(self.parameters()).dtype
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> Gemma3ImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> Gemma3ImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         num_patches = kwargs.pop("num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -664,9 +641,7 @@ class Gemma3ForConditionalGeneration(
                 # Create a local causal mask with sliding window (1024).
                 local_attn_mask = torch.ones_like(global_attn_mask)
                 local_attn_mask = torch.tril(local_attn_mask, diagonal=-sliding_window)
-                local_attn_mask = torch.where(
-                    local_attn_mask == 0, global_attn_mask, float("-inf")
-                )
+                local_attn_mask = torch.where(local_attn_mask == 0, global_attn_mask, float("-inf"))
                 local_attn_masks.append(local_attn_mask)
         kwargs["global_attn_masks"] = global_attn_masks
         kwargs["local_attn_masks"] = local_attn_masks

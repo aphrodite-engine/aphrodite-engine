@@ -17,14 +17,14 @@ else:
 
 class RunBatchSubcommand(CLISubcommand):
     """The `run-batch` subcommand for Aphrodite CLI."""
+
     name = "run-batch"
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
         from aphrodite.endpoints.openai.run_batch import main as run_batch_main
 
-        logger.info("Aphrodite batch processing API version %s",
-                    importlib.metadata.version("aphrodite-engine"))
+        logger.info("Aphrodite batch processing API version %s", importlib.metadata.version("aphrodite-engine"))
         logger.info("args: %s", args)
 
         # Start the Prometheus metrics server.
@@ -40,19 +40,16 @@ class RunBatchSubcommand(CLISubcommand):
 
         asyncio.run(run_batch_main(args))
 
-    def subparser_init(
-            self,
-            subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
+    def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         from aphrodite.endpoints.openai.run_batch import make_arg_parser
 
         run_batch_parser = subparsers.add_parser(
             self.name,
             help="Run batch prompts and write results to file.",
             description=(
-                "Run batch prompts using Aphrodite's OpenAI-compatible API.\n"
-                "Supports local or HTTP input/output files."),
-            usage=
-            "aphrodite run-batch -i INPUT.jsonl -o OUTPUT.jsonl --model <model>",
+                "Run batch prompts using Aphrodite's OpenAI-compatible API.\nSupports local or HTTP input/output files."
+            ),
+            usage="aphrodite run-batch -i INPUT.jsonl -o OUTPUT.jsonl --model <model>",
         )
         run_batch_parser = make_arg_parser(run_batch_parser)
         run_batch_parser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd=self.name)

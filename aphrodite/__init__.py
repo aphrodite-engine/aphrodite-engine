@@ -47,12 +47,18 @@ if typing.TYPE_CHECKING:
     from aphrodite.engine.async_aphrodite import AsyncAphrodite
     from aphrodite.inputs import PromptType, TextPrompt, TokensPrompt
     from aphrodite.modeling.models import ModelRegistry
-    from aphrodite.outputs import (ClassificationOutput,
-                                   ClassificationRequestOutput,
-                                   CompletionOutput, EmbeddingOutput,
-                                   EmbeddingRequestOutput, PoolingOutput,
-                                   PoolingRequestOutput, RequestOutput,
-                                   ScoringOutput, ScoringRequestOutput)
+    from aphrodite.outputs import (
+        ClassificationOutput,
+        ClassificationRequestOutput,
+        CompletionOutput,
+        EmbeddingOutput,
+        EmbeddingRequestOutput,
+        PoolingOutput,
+        PoolingRequestOutput,
+        RequestOutput,
+        ScoringOutput,
+        ScoringRequestOutput,
+    )
     from aphrodite.v1.executor.ray_utils import initialize_ray_cluster
 
     from ._bc_linter import bc_linter_include, bc_linter_skip
@@ -66,8 +72,7 @@ else:
             module = import_module(module_name, __package__)
             return getattr(module, attr_name)
         else:
-            raise AttributeError(
-                f'module {__package__} has no attribute {name}')
+            raise AttributeError(f"module {__package__} has no attribute {name}")
 
 
 __all__ = [

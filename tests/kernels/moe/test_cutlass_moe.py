@@ -6,14 +6,10 @@ import pytest
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.config import (AphroditeConfig, ParallelConfig,
-                              set_current_aphrodite_config)
-from aphrodite.modeling.layers.fused_moe.config import (
-    FUSED_MOE_UNQUANTIZED_CONFIG, fp8_w8a8_moe_quant_config)
-from aphrodite.modeling.layers.fused_moe.cutlass_moe import (
-    cutlass_moe_fp8, run_cutlass_moe_fp8)
-from aphrodite.modeling.layers.fused_moe.fused_moe import (fused_experts,
-                                                           fused_topk)
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
+from aphrodite.modeling.layers.fused_moe.config import FUSED_MOE_UNQUANTIZED_CONFIG, fp8_w8a8_moe_quant_config
+from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp8, run_cutlass_moe_fp8
+from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts, fused_topk
 from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input
 from aphrodite.platforms import current_platform
 
@@ -53,9 +49,7 @@ class MOETensors:
     c_strides2: torch.Tensor
 
     @staticmethod
-    def make_moe_tensors(
-        m: int, k: int, n: int, e: int, dtype: torch.dtype
-    ) -> "MOETensors":
+    def make_moe_tensors(m: int, k: int, n: int, e: int, dtype: torch.dtype) -> "MOETensors":
         a = torch.randn((m, k), device="cuda", dtype=dtype) / 10
         w1 = torch.randn((e, 2 * n, k), device="cuda", dtype=dtype) / 10
         w2 = torch.randn((e, k, n), device="cuda", dtype=dtype) / 10
@@ -101,9 +95,7 @@ class MOETensors8Bit(MOETensors):
         n_b_scales = 2 * n if per_out_channel else 1
         k_b_scales = k if per_out_channel else 1
         # Get the right scale for tests.
-        a_q, a_scale = ops.scaled_fp8_quant(
-            moe_tensors_fp16.a, None, use_per_token_if_dynamic=per_act_token
-        )
+        a_q, a_scale = ops.scaled_fp8_quant(moe_tensors_fp16.a, None, use_per_token_if_dynamic=per_act_token)
 
         w1_q = torch.empty((e, 2 * n, k), device="cuda", dtype=q_dtype)
         w2_q = torch.empty((e, k, n), device="cuda", dtype=q_dtype)
@@ -146,9 +138,7 @@ class MOETensors8Bit(MOETensors):
         )
 
 
-def run_with_expert_maps(
-    num_experts: int, num_local_experts: int, **cutlass_moe_kwargs
-):
+def run_with_expert_maps(num_experts: int, num_local_experts: int, **cutlass_moe_kwargs):
     def slice_experts():
         slice_params = [
             "w1_q",
@@ -158,11 +148,7 @@ def run_with_expert_maps(
             "c_strides1",
             "c_strides2",
         ]
-        full_tensors = {
-            k: v
-            for k, v in cutlass_moe_kwargs.items()
-            if k in slice_params and k in cutlass_moe_kwargs
-        }
+        full_tensors = {k: v for k, v in cutlass_moe_kwargs.items() if k in slice_params and k in cutlass_moe_kwargs}
 
         quant_config = cutlass_moe_kwargs["quant_config"]
 
@@ -258,9 +244,7 @@ def run_8_bit(
 @pytest.mark.parametrize("per_act_token", [True, False])
 @pytest.mark.parametrize("per_out_ch", [True, False])
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
 def test_cutlass_moe_8_bit_no_graph(
@@ -286,9 +270,7 @@ def test_cutlass_moe_8_bit_no_graph(
         # Using a, w1 and w2 directly results in minor output differences.
 
         quant_config = FUSED_MOE_UNQUANTIZED_CONFIG
-        triton_output = fused_experts(
-            mt.a_d, mt.w1_d, mt.w2_d, topk_weights, topk_ids, quant_config=quant_config
-        )
+        triton_output = fused_experts(mt.a_d, mt.w1_d, mt.w2_d, topk_weights, topk_ids, quant_config=quant_config)
 
         if ep_size is not None:
             assert e % ep_size == 0, "Cannot distribute experts evenly"
@@ -296,15 +278,11 @@ def test_cutlass_moe_8_bit_no_graph(
         else:
             number_local_experts = None
 
-        cutlass_output = run_8_bit(
-            mt, topk_weights, topk_ids, per_act_token, per_out_ch, number_local_experts
-        )
+        cutlass_output = run_8_bit(mt, topk_weights, topk_ids, per_act_token, per_out_ch, number_local_experts)
 
         # Note 5.5 only needed for larger problem sizes, 5 works ok for
         # the rest.
-        torch.testing.assert_close(
-            triton_output, cutlass_output, atol=5.5e-2, rtol=1e-2
-        )
+        torch.testing.assert_close(triton_output, cutlass_output, atol=5.5e-2, rtol=1e-2)
 
 
 @pytest.mark.parametrize("m,n,k", MNK_FACTORS)
@@ -313,9 +291,7 @@ def test_cutlass_moe_8_bit_no_graph(
 @pytest.mark.parametrize("per_act_token", [True, False])
 @pytest.mark.parametrize("per_out_ch", [True, False])
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
 def test_cutlass_moe_8_bit_cuda_graph(
@@ -341,16 +317,12 @@ def test_cutlass_moe_8_bit_cuda_graph(
         # Note that we are using the dequantized versions of the tensors.
         # Using a, w1 and w2 directly results in minor output differences.
         quant_config = FUSED_MOE_UNQUANTIZED_CONFIG
-        triton_output = fused_experts(
-            mt.a_d, mt.w1_d, mt.w2_d, topk_weights, topk_ids, quant_config=quant_config
-        )
+        triton_output = fused_experts(mt.a_d, mt.w1_d, mt.w2_d, topk_weights, topk_ids, quant_config=quant_config)
 
         stream = torch.cuda.Stream()
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph, stream=stream):
-            cutlass_output = run_8_bit(
-                mt, topk_weights, topk_ids, per_act_token, per_out_ch
-            )
+            cutlass_output = run_8_bit(mt, topk_weights, topk_ids, per_act_token, per_out_ch)
 
         torch.cuda.synchronize()
         graph.replay()
@@ -368,9 +340,7 @@ def test_cutlass_moe_8_bit_cuda_graph(
 @pytest.mark.parametrize("per_out_channel", [True])
 @pytest.mark.parametrize("ep_size", [1, 2, 4, 8, 16])
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
 def test_cutlass_moe_8_bit_EP(
@@ -384,9 +354,7 @@ def test_cutlass_moe_8_bit_EP(
     ep_size: int,
     monkeypatch,
 ):
-    test_cutlass_moe_8_bit_no_graph(
-        m, n, k, e, topk, per_act_token, per_out_channel, monkeypatch, ep_size
-    )
+    test_cutlass_moe_8_bit_no_graph(m, n, k, e, topk, per_act_token, per_out_channel, monkeypatch, ep_size)
 
 
 LARGE_MNK_FACTORS = [
@@ -402,9 +370,7 @@ LARGE_MNK_FACTORS = [
 @pytest.mark.parametrize("per_out_channel", [True])
 @pytest.mark.parametrize("ep_size", [8])
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
 def test_cutlass_moe_8_bit_EP_large(
@@ -418,9 +384,7 @@ def test_cutlass_moe_8_bit_EP_large(
     ep_size: int,
     monkeypatch,
 ):
-    test_cutlass_moe_8_bit_no_graph(
-        m, n, k, e, topk, per_act_token, per_out_channel, monkeypatch, ep_size
-    )
+    test_cutlass_moe_8_bit_no_graph(m, n, k, e, topk, per_act_token, per_out_channel, monkeypatch, ep_size)
 
 
 @pytest.mark.parametrize("m,n,k,topk", [(1, 8192, 5120, 31)])
@@ -429,9 +393,7 @@ def test_cutlass_moe_8_bit_EP_large(
 @pytest.mark.parametrize("per_out_channel", [True])
 @pytest.mark.parametrize("ep_size", [8])
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
 def test_run_cutlass_moe_fp8(
@@ -446,9 +408,7 @@ def test_run_cutlass_moe_fp8(
 ):
     current_platform.seed_everything(7)
     with set_current_aphrodite_config(aphrodite_config):
-        mt = MOETensors8Bit.make_moe_tensors_8bit(
-            m, k, n, e, per_act_token, per_out_channel
-        )
+        mt = MOETensors8Bit.make_moe_tensors_8bit(m, k, n, e, per_act_token, per_out_channel)
 
         score = torch.randn((m, e), device="cuda", dtype=torch.half)
         topk_weights, topk_ids, _ = fused_topk(mt.a, score, topk, renormalize=False)
@@ -462,12 +422,8 @@ def test_run_cutlass_moe_fp8(
         workspace2_shape = (m * topk, max(n, k))
         output_shape = (m, k)
 
-        workspace13 = torch.empty(
-            prod(workspace13_shape), device="cuda", dtype=mt.a.dtype
-        )
-        workspace2 = torch.empty(
-            prod(workspace2_shape), device="cuda", dtype=mt.a.dtype
-        )
+        workspace13 = torch.empty(prod(workspace13_shape), device="cuda", dtype=mt.a.dtype)
+        workspace2 = torch.empty(prod(workspace2_shape), device="cuda", dtype=mt.a.dtype)
 
         num_local_experts = e // ep_size
         start, end = 0, num_local_experts
@@ -481,9 +437,7 @@ def test_run_cutlass_moe_fp8(
         c_strides2 = torch.full((e,), k, device="cuda", dtype=torch.int64)
 
         activation = lambda o, i: torch.ops._C.silu_and_mul(o, i)
-        a1q, a1q_scale = moe_kernel_quantize_input(
-            mt.a, mt.a_scale, torch.float8_e4m3fn, per_act_token
-        )
+        a1q, a1q_scale = moe_kernel_quantize_input(mt.a, mt.a_scale, torch.float8_e4m3fn, per_act_token)
         global_num_experts = -1 if mt.w1_q is None else mt.w1_q.size(0)
         func = lambda output: run_cutlass_moe_fp8(
             output,
@@ -513,17 +467,11 @@ def test_run_cutlass_moe_fp8(
         )
 
         workspace13.random_()
-        output_random_workspace = torch.empty(
-            output_shape, device="cuda", dtype=mt.a.dtype
-        )
+        output_random_workspace = torch.empty(output_shape, device="cuda", dtype=mt.a.dtype)
         func(output_random_workspace)
 
         workspace13.fill_(0)
-        output_zero_workspace = torch.zeros(
-            output_shape, device="cuda", dtype=mt.a.dtype
-        )
+        output_zero_workspace = torch.zeros(output_shape, device="cuda", dtype=mt.a.dtype)
         func(output_zero_workspace)
 
-        torch.testing.assert_close(
-            output_random_workspace, output_zero_workspace, atol=5e-3, rtol=1e-3
-        )
+        torch.testing.assert_close(output_random_workspace, output_zero_workspace, atol=5e-3, rtol=1e-3)

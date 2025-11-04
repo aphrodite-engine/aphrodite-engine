@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from aphrodite._custom_ops import (apply_repetition_penalties_cuda,
-                                   apply_repetition_penalties_torch)
+from aphrodite._custom_ops import apply_repetition_penalties_cuda, apply_repetition_penalties_torch
 from aphrodite.platforms import current_platform
 from tests.kernels.utils import opcheck
 
@@ -19,9 +18,7 @@ DTYPES = [torch.float32, torch.float16]
 @pytest.mark.parametrize("repetition_penalty", REPETITION_PENALTY_VALUES)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="This test for checking CUDA kernel"
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="This test for checking CUDA kernel")
 @torch.inference_mode()
 def test_apply_repetition_penalties(
     num_seqs: int,
@@ -59,12 +56,8 @@ def test_apply_repetition_penalties(
     logits_torch = logits.clone()
     logits_cuda = logits.clone()
 
-    apply_repetition_penalties_torch(
-        logits_torch, prompt_mask, output_mask, repetition_penalties
-    )
-    apply_repetition_penalties_cuda(
-        logits_cuda, prompt_mask, output_mask, repetition_penalties
-    )
+    apply_repetition_penalties_torch(logits_torch, prompt_mask, output_mask, repetition_penalties)
+    apply_repetition_penalties_cuda(logits_cuda, prompt_mask, output_mask, repetition_penalties)
 
     # Compare all outputs to reference
     torch.testing.assert_close(logits_torch, logits_cuda, rtol=1e-3, atol=1e-3)
@@ -76,9 +69,7 @@ def test_apply_repetition_penalties(
     )
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="This test for checking CUDA kernel"
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="This test for checking CUDA kernel")
 @torch.inference_mode()
 def test_apply_repetition_penalties_zero_seqs() -> None:
     """
@@ -110,12 +101,8 @@ def test_apply_repetition_penalties_zero_seqs() -> None:
     logits_torch = logits.clone()
     logits_cuda = logits.clone()
 
-    apply_repetition_penalties_torch(
-        logits_torch, prompt_mask, output_mask, repetition_penalties
-    )
-    apply_repetition_penalties_cuda(
-        logits_cuda, prompt_mask, output_mask, repetition_penalties
-    )
+    apply_repetition_penalties_torch(logits_torch, prompt_mask, output_mask, repetition_penalties)
+    apply_repetition_penalties_cuda(logits_cuda, prompt_mask, output_mask, repetition_penalties)
 
     # Compare all outputs to reference
     torch.testing.assert_close(logits_torch, logits_cuda, rtol=1e-3, atol=1e-3)

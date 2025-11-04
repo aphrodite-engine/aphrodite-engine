@@ -78,9 +78,7 @@ def test_minicpmv_lora(minicpmv_lora_files):
         assert EXPECTED_OUTPUT[i].startswith(output2[i])
 
 
-@pytest.mark.skipif(
-    current_platform.is_cuda_alike(), reason="Skipping to avoid redundant model tests"
-)
+@pytest.mark.skipif(current_platform.is_cuda_alike(), reason="Skipping to avoid redundant model tests")
 @pytest.mark.xfail(
     current_platform.is_rocm(),
     reason="MiniCPM-V dependency xformers incompatible with ROCm",
@@ -102,9 +100,7 @@ def test_minicpmv_tp4_wo_fully_sharded_loras(minicpmv_lora_files):
         assert EXPECTED_OUTPUT[i].startswith(output_tp[i])
 
 
-@pytest.mark.skipif(
-    current_platform.is_cuda_alike(), reason="Skipping to avoid redundant model tests"
-)
+@pytest.mark.skipif(current_platform.is_cuda_alike(), reason="Skipping to avoid redundant model tests")
 @pytest.mark.xfail(
     current_platform.is_rocm(),
     reason="MiniCPM-V dependency xformers incompatible with ROCm",

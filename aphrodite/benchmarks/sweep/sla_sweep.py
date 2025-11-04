@@ -97,10 +97,7 @@ class SLASweep(list["SLASweepItem"]):
     @classmethod
     def from_records(cls, records: list[dict[str, str]]):
         if not isinstance(records, list):
-            raise TypeError(
-                f"The SLA sweep should be a list of dictionaries, "
-                f"but found type: {type(records)}"
-            )
+            raise TypeError(f"The SLA sweep should be a list of dictionaries, but found type: {type(records)}")
 
         return cls(SLASweepItem.from_record(record) for record in records)
 
@@ -113,9 +110,7 @@ class SLASweepItem(dict[str, SLACriterionBase]):
         for metric_key, metric_value in record.items():
             for op_key in SLA_CRITERIA:
                 if metric_value.startswith(op_key):
-                    sla_criteria[metric_key] = SLA_CRITERIA[op_key](
-                        float(metric_value.removeprefix(op_key))
-                    )
+                    sla_criteria[metric_key] = SLA_CRITERIA[op_key](float(metric_value.removeprefix(op_key)))
                     break
             else:
                 raise ValueError(

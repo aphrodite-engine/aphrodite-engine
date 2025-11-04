@@ -454,10 +454,7 @@ async def test_streaming(client: OpenAI, model_name: str, background: bool):
                 print(f"{event.delta}", end="", flush=True)
             elif "response.code_interpreter_call_code.done" in event.type:
                 print(f"Code: {event.code}", end="", flush=True)
-            elif (
-                "response.output_item.added" in event.type
-                and event.item.type == "web_search_call"
-            ):
+            elif "response.output_item.added" in event.type and event.item.type == "web_search_call":
                 print(f"Web search: {event.item.action}", end="", flush=True)
             events.append(event)
 
@@ -710,9 +707,7 @@ async def test_system_message_with_tools(client: OpenAI, model_name: str):
 async def test_function_calling_full_history(client: OpenAI, model_name: str):
     tools = [GET_WEATHER_SCHEMA]
 
-    input_messages = [
-        {"role": "user", "content": "What's the weather like in Paris today?"}
-    ]
+    input_messages = [{"role": "user", "content": "What's the weather like in Paris today?"}]
 
     response = await client.responses.create(
         model=model_name,
@@ -782,11 +777,7 @@ async def test_function_calling_with_stream(client: OpenAI, model_name: str):
         elif event.type == "response.function_call_arguments.done":
             assert event.arguments == final_tool_calls_named[event.name].arguments
     for tool_call in final_tool_calls.values():
-        if (
-            tool_call
-            and tool_call.type == "function_call"
-            and tool_call.name == "get_weather"
-        ):
+        if tool_call and tool_call.type == "function_call" and tool_call.name == "get_weather":
             args = json.loads(tool_call.arguments)
             result = call_function(tool_call.name, args)
             input_list += [tool_call]
@@ -833,9 +824,7 @@ async def test_output_messages_enabled(client: OpenAI, model_name: str, server):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
-async def test_function_call_with_previous_input_messages(
-    client: OpenAI, model_name: str
-):
+async def test_function_call_with_previous_input_messages(client: OpenAI, model_name: str):
     """Test function calling using previous_input_messages
     for multi-turn conversation with a function call"""
 
@@ -949,6 +938,4 @@ async def test_function_call_with_previous_input_messages(
 
     # Verify the output makes sense - should contain information about the horoscope
     output_text = response_2.output_text.lower()
-    assert (
-        "aquarius" in output_text or "otter" in output_text or "tuesday" in output_text
-    )
+    assert "aquarius" in output_text or "otter" in output_text or "tuesday" in output_text

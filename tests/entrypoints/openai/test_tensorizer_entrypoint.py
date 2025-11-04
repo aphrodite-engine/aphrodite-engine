@@ -9,7 +9,10 @@ import torch.cuda
 
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.model_loader.tensorizer import (
-    TensorizerConfig, tensorize_aphrodite_model, tensorize_lora_adapter)
+    TensorizerConfig,
+    tensorize_aphrodite_model,
+    tensorize_lora_adapter,
+)
 
 from ...utils import RemoteOpenAIServer
 
@@ -95,6 +98,4 @@ async def test_single_completion(client: openai.AsyncOpenAI, model_name: str):
     assert len(completion.choices) == 1
     assert len(completion.choices[0].text) >= 5
     assert completion.choices[0].finish_reason == "length"
-    assert completion.usage == openai.types.CompletionUsage(
-        completion_tokens=5, prompt_tokens=6, total_tokens=11
-    )
+    assert completion.usage == openai.types.CompletionUsage(completion_tokens=5, prompt_tokens=6, total_tokens=11)

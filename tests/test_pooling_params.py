@@ -105,9 +105,7 @@ def test_classify(task):
 @pytest.mark.parametrize("pooling_type", ["ALL", "STEP"])
 def test_token_embed(pooling_type: str):
     task = "token_embed"
-    model_config = MockModelConfig(
-        pooler_config=PoolerConfig(pooling_type=pooling_type)
-    )
+    model_config = MockModelConfig(pooler_config=PoolerConfig(pooling_type=pooling_type))
 
     pooling_params = PoolingParams(normalize=None)
     pooling_params.verify(task=task, model_config=model_config)
@@ -131,9 +129,7 @@ def test_token_embed(pooling_type: str):
 @pytest.mark.parametrize("pooling_type", ["ALL", "STEP"])
 def test_token_classify(pooling_type: str):
     task = "token_classify"
-    model_config = MockModelConfig(
-        pooler_config=PoolerConfig(pooling_type=pooling_type)
-    )
+    model_config = MockModelConfig(pooler_config=PoolerConfig(pooling_type=pooling_type))
 
     pooling_params = PoolingParams(use_activation=None)
     pooling_params.verify(task=task, model_config=model_config)

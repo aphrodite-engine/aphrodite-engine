@@ -111,17 +111,13 @@ async def init_app(
     engine = (
         llm_engine
         if llm_engine is not None
-        else AsyncAphrodite.from_engine_args(
-            engine_args, usage_context=UsageContext.API_SERVER
-        )
+        else AsyncAphrodite.from_engine_args(engine_args, usage_context=UsageContext.API_SERVER)
     )
     app.state.engine_client = engine
     return app
 
 
-async def run_server(
-    args: Namespace, llm_engine: AsyncAphrodite | None = None, **uvicorn_kwargs: Any
-) -> None:
+async def run_server(args: Namespace, llm_engine: AsyncAphrodite | None = None, **uvicorn_kwargs: Any) -> None:
     logger.info("Aphrodite API server version %s", APHRODITE_VERSION)
     logger.info("args: %s", args)
 
@@ -154,9 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=parser.check_port, default=2242)
     parser.add_argument("--ssl-keyfile", type=str, default=None)
     parser.add_argument("--ssl-certfile", type=str, default=None)
-    parser.add_argument(
-        "--ssl-ca-certs", type=str, default=None, help="The CA certificates file"
-    )
+    parser.add_argument("--ssl-ca-certs", type=str, default=None, help="The CA certificates file")
     parser.add_argument(
         "--enable-ssl-refresh",
         action="store_true",

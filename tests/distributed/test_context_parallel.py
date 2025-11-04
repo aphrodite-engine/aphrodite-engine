@@ -72,9 +72,7 @@ class CPTestSettings:
             parallel_setups=parallel_setups,
             distributed_backends=["mp"],
             runner=runner,
-            test_options=CPTestOptions(
-                multi_node_only=multi_node_only, load_format=load_format
-            ),
+            test_options=CPTestOptions(multi_node_only=multi_node_only, load_format=load_format),
         )
 
     def iter_params(self, model_id: str):
@@ -139,10 +137,7 @@ def _compare_cp_with_tp(
     if num_gpus_available < tp_size * pp_size:
         pytest.skip(f"Need at least {tp_size} x {pp_size} GPUs")
     if APHRODITE_MULTI_NODE and distributed_backend == "mp":
-        pytest.skip(
-            "Skipping multi-node pipeline parallel test for "
-            "multiprocessing distributed backend"
-        )
+        pytest.skip("Skipping multi-node pipeline parallel test for multiprocessing distributed backend")
     if multi_node_only and not APHRODITE_MULTI_NODE:
         pytest.skip("Not in multi-node setting")
 

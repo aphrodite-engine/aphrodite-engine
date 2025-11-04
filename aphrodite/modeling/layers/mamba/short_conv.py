@@ -6,22 +6,16 @@ if TYPE_CHECKING:
 import torch
 
 from aphrodite.attention.backends.abstract import AttentionMetadata
-from aphrodite.config import (CacheConfig, ModelConfig,
-                              get_current_aphrodite_config)
+from aphrodite.config import CacheConfig, ModelConfig, get_current_aphrodite_config
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.modeling._custom_op import CustomOp
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.mamba.abstract import MambaBase
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
-from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
-    causal_conv1d_fn, causal_conv1d_update)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
+from aphrodite.modeling.layers.mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
 from aphrodite.utils.torch_utils import direct_register_custom_op
-from aphrodite.v1.attention.backends.short_conv_attn import (
-    ShortConvAttentionMetadata)
+from aphrodite.v1.attention.backends.short_conv_attn import ShortConvAttentionMetadata
 
 
 @CustomOp.register("short_conv")
@@ -120,9 +114,7 @@ class ShortConv(MambaBase, CustomOp):
 
         B, C, x = BCx.chunk(3, dim=-1)
 
-        conv_weights = self.conv.weight.view(
-            self.conv.weight.size(0), self.conv.weight.size(2)
-        )
+        conv_weights = self.conv.weight.view(self.conv.weight.size(0), self.conv.weight.size(2))
 
         if attn_metadata is None:
             # V1 profile run
@@ -162,11 +154,7 @@ class ShortConv(MambaBase, CustomOp):
             [num_decodes, num_prefills],
             dim=0,
         )
-        query_start_loc_p = (
-            attn_metadata.query_start_loc[-num_prefills - 1 :] - num_decodes
-            if has_prefill
-            else None
-        )
+        query_start_loc_p = attn_metadata.query_start_loc[-num_prefills - 1 :] - num_decodes if has_prefill else None
 
         conv_output_list = []
 
@@ -226,8 +214,7 @@ class ShortConv(MambaBase, CustomOp):
         return "short_conv"
 
     def get_attn_backend(self) -> type["AttentionBackend"]:
-        from aphrodite.v1.attention.backends.short_conv_attn import (
-            ShortConvAttentionBackend)
+        from aphrodite.v1.attention.backends.short_conv_attn import ShortConvAttentionBackend
 
         return ShortConvAttentionBackend
 

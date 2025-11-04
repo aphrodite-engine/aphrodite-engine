@@ -27,10 +27,7 @@ TEST_VIDEO_URLS = [
 
 @pytest.fixture(scope="module")
 def url_images(local_asset_server) -> dict[str, Image.Image]:
-    return {
-        image_url: local_asset_server.get_image_asset(image_url)
-        for image_url in TEST_IMAGE_ASSETS
-    }
+    return {image_url: local_asset_server.get_image_asset(image_url) for image_url in TEST_IMAGE_ASSETS}
 
 
 def get_supported_suffixes() -> tuple[str, ...]:
@@ -60,9 +57,7 @@ async def test_fetch_image_http(image_url: str):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("raw_image_url", TEST_IMAGE_ASSETS)
 @pytest.mark.parametrize("suffix", get_supported_suffixes())
-async def test_fetch_image_base64(
-    url_images: dict[str, Image.Image], raw_image_url: str, suffix: str
-):
+async def test_fetch_image_base64(url_images: dict[str, Image.Image], raw_image_url: str, suffix: str):
     connector = MediaConnector(
         # Domain restriction should not apply to data URLs.
         allowed_media_domains=[
@@ -117,28 +112,18 @@ async def test_fetch_image_local_files(image_url: str):
             icc_profile=origin_image.info.get("icc_profile"),
         )
 
-        image_async = await local_connector.fetch_image_async(
-            f"file://{temp_dir}/{os.path.basename(image_url)}"
-        )
-        image_sync = local_connector.fetch_image(
-            f"file://{temp_dir}/{os.path.basename(image_url)}"
-        )
+        image_async = await local_connector.fetch_image_async(f"file://{temp_dir}/{os.path.basename(image_url)}")
+        image_sync = local_connector.fetch_image(f"file://{temp_dir}/{os.path.basename(image_url)}")
         # Check that the images are equal
         assert not ImageChops.difference(image_sync, image_async).getbbox()
 
         with pytest.raises(ValueError, match="must be a subpath"):
-            await local_connector.fetch_image_async(
-                f"file://{temp_dir}/../{os.path.basename(image_url)}"
-            )
+            await local_connector.fetch_image_async(f"file://{temp_dir}/../{os.path.basename(image_url)}")
         with pytest.raises(RuntimeError, match="Cannot load local files"):
-            await connector.fetch_image_async(
-                f"file://{temp_dir}/../{os.path.basename(image_url)}"
-            )
+            await connector.fetch_image_async(f"file://{temp_dir}/../{os.path.basename(image_url)}")
 
         with pytest.raises(ValueError, match="must be a subpath"):
-            local_connector.fetch_image(
-                f"file://{temp_dir}/../{os.path.basename(image_url)}"
-            )
+            local_connector.fetch_image(f"file://{temp_dir}/../{os.path.basename(image_url)}")
         with pytest.raises(RuntimeError, match="Cannot load local files"):
             connector.fetch_image(f"file://{temp_dir}/../{os.path.basename(image_url)}")
 
@@ -160,9 +145,7 @@ async def test_fetch_image_local_files_with_space_in_name(image_url: str):
         )
 
         try:
-            image_async = await local_connector.fetch_image_async(
-                f"file://{temp_dir}/{filename}"
-            )
+            image_async = await local_connector.fetch_image_async(f"file://{temp_dir}/{filename}")
             image_sync = local_connector.fetch_image(f"file://{temp_dir}/{filename}")
         except FileNotFoundError as e:
             pytest.fail("Failed to fetch image with space in name: {}".format(e))

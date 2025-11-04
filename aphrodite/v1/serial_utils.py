@@ -16,14 +16,18 @@ from msgspec import msgpack
 
 from aphrodite import envs
 from aphrodite.logger import init_logger
-from aphrodite.multimodal.inputs import (BaseMultiModalField,
-                                         MultiModalBatchedField,
-                                         MultiModalFieldConfig,
-                                         MultiModalFieldElem,
-                                         MultiModalFlatField, MultiModalKwargs,
-                                         MultiModalKwargsItem,
-                                         MultiModalKwargsItems,
-                                         MultiModalSharedField, NestedTensors)
+from aphrodite.multimodal.inputs import (
+    BaseMultiModalField,
+    MultiModalBatchedField,
+    MultiModalFieldConfig,
+    MultiModalFieldElem,
+    MultiModalFlatField,
+    MultiModalKwargs,
+    MultiModalKwargsItem,
+    MultiModalKwargsItems,
+    MultiModalSharedField,
+    NestedTensors,
+)
 from aphrodite.v1.engine import UtilityResult
 from aphrodite.v1.utils import tensor_data
 
@@ -46,10 +50,7 @@ bytestr: TypeAlias = bytes | bytearray | memoryview | zmq.Frame
 
 
 def _log_insecure_serialization_warning():
-    logger.warning_once(
-        "Allowing insecure serialization using pickle due to "
-        "APHRODITE_ALLOW_INSECURE_SERIALIZATION=1"
-    )
+    logger.warning_once("Allowing insecure serialization using pickle due to APHRODITE_ALLOW_INSECURE_SERIALIZATION=1")
 
 
 def _typestr(val: Any) -> tuple[str, str] | None:
@@ -71,28 +72,20 @@ def _encode_type_info_recursive(obj: Any) -> Any:
     return _typestr(obj)
 
 
-def _decode_type_info_recursive(
-    type_info: Any, data: Any, convert_fn: Callable[[Sequence[str], Any], Any]
-) -> Any:
+def _decode_type_info_recursive(type_info: Any, data: Any, convert_fn: Callable[[Sequence[str], Any], Any]) -> Any:
     """Recursively decode type information for nested structures of
     lists/dicts."""
     if type_info is None:
         return data
     if isinstance(type_info, dict):
         assert isinstance(data, dict)
-        return {
-            k: _decode_type_info_recursive(type_info[k], data[k], convert_fn)
-            for k in type_info
-        }
+        return {k: _decode_type_info_recursive(type_info[k], data[k], convert_fn) for k in type_info}
     if isinstance(type_info, list) and (
         # Exclude serialized tensors/numpy arrays.
         len(type_info) != 2 or not isinstance(type_info[0], str)
     ):
         assert isinstance(data, list)
-        return [
-            _decode_type_info_recursive(ti, d, convert_fn)
-            for ti, d in zip(type_info, data)
-        ]
+        return [_decode_type_info_recursive(ti, d, convert_fn) for ti, d in zip(type_info, data)]
     return convert_fn(type_info, data)
 
 
@@ -149,10 +142,7 @@ class MsgpackEncoder:
 
         if isinstance(obj, slice):
             # We are assuming only int-based values will be used here.
-            return tuple(
-                int(v) if v is not None else None
-                for v in (obj.start, obj.stop, obj.step)
-            )
+            return tuple(int(v) if v is not None else None for v in (obj.start, obj.stop, obj.step))
 
         if isinstance(obj, MultiModalKwargsItem):
             return self._encode_mm_item(obj)
@@ -184,13 +174,9 @@ class MsgpackEncoder:
             # problems serializing methods.
             return msgpack.Ext(CUSTOM_TYPE_CLOUDPICKLE, cloudpickle.dumps(obj))
 
-        return msgpack.Ext(
-            CUSTOM_TYPE_PICKLE, pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-        )
+        return msgpack.Ext(CUSTOM_TYPE_PICKLE, pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
 
-    def _encode_ndarray(
-        self, obj: np.ndarray
-    ) -> tuple[str, tuple[int, ...], int | memoryview]:
+    def _encode_ndarray(self, obj: np.ndarray) -> tuple[str, tuple[int, ...], int | memoryview]:
         assert self.aux_buffers is not None
         # If the array is non-contiguous, we need to copy it first
         arr_data = obj.data if obj.flags.c_contiguous else obj.tobytes()
@@ -208,9 +194,7 @@ class MsgpackEncoder:
         # backing buffers that we've stashed in `aux_buffers`.
         return obj.dtype.str, obj.shape, data
 
-    def _encode_tensor(
-        self, obj: torch.Tensor
-    ) -> tuple[str, tuple[int, ...], int | memoryview]:
+    def _encode_tensor(self, obj: torch.Tensor) -> tuple[str, tuple[int, ...], int | memoryview]:
         assert self.aux_buffers is not None
         # view the tensor as a contiguous 1D array of bytes
         arr_data = tensor_data(obj)
@@ -225,10 +209,7 @@ class MsgpackEncoder:
         return dtype, obj.shape, data
 
     def _encode_mm_items(self, items: MultiModalKwargsItems) -> dict[str, Any]:
-        return {
-            modality: [self._encode_mm_item(item) for item in itemlist]
-            for modality, itemlist in items.items()
-        }
+        return {modality: [self._encode_mm_item(item) for item in itemlist] for modality, itemlist in items.items()}
 
     def _encode_mm_item(self, item: MultiModalKwargsItem) -> list[dict[str, Any]]:
         return [self._encode_mm_field_elem(elem) for elem in item.values()]
@@ -237,16 +218,12 @@ class MsgpackEncoder:
         return {
             "modality": elem.modality,
             "key": elem.key,
-            "data": (
-                None if elem.data is None else self._encode_nested_tensors(elem.data)
-            ),
+            "data": (None if elem.data is None else self._encode_nested_tensors(elem.data)),
             "field": self._encode_mm_field(elem.field),
         }
 
     def _encode_mm_kwargs(self, kw: MultiModalKwargs) -> dict[str, Any]:
-        return {
-            modality: self._encode_nested_tensors(data) for modality, data in kw.items()
-        }
+        return {modality: self._encode_nested_tensors(data) for modality, data in kw.items()}
 
     def _encode_nested_tensors(self, nt: NestedTensors) -> Any:
         if isinstance(nt, torch.Tensor):
@@ -277,9 +254,7 @@ class MsgpackDecoder:
 
     def __init__(self, t: Any | None = None):
         args = () if t is None else (t,)
-        self.decoder = msgpack.Decoder(
-            *args, ext_hook=self.ext_hook, dec_hook=self.dec_hook
-        )
+        self.decoder = msgpack.Decoder(*args, ext_hook=self.ext_hook, dec_hook=self.dec_hook)
         self.aux_buffers: Sequence[bytestr] = ()
         if envs.APHRODITE_ALLOW_INSECURE_SERIALIZATION:
             _log_insecure_serialization_warning()
@@ -317,14 +292,9 @@ class MsgpackDecoder:
         result_type, result = obj
         if result_type is not None:
             if not envs.APHRODITE_ALLOW_INSECURE_SERIALIZATION:
-                raise TypeError(
-                    "APHRODITE_ALLOW_INSECURE_SERIALIZATION must "
-                    "be set to use custom utility result types"
-                )
+                raise TypeError("APHRODITE_ALLOW_INSECURE_SERIALIZATION must be set to use custom utility result types")
             # Use recursive decoding to handle nested structures
-            result = _decode_type_info_recursive(
-                result_type, result, self._convert_result
-            )
+            result = _decode_type_info_recursive(result_type, result, self._convert_result)
         return UtilityResult(result)
 
     def _convert_result(self, result_type: Sequence[str], result: Any) -> Any:
@@ -360,16 +330,11 @@ class MsgpackDecoder:
 
     def _decode_mm_items(self, obj: dict[str, Any]) -> MultiModalKwargsItems:
         return MultiModalKwargsItems(
-            {
-                modality: [self._decode_mm_item(item) for item in itemlist]
-                for modality, itemlist in obj.items()
-            }
+            {modality: [self._decode_mm_item(item) for item in itemlist] for modality, itemlist in obj.items()}
         )
 
     def _decode_mm_item(self, obj: list[Any]) -> MultiModalKwargsItem:
-        return MultiModalKwargsItem.from_elems(
-            [self._decode_mm_field_elem(v) for v in obj]
-        )
+        return MultiModalKwargsItem.from_elems([self._decode_mm_field_elem(v) for v in obj])
 
     def _decode_mm_field_elem(self, obj: dict[str, Any]) -> MultiModalFieldElem:
         if obj["data"] is not None:
@@ -388,12 +353,7 @@ class MsgpackDecoder:
         return MultiModalFieldElem(**obj)
 
     def _decode_mm_kwargs(self, obj: dict[str, Any]) -> MultiModalKwargs:
-        return MultiModalKwargs(
-            {
-                modality: self._decode_nested_tensors(data)
-                for modality, data in obj.items()
-            }
-        )
+        return MultiModalKwargs({modality: self._decode_nested_tensors(data) for modality, data in obj.items()})
 
     def _decode_nested_tensors(self, obj: Any) -> NestedTensors:
         if isinstance(obj, (int, float)):
@@ -444,9 +404,7 @@ def run_method(
         try:
             func = getattr(obj, method)
         except AttributeError:
-            raise NotImplementedError(
-                f"Method {method!r} is not implemented."
-            ) from None
+            raise NotImplementedError(f"Method {method!r} is not implemented.") from None
     else:
         func = partial(method, obj)  # type: ignore
     return func(*args, **kwargs)

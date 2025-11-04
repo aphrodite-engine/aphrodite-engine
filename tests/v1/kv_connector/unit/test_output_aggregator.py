@@ -2,8 +2,7 @@ from concurrent.futures import Future
 
 import pytest
 
-from aphrodite.distributed.kv_transfer.kv_connector.utils import (
-    KVOutputAggregator)
+from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
 from aphrodite.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 
 pytestmark = pytest.mark.cpu_test
@@ -47,9 +46,7 @@ def test_aggregate_workers_output():
     assert aggregated.finished_recving is None
     assert not aggregated.invalid_block_ids
 
-    output1 = DummyModelRunnerOutput(
-        finished_sending={"req1"}, finished_recving={"req2"}
-    )
+    output1 = DummyModelRunnerOutput(finished_sending={"req1"}, finished_recving={"req2"})
     output2 = DummyModelRunnerOutput(invalid_block_ids={1})
 
     aggregated = aggregator.aggregate([output1, output2])
@@ -72,9 +69,7 @@ def test_aggregate_workers_output():
     assert aggregated.invalid_block_ids == {2}
 
     output1 = DummyModelRunnerOutput(invalid_block_ids={3, 4})
-    output2 = DummyModelRunnerOutput(
-        finished_recving={"req2"}, invalid_block_ids={4, 5}
-    )
+    output2 = DummyModelRunnerOutput(finished_recving={"req2"}, invalid_block_ids={4, 5})
 
     aggregated = aggregator.aggregate([output1, output2])
 
@@ -109,9 +104,7 @@ def test_async_aggregate_workers_output():
     future2 = Future()
     result_future = aggregator.async_aggregate([future1, future2])
 
-    output1 = DummyModelRunnerOutput(
-        finished_sending={"req1"}, finished_recving={"req2"}
-    )
+    output1 = DummyModelRunnerOutput(finished_sending={"req1"}, finished_recving={"req2"})
     output2 = DummyModelRunnerOutput(invalid_block_ids={1})
     future1.set_result(output1)
     future2.set_result(output2)
@@ -146,9 +139,7 @@ def test_async_aggregate_workers_output():
     result_future = aggregator.async_aggregate([future1, future2])
 
     output1 = DummyModelRunnerOutput(invalid_block_ids={3, 4})
-    output2 = DummyModelRunnerOutput(
-        finished_recving={"req2"}, invalid_block_ids={4, 5}
-    )
+    output2 = DummyModelRunnerOutput(finished_recving={"req2"}, invalid_block_ids={4, 5})
     future1.set_result(output1)
     future2.set_result(output2)
 
@@ -175,12 +166,8 @@ def test_aggregate_workers_output_with_expected_finished_count():
 
     # Workers discover and find that in this setup they only need to
     # collect from 2
-    output1 = DummyModelRunnerOutput(
-        finished_sending={"req1"}, expected_finished_count=2
-    )
-    output2 = DummyModelRunnerOutput(
-        finished_recving={"req2"}, expected_finished_count=2
-    )
+    output1 = DummyModelRunnerOutput(finished_sending={"req1"}, expected_finished_count=2)
+    output2 = DummyModelRunnerOutput(finished_recving={"req2"}, expected_finished_count=2)
     output3 = DummyModelRunnerOutput(finished_recving={"req2"})
     # Req2 only needs 2 acks
     aggregated = aggregator.aggregate([output1, output2, output3])

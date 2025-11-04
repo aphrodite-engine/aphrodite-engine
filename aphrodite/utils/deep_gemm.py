@@ -24,8 +24,7 @@ def is_deep_gemm_supported() -> bool:
     Currently, only Hopper and Blackwell GPUs are supported.
     """
     is_supported_arch = current_platform.is_cuda() and (
-        current_platform.is_device_capability(90)
-        or current_platform.is_device_capability(100)
+        current_platform.is_device_capability(90) or current_platform.is_device_capability(100)
     )
     return envs.APHRODITE_USE_DEEP_GEMM and has_deep_gemm() and is_supported_arch
 
@@ -36,9 +35,7 @@ def is_deep_gemm_e8m0_used() -> bool:
     "E8M0 scale on a Hopper or Blackwell-class GPU.
     """
     if not is_deep_gemm_supported():
-        logger.debug_once(
-            "DeepGEMM E8M0 disabled: DeepGEMM not supported on this system."
-        )
+        logger.debug_once("DeepGEMM E8M0 disabled: DeepGEMM not supported on this system.")
         return False
 
     _lazy_init()
@@ -102,9 +99,7 @@ def _lazy_init() -> None:
     # Set up deep_gemm cache path
     DEEP_GEMM_JIT_CACHE_ENV_NAME = "DG_JIT_CACHE_DIR"
     if not os.environ.get(DEEP_GEMM_JIT_CACHE_ENV_NAME, None):
-        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(
-            envs.APHRODITE_CACHE_ROOT, "deep_gemm"
-        )
+        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(envs.APHRODITE_CACHE_ROOT, "deep_gemm")
 
     _dg = importlib.import_module("deep_gemm")
 
@@ -113,15 +108,9 @@ def _lazy_init() -> None:
     _grouped_masked_impl = getattr(_dg, "fp8_m_grouped_gemm_nt_masked", None)
     _fp8_mqa_logits_impl = getattr(_dg, "fp8_mqa_logits", None)
     _fp8_paged_mqa_logits_impl = getattr(_dg, "fp8_paged_mqa_logits", None)
-    _get_paged_mqa_logits_metadata_impl = getattr(
-        _dg, "get_paged_mqa_logits_metadata", None
-    )
-    _get_mn_major_tma_aligned_tensor_impl = getattr(
-        _dg, "get_mn_major_tma_aligned_tensor", None
-    )
-    _get_mk_alignment_for_contiguous_layout_impl = getattr(
-        _dg, "get_mk_alignment_for_contiguous_layout", None
-    )
+    _get_paged_mqa_logits_metadata_impl = getattr(_dg, "get_paged_mqa_logits_metadata", None)
+    _get_mn_major_tma_aligned_tensor_impl = getattr(_dg, "get_mn_major_tma_aligned_tensor", None)
+    _get_mk_alignment_for_contiguous_layout_impl = getattr(_dg, "get_mk_alignment_for_contiguous_layout", None)
 
 
 def get_num_sms() -> int:
@@ -163,18 +152,14 @@ def m_grouped_fp8_gemm_nt_contiguous(*args, **kwargs):
     _lazy_init()
     if _grouped_impl is None:
         return _missing(*args, **kwargs)
-    return _grouped_impl(
-        *args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs
-    )
+    return _grouped_impl(*args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs)
 
 
 def fp8_m_grouped_gemm_nt_masked(*args, **kwargs):
     _lazy_init()
     if _grouped_masked_impl is None:
         return _missing(*args, **kwargs)
-    return _grouped_masked_impl(
-        *args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs
-    )
+    return _grouped_masked_impl(*args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs)
 
 
 def fp8_mqa_logits(
@@ -207,9 +192,7 @@ def fp8_mqa_logits(
     return _fp8_mqa_logits_impl(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke)
 
 
-def get_paged_mqa_logits_metadata(
-    context_lens: torch.Tensor, block_size: int, num_sms: int
-) -> torch.Tensor:
+def get_paged_mqa_logits_metadata(context_lens: torch.Tensor, block_size: int, num_sms: int) -> torch.Tensor:
     """Build scheduling metadata for paged MQA logits.
 
     Args:
@@ -292,18 +275,14 @@ def per_block_cast_to_fp8(
     assert x.dim() == 2
     m, n = x.shape
     block_m, block_n = block_size
-    x_padded = torch.zeros(
-        (_align(m, block_m), _align(n, block_n)), dtype=x.dtype, device=x.device
-    )
+    x_padded = torch.zeros((_align(m, block_m), _align(n, block_n)), dtype=x.dtype, device=x.device)
     x_padded[:m, :n] = x
     x_view = x_padded.view(-1, block_m, x_padded.size(1) // block_n, block_n)
     x_amax = x_view.abs().float().amax(dim=(1, 3), keepdim=True).clamp(1e-4)
     sf = x_amax / 448.0
     sf = _ceil_to_ue8m0(sf) if use_ue8m0 else sf
     x_scaled = (x_view * (1.0 / sf)).to(torch.float8_e4m3fn)
-    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), sf.view(
-        x_view.size(0), x_view.size(2)
-    )
+    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), sf.view(x_view.size(0), x_view.size(2))
 
 
 def calc_diff(x: torch.Tensor, y: torch.Tensor):

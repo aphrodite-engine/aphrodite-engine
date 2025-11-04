@@ -1,9 +1,6 @@
-def validate_kv_sharing_target(
-    current_layer_name, target_layer_name, static_forward_context
-):
+def validate_kv_sharing_target(current_layer_name, target_layer_name, static_forward_context):
     error_msg = (
-        f"Specified KV sharing target layer for {current_layer_name} "
-        f"is not valid: target layer {target_layer_name} "
+        f"Specified KV sharing target layer for {current_layer_name} is not valid: target layer {target_layer_name} "
     )
 
     if current_layer_name == target_layer_name:
@@ -26,6 +23,4 @@ def validate_kv_sharing_target(
     target_layer_attn_type = static_forward_context[target_layer_name].attn_type
     expected = static_forward_context[current_layer_name].attn_type
     if target_layer_attn_type != expected:
-        raise ValueError(
-            error_msg + f"must be the same type as the current layer ({expected})."
-        )
+        raise ValueError(error_msg + f"must be the same type as the current layer ({expected}).")

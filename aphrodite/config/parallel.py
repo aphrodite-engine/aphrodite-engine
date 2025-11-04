@@ -11,8 +11,7 @@ from typing_extensions import Self
 import aphrodite.envs as envs
 from aphrodite.config.utils import config
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.platforms import current_platform
 from aphrodite.utils.network_utils import get_open_ports_list
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
@@ -184,9 +183,7 @@ class ParallelConfig:
     placement_group: PlacementGroup | None = None
     """ray distributed model workers placement group."""
 
-    distributed_executor_backend: (
-        str | DistributedExecutorBackend | type[Executor] | None
-    ) = None
+    distributed_executor_backend: str | DistributedExecutorBackend | type[Executor] | None = None
     """Backend to use for distributed model
     workers, either "ray" or "mp" (multiprocessing). If the product
     of pipeline_parallel_size and tensor_parallel_size is less than
@@ -258,16 +255,11 @@ class ParallelConfig:
             )
 
         if self.data_parallel_size <= 1 and self.data_parallel_external_lb:
-            raise ValueError(
-                "data_parallel_external_lb can only be set when data_parallel_size > 1"
-            )
+            raise ValueError("data_parallel_external_lb can only be set when data_parallel_size > 1")
 
         if self.enable_eplb:
             if not current_platform.is_cuda():
-                raise ValueError(
-                    "Expert parallelism load balancing is only supported on "
-                    "CUDA devices now."
-                )
+                raise ValueError("Expert parallelism load balancing is only supported on CUDA devices now.")
             if not self.enable_expert_parallel:
                 raise ValueError("enable_expert_parallel must be True to use EPLB.")
             if self.tensor_parallel_size * self.data_parallel_size <= 1:
@@ -320,8 +312,7 @@ class ParallelConfig:
         # with a fresh port whenever this specific error is observed.
         from torch.distributed import DistNetworkError
 
-        from aphrodite.distributed.utils import (
-            stateless_init_torch_distributed_process_group)
+        from aphrodite.distributed.utils import stateless_init_torch_distributed_process_group
 
         max_retries = 5
         last_exc: Exception | None = None
@@ -474,9 +465,7 @@ class ParallelConfig:
             if self.distributed_executor_backend == "external_launcher":
                 # For external launcher,
                 # we need to set the data parallel rank automatically
-                self.data_parallel_rank = int(os.environ["RANK"]) // (
-                    self.world_size // self.data_parallel_size
-                )
+                self.data_parallel_rank = int(os.environ["RANK"]) // (self.world_size // self.data_parallel_size)
                 logger.info(
                     "Set data_parallel_rank to %d automatically.",
                     self.data_parallel_rank,
@@ -512,20 +501,14 @@ class ParallelConfig:
             ray_found = ray_utils.ray_is_available()
             if current_platform.is_tpu() and envs.APHRODITE_XLA_USE_SPMD:
                 backend = "uni"
-            elif (
-                current_platform.is_cuda()
-                and cuda_device_count_stateless() < self.world_size
-            ):
+            elif current_platform.is_cuda() and cuda_device_count_stateless() < self.world_size:
                 gpu_count = cuda_device_count_stateless()
                 raise ValueError(
                     f"Tensor parallel size ({self.world_size}) cannot be "
                     f"larger than the number of available GPUs ({gpu_count})."
                 )
             elif self.data_parallel_backend == "ray":
-                logger.info(
-                    "Using ray distributed inference because "
-                    "data_parallel_backend is ray"
-                )
+                logger.info("Using ray distributed inference because data_parallel_backend is ray")
                 backend = "ray"
             elif ray_found:
                 if self.placement_group:
@@ -545,10 +528,7 @@ class ParallelConfig:
             self.distributed_executor_backend = "uni"
 
         if self.max_parallel_loading_workers is not None:
-            logger.warning(
-                "max_parallel_loading_workers is currently "
-                "not supported and will be ignored."
-            )
+            logger.warning("max_parallel_loading_workers is currently not supported and will be ignored.")
 
     @property
     def use_ray(self) -> bool:
@@ -587,13 +567,8 @@ class ParallelConfig:
 
         if not current_platform.use_custom_allreduce():
             self.disable_custom_all_reduce = True
-            logger.debug(
-                "Disabled the custom all-reduce kernel because it is not "
-                "supported on current platform."
-            )
+            logger.debug("Disabled the custom all-reduce kernel because it is not supported on current platform.")
         if self.ray_workers_use_nsight and not self.use_ray:
-            raise ValueError(
-                "Unable to use nsight profiling unless workers run with Ray."
-            )
+            raise ValueError("Unable to use nsight profiling unless workers run with Ray.")
 
         return self

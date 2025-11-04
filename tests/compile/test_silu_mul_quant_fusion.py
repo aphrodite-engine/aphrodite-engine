@@ -5,21 +5,21 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
-from aphrodite.compilation.activation_quant_fusion import (
-    FUSED_OPS, SILU_MUL_OP, ActivationQuantFusionPass)
+from aphrodite.compilation.activation_quant_fusion import FUSED_OPS, SILU_MUL_OP, ActivationQuantFusionPass
 from aphrodite.compilation.fusion import QUANT_OPS
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, PassConfig,
-                              set_current_aphrodite_config)
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationConfig,
+    CompilationMode,
+    PassConfig,
+    set_current_aphrodite_config,
+)
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import (GroupShape,
-                                                      kFp8StaticTensorSym,
-                                                      kNvfp4Quant)
-from aphrodite.quantization.utils.w8a8_utils import (
-    Fp8LinearOp, maybe_create_device_identity)
+from aphrodite.quantization.utils.quant_utils import GroupShape, kFp8StaticTensorSym, kNvfp4Quant
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, maybe_create_device_identity
 from tests.kernels.quantization.nvfp4_utils import quant_nvfp4_tensor
 
 from ..utils import override_cutlass_fp8_supported
@@ -58,11 +58,7 @@ class TestSiluMulFp8QuantModel(torch.nn.Module):
     def ops_in_model_before(self):
         return [
             SILU_MUL_OP if self.enable_silu_mul_custom_op else torch.ops.aten.mul,
-            (
-                QUANT_OPS[kFp8StaticTensorSym]
-                if self.enable_quant_fp8_custom_op
-                else torch.ops.aten.reciprocal
-            ),
+            (QUANT_OPS[kFp8StaticTensorSym] if self.enable_quant_fp8_custom_op else torch.ops.aten.reciprocal),
         ]
 
     def ops_in_model_after(self):
@@ -72,8 +68,7 @@ class TestSiluMulFp8QuantModel(torch.nn.Module):
 class TestSiluMulNvfp4QuantModel(torch.nn.Module):
     def __init__(self, hidden_size: int, x: torch.Tensor, **kwargs):
         super().__init__()
-        from aphrodite.compilation.activation_quant_fusion import (
-            silu_and_mul_nvfp4_quant_supported)
+        from aphrodite.compilation.activation_quant_fusion import silu_and_mul_nvfp4_quant_supported
 
         assert silu_and_mul_nvfp4_quant_supported
 
@@ -123,9 +118,7 @@ class TestSiluMulNvfp4QuantModel(torch.nn.Module):
 )
 # cuda_force_torch used to test torch code path on platforms that
 # cutlass_fp8_supported() == True.
-@pytest.mark.skipif(
-    envs.APHRODITE_TARGET_DEVICE not in ["cuda", "rocm"], reason="Only test on CUDA and ROCm"
-)
+@pytest.mark.skipif(envs.APHRODITE_TARGET_DEVICE not in ["cuda", "rocm"], reason="Only test on CUDA and ROCm")
 def test_fusion_silu_and_mul_quant(
     num_tokens: int,
     hidden_size: int,
@@ -163,9 +156,7 @@ def test_fusion_silu_and_mul_quant(
 
         passes = [NoOpEliminationPass(config), fusion_pass, PostCleanupPass(config)]
         backend = TestBackend(*passes)
-        model = model_class(
-            hidden_size=hidden_size, cuda_force_torch=cuda_force_torch, x=x
-        )
+        model = model_class(hidden_size=hidden_size, cuda_force_torch=cuda_force_torch, x=x)
 
         # First dimension dynamic
         torch._dynamo.mark_dynamic(x, 0)
@@ -181,9 +172,7 @@ def test_fusion_silu_and_mul_quant(
         elif model_class == TestSiluMulNvfp4QuantModel:
             atol, rtol = 1e-1, 1e-1
 
-        torch.testing.assert_close(
-            result[0].to(dtype=dtype), result2[0].to(dtype=dtype), atol=atol, rtol=rtol
-        )
+        torch.testing.assert_close(result[0].to(dtype=dtype), result2[0].to(dtype=dtype), atol=atol, rtol=rtol)
 
         assert fusion_pass.matched_count == 1
 

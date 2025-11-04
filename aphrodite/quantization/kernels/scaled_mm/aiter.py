@@ -67,8 +67,7 @@ class AiterScaledMMLinearKernel(CutlassScaledMMLinearKernel):
         except Exception:
             return (
                 False,
-                "AiterScaledMMLinearKernel requires `aiter` which is not "
-                + "installed on ROCm.",
+                "AiterScaledMMLinearKernel requires `aiter` which is not " + "installed on ROCm.",
             )
         # Check if rocm_aiter_gemm_w8a8_scaled_mm is enabled
         if not (envs.APHRODITE_ROCM_USE_AITER_LINEAR and envs.APHRODITE_ROCM_USE_AITER):
@@ -112,14 +111,10 @@ class AiterScaledMMLinearKernel(CutlassScaledMMLinearKernel):
         # * dynamic, i_s is None and x_s computed from x.
         # * static, i_s is scalar and x_s is i_s.
         symmetric = azp_adj is None
-        assert symmetric, (
-            "AiterScaledMMLinearKernel only supports symmetric quantization."
-        )
+        assert symmetric, "AiterScaledMMLinearKernel only supports symmetric quantization."
         x_q, x_s, x_zp = ops.scaled_int8_quant(x, i_s, i_zp, symmetric=symmetric)
 
-        assert x_zp is None, (
-            "AiterScaledMMLinearKernel only supports symmetric quantization."
-        )
+        assert x_zp is None, "AiterScaledMMLinearKernel only supports symmetric quantization."
         out_dtype = x.dtype
 
         assert w_q.shape[0] % 16 == 0 and w_q.shape[1] % 16 == 0
@@ -140,19 +135,13 @@ class AiterScaledMMLinearKernel(CutlassScaledMMLinearKernel):
         # For now, it only supports:
         # - per-tensor-per-tensor a8w8 scaled GEMM, and
         # - per-token-per-channel a8w8 scaled GEMM
-        assert (per_tensor_scale_a and per_tensor_scale_b) or (
-            per_token_scale_a and per_channel_scale_b
-        ), (
-            "Currently only support per-tensor-per-tensor GEMM "
-            + " and per-token-per-channel GEMM through AITER"
-            " w8a8 scaled gemm. `AiterScaledMMLinearKernel` "
-            + "does not support AITER block scaled GEMM."
+        assert (per_tensor_scale_a and per_tensor_scale_b) or (per_token_scale_a and per_channel_scale_b), (
+            "Currently only support per-tensor-per-tensor GEMM " + " and per-token-per-channel GEMM through AITER"
+            " w8a8 scaled gemm. `AiterScaledMMLinearKernel` " + "does not support AITER block scaled GEMM."
         )
 
         # gemm_a8w8_CK(a, b, scale_a, scale_b, bias) expects
         # a to be [M, K]
         # b to be [N, K]
         # CutlassScaledMMLinearKernel prepare weight `w_q` in [K, N] format
-        return torch.ops.aphrodite.rocm_aiter_gemm_w8a8(
-            x_q, w_q.t(), x_s, w_s, bias, out_dtype
-        )
+        return torch.ops.aphrodite.rocm_aiter_gemm_w8a8(x_q, w_q.t(), x_s, w_s, bias, out_dtype)

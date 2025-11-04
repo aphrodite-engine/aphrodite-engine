@@ -6,9 +6,7 @@ from aphrodite.attention import AttentionBackend
 from aphrodite.logger import init_logger
 from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.kv_offload.mediums import CPULoadStoreSpec, GPULoadStoreSpec
-from aphrodite.v1.kv_offload.worker.worker import (OffloadingHandler,
-                                                   TransferResult,
-                                                   TransferSpec)
+from aphrodite.v1.kv_offload.worker.worker import OffloadingHandler, TransferResult, TransferSpec
 
 logger = init_logger(__name__)
 
@@ -133,10 +131,7 @@ class CpuGpuOffloadingHandler(OffloadingHandler):
         dst_sub_blocks_to_skip = -src_blocks.size % dst_block_size_factor
         src_sub_block_count = src_blocks.size * src_block_size_factor
 
-        assert (
-            src_sub_block_count
-            == dst_blocks.size * dst_block_size_factor - dst_sub_blocks_to_skip
-        )
+        assert src_sub_block_count == dst_blocks.size * dst_block_size_factor - dst_sub_blocks_to_skip
 
         src_to_dst = np.empty((src_sub_block_count, 2), dtype=np.int64)
         expand_block_ids(src_blocks, src_block_size_factor, src_to_dst[:, 0])
@@ -150,9 +145,7 @@ class CpuGpuOffloadingHandler(OffloadingHandler):
 
         event = self.events_pool.pop() if self.events_pool else torch.cuda.Event()
         with torch.cuda.stream(stream):
-            for src_tensor, dst_tensor, kv_dim in zip(
-                src_tensors, dst_tensors, self.kv_dim_before_num_blocks
-            ):
+            for src_tensor, dst_tensor, kv_dim in zip(src_tensors, dst_tensors, self.kv_dim_before_num_blocks):
                 if kv_dim:
                     src_key_cache = src_tensor[0]
                     dst_key_cache = dst_tensor[0]

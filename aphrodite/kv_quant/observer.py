@@ -1,5 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from typing import Dict, Union
+from typing import Union
 
 import torch
 from torch import nn
@@ -8,13 +8,9 @@ from torch import nn
 class GlobalAvailMixin:
     """Mixin class to make instances globally available."""
 
-    _instances: Dict[str, Dict[Union[str, nn.Module], 'GlobalAvailMixin']] = {
-        'default': {}
-    }
+    _instances: dict[str, dict[str | nn.Module, "GlobalAvailMixin"]] = {"default": {}}
 
-    def global_available(self,
-                         key: Union[str, nn.Module] = 'default',
-                         group: str = 'default') -> None:
+    def global_available(self, key: str | nn.Module = "default", group: str = "default") -> None:
         """Make the instance globally available.
         Args:
             key (Union[str, nn.Module], optional): Key to save the instance.
@@ -25,10 +21,9 @@ class GlobalAvailMixin:
         self._save_instance(self, key, group)
 
     @classmethod
-    def _save_instance(cls,
-                       instance: 'GlobalAvailMixin',
-                       key: Union[str, nn.Module] = 'default',
-                       group: str = 'default') -> None:
+    def _save_instance(
+        cls, instance: "GlobalAvailMixin", key: str | nn.Module = "default", group: str = "default"
+    ) -> None:
         """Save the instance.
         Args:
             instance (GlobalAvailMixin): Instance to save.
@@ -44,9 +39,7 @@ class GlobalAvailMixin:
         cls._instances[group][key] = instance
 
     @classmethod
-    def find(cls,
-             key: Union[str, nn.Module] = 'default',
-             group: str = 'default') -> Union[None, 'GlobalAvailMixin']:
+    def find(cls, key: str | nn.Module = "default", group: str = "default") -> Union[None, "GlobalAvailMixin"]:
         """Find an instance by its key and group.
         Args:
             key (Union[str, nn.Module], optional): Key of the instance.
@@ -60,9 +53,7 @@ class GlobalAvailMixin:
         return cls._instances.get(group, {}).get(key)
 
     @classmethod
-    def find_group(
-            cls,
-            group: str) -> Dict[Union[str, nn.Module], 'GlobalAvailMixin']:
+    def find_group(cls, group: str) -> dict[str | nn.Module, "GlobalAvailMixin"]:
         """Find all instances in a group.
         Args:
             group (str): Group of the instances.
@@ -73,8 +64,7 @@ class GlobalAvailMixin:
         return cls._instances.get(group, {})
 
     @classmethod
-    def instances(
-            cls) -> Dict[str, Dict[Union[str, nn.Module], 'GlobalAvailMixin']]:
+    def instances(cls) -> dict[str, dict[str | nn.Module, "GlobalAvailMixin"]]:
         """Get all instances."""
         return cls._instances
 
@@ -91,15 +81,9 @@ class KVCacheObserver(GlobalAvailMixin):
         """
         self.num_head = num_head
         self.head_dim = head_dim
-        self.max_val = torch.full((num_head, head_dim),
-                                  -torch.inf,
-                                  dtype=torch.float16)
-        self.min_val = torch.full((num_head, head_dim),
-                                  torch.inf,
-                                  dtype=torch.float16)
-        self.absmax_val = torch.full((num_head, head_dim),
-                                     0,
-                                     dtype=torch.float16)
+        self.max_val = torch.full((num_head, head_dim), -torch.inf, dtype=torch.float16)
+        self.min_val = torch.full((num_head, head_dim), torch.inf, dtype=torch.float16)
+        self.absmax_val = torch.full((num_head, head_dim), 0, dtype=torch.float16)
 
     @torch.no_grad()
     def observe(self, x: torch.Tensor) -> None:
@@ -115,8 +99,9 @@ class KVCacheObserver(GlobalAvailMixin):
             x = x.transpose(1, 2)
         elif x.size(2) != self.num_head or x.size(3) != self.head_dim:
             raise RuntimeError(
-                'Unexpected dimensions for x, expected (bs, num_head, '
-                'seqlen, head_dim) or (bs, seqlen, num_head, head_dim)')
+                "Unexpected dimensions for x, expected (bs, num_head, "
+                "seqlen, head_dim) or (bs, seqlen, num_head, head_dim)"
+            )
 
         cur_max = x.flatten(0, 1).max(0)[0].cpu()
         cur_min = x.flatten(0, 1).min(0)[0].cpu()
@@ -139,11 +124,11 @@ class ActivationObserver(GlobalAvailMixin):
             dim : Dimension of the tensor
         """
         self.dim = dim
-        self.max_val = torch.full((dim, ), -torch.inf, dtype=torch.float16)
-        self.min_val = torch.full((dim, ), torch.inf, dtype=torch.float16)
-        self.absmax_val = torch.full((dim, ), 0, dtype=torch.float16)
-        self.absmean_val = torch.full((dim, ), 0, dtype=torch.float16)
-        self.mean_val = torch.full((dim, ), 0, dtype=torch.float16)
+        self.max_val = torch.full((dim,), -torch.inf, dtype=torch.float16)
+        self.min_val = torch.full((dim,), torch.inf, dtype=torch.float16)
+        self.absmax_val = torch.full((dim,), 0, dtype=torch.float16)
+        self.absmean_val = torch.full((dim,), 0, dtype=torch.float16)
+        self.mean_val = torch.full((dim,), 0, dtype=torch.float16)
         self.num_batches_tracked = 0
 
     @torch.no_grad()
@@ -170,12 +155,8 @@ class ActivationObserver(GlobalAvailMixin):
 
         # Update mean and absmean value with accumulated sum divided
         # by total number of batches
-        self.mean_val = (
-            (self.mean_val * self.num_batches_tracked + cur_mean) /
-            (self.num_batches_tracked + 1))
-        self.absmean_val = (
-            (self.absmean_val * self.num_batches_tracked + cur_absmean) /
-            (self.num_batches_tracked + 1))
+        self.mean_val = (self.mean_val * self.num_batches_tracked + cur_mean) / (self.num_batches_tracked + 1)
+        self.absmean_val = (self.absmean_val * self.num_batches_tracked + cur_absmean) / (self.num_batches_tracked + 1)
 
         # Increment the count of batches tracked
         self.num_batches_tracked += 1

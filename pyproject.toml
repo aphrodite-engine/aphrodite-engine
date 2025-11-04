@@ -103,6 +103,8 @@ ignore = [
     "B007",
     # f-string format
     "UP032",
+    # ternary op
+    "SIM108",
 ]
 
 [tool.ruff.format]

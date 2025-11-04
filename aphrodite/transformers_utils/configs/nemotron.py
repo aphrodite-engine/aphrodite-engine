@@ -144,9 +144,7 @@ class NemotronConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         head_dim = head_dim or kwargs.get("kv_channels")
-        self.head_dim = (
-            head_dim if head_dim is not None else (hidden_size // num_attention_heads)
-        )
+        self.head_dim = head_dim if head_dim is not None else (hidden_size // num_attention_heads)
 
         # for backward compatibility
         if num_key_value_heads is None:
@@ -160,11 +158,7 @@ class NemotronConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         # for backward compatibility
-        partial_rotary_factor = (
-            kwargs.get("rope_percent")
-            or kwargs.get("rope_percentage")
-            or partial_rotary_factor
-        )
+        partial_rotary_factor = kwargs.get("rope_percent") or kwargs.get("rope_percentage") or partial_rotary_factor
         self.partial_rotary_factor = partial_rotary_factor
         self._rope_scaling_validation()
         self.attention_bias = attention_bias
@@ -188,22 +182,13 @@ class NemotronConfig(PretrainedConfig):
 
         if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
             raise ValueError(
-                "`rope_scaling` must be a dictionary with two fields, "
-                f"`type` and `factor`, got {self.rope_scaling}"
+                f"`rope_scaling` must be a dictionary with two fields, `type` and `factor`, got {self.rope_scaling}"
             )
         rope_scaling_type = self.rope_scaling.get("type", None)
         rope_scaling_factor = self.rope_scaling.get("factor", None)
         if rope_scaling_type is None or rope_scaling_type not in ["linear", "dynamic"]:
             raise ValueError(
-                "`rope_scaling`'s type field must be one of ['linear', "
-                f"'dynamic'], got {rope_scaling_type}"
+                f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
             )
-        if (
-            rope_scaling_factor is None
-            or not isinstance(rope_scaling_factor, float)
-            or rope_scaling_factor <= 1.0
-        ):
-            raise ValueError(
-                "`rope_scaling`'s factor field must be a float > 1, got "
-                f"{rope_scaling_factor}"
-            )
+        if rope_scaling_factor is None or not isinstance(rope_scaling_factor, float) or rope_scaling_factor <= 1.0:
+            raise ValueError(f"`rope_scaling`'s factor field must be a float > 1, got {rope_scaling_factor}")

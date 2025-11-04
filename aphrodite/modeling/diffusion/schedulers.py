@@ -2,8 +2,6 @@
 Diffusion schedulers for Stable Diffusion inference.
 """
 
-from typing import Optional, Union
-
 import torch
 from diffusers import DDIMScheduler, PNDMScheduler
 from diffusers.schedulers.scheduling_utils import SchedulerOutput
@@ -58,11 +56,7 @@ class AphroditeSchedulerWrapper:
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_path: str,
-        scheduler_name: str = "ddim",
-        num_inference_steps: int = 50,
-        **kwargs
+        cls, model_path: str, scheduler_name: str = "ddim", num_inference_steps: int = 50, **kwargs
     ) -> "AphroditeSchedulerWrapper":
         """
         Load a scheduler from a pretrained Stable Diffusion model.
@@ -82,16 +76,11 @@ class AphroditeSchedulerWrapper:
 
         # Load from pretrained
         if wrapper.scheduler_name == "ddim":
-            wrapper.scheduler = DDIMScheduler.from_pretrained(
-                model_path, subfolder="scheduler", **kwargs
-            )
+            wrapper.scheduler = DDIMScheduler.from_pretrained(model_path, subfolder="scheduler", **kwargs)
         elif wrapper.scheduler_name == "pndm":
-            wrapper.scheduler = PNDMScheduler.from_pretrained(
-                model_path, subfolder="scheduler", **kwargs
-            )
+            wrapper.scheduler = PNDMScheduler.from_pretrained(model_path, subfolder="scheduler", **kwargs)
         else:
-            raise ValueError(
-                f"Unsupported scheduler: {wrapper.scheduler_name}")
+            raise ValueError(f"Unsupported scheduler: {wrapper.scheduler_name}")
 
         # Set inference timesteps
         wrapper.scheduler.set_timesteps(wrapper.num_inference_steps)
@@ -103,11 +92,7 @@ class AphroditeSchedulerWrapper:
         """Get the timesteps for the diffusion process."""
         return self.scheduler.timesteps
 
-    def scale_model_input(
-        self,
-        sample: torch.Tensor,
-        timestep: Union[int, torch.Tensor]
-    ) -> torch.Tensor:
+    def scale_model_input(self, sample: torch.Tensor, timestep: int | torch.Tensor) -> torch.Tensor:
         """
         Scale the input sample for the UNet model.
 
@@ -123,11 +108,11 @@ class AphroditeSchedulerWrapper:
     def step(
         self,
         model_output: torch.Tensor,
-        timestep: Union[int, torch.Tensor],
+        timestep: int | torch.Tensor,
         sample: torch.Tensor,
         eta: float = 0.0,
-        generator: Optional[torch.Generator] = None,
-        **kwargs
+        generator: torch.Generator | None = None,
+        **kwargs,
     ) -> SchedulerOutput:
         """
         Perform one denoising step.
@@ -144,12 +129,7 @@ class AphroditeSchedulerWrapper:
             SchedulerOutput with prev_sample and pred_original_sample
         """
         # Handle different scheduler signatures
-        step_kwargs = {
-            "model_output": model_output,
-            "timestep": timestep,
-            "sample": sample,
-            **kwargs
-        }
+        step_kwargs = {"model_output": model_output, "timestep": timestep, "sample": sample, **kwargs}
 
         # Add scheduler-specific parameters
         if self.scheduler_name == "ddim":
@@ -207,14 +187,14 @@ class DiffusionPipeline:
         self,
         clip_model,  # CLIP text encoder
         unet_model,  # UNet denoising model
-        vae_model,   # VAE decoder
+        vae_model,  # VAE decoder
         prompt_embeds: torch.Tensor,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
         height: int = 512,
         width: int = 512,
         num_images_per_prompt: int = 1,
-        generator: Optional[torch.Generator] = None,
-        latents: Optional[torch.Tensor] = None,
+        generator: torch.Generator | None = None,
+        latents: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Run the diffusion pipeline.
@@ -265,27 +245,22 @@ class DiffusionPipeline:
         # Denoising loop
         for i, timestep in enumerate(self.scheduler.timesteps):
             # Scale the input for the UNet
-            latent_model_input = self.scheduler.scale_model_input(
-                latents, timestep)
+            latent_model_input = self.scheduler.scale_model_input(latents, timestep)
 
             # Predict noise
             with torch.no_grad():
                 noise_pred = unet_model(
                     sample=latent_model_input,
-                    timestep=timestep.unsqueeze(0).repeat(
-                        latent_model_input.shape[0]),
+                    timestep=timestep.unsqueeze(0).repeat(latent_model_input.shape[0]),
                     encoder_hidden_states=text_embeddings,
                 )
 
             # Classifier-free guidance
-            if (self.guidance_scale > 1.0 and
-                    negative_prompt_embeds is not None):
+            if self.guidance_scale > 1.0 and negative_prompt_embeds is not None:
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                noise_pred = noise_pred_uncond + self.guidance_scale * (
-                    noise_pred_text - noise_pred_uncond
-                )
+                noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
                 # Remove duplicate latents
-                latents = latents[:batch_size * num_images_per_prompt]
+                latents = latents[: batch_size * num_images_per_prompt]
 
             # Compute previous sample
             scheduler_output = self.scheduler.step(
@@ -304,10 +279,7 @@ class DiffusionPipeline:
 
 
 def create_scheduler(
-    scheduler_type: str = "ddim",
-    num_inference_steps: int = 50,
-    model_path: Optional[str] = None,
-    **kwargs
+    scheduler_type: str = "ddim", num_inference_steps: int = 50, model_path: str | None = None, **kwargs
 ) -> AphroditeSchedulerWrapper:
     """
     Factory function to create a scheduler.
@@ -322,8 +294,6 @@ def create_scheduler(
         AphroditeSchedulerWrapper instance
     """
     if model_path:
-        return AphroditeSchedulerWrapper.from_pretrained(
-            model_path, scheduler_type, num_inference_steps, **kwargs
-        )
+        return AphroditeSchedulerWrapper.from_pretrained(model_path, scheduler_type, num_inference_steps, **kwargs)
     else:
         return AphroditeSchedulerWrapper(scheduler_type, num_inference_steps)

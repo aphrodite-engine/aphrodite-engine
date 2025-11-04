@@ -3,13 +3,9 @@ from collections.abc import Callable
 import torch
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          ModelWeightParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
-from aphrodite.quantization.kernels.mixed_precision import (
-    MPLinearLayerConfig, choose_mp_linear_kernel)
+from aphrodite.modeling.parameter import ChannelQuantScaleParameter, GroupQuantScaleParameter, ModelWeightParameter
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
+from aphrodite.quantization.kernels.mixed_precision import MPLinearLayerConfig, choose_mp_linear_kernel
 from aphrodite.scalar_type import scalar_types
 
 logger = init_logger(__name__)
@@ -39,8 +35,7 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
 
         if num_bits not in W4A8_SUPPORTED_TYPES_MAP:
             raise ValueError(
-                f"Unsupported num_bits = {num_bits}."
-                f"Supported num_bits = {W4A8_SUPPORTED_TYPES_MAP.keys()}"
+                f"Unsupported num_bits = {num_bits}.Supported num_bits = {W4A8_SUPPORTED_TYPES_MAP.keys()}"
             )
         self.quant_type = W4A8_SUPPORTED_TYPES_MAP[num_bits]
 
@@ -64,16 +59,13 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
 
         # Compute effective group_size
         if self.group_size == -1:
-            effective_group_size = (
-                input_size_per_partition if row_parallel else input_size
-            )
+            effective_group_size = input_size_per_partition if row_parallel else input_size
         else:
             effective_group_size = self.group_size
 
         # Ensure group_size divides input_size_per_partition
         assert input_size_per_partition % effective_group_size == 0, (
-            f"input_size_per_partition {input_size_per_partition}"
-            f" not divisible by group_size {effective_group_size}"
+            f"input_size_per_partition {input_size_per_partition} not divisible by group_size {effective_group_size}"
         )
 
         # Determine scale partitioning
@@ -102,9 +94,7 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
         scales_and_zp_size = input_size_per_partition // effective_group_size
 
         weight = ModelWeightParameter(
-            data=torch.empty(
-                output_size_per_partition, input_size_per_partition, dtype=torch.int8
-            ),
+            data=torch.empty(output_size_per_partition, input_size_per_partition, dtype=torch.int8),
             input_dim=1,
             output_dim=0,
             weight_loader=weight_loader,
@@ -113,15 +103,11 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
 
         weight_scale_args = {
             "weight_loader": weight_loader,
-            "data": torch.empty(
-                output_size_per_partition, scales_and_zp_size, dtype=params_dtype
-            ),
+            "data": torch.empty(output_size_per_partition, scales_and_zp_size, dtype=params_dtype),
         }
 
         if partition_scales:
-            weight_scale = GroupQuantScaleParameter(
-                output_dim=0, input_dim=1, **weight_scale_args
-            )
+            weight_scale = GroupQuantScaleParameter(output_dim=0, input_dim=1, **weight_scale_args)
         else:
             weight_scale = ChannelQuantScaleParameter(output_dim=0, **weight_scale_args)
 
@@ -139,7 +125,5 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         self.kernel.process_weights_after_loading(layer)
 
-    def apply_weights(
-        self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None
-    ) -> torch.Tensor:
+    def apply_weights(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None) -> torch.Tensor:
         return self.kernel.apply_weights(layer, x, bias)

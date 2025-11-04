@@ -39,12 +39,7 @@ class KVCacheBlocks:
 
     def __add__(self, other: "KVCacheBlocks") -> "KVCacheBlocks":
         """Adds two KVCacheBlocks instances."""
-        return KVCacheBlocks(
-            tuple(
-                list(itertools.chain(blk1, blk2))
-                for blk1, blk2 in zip(self.blocks, other.blocks)
-            )
-        )
+        return KVCacheBlocks(tuple(list(itertools.chain(blk1, blk2)) for blk1, blk2 in zip(self.blocks, other.blocks)))
 
     @overload
     def get_block_ids(
@@ -108,18 +103,10 @@ class KVCacheManager:
 
         self.block_size: int | None = None
         if self.enable_caching:
-            assert (
-                len(
-                    set(
-                        g.kv_cache_spec.block_size
-                        for g in kv_cache_config.kv_cache_groups
-                    )
-                )
-                == 1
-            ), "Only one block size is supported for now"
-            self.block_size = kv_cache_config.kv_cache_groups[
-                0
-            ].kv_cache_spec.block_size
+            assert len(set(g.kv_cache_spec.block_size for g in kv_cache_config.kv_cache_groups)) == 1, (
+                "Only one block size is supported for now"
+            )
+            self.block_size = kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size
 
             if dcp_world_size > 1:
                 assert len(kv_cache_config.kv_cache_groups) == 1
@@ -145,9 +132,7 @@ class KVCacheManager:
         # overhead.
         #
         # We use nested tuples to ensure the empty KVCacheBlocks is immutable.
-        self.empty_kv_cache_blocks = KVCacheBlocks(
-            tuple(() for _ in range(self.num_kv_cache_groups))
-        )
+        self.empty_kv_cache_blocks = KVCacheBlocks(tuple(() for _ in range(self.num_kv_cache_groups)))
 
     @property
     def usage(self) -> float:
@@ -185,8 +170,7 @@ class KVCacheManager:
         # Prefix caching is disabled or
         # When the request requires prompt logprobs, we skip prefix caching.
         if not self.enable_caching or (
-            request.sampling_params is not None
-            and request.sampling_params.prompt_logprobs is not None
+            request.sampling_params is not None and request.sampling_params.prompt_logprobs is not None
         ):
             return self.empty_kv_cache_blocks, 0
 
@@ -197,10 +181,8 @@ class KVCacheManager:
         # num_computed_tokens to be block-size aligned. Removing this limitation
         # could slightly improve performance in the future.
         max_cache_hit_length = request.num_tokens - 1
-        computed_blocks, num_new_computed_tokens = (
-            self.coordinator.find_longest_cache_hit(
-                request.block_hashes, max_cache_hit_length
-            )
+        computed_blocks, num_new_computed_tokens = self.coordinator.find_longest_cache_hit(
+            request.block_hashes, max_cache_hit_length
         )
 
         if self.log_stats:
@@ -272,9 +254,7 @@ class KVCacheManager:
         # insufficient free blocks.
         # Should call this function before allocating new blocks to reduce
         # the number of evicted blocks.
-        self.coordinator.remove_skipped_blocks(
-            request.request_id, request.num_computed_tokens
-        )
+        self.coordinator.remove_skipped_blocks(request.request_id, request.num_computed_tokens)
 
         # The number of computed tokens is the number of computed tokens plus
         # the new prefix caching hits
@@ -299,19 +279,13 @@ class KVCacheManager:
         if self.enable_caching:
             self.block_pool.touch(new_computed_block_list)
         else:
-            assert not any(new_computed_block_list), (
-                "Computed blocks should be empty when prefix caching is disabled"
-            )
+            assert not any(new_computed_block_list), "Computed blocks should be empty when prefix caching is disabled"
 
         # Append the new computed blocks to the request blocks until now to
         # avoid the case where the new blocks cannot be allocated.
-        self.coordinator.save_new_computed_blocks(
-            request.request_id, new_computed_block_list
-        )
+        self.coordinator.save_new_computed_blocks(request.request_id, new_computed_block_list)
 
-        new_blocks = self.coordinator.allocate_new_blocks(
-            request.request_id, num_tokens_need_slot, num_encoder_tokens
-        )
+        new_blocks = self.coordinator.allocate_new_blocks(request.request_id, num_tokens_need_slot, num_encoder_tokens)
 
         # P/D: delay caching blocks if we have to recv from
         # remote. Update state for locally cached blocks.
@@ -322,9 +296,7 @@ class KVCacheManager:
         # num_new_tokens, but must exclude "non-committable" tokens (e.g.,
         # draft tokens that could be rejected). Therefore, we cap the number
         # at `request.num_tokens`, ensuring only "finalized" tokens are cached.
-        num_tokens_to_cache = min(
-            num_computed_tokens + num_new_tokens, request.num_tokens
-        )
+        num_tokens_to_cache = min(num_computed_tokens + num_new_tokens, request.num_tokens)
         self.coordinator.cache_blocks(request, num_tokens_to_cache)
 
         return self.create_kv_cache_blocks(new_blocks)
@@ -410,8 +382,6 @@ class KVCacheManager:
         if self.enable_caching:
             self.coordinator.cache_blocks(request, num_computed_tokens)
 
-    def create_kv_cache_blocks(
-        self, blocks: tuple[list[KVCacheBlock], ...]
-    ) -> KVCacheBlocks:
+    def create_kv_cache_blocks(self, blocks: tuple[list[KVCacheBlock], ...]) -> KVCacheBlocks:
         # Only create new KVCacheBlocks for non-empty blocks
         return KVCacheBlocks(blocks) if any(blocks) else self.empty_kv_cache_blocks

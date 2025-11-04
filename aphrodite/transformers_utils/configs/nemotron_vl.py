@@ -31,10 +31,7 @@ class Nemotron_Nano_VL_Config(PretrainedConfig):
         super().__init__(**kwargs)
 
         if vision_config is not None:
-            assert (
-                "auto_map" in vision_config
-                and "AutoConfig" in vision_config["auto_map"]
-            )
+            assert "auto_map" in vision_config and "AutoConfig" in vision_config["auto_map"]
             vision_auto_config = get_class_from_dynamic_module(
                 *vision_config["auto_map"]["AutoConfig"].split("--")[::-1]
             )

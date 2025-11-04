@@ -15,24 +15,27 @@ from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA,
-                         SupportsMambaPrefixCaching, SupportsPP)
-from .utils import (PPMissingLayer, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .interfaces import HasInnerState, IsHybrid, SupportsLoRA, SupportsMambaPrefixCaching, SupportsPP
+from .utils import (
+    PPMissingLayer,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class FalconH1MLP(nn.Module):
@@ -59,10 +62,7 @@ class FalconH1MLP(nn.Module):
         self.intermediate_size = config.intermediate_size
         self.gate_multiplier, self.down_multiplier = config.mlp_multipliers
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -87,11 +87,7 @@ class FalconH1SSMDecoderLayer(nn.Module):
         self.config = config
         self.tp_size = get_tensor_model_parallel_world_size()
 
-        self.d_ssm = (
-            int(config.mamba_expand * config.hidden_size)
-            if config.mamba_d_ssm is None
-            else config.mamba_d_ssm
-        )
+        self.d_ssm = int(config.mamba_expand * config.hidden_size) if config.mamba_d_ssm is None else config.mamba_d_ssm
 
         self.mamba = MambaMixer2(
             hidden_size=config.hidden_size,
@@ -136,23 +132,16 @@ class FalconH1SSMDecoderLayer(nn.Module):
             - S:         SSM state size per group
             - All indices are divided by tp_size to support tensor parallelism
         """
-        vector_shape = (
-            2 * self.d_ssm + 2 * self.groups_time_state_size + self.config.mamba_n_heads
-        ) // self.tp_size
+        vector_shape = (2 * self.d_ssm + 2 * self.groups_time_state_size + self.config.mamba_n_heads) // self.tp_size
         mup_vector = torch.ones(1, vector_shape)
         # Z vector 0 -> d_ssm
         mup_vector[:, : self.d_ssm // self.tp_size] *= self.zxbcdt_multipliers[0]
         # X vector d_ssm -> 2 * d_ssm
-        mup_vector[
-            :, (self.d_ssm // self.tp_size) : (2 * self.d_ssm // self.tp_size)
-        ] *= self.zxbcdt_multipliers[1]
+        mup_vector[:, (self.d_ssm // self.tp_size) : (2 * self.d_ssm // self.tp_size)] *= self.zxbcdt_multipliers[1]
         # B vector 2 * d_ssm -> 2 * d_ssm + (n_group * d_state)
         mup_vector[
             :,
-            (2 * self.d_ssm) // self.tp_size : (
-                2 * self.d_ssm + self.groups_time_state_size
-            )
-            // self.tp_size,
+            (2 * self.d_ssm) // self.tp_size : (2 * self.d_ssm + self.groups_time_state_size) // self.tp_size,
         ] *= self.zxbcdt_multipliers[2]
         # C vector 2 * d_ssm + (n_group * d_state)
         # -> 2 * d_ssm + 2 * (n_group * d_state)
@@ -215,9 +204,7 @@ class FalconH1AttentionDecoderLayer(nn.Module):
             assert tp_size % self.total_num_kv_heads == 0
         self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
         self.head_dim = (
-            config.hidden_size // self.total_num_heads
-            if getattr(config, "head_dim", None) is None
-            else config.head_dim
+            config.hidden_size // self.total_num_heads if getattr(config, "head_dim", None) is None else config.head_dim
         )
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
@@ -381,9 +368,7 @@ class FalconH1ParallelHybrid(nn.Module):
         # Sum the outputs from both branches.
         # We assume both branches produce outputs of the same
         # dimensionality (config.hidden_size).
-        hidden_states = (attn_hidden * self.attn_out_multiplier) + (
-            ssm_hidden * self.ssm_out_multiplier
-        )
+        hidden_states = (attn_hidden * self.attn_out_multiplier) + (ssm_hidden * self.ssm_out_multiplier)
         hidden_states = hidden_states + residual
 
         # feed-forward
@@ -406,11 +391,7 @@ class FalconH1Model(nn.Module):
         lora_config = aphrodite_config.lora_config
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
         if get_pp_group().is_first_rank:
@@ -461,9 +442,7 @@ class FalconH1Model(nn.Module):
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds * self.embedding_multiplier
             else:
-                hidden_states = (
-                    self.get_input_embeddings(input_ids) * self.embedding_multiplier
-                )
+                hidden_states = self.get_input_embeddings(input_ids) * self.embedding_multiplier
         else:
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
@@ -559,9 +538,7 @@ class FalconH1ForCausalLM(
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = FalconH1Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = FalconH1Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.tie_word_embeddings = config.tie_word_embeddings
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
@@ -593,9 +570,7 @@ class FalconH1ForCausalLM(
         else:
             self.lm_head = PPMissingLayer()
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)

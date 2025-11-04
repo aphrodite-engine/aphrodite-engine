@@ -62,9 +62,7 @@ class PPTestSettings:
             ],
             distributed_backends=["mp", "ray"],
             runner=runner,
-            test_options=PPTestOptions(
-                multi_node_only=multi_node_only, load_format=load_format
-            ),
+            test_options=PPTestOptions(multi_node_only=multi_node_only, load_format=load_format),
         )
 
     @staticmethod
@@ -82,9 +80,7 @@ class PPTestSettings:
             ],
             distributed_backends=["mp"],
             runner=runner,
-            test_options=PPTestOptions(
-                multi_node_only=multi_node_only, load_format=load_format
-            ),
+            test_options=PPTestOptions(multi_node_only=multi_node_only, load_format=load_format),
         )
 
     def iter_params(self, model_id: str):
@@ -147,9 +143,7 @@ TEXT_GENERATION_MODELS = {
     "adept/persimmon-8b-chat": PPTestSettings.fast(),
     "microsoft/phi-2": PPTestSettings.fast(),
     "microsoft/Phi-3-small-8k-instruct": PPTestSettings.fast(),
-    "microsoft/Phi-3.5-MoE-instruct": PPTestSettings.detailed(
-        multi_node_only=True, load_format="dummy"
-    ),
+    "microsoft/Phi-3.5-MoE-instruct": PPTestSettings.detailed(multi_node_only=True, load_format="dummy"),
     "Qwen/Qwen-7B-Chat": PPTestSettings.fast(),
     "Qwen/Qwen2.5-0.5B-Instruct": PPTestSettings.fast(),
     "Qwen/Qwen1.5-MoE-A2.7B-Chat": PPTestSettings.fast(),
@@ -168,9 +162,7 @@ EMBEDDING_MODELS = {  # type: ignore[var-annotated]
     # [Text-only]
     "intfloat/e5-mistral-7b-instruct": PPTestSettings.fast(runner="pooling"),
     "BAAI/bge-multilingual-gemma2": PPTestSettings.fast(runner="pooling"),
-    "Qwen/Qwen2.5-Math-RM-72B": PPTestSettings.fast(
-        load_format="dummy", runner="pooling"
-    ),
+    "Qwen/Qwen2.5-Math-RM-72B": PPTestSettings.fast(load_format="dummy", runner="pooling"),
 }
 
 MULTIMODAL_MODELS = {
@@ -269,10 +261,7 @@ def _compare_tp(
     if num_gpus_available < tp_size * pp_size:
         pytest.skip(f"Need at least {tp_size} x {pp_size} GPUs")
     if APHRODITE_MULTI_NODE and distributed_backend == "mp":
-        pytest.skip(
-            "Skipping multi-node pipeline parallel test for "
-            "multiprocessing distributed backend"
-        )
+        pytest.skip("Skipping multi-node pipeline parallel test for multiprocessing distributed backend")
     if multi_node_only and not APHRODITE_MULTI_NODE:
         pytest.skip("Not in multi-node setting")
 

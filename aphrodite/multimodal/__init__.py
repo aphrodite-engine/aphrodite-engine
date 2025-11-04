@@ -1,8 +1,15 @@
 from .hasher import MultiModalHasher
-from .inputs import (BatchedTensorInputs, ModalityData, MultiModalDataBuiltins,
-                     MultiModalDataDict, MultiModalKwargs,
-                     MultiModalKwargsItems, MultiModalPlaceholderDict,
-                     MultiModalUUIDDict, NestedTensors)
+from .inputs import (
+    BatchedTensorInputs,
+    ModalityData,
+    MultiModalDataBuiltins,
+    MultiModalDataDict,
+    MultiModalKwargs,
+    MultiModalKwargsItems,
+    MultiModalPlaceholderDict,
+    MultiModalUUIDDict,
+    NestedTensors,
+)
 from .registry import MultiModalRegistry
 
 MULTIMODAL_REGISTRY = MultiModalRegistry()

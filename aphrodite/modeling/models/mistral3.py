@@ -4,8 +4,7 @@ from typing import Annotated, Final, Literal, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
-from transformers import (BatchFeature, Mistral3Config, PixtralVisionConfig,
-                          PretrainedConfig)
+from transformers import BatchFeature, Mistral3Config, PixtralVisionConfig, PretrainedConfig
 from transformers.models.pixtral import PixtralProcessor
 
 from aphrodite.common.sequence import IntermediateTensors
@@ -13,30 +12,27 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import BaseMultiModalProcessorCache
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             InputProcessingContext,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    InputProcessingContext,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
 from .pixtral import PixtralHFEncoderInfo, PixtralHFVisionModel
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
 from .vision import get_vision_encoder_info
 
 
@@ -64,9 +60,7 @@ class Mistral3PatchMerger(nn.Module):
     Learned merging of spatial_merge_size ** 2 patches
     """
 
-    def __init__(
-        self, vision_hidden_size: int, spatial_merge_size: int, patch_size: int
-    ):
+    def __init__(self, vision_hidden_size: int, spatial_merge_size: int, patch_size: int):
         super().__init__()
 
         self.vision_hidden_size = vision_hidden_size
@@ -78,21 +72,16 @@ class Mistral3PatchMerger(nn.Module):
             bias=False,
         )
 
-    def forward(
-        self, image_features: torch.Tensor, image_sizes: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, image_features: torch.Tensor, image_sizes: torch.Tensor) -> torch.Tensor:
         image_sizes = [
-            (image_size[0] // self.patch_size, image_size[1] // self.patch_size)
-            for image_size in image_sizes
+            (image_size[0] // self.patch_size, image_size[1] // self.patch_size) for image_size in image_sizes
         ]
 
         tokens_per_image = [h * w for h, w in image_sizes]
         d = image_features.shape[-1]
 
         permuted_tensor = []
-        for image_index, image_tokens in enumerate(
-            image_features.split(tokens_per_image)
-        ):
+        for image_index, image_tokens in enumerate(image_features.split(tokens_per_image)):
             # Reshape image_tokens into a 2D grid
             h, w = image_sizes[image_index]
             image_grid = image_tokens.view(h, w, d).permute(2, 0, 1).unsqueeze(0)
@@ -146,9 +135,7 @@ class Mistral3MultiModalProjector(nn.Module):
             prefix=f"{prefix}.linear_2",
         )
 
-    def forward(
-        self, image_features: torch.Tensor, image_sizes: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, image_features: torch.Tensor, image_sizes: torch.Tensor) -> torch.Tensor:
         image_features = self.norm(image_features)
         image_features = self.patch_merger(image_features, image_sizes)
         hidden_states, _ = self.linear_1(image_features)
@@ -261,9 +248,7 @@ class Mistral3MultiModalProcessor(BaseMultiModalProcessor[Mistral3ProcessingInfo
             image_sizes = processed_outputs["image_sizes"]
             assert len(pixel_values) == len(image_sizes)
 
-            processed_outputs["pixel_values"] = [
-                p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)
-            ]
+            processed_outputs["pixel_values"] = [p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)]
 
         return processed_outputs
 
@@ -355,9 +340,7 @@ def _get_num_hidden_layers(hf_config: LlavaLikeConfig) -> int:
     # If we have multiple feature layers, initialize up to the deepest one
     elif isinstance(feature_layers, (list, tuple)):
         return max(_get_layer_index(idx, num_hidden_layers) for idx in feature_layers)
-    raise TypeError(
-        f"vision_layer_feature type: {type(feature_layers)} is not supported"
-    )
+    raise TypeError(f"vision_layer_feature type: {type(feature_layers)} is not supported")
 
 
 def _get_layer_index(feature_layer_index: int, num_hidden_layers: int) -> int:
@@ -402,9 +385,7 @@ def init_vision_tower_for_llava(
     info=_build_mistral3_info,
     dummy_inputs=Mistral3DummyInputsBuilder,
 )
-class Mistral3ForConditionalGeneration(
-    nn.Module, SupportsLoRA, SupportsMultiModal, SupportsPP
-):
+class Mistral3ForConditionalGeneration(nn.Module, SupportsLoRA, SupportsMultiModal, SupportsPP):
     merge_by_field_config = True
 
     packed_modules_mapping = {
@@ -441,15 +422,9 @@ class Mistral3ForConditionalGeneration(
 
         # NOTE: These are special cases for Pixtral-12B in the HF-format
         # https://huggingface.co/mistral-community/pixtral-12b/blob/main/config.json  # noqa
-        if (
-            config.text_config.architectures is None
-            and config.text_config.model_type == "mistral"
-        ):
+        if config.text_config.architectures is None and config.text_config.model_type == "mistral":
             config.text_config.architectures = ["MistralForCausalLM"]
-        if (
-            config.projector_hidden_act is None
-            and config.vision_config.hidden_act == "gelu"
-        ):
+        if config.projector_hidden_act is None and config.vision_config.hidden_act == "gelu":
             config.projector_hidden_act = "gelu"
 
         # TODO: Optionally initializes this for supporting embeddings.
@@ -480,13 +455,9 @@ class Mistral3ForConditionalGeneration(
             prefix=maybe_prefix(prefix, "language_model"),
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> Mistral3ImagePixelInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> Mistral3ImagePixelInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -505,9 +476,7 @@ class Mistral3ForConditionalGeneration(
         if image_input["type"] == "image_embeds":
             return image_input["data"]
 
-        image_sizes = [
-            (img.shape[-2], img.shape[-1]) for img in image_input["pixel_values"]
-        ]
+        image_sizes = [(img.shape[-2], img.shape[-1]) for img in image_input["pixel_values"]]
 
         image_features = self.vision_tower(image_input["pixel_values"])
 
@@ -515,13 +484,10 @@ class Mistral3ForConditionalGeneration(
             return self.multi_modal_projector(image_features, image_sizes)
 
         feature_sizes = [
-            image_feature.shape[0] // self.config.spatial_merge_size**2
-            for image_feature in image_features
+            image_feature.shape[0] // self.config.spatial_merge_size**2 for image_feature in image_features
         ]
 
-        image_embeds = self.multi_modal_projector(
-            torch.cat(image_features), image_sizes
-        )
+        image_embeds = self.multi_modal_projector(torch.cat(image_features), image_sizes)
         if len(feature_sizes) > 1:
             image_embeds = torch.split(image_embeds, feature_sizes)
         else:

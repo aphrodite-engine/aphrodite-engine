@@ -9,10 +9,11 @@ import torch
 
 # Assuming these are imported from your module
 from aphrodite.distributed.device_communicators.shm_object_storage import (
-    MsgpackSerde, SingleWriterShmObjectStorage, SingleWriterShmRingBuffer)
-from aphrodite.multimodal.inputs import (MultiModalFieldElem,
-                                         MultiModalKwargsItem,
-                                         MultiModalSharedField)
+    MsgpackSerde,
+    SingleWriterShmObjectStorage,
+    SingleWriterShmRingBuffer,
+)
+from aphrodite.multimodal.inputs import MultiModalFieldElem, MultiModalKwargsItem, MultiModalSharedField
 
 
 def _dummy_elem(modality: str, key: str, size: int):
@@ -25,9 +26,7 @@ def _dummy_elem(modality: str, key: str, size: int):
 
 
 def _dummy_item(modality: str, size_by_key: dict[str, int]):
-    return MultiModalKwargsItem.from_elems(
-        [_dummy_elem(modality, key, size) for key, size in size_by_key.items()]
-    )
+    return MultiModalKwargsItem.from_elems([_dummy_elem(modality, key, size) for key, size in size_by_key.items()])
 
 
 class TestSingleWriterShmObjectStorage(unittest.TestCase):
@@ -292,9 +291,7 @@ def run_multiprocess_example():
         # initialize lock for reader processes
         handle.reader_lock = Lock()
         for i in range(storage.n_readers):
-            p = multiprocessing.Process(
-                target=reader_process, args=(i, handle, stored_items)
-            )
+            p = multiprocessing.Process(target=reader_process, args=(i, handle, stored_items))
             processes.append(p)
             p.start()
 

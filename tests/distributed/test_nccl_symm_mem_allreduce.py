@@ -8,15 +8,10 @@ import torch.multiprocessing as mp
 
 import aphrodite.envs as envs
 from aphrodite.distributed import cleanup_dist_env_and_memory
-from aphrodite.distributed.device_communicators.cuda_communicator import (
-    CudaCommunicator)
-from aphrodite.distributed.device_communicators.pynccl import (
-    register_nccl_symmetric_ops)
-from aphrodite.distributed.device_communicators.pynccl_allocator import (
-    get_nccl_mem_pool, is_symmetric_memory_enabled)
-from aphrodite.distributed.parallel_state import (get_tp_group,
-                                                  init_distributed_environment,
-                                                  initialize_model_parallel)
+from aphrodite.distributed.device_communicators.cuda_communicator import CudaCommunicator
+from aphrodite.distributed.device_communicators.pynccl import register_nccl_symmetric_ops
+from aphrodite.distributed.device_communicators.pynccl_allocator import get_nccl_mem_pool, is_symmetric_memory_enabled
+from aphrodite.distributed.parallel_state import get_tp_group, init_distributed_environment, initialize_model_parallel
 from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import update_environment_variables
 
@@ -48,14 +43,10 @@ def nccl_symm_mem_allreduce_worker(local_rank: int, world_size: int):
         init_distributed_environment()
         initialize_model_parallel(tensor_model_parallel_size=world_size)
 
-        cuda_communicator = typing.cast(
-            CudaCommunicator, get_tp_group().device_communicator
-        )
+        cuda_communicator = typing.cast(CudaCommunicator, get_tp_group().device_communicator)
         pynccl_comm = cuda_communicator.pynccl_comm
         if get_nccl_mem_pool() is None:
-            pytest.skip(
-                "NCCL allocator compilation failed (probably missing NCCL headers)."
-            )
+            pytest.skip("NCCL allocator compilation failed (probably missing NCCL headers).")
         if not is_symmetric_memory_enabled():
             pytest.skip("NCCL symmetric memory allreduce is disabled.")
 

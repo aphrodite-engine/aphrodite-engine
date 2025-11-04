@@ -17,8 +17,7 @@ import zmq
 
 from aphrodite import envs
 from aphrodite.config import AphroditeConfig, ParallelConfig
-from aphrodite.distributed import (
-    stateless_destroy_torch_distributed_process_group)
+from aphrodite.distributed import stateless_destroy_torch_distributed_process_group
 from aphrodite.envs import enable_envs_cache
 from aphrodite.logger import init_logger
 from aphrodite.logging_utils.dump_input import dump_engine_exception
@@ -26,26 +25,32 @@ from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import engine_receiver_cache_from_config
 from aphrodite.tasks import POOLING_TASKS, SupportedTask
-from aphrodite.transformers_utils.config import (
-    maybe_register_config_serialize_by_value)
+from aphrodite.transformers_utils.config import maybe_register_config_serialize_by_value
 from aphrodite.utils.gc_utils import maybe_attach_gc_debug_callback
 from aphrodite.utils.hashing import get_hash_fn_by_name
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.utils.network_utils import make_zmq_socket
 from aphrodite.utils.system_utils import decorate_logs, set_process_title
 from aphrodite.v1.core.kv_cache_utils import (
-    BlockHash, generate_scheduler_kv_cache_config, get_kv_cache_configs,
-    get_request_block_hasher, init_none_hash)
+    BlockHash,
+    generate_scheduler_kv_cache_config,
+    get_kv_cache_configs,
+    get_request_block_hasher,
+    init_none_hash,
+)
 from aphrodite.v1.core.sched.interface import SchedulerInterface
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.core.sched.scheduler import Scheduler as V1Scheduler
-from aphrodite.v1.engine import (EngineCoreOutputs, EngineCoreRequest,
-                                 EngineCoreRequestType,
-                                 ReconfigureDistributedRequest,
-                                 ReconfigureRankType, UtilityOutput,
-                                 UtilityResult)
-from aphrodite.v1.engine.utils import (EngineHandshakeMetadata,
-                                       EngineZmqAddresses, get_device_indices)
+from aphrodite.v1.engine import (
+    EngineCoreOutputs,
+    EngineCoreRequest,
+    EngineCoreRequestType,
+    ReconfigureDistributedRequest,
+    ReconfigureRankType,
+    UtilityOutput,
+    UtilityResult,
+)
+from aphrodite.v1.engine.utils import EngineHandshakeMetadata, EngineZmqAddresses, get_device_indices
 from aphrodite.v1.executor import Executor
 from aphrodite.v1.kv_cache_interface import KVCacheConfig
 from aphrodite.v1.metrics.stats import SchedulerStats
@@ -96,9 +101,7 @@ class EngineCore:
         self.available_gpu_memory_for_kv_cache = -1
 
         # Setup KV Caches and update CacheConfig after profiling.
-        num_gpu_blocks, num_cpu_blocks, kv_cache_config = self._initialize_kv_caches(
-            aphrodite_config
-        )
+        num_gpu_blocks, num_cpu_blocks, kv_cache_config = self._initialize_kv_caches(aphrodite_config)
 
         aphrodite_config.cache_config.num_gpu_blocks = num_gpu_blocks
         aphrodite_config.cache_config.num_cpu_blocks = num_cpu_blocks
@@ -109,6 +112,7 @@ class EngineCore:
         is_elastic = envs.APHRODITE_ENABLE_DYNAMIC_KV_CACHE
         if is_elastic:
             from aphrodite.v1.core.dynamic_kv.interfaces import init_kvcached
+
             init_kvcached(
                 tp_rank=0,
                 tp_size=aphrodite_config.parallel_config.tensor_parallel_size,
@@ -117,9 +121,7 @@ class EngineCore:
 
         # Setup scheduler.
         if isinstance(aphrodite_config.scheduler_config.scheduler_cls, str):
-            Scheduler = resolve_obj_by_qualname(
-                aphrodite_config.scheduler_config.scheduler_cls
-            )
+            Scheduler = resolve_obj_by_qualname(aphrodite_config.scheduler_config.scheduler_cls)
         else:
             Scheduler = aphrodite_config.scheduler_config.scheduler_cls
 
@@ -141,8 +143,7 @@ class EngineCore:
             aphrodite_config.scheduler_config.chunked_prefill_enabled = False
 
         scheduler_block_size = (
-            aphrodite_config.cache_config.block_size
-            * aphrodite_config.parallel_config.decode_context_parallel_size
+            aphrodite_config.cache_config.block_size * aphrodite_config.parallel_config.decode_context_parallel_size
         )
 
         self.scheduler: SchedulerInterface = Scheduler(
@@ -158,43 +159,28 @@ class EngineCore:
             self.modeling.init_kv_output_aggregator(self.scheduler.connector)  # type: ignore
 
         self.mm_registry = mm_registry = MULTIMODAL_REGISTRY
-        self.mm_receiver_cache = engine_receiver_cache_from_config(
-            aphrodite_config, mm_registry
-        )
+        self.mm_receiver_cache = engine_receiver_cache_from_config(aphrodite_config, mm_registry)
 
         # Setup batch queue for pipeline parallelism.
         # Batch queue for scheduled batches. This enables us to asynchronously
         # schedule and execute batches, and is required by pipeline parallelism
         # to eliminate pipeline bubbles.
         self.batch_queue_size = self.modeling.max_concurrent_batches
-        self.batch_queue: (
-            deque[tuple[Future[ModelRunnerOutput], SchedulerOutput]] | None
-        ) = None
+        self.batch_queue: deque[tuple[Future[ModelRunnerOutput], SchedulerOutput]] | None = None
         if self.batch_queue_size > 1:
             logger.info_once("Batch queue is enabled with size %d", self.batch_queue_size, scope="global")
             self.batch_queue = deque(maxlen=self.batch_queue_size)
 
         self.request_block_hasher: Callable[[Request], list[BlockHash]] | None = None
-        if (
-            self.aphrodite_config.cache_config.enable_prefix_caching
-            or self.scheduler.get_kv_connector() is not None
-        ):
-            caching_hash_fn = get_hash_fn_by_name(
-                aphrodite_config.cache_config.prefix_caching_hash_algo
-            )
+        if self.aphrodite_config.cache_config.enable_prefix_caching or self.scheduler.get_kv_connector() is not None:
+            caching_hash_fn = get_hash_fn_by_name(aphrodite_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
 
-            self.request_block_hasher = get_request_block_hasher(
-                scheduler_block_size, caching_hash_fn
-            )
+            self.request_block_hasher = get_request_block_hasher(scheduler_block_size, caching_hash_fn)
 
-        self.step_fn = (
-            self.step if self.batch_queue is None else self.step_with_batch_queue
-        )
+        self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
 
-    def _initialize_kv_caches(
-        self, aphrodite_config: AphroditeConfig
-    ) -> tuple[int, int, KVCacheConfig]:
+    def _initialize_kv_caches(self, aphrodite_config: AphroditeConfig) -> tuple[int, int, KVCacheConfig]:
         start = time.time()
 
         # Get all kv cache needed by the model
@@ -205,12 +191,8 @@ class EngineCore:
             if os.environ.get("APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH") == "1":
                 dp_group = getattr(self, "dp_group", None)
                 assert dp_group is not None
-                self.available_gpu_memory_for_kv_cache = (
-                    ParallelConfig.sync_kv_cache_memory_size(dp_group, -1)
-                )
-                available_gpu_memory = [self.available_gpu_memory_for_kv_cache] * len(
-                    kv_cache_specs
-                )
+                self.available_gpu_memory_for_kv_cache = ParallelConfig.sync_kv_cache_memory_size(dp_group, -1)
+                available_gpu_memory = [self.available_gpu_memory_for_kv_cache] * len(kv_cache_specs)
             else:
                 # Profiles the peak memory usage of the model to determine how
                 # much memory can be allocated for kv cache.
@@ -222,9 +204,7 @@ class EngineCore:
 
         assert len(kv_cache_specs) == len(available_gpu_memory)
 
-        kv_cache_configs = get_kv_cache_configs(
-            aphrodite_config, kv_cache_specs, available_gpu_memory
-        )
+        kv_cache_configs = get_kv_cache_configs(aphrodite_config, kv_cache_specs, available_gpu_memory)
         scheduler_kv_cache_config = generate_scheduler_kv_cache_config(kv_cache_configs)
         num_gpu_blocks = scheduler_kv_cache_config.num_blocks
         num_cpu_blocks = 0
@@ -241,7 +221,9 @@ class EngineCore:
         if envs.APHRODITE_REQUEST_LEVEL_METRICS:
             logger.warning_once(
                 "Throughput metrics are set to request-level. If you want to get aggregate "
-                "metrics, set APHRODITE_REQUEST_LEVEL_METRICS=0.", scope="global")
+                "metrics, set APHRODITE_REQUEST_LEVEL_METRICS=0.",
+                scope="global",
+            )
         return num_gpu_blocks, num_cpu_blocks, scheduler_kv_cache_config
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
@@ -255,28 +237,18 @@ class EngineCore:
         """
         # Validate the request_id type.
         if not isinstance(request.request_id, str):
-            raise TypeError(
-                f"request_id must be a string, got {type(request.request_id)}"
-            )
+            raise TypeError(f"request_id must be a string, got {type(request.request_id)}")
 
         if pooling_params := request.pooling_params:
-            supported_pooling_tasks = [
-                task for task in self.get_supported_tasks() if task in POOLING_TASKS
-            ]
+            supported_pooling_tasks = [task for task in self.get_supported_tasks() if task in POOLING_TASKS]
 
             if pooling_params.task not in supported_pooling_tasks:
                 raise ValueError(
-                    f"Unsupported task: {pooling_params.task!r} "
-                    f"Supported tasks: {supported_pooling_tasks}"
+                    f"Unsupported task: {pooling_params.task!r} Supported tasks: {supported_pooling_tasks}"
                 )
 
-        if request.kv_transfer_params is not None and (
-            not self.scheduler.get_kv_connector()
-        ):
-            logger.warning(
-                "Got kv_transfer_params, but no KVConnector found. "
-                "Disabling KVTransfer for this request."
-            )
+        if request.kv_transfer_params is not None and (not self.scheduler.get_kv_connector()):
+            logger.warning("Got kv_transfer_params, but no KVConnector found. Disabling KVTransfer for this request.")
 
         self.scheduler.add_request(request)
 
@@ -299,9 +271,7 @@ class EngineCore:
             # error from execute_model itself.
 
             # NOTE: This method is exception-free
-            dump_engine_exception(
-                self.aphrodite_config, scheduler_output, self.scheduler.make_stats()
-            )
+            dump_engine_exception(self.aphrodite_config, scheduler_output, self.scheduler.make_stats())
             raise err
 
     def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
@@ -320,9 +290,7 @@ class EngineCore:
         with self.log_error_detail(scheduler_output):
             model_output = self.modeling.execute_model(scheduler_output)
 
-        engine_core_outputs = self.scheduler.update_from_output(
-            scheduler_output, model_output
-        )
+        engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 
         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 
@@ -364,11 +332,7 @@ class EngineCore:
             batch_queue.appendleft((future, scheduler_output))
 
             model_executed = scheduler_output.total_num_scheduled_tokens > 0
-            if (
-                model_executed
-                and len(batch_queue) < self.batch_queue_size
-                and not batch_queue[-1][0].done()
-            ):
+            if model_executed and len(batch_queue) < self.batch_queue_size and not batch_queue[-1][0].done():
                 # Don't block on next worker response unless the queue is full
                 # or there are no more requests to schedule.
                 return None, True
@@ -384,9 +348,7 @@ class EngineCore:
         with self.log_error_detail(scheduler_output):
             model_output = future.result()
 
-        engine_core_outputs = self.scheduler.update_from_output(
-            scheduler_output, model_output
-        )
+        engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
         return engine_core_outputs, model_executed
 
     def shutdown(self):
@@ -404,8 +366,7 @@ class EngineCore:
         # re-sync the internal caches (P0 sender, P1 receiver)
         if self.scheduler.has_unfinished_requests():
             logger.warning(
-                "Resetting the multi-modal cache when requests are "
-                "in progress may lead to desynced internal caches."
+                "Resetting the multi-modal cache when requests are in progress may lead to desynced internal caches."
             )
 
         # The cache either exists in EngineCore or WorkerWrapperBase
@@ -447,9 +408,7 @@ class EngineCore:
         pattern: str | None = None,
         max_size: int | None = None,
     ) -> None:
-        self.modeling.save_sharded_state(
-            path=path, pattern=pattern, max_size=max_size
-        )
+        self.modeling.save_sharded_state(path=path, pattern=pattern, max_size=max_size)
 
     def collective_rpc(
         self,
@@ -470,9 +429,7 @@ class EngineCore:
         # `mm_receiver_cache` is reset at the end of LLMEngine init,
         # and will only be accessed in the input processing thread afterwards.
         if self.mm_receiver_cache is not None and request.mm_features:
-            request.mm_features = self.mm_receiver_cache.get_and_update_features(
-                request.mm_features
-            )
+            request.mm_features = self.mm_receiver_cache.get_and_update_features(request.mm_features)
 
         req = Request.from_engine_core_request(request, self.request_block_hasher)
         if req.use_structured_output:
@@ -502,9 +459,7 @@ class EngineCoreProc(EngineCore):
     ):
         self.input_queue = queue.Queue[tuple[EngineCoreRequestType, Any]]()
         self.output_queue = queue.Queue[tuple[int, EngineCoreOutputs] | bytes]()
-        executor_fail_callback = lambda: self.input_queue.put_nowait(
-            (EngineCoreRequestType.EXECUTOR_FAILED, b"")
-        )
+        executor_fail_callback = lambda: self.input_queue.put_nowait((EngineCoreRequestType.EXECUTOR_FAILED, b""))
 
         self.engine_index = engine_index
         identity = self.engine_index.to_bytes(length=2, byteorder="little")
@@ -521,9 +476,7 @@ class EngineCoreProc(EngineCore):
 
             # Set up data parallel environment.
             self.has_coordinator = addresses.coordinator_output is not None
-            self.frontend_stats_publish_address = (
-                addresses.frontend_stats_publish_address
-            )
+            self.frontend_stats_publish_address = addresses.frontend_stats_publish_address
             logger.debug(
                 "Has DP Coordinator: %s, stats publish address: %s",
                 self.has_coordinator,
@@ -532,15 +485,12 @@ class EngineCoreProc(EngineCore):
             # Only publish request queue stats to coordinator for "internal"
             # and "hybrid" LB modes .
             self.publish_dp_lb_stats = (
-                self.has_coordinator
-                and not aphrodite_config.parallel_config.data_parallel_external_lb
+                self.has_coordinator and not aphrodite_config.parallel_config.data_parallel_external_lb
             )
 
             self._init_data_parallel(aphrodite_config)
 
-            super().__init__(
-                aphrodite_config, executor_class, log_stats, executor_fail_callback
-            )
+            super().__init__(aphrodite_config, executor_class, log_stats, executor_fail_callback)
 
             # Background Threads and Queues for IO. These enable us to
             # overlap ZMQ socket IO with GPU since they release the GIL,
@@ -670,9 +620,7 @@ class EngineCoreProc(EngineCore):
             bind=False,
         ) as handshake_socket:
             # Register engine with front-end.
-            addresses = self.startup_handshake(
-                handshake_socket, local_client, headless, parallel_config_to_update
-            )
+            addresses = self.startup_handshake(handshake_socket, local_client, headless, parallel_config_to_update)
             yield addresses
 
             # Send ready message.
@@ -691,9 +639,7 @@ class EngineCoreProc(EngineCore):
                 "dp_stats_address": dp_stats_address,
             }
             if aphrodite_config.parallel_config.data_parallel_size > 1:
-                ready_msg["parallel_config_hash"] = (
-                    aphrodite_config.parallel_config.compute_hash()
-                )
+                ready_msg["parallel_config_hash"] = aphrodite_config.parallel_config.compute_hash()
 
             handshake_socket.send(msgspec.msgpack.encode(ready_msg))
 
@@ -719,14 +665,10 @@ class EngineCoreProc(EngineCore):
         logger.debug("Waiting for init message from front-end.")
         if not handshake_socket.poll(timeout=HANDSHAKE_TIMEOUT_MINS * 60_000):
             raise RuntimeError(
-                "Did not receive response from front-end "
-                f"process within {HANDSHAKE_TIMEOUT_MINS} "
-                f"minutes"
+                f"Did not receive response from front-end process within {HANDSHAKE_TIMEOUT_MINS} minutes"
             )
         init_bytes = handshake_socket.recv()
-        init_message: EngineHandshakeMetadata = msgspec.msgpack.decode(
-            init_bytes, type=EngineHandshakeMetadata
-        )
+        init_message: EngineHandshakeMetadata = msgspec.msgpack.decode(init_bytes, type=EngineHandshakeMetadata)
         logger.debug("Received init message: %s", init_message)
 
         if parallel_config is not None:
@@ -805,11 +747,7 @@ class EngineCoreProc(EngineCore):
         """Exits when an engine step needs to be performed."""
 
         waited = False
-        while (
-            not self.engines_running
-            and not self.scheduler.has_requests()
-            and not self.batch_queue
-        ):
+        while not self.engines_running and not self.scheduler.has_requests() and not self.batch_queue:
             if logger.isEnabledFor(DEBUG) and self.input_queue.empty():
                 logger.debug("EngineCore waiting for work.")
                 waited = True
@@ -837,9 +775,7 @@ class EngineCoreProc(EngineCore):
 
         return model_executed
 
-    def _handle_client_request(
-        self, request_type: EngineCoreRequestType, request: Any
-    ) -> None:
+    def _handle_client_request(self, request_type: EngineCoreRequestType, request: Any) -> None:
         """Dispatch request from client."""
 
         if request_type == EngineCoreRequestType.ADD:
@@ -856,18 +792,12 @@ class EngineCoreProc(EngineCore):
                 output.result = UtilityResult(result)
             except BaseException as e:
                 logger.exception("Invocation of %s method failed", method_name)
-                output.failure_message = (
-                    f"Call to {method_name} method failed: {str(e)}"
-                )
-            self.output_queue.put_nowait(
-                (client_idx, EngineCoreOutputs(utility_output=output))
-            )
+                output.failure_message = f"Call to {method_name} method failed: {str(e)}"
+            self.output_queue.put_nowait((client_idx, EngineCoreOutputs(utility_output=output)))
         elif request_type == EngineCoreRequestType.EXECUTOR_FAILED:
             raise RuntimeError("Executor failed.")
         else:
-            logger.error(
-                "Unrecognized input request type encountered: %s", request_type
-            )
+            logger.error("Unrecognized input request type encountered: %s", request_type)
 
     @staticmethod
     def _convert_msgspec_args(method, args):
@@ -879,9 +809,7 @@ class EngineCoreProc(EngineCore):
         assert len(args) <= len(arg_types)
         return tuple(
             msgspec.convert(v, type=p.annotation)
-            if isclass(p.annotation)
-            and issubclass(p.annotation, msgspec.Struct)
-            and not isinstance(v, p.annotation)
+            if isclass(p.annotation) and issubclass(p.annotation, msgspec.Struct) and not isinstance(v, p.annotation)
             else v
             for v, p in zip(args, arg_types)
         )
@@ -895,10 +823,7 @@ class EngineCoreProc(EngineCore):
         # Wait until msg sent by the daemon before shutdown.
         self.output_thread.join(timeout=5.0)
         if self.output_thread.is_alive():
-            logger.fatal(
-                "Aphrodite shutdown signal from EngineCore failed "
-                "to send. Please report this issue."
-            )
+            logger.fatal("Aphrodite shutdown signal from EngineCore failed to send. Please report this issue.")
 
     def process_input_sockets(
         self,
@@ -915,11 +840,7 @@ class EngineCoreProc(EngineCore):
 
         with ExitStack() as stack, zmq.Context() as ctx:
             input_sockets = [
-                stack.enter_context(
-                    make_zmq_socket(
-                        ctx, input_address, zmq.DEALER, identity=identity, bind=False
-                    )
-                )
+                stack.enter_context(make_zmq_socket(ctx, input_address, zmq.DEALER, identity=identity, bind=False))
                 for input_address in input_addresses
             ]
             if coord_input_address is None:
@@ -990,17 +911,11 @@ class EngineCoreProc(EngineCore):
         # message is sent prior to closing the socket.
         with ExitStack() as stack, zmq.Context() as ctx:
             sockets = [
-                stack.enter_context(
-                    make_zmq_socket(ctx, output_path, zmq.PUSH, linger=4000)
-                )
+                stack.enter_context(make_zmq_socket(ctx, output_path, zmq.PUSH, linger=4000))
                 for output_path in output_paths
             ]
             coord_socket = (
-                stack.enter_context(
-                    make_zmq_socket(
-                        ctx, coord_output_path, zmq.PUSH, bind=False, linger=4000
-                    )
-                )
+                stack.enter_context(make_zmq_socket(ctx, coord_output_path, zmq.PUSH, bind=False, linger=4000))
                 if coord_output_path is not None
                 else None
             )
@@ -1029,9 +944,7 @@ class EngineCoreProc(EngineCore):
 
                 buffer = reuse_buffers.pop() if reuse_buffers else bytearray()
                 buffers = encoder.encode_into(outputs, buffer)
-                tracker = sockets[client_index].send_multipart(
-                    buffers, copy=False, track=True
-                )
+                tracker = sockets[client_index].send_multipart(buffers, copy=False, track=True)
                 if not tracker.done:
                     ref = outputs if len(buffers) > 1 else None
                     pending.appendleft((tracker, ref, buffer))
@@ -1107,20 +1020,14 @@ class DPEngineCoreProc(EngineCoreProc):
             elif not self.engines_running:
                 # Request received for an already-completed wave, notify
                 # front-end that we need to start the next one.
-                self.output_queue.put_nowait(
-                    (-1, EngineCoreOutputs(start_wave=self.current_wave))
-                )
+                self.output_queue.put_nowait((-1, EngineCoreOutputs(start_wave=self.current_wave)))
 
         super().add_request(request, request_wave)
 
-    def _handle_client_request(
-        self, request_type: EngineCoreRequestType, request: Any
-    ) -> None:
+    def _handle_client_request(self, request_type: EngineCoreRequestType, request: Any) -> None:
         if request_type == EngineCoreRequestType.START_DP_WAVE:
             new_wave, exclude_eng_index = request
-            if exclude_eng_index != self.engine_index and (
-                new_wave >= self.current_wave
-            ):
+            if exclude_eng_index != self.engine_index and (new_wave >= self.current_wave):
                 self.current_wave = new_wave
                 if not self.engines_running:
                     logger.debug("EngineCore starting idle loop for wave %d.", new_wave)
@@ -1136,9 +1043,7 @@ class DPEngineCoreProc(EngineCoreProc):
         counts = self.scheduler.get_request_counts()
         if counts != self.last_counts:
             self.last_counts = counts
-            stats = SchedulerStats(
-                *counts, step_counter=self.step_counter, current_wave=self.current_wave
-            )
+            stats = SchedulerStats(*counts, step_counter=self.step_counter, current_wave=self.current_wave)
             self.output_queue.put_nowait((-1, EngineCoreOutputs(scheduler_stats=stats)))
 
     def run_busy_loop(self):
@@ -1164,16 +1069,12 @@ class DPEngineCoreProc(EngineCoreProc):
                 self.execute_dummy_batch()
 
             # 3) All-reduce operation to determine global unfinished reqs.
-            self.engines_running = self._has_global_unfinished_reqs(
-                local_unfinished_reqs
-            )
+            self.engines_running = self._has_global_unfinished_reqs(local_unfinished_reqs)
 
             if not self.engines_running:
                 if self.dp_rank == 0 or not self.has_coordinator:
                     # Notify client that we are pausing the loop.
-                    logger.debug(
-                        "Wave %d finished, pausing engine loop.", self.current_wave
-                    )
+                    logger.debug("Wave %d finished, pausing engine loop.", self.current_wave)
                     # In the coordinator case, dp rank 0 sends updates to the
                     # coordinator. Otherwise (offline spmd case), each rank
                     # sends the update to its colocated front-end process.
@@ -1196,9 +1097,7 @@ class DPEngineCoreProc(EngineCoreProc):
 
         return ParallelConfig.has_unfinished_dp(self.dp_group, local_unfinished)
 
-    def reinitialize_distributed(
-        self, reconfig_request: ReconfigureDistributedRequest
-    ) -> None:
+    def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> None:
         stateless_destroy_torch_distributed_process_group(self.dp_group)
         self.shutdown()
 
@@ -1208,22 +1107,13 @@ class DPEngineCoreProc(EngineCoreProc):
         if reconfig_request.new_data_parallel_rank != -1:
             parallel_config.data_parallel_rank = reconfig_request.new_data_parallel_rank
         # local rank specifies device visibility, it should not be changed
-        assert (
-            reconfig_request.new_data_parallel_rank_local
-            == ReconfigureRankType.KEEP_CURRENT_RANK
-        )
-        parallel_config.data_parallel_master_ip = (
-            reconfig_request.new_data_parallel_master_ip
-        )
-        parallel_config.data_parallel_master_port = (
-            reconfig_request.new_data_parallel_master_port
-        )
+        assert reconfig_request.new_data_parallel_rank_local == ReconfigureRankType.KEEP_CURRENT_RANK
+        parallel_config.data_parallel_master_ip = reconfig_request.new_data_parallel_master_ip
+        parallel_config.data_parallel_master_port = reconfig_request.new_data_parallel_master_port
         if reconfig_request.new_data_parallel_rank != -2:
             self.dp_rank = parallel_config.data_parallel_rank
             self.dp_group = parallel_config.stateless_init_dp_group()
-        reconfig_request.new_data_parallel_master_port = (
-            parallel_config.data_parallel_master_port
-        )
+        reconfig_request.new_data_parallel_master_port = parallel_config.data_parallel_master_port
 
         self.modeling.reinitialize_distributed(reconfig_request)
         if reconfig_request.new_data_parallel_size > old_dp_size:
@@ -1231,22 +1121,15 @@ class DPEngineCoreProc(EngineCoreProc):
             # pass available_gpu_memory_for_kv_cache from existing
             # engine-cores to new engine-cores so they can directly
             # use it in _initialize_kv_caches() rather than profiling.
-            ParallelConfig.sync_kv_cache_memory_size(
-                self.dp_group, self.available_gpu_memory_for_kv_cache
-            )
+            ParallelConfig.sync_kv_cache_memory_size(self.dp_group, self.available_gpu_memory_for_kv_cache)
             # NOTE(yongji): newly joined workers require dummy_run even
             # CUDA graph is not used
             self.modeling.collective_rpc("compile_or_warm_up_model")
-        if (
-            reconfig_request.new_data_parallel_rank
-            == ReconfigureRankType.SHUTDOWN_CURRENT_RANK
-        ):
+        if reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
             self.shutdown()
             logger.info("DPEngineCoreProc %s shutdown", self.dp_rank)
         else:
-            logger.info(
-                "Distributed environment reinitialized for DP rank %s", self.dp_rank
-            )
+            logger.info("Distributed environment reinitialized for DP rank %s", self.dp_rank)
 
 
 class DPEngineCoreActor(DPEngineCoreProc):
@@ -1296,9 +1179,7 @@ class DPEngineCoreActor(DPEngineCoreProc):
             pass
         else:
             device_control_env_var = current_platform.device_control_env_var
-            self._set_cuda_visible_devices(
-                aphrodite_config, local_dp_rank, device_control_env_var
-            )
+            self._set_cuda_visible_devices(aphrodite_config, local_dp_rank, device_control_env_var)
 
     def _set_cuda_visible_devices(
         self, aphrodite_config: AphroditeConfig, local_dp_rank: int, device_control_env_var: str
@@ -1306,9 +1187,7 @@ class DPEngineCoreActor(DPEngineCoreProc):
         world_size = aphrodite_config.parallel_config.world_size
         # Set CUDA_VISIBLE_DEVICES or equivalent.
         try:
-            value = get_device_indices(
-                device_control_env_var, local_dp_rank, world_size
-            )
+            value = get_device_indices(device_control_env_var, local_dp_rank, world_size)
             os.environ[device_control_env_var] = value
         except IndexError as e:
             raise Exception(

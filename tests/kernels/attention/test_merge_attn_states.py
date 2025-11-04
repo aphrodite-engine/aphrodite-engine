@@ -2,8 +2,7 @@ import pytest
 import torch
 
 from aphrodite._custom_ops import merge_attn_states as merge_attn_states_cuda
-from aphrodite.attention.ops.triton_merge_attn_states import (
-    merge_attn_states as merge_attn_states_triton)
+from aphrodite.attention.ops.triton_merge_attn_states import merge_attn_states as merge_attn_states_triton
 from aphrodite.platforms import current_platform
 
 
@@ -49,10 +48,7 @@ all_case_info: list[tuple] = []
 
 def generate_markdown_table():
     global all_case_info
-    table_header = (
-        "| tokens | heads | headsize | dtype "
-        "| device | torch | triton | cuda | speedup |"
-    )
+    table_header = "| tokens | heads | headsize | dtype | device | torch | triton | cuda | speedup |"
     table_separator = "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
 
     def shortly_dtype(dtype: torch.dtype) -> str:
@@ -91,14 +87,9 @@ def generate_markdown_table():
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
 @pytest.mark.parametrize("output_dtype", DTYPES)
 @torch.inference_mode()
-def test_merge_attn_states(
-    num_tokens: int, num_query_heads: int, head_size: int, output_dtype: torch.dtype
-):
+def test_merge_attn_states(num_tokens: int, num_query_heads: int, head_size: int, output_dtype: torch.dtype):
     if not current_platform.is_cuda():
-        pytest.skip(
-            "Currently only support compare triton merge_attn_states "
-            "with custom cuda merge_attn_states kernel"
-        )
+        pytest.skip("Currently only support compare triton merge_attn_states with custom cuda merge_attn_states kernel")
 
     NUM_TOKENS = num_tokens
     NUM_HEADS = num_query_heads
@@ -127,18 +118,10 @@ def test_merge_attn_states(
 
     # Other input tensors (need to be initialized but
     # no actual calculation needed)
-    output = torch.zeros(
-        (NUM_TOKENS, NUM_HEADS, HEAD_SIZE), dtype=output_dtype, device="cuda"
-    )
-    output_lse = torch.zeros(
-        (NUM_HEADS, NUM_TOKENS), dtype=torch.float32, device="cuda"
-    )
-    prefix_output = torch.randn(
-        (NUM_TOKENS, NUM_HEADS, HEAD_SIZE), dtype=output_dtype, device="cuda"
-    )
-    suffix_output = torch.randn(
-        (NUM_TOKENS, NUM_HEADS, HEAD_SIZE), dtype=output_dtype, device="cuda"
-    )
+    output = torch.zeros((NUM_TOKENS, NUM_HEADS, HEAD_SIZE), dtype=output_dtype, device="cuda")
+    output_lse = torch.zeros((NUM_HEADS, NUM_TOKENS), dtype=torch.float32, device="cuda")
+    prefix_output = torch.randn((NUM_TOKENS, NUM_HEADS, HEAD_SIZE), dtype=output_dtype, device="cuda")
+    suffix_output = torch.randn((NUM_TOKENS, NUM_HEADS, HEAD_SIZE), dtype=output_dtype, device="cuda")
 
     warmup_times = 2
     repeat_times = 20
@@ -250,10 +233,7 @@ def test_merge_attn_states(
     performance_improved = avg_time_triton_kernel / avg_time_cuda_kernel
     print(f" Torch time: {avg_time_torch_kernel:.6f}ms")
     print(f"Triton time: {avg_time_triton_kernel:.6f}ms")
-    print(
-        f"  CUDA time: {avg_time_cuda_kernel:.6f}ms, "
-        f"Performance: {performance_improved:.5f}x"
-    )
+    print(f"  CUDA time: {avg_time_cuda_kernel:.6f}ms, Performance: {performance_improved:.5f}x")
     print("-" * 100)
 
     # 4. Correctness compare
@@ -271,28 +251,21 @@ def test_merge_attn_states(
     # states operation.
     output_ref = output_ref_triton
     output_lse_ref = output_lse_ref_triton
-    torch.testing.assert_close(
-        output_cuda.float(), output_ref.float(), atol=1e-3, rtol=rtol
-    )
+    torch.testing.assert_close(output_cuda.float(), output_ref.float(), atol=1e-3, rtol=rtol)
     print("Output all match, max abs diff:")
     print(f"(Triton vs Torch) : {diff(output_torch, output_ref)}")
     print(f"  (CUDA vs Torch) : {diff(output_torch, output_cuda)}")
     print(f"  (CUDA vs Triton): {diff(output_ref, output_cuda)}")
     print("-" * 100)
 
-    torch.testing.assert_close(
-        output_lse_cuda.float(), output_lse_ref.float(), atol=1e-3, rtol=rtol
-    )
+    torch.testing.assert_close(output_lse_cuda.float(), output_lse_ref.float(), atol=1e-3, rtol=rtol)
     print("Output LSE all match, max abs diff:")
     print(f"(Triton vs Torch) : {diff(output_lse_torch, output_lse_ref)}")
     print(f"  (CUDA vs Torch) : {diff(output_lse_torch, output_lse_cuda)}")
     print(f"  (CUDA vs Triton): {diff(output_lse_ref, output_lse_cuda)}")
     print("-" * 100)
 
-    print(
-        "All output values test passed! All inf values "
-        "are correctly replaced with -inf."
-    )
+    print("All output values test passed! All inf values are correctly replaced with -inf.")
     print("-" * 100)
 
     device = current_platform.get_device_name()
@@ -309,7 +282,5 @@ def test_merge_attn_states(
             performance_improved,
         )
     )
-    if len(all_case_info) == (
-        len(NUM_BATCH_TOKENS) * len(HEAD_SIZES) * len(NUM_QUERY_HEADS) * len(DTYPES)
-    ):
+    if len(all_case_info) == (len(NUM_BATCH_TOKENS) * len(HEAD_SIZES) * len(NUM_QUERY_HEADS) * len(DTYPES)):
         generate_markdown_table()

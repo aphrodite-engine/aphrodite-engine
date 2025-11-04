@@ -8,8 +8,7 @@ from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.transformers_utils.tokenizer import init_tokenizer_from_configs
 from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.v1.structured_output.backend_guidance import GuidanceBackend
-from aphrodite.v1.structured_output.backend_types import (
-    StructuredOutputBackend, StructuredOutputGrammar)
+from aphrodite.v1.structured_output.backend_types import StructuredOutputBackend, StructuredOutputGrammar
 from aphrodite.v1.structured_output.backend_xgrammar import XgrammarBackend
 
 if TYPE_CHECKING:
@@ -57,31 +56,20 @@ class StructuredOutputManager:
             # of CPUs.
             max_workers = max(1, (multiprocessing.cpu_count() + 1) // 2)
             self.executor = ThreadPoolExecutor(max_workers=max_workers)
-            self.tokenizer = init_tokenizer_from_configs(
-                model_config=self.aphrodite_config.model_config
-            )
-            reasoning_parser = (
-                self.aphrodite_config.structured_outputs_config.reasoning_parser
-            )
+            self.tokenizer = init_tokenizer_from_configs(model_config=self.aphrodite_config.model_config)
+            reasoning_parser = self.aphrodite_config.structured_outputs_config.reasoning_parser
             if reasoning_parser:
-                reasoner_cls = ReasoningParserManager.get_reasoning_parser(
-                    reasoning_parser
-                )
+                reasoner_cls = ReasoningParserManager.get_reasoning_parser(reasoning_parser)
                 self.reasoner = reasoner_cls(tokenizer=self.tokenizer)
 
-        self.enable_in_reasoning = (
-            self.aphrodite_config.structured_outputs_config.enable_in_reasoning
-        )
+        self.enable_in_reasoning = self.aphrodite_config.structured_outputs_config.enable_in_reasoning
 
     def grammar_init(self, request: Request) -> None:
         if request.structured_output_request is None:
             return
 
         if TYPE_CHECKING:
-            assert (
-                request.sampling_params is not None
-                and request.sampling_params.structured_outputs is not None
-            )
+            assert request.sampling_params is not None and request.sampling_params.structured_outputs is not None
 
         # Initialize the backend the first time it is needed.
         #
@@ -105,8 +93,7 @@ class StructuredOutputManager:
                     vocab_size=vocab_size,
                 )
             elif backend == "outlines":
-                from aphrodite.v1.structured_output.backend_outlines import (
-                    OutlinesBackend)
+                from aphrodite.v1.structured_output.backend_outlines import OutlinesBackend
 
                 self.backend = OutlinesBackend(
                     self.aphrodite_config,
@@ -115,7 +102,8 @@ class StructuredOutputManager:
                 )
             elif backend == "lm-format-enforcer":
                 from aphrodite.v1.structured_output.backend_lm_format_enforcer import (  # noqa: E501
-                    LMFormatEnforcerBackend)
+                    LMFormatEnforcerBackend,
+                )
 
                 self.backend = LMFormatEnforcerBackend(
                     self.aphrodite_config,
@@ -176,9 +164,7 @@ class StructuredOutputManager:
 
         max_num_spec_tokens = 0
         if self.aphrodite_config.speculative_config is not None:
-            max_num_spec_tokens = (
-                self.aphrodite_config.speculative_config.num_speculative_tokens
-            )
+            max_num_spec_tokens = self.aphrodite_config.speculative_config.num_speculative_tokens
 
         if self._grammar_bitmask is None:
             assert self.backend is not None
@@ -187,9 +173,7 @@ class StructuredOutputManager:
             # Allocate a bitmask for each token needing to be checked:
             # one for each speculative position, and one more for the
             # bonus token / non-speculative token.
-            self._grammar_bitmask = self.backend.allocate_token_bitmask(
-                max_batch_size * (1 + max_num_spec_tokens)
-            )
+            self._grammar_bitmask = self.backend.allocate_token_bitmask(max_batch_size * (1 + max_num_spec_tokens))
 
         # Generate a batched bitmask for all structured output requests.
         # When speculative decoding is enabled, we need to include multiple
@@ -199,10 +183,7 @@ class StructuredOutputManager:
 
         # Optimized parallel filling of bitmasks for
         # non-spec, large-batch-size cases
-        if (
-            len(structured_output_request_ids) > self.fill_bitmask_parallel_threshold
-            and max_num_spec_tokens == 0
-        ):
+        if len(structured_output_request_ids) > self.fill_bitmask_parallel_threshold and max_num_spec_tokens == 0:
             promises = []
             batch = []
             for req_id in structured_output_request_ids:
@@ -213,9 +194,7 @@ class StructuredOutputManager:
                     assert structured_output_request.grammar is not None
 
                 apply_bitmask = self.should_fill_bitmask(request)
-                batch.append(
-                    (structured_output_request.grammar, cumulative_index, apply_bitmask)
-                )
+                batch.append((structured_output_request.grammar, cumulative_index, apply_bitmask))
                 if len(batch) == self.fill_bitmask_parallel_batch_size:
                     promises.append(self._async_submit_fill_bitmask(batch))
                     batch = []
@@ -251,14 +230,8 @@ class StructuredOutputManager:
                         ]
                     )
 
-                    if (
-                        apply_bitmask
-                        and token is not None
-                        and not structured_output_request.grammar.is_terminated()
-                    ):
-                        assert structured_output_request.grammar.accept_tokens(
-                            req_id, [token]
-                        )
+                    if apply_bitmask and token is not None and not structured_output_request.grammar.is_terminated():
+                        assert structured_output_request.grammar.accept_tokens(req_id, [token])
                         state_advancements += 1
                     cumulative_index += 1
                 if state_advancements > 0:
@@ -283,8 +256,8 @@ class StructuredOutputManager:
                 return True
             assert request.structured_output_request is not None
             if request.structured_output_request.reasoning_ended is None:
-                request.structured_output_request.reasoning_ended = (
-                    self.reasoner.is_reasoning_end(request.prompt_token_ids)
+                request.structured_output_request.reasoning_ended = self.reasoner.is_reasoning_end(
+                    request.prompt_token_ids
                 )
             return request.structured_output_request.reasoning_ended
         return True

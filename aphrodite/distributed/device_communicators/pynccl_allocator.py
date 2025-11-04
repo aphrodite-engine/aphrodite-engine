@@ -9,8 +9,7 @@ from torch.cuda.memory import CUDAPluggableAllocator
 from torch.utils.cpp_extension import load_inline
 
 from aphrodite import envs
-from aphrodite.distributed.device_communicators.pynccl import (
-    PyNcclCommunicator)
+from aphrodite.distributed.device_communicators.pynccl import PyNcclCommunicator
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.utils.nccl import find_nccl_include_paths
@@ -141,9 +140,7 @@ class nccl_symm_mem_context:
         )
         if self.disabled:
             self.pynccl_comm: PyNcclCommunicator | None = None
-            self._mem_pool_ctx: contextlib.AbstractContextManager[Any] = (
-                contextlib.nullcontext()
-            )
+            self._mem_pool_ctx: contextlib.AbstractContextManager[Any] = contextlib.nullcontext()
             self.is_graph_capture = None
             self.device = None
         else:
@@ -155,16 +152,12 @@ class nccl_symm_mem_context:
     def __enter__(self):
         if self.disabled:
             return self
-        assert self.pynccl_comm is not None, (
-            "Symmetric memory requires pynccl to be initalized"
-        )
+        assert self.pynccl_comm is not None, "Symmetric memory requires pynccl to be initalized"
         assert self.pynccl_comm.nccl_version >= 22703, (
             "NCCL version 2.27.3 or higher is required for NCCL symmetric memory"
         )
         if self.is_graph_capture:
-            assert _graph_pool_id is not None, (
-                "graph_pool_id is not set under graph capture"
-            )
+            assert _graph_pool_id is not None, "graph_pool_id is not set under graph capture"
             # Pause graph memory pool to use symmetric memory with cuda graph
             torch._C._cuda_endAllocateToPool(self.device, _graph_pool_id)
         self._mem_pool_ctx.__enter__()
@@ -182,9 +175,7 @@ class nccl_symm_mem_context:
         assert self.pynccl_comm is not None
         for segment in _cached_pool_snapshot:
             if segment["address"] not in _registered_base_addrs:
-                self.pynccl_comm.register_comm_window_raw(
-                    segment["address"], segment["total_size"]
-                )
+                self.pynccl_comm.register_comm_window_raw(segment["address"], segment["total_size"])
                 _registered_base_addrs.add(segment["address"])
         if self.is_graph_capture:
             torch._C._cuda_beginAllocateCurrentThreadToPool(self.device, _graph_pool_id)

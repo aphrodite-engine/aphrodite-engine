@@ -25,12 +25,10 @@ import prometheus_client
 import pydantic
 import regex as re
 import uvloop
-from fastapi import (APIRouter, Depends, FastAPI, Form, HTTPException, Query,
-                     Request)
+from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import (HTMLResponse, JSONResponse, Response,
-                               StreamingResponse)
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from prometheus_client import make_asgi_app
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.concurrency import iterate_in_threadpool
@@ -42,62 +40,64 @@ from typing_extensions import assert_never
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.args import (make_arg_parser,
-                                             validate_parsed_serve_args)
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 ChatCompletionResponse,
-                                                 ClassificationRequest,
-                                                 ClassificationResponse,
-                                                 CompletionRequest,
-                                                 CompletionResponse,
-                                                 DetokenizeRequest,
-                                                 DetokenizeResponse,
-                                                 EmbeddingRequest,
-                                                 EmbeddingResponse, ErrorInfo,
-                                                 ErrorResponse,
-                                                 IOProcessorResponse,
-                                                 KAIGenerationInputSchema,
-                                                 LoadLoRAAdapterRequest,
-                                                 PoolingBytesResponse,
-                                                 PoolingRequest,
-                                                 PoolingResponse,
-                                                 RerankRequest, RerankResponse,
-                                                 ResponsesRequest,
-                                                 ResponsesResponse,
-                                                 ScoreRequest, ScoreResponse,
-                                                 StreamingResponsesResponse,
-                                                 TokenizeRequest,
-                                                 TokenizeResponse,
-                                                 TranscriptionRequest,
-                                                 TranscriptionResponse,
-                                                 TranslationRequest,
-                                                 TranslationResponse,
-                                                 UnloadLoRAAdapterRequest)
+from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ClassificationRequest,
+    ClassificationResponse,
+    CompletionRequest,
+    CompletionResponse,
+    DetokenizeRequest,
+    DetokenizeResponse,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    ErrorInfo,
+    ErrorResponse,
+    IOProcessorResponse,
+    KAIGenerationInputSchema,
+    LoadLoRAAdapterRequest,
+    PoolingBytesResponse,
+    PoolingRequest,
+    PoolingResponse,
+    RerankRequest,
+    RerankResponse,
+    ResponsesRequest,
+    ResponsesResponse,
+    ScoreRequest,
+    ScoreResponse,
+    StreamingResponsesResponse,
+    TokenizeRequest,
+    TokenizeResponse,
+    TranscriptionRequest,
+    TranscriptionResponse,
+    TranslationRequest,
+    TranslationResponse,
+    UnloadLoRAAdapterRequest,
+)
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
-from aphrodite.endpoints.openai.serving_classification import (
-    ServingClassification)
-from aphrodite.endpoints.openai.serving_completions import (
-    OpenAIServingCompletion)
+from aphrodite.endpoints.openai.serving_classification import ServingClassification
+from aphrodite.endpoints.openai.serving_completions import OpenAIServingCompletion
 from aphrodite.endpoints.openai.serving_embedding import OpenAIServingEmbedding
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_kobold import OpenAIServingKobold
 from aphrodite.endpoints.openai.serving_messages import OpenAIServingMessages
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.endpoints.openai.serving_pooling import OpenAIServingPooling
 from aphrodite.endpoints.openai.serving_responses import OpenAIServingResponses
 from aphrodite.endpoints.openai.serving_score import ServingScores
-from aphrodite.endpoints.openai.serving_tokenization import (
-    OpenAIServingTokenization)
-from aphrodite.endpoints.openai.serving_transcription import (
-    OpenAIServingTranscription, OpenAIServingTranslation)
+from aphrodite.endpoints.openai.serving_tokenization import OpenAIServingTokenization
+from aphrodite.endpoints.openai.serving_transcription import OpenAIServingTranscription, OpenAIServingTranslation
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
-from aphrodite.endpoints.tool_server import (DemoToolServer, MCPToolServer,
-                                             ToolServer)
-from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
-                                       log_non_default_args,
-                                       process_chat_template,
-                                       process_lora_modules, with_cancellation)
+from aphrodite.endpoints.tool_server import DemoToolServer, MCPToolServer, ToolServer
+from aphrodite.endpoints.utils import (
+    cli_env_setup,
+    load_aware_call,
+    log_non_default_args,
+    process_chat_template,
+    process_lora_modules,
+    with_cancellation,
+)
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import Device, EngineClient
 from aphrodite.logger import init_logger
@@ -131,6 +131,7 @@ _running_tasks: set[asyncio.Task] = set()
 @dataclass
 class ModelInfo:
     """Information about a loaded model in the registry."""
+
     engine_client: EngineClient
     serving_models: OpenAIServingModels
     args: Namespace
@@ -141,15 +142,16 @@ class ModelInfo:
 async def lifespan(app: FastAPI):
     try:
         if app.state.log_stats:
+
             async def _force_log():
                 while True:
                     await asyncio.sleep(envs.APHRODITE_LOG_STATS_INTERVAL)
                     # Log stats for all loaded models (multi-model mode)
-                    if hasattr(app.state, 'model_registry') and app.state.model_registry is not None:
+                    if hasattr(app.state, "model_registry") and app.state.model_registry is not None:
                         for model_info in app.state.model_registry.values():
                             await model_info.engine_client.do_log_stats()
                     # Single-model mode fallback
-                    elif hasattr(app.state, 'engine_client') and app.state.engine_client is not None:
+                    elif hasattr(app.state, "engine_client") and app.state.engine_client is not None:
                         await app.state.engine_client.do_log_stats()
 
             task = asyncio.create_task(_force_log())
@@ -180,36 +182,33 @@ async def build_async_engine_client(
     disable_frontend_multiprocessing: bool | None = None,
     client_config: dict[str, Any] | None = None,
 ) -> AsyncIterator[EngineClient]:
-
     if os.getenv("APHRODITE_WORKER_MULTIPROC_METHOD") == "forkserver":
         # The executor is expected to be mp.
         # Pre-import heavy modules in the forkserver process
         logger.debug("Setup forkserver with pre-imports")
-        multiprocessing.set_start_method('forkserver')
+        multiprocessing.set_start_method("forkserver")
         multiprocessing.set_forkserver_preload(["aphrodite.v1.engine.async_llm"])
         forkserver.ensure_running()
         logger.debug("Forkserver setup complete!")
 
-    model_config_yaml = get_model_config_yaml(
-        args.model, getattr(args, 'download_dir', None)
-    )
+    model_config_yaml = get_model_config_yaml(args.model, getattr(args, "download_dir", None))
 
     if model_config_yaml:
-        logger.info(f"Applying {len(model_config_yaml)} config values from model directory")
+        logger.info("Applying %s config values from model directory", len(model_config_yaml))
         for key, value in model_config_yaml.items():
             # Convert dashes to underscores for attribute names
-            attr_name = key.replace('-', '_')
+            attr_name = key.replace("-", "_")
 
             # Don't override the model path itself
-            if attr_name == 'model':
+            if attr_name == "model":
                 continue
 
             if hasattr(args, attr_name):
                 old_value = getattr(args, attr_name)
                 setattr(args, attr_name, value)
-                logger.info(f"Config from model dir: {key} = {value} (was: {old_value})")
+                logger.info("Config from model dir: %s = %s (was: %s)", key, value, old_value)
             else:
-                logger.warning(f"Unknown config key in model directory: {key} - ignoring")
+                logger.warning("Unknown config key in model directory: %s - ignoring", key)
 
     # Context manager to handle engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
@@ -220,14 +219,13 @@ async def build_async_engine_client(
         engine_args._api_process_rank = client_config.get("client_index", 0)
 
     if disable_frontend_multiprocessing is None:
-        disable_frontend_multiprocessing = bool(
-            args.disable_frontend_multiprocessing)
+        disable_frontend_multiprocessing = bool(args.disable_frontend_multiprocessing)
 
     async with build_async_engine_client_from_engine_args(
-            engine_args,
-            usage_context=usage_context,
-            disable_frontend_multiprocessing=disable_frontend_multiprocessing,
-            client_config=client_config,
+        engine_args,
+        usage_context=usage_context,
+        disable_frontend_multiprocessing=disable_frontend_multiprocessing,
+        client_config=client_config,
     ) as engine:
         yield engine
 
@@ -249,8 +247,7 @@ async def build_async_engine_client_from_engine_args(
     """
 
     # Create the EngineConfig (determines if we can use V1).
-    aphrodite_config = engine_args.create_engine_config(
-        usage_context=usage_context)
+    aphrodite_config = engine_args.create_engine_config(usage_context=usage_context)
 
     # V1 AsyncLLM.
     assert envs.APHRODITE_USE_V1
@@ -295,9 +292,7 @@ async def validate_json_request(raw_request: Request):
     content_type = raw_request.headers.get("content-type", "").lower()
     media_type = content_type.split(";", maxsplit=1)[0]
     if media_type != "application/json":
-        raise RequestValidationError(errors=[
-            "Unsupported Media Type: Only 'application/json' is allowed"
-        ])
+        raise RequestValidationError(errors=["Unsupported Media Type: Only 'application/json' is allowed"])
 
 
 class PrometheusResponse(Response):
@@ -405,7 +400,7 @@ async def maybe_switch_model(raw_request: Request, requested_model: str) -> None
     Behavior depends on APHRODITE_ENABLE_MULTI_MODEL:
     - Multi-model mode (enabled): Loads additional models into registry
     - Single-model mode (disabled): Unloads current model and loads new one
-    
+
     Checks:
     1. Inline model loading is enabled
     2. The requested model is not already loaded
@@ -416,23 +411,24 @@ async def maybe_switch_model(raw_request: Request, requested_model: str) -> None
     # Check if model is already loaded
     if envs.APHRODITE_ENABLE_MULTI_MODEL:
         # Multi-model mode: check registry
-        if (hasattr(raw_request.app.state, 'model_registry') and 
-            raw_request.app.state.model_registry is not None and
-            requested_model in raw_request.app.state.model_registry):
+        if (
+            hasattr(raw_request.app.state, "model_registry")
+            and raw_request.app.state.model_registry is not None
+            and requested_model in raw_request.app.state.model_registry
+        ):
             return  # Already loaded
 
-        logger.info(f"Inline model loading: Loading '{requested_model}' into multi-model registry")
+        logger.info("Inline model loading: Loading '%s' into multi-model registry", requested_model)
     else:
         # Single-model mode: check current model
-        current_model = getattr(raw_request.app.state, 'current_model_path', None)
+        current_model = getattr(raw_request.app.state, "current_model_path", None)
         if requested_model == current_model:
             return  # Already loaded
 
-        logger.info(f"Inline model switching: Switching from '{current_model}' to '{requested_model}'")
-        
+        logger.info("Inline model switching: Switching from '%s' to '%s'", current_model, requested_model)
+
         # Unload current model
-        if (hasattr(raw_request.app.state, 'engine_client') and 
-            raw_request.app.state.engine_client is not None):
+        if hasattr(raw_request.app.state, "engine_client") and raw_request.app.state.engine_client is not None:
             handler = models(raw_request)
             await handler.unload_model(raw_request.app.state.engine_client)
             raw_request.app.state.engine_client = None
@@ -449,8 +445,9 @@ async def maybe_switch_model(raw_request: Request, requested_model: str) -> None
     await init_app_state(new_client, raw_request.app.state, updated_args)
 
     logger.info(
-        f"Model "
-        f"{'loaded into registry' if envs.APHRODITE_ENABLE_MULTI_MODEL else 'switch complete'}: '{requested_model}'"
+        "Model %s: '%s'",
+        "loaded into registry" if envs.APHRODITE_ENABLE_MULTI_MODEL else "switch complete",
+        requested_model,
     )
 
 
@@ -480,8 +477,7 @@ async def get_server_load_metrics(request: Request):
     # - /rerank
     # - /v1/rerank
     # - /v2/rerank
-    return JSONResponse(
-        content={'server_load': request.app.state.server_load_metrics})
+    return JSONResponse(content={"server_load": request.app.state.server_load_metrics})
 
 
 @router.get("/ping", response_class=Response)
@@ -508,15 +504,12 @@ async def tokenize(request: TokenizeRequest, raw_request: Request):
     try:
         generator = await handler.create_tokenize(request, raw_request)
     except NotImplementedError as e:
-        raise HTTPException(status_code=HTTPStatus.NOT_IMPLEMENTED.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.NOT_IMPLEMENTED.value, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, TokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -541,12 +534,10 @@ async def detokenize(request: DetokenizeRequest, raw_request: Request):
     except OverflowError as e:
         raise RequestValidationError(errors=[str(e)]) from e
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, DetokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -555,29 +546,30 @@ async def detokenize(request: DetokenizeRequest, raw_request: Request):
 
 def maybe_register_tokenizer_info_endpoint(args):
     """Conditionally register the tokenizer info endpoint if enabled."""
-    if getattr(args, 'enable_tokenizer_info_endpoint', False):
+    if getattr(args, "enable_tokenizer_info_endpoint", False):
 
         @router.get("/tokenizer_info")
         async def get_tokenizer_info(raw_request: Request):
             """Get comprehensive tokenizer information."""
             result = await tokenization(raw_request).get_tokenizer_info()
-            return JSONResponse(content=result.model_dump(),
-                                status_code=result.code if isinstance(
-                                    result, ErrorResponse) else 200)
+            return JSONResponse(
+                content=result.model_dump(), status_code=result.code if isinstance(result, ErrorResponse) else 200
+            )
 
 
 @router.get("/v1/models")
 async def show_available_models(raw_request: Request):
     """List all available models from the registry."""
-    from aphrodite.endpoints.openai.protocol import (ModelCard, ModelList,
-                                                     ModelPermission)
+    from aphrodite.endpoints.openai.protocol import ModelCard, ModelList, ModelPermission
 
     model_cards = []
 
     # If multi-model is enabled and registry exists, aggregate models from all loaded models
-    if (envs.APHRODITE_ENABLE_MULTI_MODEL and 
-        hasattr(raw_request.app.state, 'model_registry') and 
-        raw_request.app.state.model_registry is not None):
+    if (
+        envs.APHRODITE_ENABLE_MULTI_MODEL
+        and hasattr(raw_request.app.state, "model_registry")
+        and raw_request.app.state.model_registry is not None
+    ):
         # Track already added models to avoid duplicates from aliases
         seen_models = set()
 
@@ -589,22 +581,27 @@ async def show_available_models(raw_request: Request):
 
             # Add cards for this model's base models
             for base_model in model_info.serving_models.base_model_paths:
-                model_cards.append(ModelCard(
-                    id=base_model.name,
-                    max_model_len=model_info.serving_models.max_model_len,
-                    root=base_model.model_path,
-                    permission=[ModelPermission()],
-                ))
+                model_cards.append(
+                    ModelCard(
+                        id=base_model.name,
+                        max_model_len=model_info.serving_models.max_model_len,
+                        root=base_model.model_path,
+                        permission=[ModelPermission()],
+                    )
+                )
 
             # Add LoRA adapters for this model
             for lora in model_info.serving_models.lora_requests.values():
-                model_cards.append(ModelCard(
-                    id=lora.lora_name,
-                    root=lora.local_path,
-                    parent=lora.base_model_name if lora.base_model_name
+                model_cards.append(
+                    ModelCard(
+                        id=lora.lora_name,
+                        root=lora.local_path,
+                        parent=lora.base_model_name
+                        if lora.base_model_name
                         else model_info.serving_models.base_model_paths[0].name,
-                    permission=[ModelPermission()],
-                ))
+                        permission=[ModelPermission()],
+                    )
+                )
     else:
         # Fallback to legacy single-model behavior
         handler = models(raw_request)
@@ -631,8 +628,7 @@ async def serviceinfo():
             "software": {
                 "name": "Aphrodite Engine",
                 "version": APHRODITE_VERSION,
-                "repository":
-                "https://github.com/PygmalionAI/aphrodite-engine",
+                "repository": "https://github.com/PygmalionAI/aphrodite-engine",
                 "homepage": "https://aphrodite.pygmalion.chat",
                 "logo": "https://pygmalion.chat/icons/favicon.ico",
             },
@@ -648,9 +644,10 @@ async def serviceinfo():
                     "rel_url": "/api",
                     "documentation": "/redoc",
                     "version": 1,
-                }
-            }
-        })
+                },
+            },
+        }
+    )
 
 
 async def _convert_stream_to_sse_events(
@@ -660,9 +657,7 @@ async def _convert_stream_to_sse_events(
     async for event in generator:
         event_type = getattr(event, "type", "unknown")
         # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
-        event_data = (
-            f"event: {event_type}\ndata: {event.model_dump_json(indent=None)}\n\n"
-        )
+        event_data = f"event: {event_type}\ndata: {event.model_dump_json(indent=None)}\n\n"
         yield event_data
 
 
@@ -680,18 +675,15 @@ async def _convert_stream_to_sse_events(
 async def create_responses(request: ResponsesRequest, raw_request: Request):
     handler = responses(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Responses API")
+        return base(raw_request).create_error_response(message="The model does not support Responses API")
 
     try:
         generator = await handler.create_responses(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, ResponsesResponse):
         return JSONResponse(content=generator.model_dump())
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -706,8 +698,7 @@ async def retrieve_responses(
 ):
     handler = responses(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Responses API")
+        return base(raw_request).create_error_response(message="The model does not support Responses API")
 
     try:
         response = await handler.retrieve_responses(
@@ -716,36 +707,28 @@ async def retrieve_responses(
             stream=stream,
         )
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(response, ErrorResponse):
-        return JSONResponse(
-            content=response.model_dump(), status_code=response.error.code
-        )
+        return JSONResponse(content=response.model_dump(), status_code=response.error.code)
     elif isinstance(response, ResponsesResponse):
         return JSONResponse(content=response.model_dump())
-    return StreamingResponse(
-        content=_convert_stream_to_sse_events(response), media_type="text/event-stream"
-    )
+    return StreamingResponse(content=_convert_stream_to_sse_events(response), media_type="text/event-stream")
 
 
 @router.post("/v1/responses/{response_id}/cancel")
 async def cancel_responses(response_id: str, raw_request: Request):
     handler = responses(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Responses API")
+        return base(raw_request).create_error_response(message="The model does not support Responses API")
 
     try:
         response = await handler.cancel_responses(response_id)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(response, ErrorResponse):
-        return JSONResponse(content=response.model_dump(),
-                            status_code=response.code)
+        return JSONResponse(content=response.model_dump(), status_code=response.code)
     return JSONResponse(content=response.model_dump())
 
 
@@ -761,25 +744,21 @@ async def cancel_responses(response_id: str, raw_request: Request):
 )
 @with_cancellation
 @load_aware_call
-async def create_chat_completion(request: ChatCompletionRequest,
-                                 raw_request: Request):
+async def create_chat_completion(request: ChatCompletionRequest, raw_request: Request):
     # Check if we need to switch models (inline model loading)
     await maybe_switch_model(raw_request, request.model)
 
     handler = chat(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Chat Completions API")
+        return base(raw_request).create_error_response(message="The model does not support Chat Completions API")
 
     try:
         generator = await handler.create_chat_completion(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
 
     elif isinstance(generator, ChatCompletionResponse):
         return JSONResponse(content=generator.model_dump())
@@ -805,21 +784,17 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
 
     handler = completion(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Completions API")
+        return base(raw_request).create_error_response(message="The model does not support Completions API")
 
     try:
         generator = await handler.create_completion(request, raw_request)
     except OverflowError as e:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, CompletionResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -839,18 +814,15 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
 async def create_embedding(request: EmbeddingRequest, raw_request: Request):
     handler = embedding(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Embeddings API")
+        return base(raw_request).create_error_response(message="The model does not support Embeddings API")
 
     try:
         generator = await handler.create_embedding(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, EmbeddingResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -870,18 +842,15 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
 async def create_pooling(request: PoolingRequest, raw_request: Request):
     handler = pooling(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Pooling API")
+        return base(raw_request).create_error_response(message="The model does not support Pooling API")
 
     try:
         generator = await handler.create_pooling(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, (PoolingResponse, IOProcessorResponse)):
         return JSONResponse(content=generator.model_dump())
     elif isinstance(generator, PoolingBytesResponse):
@@ -897,22 +866,18 @@ async def create_pooling(request: PoolingRequest, raw_request: Request):
 @router.post("/classify", dependencies=[Depends(validate_json_request)])
 @with_cancellation
 @load_aware_call
-async def create_classify(request: ClassificationRequest,
-                          raw_request: Request):
+async def create_classify(request: ClassificationRequest, raw_request: Request):
     handler = classify(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Classification API")
+        return base(raw_request).create_error_response(message="The model does not support Classification API")
 
     try:
         generator = await handler.create_classify(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
 
     elif isinstance(generator, ClassificationResponse):
         return JSONResponse(content=generator.model_dump())
@@ -933,18 +898,15 @@ async def create_classify(request: ClassificationRequest,
 async def create_score(request: ScoreRequest, raw_request: Request):
     handler = score(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Score API")
+        return base(raw_request).create_error_response(message="The model does not support Score API")
 
     try:
         generator = await handler.create_score(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, ScoreResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -964,7 +926,8 @@ async def create_score(request: ScoreRequest, raw_request: Request):
 async def create_score_v1(request: ScoreRequest, raw_request: Request):
     logger.warning(
         "To indicate that Score API is not part of standard OpenAI API, we "
-        "have moved it to `/score`. Please update your client accordingly.")
+        "have moved it to `/score`. Please update your client accordingly."
+    )
 
     return await create_score(request, raw_request)
 
@@ -980,26 +943,20 @@ async def create_score_v1(request: ScoreRequest, raw_request: Request):
 )
 @with_cancellation
 @load_aware_call
-async def create_transcriptions(raw_request: Request,
-                                request: Annotated[TranscriptionRequest,
-                                                   Form()]):
+async def create_transcriptions(raw_request: Request, request: Annotated[TranscriptionRequest, Form()]):
     handler = transcription(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Transcriptions API")
+        return base(raw_request).create_error_response(message="The model does not support Transcriptions API")
 
     audio_data = await request.file.read()
 
     try:
-        generator = await handler.create_transcription(audio_data, request,
-                                                       raw_request)
+        generator = await handler.create_transcription(audio_data, request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
 
     elif isinstance(generator, TranscriptionResponse):
         return JSONResponse(content=generator.model_dump())
@@ -1018,26 +975,20 @@ async def create_transcriptions(raw_request: Request,
 )
 @with_cancellation
 @load_aware_call
-async def create_translations(request: Annotated[TranslationRequest,
-                                                 Form()],
-                              raw_request: Request):
+async def create_translations(request: Annotated[TranslationRequest, Form()], raw_request: Request):
     handler = translation(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Translations API")
+        return base(raw_request).create_error_response(message="The model does not support Translations API")
 
     audio_data = await request.file.read()
 
     try:
-        generator = await handler.create_translation(audio_data, request,
-                                                     raw_request)
+        generator = await handler.create_translation(audio_data, request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
 
     elif isinstance(generator, TranslationResponse):
         return JSONResponse(content=generator.model_dump())
@@ -1058,18 +1009,15 @@ async def create_translations(request: Annotated[TranslationRequest,
 async def do_rerank(request: RerankRequest, raw_request: Request):
     handler = rerank(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Rerank (Score) API")
+        return base(raw_request).create_error_response(message="The model does not support Rerank (Score) API")
 
     try:
         generator = await handler.do_rerank(request, raw_request)
     except Exception as e:
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                            detail=str(e)) from e
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
 
     if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, RerankResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -1109,10 +1057,7 @@ async def do_rerank_v2(request: RerankRequest, raw_request: Request):
 
 
 if envs.APHRODITE_SERVER_DEV_MODE:
-    logger.warning(
-        "SECURITY WARNING: Development endpoints are enabled! "
-        "This should NOT be used in production!"
-    )
+    logger.warning("SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!")
 
     PydanticAphroditConfig = pydantic.TypeAdapter(AphroditeConfig)
 
@@ -1186,19 +1131,18 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         try:
             body = await raw_request.json()
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value,
-                                detail=f"JSON decode error: {e}") from e
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=f"JSON decode error: {e}") from e
         method = body.get("method")
         if method is None:
-            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value,
-                                detail="Missing 'method' in request body")
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail="Missing 'method' in request body")
         # For security reason, only serialized string args/kwargs are passed.
         # User-defined `method` is responsible for deserialization if needed.
         args: list[str] = body.get("args", [])
         kwargs: dict[str, str] = body.get("kwargs", {})
         timeout: float | None = body.get("timeout")
         results = await engine_client(raw_request).collective_rpc(
-            method=method, timeout=timeout, args=tuple(args), kwargs=kwargs)
+            method=method, timeout=timeout, args=tuple(args), kwargs=kwargs
+        )
         if results is None:
             return Response(status_code=200)
         response: list[Any] = []
@@ -1244,31 +1188,31 @@ if envs.APHRODITE_SERVER_DEV_MODE:
 
             # Check if multi-model is enabled when trying to unload specific models
             if model_to_unload and not envs.APHRODITE_ENABLE_MULTI_MODEL:
-                return JSONResponse(content={
-                    "status": "error",
-                    "message": (
-                        "Selective model unloading requires multi-model support. "
-                        "Use /v1/unload_model without parameters to unload the current model, "
-                        "or enable multi-model support with APHRODITE_ENABLE_MULTI_MODEL=1."
-                    )
-                }, status_code=400)
+                return JSONResponse(
+                    content={
+                        "status": "error",
+                        "message": (
+                            "Selective model unloading requires multi-model support. "
+                            "Use /v1/unload_model without parameters to unload the current model, "
+                            "or enable multi-model support with APHRODITE_ENABLE_MULTI_MODEL=1."
+                        ),
+                    },
+                    status_code=400,
+                )
 
             # Multi-model mode: use registry
             if envs.APHRODITE_ENABLE_MULTI_MODEL:
-                if not hasattr(raw_request.app.state, 'model_registry') or raw_request.app.state.model_registry is None:
-                    return JSONResponse(content={
-                        "status": "info",
-                        "message": "No models are loaded."
-                    })
+                if not hasattr(raw_request.app.state, "model_registry") or raw_request.app.state.model_registry is None:
+                    return JSONResponse(content={"status": "info", "message": "No models are loaded."})
                 registry = raw_request.app.state.model_registry
 
                 if model_to_unload:
                     # Unload specific model
                     if model_to_unload not in registry:
-                        return JSONResponse(content={
-                            "status": "error",
-                            "message": f"Model '{model_to_unload}' is not loaded."
-                        }, status_code=404)
+                        return JSONResponse(
+                            content={"status": "error", "message": f"Model '{model_to_unload}' is not loaded."},
+                            status_code=404,
+                        )
 
                     model_info = registry[model_to_unload]
                     handler = models(raw_request)
@@ -1304,20 +1248,17 @@ if envs.APHRODITE_SERVER_DEV_MODE:
 
                     registry.clear()
                     raw_request.app.state.engine_client = None
-                    
+
                     result = {
                         "status": "success",
                         "message": f"All models unloaded successfully in {total_time:.2f}s.",
                         "total_time_s": round(total_time, 2),
-                        "unloaded_models": unloaded
+                        "unloaded_models": unloaded,
                     }
             else:
                 # Single-model mode: unload the current model
-                if not hasattr(raw_request.app.state, 'engine_client') or raw_request.app.state.engine_client is None:
-                    return JSONResponse(content={
-                        "status": "info",
-                        "message": "No model is loaded."
-                    })
+                if not hasattr(raw_request.app.state, "engine_client") or raw_request.app.state.engine_client is None:
+                    return JSONResponse(content={"status": "info", "message": "No model is loaded."})
 
                 handler = models(raw_request)
                 old_client = raw_request.app.state.engine_client
@@ -1326,10 +1267,9 @@ if envs.APHRODITE_SERVER_DEV_MODE:
 
             return JSONResponse(content=result)
         except Exception as e:
-            logger.error(f"Model unload failed: {e}")
+            logger.error("Model unload failed: %s", e)
             raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                detail=f"Model unload failed: {str(e)}"
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Model unload failed: {str(e)}"
             ) from e
 
     @router.post("/v1/load_model")
@@ -1435,8 +1375,7 @@ if envs.APHRODITE_SERVER_DEV_MODE:
                         config_data = yaml.safe_load(config_content)
                     except yaml.YAMLError as e:
                         raise HTTPException(
-                            status_code=HTTPStatus.BAD_REQUEST.value,
-                            detail=f"Invalid YAML config file: {str(e)}"
+                            status_code=HTTPStatus.BAD_REQUEST.value, detail=f"Invalid YAML config file: {str(e)}"
                         ) from e
 
             # Determine the model to load (default to original if not specified)
@@ -1446,27 +1385,33 @@ if envs.APHRODITE_SERVER_DEV_MODE:
             # Check if multi-model is enabled when trying to load additional models
             if envs.APHRODITE_ENABLE_MULTI_MODEL:
                 # Multi-model mode: check if already loaded in registry
-                if (hasattr(raw_request.app.state, 'model_registry') and 
-                    raw_request.app.state.model_registry is not None and
-                    model_name in raw_request.app.state.model_registry):
-                    return JSONResponse(content={
-                        "status": "info",
-                        "message": f"Model '{model_name}' is already loaded in the registry."
-                    })
+                if (
+                    hasattr(raw_request.app.state, "model_registry")
+                    and raw_request.app.state.model_registry is not None
+                    and model_name in raw_request.app.state.model_registry
+                ):
+                    return JSONResponse(
+                        content={
+                            "status": "info",
+                            "message": f"Model '{model_name}' is already loaded in the registry.",
+                        }
+                    )
             else:
                 # Single-model mode: check if a model is already loaded
-                if (hasattr(raw_request.app.state, 'engine_client') and 
-                    raw_request.app.state.engine_client is not None):
+                if hasattr(raw_request.app.state, "engine_client") and raw_request.app.state.engine_client is not None:
                     # Single model mode - must unload first
-                    current_model = getattr(raw_request.app.state, 'current_model_path', 'unknown')
-                    return JSONResponse(content={
-                        "status": "error",
-                        "message": (
-                            f"A model ('{current_model}') is already loaded. "
-                            "In single-model mode, use /v1/unload_model first, then /v1/load_model. "
-                            "Or enable multi-model support with APHRODITE_ENABLE_MULTI_MODEL=1."
-                        )
-                    }, status_code=400)
+                    current_model = getattr(raw_request.app.state, "current_model_path", "unknown")
+                    return JSONResponse(
+                        content={
+                            "status": "error",
+                            "message": (
+                                f"A model ('{current_model}') is already loaded. "
+                                "In single-model mode, use /v1/unload_model first, then /v1/load_model. "
+                                "Or enable multi-model support with APHRODITE_ENABLE_MULTI_MODEL=1."
+                            ),
+                        },
+                        status_code=400,
+                    )
 
             # Load the model using the serving_models handler
             handler = models(raw_request)
@@ -1483,15 +1428,11 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         except HTTPException:
             raise
         except ValueError as e:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST.value,
-                detail=str(e)
-            ) from e
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=str(e)) from e
         except Exception as e:
-            logger.error(f"Model load failed: {e}")
+            logger.error("Model load failed: %s", e)
             raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
-                detail=f"Model load failed: {str(e)}"
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Model load failed: {str(e)}"
             ) from e
 
 
@@ -1509,25 +1450,19 @@ async def scale_elastic_ep(raw_request: Request):
     try:
         body = await raw_request.json()
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400,
-                            detail="Invalid JSON format") from e  # noqa: B904
+        raise HTTPException(status_code=400, detail="Invalid JSON format") from e  # noqa: B904
 
     new_data_parallel_size = body.get("new_data_parallel_size")
     drain_timeout = body.get("drain_timeout", 120)  # Default 2 minutes
 
     if new_data_parallel_size is None:
-        raise HTTPException(status_code=400,
-                            detail="new_data_parallel_size is required")
+        raise HTTPException(status_code=400, detail="new_data_parallel_size is required")
 
-    if not isinstance(new_data_parallel_size,
-                      int) or new_data_parallel_size <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="new_data_parallel_size must be a positive integer")
+    if not isinstance(new_data_parallel_size, int) or new_data_parallel_size <= 0:
+        raise HTTPException(status_code=400, detail="new_data_parallel_size must be a positive integer")
 
     if not isinstance(drain_timeout, int) or drain_timeout <= 0:
-        raise HTTPException(status_code=400,
-                            detail="drain_timeout must be a positive integer")
+        raise HTTPException(status_code=400, detail="drain_timeout must be a positive integer")
 
     # Set scaling flag to prevent new requests
     global _scaling_elastic_ep
@@ -1535,15 +1470,15 @@ async def scale_elastic_ep(raw_request: Request):
     client = engine_client(raw_request)
     try:
         await client.scale_elastic_ep(new_data_parallel_size, drain_timeout)
-        return JSONResponse({
-            "message":
-            f"Scaled to {new_data_parallel_size} "
-            "data parallel engines",
-        })
+        return JSONResponse(
+            {
+                "message": f"Scaled to {new_data_parallel_size} data parallel engines",
+            }
+        )
     except TimeoutError as e:
-        raise HTTPException(status_code=408,
-                            detail="Scale failed due to request drain timeout "
-                            f"after {drain_timeout} seconds") from e
+        raise HTTPException(
+            status_code=408, detail=f"Scale failed due to request drain timeout after {drain_timeout} seconds"
+        ) from e
     except Exception as e:
         logger.error("Scale failed: %s", e)
         raise HTTPException(status_code=500, detail="Scale failed") from e
@@ -1594,13 +1529,13 @@ async def invocations(raw_request: Request):
     try:
         body = await raw_request.json()
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value,
-                            detail=f"JSON decode error: {e}") from e
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=f"JSON decode error: {e}") from e
 
-    valid_endpoints = [(validator, endpoint)
-                       for validator, (get_handler,
-                                       endpoint) in INVOCATION_VALIDATORS
-                       if get_handler(raw_request) is not None]
+    valid_endpoints = [
+        (validator, endpoint)
+        for validator, (get_handler, endpoint) in INVOCATION_VALIDATORS
+        if get_handler(raw_request) is not None
+    ]
 
     for request_validator, endpoint in valid_endpoints:
         try:
@@ -1610,20 +1545,14 @@ async def invocations(raw_request: Request):
 
         return await endpoint(request, raw_request)
 
-    type_names = [
-        t.__name__ if isinstance(t := validator._type, type) else str(t)
-        for validator, _ in valid_endpoints
-    ]
-    msg = ("Cannot find suitable handler for request. "
-           f"Expected one of: {type_names}")
+    type_names = [t.__name__ if isinstance(t := validator._type, type) else str(t) for validator, _ in valid_endpoints]
+    msg = f"Cannot find suitable handler for request. Expected one of: {type_names}"
     res = base(raw_request).create_error_response(message=msg)
     return JSONResponse(content=res.model_dump(), status_code=res.code)
 
 
 if envs.APHRODITE_TORCH_PROFILER_DIR:
-    logger.warning(
-        "Torch Profiler is enabled in the API server. This should ONLY be "
-        "used for local development!")
+    logger.warning("Torch Profiler is enabled in the API server. This should ONLY be used for local development!")
 
     @router.post("/start_profile")
     async def start_profile(raw_request: Request):
@@ -1642,42 +1571,34 @@ if envs.APHRODITE_TORCH_PROFILER_DIR:
 
 if envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING:
     logger.warning(
-        "LoRA dynamic loading & unloading is enabled in the API server. "
-        "This should ONLY be used for local development!")
+        "LoRA dynamic loading & unloading is enabled in the API server. This should ONLY be used for local development!"
+    )
 
-    @router.post("/v1/load_lora_adapter",
-                 dependencies=[Depends(validate_json_request)])
-    async def load_lora_adapter(request: LoadLoRAAdapterRequest,
-                                raw_request: Request):
+    @router.post("/v1/load_lora_adapter", dependencies=[Depends(validate_json_request)])
+    async def load_lora_adapter(request: LoadLoRAAdapterRequest, raw_request: Request):
         handler = models(raw_request)
         response = await handler.load_lora_adapter(request)
         if isinstance(response, ErrorResponse):
-            return JSONResponse(content=response.model_dump(),
-                                status_code=response.code)
+            return JSONResponse(content=response.model_dump(), status_code=response.code)
 
         return Response(status_code=200, content=response)
 
-    @router.post("/v1/unload_lora_adapter",
-                 dependencies=[Depends(validate_json_request)])
-    async def unload_lora_adapter(request: UnloadLoRAAdapterRequest,
-                                  raw_request: Request):
+    @router.post("/v1/unload_lora_adapter", dependencies=[Depends(validate_json_request)])
+    async def unload_lora_adapter(request: UnloadLoRAAdapterRequest, raw_request: Request):
         handler = models(raw_request)
         response = await handler.unload_lora_adapter(request)
         if isinstance(response, ErrorResponse):
-            return JSONResponse(content=response.model_dump(),
-                                status_code=response.code)
+            return JSONResponse(content=response.model_dump(), status_code=response.code)
 
         return Response(status_code=200, content=response)
 
 
 # ============ KoboldAI API ============ #
 @kai_api.post("/generate")
-async def generate(kai_payload: KAIGenerationInputSchema,
-                   raw_request: Request):
+async def generate(kai_payload: KAIGenerationInputSchema, raw_request: Request):
     handler = kobold(raw_request)
     if handler is None:
-        err = base(raw_request).create_error_response(
-            message="The model does not support KoboldAI API")
+        err = base(raw_request).create_error_response(message="The model does not support KoboldAI API")
         return JSONResponse(content=err.model_dump(), status_code=err.code)
 
     result = await handler.create_kobold_response(kai_payload, raw_request)
@@ -1685,12 +1606,10 @@ async def generate(kai_payload: KAIGenerationInputSchema,
 
 
 @extra_api.post("/generate/stream")
-async def generate_stream(kai_payload: KAIGenerationInputSchema,
-                          raw_request: Request):
+async def generate_stream(kai_payload: KAIGenerationInputSchema, raw_request: Request):
     handler = kobold(raw_request)
     if handler is None:
-        err = base(raw_request).create_error_response(
-            message="The model does not support KoboldAI streaming API")
+        err = base(raw_request).create_error_response(message="The model does not support KoboldAI streaming API")
         return JSONResponse(content=err.model_dump(), status_code=err.code)
 
     generator = handler.create_kobold_stream(kai_payload, raw_request)
@@ -1701,7 +1620,7 @@ async def generate_stream(kai_payload: KAIGenerationInputSchema,
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         },
-        media_type="text/event-stream"
+        media_type="text/event-stream",
     )
 
 
@@ -1743,8 +1662,7 @@ async def abort_generation(raw_request: Request):
 async def count_tokens(request: TokenizeRequest, raw_request: Request):
     """Tokenize string and return token count"""
 
-    generator = await tokenization(raw_request).create_tokenize(
-        request, raw_request)
+    generator = await tokenization(raw_request).create_tokenize(request, raw_request)
     return JSONResponse({"value": generator.model_dump()["tokens"]})
 
 
@@ -1756,8 +1674,7 @@ async def get_version():
 
 @kai_api.get("/model")
 async def get_model(raw_request: Request):
-    return JSONResponse(
-        {"result": f"aphrodite/{raw_request.app.state.served_model_names[0]}"})
+    return JSONResponse({"result": f"aphrodite/{raw_request.app.state.served_model_names[0]}"})
 
 
 @kai_api.get("/config/soft_prompts_list")
@@ -1780,16 +1697,14 @@ async def set_current_softprompt():
 
 @kai_api.get("/config/max_length")
 async def get_max_length(raw_request: Request) -> JSONResponse:
-    max_length = (
-        raw_request.app.state.aphrodite_config.model_config.max_model_len)
+    max_length = raw_request.app.state.aphrodite_config.model_config.max_model_len
     return JSONResponse({"value": max_length})
 
 
 @kai_api.get("/config/max_context_length")
 @extra_api.get("/true_max_context_length")
 async def get_max_context_length(raw_request: Request) -> JSONResponse:
-    max_context_length = (
-        raw_request.app.state.aphrodite_config.model_config.max_model_len)
+    max_context_length = raw_request.app.state.aphrodite_config.model_config.max_model_len
     return JSONResponse({"value": max_context_length})
 
 
@@ -1810,15 +1725,14 @@ async def get_kobold_lite_ui():
     """Serves a cached copy of the Kobold Lite UI, loading it from disk
     on demand if needed. Can be disabled with SERVE_KOBOLD_LITE_UI=0."""
     if not SERVE_KOBOLD_LITE_UI:
-        return JSONResponse(content={"error": "Kobold Lite UI is disabled"},
-                            status_code=404)
+        return JSONResponse(content={"error": "Kobold Lite UI is disabled"}, status_code=404)
     global kobold_lite_ui
     if kobold_lite_ui == "":
         scriptpath = os.path.dirname(os.path.abspath(__file__))
         klitepath = os.path.join(scriptpath, "./klite.embd")
         klitepath = os.path.normpath(klitepath)  # Normalize the path
         if os.path.exists(klitepath):
-            with open(klitepath, "r", encoding="utf-8") as f:
+            with open(klitepath, encoding="utf-8") as f:
                 kobold_lite_ui = f.read()
         else:
             logger.error("Kobold Lite UI not found at %s", klitepath)
@@ -1835,8 +1749,7 @@ def load_log_config(log_config_file: str | None) -> dict | None:
         with open(log_config_file) as f:
             return json.load(f)
     except Exception as e:
-        logger.warning("Failed to load log config from file %s: error %s",
-                       log_config_file, e)
+        logger.warning("Failed to load log config from file %s: error %s", log_config_file, e)
         return None
 
 
@@ -1847,18 +1760,18 @@ class UvicornFormatter(logging.Formatter):
         super().__init__(fmt, datefmt, style)
 
         self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
-        self.use_color = _supports_color() and os.environ.get('APHRODITE_LOGGING_COLOR', '1') in ('1', 'true', 'True')
+        self.use_color = _supports_color() and os.environ.get("APHRODITE_LOGGING_COLOR", "1") in ("1", "true", "True")
         self.level_colors = {
-            'DEBUG': Colors.DEBUG,
-            'INFO': Colors.INFO,
-            'WARNING': Colors.WARNING,
-            'ERROR': Colors.ERROR,
-            'CRITICAL': Colors.CRITICAL,
+            "DEBUG": Colors.DEBUG,
+            "INFO": Colors.INFO,
+            "WARNING": Colors.WARNING,
+            "ERROR": Colors.ERROR,
+            "CRITICAL": Colors.CRITICAL,
         }
         self.path_color = Colors.PATH
         self.time_color = Colors.TIME
         self.reset_color = Colors.RESET
-    
+
     def format(self, record):
         if not self.verbose_logging:
             original_datefmt = self.datefmt
@@ -1869,12 +1782,12 @@ class UvicornFormatter(logging.Formatter):
         if not self.verbose_logging:
             self.datefmt = original_datefmt
 
-        if 'WARNING' in msg:
-            msg = msg.replace('WARNING', 'WARN', 1)
+        if "WARNING" in msg:
+            msg = msg.replace("WARNING", "WARN", 1)
 
         if self.use_color:
-            level_color = self.level_colors.get(record.levelname, '')
-            level_str = 'WARN' if record.levelname == 'WARNING' else record.levelname
+            level_color = self.level_colors.get(record.levelname, "")
+            level_str = "WARN" if record.levelname == "WARNING" else record.levelname
 
             if level_str in msg:
                 msg = msg.replace(level_str, f"{level_color}{level_str}{self.reset_color}", 1)
@@ -1901,21 +1814,15 @@ def create_uvicorn_log_config() -> dict:
     if envs.APHRODITE_LOGGING_VERBOSE:
         date_format = "%m-%d %H:%M:%S"
         default_format = (
-            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
-            "[%(name)-15s:%(lineno)4d] %(message)s"
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s [%(name)-15s:%(lineno)4d] %(message)s"
         )
         access_format = (
-            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
-            "[%(name)-15s:%(lineno)4d] %(message)s"
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s [%(name)-15s:%(lineno)4d] %(message)s"
         )
     else:
         date_format = "%H:%M:%S"
-        default_format = (
-            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
-        )
-        access_format = (
-            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
-        )
+        default_format = f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+        access_format = f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
 
     return {
         "version": 1,
@@ -2021,8 +1928,7 @@ class XRequestIdMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    def __call__(self, scope: Scope, receive: Receive,
-                 send: Send) -> Awaitable[None]:
+    def __call__(self, scope: Scope, receive: Receive, send: Send) -> Awaitable[None]:
         if scope["type"] not in ("http", "websocket"):
             return self.app(scope, receive, send)
 
@@ -2036,8 +1942,7 @@ class XRequestIdMiddleware:
             """
             if message["type"] == "http.response.start":
                 response_headers = MutableHeaders(raw=message["headers"])
-                request_id = request_headers.get("X-Request-Id",
-                                                 uuid.uuid4().hex)
+                request_id = request_headers.get("X-Request-Id", uuid.uuid4().hex)
                 response_headers.append("X-Request-Id", request_id)
             await send(message)
 
@@ -2059,8 +1964,7 @@ class ScalingMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    def __call__(self, scope: Scope, receive: Receive,
-                 send: Send) -> Awaitable[None]:
+    def __call__(self, scope: Scope, receive: Receive, send: Send) -> Awaitable[None]:
         if scope["type"] != "http":
             return self.app(scope, receive, send)
 
@@ -2068,11 +1972,9 @@ class ScalingMiddleware:
         global _scaling_elastic_ep
         if _scaling_elastic_ep:
             # Return 503 Service Unavailable response
-            response = JSONResponse(content={
-                "error":
-                "The model is currently scaling. Please try again later."
-            },
-                                    status_code=503)
+            response = JSONResponse(
+                content={"error": "The model is currently scaling. Please try again later."}, status_code=503
+            )
             return response(scope, receive, send)
 
         return self.app(scope, receive, send)
@@ -2081,29 +1983,25 @@ class ScalingMiddleware:
 def _extract_content_from_chunk(chunk_data: dict) -> str:
     """Extract content from a streaming response chunk."""
     try:
-        from aphrodite.endpoints.openai.protocol import (
-            ChatCompletionStreamResponse, CompletionStreamResponse)
+        from aphrodite.endpoints.openai.protocol import ChatCompletionStreamResponse, CompletionStreamResponse
 
         # Try using Completion types for type-safe parsing
-        if chunk_data.get('object') == 'chat.completion.chunk':
-            chat_response = ChatCompletionStreamResponse.model_validate(
-                chunk_data)
+        if chunk_data.get("object") == "chat.completion.chunk":
+            chat_response = ChatCompletionStreamResponse.model_validate(chunk_data)
             if chat_response.choices and chat_response.choices[0].delta.content:
                 return chat_response.choices[0].delta.content
-        elif chunk_data.get('object') == 'text_completion':
-            completion_response = CompletionStreamResponse.model_validate(
-                chunk_data)
-            if completion_response.choices and completion_response.choices[
-                    0].text:
+        elif chunk_data.get("object") == "text_completion":
+            completion_response = CompletionStreamResponse.model_validate(chunk_data)
+            if completion_response.choices and completion_response.choices[0].text:
                 return completion_response.choices[0].text
     except pydantic.ValidationError:
         # Fallback to manual parsing
-        if 'choices' in chunk_data and chunk_data['choices']:
-            choice = chunk_data['choices'][0]
-            if 'delta' in choice and choice['delta'].get('content'):
-                return choice['delta']['content']
-            elif choice.get('text'):
-                return choice['text']
+        if "choices" in chunk_data and chunk_data["choices"]:
+            choice = chunk_data["choices"][0]
+            if "delta" in choice and choice["delta"].get("content"):
+                return choice["delta"]["content"]
+            elif choice.get("text"):
+                return choice["text"]
     return ""
 
 
@@ -2119,7 +2017,7 @@ class SSEDecoder:
         import json
 
         try:
-            chunk_str = chunk.decode('utf-8')
+            chunk_str = chunk.decode("utf-8")
         except UnicodeDecodeError:
             # Skip malformed chunks
             return []
@@ -2128,18 +2026,18 @@ class SSEDecoder:
         events = []
 
         # Process complete lines
-        while '\n' in self.buffer:
-            line, self.buffer = self.buffer.split('\n', 1)
-            line = line.rstrip('\r')  # Handle CRLF
+        while "\n" in self.buffer:
+            line, self.buffer = self.buffer.split("\n", 1)
+            line = line.rstrip("\r")  # Handle CRLF
 
-            if line.startswith('data: '):
+            if line.startswith("data: "):
                 data_str = line[6:].strip()
-                if data_str == '[DONE]':
-                    events.append({'type': 'done'})
+                if data_str == "[DONE]":
+                    events.append({"type": "done"})
                 elif data_str:
                     try:
                         event_data = json.loads(data_str)
-                        events.append({'type': 'data', 'data': event_data})
+                        events.append({"type": "data", "data": event_data})
                     except json.JSONDecodeError:
                         # Skip malformed JSON
                         continue
@@ -2157,7 +2055,7 @@ class SSEDecoder:
 
     def get_complete_content(self) -> str:
         """Get the complete buffered content."""
-        return ''.join(self.content_buffer)
+        return "".join(self.content_buffer)
 
 
 def _log_streaming_response(response, response_body: list) -> None:
@@ -2178,10 +2076,10 @@ def _log_streaming_response(response, response_body: list) -> None:
             events = sse_decoder.decode_chunk(chunk)
 
             for event in events:
-                if event['type'] == 'data':
-                    content = sse_decoder.extract_content(event['data'])
+                if event["type"] == "data":
+                    content = sse_decoder.extract_content(event["data"])
                     sse_decoder.add_content(content)
-                elif event['type'] == 'done':
+                elif event["type"] == "done":
                     # Log complete content when done
                     full_content = sse_decoder.get_complete_content()
                     if full_content:
@@ -2190,19 +2088,14 @@ def _log_streaming_response(response, response_body: list) -> None:
                             full_content = full_content[:2048] + ""
                             "...[truncated]"
                         logger.info(
-                            "response_body={streaming_complete: "
-                            "content='{}', chunks={}}",
-                            full_content, chunk_count)
+                            "response_body={streaming_complete: content='{}', chunks={}}", full_content, chunk_count
+                        )
                     else:
-                        logger.info(
-                            "response_body={streaming_complete: "
-                            "no_content, chunks={}}",
-                            chunk_count)
+                        logger.info("response_body={streaming_complete: no_content, chunks={}}", chunk_count)
                     return
 
     response.body_iterator = iterate_in_threadpool(buffered_iterator())
-    logger.info("response_body={streaming_started: chunks=%s}",
-                len(response_body))
+    logger.info("response_body={streaming_started: chunks=%s}", len(response_body))
 
 
 def _log_non_streaming_response(response_body: list) -> None:
@@ -2216,10 +2109,7 @@ def _log_non_streaming_response(response_body: list) -> None:
 
 def build_app(args: Namespace) -> FastAPI:
     if args.disable_fastapi_docs:
-        app = FastAPI(openapi_url=None,
-                      docs_url=None,
-                      redoc_url=None,
-                      lifespan=lifespan)
+        app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
     else:
         app = FastAPI(lifespan=lifespan)
     app.include_router(router)
@@ -2244,14 +2134,12 @@ def build_app(args: Namespace) -> FastAPI:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_: Request, exc: HTTPException):
         err = ErrorResponse(
-            error=ErrorInfo(message=exc.detail,
-                            type=HTTPStatus(exc.status_code).phrase,
-                            code=exc.status_code))
+            error=ErrorInfo(message=exc.detail, type=HTTPStatus(exc.status_code).phrase, code=exc.status_code)
+        )
         return JSONResponse(err.model_dump(), status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(_: Request,
-                                           exc: RequestValidationError):
+    async def validation_exception_handler(_: Request, exc: RequestValidationError):
         exc_str = str(exc)
         errors_str = str(exc.errors())
 
@@ -2260,15 +2148,13 @@ def build_app(args: Namespace) -> FastAPI:
         else:
             message = exc_str
 
-        err = ErrorResponse(error=ErrorInfo(message=message,
-                                            type=HTTPStatus.BAD_REQUEST.phrase,
-                                            code=HTTPStatus.BAD_REQUEST))
-        return JSONResponse(err.model_dump(),
-                            status_code=HTTPStatus.BAD_REQUEST)
+        err = ErrorResponse(
+            error=ErrorInfo(message=message, type=HTTPStatus.BAD_REQUEST.phrase, code=HTTPStatus.BAD_REQUEST)
+        )
+        return JSONResponse(err.model_dump(), status_code=HTTPStatus.BAD_REQUEST)
 
     # Ensure --api-key option from CLI takes precedence over APHRODITE_API_KEY
-    if tokens := [key for key in (args.api_key or
-                  [envs.APHRODITE_API_KEY]) if key]:
+    if tokens := [key for key in (args.api_key or [envs.APHRODITE_API_KEY]) if key]:
         app.add_middleware(AuthenticationMiddleware, tokens=tokens)
 
     if args.enable_request_id_headers:
@@ -2278,16 +2164,16 @@ def build_app(args: Namespace) -> FastAPI:
     app.add_middleware(ScalingMiddleware)
 
     if envs.APHRODITE_DEBUG_LOG_API_SERVER_RESPONSE:
-        logger.warning("CAUTION: Enabling log response in the API Server. "
-                       "This can include sensitive information and should be "
-                       "avoided in production.")
+        logger.warning(
+            "CAUTION: Enabling log response in the API Server. "
+            "This can include sensitive information and should be "
+            "avoided in production."
+        )
 
         @app.middleware("http")
         async def log_response(request: Request, call_next):
             response = await call_next(request)
-            response_body = [
-                section async for section in response.body_iterator
-            ]
+            response_body = [section async for section in response.body_iterator]
             response.body_iterator = iterate_in_threadpool(iter(response_body))
             # Check if this is a streaming response by looking at content-type
             content_type = response.headers.get("content-type", "")
@@ -2310,8 +2196,7 @@ def build_app(args: Namespace) -> FastAPI:
         elif inspect.iscoroutinefunction(imported):
             app.middleware("http")(imported)
         else:
-            raise ValueError(f"Invalid middleware {middleware}. "
-                             f"Must be a function or a class.")
+            raise ValueError(f"Invalid middleware {middleware}. Must be a function or a class.")
 
     return app
 
@@ -2330,7 +2215,7 @@ async def init_app_state(
         served_model_names = [args.model]
 
     # Initialize model registry if this is the first model and multi-model is enabled
-    if not hasattr(state, 'model_registry'):
+    if not hasattr(state, "model_registry"):
         if envs.APHRODITE_ENABLE_MULTI_MODEL:
             logger.warning(
                 "=" * 80 + "\n"  # noqa: G003
@@ -2339,8 +2224,7 @@ async def init_app_state(
                 "- Requires APHRODITE_ENABLE_DYNAMIC_KV_CACHE=1 for efficient memory usage\n"
                 "- May have unexpected behavior with certain model configurations\n"
                 "- Not all endpoints are fully tested with multi-model support\n"
-                "- Use at your own risk in production environments\n"
-                + "=" * 80
+                "- Use at your own risk in production environments\n" + "=" * 80
             )
             state.model_registry: dict[str, ModelInfo] = {}
         else:
@@ -2351,6 +2235,7 @@ async def init_app_state(
 
         # Store original args only on first initialization
         from copy import deepcopy
+
         state.original_engine_args = deepcopy(args)
         state.enable_inline_model_loading = args.enable_inline_model_loading
 
@@ -2361,17 +2246,10 @@ async def init_app_state(
             state.request_logger = None
 
     # Merge default_mm_loras into the static lora_modules
-    default_mm_loras = (
-        aphrodite_config.lora_config.default_mm_loras
-        if aphrodite_config.lora_config is not None
-        else {}
-    )
+    default_mm_loras = aphrodite_config.lora_config.default_mm_loras if aphrodite_config.lora_config is not None else {}
     lora_modules = process_lora_modules(args.lora_modules, default_mm_loras)
 
-    base_model_paths = [
-        BaseModelPath(name=name, model_path=args.model)
-        for name in served_model_names
-    ]
+    base_model_paths = [BaseModelPath(name=name, model_path=args.model) for name in served_model_names]
 
     # Create OpenAIServingModels for this specific model
     serving_models = OpenAIServingModels(
@@ -2397,7 +2275,7 @@ async def init_app_state(
                 state.model_registry[name] = state.model_registry[model_key]
 
     # Keep legacy state.engine_client for backward compatibility (points to first model)
-    if not hasattr(state, 'engine_client') or state.engine_client is None:
+    if not hasattr(state, "engine_client") or state.engine_client is None:
         state.engine_client = engine_client
         state.served_model_names = served_model_names
         state.aphrodite_config = aphrodite_config
@@ -2426,7 +2304,7 @@ async def init_app_state(
 
     # Only set openai_serving_models on first initialization (for backward compatibility)
     # Handlers will look up from registry for multi-model support
-    if not hasattr(state, 'openai_serving_models'):
+    if not hasattr(state, "openai_serving_models"):
         state.openai_serving_models = serving_models
 
     state.openai_serving_responses = (
@@ -2610,19 +2488,17 @@ def create_server_unix_socket(path: str) -> socket.socket:
 
 
 def validate_api_server_args(args):
-
     valid_tool_parses = ToolParserManager.tool_parsers.keys()
-    if args.enable_auto_tool_choice \
-            and args.tool_call_parser not in valid_tool_parses:
-        raise KeyError(f"invalid tool call parser: {args.tool_call_parser} "
-                       f"(chose from {{ {','.join(valid_tool_parses)} }})")
+    if args.enable_auto_tool_choice and args.tool_call_parser not in valid_tool_parses:
+        raise KeyError(
+            f"invalid tool call parser: {args.tool_call_parser} (chose from {{ {','.join(valid_tool_parses)} }})"
+        )
 
     valid_reasoning_parses = ReasoningParserManager.reasoning_parsers.keys()
-    if args.reasoning_parser \
-            and args.reasoning_parser not in valid_reasoning_parses:
+    if args.reasoning_parser and args.reasoning_parser not in valid_reasoning_parses:
         raise KeyError(
-            f"invalid reasoning parser: {args.reasoning_parser} "
-            f"(chose from {{ {','.join(valid_reasoning_parses)} }})")
+            f"invalid reasoning parser: {args.reasoning_parser} (chose from {{ {','.join(valid_reasoning_parses)} }})"
+        )
 
 
 def setup_server(args):
@@ -2636,8 +2512,6 @@ def setup_server(args):
         ToolParserManager.import_tool_parser(args.tool_parser_plugin)
 
     validate_api_server_args(args)
-
-
 
     # workaround to make sure that we bind the port before the engine is set up.
     # This avoids race conditions with ray.
@@ -2662,8 +2536,7 @@ def setup_server(args):
     else:
         addr, port = sock_addr
         is_ssl = args.ssl_keyfile and args.ssl_certfile
-        host_part = f"[{addr}]" if is_valid_ipv6_address(
-            addr) else addr or "0.0.0.0"
+        host_part = f"[{addr}]" if is_valid_ipv6_address(addr) else addr or "0.0.0.0"
         listen_address = f"http{'s' if is_ssl else ''}://{host_part}:{port}"
 
     return listen_address, sock
@@ -2679,11 +2552,7 @@ async def run_server(args, **uvicorn_kwargs) -> None:
     await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)
 
 
-async def run_server_worker(listen_address,
-                            sock,
-                            args,
-                            client_config=None,
-                            **uvicorn_kwargs) -> None:
+async def run_server_worker(listen_address, sock, args, client_config=None, **uvicorn_kwargs) -> None:
     """Run a single API server worker."""
 
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
@@ -2691,13 +2560,13 @@ async def run_server_worker(listen_address,
 
     log_config = load_log_config(args.log_config_file)
     if log_config is not None:
-        uvicorn_kwargs['log_config'] = log_config
+        uvicorn_kwargs["log_config"] = log_config
     else:
-        uvicorn_kwargs['log_config'] = create_uvicorn_log_config()
+        uvicorn_kwargs["log_config"] = create_uvicorn_log_config()
 
     async with build_async_engine_client(
-            args,
-            client_config=client_config,
+        args,
+        client_config=client_config,
     ) as engine_client:
         maybe_register_tokenizer_info_endpoint(args)
         app = build_app(args)
@@ -2713,29 +2582,29 @@ async def run_server_worker(listen_address,
         url_prefix = listen_address.rstrip("/")
 
         if SERVE_KOBOLD_LITE_UI:
-            logger.info(f"Kobold Lite UI:         {url_prefix}/")
+            logger.info("Kobold Lite UI:         %s/", url_prefix)
 
         if not args.disable_fastapi_docs:
-            logger.info(f"Documentation:          {url_prefix}/redoc")
-        logger.info(f"Completions API:        {url_prefix}/v1/completions")
-        logger.info(f"Chat API:               {url_prefix}/v1/chat/completions")
-        logger.info(f"Responses API:          {url_prefix}/v1/responses")
-        logger.info(f"Embeddings API:         {url_prefix}/v1/embeddings")
-        logger.info(f"Pooling API:            {url_prefix}/pooling")
-        logger.info(f"Score API:              {url_prefix}/score")
-        logger.info(f"Rerank API:             {url_prefix}/rerank")
-        logger.info(f"Rerank API v1:          {url_prefix}/v1/rerank")
-        logger.info(f"Rerank API v2:          {url_prefix}/v2/rerank")
-        logger.info(f"Transcription API:      {url_prefix}/v1/audio/transcriptions")
-        logger.info(f"Translation API:        {url_prefix}/v1/audio/translations")
-        logger.info(f"Classification API:     {url_prefix}/classify")
-        logger.info(f"Detokenization API:     {url_prefix}/v1/detokenize")
-        logger.info(f"Tokenizer Info API:     {url_prefix}/tokenizer_info")
-        logger.info(f"Tokenization API:       {url_prefix}/v1/tokenize")
-        logger.info(f"Model Management:       {url_prefix}/v1/unload_model")
-        logger.info(f"Model Management:       {url_prefix}/v1/load_model")
-        logger.info(f"KoboldAI API:           {url_prefix}/api/v1")
-        logger.info(f"KoboldAI Extra:         {url_prefix}/api/extra")
+            logger.info("Documentation:          %s/redoc", url_prefix)
+        logger.info("Completions API:        %s/v1/completions", url_prefix)
+        logger.info("Chat API:               %s/v1/chat/completions", url_prefix)
+        logger.info("Responses API:          %s/v1/responses", url_prefix)
+        logger.info("Embeddings API:         %s/v1/embeddings", url_prefix)
+        logger.info("Pooling API:            %s/pooling", url_prefix)
+        logger.info("Score API:              %s/score", url_prefix)
+        logger.info("Rerank API:             %s/rerank", url_prefix)
+        logger.info("Rerank API v1:          %s/v1/rerank", url_prefix)
+        logger.info("Rerank API v2:          %s/v2/rerank", url_prefix)
+        logger.info("Transcription API:      %s/v1/audio/transcriptions", url_prefix)
+        logger.info("Translation API:        %s/v1/audio/translations", url_prefix)
+        logger.info("Classification API:     %s/classify", url_prefix)
+        logger.info("Detokenization API:     %s/v1/detokenize", url_prefix)
+        logger.info("Tokenizer Info API:     %s/tokenizer_info", url_prefix)
+        logger.info("Tokenization API:       %s/v1/tokenize", url_prefix)
+        logger.info("Model Management:       %s/v1/unload_model", url_prefix)
+        logger.info("Model Management:       %s/v1/load_model", url_prefix)
+        logger.info("KoboldAI API:           %s/api/v1", url_prefix)
+        logger.info("KoboldAI Extra:         %s/api/extra", url_prefix)
 
         shutdown_task = await serve_http(
             app,
@@ -2769,8 +2638,7 @@ if __name__ == "__main__":
     # This section should be in sync with aphrodite/endpoints/cli.py
     # for CLI endpoints.
     cli_env_setup()
-    parser = FlexibleArgumentParser(
-        description="Aphrodite OpenAI-Compatible RESTful API Server")
+    parser = FlexibleArgumentParser(description="Aphrodite OpenAI-Compatible RESTful API Server")
     parser = make_arg_parser(parser)
     args = parser.parse_args()
     validate_parsed_serve_args(args)

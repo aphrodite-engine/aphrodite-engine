@@ -136,9 +136,7 @@ class AttentionImpl(ABC, Generic[T]):
             # DCP might not be initialized in testing
             self.dcp_world_size = 1
             self.dcp_rank = 0
-        self.need_to_return_lse_for_decode = (
-            self.dcp_world_size > 1 and self.can_return_lse_for_decode
-        )
+        self.need_to_return_lse_for_decode = self.dcp_world_size > 1 and self.can_return_lse_for_decode
         return self
 
     @abstractmethod

@@ -45,13 +45,9 @@ class PunicaWrapperGPU(PunicaWrapperBase):
 
         self.max_loras = kwargs["max_loras"]
 
-        self.token_mapping_meta = LoRAKernelMeta.make(
-            self.max_loras, max_num_batched_tokens, device=device
-        )
+        self.token_mapping_meta = LoRAKernelMeta.make(self.max_loras, max_num_batched_tokens, device=device)
 
-        self.prompt_mapping_meta = LoRAKernelMeta.make(
-            self.max_loras, max_batches, device=device
-        )
+        self.prompt_mapping_meta = LoRAKernelMeta.make(self.max_loras, max_batches, device=device)
 
     def update_metadata(
         self,
@@ -63,9 +59,7 @@ class PunicaWrapperGPU(PunicaWrapperBase):
         **kwargs,
     ):
         self.is_prefill = mapping.is_prefill
-        self._update_base_metadata(
-            mapping, lora_index_to_id, max_loras, vocab_size, extra_vocab_size
-        )
+        self._update_base_metadata(mapping, lora_index_to_id, max_loras, vocab_size, extra_vocab_size)
 
         # Prepare cuda kernel metadata tensors
         self.token_mapping_meta.prepare_tensors(self.token_lora_indices)
@@ -212,16 +206,13 @@ class PunicaWrapperGPU(PunicaWrapperBase):
         assert len(lora_a_stacked) == len(lora_b_stacked) == len(output_slices)
 
         assert buffer is None, (
-            "To minimize overhead, the buffer should be created by "
-            ".add_lora_linear() instead of being passed in."
+            "To minimize overhead, the buffer should be created by .add_lora_linear() instead of being passed in."
         )
         r = lora_b_stacked[0].size(-1)
         # We set the buffer to be float32 by default, refer to:
         # https://github.com/triton-lang/triton/issues/1387
         # Note: buffer is zeroed inside the shrink op
-        buffer = torch.empty(
-            (len(output_slices), x.size(0), r), dtype=torch.float32, device=x.device
-        )
+        buffer = torch.empty((len(output_slices), x.size(0), r), dtype=torch.float32, device=x.device)
 
         self.add_shrink(
             buffer,  # type: ignore
@@ -271,8 +262,7 @@ class PunicaWrapperGPU(PunicaWrapperBase):
         r = lora_b_stacked.size(-1)
 
         assert buffer is None, (
-            "To minimize overhead, the buffer should be created by "
-            ".add_lora_linear() instead of being passed in."
+            "To minimize overhead, the buffer should be created by .add_lora_linear() instead of being passed in."
         )
         # We set the buffer to be float32 by default, refer to:
         # https://github.com/triton-lang/triton/issues/1387
@@ -325,13 +315,9 @@ class PunicaWrapperGPU(PunicaWrapperBase):
             dtype=torch.int32,
             device=topk_ids.device,
         )
-        num_tokens_post_pad = torch.empty(
-            (max_loras), dtype=torch.int32, device=topk_ids.device
-        )
+        num_tokens_post_pad = torch.empty((max_loras), dtype=torch.int32, device=topk_ids.device)
 
-        (token_lora_mapping, _, _, _, _, _) = self.token_mapping_meta.meta_args(
-            num_tokens
-        )
+        (token_lora_mapping, _, _, _, _, _) = self.token_mapping_meta.meta_args(num_tokens)
 
         ops.moe_lora_align_block_size(
             topk_ids,

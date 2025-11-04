@@ -15,39 +15,35 @@ import jinja2.nodes
 import jinja2.parser
 import jinja2.sandbox
 import transformers.utils.chat_template_utils as hf_chat_utils
-from openai.types.chat import (ChatCompletionAssistantMessageParam,
-                               ChatCompletionContentPartImageParam,
-                               ChatCompletionContentPartInputAudioParam)
 from openai.types.chat import (
-    ChatCompletionContentPartParam as OpenAIChatCompletionContentPartParam)
-from openai.types.chat import (ChatCompletionContentPartRefusalParam,
-                               ChatCompletionContentPartTextParam)
-from openai.types.chat import (
-    ChatCompletionMessageParam as OpenAIChatCompletionMessageParam)
-from openai.types.chat import (ChatCompletionMessageToolCallParam,
-                               ChatCompletionToolMessageParam)
-from openai.types.chat.chat_completion_content_part_input_audio_param import (
-    InputAudio)
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartInputAudioParam,
+    ChatCompletionContentPartRefusalParam,
+    ChatCompletionContentPartTextParam,
+    ChatCompletionMessageToolCallParam,
+    ChatCompletionToolMessageParam,
+)
+from openai.types.chat import ChatCompletionContentPartParam as OpenAIChatCompletionContentPartParam
+from openai.types.chat import ChatCompletionMessageParam as OpenAIChatCompletionMessageParam
+from openai.types.chat.chat_completion_content_part_input_audio_param import InputAudio
 from openai.types.responses import ResponseInputImageParam
 from openai_harmony import Message as OpenAIHarmonyMessage
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, TypeAdapter
-from transformers import (PreTrainedTokenizer, PreTrainedTokenizerFast,
-                          ProcessorMixin)
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast, ProcessorMixin
+
 # pydantic needs the TypedDict from typing_extensions
 from typing_extensions import Required, TypedDict
 
 from aphrodite.config import ModelConfig
 from aphrodite.logger import init_logger
 from aphrodite.modeling.models import SupportsMultiModal
-from aphrodite.multimodal import (MULTIMODAL_REGISTRY, MultiModalDataDict,
-                                  MultiModalUUIDDict)
+from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict, MultiModalUUIDDict
 from aphrodite.multimodal.utils import MediaConnector
-from aphrodite.transformers_utils.chat_templates import (
-    get_chat_template_fallback_path)
+from aphrodite.transformers_utils.chat_templates import get_chat_template_fallback_path
 from aphrodite.transformers_utils.processor import cached_get_processor
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    MistralTokenizer)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
 from aphrodite.utils import random_uuid
 from aphrodite.utils.func_utils import supports_kw
 
@@ -238,9 +234,7 @@ class CustomChatCompletionMessageParam(TypedDict, total=False):
 
 
 ChatCompletionMessageParam: TypeAlias = (
-    OpenAIChatCompletionMessageParam
-    | CustomChatCompletionMessageParam
-    | OpenAIHarmonyMessage
+    OpenAIChatCompletionMessageParam | CustomChatCompletionMessageParam | OpenAIHarmonyMessage
 )
 
 
@@ -278,11 +272,7 @@ def _is_var_access(node: jinja2.nodes.Node, varname: str) -> bool:
 
 def _is_attr_access(node: jinja2.nodes.Node, varname: str, key: str) -> bool:
     if isinstance(node, jinja2.nodes.Getitem):
-        return (
-            _is_var_access(node.node, varname)
-            and isinstance(node.arg, jinja2.nodes.Const)
-            and node.arg.value == key
-        )
+        return _is_var_access(node.node, varname) and isinstance(node.arg, jinja2.nodes.Const) and node.arg.value == key
 
     if isinstance(node, jinja2.nodes.Getattr):
         return _is_var_access(node.node, varname) and node.attr == key
@@ -296,15 +286,11 @@ def _is_var_or_elems_access(
     key: str | None = None,
 ) -> bool:
     if isinstance(node, jinja2.nodes.Filter):
-        return node.node is not None and _is_var_or_elems_access(
-            node.node, varname, key
-        )
+        return node.node is not None and _is_var_or_elems_access(node.node, varname, key)
     if isinstance(node, jinja2.nodes.Test):
         return _is_var_or_elems_access(node.node, varname, key)
 
-    if isinstance(node, jinja2.nodes.Getitem) and isinstance(
-        node.arg, jinja2.nodes.Slice
-    ):
+    if isinstance(node, jinja2.nodes.Getitem) and isinstance(node.arg, jinja2.nodes.Slice):
         return _is_var_or_elems_access(node.node, varname, key)
 
     return _is_attr_access(node, varname, key) if key else _is_var_access(node, varname)
@@ -335,9 +321,7 @@ def _iter_nodes_assign_var_or_elems(root: jinja2.nodes.Node, varname: str):
 # NOTE: The proper way to handle this is to build a CFG so that we can handle
 # the scope in which each variable is defined, but that is too complicated
 def _iter_nodes_assign_messages_item(root: jinja2.nodes.Node):
-    messages_varnames = [
-        varname for _, varname in _iter_nodes_assign_var_or_elems(root, "messages")
-    ]
+    messages_varnames = [varname for _, varname in _iter_nodes_assign_var_or_elems(root, "messages")]
 
     # Search for {%- for message in messages -%} loops
     for loop_ast in root.find_all(jinja2.nodes.For):
@@ -352,9 +336,7 @@ def _iter_nodes_assign_messages_item(root: jinja2.nodes.Node):
 
 
 def _iter_nodes_assign_content_item(root: jinja2.nodes.Node):
-    message_varnames = [
-        varname for _, varname in _iter_nodes_assign_messages_item(root)
-    ]
+    message_varnames = [varname for _, varname in _iter_nodes_assign_messages_item(root)]
 
     # Search for {%- for content in message['content'] -%} loops
     for loop_ast in root.find_all(jinja2.nodes.For):
@@ -403,10 +385,7 @@ def resolve_mistral_chat_template(
     **kwargs: Any,
 ) -> str | None:
     if chat_template is not None or kwargs.get("chat_template_kwargs") is not None:
-        raise ValueError(
-            "'chat_template' or 'chat_template_kwargs' cannot be overridden "
-            "for mistral tokenizer."
-        )
+        raise ValueError("'chat_template' or 'chat_template_kwargs' cannot be overridden for mistral tokenizer.")
 
     return None
 
@@ -490,15 +469,12 @@ def resolve_hf_chat_template(
     )
     if path is not None:
         logger.info_once(
-            "Loading chat template fallback for %s as there isn't one "
-            "defined on HF Hub.",
+            "Loading chat template fallback for %s as there isn't one defined on HF Hub.",
             tokenizer.name_or_path,
         )
         chat_template = load_chat_template(path)
     else:
-        logger.debug_once(
-            "There is no chat template fallback for %s", tokenizer.name_or_path
-        )
+        logger.debug_once("There is no chat template fallback for %s", tokenizer.name_or_path)
 
     return chat_template
 
@@ -521,16 +497,10 @@ def _resolve_chat_template_content_format(
         hf_chat_template = None
 
     jinja_text = (
-        hf_chat_template
-        if isinstance(hf_chat_template, str)
-        else load_chat_template(chat_template, is_literal=True)
+        hf_chat_template if isinstance(hf_chat_template, str) else load_chat_template(chat_template, is_literal=True)
     )
 
-    detected_format = (
-        "string"
-        if jinja_text is None
-        else _detect_content_format(jinja_text, default="string")
-    )
+    detected_format = "string" if jinja_text is None else _detect_content_format(jinja_text, default="string")
 
     return detected_format
 
@@ -776,9 +746,7 @@ class BaseMultiModalContentParser(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def parse_image_pil(
-        self, image_pil: Image.Image | None, uuid: str | None = None
-    ) -> None:
+    def parse_image_pil(self, image_pil: Image.Image | None, uuid: str | None = None) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -786,9 +754,7 @@ class BaseMultiModalContentParser(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def parse_input_audio(
-        self, input_audio: InputAudio | None, uuid: str | None = None
-    ) -> None:
+    def parse_input_audio(self, input_audio: InputAudio | None, uuid: str | None = None) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -826,15 +792,10 @@ class MultiModalContentParser(BaseMultiModalContentParser):
     ) -> None:
         mm_config = self.model_config.get_multimodal_config()
         if not mm_config.enable_mm_embeds:
-            raise ValueError(
-                "You must set `--enable-mm-embeds` to input `image_embeds`"
-            )
+            raise ValueError("You must set `--enable-mm-embeds` to input `image_embeds`")
 
         if isinstance(image_embeds, dict):
-            embeds = {
-                k: self._connector.fetch_image_embedding(v)
-                for k, v in image_embeds.items()
-            }
+            embeds = {k: self._connector.fetch_image_embedding(v) for k, v in image_embeds.items()}
             placeholder = self._tracker.add("image_embeds", embeds, uuid)
 
         if isinstance(image_embeds, str):
@@ -846,9 +807,7 @@ class MultiModalContentParser(BaseMultiModalContentParser):
 
         self._add_placeholder("image", placeholder)
 
-    def parse_image_pil(
-        self, image_pil: Image.Image | None, uuid: str | None = None
-    ) -> None:
+    def parse_image_pil(self, image_pil: Image.Image | None, uuid: str | None = None) -> None:
         placeholder = self._tracker.add("image", image_pil, uuid)
         self._add_placeholder("image", placeholder)
 
@@ -858,9 +817,7 @@ class MultiModalContentParser(BaseMultiModalContentParser):
         placeholder = self._tracker.add("audio", audio, uuid)
         self._add_placeholder("audio", placeholder)
 
-    def parse_input_audio(
-        self, input_audio: InputAudio | None, uuid: str | None = None
-    ) -> None:
+    def parse_input_audio(self, input_audio: InputAudio | None, uuid: str | None = None) -> None:
         if input_audio:
             audio_data = input_audio.get("data", "")
             audio_format = input_audio.get("format", "")
@@ -911,17 +868,12 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
     ) -> None:
         mm_config = self.model_config.get_multimodal_config()
         if not mm_config.enable_mm_embeds:
-            raise ValueError(
-                "You must set `--enable-mm-embeds` to input `image_embeds`"
-            )
+            raise ValueError("You must set `--enable-mm-embeds` to input `image_embeds`")
 
         future: asyncio.Future[str | dict[str, str] | None] = asyncio.Future()
 
         if isinstance(image_embeds, dict):
-            embeds = {
-                k: self._connector.fetch_image_embedding(v)
-                for k, v in image_embeds.items()
-            }
+            embeds = {k: self._connector.fetch_image_embedding(v) for k, v in image_embeds.items()}
             future.set_result(embeds)
 
         if isinstance(image_embeds, str):
@@ -934,9 +886,7 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         placeholder = self._tracker.add("image_embeds", future, uuid)
         self._add_placeholder("image", placeholder)
 
-    def parse_image_pil(
-        self, image_pil: Image.Image | None, uuid: str | None = None
-    ) -> None:
+    def parse_image_pil(self, image_pil: Image.Image | None, uuid: str | None = None) -> None:
         future: asyncio.Future[Image.Image | None] = asyncio.Future()
         if image_pil:
             future.set_result(image_pil)
@@ -952,9 +902,7 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         placeholder = self._tracker.add("audio", audio_coro, uuid)
         self._add_placeholder("audio", placeholder)
 
-    def parse_input_audio(
-        self, input_audio: InputAudio | None, uuid: str | None = None
-    ) -> None:
+    def parse_input_audio(self, input_audio: InputAudio | None, uuid: str | None = None) -> None:
         if input_audio:
             audio_data = input_audio.get("data", "")
             audio_format = input_audio.get("format", "")
@@ -969,11 +917,7 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         return self.parse_audio(audio_url, uuid)
 
     def parse_video(self, video_url: str | None, uuid: str | None = None) -> None:
-        video = (
-            self._connector.fetch_video_async(video_url=video_url)
-            if video_url
-            else None
-        )
+        video = self._connector.fetch_video_async(video_url=video_url) if video_url else None
 
         placeholder = self._tracker.add("video", video, uuid)
         self._add_placeholder("video", placeholder)
@@ -989,13 +933,9 @@ def validate_chat_template(chat_template: Path | str | None):
 
     elif isinstance(chat_template, str):
         JINJA_CHARS = "{}\n"
-        if (
-            not any(c in chat_template for c in JINJA_CHARS)
-            and not Path(chat_template).exists()
-        ):
+        if not any(c in chat_template for c in JINJA_CHARS) and not Path(chat_template).exists():
             raise ValueError(
-                f"The supplied chat template string ({chat_template}) "
-                f"appears path-like, but doesn't exist!"
+                f"The supplied chat template string ({chat_template}) appears path-like, but doesn't exist!"
             )
 
     else:
@@ -1012,9 +952,7 @@ def _load_chat_template(
 
     if is_literal:
         if isinstance(chat_template, Path):
-            raise TypeError(
-                "chat_template is expected to be read directly from its value"
-            )
+            raise TypeError("chat_template is expected to be read directly from its value")
 
         return chat_template
 
@@ -1050,9 +988,7 @@ def load_chat_template(
     return _cached_load_chat_template(chat_template, is_literal=is_literal)
 
 
-def _get_interleaved_text_prompt(
-    placeholder_storage: dict[str, list], texts: list[str]
-) -> str:
+def _get_interleaved_text_prompt(placeholder_storage: dict[str, list], texts: list[str]) -> str:
     for idx, elem in enumerate(texts):
         if elem in placeholder_storage:
             texts[idx] = placeholder_storage[elem].pop(0)
@@ -1074,9 +1010,7 @@ def _get_full_multimodal_text_prompt(
     #   "<|image|>": 2,
     #   "<|audio|>": 1
     # }
-    placeholder_counts = Counter(
-        [v for elem in placeholder_storage.values() for v in elem]
-    )
+    placeholder_counts = Counter([v for elem in placeholder_storage.values() for v in elem])
 
     if interleave_strings:
         text_prompt = _get_interleaved_text_prompt(placeholder_storage, texts)
@@ -1102,8 +1036,7 @@ def _get_full_multimodal_text_prompt(
             )
             logger.debug("Input prompt: %s", text_prompt)
             raise ValueError(
-                f"Found more '{placeholder}' placeholders in input prompt than "
-                "actual multimodal data items."
+                f"Found more '{placeholder}' placeholders in input prompt than actual multimodal data items."
             )
 
         missing_placeholders.extend([placeholder] * placeholder_counts[placeholder])
@@ -1164,9 +1097,7 @@ def _parse_chat_message_content_mm_part(
     Raises:
         ValueError: If the 'type' field is missing and no direct URL is found.
     """
-    assert isinstance(
-        part, dict
-    )  # This is needed to avoid mypy errors: part.get() from str
+    assert isinstance(part, dict)  # This is needed to avoid mypy errors: part.get() from str
     part_type = part.get("type", None)
     uuid = part.get("uuid", None)
 
@@ -1176,9 +1107,7 @@ def _parse_chat_message_content_mm_part(
         # Special case for 'image_url.detail'
         # We only support 'auto', which is the default
         if part_type == "image_url" and part.get("detail", "auto") != "auto":
-            logger.warning(
-                "'image_url.detail' is currently not supported and will be ignored."
-            )
+            logger.warning("'image_url.detail' is currently not supported and will be ignored.")
 
         return part_type, content
 
@@ -1268,9 +1197,7 @@ def _parse_chat_message_content_parts(
     texts = cast(list[str], content)
     mm_placeholder_storage = mm_parser.mm_placeholder_storage()
     if mm_placeholder_storage:
-        text_prompt = _get_full_multimodal_text_prompt(
-            mm_placeholder_storage, texts, interleave_strings
-        )
+        text_prompt = _get_full_multimodal_text_prompt(mm_placeholder_storage, texts, interleave_strings)
     else:
         text_prompt = "\n".join(texts)
 
@@ -1299,8 +1226,7 @@ def _parse_chat_message_content_part(
     # content is None, log a warning and skip
     if part_type in PART_TYPES_TO_SKIP_NONE_CONTENT and content is None:
         logger.warning(
-            "Skipping multimodal part '%s' (type: '%s') "
-            "with empty / unparsable content.",
+            "Skipping multimodal part '%s' (type: '%s') with empty / unparsable content.",
             part,
             part_type,
         )
@@ -1347,11 +1273,7 @@ def _parse_chat_message_content_part(
     else:
         raise NotImplementedError(f"Unknown part type: {part_type}")
 
-    return (
-        {"type": modality}
-        if wrap_dicts
-        else (MODALITY_PLACEHOLDERS_MAP[modality] if interleave_strings else None)
-    )
+    return {"type": modality} if wrap_dicts else (MODALITY_PLACEHOLDERS_MAP[modality] if interleave_strings else None)
 
 
 # No need to validate using Pydantic again
@@ -1407,11 +1329,7 @@ def _postprocess_messages(messages: list[ConversationMessage]) -> None:
     # so, for messages that have tool_calls, parse the string (which we get
     # from openAI format) to dict
     for message in messages:
-        if (
-            message["role"] == "assistant"
-            and "tool_calls" in message
-            and isinstance(message["tool_calls"], list)
-        ):
+        if message["role"] == "assistant" and "tool_calls" in message and isinstance(message["tool_calls"], list):
             for item in message["tool_calls"]:
                 # if arguments is None or empty string, set to {}
                 if content := item["function"].get("arguments"):
@@ -1526,8 +1444,7 @@ def _get_hf_base_chat_template_params() -> frozenset[str]:
     return frozenset(
         p.name
         for p in base_sig.parameters.values()
-        if p.kind
-        not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        if p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
     )
 
 
@@ -1540,19 +1457,10 @@ def resolve_chat_template_kwargs(
     # We exclude chat_template from kwargs here, because
     # chat template has been already resolved at this stage
     unexpected_vars = {"chat_template", "tokenize"}
-    if raise_on_unexpected and (
-        unexpected_in_kwargs := unexpected_vars & chat_template_kwargs.keys()
-    ):
-        raise ValueError(
-            "Found unexpected chat template kwargs from request: "
-            f"{unexpected_in_kwargs}"
-        )
+    if raise_on_unexpected and (unexpected_in_kwargs := unexpected_vars & chat_template_kwargs.keys()):
+        raise ValueError(f"Found unexpected chat template kwargs from request: {unexpected_in_kwargs}")
 
-    fn_kw = {
-        k
-        for k in chat_template_kwargs
-        if supports_kw(tokenizer.apply_chat_template, k, allow_var_kwargs=False)
-    }
+    fn_kw = {k for k in chat_template_kwargs if supports_kw(tokenizer.apply_chat_template, k, allow_var_kwargs=False)}
     template_vars = _cached_resolve_chat_template_kwargs(chat_template)
 
     # Allow standard HF parameters even if tokenizer uses **kwargs to receive them
@@ -1605,9 +1513,7 @@ def apply_hf_chat_template(
     except Exception as e:
         # Log and report any library-related exceptions for further
         # investigation.
-        logger.exception(
-            "An error occurred in `transformers` while applying chat template"
-        )
+        logger.exception("An error occurred in `transformers` while applying chat template")
         raise ValueError(str(e)) from e
 
 
@@ -1645,9 +1551,7 @@ def apply_mistral_chat_template(
     except Exception as e:
         # Log and report any library-related exceptions for further
         # investigation.
-        logger.exception(
-            "An error occurred in `mistral_common` while applying chat template"
-        )
+        logger.exception("An error occurred in `mistral_common` while applying chat template")
         raise ValueError(str(e)) from e
 
 

@@ -76,14 +76,9 @@ def kernel_paged_attention_2d(
     else:
         cur_batch_in_all_start_index = seq_idx
 
-    query_head_idx = kv_head_idx * num_queries_per_kv + tl.arange(
-        0, num_queries_per_kv_padded
-    )
+    query_head_idx = kv_head_idx * num_queries_per_kv + tl.arange(0, num_queries_per_kv_padded)
 
-    query_offset = (
-        cur_batch_in_all_start_index * query_stride_0
-        + query_head_idx[:, None] * query_stride_1
-    )
+    query_offset = cur_batch_in_all_start_index * query_stride_0 + query_head_idx[:, None] * query_stride_1
 
     head_mask = query_head_idx < (kv_head_idx + 1) * num_queries_per_kv
     head_mask = head_mask & (query_head_idx < num_query_heads)
@@ -116,9 +111,7 @@ def kernel_paged_attention_2d(
 
     # alibi slope for this head
     if USE_ALIBI_SLOPES:
-        alibi_slope = tl.load(
-            alibi_slopes_ptr + query_head_idx, mask=head_mask, other=0.0
-        )
+        alibi_slope = tl.load(alibi_slopes_ptr + query_head_idx, mask=head_mask, other=0.0)
 
     num_blocks = cdiv_fn(seq_len, BLOCK_SIZE)
 
@@ -205,10 +198,7 @@ def kernel_paged_attention_2d(
         acc = acc * tl.load(out_scale_inv)
         acc = tl.clamp(acc, FP8_MIN, FP8_MAX)
 
-    output_offset = (
-        cur_batch_in_all_start_index * output_stride_0
-        + query_head_idx * output_stride_1
-    )
+    output_offset = cur_batch_in_all_start_index * output_stride_0 + query_head_idx * output_stride_1
 
     tl.store(
         output_ptr + output_offset[:, None] + tl.arange(0, HEAD_SIZE_PADDED)[None, :],
@@ -311,9 +301,7 @@ def chunked_prefill_paged_decode(
     )
     if use_custom:
         _PARTITION_SIZE_ROCM = 256
-        max_num_partitions = (
-            max_seq_len + _PARTITION_SIZE_ROCM - 1
-        ) // _PARTITION_SIZE_ROCM
+        max_num_partitions = (max_seq_len + _PARTITION_SIZE_ROCM - 1) // _PARTITION_SIZE_ROCM
         assert _PARTITION_SIZE_ROCM % block_size == 0
         total_num_seq = block_table.shape[0]
         tmp_output = torch.empty(
