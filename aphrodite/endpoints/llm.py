@@ -48,6 +48,7 @@ from aphrodite.outputs import (
     RequestOutput,
     ScoringRequestOutput,
 )
+from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.tasks import PoolingTask
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer, get_cached_tokenizer
@@ -252,7 +253,7 @@ class LLM:
         # warn about single-process data parallel usage.
         _dp_size = int(kwargs.get("data_parallel_size", 1))
         _distributed_executor_backend = kwargs.get("distributed_executor_backend")
-        if _dp_size > 1 and not _distributed_executor_backend == "external_launcher":
+        if _dp_size > 1 and not _distributed_executor_backend == "external_launcher" and not current_platform.is_tpu():
             raise ValueError(
                 f"LLM(data_parallel_size={_dp_size}) is not supported for single-"
                 "process usage and may hang. Please use "
