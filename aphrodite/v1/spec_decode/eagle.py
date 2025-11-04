@@ -89,6 +89,7 @@ class EagleProposer:
             (sorted(self.aphrodite_config.compilation_config.cudagraph_capture_sizes)) if self.use_cuda_graph else []
         )
 
+        self.use_cuda_graph = self.use_cuda_graph and bool(self.cudagraph_batch_sizes)
         # persistent buffers for cuda graph
         self.input_ids = torch.zeros(self.max_num_tokens, dtype=torch.int32, device=device)
         self.uses_mrope = self.aphrodite_config.model_config.uses_mrope
@@ -824,7 +825,7 @@ class EagleProposer:
         )
         indexer_layers = get_layers_from_aphrodite_config(self.aphrodite_config, DeepseekV32IndexerCache)
         draft_indexer_layer_names = indexer_layers.keys() - target_indexer_layer_names
-        self.attn_layer_names = list(draft_attn_layer_names)
+        self.attn_layer_names = list(draft_attn_layer_names - draft_indexer_layer_names)
         self.indexer_layer_names = list(draft_indexer_layer_names)
 
         if self.indexer_layer_names:
@@ -907,14 +908,16 @@ class EagleProposer:
         num_tokens: int,
         use_cudagraphs=True,
     ) -> None:
-        if use_cudagraphs and num_tokens <= self.cudagraph_batch_sizes[-1]:
+        # Determine if CUDA graphs should be used for this run.
+        cudagraphs_enabled = use_cudagraphs and self.use_cuda_graph
+        if cudagraphs_enabled and num_tokens <= self.cudagraph_batch_sizes[-1]:
             num_tokens = self.aphrodite_config.pad_for_cudagraph(num_tokens)
 
         with set_forward_context(
             None,
             self.aphrodite_config,
             num_tokens=num_tokens,
-            cudagraph_runtime_mode=CUDAGraphMode.PIECEWISE if use_cudagraphs else CUDAGraphMode.NONE,
+            cudagraph_runtime_mode=(CUDAGraphMode.PIECEWISE if cudagraphs_enabled else CUDAGraphMode.NONE),
         ):
             if self.supports_mm_inputs:
                 input_ids = None
