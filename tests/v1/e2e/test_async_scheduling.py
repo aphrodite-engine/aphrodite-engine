@@ -4,6 +4,7 @@ import pytest
 import torch._dynamo.config as dynamo_config
 
 from aphrodite import SamplingParams
+from aphrodite.common.sampling_params import StructuredOutputsParams
 from aphrodite.logprobs import Logprob
 
 from ...conftest import AphroditeRunner
@@ -13,9 +14,10 @@ MODEL = "Qwen/Qwen3-0.6B"
 
 
 @dynamo_config.patch(cache_size_limit=16)
-def test_preempt_and_async_scheduling_e2e(monkeypatch: pytest.MonkeyPatch):
+def test_preempt_and_async_scheduling_e2e(sample_json_schema, monkeypatch: pytest.MonkeyPatch):
     """Test consistency of combos of async scheduling, preemption,
-    uni/multiproc executor, and various sampling parameters."""
+    uni/multiproc executor, and various sampling parameters
+    including structured outputs."""
 
     first_prompt = "The following numbers of the sequence " + ", ".join(str(i) for i in range(10)) + " are:"
     example_prompts = [first_prompt, "In one word, the capital of France is "] + [
@@ -29,6 +31,12 @@ def test_preempt_and_async_scheduling_e2e(monkeypatch: pytest.MonkeyPatch):
         dict(bad_words=["the", " the"]),
         dict(logprobs=2),
         dict(logprobs=2, presence_penalty=-1.0),
+        dict(structured_outputs=StructuredOutputsParams(json=sample_json_schema)),
+        dict(
+            structured_outputs=StructuredOutputsParams(json=sample_json_schema),
+            logprobs=2,
+            presence_penalty=-1.0,
+        ),
     ]
 
     default_params = dict(

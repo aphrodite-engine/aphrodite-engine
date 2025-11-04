@@ -17,10 +17,12 @@ from aphrodite.v1.kv_cache_interface import KVCacheSpec
 from aphrodite.v1.serial_utils import run_method
 
 if TYPE_CHECKING:
-    from aphrodite.v1.core.sched.output import SchedulerOutput
-    from aphrodite.v1.outputs import ModelRunnerOutput
+    from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
+    from aphrodite.v1.outputs import AsyncModelRunnerOutput, ModelRunnerOutput
 else:
     SchedulerOutput = object
+    GrammarOutput = object
+    AsyncModelRunnerOutput = object
     ModelRunnerOutput = object
 
 logger = init_logger(__name__)
@@ -119,7 +121,16 @@ class WorkerBase:
         """Load model onto target device."""
         raise NotImplementedError
 
-    def execute_model(self, scheduler_output: SchedulerOutput) -> ModelRunnerOutput:
+    def execute_model(self, scheduler_output: SchedulerOutput) -> ModelRunnerOutput | None:
+        """If this method returns None, sample_tokens should be called immediately after
+        to obtain the ModelRunnerOutput.
+        Note that this design may be changed in future if/when structured outputs
+        parallelism is re-architected.
+        """
+        raise NotImplementedError
+
+    def sample_tokens(self, grammar_output: GrammarOutput) -> ModelRunnerOutput | AsyncModelRunnerOutput:
+        """Should be called immediately after execute_model iff it returned None."""
         raise NotImplementedError
 
     def get_cache_block_size_bytes(self) -> int:
@@ -328,7 +339,7 @@ class WorkerWrapperBase:
         scheduler_output: SchedulerOutput,
         *args,
         **kwargs,
-    ) -> ModelRunnerOutput:
+    ) -> ModelRunnerOutput | None:
         self._apply_mm_cache(scheduler_output)
 
         assert self.worker is not None
