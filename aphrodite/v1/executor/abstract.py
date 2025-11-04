@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, overload
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
+from aphrodite.distributed.kv_transfer.kv_connector.v1.base import KVConnectorHandshakeMetadata
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.tasks import SupportedTask
@@ -166,6 +167,11 @@ class Executor(ABC):
     @abstractmethod
     def collective_rpc(self, method, timeout=None, args=(), kwargs=None, non_block: bool = False):
         raise NotImplementedError
+
+    def get_kv_connector_handshake_metadata(
+        self,
+    ) -> list[dict[int, KVConnectorHandshakeMetadata]]:
+        return self.collective_rpc("get_kv_connector_handshake_metadata")
 
     @overload
     def execute_model(
