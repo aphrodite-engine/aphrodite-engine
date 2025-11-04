@@ -836,6 +836,7 @@ def get_kernel_options(query, block_m, block_n, use_direct_build: bool) -> dict[
         return kernel_options
     else:
         preferred_block = 32 if query.dtype == torch.float32 else 64
+        block_lower_bound = 16
         block_m_candidate = ensure_divisible(preferred_block, block_m)
         block_n_candidate = ensure_divisible(preferred_block, block_n)
 
@@ -845,6 +846,9 @@ def get_kernel_options(query, block_m, block_n, use_direct_build: bool) -> dict[
             if max_shared_memory < 144 * 1024:
                 block_m_candidate = ensure_divisible(max(1, block_m_candidate // 2), block_m)
                 block_n_candidate = ensure_divisible(max(1, block_n_candidate // 2), block_n)
+
+        block_m_candidate = max(block_lower_bound, block_m_candidate)
+        block_n_candidate = max(block_lower_bound, block_n_candidate)
 
         kernel_options["BLOCK_M"] = block_m_candidate
         kernel_options["BLOCK_N"] = block_n_candidate
