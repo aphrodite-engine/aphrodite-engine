@@ -161,6 +161,25 @@ class EngineCore:
         self.mm_registry = mm_registry = MULTIMODAL_REGISTRY
         self.mm_receiver_cache = engine_receiver_cache_from_config(aphrodite_config, mm_registry)
 
+        # If a KV connector is initialized for scheduler, we want to collect
+        # handshake metadata from all workers so the connector in the scheduler
+        # will have the full context
+        kv_connector = self.scheduler.get_kv_connector()
+        if kv_connector is not None:
+            # Collect and store KV connector xfer metadata from workers
+            # (after KV cache registration)
+            xfer_handshake_metadata = self.model_executor.get_kv_connector_handshake_metadata()
+
+            if xfer_handshake_metadata:
+                # xfer_handshake_metadata is list of dicts from workers
+                # Each dict already has structure {tp_rank: metadata}
+                # Merge all worker dicts into a single dict
+                content: dict[int, Any] = {}
+                for worker_dict in xfer_handshake_metadata:
+                    if worker_dict is not None:
+                        content.update(worker_dict)
+                kv_connector.set_xfer_handshake_metadata(content)
+
         # Setup batch queue for pipeline parallelism.
         # Batch queue for scheduled batches. This enables us to asynchronously
         # schedule and execute batches, and is required by pipeline parallelism
@@ -172,7 +191,7 @@ class EngineCore:
             self.batch_queue = deque(maxlen=self.batch_queue_size)
 
         self.request_block_hasher: Callable[[Request], list[BlockHash]] | None = None
-        if self.aphrodite_config.cache_config.enable_prefix_caching or self.scheduler.get_kv_connector() is not None:
+        if self.aphrodite_config.cache_config.enable_prefix_caching or kv_connector is not None:
             caching_hash_fn = get_hash_fn_by_name(aphrodite_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
 
