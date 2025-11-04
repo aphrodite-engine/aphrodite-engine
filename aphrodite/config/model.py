@@ -17,7 +17,6 @@ from aphrodite.config.pooler import PoolerConfig
 from aphrodite.config.scheduler import RunnerType
 from aphrodite.config.utils import assert_hashable, config, getattr_iter
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.config import (
     ConfigFormat,
@@ -424,10 +423,6 @@ class ModelConfig:
         skip_mm_profiling: bool | None,
         video_pruning_rate: float | None,
     ) -> None:
-        # Enable batch invariance settings if requested
-        if aphrodite_is_batch_invariant():
-            self.enforce_eager = True
-
         # Set the default seed to 0 in V1.
         # NOTE(woosuk): In V1, we use separate processes for workers (unless
         # APHRODITE_ENABLE_V1_MULTIPROCESSING=0), so setting a seed here
