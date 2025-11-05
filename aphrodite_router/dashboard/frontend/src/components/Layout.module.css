@@ -1,0 +1,330 @@
+.container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--color-bg);
+}
+
+.sidebar {
+  width: 260px;
+  background-color: var(--color-bg-secondary);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 0.75rem;
+  gap: 1.5rem;
+  transition: width var(--transition-fast);
+}
+
+.sidebarCollapsed {
+  width: 70px;
+}
+
+.brandContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem;
+  justify-content: center;
+}
+
+.sidebarCollapsed .brandContainer {
+  justify-content: center;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.25rem 0.375rem;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.brand:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.sidebarCollapsed .brand {
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.brandText {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.navLink:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.navLinkActive {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.navLinkActive:hover {
+  background-color: var(--color-primary-dark);
+  color: white;
+}
+
+.navIcon {
+  font-size: 1.125rem;
+  line-height: 1;
+  width: 1.375rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.navText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebarCollapsed .navLink {
+  justify-content: center;
+  padding: 0.75rem 0.5rem;
+}
+
+.sidebarCollapsed .navIcon {
+  width: auto;
+}
+
+/* Sub Navigation (Configuration sections) - Match parent nav style */
+.subNav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  padding-left: 1.75rem;
+}
+
+.subNavLink {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.subNavLink:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.subNavLinkActive {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.subNavLinkActive:hover {
+  background-color: var(--color-primary-dark);
+  color: white;
+}
+
+.subNavIcon {
+  font-size: 1rem;
+  line-height: 1;
+  width: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.subNavText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebarFooter {
+  margin-top: auto;
+  padding: 0 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapseButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.collapseButton:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.collapseButton svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.header {
+  background-color: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 1.5rem;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.headerLeft {
+  flex: 1;
+}
+
+.headerBrand {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.headerIconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  font-size: 1.25rem;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+
+.headerIconButton:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.mainContent {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 70px;
+  }
+
+  .brandText {
+    display: none;
+  }
+
+  .navText {
+    display: none;
+  }
+
+  .collapseButton {
+    display: none;
+  }
+
+  .sidebarFooter a {
+    display: none;
+  }
+
+  .header {
+    padding: 0 1rem;
+  }
+
+  .headerRight {
+    gap: 1rem;
+  }
+}

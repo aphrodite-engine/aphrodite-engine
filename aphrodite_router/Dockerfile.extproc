@@ -1,0 +1,87 @@
+# Build the Rust library
+FROM rust:1.90 AS rust-builder
+
+RUN apt-get update && apt-get install -y \
+    make \
+    build-essential \
+    pkg-config \
+    lld \
+    clang \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV CARGO_INCREMENTAL=1
+ENV CARGO_PROFILE_RELEASE_LTO=thin
+ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+
+WORKDIR /app
+
+# Copy dependency files first for better layer caching
+COPY candle_binding/Cargo.toml ./candle_binding/
+COPY candle_binding/Cargo.loc[k] ./candle_binding/
+
+# Pre-build dependencies to cache them (CPU-only, no CUDA)
+RUN cd candle_binding && \
+    mkdir -p src && \
+    echo "fn main() {}" > src/lib.rs && \
+    cargo build --release --no-default-features && \
+    rm -rf src
+
+# Copy source code and build
+COPY candle_binding/src/ ./candle_binding/src/
+
+RUN cd candle_binding && \
+    cargo clean && \
+    cargo build --release --no-default-features && \
+    find target -name "*.so" -type f && \
+    ls -la target/release/
+
+# Build the Go application
+FROM golang:1.25 AS go-builder
+
+WORKDIR /app
+
+# Copy Go module files first for better layer caching
+RUN mkdir -p router
+COPY router/go.mod router/go.sum router/
+COPY candle_binding/go.mod candle_binding/aphrodite-router.go candle_binding/
+
+# Pre-download modules
+RUN cd router && go mod download && \
+    cd /app/candle_binding && go mod download
+
+# Copy router source code
+COPY router/ router/
+
+# Copy the built Rust library from rust-builder
+COPY --from=rust-builder /app/candle_binding/target/release/libcandle_semantic_router.so /app/candle_binding/target/release/
+
+# Set environment variables for CGO
+ENV CGO_ENABLED=1
+ENV LD_LIBRARY_PATH=/app/candle_binding/target/release
+ENV GOOS=linux
+
+# Build the router binary
+RUN mkdir -p bin && cd router && \
+    go build -ldflags="-w -s" -o ../../bin/aphrodite-router cmd/main.go
+
+# Final stage
+FROM quay.io/centos/centos:stream10
+
+WORKDIR /app
+
+COPY --from=go-builder /app/bin/aphrodite-router /app/extproc-server
+COPY --from=go-builder /app/candle_binding/target/release/libcandle_semantic_router.so /app/lib/
+COPY router/config/config.yaml /app/config/
+
+ENV LD_LIBRARY_PATH=/app/lib
+
+EXPOSE 50051
+
+# Copy entrypoint script
+COPY scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+

@@ -1,0 +1,215 @@
+# Aphrodite Router Configuration
+# Simple setup for Qwen3-4B-Instruct (port 2242) and Qwen3-30B-A3B-Instruct (port 2243)
+
+# BERT Model for Semantic Cache Embeddings
+# Note: Router will warn if model not found but continue without semantic cache
+bert_model:
+  model_id: models/all-MiniLM-L12-v2
+  threshold: 0.6
+  use_cpu: true
+
+# Semantic Cache Configuration
+semantic_cache:
+  enabled: true
+  backend_type: "memory"
+  similarity_threshold: 0.8
+  max_entries: 1000
+  ttl_seconds: 3600
+  eviction_policy: "fifo"
+  use_hnsw: true
+  hnsw_m: 16
+  hnsw_ef_construction: 200
+  embedding_model: "bert"  # Use BERT for fast embeddings
+
+# Tools Configuration
+tools:
+  enabled: true
+  top_k: 3
+  similarity_threshold: 0.2
+  tools_db_path: "config/tools_db.json"
+  fallback_to_empty: true
+
+# Prompt Guard (Security) - Disabled if model files missing
+prompt_guard:
+  enabled: false  # Disable if model files not available
+  use_modernbert: true
+  model_id: "models/jailbreak_classifier_modernbert-base_model"
+  threshold: 0.7
+  use_cpu: true
+
+# Aphrodite Endpoints Configuration
+# Qwen3-4B-Instruct: Fast, efficient for simple tasks
+# Qwen3-30B-A3B-Instruct: More powerful for complex reasoning
+aphrodite_endpoints:
+  - name: "Qwen/Qwen3-4B-Instruct-2507"
+    address: "127.0.0.1"
+    port: 2242
+    weight: 1
+    health_check_path: "/health"
+  
+  - name: "Qwen/Qwen3-14B"
+    address: "127.0.0.1"
+    port: 2243
+    weight: 1
+    health_check_path: "/health"
+
+# Model Configuration
+model_config:
+  "Qwen/Qwen3-4B-Instruct-2507-instruct":
+    reasoning_family: "qwen3"
+    preferred_endpoints: ["Qwen/Qwen3-4B-Instruct-2507"]
+    pii_policy:
+      allow_by_default: true
+  
+  "Qwen/Qwen3-14B-a3b-instruct":
+    reasoning_family: "qwen3"
+    preferred_endpoints: ["Qwen/Qwen3-14B"]
+    pii_policy:
+      allow_by_default: true
+  
+  # Default model name for routing
+  "qwen3":
+    reasoning_family: "qwen3"
+    preferred_endpoints: ["Qwen/Qwen3-4B-Instruct-2507", "Qwen/Qwen3-14B"]
+    pii_policy:
+      allow_by_default: true
+
+# Classifier Configuration - Disabled if model files missing
+classifier:
+  category_model:
+    enabled: false  # Disable if model files not available
+    model_id: "models/category_classifier_modernbert-base_model"
+    use_modernbert: true
+    threshold: 0.6
+    use_cpu: true
+  pii_model:
+    enabled: false  # Disable if model files not available
+    model_id: "models/pii_classifier_modernbert-base_presidio_token_model"
+    use_modernbert: true
+    threshold: 0.7
+    use_cpu: true
+
+# Routing Categories
+# Simple strategy: Route simple tasks to 4B, complex tasks to 30B
+categories:
+  - name: general
+    system_prompt: "You are a helpful AI assistant. Provide accurate, helpful, and concise responses."
+    model_scores:
+      - model: Qwen/Qwen3-4B-Instruct-2507-instruct
+        score: 0.8
+        use_reasoning: false
+      - model: Qwen/Qwen3-14B-a3b-instruct
+        score: 0.3
+        use_reasoning: false
+  
+  - name: coding
+    system_prompt: "You are an expert software engineer. Write clean, efficient, and well-documented code. Follow best practices and explain your approach."
+    model_scores:
+      - model: Qwen/Qwen3-4B-Instruct-2507-instruct
+        score: 0.6
+        use_reasoning: false
+      - model: Qwen/Qwen3-14B-a3b-instruct
+        score: 0.9
+        use_reasoning: true  # Enable reasoning for complex coding tasks
+  
+  - name: math
+    system_prompt: "You are a mathematics expert. Solve problems step-by-step, show your work, and verify your solutions."
+    model_scores:
+      - model: Qwen/Qwen3-4B-Instruct-2507-instruct
+        score: 0.5
+        use_reasoning: false
+      - model: Qwen/Qwen3-14B-a3b-instruct
+        score: 0.95
+        use_reasoning: true  # Math benefits from reasoning
+  
+  - name: reasoning
+    system_prompt: "You are a logical reasoning expert. Break down complex problems, analyze step-by-step, and provide well-reasoned conclusions."
+    model_scores:
+      - model: Qwen/Qwen3-4B-Instruct-2507-instruct
+        score: 0.3
+        use_reasoning: false
+      - model: Qwen/Qwen3-14B-a3b-instruct
+        score: 1.0
+        use_reasoning: true  # Always use reasoning for complex reasoning tasks
+  
+  - name: business
+    system_prompt: "You are a senior business consultant. Provide practical, actionable business advice backed by proven methodologies."
+    model_scores:
+      - model: Qwen/Qwen3-4B-Instruct-2507-instruct
+        score: 0.7
+        use_reasoning: false
+      - model: Qwen/Qwen3-14B-a3b-instruct
+        score: 0.6
+        use_reasoning: false
+
+# Default Model (fallback when classification fails)
+# This should match one of your actual backend model names
+default_model: Qwen/Qwen3-4B-Instruct-2507-instruct
+
+# Keyword-based classification rules (works without ML models)
+# These enable basic routing without requiring model files
+keyword_rules:
+  - category: coding
+    operator: OR
+    keywords: ["code", "programming", "function", "python", "javascript", "java", "c++", "algorithm", "bug", "compile", "debug", "variable", "class", "method"]
+    case_sensitive: false
+  
+  - category: math
+    operator: OR
+    keywords: ["calculate", "solve", "equation", "formula", "derivative", "integral", "matrix", "algebra", "geometry", "trigonometry", "statistics", "probability"]
+    case_sensitive: false
+  
+  - category: reasoning
+    operator: OR
+    keywords: ["reason", "analyze", "logic", "conclusion", "inference", "deduce", "explain why", "think through", "step by step"]
+    case_sensitive: false
+  
+  - category: business
+    operator: OR
+    keywords: ["business", "strategy", "marketing", "finance", "revenue", "profit", "market", "customer", "sales", "management", "startup", "investment"]
+    case_sensitive: false
+
+# Reasoning Family Configuration
+reasoning_families:
+  qwen3:
+    type: "chat_template_kwargs"
+    parameter: "enable_thinking"
+
+# Global Default Reasoning Effort
+default_reasoning_effort: high
+
+# API Configuration
+api:
+  batch_classification:
+    max_batch_size: 100
+    concurrency_threshold: 5
+    max_concurrency: 8
+    metrics:
+      enabled: true
+      detailed_goroutine_tracking: true
+      high_resolution_timing: false
+      sample_rate: 1.0
+      duration_buckets:
+        [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30]
+      size_buckets: [1, 2, 5, 10, 20, 50, 100, 200]
+
+# Embedding Models - Disabled by default
+embedding_models:
+  use_cpu: true
+
+# Observability Configuration
+observability:
+  tracing:
+    enabled: false
+    provider: "opentelemetry"
+    exporter:
+      type: "otlp"
+      endpoint: "localhost:4317"
+      insecure: true
+    sampling:
+      type: "always_on"
+      rate: 1.0
+    resource:
+      service_name: "aphrodite-router"
+      service_version: "v0.1.0"
+      deployment_environment: "development"
