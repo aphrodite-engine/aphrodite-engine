@@ -1136,7 +1136,14 @@ class Glm4vDummyInputsBuilder(BaseDummyInputsBuilder[Glm4vProcessingInfo]):
                         overrides.num_frames,
                         num_frames,
                     )
-                num_frames = min(num_frames, overrides.num_frames)
+                elif overrides.num_frames < 2:
+                    logger.warning(
+                        "video.num_frames override (%d) cannot be less than 2 "
+                        "(temporal_factor requirement), will be ignored",
+                        overrides.num_frames,
+                    )
+                else:
+                    num_frames = min(num_frames, overrides.num_frames)
             if overrides.width:
                 if overrides.width > width:
                     logger.warning(
@@ -1153,6 +1160,9 @@ class Glm4vDummyInputsBuilder(BaseDummyInputsBuilder[Glm4vProcessingInfo]):
                         height,
                     )
                 height = min(height, overrides.height)
+
+        # GLM-4V requires temporal_factor=2, so enforce minimum 2 frames
+        num_frames = max(num_frames, 2)
 
         video = np.full((num_frames, width, height, 3), 255, dtype=np.uint8)
         video_items = []
