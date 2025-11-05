@@ -254,6 +254,16 @@ class Glm4vVisionAttention(nn.Module):
         self.hidden_size_per_attention_head = dist_utils.divide(projection_size, num_heads)
         self.num_attention_heads_per_partition = dist_utils.divide(num_heads, self.tp_size)
 
+        # Check if quantization is FP8 (needs qkv_proj prefix)
+        # Unquantized and AWQ need qkv prefix
+        is_fp8 = (
+            quant_config is not None and quant_config.get_name() in ("fp8", "ptpc_fp8", "fbgemm_fp8", "modelopt")
+        ) or (
+            quant_config is not None
+            and quant_config.get_name() == "modelopt"
+            and hasattr(quant_config, "is_checkpoint_fp8_serialized")
+            and quant_config.is_checkpoint_fp8_serialized
+        )
         self.qkv = QKVParallelLinear(
             hidden_size=embed_dim,
             head_size=self.hidden_size_per_attention_head,
@@ -262,7 +272,7 @@ class Glm4vVisionAttention(nn.Module):
             bias=False,
             quant_config=quant_config,
             # Change qkv prefix to align with GLM-4.5V-FP8 quantization cfg
-            prefix=f"{prefix}.qkv_proj" if quant_config else f"{prefix}.qkv",
+            prefix=f"{prefix}.qkv_proj" if is_fp8 else f"{prefix}.qkv",
             disable_tp=use_data_parallel,
         )
         self.proj = RowParallelLinear(
