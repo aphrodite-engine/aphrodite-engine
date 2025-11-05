@@ -99,7 +99,7 @@ def apply_rotary_pos_emb_vision(t: torch.Tensor, freqs: torch.Tensor) -> torch.T
     sin = freqs.sin()
     apply_rotary_emb = apply_rotary_emb_torch
     if current_platform.is_cuda():
-        from aphrodite.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
+        from aphrodite_kernels.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
     output = apply_rotary_emb(t_, cos, sin).type_as(t)
     return output
 

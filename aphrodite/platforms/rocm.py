@@ -31,15 +31,15 @@ except ImportError as e:
     logger.warning("Failed to import from amdsmi with %r", e)
 
 try:
-    import aphrodite._C  # noqa: F401
+    import aphrodite_kernels._C  # noqa: F401
 except ImportError as e:
-    logger.warning("Failed to import from aphrodite._C with %r", e)
+    logger.warning("Failed to import from aphrodite_kernels._C with %r", e)
 
 # import custom ops, trigger op registration
 try:
-    import aphrodite._rocm_C  # noqa: F401
+    import aphrodite_kernels._rocm_C  # noqa: F401
 except ImportError as e:
-    logger.warning("Failed to import from aphrodite._rocm_C with %r", e)
+    logger.warning("Failed to import from aphrodite_kernels._rocm_C with %r", e)
 
 # Models not supported by ROCm.
 _ROCM_UNSUPPORTED_MODELS: list[str] = []

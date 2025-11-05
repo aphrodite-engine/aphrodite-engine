@@ -34,9 +34,9 @@ class XPUPlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        # Do not import aphrodite._C
+        # Do not import aphrodite_kernels._C
         with contextlib.suppress(ImportError):
-            import aphrodite._moe_C  # noqa: F401
+            import aphrodite_kernels._moe_C  # noqa: F401
 
     @classmethod
     def get_attn_backend_cls(

@@ -10,7 +10,7 @@ from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
 if current_platform.is_cuda():
-    from aphrodite.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
+    from aphrodite_kernels.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
 
 logger = init_logger(__name__)
 

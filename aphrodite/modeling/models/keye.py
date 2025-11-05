@@ -307,7 +307,7 @@ def apply_rotary_pos_emb_flashatt(
     sin = sin.chunk(2, dim=-1)[0].contiguous()
 
     if current_platform.is_cuda():
-        from aphrodite.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
+        from aphrodite_kernels.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
     elif current_platform.is_rocm():
         from flash_attn.ops.triton.rotary import apply_rotary as apply_rotary_emb
 
