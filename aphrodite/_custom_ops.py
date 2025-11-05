@@ -1705,8 +1705,6 @@ def moe_align_block_size(
     sorted_token_ids: torch.Tensor,
     experts_ids: torch.Tensor,
     num_tokens_post_pad: torch.Tensor,
-    adapter_enabled: torch.Tensor,
-    lora_ids: torch.Tensor,
 ) -> None:
     torch.ops._moe_C.moe_align_block_size(
         topk_ids,
@@ -1715,8 +1713,6 @@ def moe_align_block_size(
         sorted_token_ids,
         experts_ids,
         num_tokens_post_pad,
-        adapter_enabled,
-        lora_ids,
     )
 
 
@@ -1749,6 +1745,8 @@ def moe_lora_align_block_size(
     sorted_token_ids: torch.Tensor,
     experts_ids: torch.Tensor,
     num_tokens_post_pad: torch.Tensor,
+    adapter_enabled: torch.Tensor,
+    lora_ids: torch.Tensor,
 ) -> None:
     torch.ops._moe_C.moe_lora_align_block_size(
         topk_ids,
@@ -1761,6 +1759,8 @@ def moe_lora_align_block_size(
         sorted_token_ids,
         experts_ids,
         num_tokens_post_pad,
+        adapter_enabled,
+        lora_ids,
     )
 
 
