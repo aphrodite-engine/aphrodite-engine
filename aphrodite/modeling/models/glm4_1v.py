@@ -256,9 +256,7 @@ class Glm4vVisionAttention(nn.Module):
 
         # Check if quantization is FP8 (needs qkv_proj prefix)
         # Unquantized and AWQ need qkv prefix
-        is_fp8 = (
-            quant_config is not None and quant_config.get_name() in ("fp8", "ptpc_fp8", "fbgemm_fp8", "modelopt")
-        ) or (
+        is_fp8 = (quant_config is not None and quant_config.get_name() in ("fp8", "ptpc_fp8", "fbgemm_fp8")) or (
             quant_config is not None
             and quant_config.get_name() == "modelopt"
             and hasattr(quant_config, "is_checkpoint_fp8_serialized")
