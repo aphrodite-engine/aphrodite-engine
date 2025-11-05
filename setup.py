@@ -512,6 +512,54 @@ def get_aphrodite_version() -> str:
     return version
 
 
+def get_kernels_extra_index_url() -> str | None:
+    """Get the extra index URL for aphrodite-kernels wheels based on target device."""
+    base_url = "https://downloads.pygmalion.chat/whl"
+
+    if _is_cpu():
+        return f"{base_url}/cpu"
+    elif _is_hip():
+        return f"{base_url}/rocm"
+    elif _is_cuda():
+        # Determine CUDA version for wheel URL
+        cuda_version = None
+        if torch.version.cuda:
+            cuda_major, cuda_minor = torch.version.cuda.split(".")
+            cuda_version_str = f"{cuda_major}{cuda_minor}"
+            # Support CUDA 12.6, 12.8, and 12.9
+            if cuda_version_str in ["126", "128", "129"]:
+                cuda_version = cuda_version_str
+            else:
+                # Fallback to detected version or default
+                try:
+                    nvcc_version = get_nvcc_cuda_version()
+                    if nvcc_version >= Version("12.9"):
+                        cuda_version = "129"
+                    elif nvcc_version >= Version("12.8"):
+                        cuda_version = "128"
+                    elif nvcc_version >= Version("12.6"):
+                        cuda_version = "126"
+                except Exception:
+                    pass
+
+        # Use MAIN_CUDA_VERSION as fallback
+        if cuda_version is None:
+            main_cuda = envs.APHRODITE_MAIN_CUDA_VERSION
+            if main_cuda == "12.9":
+                cuda_version = "129"
+            elif main_cuda == "12.8":
+                cuda_version = "128"
+            elif main_cuda == "12.6":
+                cuda_version = "126"
+            else:
+                # Default to 12.8
+                cuda_version = "128"
+
+        return f"{base_url}/cu{cuda_version}"
+
+    return None
+
+
 def get_requirements() -> list[str]:
     """Get Python package dependencies from requirements.txt."""
     requirements_dir = ROOT_DIR / "requirements"
@@ -552,36 +600,30 @@ def get_requirements() -> list[str]:
         requirements = _read_requirements("xpu.txt")
     else:
         raise ValueError("Unsupported platform, please use CUDA, ROCm, or CPU.")
+
+    # Add aphrodite-kernels as a dependency
+    requirements.append("aphrodite-kernels")
+
     return requirements
 
 
 ext_modules = []
 
-# Skip building extensions if using precompiled binaries
-if not envs.APHRODITE_USE_PRECOMPILED:
-    if _is_cuda() or _is_hip():
-        ext_modules.append(CMakeExtension(name="aphrodite._moe_C"))
-
-    if _is_hip():
-        ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
-
-    if _is_cuda():
-        if not envs.APHRODITE_DISABLE_FLASH_ATTN_COMPILE:
-            ext_modules.append(CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa2_C"))
-            # Build FA3 when using precompiled artifacts or nvcc >= 12.3.
-            if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
-                ext_modules.append(CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa3_C"))
-
-        # Build flashmla when using precompiled artifacts or nvcc >= 12.3.
-        # Optional since this doesn't get built (produce an .so file) when
-        # not targeting a hopper system
-        if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
-            ext_modules.append(CMakeExtension(name="aphrodite._flashmla_C", optional=True))
-            ext_modules.append(CMakeExtension(name="aphrodite._flashmla_extension_C", optional=True))
-        ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
-
-    if _build_custom_ops():
-        ext_modules.append(CMakeExtension(name="aphrodite._C"))
+# Determine extra index URL for aphrodite-kernels wheels
+kernels_extra_index_url = get_kernels_extra_index_url()
+if kernels_extra_index_url:
+    current_extra_index = os.environ.get("PIP_EXTRA_INDEX_URL", "")
+    if kernels_extra_index_url not in current_extra_index:
+        if current_extra_index:
+            os.environ["PIP_EXTRA_INDEX_URL"] = f"{current_extra_index} {kernels_extra_index_url}"
+        else:
+            os.environ["PIP_EXTRA_INDEX_URL"] = kernels_extra_index_url
+        logger.info(
+            "Added extra index URL for aphrodite-kernels: %s\n"
+            "To install with this index URL, use: pip install --extra-index-url %s .",
+            kernels_extra_index_url,
+            kernels_extra_index_url,
+        )
 
 package_data = {
     "aphrodite": [
@@ -591,12 +633,6 @@ package_data = {
         "modeling/layers/fused_moe/configs/*.json",
     ]
 }
-
-if _no_device():
-    ext_modules = []
-
-if not ext_modules:
-    cmdclass = {}
 
 setup(
     # static metadata should rather go to pyproject.toml
@@ -619,6 +655,6 @@ setup(
         "petit-kernel": ["petit-kernel"],
     },
     ext_modules=ext_modules,
-    cmdclass={"build_ext": cmake_build_ext} if len(ext_modules) > 0 else {},
+    cmdclass={},
     package_data=package_data,
 )
