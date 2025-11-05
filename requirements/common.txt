@@ -2,7 +2,7 @@ regex # replace re for higher-performance regex matching
 cachetools
 psutil
 sentencepiece  # Required for LLaMA tokenizer.
-numpy
+numpy == 2.2.6
 requests >= 2.26.0
 tqdm
 blake3
@@ -50,6 +50,6 @@ setproctitle # Used to set process names for better debugging and monitoring
 openai-harmony >= 0.0.3  # Required for gpt-oss
 python-multipart # required for multipart/form-data requests
 blobfile
-numba
+numba == 0.61.2
 anthropic == 0.71.0
 posix_ipc >= 1.0  # required for dynamic KV cache
