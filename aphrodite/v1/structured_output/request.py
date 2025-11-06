@@ -71,7 +71,7 @@ def get_structured_output_key(params: StructuredOutputsParams) -> StructuredOutp
         else:
             json_str = params.json
         return StructuredOutputOptions.JSON, json_str
-    if params.json_object:
+    if params.json_object is not None:
         return StructuredOutputOptions.JSON_OBJECT, ""
     if params.regex is not None:
         return StructuredOutputOptions.REGEX, params.regex
