@@ -52,12 +52,12 @@ class StructuredOutputsParams:
         """Validate that some fields are mutually exclusive."""
         count = sum(
             [
-                bool(self.json),
-                bool(self.regex),
-                bool(self.choice),
-                bool(self.grammar),
+                self.json is not None,
+                self.regex is not None,
+                self.choice is not None,
+                self.grammar is not None,
                 self.json_object is not None,
-                bool(self.structural_tag),
+                self.structural_tag is not None,
             ]
         )
         if count > 1:
