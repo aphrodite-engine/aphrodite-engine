@@ -527,14 +527,14 @@ def get_kernels_version() -> str:
 
 
 def _has_sm90_or_higher() -> bool:
-    """Check if any CUDA architecture in TORCH_CUDA_ARCH_LIST is sm_90 (9.0) only."""
+    """Check if any CUDA architecture in TORCH_CUDA_ARCH_LIST is sm_90 (9.0) or higher."""
     arch_list = os.getenv("TORCH_CUDA_ARCH_LIST", "")
     if not arch_list:
         # If not set, try to detect from available GPU
         try:
             if torch.cuda.is_available():
                 capability = torch.cuda.get_device_capability(0)
-                return capability[0] == 9
+                return capability[0] >= 9
         except Exception:
             pass
         # Default to True if we can't determine (conservative)
@@ -547,7 +547,7 @@ def _has_sm90_or_higher() -> bool:
         arch_str = arch_str.split("+")[0].split("-")[0]
         try:
             arch_float = float(arch_str)
-            if arch_float == 9.0:
+            if arch_float >= 9.0:
                 return True
         except ValueError:
             continue
