@@ -252,13 +252,13 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
 
     so_params = sampling_params.structured_outputs
 
-    if so_params.regex:
+    if so_params.regex is not None:
         try:
             xgr.Grammar.from_regex(so_params.regex)
         except Exception as err:
             raise ValueError(f"Failed to transform regex into a grammar: {err}") from err
 
-    if so_params.choice:
+    if so_params.choice is not None:
         choice_grammar = choice_as_grammar(so_params.choice)
         try:
             xgr.Grammar.from_ebnf(choice_grammar)
@@ -268,7 +268,7 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
         so_params.grammar = choice_grammar
         return
 
-    if so_params.json:
+    if so_params.json is not None:
         if isinstance(so_params.json, str):
             try:
                 schema = json.loads(so_params.json)
@@ -286,7 +286,7 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
             raise ValueError("The provided JSON schema contains features not supported by xgrammar.")
         return
 
-    if so_params.grammar:
+    if so_params.grammar is not None:
         if grammar_is_likely_lark(so_params.grammar):
             # xgrammar supports EBNF grammars only
             try:
@@ -302,7 +302,7 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
             raise ValueError("Invalid grammar specification.") from e
         return
 
-    if so_params.structural_tag:
+    if so_params.structural_tag is not None:
         try:
             s_tag = json.loads(so_params.structural_tag)
 
