@@ -26,7 +26,7 @@
 #   - NCCL_SOCKET_IFNAME (detected network interface name)
 #
 # You can override these by passing -e flags, e.g.:
-#   -e APHRODITE_HOST_IP=64.247.196.89 -e GLOO_SOCKET_IFNAME=eth0
+#   -e APHRODITE_HOST_IP=<your_node_ip> -e GLOO_SOCKET_IFNAME=eth0
 # Keep each terminal session open. Closing a session stops the associated Ray
 # node and thereby shuts down the entire cluster.
 # Every machine must be reachable at the supplied IP address.
