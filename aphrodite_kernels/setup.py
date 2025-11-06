@@ -12,6 +12,7 @@ import torch
 from packaging.version import Version, parse
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+from setuptools_scm import get_version
 from torch.utils.cpp_extension import CUDA_HOME, ROCM_HOME
 
 
@@ -451,6 +452,80 @@ def get_gaudi_sw_version():
     return "0.0.0"  # when hl-smi is not available
 
 
+def get_kernels_version() -> str:
+    """Get the version string for aphrodite-kernels with platform-specific suffix."""
+    if env_version := os.getenv("APHRODITE_KERNELS_VERSION_OVERRIDE"):
+        return env_version
+
+    # Use REPO_ROOT to find git repository in parent directory
+    try:
+        # relative_to should point to a file in the git repository root
+        repo_setup_py = REPO_ROOT / "setup.py"
+        if repo_setup_py.exists():
+            version = get_version(write_to="aphrodite_kernels/_version.py", relative_to=str(repo_setup_py))
+        else:
+            # Fallback: try without relative_to, relying on search_parent_directories
+            version = get_version(write_to="aphrodite_kernels/_version.py")
+    except LookupError:
+        # Fallback if setuptools-scm can't find version (e.g., not in git repo)
+        # Try to read from existing _version.py if it exists
+        version_file = ROOT_DIR / "aphrodite_kernels" / "_version.py"
+        if version_file.exists():
+            try:
+                with open(version_file, encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("__version__"):
+                            version = line.split("=")[1].strip().strip("'\"")
+                            break
+            except Exception:
+                version = "0.0.1"
+        else:
+            version = "0.0.1"
+
+    sep = "+" if "+" not in version else "."  # dev versions might contain +
+
+    # Get MAIN_CUDA_VERSION from envs if available, otherwise use default
+    main_cuda_version = (getattr(envs, "APHRODITE_MAIN_CUDA_VERSION", None) if envs else None) or MAIN_CUDA_VERSION
+
+    if _no_device():
+        if APHRODITE_TARGET_DEVICE == "empty":
+            version += f"{sep}empty"
+    elif _is_cuda():
+        use_precompiled = envs and getattr(envs, "APHRODITE_USE_PRECOMPILED", False)
+        if use_precompiled:
+            version += f"{sep}precompiled"
+
+        # Check CUDA version even when using precompiled
+        cuda_version = str(get_nvcc_cuda_version())
+        if cuda_version != main_cuda_version:
+            cuda_version_str = cuda_version.replace(".", "")[:3]
+            # skip this for source tarball, required for pypi
+            if "sdist" not in sys.argv:
+                version += f"{sep}cu{cuda_version_str}"
+    elif _is_hip():
+        # Get the ROCm Version
+        rocm_version = get_rocm_version() or torch.version.hip
+        if rocm_version and rocm_version != main_cuda_version:
+            version += f"{sep}rocm{rocm_version.replace('.', '')[:3]}"
+    elif _is_hpu():
+        # Get the Intel Gaudi Software Suite version
+        gaudi_sw_version = str(get_gaudi_sw_version())
+        if gaudi_sw_version != main_cuda_version:
+            gaudi_sw_version = gaudi_sw_version.replace(".", "")[:3]
+            version += f"{sep}gaudi{gaudi_sw_version}"
+    elif _is_tpu():
+        version += f"{sep}tpu"
+    elif _is_cpu():
+        if APHRODITE_TARGET_DEVICE == "cpu":
+            version += f"{sep}cpu"
+    elif _is_xpu():
+        version += f"{sep}xpu"
+    else:
+        raise RuntimeError("Unknown runtime environment")
+
+    return version
+
+
 ext_modules = []
 
 # Skip building extensions if using precompiled binaries
@@ -491,7 +566,7 @@ else:
 
 setup(
     name="aphrodite-kernels",
-    version="0.0.1",
+    version=get_kernels_version(),
     ext_modules=ext_modules,
     cmdclass=cmdclass,
     packages=["aphrodite_kernels"],

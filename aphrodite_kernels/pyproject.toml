@@ -35,7 +35,8 @@ Homepage="https://github.com/aphrodite-engine/aphrodite-engine"
 Documentation="https://aphrodite.pygmalion.chat"
 
 [tool.setuptools_scm]
-# no extra settings needed, presence enables setuptools-scm
+# Search parent directories for git repository (since kernels is a subdirectory)
+search_parent_directories = true
 
 [tool.setuptools.packages.find]
 where = ["."]
