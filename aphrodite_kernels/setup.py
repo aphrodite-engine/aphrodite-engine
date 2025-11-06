@@ -526,6 +526,34 @@ def get_kernels_version() -> str:
     return version
 
 
+def _has_sm90_or_higher() -> bool:
+    """Check if any CUDA architecture in TORCH_CUDA_ARCH_LIST is sm_90 (9.0) or higher."""
+    arch_list = os.getenv("TORCH_CUDA_ARCH_LIST", "")
+    if not arch_list:
+        # If not set, try to detect from available GPU
+        try:
+            if torch.cuda.is_available():
+                capability = torch.cuda.get_device_capability(0)
+                return capability[0] >= 9
+        except Exception:
+            pass
+        # Default to True if we can't determine (conservative)
+        return True
+
+    # Parse TORCH_CUDA_ARCH_LIST (format: "7.0 7.5 8.0 8.9 9.0 10.0")
+    archs = arch_list.split()
+    for arch_str in archs:
+        # Remove PTX suffix and other modifiers (e.g., "9.0+PTX" -> "9.0")
+        arch_str = arch_str.split("+")[0].split("-")[0]
+        try:
+            arch_float = float(arch_str)
+            if arch_float >= 9.0:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 ext_modules = []
 
 # Skip building extensions if using precompiled binaries
@@ -541,8 +569,8 @@ if not use_precompiled:
         disable_flash_attn = getattr(envs, "APHRODITE_DISABLE_FLASH_ATTN_COMPILE", False) if envs else False
         if not disable_flash_attn:
             ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._vllm_fa2_C"))
-            # Build FA3 when using precompiled artifacts or nvcc >= 12.3.
-            if use_precompiled or get_nvcc_cuda_version() >= Version("12.3"):
+            # Build FA3 when using precompiled artifacts, nvcc >= 12.3, and architecture >= sm_90
+            if use_precompiled or (get_nvcc_cuda_version() >= Version("12.3") and _has_sm90_or_higher()):
                 ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._vllm_fa3_C"))
 
         # Build flashmla when using precompiled artifacts or nvcc >= 12.3.

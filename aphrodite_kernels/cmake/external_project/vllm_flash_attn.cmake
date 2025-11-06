@@ -37,8 +37,8 @@ if(APHRODITE_FLASH_ATTN_SRC_DIR)
 else()
   FetchContent_Declare(
           aphrodite-flash-attn
-          GIT_REPOSITORY https://github.com/vllm-project/flash-attention.git
-          GIT_TAG a893712401d70362fbb299cd9c4b3476e8e9ed54
+          GIT_REPOSITORY https://github.com/AlpinDale/flash-attention.git
+          GIT_TAG 8f25773948a588d751e12bd911de5810138e9790
           GIT_PROGRESS TRUE
           # Don't share the aphrodite-flash-attn build between build types
           BINARY_DIR ${CMAKE_BINARY_DIR}/aphrodite_flash_attn
