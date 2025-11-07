@@ -546,3 +546,12 @@ FROM scratch AS kernels-wheel-export
 ARG COMMON_WORKDIR=/workspace
 COPY --from=build-kernels ${COMMON_WORKDIR}/aphrodite_kernels/dist/*.whl /
 #################### KERNELS WHEEL EXPORT ####################
+
+#################### MAIN WHEEL EXPORT ####################
+# Stage to export only the main aphrodite-engine wheel for distribution
+# Usage: DOCKER_BUILDKIT=1 docker build --target main-wheel-export --output ./dist -f docker/Dockerfile .
+# This will export the wheel to ./dist/ on your host machine
+FROM scratch AS main-wheel-export
+ARG COMMON_WORKDIR=/workspace
+COPY --from=build ${COMMON_WORKDIR}/dist/*.whl /
+#################### MAIN WHEEL EXPORT ####################
