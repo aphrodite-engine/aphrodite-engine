@@ -190,7 +190,11 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     rm -rf .deps && \
     mkdir -p .deps && \
     export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
-    python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
+    # Temporarily rename pyproject.toml to prevent setuptools-scm from interfering
+    # when building with setup.py bdist_wheel
+    mv pyproject.toml pyproject.toml.bak && \
+    python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 && \
+    mv pyproject.toml.bak pyproject.toml
 #################### KERNELS WHEEL BUILD IMAGE ####################
 
 #################### WHEEL BUILD IMAGE ####################
@@ -257,7 +261,11 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     rm -rf .deps && \
         mkdir -p .deps && \
         export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
-        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
+        # Temporarily rename pyproject.toml to prevent setuptools-scm from interfering
+        # when building with setup.py bdist_wheel
+        mv pyproject.toml pyproject.toml.bak && \
+        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 && \
+        mv pyproject.toml.bak pyproject.toml
 #################### EXTENSION Build IMAGE ####################
 
 #################### DEV IMAGE ####################
