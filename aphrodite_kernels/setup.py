@@ -391,7 +391,7 @@ def _is_xpu() -> bool:
 
 def _build_custom_ops() -> bool:
     # Skip building custom ops if using precompiled binaries
-    if envs and getattr(envs, "APHRODITE_USE_PRECOMPILED", False):
+    if os.getenv("APHRODITE_USE_PRECOMPILED", "false").lower() == "true":
         return False
     return _is_cuda() or _is_hip() or _is_cpu()
 
@@ -547,7 +547,7 @@ def _has_sm90_or_higher() -> bool:
 ext_modules = []
 
 # Skip building extensions if using precompiled binaries
-use_precompiled = envs and getattr(envs, "APHRODITE_USE_PRECOMPILED", False)
+use_precompiled = os.getenv("APHRODITE_USE_PRECOMPILED", "false").lower() == "true"
 if not use_precompiled:
     if _is_cuda() or _is_hip():
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._moe_C"))
@@ -556,7 +556,7 @@ if not use_precompiled:
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._rocm_C"))
 
     if _is_cuda():
-        disable_flash_attn = getattr(envs, "APHRODITE_DISABLE_FLASH_ATTN_COMPILE", False) if envs else False
+        disable_flash_attn = os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "false").lower() == "true"
         if not disable_flash_attn:
             ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._vllm_fa2_C"))
             # Build FA3 when using precompiled artifacts, nvcc >= 12.3, and architecture >= sm_90
