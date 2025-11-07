@@ -25,16 +25,11 @@ def load_module_from_path(module_name, path):
 
 
 ROOT_DIR = Path(os.path.dirname(__file__))
-REPO_ROOT = ROOT_DIR.parent
 logger = logging.getLogger(__name__)
 
-# Try to load envs from main aphrodite if available, otherwise use environment variables
-try:
-    envs = load_module_from_path("envs", os.path.join(REPO_ROOT, "aphrodite", "envs.py"))
-    APHRODITE_TARGET_DEVICE = envs.APHRODITE_TARGET_DEVICE
-except Exception:
-    envs = None
-    APHRODITE_TARGET_DEVICE = os.getenv("APHRODITE_TARGET_DEVICE", "cuda")
+# Use environment variables only - no dependency on main project
+envs = None
+APHRODITE_TARGET_DEVICE = os.getenv("APHRODITE_TARGET_DEVICE", "cuda")
 
 if sys.platform.startswith("darwin") and APHRODITE_TARGET_DEVICE != "cpu":
     logger.warning("APHRODITE_TARGET_DEVICE automatically set to `cpu` due to macOS")
@@ -457,15 +452,10 @@ def get_kernels_version() -> str:
     if env_version := os.getenv("APHRODITE_KERNELS_VERSION_OVERRIDE"):
         return env_version
 
-    # Use REPO_ROOT to find git repository in parent directory
+    # Use setuptools-scm to get version - works from current directory or parent git repo
     try:
-        # relative_to should point to a file in the git repository root
-        repo_setup_py = REPO_ROOT / "setup.py"
-        if repo_setup_py.exists():
-            version = get_version(write_to="aphrodite_kernels/_version.py", relative_to=str(repo_setup_py))
-        else:
-            # Fallback: try without relative_to, relying on search_parent_directories
-            version = get_version(write_to="aphrodite_kernels/_version.py")
+        # get_version will search up the directory tree for .git by default
+        version = get_version(write_to="aphrodite_kernels/_version.py")
     except LookupError:
         # Fallback if setuptools-scm can't find version (e.g., not in git repo)
         # Try to read from existing _version.py if it exists
@@ -484,14 +474,14 @@ def get_kernels_version() -> str:
 
     sep = "+" if "+" not in version else "."  # dev versions might contain +
 
-    # Get MAIN_CUDA_VERSION from envs if available, otherwise use default
-    main_cuda_version = (getattr(envs, "APHRODITE_MAIN_CUDA_VERSION", None) if envs else None) or MAIN_CUDA_VERSION
+    # Get MAIN_CUDA_VERSION from environment variable, otherwise use default
+    main_cuda_version = os.getenv("APHRODITE_MAIN_CUDA_VERSION", MAIN_CUDA_VERSION)
 
     if _no_device():
         if APHRODITE_TARGET_DEVICE == "empty":
             version += f"{sep}empty"
     elif _is_cuda():
-        use_precompiled = envs and getattr(envs, "APHRODITE_USE_PRECOMPILED", False)
+        use_precompiled = os.getenv("APHRODITE_USE_PRECOMPILED", "false").lower() == "true"
         if use_precompiled:
             version += f"{sep}precompiled"
 

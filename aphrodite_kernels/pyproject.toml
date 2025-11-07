@@ -35,8 +35,7 @@ Homepage="https://github.com/aphrodite-engine/aphrodite-engine"
 Documentation="https://aphrodite.pygmalion.chat"
 
 [tool.setuptools_scm]
-# Search parent directories for git repository (since kernels is a subdirectory)
-search_parent_directories = true
+search_parent_directories = false
 
 [tool.setuptools.packages.find]
 where = ["."]
