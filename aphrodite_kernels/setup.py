@@ -391,7 +391,7 @@ def _is_xpu() -> bool:
 
 def _build_custom_ops() -> bool:
     # Skip building custom ops if using precompiled binaries
-    if os.getenv("APHRODITE_USE_PRECOMPILED", "false").lower() == "true":
+    if os.environ.get("APHRODITE_USE_PRECOMPILED", "").strip().lower() in ("1", "true"):
         return False
     return _is_cuda() or _is_hip() or _is_cpu()
 
@@ -481,17 +481,17 @@ def get_kernels_version() -> str:
         if APHRODITE_TARGET_DEVICE == "empty":
             version += f"{sep}empty"
     elif _is_cuda():
-        use_precompiled = os.getenv("APHRODITE_USE_PRECOMPILED", "false").lower() == "true"
+        use_precompiled = os.environ.get("APHRODITE_USE_PRECOMPILED", "").strip().lower() in ("1", "true")
         if use_precompiled:
             version += f"{sep}precompiled"
-
-        # Check CUDA version even when using precompiled
-        cuda_version = str(get_nvcc_cuda_version())
-        if cuda_version != main_cuda_version:
-            cuda_version_str = cuda_version.replace(".", "")[:3]
-            # skip this for source tarball, required for pypi
-            if "sdist" not in sys.argv:
-                version += f"{sep}cu{cuda_version_str}"
+        else:
+            # Check CUDA version only when not using precompiled
+            cuda_version = str(get_nvcc_cuda_version())
+            if cuda_version != main_cuda_version:
+                cuda_version_str = cuda_version.replace(".", "")[:3]
+                # skip this for source tarball, required for pypi
+                if "sdist" not in sys.argv:
+                    version += f"{sep}cu{cuda_version_str}"
     elif _is_hip():
         # Get the ROCm Version
         rocm_version = get_rocm_version() or torch.version.hip
@@ -547,7 +547,8 @@ def _has_sm90_or_higher() -> bool:
 ext_modules = []
 
 # Skip building extensions if using precompiled binaries
-use_precompiled = os.getenv("APHRODITE_USE_PRECOMPILED", "false").lower() == "true"
+# Match the pattern from aphrodite/envs.py: accepts "1" or "true" (case-insensitive)
+use_precompiled = os.environ.get("APHRODITE_USE_PRECOMPILED", "").strip().lower() in ("1", "true")
 if not use_precompiled:
     if _is_cuda() or _is_hip():
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._moe_C"))
@@ -556,7 +557,10 @@ if not use_precompiled:
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._rocm_C"))
 
     if _is_cuda():
-        disable_flash_attn = os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "false").lower() == "true"
+        disable_flash_attn = os.environ.get("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0").strip().lower() in (
+            "1",
+            "true",
+        )
         if not disable_flash_attn:
             ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._vllm_fa2_C"))
             # Build FA3 when using precompiled artifacts, nvcc >= 12.3, and architecture >= sm_90
@@ -582,9 +586,16 @@ if not ext_modules:
 else:
     cmdclass = {"build_ext": cmake_build_ext}
 
+_kernels_version = get_kernels_version()
+
+# Print version if --version flag is used
+if len(sys.argv) > 1 and "--version" in sys.argv:
+    print(_kernels_version)
+    sys.exit(0)
+
 setup(
     name="aphrodite-kernels",
-    version=get_kernels_version(),
+    version=_kernels_version,
     ext_modules=ext_modules,
     cmdclass=cmdclass,
     packages=["aphrodite_kernels"],
