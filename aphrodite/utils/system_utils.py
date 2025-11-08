@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TextIO
 
 import psutil
+import regex as re
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
@@ -310,12 +311,12 @@ def get_kernels_install_command() -> str:
         # Check for CPU build
         if torch.version.cuda is None and torch.version.hip is None:
             extra_index_url = f"{base_url}/cpu"
-            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+            return f"pip install --extra-index-url aphrodite-kernels==0.0.1 {extra_index_url}"
 
         # Check for ROCm
         if torch.version.hip is not None:
             extra_index_url = f"{base_url}/rocm"
-            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+            return f"pip install --extra-index-url aphrodite-kernels==0.0.1 {extra_index_url}"
 
         # Check for CUDA
         if torch.version.cuda:
@@ -325,24 +326,22 @@ def get_kernels_install_command() -> str:
             # Support CUDA 12.8 and 12.9
             if cuda_version_str == "129":
                 extra_index_url = f"{base_url}/cu129"
-                return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+                return f"pip install --extra-index-url aphrodite-kernels==0.0.1 {extra_index_url}"
             elif cuda_version_str == "128":
                 # Default (12.8) uses base URL without /cu128 suffix
                 extra_index_url = base_url
-                return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+                return f"pip install --extra-index-url aphrodite-kernels==0.0.1 {extra_index_url}"
 
             # Try to detect from nvcc if available
             try:
+                import subprocess
+
                 from torch.utils.cpp_extension import CUDA_HOME
 
                 if CUDA_HOME:
-                    import subprocess
-
                     nvcc_output = subprocess.check_output(
                         [f"{CUDA_HOME}/bin/nvcc", "-V"], universal_newlines=True, stderr=subprocess.DEVNULL
                     )
-                    import regex as re
-
                     version_match = re.search(r"release (\d+\.\d+)", nvcc_output)
                     if version_match:
                         nvcc_version = version_match.group(1)
@@ -350,11 +349,15 @@ def get_kernels_install_command() -> str:
                         nvcc_version_str = f"{nvcc_major}{nvcc_minor}"
                         if nvcc_version_str == "129":
                             extra_index_url = f"{base_url}/cu129"
-                            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+                            return f"pip install --extra-index-url aphrodite-kernels==0.0.1 {extra_index_url}"
                         elif nvcc_version_str == "128":
                             extra_index_url = base_url
-                            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
-            except Exception:
+                            return f"pip install --extra-index-url aphrodite-kernels==0.0.1 {extra_index_url}"
+            except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as e:
+                logger.warning(
+                    "nvcc-based CUDA version detection failed. This is expected if nvcc is not in your PATH. Error: %s",
+                    e,
+                )
                 pass
 
             # Unsupported CUDA version - direct to build from source
