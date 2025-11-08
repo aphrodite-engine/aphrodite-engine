@@ -29,6 +29,7 @@ from aphrodite.endpoints.chat_utils import (
     ConversationMessage,
     apply_hf_chat_template,
     apply_mistral_chat_template,
+    conversation_message_to_dict,
     parse_chat_messages_futures,
     resolve_chat_template_content_format,
 )
@@ -1095,6 +1096,12 @@ class OpenAIServing:
 
         if hasattr(request, "cache_salt") and request.cache_salt is not None:
             engine_prompt["cache_salt"] = request.cache_salt
+
+        # Record raw conversation for t2i pipeleine
+        engine_prompt["raw_conversation"] = [conversation_message_to_dict(message) for message in conversation]
+        engine_prompt["task_type"] = request.task_type
+        if request.task_extra_kwargs is not None:
+            engine_prompt["task_extra_kwargs"] = request.task_extra_kwargs
 
         return conversation, [request_prompt], [engine_prompt]
 

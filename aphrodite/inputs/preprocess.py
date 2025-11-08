@@ -319,7 +319,12 @@ class InputPreprocessor:
             if parsed_content.get("multi_modal_data"):
                 raise ValueError("This model does not support multimodal inputs")
 
-            inputs = token_inputs(prompt_token_ids)
+            inputs = token_inputs(
+                prompt_token_ids,
+                raw_conversation=parsed_content["raw_conversation"],
+                task_type=parsed_content["task_type"],
+                task_extra_kwargs=parsed_content["task_extra_kwargs"],
+            )
 
         if cache_salt := parsed_content.get("cache_salt"):
             inputs["cache_salt"] = cache_salt

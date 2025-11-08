@@ -12,4 +12,7 @@ VAE_TASKS = get_args(VAETask)
 UNetTask = Literal["denoise_step"]
 UNET_TASKS = get_args(UNetTask)
 
+CustomTask = Literal["t2i"]
+CUSTOM_TASKS = get_args(CustomTask)
+
 SupportedTask = Literal[GenerationTask, PoolingTask, VAETask, UNetTask]

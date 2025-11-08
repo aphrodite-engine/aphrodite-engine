@@ -222,6 +222,7 @@ if TYPE_CHECKING:
     APHRODITE_DISABLE_FLASH_ATTN_COMPILE: bool = False
     APHRODITE_ENABLE_DYNAMIC_KV_CACHE: bool = False
     APHRODITE_COMPILE_CACHE_SAVE_FORMAT: Literal["binary", "unpacked"] = "binary"
+    APHRODITE_ENABLE_T2I_PIPELINE: bool = False
 
 
 def get_default_cache_root():
@@ -1304,6 +1305,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_COMPILE_CACHE_SAVE_FORMAT": env_with_choices(
         "APHRODITE_COMPILE_CACHE_SAVE_FORMAT", "binary", ["binary", "unpacked"]
     ),
+    # Whether to enable t2i pipeline
+    "APHRODITE_ENABLE_T2I_PIPELINE": lambda: bool(int(os.getenv("APHRODITE_ENABLE_T2I_PIPELINE", "0"))),
 }
 
 # --8<-- [end:env-vars-definition]

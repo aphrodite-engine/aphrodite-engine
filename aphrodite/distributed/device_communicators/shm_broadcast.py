@@ -1,4 +1,5 @@
 import functools
+import io
 import pickle
 import time
 from contextlib import contextmanager
@@ -11,7 +12,9 @@ from unittest.mock import patch
 
 import torch
 import torch.distributed as dist
+import torch.multiprocessing
 import zmq
+from multiprocesing.reduction import ForkingPickler
 from torch.distributed import ProcessGroup
 from zmq import (  # type: ignore
     IPV6,  # type: ignore
@@ -500,7 +503,7 @@ class MessageQueue:
                 self._read_spin_timer.record_activity()
                 break
 
-    def enqueue(self, obj, timeout: float | None = None):
+    def enqueue(self, obj, timeout: float | None = None, use_torch_shared_pickler=False):
         """Write to message queue with optional timeout (in seconds)"""
         assert self._is_writer, "Only writers can enqueue"
         all_buffers: list[SizedBuffer] = [b""]
@@ -516,7 +519,13 @@ class MessageQueue:
             total_bytes += len(raw_buf) + 4
             return False
 
-        all_buffers[0] = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL, buffer_callback=oob_callback)
+        if use_torch_shared_pickler:
+            buf = io.BytesIO()
+            ForkingPickler(buf, pickle.HIGHEST_PROTOCOL).dump(obj)
+            all_buffers[0] = buf.getvalue()
+        else:
+            all_buffers[0] = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL, buffer_callback=oob_callback)
+
         if self.n_local_reader > 0:
             if total_bytes + len(all_buffers[0]) >= self.buffer.max_chunk_bytes:
                 with self.acquire_write(timeout) as buf:

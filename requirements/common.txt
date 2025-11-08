@@ -53,3 +53,4 @@ blobfile
 numba == 0.61.2
 anthropic == 0.71.0
 posix_ipc >= 1.0  # required for dynamic KV cache
+diffusers >= 0.32.0

@@ -544,6 +544,10 @@ class Worker(WorkerBase):
         output.kv_connector_output = kv_connector_output
         return output
 
+    @torch.inference_mode()
+    def custom_execute_model(self, *args, **kwargs):
+        return self.model_runner.custom_execute_model(*args, **kwargs)
+
     def take_draft_token_ids(self) -> DraftTokenIds | None:
         return self.model_runner.take_draft_token_ids()
 

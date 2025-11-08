@@ -38,6 +38,9 @@ class NewRequestData:
     num_computed_tokens: int
     lora_request: LoRARequest | None
     prompt_embeds: "torch.Tensor | None" = None
+    raw_conversation: list[dict] | None = None
+    task_type: str = "chat"
+    task_extra_kwargs: dict[str, object] | None = None
 
     @classmethod
     def from_request(
@@ -55,6 +58,9 @@ class NewRequestData:
             num_computed_tokens=request.num_computed_tokens,
             lora_request=request.lora_request,
             prompt_embeds=request.prompt_embeds,
+            raw_conversation=request.raw_conversation,
+            task_type=request.task_type,
+            task_extra_kwargs=request.task_extra_kwargs,
         )
 
     def __repr__(self) -> str:
@@ -68,7 +74,9 @@ class NewRequestData:
             f"block_ids={self.block_ids},"
             f"num_computed_tokens={self.num_computed_tokens},"
             f"lora_request={self.lora_request},"
-            f"prompt_embeds_shape={prompt_embeds_shape}"
+            f"prompt_embeds_shape={prompt_embeds_shape},"
+            f"task_type={self.task_type},"
+            f"task_extra_kwargs={self.task_extra_kwargs}"
             ")"
         )
 

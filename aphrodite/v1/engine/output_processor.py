@@ -176,6 +176,7 @@ class RequestState:
         finish_reason: FinishReason | None,
         stop_reason: int | str | None,
         kv_transfer_params: dict[str, Any] | None = None,
+        image: str | None = None,
     ) -> RequestOutput | PoolingRequestOutput | None:
         finished = finish_reason is not None
         final_only = self.output_kind == RequestOutputKind.FINAL_ONLY
@@ -197,7 +198,7 @@ class RequestState:
             if not outputs:
                 return None
 
-        return self._new_request_output(request_id, outputs, finished, kv_transfer_params)
+        return self._new_request_output(request_id, outputs, finished, kv_transfer_params, image)
 
     def _new_request_output(
         self,
@@ -205,6 +206,7 @@ class RequestState:
         outputs: list[CompletionOutput] | list[PoolingOutput],
         finished: bool,
         kv_transfer_params: dict[str, Any] | None = None,
+        image: str | None = None,
     ) -> RequestOutput | PoolingRequestOutput:
         first_output = outputs[0]
         if isinstance(first_output, PoolingOutput):
@@ -240,6 +242,7 @@ class RequestState:
             kv_transfer_params=kv_transfer_params,
             num_cached_tokens=self.num_cached_tokens,
             metrics=self.stats,
+            image=image,
         )
 
     def _new_completion_output(
@@ -409,6 +412,7 @@ class OutputProcessor:
             kv_transfer_params = engine_core_output.kv_transfer_params
             req_state.num_cached_tokens = engine_core_output.num_cached_tokens
             req_state.is_prefilling = False
+            image = engine_core_output.image
 
             if pooling_output is None:
                 assert req_state.detokenizer is not None
@@ -430,6 +434,7 @@ class OutputProcessor:
                 finish_reason,
                 stop_reason,
                 kv_transfer_params,
+                image,
             ):
                 if req_state.queue is not None:
                     # AsyncLLM: put into queue for handling by generate().

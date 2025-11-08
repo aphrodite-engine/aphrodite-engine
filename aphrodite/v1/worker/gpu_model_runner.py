@@ -2,7 +2,7 @@ import gc
 import itertools
 import time
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
 from functools import reduce
@@ -60,6 +60,7 @@ from aphrodite.modeling.models.interfaces_base import (
 )
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import BatchedTensorInputs, MultiModalKwargsItem, PlaceholderRange
+from aphrodite.multimodal.tasks.t2i import register_hunyuan_image3_modelrunner_task_callable
 from aphrodite.multimodal.utils import group_mm_kwargs_by_modality
 from aphrodite.tasks import GenerationTask, PoolingTask, SupportedTask
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
@@ -143,6 +144,13 @@ logger = init_logger(__name__)
 AttnMetadataDict: TypeAlias = dict[str, AttentionMetadata]
 # list when ubatching is enabled
 PerLayerAttnMetadata: TypeAlias = list[AttnMetadataDict] | AttnMetadataDict
+
+
+def _assert_callable(obj: Any, name: str) -> Callable[..., Any]:
+    """Ensure the object is callable; otherwise raise TypeError immediately."""
+    if not callable(obj):
+        raise TypeError(f"{name} is not callable: {obj!r}")
+    return obj
 
 
 # Wrapper for ModelRunnerOutput to support overlapped execution.
@@ -491,8 +499,32 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             pin_memory=self.pin_memory,
         )
 
+        self._CUSTOM_TASK_REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {}
+
+        if envs.APHRODITE_ENABLE_T2I_PIPELINE:
+            register_hunyuan_image3_modelrunner_task_callable(self)
+
         # Ephemeral state transferred between execute_model() and sample_tokens().
         self.execute_model_state: ExecuteModelState | None = None
+
+    def register_task_callables(
+        self,
+        task_type: str,
+        preprocess_fn: Callable[..., Any],
+        postprocess_fn: Callable[..., Any],
+        custom_forward_method: str,
+    ) -> None:
+        self._CUSTOM_TASK_REGISTRY[task_type] = {
+            "preprocess_fn": preprocess_fn,
+            "postprocess_fn": postprocess_fn,
+            "custom_forward_method": custom_forward_method,
+        }
+
+    def _get_task_callables(self, task_type: str) -> dict[str, Any]:
+        try:
+            return self._CUSTOM_TASK_REGISTRY[task_type]
+        except KeyError as exc:
+            raise KeyError(f"task_type={task_type} not registered!") from exc
 
     def reset_mm_cache(self) -> None:
         if self.mm_budget:
@@ -2549,6 +2581,27 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         )
 
         return async_output
+
+    @torch.inference_mode()
+    def custom_execute_model(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Execute a single custom forward pass.
+        Any missing or non-callable element will raise an exception immediately.
+        """
+        task_type: str = kwargs.pop("task_type", "None")
+        callables: dict[str, Any] = self._get_task_callables(task_type)
+
+        preprocess_fn = _assert_callable(callables["preprocess_fn"], "preprocess_fn")
+        forward_method = callables["custom_forward_method"]  # attribute name only
+        postprocess_fn = _assert_callable(callables["postprocess_fn"], "postprocess_fn")
+
+        attn_meta, exec_args, exec_kwargs = preprocess_fn(*args, **kwargs)
+
+        with set_forward_context(attn_meta, self.aphrodite_config):
+            forward_callable = _assert_callable(getattr(self.model, forward_method), f"model.{forward_method}")
+            result = forward_callable(*exec_args, **exec_kwargs)
+
+        return postprocess_fn(result)
 
     def take_draft_token_ids(self) -> DraftTokenIds | None:
         if self._draft_token_ids is None:

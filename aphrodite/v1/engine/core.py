@@ -13,6 +13,7 @@ from logging import DEBUG
 from typing import Any, TypeVar, cast
 
 import msgspec
+import torch
 import zmq
 
 from aphrodite import envs
@@ -24,6 +25,9 @@ from aphrodite.logging_utils.dump_input import dump_engine_exception
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import engine_receiver_cache_from_config
+from aphrodite.multimodal.tasks.t2i import (
+    register_hunyuan_image3_engine_core_hooks,
+)
 from aphrodite.tasks import POOLING_TASKS, SupportedTask
 from aphrodite.transformers_utils.config import maybe_register_config_serialize_by_value
 from aphrodite.utils.gc_utils import maybe_attach_gc_debug_callback
@@ -42,9 +46,11 @@ from aphrodite.v1.core.sched.interface import SchedulerInterface
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.core.sched.scheduler import Scheduler as V1Scheduler
 from aphrodite.v1.engine import (
+    EngineCoreOutput,
     EngineCoreOutputs,
     EngineCoreRequest,
     EngineCoreRequestType,
+    FinishReason,
     ReconfigureDistributedRequest,
     ReconfigureRankType,
     UtilityOutput,
@@ -199,6 +205,43 @@ class EngineCore:
 
         self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
 
+        self._hooks: dict[str, list[Callable[..., Any]]] = {}
+        self.task_allowed_token_ids: dict[str, list[int] | Callable] = {}
+        self.task_stop_token_ids: dict[str, list[int] | Callable] = {}
+        self.task_skip_inference: dict[str, bool | Callable] = {}
+
+        # register hunyuan_image3 task
+        if envs.APHRODITE_ENABLE_T2I_PIPELINE:
+            register_hunyuan_image3_engine_core_hooks(self, aphrodite_config)
+            logger.info("T2I task is enabled")
+
+    def register_hook(self, name: str, fn: Callable[..., Any]) -> None:
+        """Not thread-safe; for init use only."""
+        self._hooks.setdefault(name, []).append(fn)
+
+    def _run_hooks(self, name: str, *args, **kwargs) -> list[Any]:
+        """
+        Execute all hooks registered under the given name:
+        - Filter out None results.
+        - If a hook returns a list, extend the result list with it.
+        - Otherwise, append the single return value.
+        Returns a flattened list.
+        """
+        results: list[Any] = []
+        for fn in self._hooks.get(name, []):
+            try:
+                item = fn(*args, **kwargs)
+            except Exception:
+                continue
+
+            if item is None:
+                continue
+            if isinstance(item, list):
+                results.extend(item)
+            else:
+                results.append(item)
+        return results
+
     def _initialize_kv_caches(self, aphrodite_config: AphroditeConfig) -> tuple[int, int, KVCacheConfig]:
         start = time.time()
 
@@ -250,6 +293,59 @@ class EngineCore:
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.modeling.supported_tasks
 
+    def apply_task_specific_token_constraints(self, request: Request) -> None:
+        """
+        Apply task-specific token constraints to sampling parameters.
+        Adds task-specific allowed token IDs to existing sampling constraints.
+        Supports both static token lists and dynamic callable functions.
+        Args:
+            request: Request object with task_type and sampling_params
+        """
+        if request.task_type in self.task_allowed_token_ids:
+            print(f"Applying token constraints for task type: {request.task_type}")
+
+            if callable(self.task_allowed_token_ids[request.task_type]):
+                task_allowed_token_ids = self.task_allowed_token_ids[request.task_type](
+                    request.task_type, request.task_extra_kwargs
+                )
+            else:
+                task_allowed_token_ids = self.task_allowed_token_ids[request.task_type]
+
+            request.sampling_params.allowed_token_ids = (
+                request.sampling_params.allowed_token_ids or []
+            ) + task_allowed_token_ids
+
+            logger.info("Final combined allowed tokens: %s", request.sampling_params.allowed_token_ids)
+
+        if request.task_type in self.task_stop_token_ids:
+            print(f"Applying stop token constraints for task type: {request.task_type}")
+            if callable(self.task_stop_token_ids[request.task_type]):
+                task_stop_token_ids = self.task_stop_token_ids[request.task_type](
+                    request.task_type, request.task_extra_kwargs
+                )
+            else:
+                task_stop_token_ids = self.task_stop_token_ids[request.task_type]
+            request.sampling_params.stop_token_ids = (
+                request.sampling_params.stop_token_ids or []
+            ) + task_stop_token_ids
+            logger.info("Final combined stop tokens: %s", request.sampling_params.stop_token_ids)
+
+    def should_skip_inference(self, request):
+        """
+        Check if inference should be skipped for the given request.
+        Supports both static boolean values and callable functions for skip logic.
+        Args:
+            request: The inference request object
+        Returns:
+            bool: True if inference should be skipped, False otherwise
+        """
+        if request.task_type in self.task_skip_inference:
+            if callable(self.task_skip_inference[request.task_type]):
+                return self.task_skip_inference[request.task_type](request.task_type, request.task_extra_kwargs)
+            else:
+                return self.task_skip_inference[request.task_type]
+        return False
+
     def add_request(self, request: Request, request_wave: int = 0):
         """Add request to the scheduler.
 
@@ -271,6 +367,7 @@ class EngineCore:
         if request.kv_transfer_params is not None and (not self.scheduler.get_kv_connector()):
             logger.warning("Got kv_transfer_params, but no KVConnector found. Disabling KVTransfer for this request.")
 
+        self.apply_task_specific_token_constraints(request)
         self.scheduler.add_request(request)
 
     def abort_requests(self, request_ids: list[str]):
@@ -295,6 +392,50 @@ class EngineCore:
             dump_engine_exception(self.aphrodite_config, scheduler_output, self.scheduler.make_stats())
             raise err
 
+    def custom_execute_model(self, *args, **kwargs) -> list[torch.Tensor]:
+        """
+        Generic model execution interface with optional pre- and post-processing hooks.
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments forwarded to the model.
+        **kwargs : dict
+            Keyword arguments forwarded to the model. May additionally contain:
+            preprocess_fn : Callable, optional
+                Function to transform inputs before the actual forward pass.
+                Signature: preprocess_fn(*args, **kwargs) -> Tuple[tuple, dict]
+                Must return (executor_args, executor_kwargs) that will be fed
+                into the underlying model executor.
+            postprocess_fn : Callable, optional
+                Function to transform the raw model output before returning it.
+                Signature: postprocess_fn(output, *args, **kwargs) -> List[torch.Tensor]
+        Returns
+        -------
+        List[torch.Tensor]
+            Final output tensors after optional post-processing.
+        """
+
+        # Default pre-processing: identity function, passes arguments unchanged
+        def default_preprocess_fn(*args, **kwargs):
+            return args, kwargs
+
+        # Default post-processing: identity function, returns output as-is
+        def default_postprocess_fn(output, *args, **kwargs):
+            return output
+
+        # Extract optional pre- and post-processing functions from kwargs
+        preprocess_fn = kwargs.pop("preprocess_fn", default_preprocess_fn)
+        postprocess_fn = kwargs.pop("postprocess_fn", default_postprocess_fn)
+
+        # Apply pre-processing to obtain arguments for the model executor
+        executor_args, executor_kwargs = preprocess_fn(*args, **kwargs)
+
+        # Execute the forward pass through the underlying model executor
+        output = self.model_executor.custom_execute_model(*executor_args, **executor_kwargs)
+
+        # Apply post-processing to the raw output and return the final result
+        return postprocess_fn(output, *args, **kwargs)
+
     def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
         """Schedule, execute, and make output.
 
@@ -307,6 +448,9 @@ class EngineCore:
         if not self.scheduler.has_requests():
             return {}, False
         scheduler_output = self.scheduler.schedule()
+
+        self._run_hooks("on_new_requests", scheduler_output.scheduled_new_reqs)
+
         future = self.modeling.execute_model(scheduler_output, non_block=True)
         grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 
@@ -828,6 +972,7 @@ class EngineCoreProc(EngineCore):
         outputs, model_executed = self.step_fn()
         # Put EngineCoreOutputs into the output queue.
         for output in outputs.items() if outputs else ():
+            self._run_hooks("on_step_outputs", output[1].outputs)
             self.output_queue.put_nowait(output)
         # Post-step hook.
         self.post_step(model_executed)
@@ -1010,6 +1155,31 @@ class EngineCoreProc(EngineCore):
                 elif len(reuse_buffers) < max_reuse_bufs:
                     # Limit the number of buffers to reuse.
                     reuse_buffers.append(buffer)
+
+    def step_passthrough(self, request: Request):
+        """Simulate one inference step with fake outputs for testing."""
+        logger.info("skip request infer, id: %s, task: %s", request.request_id, request.task_type)
+        self._run_hooks("on_new_requests", [request])
+
+        # Create fake output to bypass real inference
+        fake_outputs: list[EngineCoreOutput] = []
+        fake_outputs.append(
+            EngineCoreOutput(
+                request_id=request.request_id,
+                new_token_ids=[2],  # Placeholder token
+                finish_reason=FinishReason.STOP,  # Mark as completed
+            )
+        )
+
+        self._run_hooks("on_step_outputs", fake_outputs)
+        final_fake_outputs = EngineCoreOutputs(outputs=fake_outputs)
+        self.output_queue.put((request.client_index, final_fake_outputs))
+
+    def add_request(self, request: Request, request_wave: int = 0):
+        if self.should_skip_inference(request):
+            self.step_passthrough(request)
+        else:
+            super().add_request(request, request_wave)
 
 
 class DPEngineCoreProc(EngineCoreProc):

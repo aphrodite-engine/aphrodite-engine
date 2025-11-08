@@ -446,6 +446,9 @@ class Processor:
             priority=priority,
             data_parallel_rank=data_parallel_rank,
             trace_headers=trace_headers,
+            raw_conversation=decoder_inputs["raw_conversation"],
+            task_type=decoder_inputs["task_type"],
+            task_extra_kwargs=decoder_inputs["task_extra_kwargs"],
         )
 
     def _validate_model_inputs(self, encoder_inputs: SingletonInputs | None, decoder_inputs: SingletonInputs):

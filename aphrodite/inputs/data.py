@@ -86,6 +86,15 @@ class TokensPrompt(TypedDict):
     Optional cache salt to be used for prefix caching.
     """
 
+    raw_conversation: NotRequired[list[dict]]
+    """The raw conversation data. For t2i pipelines, this field is required."""
+
+    task_type: NotRequired[str]
+    """The request task type"""
+
+    task_extra_kwargs: NotRequired[dict[str, Any]]
+    """The task-specific kwargs"""
+
 
 class EmbedsPrompt(TypedDict):
     """Schema for a prompt provided via token embeddings."""
@@ -203,10 +212,22 @@ class TokenInputs(TypedDict):
     Optional cache salt to be used for prefix caching.
     """
 
+    raw_conversation: NotRequired[list[dict]]
+    """The original prompt data corresponding to the token IDs, if available."""
+
+    task_type: NotRequired[str]
+    """The request task type"""
+
+    task_extra_kwargs: NotRequired[dict[str, Any]]
+    """The task-specific kwargs"""
+
 
 def token_inputs(
     prompt_token_ids: list[int],
     cache_salt: str | None = None,
+    raw_conversation: list[dict] | None = None,
+    task_type: str | None = None,
+    task_extra_kwargs: dict[str, Any] | None = None,
 ) -> TokenInputs:
     """Construct [`TokenInputs`][aphrodite.inputs.data.TokenInputs] from optional
     values."""
@@ -214,6 +235,13 @@ def token_inputs(
 
     if cache_salt is not None:
         inputs["cache_salt"] = cache_salt
+
+    if raw_conversation is not None:
+        inputs["raw_conversation"] = raw_conversation
+    if task_type is not None:
+        inputs["task_type"] = task_type
+    if task_extra_kwargs is not None:
+        inputs["task_extra_kwargs"] = task_extra_kwargs
 
     return inputs
 

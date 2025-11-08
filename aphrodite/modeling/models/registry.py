@@ -382,6 +382,10 @@ _MULTIMODAL_MODELS = {
     "WhisperForConditionalGeneration": ("whisper", "WhisperForConditionalGeneration"),  # noqa: E501
 }
 
+_T2I_MODELS = {
+    "HunyuanImage3ForCausalMM": ("hunyuan_image3", "HunyuanImage3ForCausalMM"),
+}
+
 _SPECULATIVE_DECODING_MODELS = {
     "MiMoMTPModel": ("mimo_mtp", "MiMoMTP"),
     "EagleLlamaForCausalLM": ("llama_eagle", "EagleLlamaForCausalLM"),
@@ -455,6 +459,7 @@ _APHRODITE_MODELS = {
     **_SPECULATIVE_DECODING_MODELS,
     **_TRANSFORMERS_SUPPORTED_MODELS,
     **_TRANSFORMERS_BACKEND_MODELS,
+    **_T2I_MODELS,
 }
 
 # This variable is used as the args for subprocess.run(). We

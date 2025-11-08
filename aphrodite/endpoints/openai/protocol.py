@@ -40,7 +40,7 @@ from openai_harmony import Message as OpenAIHarmonyMessage
 from pydantic_core.core_schema import NoneSchema
 
 from aphrodite.config.pooler import get_use_activation
-from aphrodite.tasks import PoolingTask
+from aphrodite.tasks import PoolingTask, SupportedTask
 from aphrodite.utils.serial_utils import EmbedDType, EncodingFormat, Endianness
 
 # Backward compatibility for OpenAI client versions
@@ -491,6 +491,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
     # Ordered by official OpenAI API documentation
     # https://platform.openai.com/docs/api-reference/chat/create
     messages: list[ChatCompletionMessageParam]
+    task_type: SupportedTask | None = None
+    task_extra_kwargs: dict[str, Any] | None = None
     model: str
     frequency_penalty: float | None = 0.0
     logit_bias: dict[str, float] | None = None
@@ -2239,6 +2241,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
     prompt_logprobs: list[dict[int, Logprob] | None] | None = None
     prompt_token_ids: list[int] | None = None
     kv_transfer_params: dict[str, Any] | None = Field(default=None, description="KVTransfer parameters.")
+    image: str | None = Field(default=None, description="Image data.")
 
 
 class DeltaMessage(OpenAIBaseModel):

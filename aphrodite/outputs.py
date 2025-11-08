@@ -116,6 +116,7 @@ class RequestOutput:
         *,
         multi_modal_placeholders: MultiModalPlaceholderDict | None = None,
         kv_transfer_params: dict[str, Any] | None = None,
+        image: str | None = None,
         # Forward compatibility, code that uses args added in new release can
         # still run with older versions of Aphrodite without breaking.
         **kwargs: Any,
@@ -135,6 +136,7 @@ class RequestOutput:
         self.encoder_prompt_token_ids = encoder_prompt_token_ids
         self.num_cached_tokens = num_cached_tokens
         self.kv_transfer_params = kv_transfer_params
+        self.image = image
 
     def add(self, next_output: "RequestOutput", aggregate: bool) -> None:
         """Merge subsequent RequestOutput into this one"""

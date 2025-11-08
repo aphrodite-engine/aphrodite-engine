@@ -1,3 +1,4 @@
+import base64
 import dataclasses
 import importlib
 import pickle
@@ -408,3 +409,10 @@ def run_method(
     else:
         func = partial(method, obj)  # type: ignore
     return func(*args, **kwargs)
+
+
+def image_to_base64(file_path):
+    with open(file_path, "rb") as image_file:
+        image_data = image_file.read()
+        base64_encoded = base64.b64encode(image_data).decode("utf-8")
+        return base64_encoded

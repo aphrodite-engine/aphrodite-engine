@@ -36,6 +36,9 @@ class Request:
         priority: int = 0,
         trace_headers: Mapping[str, str] | None = None,
         block_hasher: Callable[["Request"], list["BlockHash"]] | None = None,
+        raw_conversation: list[dict] | None = None,
+        task_type: str | None = None,
+        task_extra_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.request_id = request_id
         self.client_index = client_index
@@ -111,6 +114,10 @@ class Request:
             self.get_hash_new_full_blocks = partial(block_hasher, self)
             self.block_hashes = self.get_hash_new_full_blocks()
 
+        self.raw_conversation = raw_conversation
+        self.task_type = task_type
+        self.task_extra_kwargs = task_extra_kwargs
+
     @classmethod
     def from_engine_core_request(
         cls,
@@ -132,6 +139,9 @@ class Request:
             priority=request.priority,
             trace_headers=request.trace_headers,
             block_hasher=block_hasher,
+            raw_conversation=request.raw_conversation,
+            task_type=request.task_type,
+            task_extra_kwargs=request.task_extra_kwargs,
         )
 
     def append_output_token_ids(

@@ -157,7 +157,7 @@ unicode = true
 ignore-hex = true
 identifier-leading-digits = false
 locale = "en"
-extend-ignore-identifiers-re = ["NVML_*", ".*Unc.*", ".*_thw",
+extend-ignore-identifiers-re = ["NVML_*", ".*Unc.*", ".*_thw", "THW", "WHT",
     ".*UE8M0.*", ".*[UE4M3|ue4m3].*", ".*eles.*",
      ".*[Tt]h[rR].*"]
 extend-ignore-words-re = []

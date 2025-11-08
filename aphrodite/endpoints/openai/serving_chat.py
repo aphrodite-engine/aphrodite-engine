@@ -1446,6 +1446,7 @@ class OpenAIServingChat(OpenAIServing):
             prompt_logprobs=clamp_prompt_logprobs(final_res.prompt_logprobs),
             prompt_token_ids=(final_res.prompt_token_ids if request.return_token_ids else None),
             kv_transfer_params=final_res.kv_transfer_params,
+            image=final_res.image,
         )
 
         # Log complete response if output logging is enabled

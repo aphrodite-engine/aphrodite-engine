@@ -40,6 +40,7 @@ ALLOWED_FILES = {
     "tests/utils.py",
     # pickle and cloudpickle
     "aphrodite/v1/serial_utils.py",
+    "aphrodite/multimodal/tasks/t2i.py",
 }
 
 PICKLE_RE = re.compile(
