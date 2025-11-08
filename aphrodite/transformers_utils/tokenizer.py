@@ -1,6 +1,5 @@
 import contextlib
 import copy
-import importlib.util
 import os
 import warnings
 from functools import lru_cache
@@ -208,12 +207,8 @@ def get_tokenizer(
         try:
             if kwargs["architectures"][0] == "HunyuanImage3ForCausalMM":
                 logger.info("Loading tokenizer from %s", tokenizer_name)
-                module_path = tokenizer_name + "/tokenizer_wrapper.py"
-                module_name = "TokenizerWrapper"
-                spec = importlib.util.spec_from_file_location(module_name, module_path)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                TokenizerWrapper = module.TokenizerWrapper
+                from aphrodite.modeling.models.text_to_image.tokenizer_wrapper import TokenizerWrapper
+
                 tw = TokenizerWrapper(tokenizer_name)
                 tokenizer = tw.tokenizer
             else:
