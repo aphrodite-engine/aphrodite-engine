@@ -7,9 +7,11 @@ import signal
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from shutil import which
 from typing import TextIO
 
 import psutil
+import regex as re
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
@@ -297,3 +299,85 @@ def set_ulimit(target_soft_limit: int = 65535):
                 current_soft,
                 e,
             )
+
+
+def get_kernels_install_command() -> str:
+    """Get the install command for aphrodite-kernels based on the current environment."""
+
+    base_url = "https://downloads.pygmalion.chat/whl"
+    install_page = "https://aphrodite.pygmalion.chat/installation/installation/"
+
+    # Detect if uv is available
+    pip_cmd = "uv pip" if which("uv") else "pip"
+
+    try:
+        import torch
+
+        # Check for CPU build - no pre-built wheels available
+        if torch.version.cuda is None and torch.version.hip is None:
+            return (
+                "Pre-built wheels for CPU are not available.\n"
+                f"Please build aphrodite-kernels from source. See: {install_page}"
+            )
+
+        # Check for ROCm - no pre-built wheels available
+        if torch.version.hip is not None:
+            return (
+                "Pre-built wheels for ROCm are not available.\n"
+                f"Please build aphrodite-kernels from source. See: {install_page}"
+            )
+
+        # Check for CUDA
+        if torch.version.cuda:
+            cuda_major, cuda_minor = torch.version.cuda.split(".")
+            cuda_version_str = f"{cuda_major}{cuda_minor}"
+
+            # Support CUDA 12.8 and 12.9
+            if cuda_version_str == "129":
+                extra_index_url = f"{base_url}/cu129"
+                return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+            elif cuda_version_str == "128":
+                # Default (12.8) uses base URL without /cu128 suffix
+                extra_index_url = base_url
+                return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+
+            # Try to detect from nvcc if available
+            try:
+                import subprocess
+
+                from torch.utils.cpp_extension import CUDA_HOME
+
+                if CUDA_HOME:
+                    nvcc_output = subprocess.check_output(
+                        [f"{CUDA_HOME}/bin/nvcc", "-V"], universal_newlines=True, stderr=subprocess.DEVNULL
+                    )
+                    version_match = re.search(r"release (\d+\.\d+)", nvcc_output)
+                    if version_match:
+                        nvcc_version = version_match.group(1)
+                        nvcc_major, nvcc_minor = nvcc_version.split(".")
+                        nvcc_version_str = f"{nvcc_major}{nvcc_minor}"
+                        if nvcc_version_str == "129":
+                            extra_index_url = f"{base_url}/cu129"
+                            return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+                        elif nvcc_version_str == "128":
+                            extra_index_url = base_url
+                            return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+            except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as e:
+                logger.warning(
+                    "nvcc-based CUDA version detection failed. This is expected if nvcc is not in your PATH. Error: %s",
+                    e,
+                )
+                pass
+
+            # Unsupported CUDA version - direct to build from source
+            return (
+                f"Your CUDA version ({torch.version.cuda}) is not supported by pre-built wheels.\n"
+                f"Only CUDA 12.8 and 12.9 are supported. "
+                f"Please build aphrodite-kernels from source. See: {install_page}"
+            )
+    except ImportError:
+        pass
+
+    # Fallback - default to 12.8
+    extra_index_url = base_url
+    return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"

@@ -3,12 +3,33 @@ pynvml. However, it should not initialize cuda context.
 """
 
 import os
+import sys
 from collections.abc import Callable
 from functools import cache, wraps
 from typing import TYPE_CHECKING, TypeVar
 
+from aphrodite.utils.system_utils import get_kernels_install_command
+
 # import custom ops, trigger op registration
-import aphrodite_kernels._C  # noqa
+try:
+    import aphrodite_kernels._C  # noqa
+except ImportError:
+    install_cmd = get_kernels_install_command()
+    error_msg = f"Failed to import aphrodite_kernels. Please install it using:\n  {install_cmd}"
+
+    # Override excepthook to suppress traceback for this specific error
+    original_excepthook = sys.excepthook
+
+    def clean_excepthook(exc_type, exc_value, exc_traceback):
+        # Check if this is our kernels import error by checking the message
+        if exc_type is ImportError and exc_value and "Failed to import aphrodite_kernels" in str(exc_value):
+            print(str(exc_value), file=sys.stderr)
+            sys.exit(1)
+        else:
+            original_excepthook(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = clean_excepthook
+    raise ImportError(error_msg) from None
 import torch
 from typing_extensions import ParamSpec
 
