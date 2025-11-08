@@ -552,6 +552,9 @@ ENTRYPOINT ["aphrodite", "run"]
 #################### KERNELS WHEEL EXPORT ####################
 # Stage to export only the kernels wheel for distribution
 # Usage: DOCKER_BUILDKIT=1 docker build --target kernels-wheel-export --output ./dist -f docker/Dockerfile .
+# To use cache from a previous build: 
+#   DOCKER_BUILDKIT=1 docker build --target build-kernels -t aphrodite-kernels:cache -f docker/Dockerfile .
+#   DOCKER_BUILDKIT=1 docker build --target kernels-wheel-export --cache-from aphrodite-kernels:cache --output ./dist -f docker/Dockerfile .
 # This will export the wheel to ./dist/ on your host machine
 FROM scratch AS kernels-wheel-export
 ARG COMMON_WORKDIR=/workspace
@@ -561,6 +564,9 @@ COPY --from=build-kernels ${COMMON_WORKDIR}/aphrodite_kernels/dist/*.whl /
 #################### MAIN WHEEL EXPORT ####################
 # Stage to export only the main aphrodite-engine wheel for distribution
 # Usage: DOCKER_BUILDKIT=1 docker build --target main-wheel-export --output ./dist -f docker/Dockerfile .
+# To use cache from a previous build:
+#   DOCKER_BUILDKIT=1 docker build --target build -t aphrodite-build:cache -f docker/Dockerfile .
+#   DOCKER_BUILDKIT=1 docker build --target main-wheel-export --cache-from aphrodite-build:cache --output ./dist -f docker/Dockerfile .
 # This will export the wheel to ./dist/ on your host machine
 FROM scratch AS main-wheel-export
 ARG COMMON_WORKDIR=/workspace
