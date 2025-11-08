@@ -2577,7 +2577,7 @@ class HunyuanImage3ForCausalMM(HunyuanImage3PreTrainedModel, GenerationMixin):
         prefix_allowed_tokens_fn: Callable[[int, torch.Tensor], list[int]] | None = None,
         synced_gpus: bool | None = None,
         assistant_model: Optional["PreTrainedModel"] = None,
-        streamer: "BaseStreamer" | None = None,
+        streamer: Optional["BaseStreamer"] = None,
         negative_prompt_ids: torch.Tensor | None = None,
         negative_prompt_attention_mask: torch.Tensor | None = None,
         use_model_defaults: bool | None = None,
