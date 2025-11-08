@@ -8,8 +8,8 @@ The installation process for Aphrodite is different depending on your hardware. 
 ## Requirements
 
 - Linux (or WSL on Windows)
-- Python 3.9 - 3.11
-- NVIDIA GPU (compute capability 6.0 or higher)
+- Python 3.10 - 3.13
+- NVIDIA GPU (compute capability 7.0 or higher)
 
 To find out what compute capability your GPU has, you can run this in a python interpreter:
 
@@ -22,21 +22,24 @@ To find out what compute capability your GPU has, you can run this in a python i
 The (8, 6) indicates the GPU has a compute capability of 8.6, for example.
 
 
-## Installation with pip
+## Installation with uv
 
-You can install Aphrodite using pip:
+Please install uv for your operating system [here](https://docs.astral.sh/uv/).
 
 ```sh
 # Create a new environment (optional)
-python -m venv ./aphrodite-venv --prompt "aphrodite"
+uv venv ~/venv/aphrodite --python 3.12 --seed
 # You will need to run this every time you close the terminal
-source ./aphrodite-venv/bin/activate
-# Install Aphrodite with CUDA 12.4
-pip install -U aphrodite-engine --extra-index-url https://downloads.pygmalion.chat/whl
+source ~/venv/aphrodite/bin/activate
+```
+
+Then install Aphrodite Engine:
+```sh
+pip install -U aphrodite-engine
 ```
 
 :::warning
-Since our binaries are compiled with CUDA 12.4, you may need to build from source for different (major) CUDA versions. Please see below for instructions.
+Since our binaries are compiled with CUDA 12.8 and 12.9, you may need to build from source for different (major) CUDA versions. Please see below for instructions.
 :::
 
 ## Building from source
@@ -46,27 +49,29 @@ You can build Aphrodite from source if needed.
 ```sh
 git clone https://github.com/PygmalionAI/aphrodite-engine.git
 cd aphrodite-engine
-
-python -m venv ./venv --prompt "aphrodite"
-source ./venv/bin/activate  # do this every time
-
-pip install -e .  # this may take a while
 ```
 
-If you don't have enough RAM, you may need to run `export MAX_JOBS=n`, where `n` is the number of jobs.
-
-You can also use the embedded micromamba runtime for one-command installation of Aphrodite:
+For creating a venv using uv, see the previous section.
 
 ```sh
-./update-runtime.sh
+# install the kernels (optional, only needed if you want the latest kernel changes, or the kernel is not available for your CUDA version)
+cd aphrodite_kernels
+uv pip install -e .
+
+cd ../
+uv pip install -e .
 ```
 
-Afterwards, prefix every Aphrodite-related command with `./runtime.sh`. e.g.:
-```sh
-./runtime.sh aphrodite run -h
-```
+:::warning
+If you don't have enough RAM when building the kernels, you may need to run `export MAX_JOBS=n`, where `n` is the number of jobs.
+:::
+
 
 ## Linux arm64/aarch64/GH200 tips
+
+:::warning
+This section is outdated.
+:::
 
 The NVIDIA GH200 comes with an ARM CPU, so you might have to look around for the binaries you need.
 As of November 2024, this produced a working aphrodite build:
