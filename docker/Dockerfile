@@ -257,15 +257,18 @@ ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=.git,target=.git  \
-    # Clean any existing CMake artifacts
-    rm -rf .deps && \
-        mkdir -p .deps && \
+        # Clean any existing CMake artifacts and dist directory
+        # Also remove any kernels wheels that might have been copied
+    rm -rf .deps dist *.egg-info aphrodite_kernels/dist && \
+        mkdir -p .deps dist && \
         export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
         # Temporarily rename pyproject.toml to prevent setuptools-scm from interfering
-        # when building with setup.py bdist_wheel
-        mv pyproject.toml pyproject.toml.bak && \
+        # when building with setup.py bdist_wheel. Also ensure no cached metadata.
+        mv pyproject.toml pyproject.toml.bak 2>/dev/null || true && \
+        # Use SETUPTOOLS_USE_DEPRECATED_FEATURES to force setuptools to use setup.py
+        SETUPTOOLS_USE_DEPRECATED_FEATURES=legacy-editable \
         python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 && \
-        mv pyproject.toml.bak pyproject.toml
+        mv pyproject.toml.bak pyproject.toml 2>/dev/null || true
 #################### EXTENSION Build IMAGE ####################
 
 #################### DEV IMAGE ####################

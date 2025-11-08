@@ -636,6 +636,7 @@ package_data = {
 
 setup(
     # static metadata should rather go to pyproject.toml
+    name="aphrodite-engine",
     version=get_aphrodite_version(),
     install_requires=get_requirements(),
     extras_require={
