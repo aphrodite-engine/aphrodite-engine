@@ -72,7 +72,7 @@ def build_payload(args):
         "temperature": args.temperature,
         "seed": default(args.seed, random.randint(1, 10_000_000)),
         "chat_template": chat_template,
-        "task_type": "hunyuan_image3",
+        "task_type": "t2i",
         "task_extra_kwargs": task_extra_kwargs,
     }
     return payload
