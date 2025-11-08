@@ -1,12 +1,12 @@
 import pytest
 import torch
-
-from aphrodite.aphrodite_flash_attn import (
+from aphrodite_kernels.aphrodite_flash_attn import (
     fa_version_unsupported_reason,
     flash_attn_varlen_func,
     flash_attn_with_kvcache,
     is_fa_version_supported,
 )
+
 from aphrodite.platforms import current_platform
 
 NUM_HEADS = [(4, 4), (8, 2)]

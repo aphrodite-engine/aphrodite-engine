@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import torch
+from aphrodite_kernels.aphrodite_flash_attn import flash_attn_varlen_func, get_scheduler_metadata
 
 from aphrodite import envs
-from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func, get_scheduler_metadata
 from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, is_quantized_kv_cache
 from aphrodite.attention.utils.fa_utils import flash_attn_supports_mla, get_flash_attn_version
 from aphrodite.config import AphroditeConfig
