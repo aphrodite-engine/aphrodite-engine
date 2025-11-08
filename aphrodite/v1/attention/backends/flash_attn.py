@@ -468,7 +468,7 @@ class FlashAttentionImpl(AttentionImpl):
         if aphrodite_flash_attn_version is None:
             # Default to FA version 2 if version detection fails
             aphrodite_flash_attn_version = 2
-            logger.warning_once("Could not determine FlashAttention version, defaulting to version 2")
+            logger.warning_once("Could not determine FlashAttention version, defaulting to version 2", scope="global")
         self.aphrodite_flash_attn_version = aphrodite_flash_attn_version
         # Cache the batch invariant result for use in forward passes
         self.batch_invariant_enabled = aphrodite_is_batch_invariant()
