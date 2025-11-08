@@ -5,6 +5,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from multiprocessing import shared_memory
+from multiprocessing.reduction import ForkingPickler
 from pickle import PickleBuffer
 from threading import Event
 from typing import TYPE_CHECKING, Any
@@ -14,7 +15,6 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing
 import zmq
-from multiprocesing.reduction import ForkingPickler
 from torch.distributed import ProcessGroup
 from zmq import (  # type: ignore
     IPV6,  # type: ignore
