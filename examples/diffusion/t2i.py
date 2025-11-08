@@ -21,7 +21,7 @@ DEFAULTS = {
     "prompt": "Generate an image: In a colosseum, a woman and a bear engage in combat, illuminated by torchlight. "
     "Rendered in 3D style.",
     "url": "http://0.0.0.0:2242/v1/chat/completions",
-    "model": "tencent/HunyuanImage-3.0",
+    "model": "hunyuan_image3",
     "max_tokens": 256,
     "temperature": 0,
 }
