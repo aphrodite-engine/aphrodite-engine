@@ -1,11 +1,11 @@
 import pytest
 import torch
-
-from aphrodite.aphrodite_flash_attn import (
+from aphrodite_kernels.aphrodite_flash_attn import (
     fa_version_unsupported_reason,
     flash_attn_varlen_func,
     is_fa_version_supported,
 )
+
 from aphrodite.platforms import current_platform
 from aphrodite.v1.attention.backends.flash_attn import cascade_attention, merge_attn_states
 

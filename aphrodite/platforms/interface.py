@@ -161,11 +161,11 @@ class Platform:
     def import_kernels(cls) -> None:
         """Import any platform-specific C kernels."""
         try:
-            import aphrodite._C  # noqa: F401
+            import aphrodite_kernels._C  # noqa: F401
         except ImportError as e:
-            logger.warning("Failed to import from aphrodite._C: %r", e)
+            logger.warning("Failed to import from aphrodite_kernels._C: %r", e)
         with contextlib.suppress(ImportError):
-            import aphrodite._moe_C  # noqa: F401
+            import aphrodite_kernels._moe_C  # noqa: F401
 
     @classmethod
     def get_vit_attn_backend(cls, head_size: int, dtype: torch.dtype) -> "_Backend":

@@ -194,7 +194,8 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
     # to FULL_AND_PIECEWISE.
     # TODO(luka, lucas): audit FA2 as part of:
     #  https://github.com/vllm-project/vllm/issues/22945
-    cudagraph_support = AttentionCGSupport.ALWAYS if get_flash_attn_version() == 3 else AttentionCGSupport.UNIFORM_BATCH
+    _fa_version = get_flash_attn_version() or 2  # Default to 2 if None
+    cudagraph_support = AttentionCGSupport.ALWAYS if _fa_version == 3 else AttentionCGSupport.UNIFORM_BATCH
 
     def __init__(
         self,
@@ -216,7 +217,8 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
         self.block_size = kv_cache_spec.block_size
 
         self.max_num_splits = 0  # No upper bound on the number of splits.
-        self.aot_schedule = get_flash_attn_version() == 3
+        _fa_version = get_flash_attn_version() or 2  # Default to 2 if None
+        self.aot_schedule = _fa_version == 3
 
         try:
             from aphrodite.distributed.parallel_state import get_dcp_group
@@ -462,7 +464,12 @@ class FlashAttentionImpl(AttentionImpl):
         FlashAttentionBackend.validate_head_size(head_size)
 
         self.attn_type = attn_type
-        self.aphrodite_flash_attn_version = get_flash_attn_version()
+        aphrodite_flash_attn_version = get_flash_attn_version()
+        if aphrodite_flash_attn_version is None:
+            # Default to FA version 2 if version detection fails
+            aphrodite_flash_attn_version = 2
+            logger.warning_once("Could not determine FlashAttention version, defaulting to version 2", scope="global")
+        self.aphrodite_flash_attn_version = aphrodite_flash_attn_version
         # Cache the batch invariant result for use in forward passes
         self.batch_invariant_enabled = aphrodite_is_batch_invariant()
 

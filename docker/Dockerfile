@@ -145,9 +145,62 @@ ARG torch_cuda_arch_list='7.0 7.5 8.0 8.9 9.0 10.0 12.0'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 #################### BASE BUILD IMAGE ####################
 
+#################### KERNELS WHEEL BUILD IMAGE ####################
+FROM base AS build-kernels
+ARG TARGETPLATFORM
+ARG CUDA_VERSION
+
+ARG PIP_INDEX_URL UV_INDEX_URL
+ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
+ARG PYTORCH_CUDA_INDEX_BASE_URL
+
+# install build dependencies for kernels
+COPY aphrodite_kernels/requirements.txt aphrodite_kernels/requirements.txt
+
+# This timeout (in seconds) is necessary when installing some dependencies via uv since it's likely to time out
+# Reference: https://github.com/astral-sh/uv/pull/1694
+ENV UV_HTTP_TIMEOUT=500
+ENV UV_INDEX_STRATEGY="unsafe-best-match"
+# Use copy mode to avoid hardlink failures with Docker cache mounts
+ENV UV_LINK_MODE=copy
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /opt/venv/bin/python3 -r aphrodite_kernels/requirements.txt \
+    --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+
+# Copy aphrodite_kernels directory
+COPY aphrodite_kernels/ aphrodite_kernels/
+
+# max jobs used by Ninja to build extensions
+ARG max_jobs=2
+ENV MAX_JOBS=${max_jobs}
+# number of threads used by nvcc
+ARG nvcc_threads=8
+ENV NVCC_THREADS=$nvcc_threads
+
+ARG aphrodite_target_device="cuda"
+ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
+ENV CCACHE_DIR=/root/.cache/ccache
+
+RUN --mount=type=cache,target=/root/.cache/ccache \
+    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=.git,target=.git  \
+    cd aphrodite_kernels && \
+    # Clean any existing CMake artifacts
+    rm -rf .deps && \
+    mkdir -p .deps && \
+    export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
+    # Temporarily rename pyproject.toml to prevent setuptools-scm from interfering
+    # when building with setup.py bdist_wheel
+    mv pyproject.toml pyproject.toml.bak && \
+    python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 && \
+    mv pyproject.toml.bak pyproject.toml
+#################### KERNELS WHEEL BUILD IMAGE ####################
+
 #################### WHEEL BUILD IMAGE ####################
 FROM base AS build
 ARG TARGETPLATFORM
+ARG CUDA_VERSION
 
 ARG PIP_INDEX_URL UV_INDEX_URL
 ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
@@ -167,6 +220,27 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /opt/venv/bin/python3 -r requirements/build.txt \
     --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
 
+# Copy aphrodite_kernels wheel from build-kernels stage
+COPY --from=build-kernels /workspace/aphrodite_kernels/dist/*.whl /tmp/kernels-wheel/
+
+# Install kernels wheel before building main package
+ARG aphrodite_target_device="cuda"
+ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
+
+# Determine kernels extra index URL based on CUDA version and install kernels wheel
+RUN CUDA_MAJOR_MINOR=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
+    if [ "$CUDA_MAJOR_MINOR" = "126" ] || [ "$CUDA_MAJOR_MINOR" = "128" ] || [ "$CUDA_MAJOR_MINOR" = "129" ]; then \
+        KERNELS_EXTRA_INDEX_URL="https://downloads.pygmalion.chat/whl/cu${CUDA_MAJOR_MINOR}"; \
+    else \
+        KERNELS_EXTRA_INDEX_URL="https://downloads.pygmalion.chat/whl/cu128"; \
+    fi && \
+    if [ -n "$(ls -A /tmp/kernels-wheel/*.whl 2>/dev/null)" ]; then \
+        uv pip install --python /opt/venv/bin/python3 /tmp/kernels-wheel/*.whl || \
+        uv pip install --python /opt/venv/bin/python3 --extra-index-url "$KERNELS_EXTRA_INDEX_URL" aphrodite-kernels; \
+    else \
+        uv pip install --python /opt/venv/bin/python3 --extra-index-url "$KERNELS_EXTRA_INDEX_URL" aphrodite-kernels || true; \
+    fi
+
 COPY . .
 ARG GIT_REPO_CHECK=0
 RUN --mount=type=bind,source=.git,target=.git \
@@ -179,17 +253,22 @@ ENV MAX_JOBS=${max_jobs}
 ARG nvcc_threads=8
 ENV NVCC_THREADS=$nvcc_threads
 
-ARG aphrodite_target_device="cuda"
-ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=.git,target=.git  \
-    # Clean any existing CMake artifacts
-    rm -rf .deps && \
-        mkdir -p .deps && \
+        # Clean any existing CMake artifacts and dist directory
+        # Also remove any kernels wheels that might have been copied
+    rm -rf .deps dist *.egg-info aphrodite_kernels/dist && \
+        mkdir -p .deps dist && \
         export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
-        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
+        # Temporarily rename pyproject.toml to prevent setuptools-scm from interfering
+        # when building with setup.py bdist_wheel. Also ensure no cached metadata.
+        mv pyproject.toml pyproject.toml.bak 2>/dev/null || true && \
+        # Use SETUPTOOLS_USE_DEPRECATED_FEATURES to force setuptools to use setup.py
+        SETUPTOOLS_USE_DEPRECATED_FEATURES=legacy-editable \
+        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 && \
+        mv pyproject.toml.bak pyproject.toml 2>/dev/null || true
 #################### EXTENSION Build IMAGE ####################
 
 #################### DEV IMAGE ####################
@@ -304,9 +383,24 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             --pre pytorch_triton==3.3.0+gitab727c40 ; \
     fi
 
-# Install aphrodite wheel first, so that torch etc will be installed.
-RUN --mount=type=bind,from=build,src=/workspace/dist,target=/aphrodite-workspace/dist \
+# Install aphrodite-kernels wheel first, then aphrodite wheel
+RUN --mount=type=bind,from=build-kernels,src=/workspace/aphrodite_kernels/dist,target=/aphrodite-workspace/kernels-dist \
+    --mount=type=bind,from=build,src=/workspace/dist,target=/aphrodite-workspace/dist \
     --mount=type=cache,target=/root/.cache/uv \
+    # Determine kernels extra index URL based on CUDA version
+    CUDA_MAJOR_MINOR=$(echo ${CUDA_VERSION} | cut -d. -f1,2 | tr -d '.') && \
+    if [ "$CUDA_MAJOR_MINOR" = "126" ] || [ "$CUDA_MAJOR_MINOR" = "128" ] || [ "$CUDA_MAJOR_MINOR" = "129" ]; then \
+        KERNELS_EXTRA_INDEX_URL="https://downloads.pygmalion.chat/whl/cu${CUDA_MAJOR_MINOR}"; \
+    else \
+        KERNELS_EXTRA_INDEX_URL="https://downloads.pygmalion.chat/whl/cu128"; \
+    fi && \
+    # Install kernels wheel (prefer local build, fallback to index)
+    if [ -n "$(ls -A /aphrodite-workspace/kernels-dist/*.whl 2>/dev/null)" ]; then \
+        uv pip install --system /aphrodite-workspace/kernels-dist/*.whl || \
+        uv pip install --system --extra-index-url "$KERNELS_EXTRA_INDEX_URL" aphrodite-kernels; \
+    else \
+        uv pip install --system --extra-index-url "$KERNELS_EXTRA_INDEX_URL" aphrodite-kernels || true; \
+    fi && \
     # TODO: remove apache-tvm-ffi once FlashInfer is fixed https://github.com/flashinfer-ai/flashinfer/issues/1962
     uv pip install --system --pre apache-tvm-ffi==0.1.0b15 \
     && uv pip install --system dist/*.whl --verbose \
@@ -454,3 +548,27 @@ FROM aphrodite-openai-base AS aphrodite-openai
 
 ENTRYPOINT ["aphrodite", "run"]
 #################### OPENAI API SERVER ####################
+
+#################### KERNELS WHEEL EXPORT ####################
+# Stage to export only the kernels wheel for distribution
+# Usage: DOCKER_BUILDKIT=1 docker build --target kernels-wheel-export --output ./dist -f docker/Dockerfile .
+# To use cache from a previous build: 
+#   DOCKER_BUILDKIT=1 docker build --target build-kernels -t aphrodite-kernels:cache -f docker/Dockerfile .
+#   DOCKER_BUILDKIT=1 docker build --target kernels-wheel-export --cache-from aphrodite-kernels:cache --output ./dist -f docker/Dockerfile .
+# This will export the wheel to ./dist/ on your host machine
+FROM scratch AS kernels-wheel-export
+ARG COMMON_WORKDIR=/workspace
+COPY --from=build-kernels ${COMMON_WORKDIR}/aphrodite_kernels/dist/*.whl /
+#################### KERNELS WHEEL EXPORT ####################
+
+#################### MAIN WHEEL EXPORT ####################
+# Stage to export only the main aphrodite-engine wheel for distribution
+# Usage: DOCKER_BUILDKIT=1 docker build --target main-wheel-export --output ./dist -f docker/Dockerfile .
+# To use cache from a previous build:
+#   DOCKER_BUILDKIT=1 docker build --target build -t aphrodite-build:cache -f docker/Dockerfile .
+#   DOCKER_BUILDKIT=1 docker build --target main-wheel-export --cache-from aphrodite-build:cache --output ./dist -f docker/Dockerfile .
+# This will export the wheel to ./dist/ on your host machine
+FROM scratch AS main-wheel-export
+ARG COMMON_WORKDIR=/workspace
+COPY --from=build ${COMMON_WORKDIR}/dist/*.whl /
+#################### MAIN WHEEL EXPORT ####################

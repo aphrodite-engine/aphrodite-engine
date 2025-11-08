@@ -237,7 +237,7 @@ class QueryLenSupport(Enum):
 
 
 try:
-    from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func
+    from aphrodite_kernels.aphrodite_flash_attn import flash_attn_varlen_func
 
     is_aphrodite_fa = True
 except ImportError:

@@ -7,11 +7,11 @@ from collections.abc import Callable
 from functools import cache, wraps
 from typing import TYPE_CHECKING, TypeVar
 
+# import custom ops, trigger op registration
+import aphrodite_kernels._C  # noqa
 import torch
 from typing_extensions import ParamSpec
 
-# import custom ops, trigger op registration
-import aphrodite._C  # noqa
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
 from aphrodite.utils.import_utils import import_pynvml
