@@ -588,6 +588,49 @@ def get_requirements() -> list[str]:
                 continue
             modified_requirements.append(req)
         requirements = modified_requirements
+
+        # Add CUDA-specific kernels requirements file based on detected CUDA version
+        cuda_version = None
+        if torch.version.cuda:
+            cuda_major, cuda_minor = torch.version.cuda.split(".")
+            cuda_version_str = f"{cuda_major}{cuda_minor}"
+            if cuda_version_str == "128":
+                cuda_version = "128"
+            elif cuda_version_str == "129":
+                cuda_version = "129"
+            else:
+                # Try to detect from nvcc
+                try:
+                    nvcc_version = get_nvcc_cuda_version()
+                    if nvcc_version >= Version("12.9"):
+                        cuda_version = "129"
+                    elif nvcc_version >= Version("12.8"):
+                        cuda_version = "128"
+                except Exception:
+                    pass
+
+        # Use MAIN_CUDA_VERSION as fallback
+        if cuda_version is None:
+            main_cuda = envs.APHRODITE_MAIN_CUDA_VERSION
+            if main_cuda == "12.9":
+                cuda_version = "129"
+            elif main_cuda == "12.8":
+                cuda_version = "128"
+
+        # Add kernels requirements file if CUDA version is supported
+        if cuda_version == "128":
+            requirements += _read_requirements("cu128.txt")
+        elif cuda_version == "129":
+            requirements += _read_requirements("cu129.txt")
+        else:
+            # If cuda_version is None or unsupported, don't add kernels
+            # User will need to build from source
+            logger.warning(
+                "No pre-built aphrodite-kernels wheels available for CUDA version %s. "
+                "Only CUDA 12.8 and 12.9 are supported. "
+                "You will need to build aphrodite-kernels from source.",
+                torch.version.cuda if torch.version.cuda else "unknown",
+            )
     elif _is_hip():
         requirements = _read_requirements("rocm.txt")
     elif _is_hpu():
@@ -600,9 +643,6 @@ def get_requirements() -> list[str]:
         requirements = _read_requirements("xpu.txt")
     else:
         raise ValueError("Unsupported platform, please use CUDA, ROCm, or CPU.")
-
-    # Add aphrodite-kernels as a dependency
-    requirements.append("aphrodite-kernels")
 
     return requirements
 

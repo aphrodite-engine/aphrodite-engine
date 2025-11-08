@@ -1,0 +1,1 @@
+aphrodite-kernels @ https://downloads.pygmalion.chat/whl/aphrodite_kernels/aphrodite_kernels-0.0.1-cp38-abi3-manylinux1_x86_64.whl
