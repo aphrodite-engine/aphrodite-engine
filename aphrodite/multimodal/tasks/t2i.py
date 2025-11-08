@@ -222,6 +222,7 @@ class ModelProvider:
             device_map=device_map,
             moe_impl="eager",
             low_cpu_mem_usage=True,
+            moe_drop_tokens=True,
         )
 
         with suppress_transformers_unused_weight_log():
