@@ -16,7 +16,7 @@ import random
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import regex as re
 import torch
@@ -2576,7 +2576,7 @@ class HunyuanImage3ForCausalMM(HunyuanImage3PreTrainedModel, GenerationMixin):
         stopping_criteria: StoppingCriteriaList | None = None,
         prefix_allowed_tokens_fn: Callable[[int, torch.Tensor], list[int]] | None = None,
         synced_gpus: bool | None = None,
-        assistant_model: "PreTrainedModel" | None = None,
+        assistant_model: Optional["PreTrainedModel"] = None,
         streamer: "BaseStreamer" | None = None,
         negative_prompt_ids: torch.Tensor | None = None,
         negative_prompt_attention_mask: torch.Tensor | None = None,
