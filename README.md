@@ -28,8 +28,11 @@ Aphrodite builds upon and integrates the exceptional work from [various projects
 
 Install the engine:
 ```sh
-pip install -U aphrodite-engine --extra-index-url https://downloads.pygmalion.chat/whl
+pip install -U aphrodite-engine
 ```
+
+> [!TIP]
+> You will need to install the kernels separately. See the [installation guide](https://aphrodite.pygmalion.chat/installation/installation/) for more details. Running Aphrodite without the kernels will give you the installation instructions as well.
 
 Then launch a model:
 
