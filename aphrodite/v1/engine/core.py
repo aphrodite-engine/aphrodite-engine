@@ -431,7 +431,7 @@ class EngineCore:
         executor_args, executor_kwargs = preprocess_fn(*args, **kwargs)
 
         # Execute the forward pass through the underlying model executor
-        output = self.model_executor.custom_execute_model(*executor_args, **executor_kwargs)
+        output = self.modeling.custom_execute_model(*executor_args, **executor_kwargs)
 
         # Apply post-processing to the raw output and return the final result
         return postprocess_fn(output, *args, **kwargs)
