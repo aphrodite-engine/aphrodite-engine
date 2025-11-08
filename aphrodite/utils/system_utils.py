@@ -297,3 +297,74 @@ def set_ulimit(target_soft_limit: int = 65535):
                 current_soft,
                 e,
             )
+
+
+def get_kernels_install_command() -> str:
+    """Get the install command for aphrodite-kernels based on the current environment."""
+    base_url = "https://downloads.pygmalion.chat/whl"
+    install_page = "https://aphrodite.pygmalion.chat/installation/installation/"
+
+    try:
+        import torch
+
+        # Check for CPU build
+        if torch.version.cuda is None and torch.version.hip is None:
+            extra_index_url = f"{base_url}/cpu"
+            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+
+        # Check for ROCm
+        if torch.version.hip is not None:
+            extra_index_url = f"{base_url}/rocm"
+            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+
+        # Check for CUDA
+        if torch.version.cuda:
+            cuda_major, cuda_minor = torch.version.cuda.split(".")
+            cuda_version_str = f"{cuda_major}{cuda_minor}"
+
+            # Support CUDA 12.8 and 12.9
+            if cuda_version_str == "129":
+                extra_index_url = f"{base_url}/cu129"
+                return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+            elif cuda_version_str == "128":
+                # Default (12.8) uses base URL without /cu128 suffix
+                extra_index_url = base_url
+                return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+
+            # Try to detect from nvcc if available
+            try:
+                from torch.utils.cpp_extension import CUDA_HOME
+
+                if CUDA_HOME:
+                    import subprocess
+
+                    nvcc_output = subprocess.check_output(
+                        [f"{CUDA_HOME}/bin/nvcc", "-V"], universal_newlines=True, stderr=subprocess.DEVNULL
+                    )
+                    import regex as re
+
+                    version_match = re.search(r"release (\d+\.\d+)", nvcc_output)
+                    if version_match:
+                        nvcc_version = version_match.group(1)
+                        nvcc_major, nvcc_minor = nvcc_version.split(".")
+                        nvcc_version_str = f"{nvcc_major}{nvcc_minor}"
+                        if nvcc_version_str == "129":
+                            extra_index_url = f"{base_url}/cu129"
+                            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+                        elif nvcc_version_str == "128":
+                            extra_index_url = base_url
+                            return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+            except Exception:
+                pass
+
+            # Unsupported CUDA version - direct to build from source
+            return (
+                f"Your CUDA version ({torch.version.cuda}) is not supported by pre-built wheels.\n"
+                f"Please build aphrodite-kernels from source. See: {install_page}"
+            )
+    except ImportError:
+        pass
+
+    # Fallback - default to 12.8
+    extra_index_url = base_url
+    return f"pip install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
