@@ -49,7 +49,7 @@ def build_pipeline(
     model_path = server_args.model_path
     model_path = maybe_download_model(model_path)
     # server_args.downloaded_model_path = model_path
-    logger.info("Model path: %s", model_path)
+    logger.debug("Model path: %s", model_path)
 
     config = verify_model_config_and_directory(model_path)
     pipeline_name = config.get("_class_name")
@@ -57,7 +57,7 @@ def build_pipeline(
         raise ValueError("Model config does not contain a _class_name attribute. Only diffusers format is supported.")
 
     # Get the appropriate pipeline registry based on pipeline_type
-    logger.info(
+    logger.debug(
         "Building pipeline of type: %s",
         (pipeline_type.value if isinstance(pipeline_type, PipelineType) else pipeline_type),
     )

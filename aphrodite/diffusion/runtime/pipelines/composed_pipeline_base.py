@@ -154,7 +154,7 @@ class ComposedPipelineBase(ABC):
         model_path = maybe_download_model(self.model_path)
         self.model_path = model_path
         # server_args.downloaded_model_path = model_path
-        logger.info("Model path: %s", model_path)
+        logger.debug("Model path: %s", model_path)
         config = verify_model_config_and_directory(model_path)
         return cast(dict[str, Any], config)
 
@@ -292,7 +292,7 @@ class ComposedPipelineBase(ABC):
                 transformers_or_diffusers=transformers_or_diffusers,
                 server_args=server_args,
             )
-            logger.info("Loaded module %s from %s", module_name, component_model_path)
+            logger.debug("Loaded module %s from %s", module_name, component_model_path)
 
             if module_name in components:
                 logger.warning("Overwriting module %s", module_name)

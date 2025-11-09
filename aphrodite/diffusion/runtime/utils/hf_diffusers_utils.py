@@ -242,7 +242,7 @@ def verify_model_config_and_directory(model_path: str) -> dict[str, Any]:
     if "_diffusers_version" not in config:
         raise ValueError("model_index.json does not contain _diffusers_version")
 
-    logger.info("Diffusers version: %s", config["_diffusers_version"])
+    logger.debug("Diffusers version: %s", config["_diffusers_version"])
     return cast(dict[str, Any], config)
 
 
@@ -339,12 +339,12 @@ def maybe_download_model(model_name_or_path: str, local_dir: str | None = None, 
 
     # If the path exists locally, return it
     if os.path.exists(model_name_or_path):
-        logger.info("Model already exists locally")
+        logger.debug("Model already exists locally")
         return model_name_or_path
 
     # Otherwise, assume it's a HF Hub model ID and try to download it
     try:
-        logger.info("Downloading model snapshot from HF Hub for %s...", model_name_or_path)
+        logger.info("Downloading model: %s...", model_name_or_path)
         with get_lock(model_name_or_path):
             local_path = snapshot_download(
                 repo_id=model_name_or_path,

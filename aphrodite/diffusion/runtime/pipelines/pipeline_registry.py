@@ -142,7 +142,7 @@ def import_pipeline_classes(
     else:
         pipeline_types_to_scan = [pt.value for pt in PipelineType]
 
-    logger.info("Loading pipelines for types: %s", pipeline_types_to_scan)
+    logger.debug("Loading pipelines for types: %s", pipeline_types_to_scan)
 
     for pipeline_type_str in pipeline_types_to_scan:
         # Try to load from pipeline-type-specific directory first
@@ -188,7 +188,7 @@ def import_pipeline_classes(
 
     # Log summary
     total_pipelines = sum(len(pipeline_dict) for pipeline_dict in type_to_pipeline_dict.values())
-    logger.info(
+    logger.debug(
         "Loaded %d pipeline classes across %d types",
         total_pipelines,
         len(pipeline_types_to_scan),

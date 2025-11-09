@@ -229,7 +229,7 @@ class TextEncoderLoader(ComponentLoader):
         model_config.pop("model_type", None)
         model_config.pop("tokenizer_class", None)
         model_config.pop("torch_dtype", None)
-        logger.info("HF model config: %s", model_config)
+        logger.debug("HF model config: %s", model_config)
 
         def is_not_first_encoder(module_name):
             return "2" in module_name
@@ -331,7 +331,7 @@ class ImageEncoderLoader(TextEncoderLoader):
         model_config.pop("transformers_version", None)
         model_config.pop("torch_dtype", None)
         model_config.pop("model_type", None)
-        logger.info("HF model config: %s", model_config)
+        logger.debug("HF model config: %s", model_config)
 
         encoder_config = server_args.pipeline_config.image_encoder_config
         encoder_config.update_model_arch(model_config)
@@ -381,7 +381,7 @@ class TokenizerLoader(ComponentLoader):
 
     def load(self, model_path: str, server_args: ServerArgs, *args):
         """Load the tokenizer based on the model path, and inference args."""
-        logger.info("Loading tokenizer from %s", model_path)
+        logger.debug("Loading tokenizer from %s", model_path)
 
         tokenizer = AutoTokenizer.from_pretrained(
             model_path,  # "<path to model>/tokenizer"
@@ -390,7 +390,7 @@ class TokenizerLoader(ComponentLoader):
             # other method of config?
             padding_size="right",
         )
-        logger.info("Loaded tokenizer: %s", tokenizer.__class__.__name__)
+        logger.debug("Loaded tokenizer: %s", tokenizer.__class__.__name__)
         return tokenizer
 
 
@@ -408,7 +408,7 @@ class VAELoader(ComponentLoader):
         server_args.model_paths["vae"] = model_path
 
         # TODO: abstract these logics
-        logger.info("HF model config: %s", config)
+        logger.debug("HF model config: %s", config)
         vae_config = server_args.pipeline_config.vae_config
         vae_config.update_model_arch(config)
 
@@ -447,7 +447,7 @@ class TransformerLoader(ComponentLoader):
                 "Model config does not contain a _class_name attribute. Only diffusers format is supported."
             )
 
-        logger.info("transformer cls_name: %s", cls_name)
+        logger.debug("transformer cls_name: %s", cls_name)
         if server_args.override_transformer_cls_name is not None:
             cls_name = server_args.override_transformer_cls_name
             logger.info("Overriding transformer cls_name to %s", cls_name)

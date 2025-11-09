@@ -124,7 +124,7 @@ class StepVideoPipeline(LoRAPipeline, ComposedPipelineBase):
         Load the modules from the config.
         """
         model_index = self._load_config()
-        logger.info("Loading pipeline modules from config: %s", model_index)
+        logger.debug("Loading pipeline modules from config: %s", model_index)
 
         # remove keys that are not pipeline modules
         model_index.pop("_class_name")
@@ -152,7 +152,7 @@ class StepVideoPipeline(LoRAPipeline, ComposedPipelineBase):
                 transformers_or_diffusers=transformers_or_diffusers,
                 server_args=server_args,
             )
-            logger.info("Loaded module %s from %s", module_name, component_model_path)
+            logger.debug("Loaded module %s from %s", module_name, component_model_path)
 
             if module_name in modules:
                 logger.warning("Overwriting module %s", module_name)

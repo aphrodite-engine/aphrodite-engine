@@ -215,7 +215,7 @@ class CudaPlatformBase(Platform):
                 logger.debug("Use torch_sdpa as default backend")
             else:
                 target_backend = AttentionBackendEnum.FA3
-                logger.debug("Use fa3 as default backend")
+                logger.debug("Use Flash Attention 3 as default backend")
 
         if not cls.has_device_capability(80):
             logger.info("Cannot use FlashAttention-2 backend for Volta and Turing GPUs.")
@@ -253,7 +253,7 @@ class CudaPlatformBase(Platform):
 
             return "aphrodite.diffusion.runtime.layers.attention.backends.sdpa.SDPABackend"
 
-        logger.info("Using fa3 backend.")
+        logger.info("Using Flash Attention 3 backend.")
 
         return "aphrodite.diffusion.runtime.layers.attention.backends.flash_attn.FlashAttentionBackend"
 

@@ -25,6 +25,7 @@ from aphrodite.diffusion.runtime.distributed.device_communicators.cpu_communicat
 )
 from aphrodite.diffusion.utils import get_device
 from aphrodite.logger import init_logger
+from aphrodite.utils.system_utils import suppress_c_lib_output
 
 try:
     import torch_musa  # noqa: F401
@@ -162,7 +163,8 @@ class GroupCoordinator:
             device_group = torch.distributed.new_group(ranks, backend=torch_distributed_backend)
             # a group with `gloo` backend, to allow direct coordination between
             # processes through the CPU.
-            cpu_group = torch.distributed.new_group(ranks, backend="gloo")
+            with suppress_c_lib_output():
+                cpu_group = torch.distributed.new_group(ranks, backend="gloo")
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)
@@ -726,7 +728,8 @@ class PipelineGroupCoordinator(GroupCoordinator):
                 device_group = torch.distributed.new_group(ranks, backend=torch_distributed_backend)
                 # a group with `gloo` backend, to allow direct coordination between
                 # processes through the CPU.
-                cpu_group = torch.distributed.new_group(ranks, backend="gloo")
+                with suppress_c_lib_output():
+                    cpu_group = torch.distributed.new_group(ranks, backend="gloo")
                 if self.rank in ranks:
                     self.ranks = ranks
                     self.world_size = len(ranks)
@@ -745,8 +748,9 @@ class PipelineGroupCoordinator(GroupCoordinator):
                 device_group_1_0 = torch.distributed.new_group(ranks, backend=torch_distributed_backend)
                 # a group with `gloo` backend, to allow direct coordination between
                 # processes through the CPU.
-                cpu_group_0_1 = torch.distributed.new_group(ranks, backend="gloo")
-                cpu_group_1_0 = torch.distributed.new_group(ranks, backend="gloo")
+                with suppress_c_lib_output():
+                    cpu_group_0_1 = torch.distributed.new_group(ranks, backend="gloo")
+                    cpu_group_1_0 = torch.distributed.new_group(ranks, backend="gloo")
                 if self.rank in ranks:
                     self.ranks = ranks
                     self.world_size = len(ranks)
