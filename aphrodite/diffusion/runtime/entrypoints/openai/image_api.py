@@ -153,8 +153,8 @@ async def generations(
             ]
         )
     else:
-        # Return error, not supported
-        raise HTTPException(status_code=400, detail="response_format=url is not supported")
+        url = f"/v1/images/{request_id}/content"
+        return ImageResponse(data=[ImageResponseData(url=url, revised_prompt=request.prompt)])
 
 
 @router.post("/edits", response_model=ImageResponse)

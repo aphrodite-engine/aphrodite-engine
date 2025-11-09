@@ -4,7 +4,7 @@ import multiprocessing as mp
 
 import uvicorn
 
-from aphrodite.diffusion.runtime.entrypoints.http_server import create_app
+from aphrodite.diffusion.runtime.entrypoints.http_server import create_app, create_uvicorn_log_config
 from aphrodite.diffusion.runtime.managers.gpu_worker import run_scheduler_process
 from aphrodite.diffusion.runtime.server_args import ServerArgs, set_global_server_args
 from aphrodite.logger import init_logger
@@ -125,7 +125,7 @@ def launch_server(server_args: ServerArgs, launch_http_server: bool = True):
         app = create_app(server_args)
         uvicorn.run(
             app,
-            log_config=None,
+            log_config=create_uvicorn_log_config(),
             log_level=server_args.log_level,
             host=server_args.host,
             port=server_args.port,
