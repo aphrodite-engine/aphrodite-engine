@@ -13,7 +13,6 @@ from abc import ABC, abstractmethod
 from typing import Any, cast
 
 import torch
-from tqdm import tqdm
 
 from aphrodite.diffusion.configs.pipelines import PipelineConfig
 from aphrodite.diffusion.runtime.loader.component_loader import (
@@ -208,7 +207,7 @@ class ComposedPipelineBase(ABC):
         """
 
         model_index = self._load_config()
-        logger.info("Loading pipeline modules from config: %s", model_index)
+        logger.debug("Loading pipeline modules from config: %s", model_index)
 
         # remove keys that are not pipeline modules
         model_index.pop("_class_name")
@@ -259,10 +258,12 @@ class ComposedPipelineBase(ABC):
         logger.info("Loading required components: %s", required_modules)
 
         components = {}
+        logger.info("Loading %d required modules...", len(model_index))
+
         for module_name, (
             transformers_or_diffusers,
-            architecture,
-        ) in tqdm(iterable=model_index.items(), desc="Loading required modules"):
+            _,
+        ) in model_index.items():
             if transformers_or_diffusers is None:
                 logger.warning(
                     "Module %s in model_index.json has null value, removing from required_config_modules",

@@ -181,29 +181,51 @@ def get_progress_log_prefix() -> str:
 
 
 def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]], final_bytes: int, desc="Processing"):
+    import logging
+
     from aphrodite.distributed.parallel_state import is_global_first_rank
 
     show_progress = is_global_first_rank()
-    units = 1024 ** (int(math.log2(final_bytes)) // 10)
+    if final_bytes == 0:
+        units = 1
+        unit_label = "B"
+    else:
+        unit_power = int(math.log2(final_bytes)) // 10
+        units = 1024**unit_power
+        # Determine unit label based on power
+        unit_labels = {0: "B", 1: "KB", 2: "MB", 3: "GB", 4: "TB", 5: "PB"}
+        unit_label = unit_labels.get(unit_power, "B")
 
     if show_progress:
-        log_prefix = get_progress_log_prefix()
+        from rich.console import Console
 
-        with Progress(
-            TextColumn(log_prefix + " [progress.description]{task.description}"),
-            BarColumn(),
-            # MofNCompleteColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("{task.completed:.2f}/{task.total:.2f} GiB"),
-            TimeElapsedColumn(),
-        ) as progress:
-            task = progress.add_task(desc, total=final_bytes / units)
-            for item in iterable:
-                # Only update progress for tensor values, skip dicts/OrderedDicts
-                if hasattr(item[1], "element_size"):
-                    steps = item[1].element_size() * item[1].nelement() / units
-                    progress.update(task, advance=steps)
-                yield item
+        log_prefix = get_progress_log_prefix()
+        console = Console(force_terminal=True)
+
+        # Temporarily suppress INFO logs during progress bar to avoid interruptions
+        root_logger = logging.getLogger()
+        original_level = root_logger.level
+        root_logger.setLevel(logging.WARNING)
+
+        try:
+            with Progress(
+                TextColumn(log_prefix + " [progress.description]{task.description}"),
+                BarColumn(),
+                # MofNCompleteColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn(f"{{task.completed:.2f}}/{{task.total:.2f}} {unit_label}"),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task(desc, total=final_bytes / units)
+                for item in iterable:
+                    # Only update progress for tensor values, skip dicts/OrderedDicts
+                    if hasattr(item[1], "element_size"):
+                        steps = item[1].element_size() * item[1].nelement() / units
+                        progress.update(task, advance=steps)
+                    yield item
+        finally:
+            root_logger.setLevel(original_level)
     else:
         yield from iterable
 

@@ -115,12 +115,11 @@ def safetensors_weights_iterator(
     to_cpu: bool = True,
 ) -> Generator[tuple[str, torch.Tensor], None, None]:
     """Iterate over the weights in the model safetensor files."""
-    enable_tqdm = not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
     device = "cpu" if to_cpu else str(get_local_torch_device())
     for st_file in tqdm(
         hf_weights_files,
         desc="Loading safetensors checkpoint shards",
-        disable=not enable_tqdm,
+        disable=True,
         bar_format=_BAR_FORMAT,
     ):
         with safe_open(st_file, framework="pt", device=device) as f:
@@ -135,11 +134,10 @@ def pt_weights_iterator(
 ) -> Generator[tuple[str, torch.Tensor], None, None]:
     """Iterate over the weights in the model bin/pt files."""
     device = "cpu" if to_cpu else str(get_local_torch_device())
-    enable_tqdm = not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
     for bin_file in tqdm(
         hf_weights_files,
         desc="Loading pt checkpoint shards",
-        disable=not enable_tqdm,
+        disable=True,
         bar_format=_BAR_FORMAT,
     ):
         state = torch.load(bin_file, map_location=device, weights_only=True)

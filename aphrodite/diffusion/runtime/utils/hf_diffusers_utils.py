@@ -351,7 +351,7 @@ def maybe_download_model(model_name_or_path: str, local_dir: str | None = None, 
                 ignore_patterns=["*.onnx", "*.msgpack"],
                 local_dir=local_dir,
             )
-        logger.info("Downloaded model to %s", local_path)
+        logger.debug("Downloaded model to %s", local_path)
         return str(local_path)
     except Exception as e:
         raise ValueError(f"Could not find model at {model_name_or_path} and failed to download from HF Hub: {e}") from e

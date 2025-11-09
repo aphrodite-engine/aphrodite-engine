@@ -29,13 +29,13 @@ class Timer:
 
     def __enter__(self):
         self.start = time.perf_counter()
-        logger.info("[%s] started...", self.name)
+        logger.debug("[%s] started...", self.name)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end = time.perf_counter()
         self.elapsed = self.end - self.start
-        logger.info("[%s] finished in %.4f seconds", self.name, self.elapsed)
+        logger.debug("[%s] finished in %.4f seconds", self.name, self.elapsed)
         return False
 
 

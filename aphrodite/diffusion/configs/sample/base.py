@@ -470,7 +470,7 @@ class SamplingParams:
                  save_output: {self.save_output}
             output_file_path: {self.output_file_path()}
         """  # type: ignore[attr-defined]
-        logger.info(debug_str)
+        logger.debug(debug_str)
 
 
 @dataclass

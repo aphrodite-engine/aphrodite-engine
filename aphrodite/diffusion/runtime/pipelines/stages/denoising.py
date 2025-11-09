@@ -17,7 +17,7 @@ from typing import Any
 import torch
 import torch.profiler
 from einops import rearrange
-from tqdm.auto import tqdm
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 
 from aphrodite.diffusion.configs.pipelines.base import STA_Mode
 from aphrodite.diffusion.runtime.distributed import (
@@ -601,6 +601,7 @@ class DenoisingStage(PipelineStage):
             ),
             self.progress_bar(total=num_inference_steps) as progress_bar,
         ):
+            task = progress_bar.add_task("Denoising", total=num_inference_steps)
             for i, t_host in enumerate(timesteps_cpu):
                 if batch.perf_logger:
                     batch.perf_logger.record_step_start()
@@ -684,7 +685,7 @@ class DenoisingStage(PipelineStage):
                 if i == num_timesteps - 1 or (
                     (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0 and progress_bar is not None
                 ):
-                    progress_bar.update()
+                    progress_bar.update(task, advance=1)
 
                 self.step_profile()
 
@@ -726,22 +727,34 @@ class DenoisingStage(PipelineStage):
                 extra_step_kwargs[k] = v
         return extra_step_kwargs
 
-    def progress_bar(self, iterable: Iterable | None = None, total: int | None = None) -> tqdm:
+    def progress_bar(self, iterable: Iterable | None = None, total: int | None = None) -> Progress:
         """
         Create a progress bar for the denoising process.
 
         Args:
-            iterable: The iterable to iterate over.
+            iterable: The iterable to iterate over (unused, kept for compatibility).
             total: The total number of items.
 
         Returns:
-            A tqdm progress bar.
+            A rich Progress context manager.
         """
+        from rich.console import Console
+
+        from aphrodite.utils import get_progress_log_prefix
+
         local_rank = get_world_group().local_rank
-        if local_rank == 0:
-            return tqdm(iterable=iterable, total=total)
-        else:
-            return tqdm(iterable=iterable, total=total, disable=True)
+        log_prefix = get_progress_log_prefix() if local_rank == 0 else ""
+
+        console = Console(force_terminal=True) if local_rank == 0 else None
+        return Progress(
+            TextColumn(log_prefix + " [progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total})"),
+            TimeElapsedColumn(),
+            console=console,
+            disable=local_rank != 0,
+        )
 
     def rescale_noise_cfg(self, noise_cfg, noise_pred_text, guidance_rescale=0.0) -> torch.Tensor:
         """

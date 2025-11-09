@@ -214,6 +214,56 @@ class TextEncoderLoader(ComponentLoader):
         for source in secondary_weights:
             yield from self._get_weights_iterator(source, to_cpu)
 
+    def _get_all_weights_with_size(
+        self,
+        model: nn.Module,
+        model_path: str,
+        to_cpu: bool,
+    ) -> tuple[Generator[tuple[str, torch.Tensor], None, None], int]:
+        """Get all weights including primary and secondary sources with total size."""
+        import os
+
+        primary_weights = TextEncoderLoader.Source(
+            model_path,
+            prefix="",
+            fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True),
+            allow_patterns_overrides=getattr(model, "allow_patterns_overrides", None),
+        )
+
+        # Calculate total bytes
+        total_bytes = 0
+        hf_folder, hf_weights_files, _ = self._prepare_weights(
+            primary_weights.model_or_path,
+            primary_weights.fall_back_to_pt,
+            primary_weights.allow_patterns_overrides,
+        )
+        for file_path in hf_weights_files:
+            if os.path.exists(file_path):
+                total_bytes += os.path.getsize(file_path)
+
+        secondary_weights = cast(
+            Iterable[TextEncoderLoader.Source],
+            getattr(model, "secondary_weights", ()),
+        )
+        for source in secondary_weights:
+            hf_folder, hf_weights_files, _ = self._prepare_weights(
+                source.model_or_path,
+                source.fall_back_to_pt,
+                source.allow_patterns_overrides,
+            )
+            for file_path in hf_weights_files:
+                if os.path.exists(file_path):
+                    total_bytes += os.path.getsize(file_path)
+
+        # Return iterator and total bytes
+        from itertools import chain
+
+        iterators = [self._get_weights_iterator(primary_weights, to_cpu)]
+        for source in secondary_weights:
+            iterators.append(self._get_weights_iterator(source, to_cpu))
+
+        return chain.from_iterable(iterators), total_bytes
+
     def load(self, model_path: str, server_args: ServerArgs, module_name: str):
         """Load the text encoders based on the model path, and inference args."""
         # model_config: PretrainedConfig = get_hf_config(
@@ -278,9 +328,12 @@ class TextEncoderLoader(ComponentLoader):
                 model = model_cls(model_config)
 
             weights_to_load = {name for name, _ in model.named_parameters()}
-            loaded_weights = model.load_weights(self._get_all_weights(model, model_path, to_cpu=use_cpu_offload))
+            weights_iter, total_bytes = self._get_all_weights_with_size(model, model_path, to_cpu=use_cpu_offload)
+            from aphrodite.utils import tensor_progress_bar
+
+            loaded_weights = model.load_weights(tensor_progress_bar(weights_iter, total_bytes, "Loading model weights"))
             self.counter_after_loading_weights = time.perf_counter()
-            logger.info(
+            logger.debug(
                 "Loading weights took %.2f seconds",
                 self.counter_after_loading_weights - self.counter_before_loading_weights,
             )
@@ -480,7 +533,7 @@ class TransformerLoader(ComponentLoader):
                 )
                 safetensors_list = [custom_weights_path]
 
-        logger.info(
+        logger.debug(
             "Loading model from %s safetensors files: %s",
             len(safetensors_list),
             safetensors_list,
@@ -595,7 +648,7 @@ class PipelineComponentLoader:
         Returns:
             The loaded module
         """
-        logger.info(
+        logger.debug(
             "Loading %s using %s from %s",
             module_name,
             transformers_or_diffusers,
