@@ -72,6 +72,7 @@ skip_gitignore = true
 
 [tool.ruff.lint.per-file-ignores]
 "aphrodite/third_party/**" = ["ALL"]
+"aphrodite/diffusion/third_party/**" = ["ALL"]
 "aphrodite/version.py" = ["F401"]
 "aphrodite/_version.py" = ["ALL"]
 
@@ -159,7 +160,7 @@ identifier-leading-digits = false
 locale = "en"
 extend-ignore-identifiers-re = ["NVML_*", ".*Unc.*", ".*_thw",
     ".*UE8M0.*", ".*[UE4M3|ue4m3].*", ".*eles.*",
-     ".*[Tt]h[rR].*"]
+     ".*[Tt]h[rR].*", "ot"]
 extend-ignore-words-re = []
 extend-ignore-re = []
 
