@@ -6,7 +6,7 @@
 from aphrodite.diffusion.runtime.entrypoints.cli.cli_types import CLISubcommand
 from aphrodite.diffusion.runtime.entrypoints.cli.generate import GenerateSubcommand
 from aphrodite.diffusion.runtime.entrypoints.cli.serve import ServeSubcommand
-from aphrodite.diffusion.utils import FlexibleArgumentParser
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 
 def generate_cmd_init() -> list[CLISubcommand]:
@@ -21,7 +21,7 @@ def cmd_init() -> list[CLISubcommand]:
 
 
 def main() -> None:
-    parser = FlexibleArgumentParser(description="sgl-diffusion CLI")
+    parser = FlexibleArgumentParser(description="Aphrodite CLI")
     parser.add_argument("-v", "--version", action="version", version="0.1.0")
 
     subparsers = parser.add_subparsers(required=False, dest="subparser")

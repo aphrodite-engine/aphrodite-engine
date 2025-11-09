@@ -208,7 +208,7 @@ def is_host_cpu_x86() -> bool:
 
 @lru_cache(maxsize=1)
 def is_cpu() -> bool:
-    return os.getenv("SGLANG_USE_CPU_ENGINE", "0") == "1" and is_host_cpu_x86()
+    return os.getenv("APHRODITE_USE_CPU_ENGINE", "0") == "1" and is_host_cpu_x86()
 
 
 # cuda
@@ -249,8 +249,6 @@ def is_flashinfer_available():
     Check whether flashinfer is available.
     As of Oct. 6, 2024, it is only available on NVIDIA GPUs.
     """
-    # if not get_bool_env_var("SGLANG_IS_FLASHINFER_AVAILABLE", default="true"):
-    #     return False
     return importlib.util.find_spec("flashinfer") is not None and is_cuda()
 
 
@@ -260,7 +258,6 @@ _warned_bool_env_var_keys = set()
 
 
 def get_bool_env_var_legacy(name: str, default: str = "false") -> bool:
-    # FIXME: move your environment variable to sglang.srt.environ
     # Legacy function - kept for compatibility
     value = os.getenv(name, default)
     value = value.lower()

@@ -48,8 +48,9 @@ from aphrodite.diffusion.runtime.pipelines.stages import (
     TimestepPreparationStage,
 )
 from aphrodite.diffusion.runtime.server_args import ServerArgs
-from aphrodite.diffusion.utils import save_decoded_latents_as_video, shallow_asdict
+from aphrodite.diffusion.utils import save_decoded_latents_as_video
 from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import shallow_asdict
 
 logger = init_logger(__name__)
 

@@ -10,7 +10,7 @@ import torch
 
 from aphrodite.diffusion.configs.models.base import ArchConfig, ModelConfig
 from aphrodite.diffusion.runtime.models.vision_utils import get_default_height_width
-from aphrodite.diffusion.utils import StoreBoolean
+from aphrodite.utils.argparse_utils import StoreBoolean
 
 
 @dataclass
@@ -26,7 +26,7 @@ class VAEArchConfig(ArchConfig):
 class VAEConfig(ModelConfig):
     arch_config: VAEArchConfig = field(default_factory=VAEArchConfig)
 
-    # sgl-diffusionVAE-specific parameters
+    # AphroditeVAE-specific parameters
     load_encoder: bool = True
     load_decoder: bool = True
 

@@ -34,8 +34,8 @@ from typing import Any
 import torch
 from torch.distributed import ReduceOp
 
-from aphrodite.diffusion.utils import find_nccl_library
 from aphrodite.logger import init_logger
+from aphrodite.utils.nccl import find_nccl_library
 
 logger = init_logger(__name__)
 

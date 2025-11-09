@@ -8,7 +8,7 @@ import zmq
 
 from aphrodite.diffusion.runtime.pipelines.pipeline_batch_info import OutputBatch, Req
 from aphrodite.diffusion.runtime.server_args import ServerArgs
-from aphrodite.diffusion.utils import init_logger
+from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
 

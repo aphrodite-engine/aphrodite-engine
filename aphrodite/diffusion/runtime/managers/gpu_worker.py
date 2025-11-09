@@ -3,14 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import multiprocessing as mp
 import os
-from typing import list
 
 import torch
-from aphrodite.diffusion.runtime.utils.logging_utils import (
-    configure_logger,
-    init_logger,
-    suppress_other_loggers,
-)
 from setproctitle import setproctitle
 
 from aphrodite.diffusion.runtime.distributed import (
@@ -25,6 +19,7 @@ from aphrodite.diffusion.runtime.pipelines import build_pipeline
 from aphrodite.diffusion.runtime.pipelines.pipeline_batch_info import OutputBatch, Req
 from aphrodite.diffusion.runtime.server_args import PortArgs, ServerArgs
 from aphrodite.diffusion.runtime.utils.common import set_cuda_arch
+from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -63,7 +58,7 @@ class GPUWorker:
 
     def init_device_and_model(self) -> None:
         """Initialize the device and load the model."""
-        setproctitle(f"sgl_diffusion::scheduler:{self.local_rank}")
+        setproctitle(f"aphrodite::scheduler:{self.local_rank}")
         torch.cuda.set_device(self.local_rank)
         # Set environment variables for distributed initialization
         os.environ["MASTER_ADDR"] = "localhost"
@@ -139,8 +134,6 @@ def run_scheduler_process(
     Rank 0 acts as the master, handling ZMQ requests and coordinating slaves.
     Ranks > 0 act as slaves, waiting for tasks from the master.
     """
-    configure_logger(server_args)
-    suppress_other_loggers()
     set_cuda_arch()
 
     port_args = PortArgs.from_server_args(server_args)

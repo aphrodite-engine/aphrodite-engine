@@ -5,7 +5,7 @@
 
 import argparse
 
-from aphrodite.diffusion.utils import FlexibleArgumentParser
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 
 class CLISubcommand:

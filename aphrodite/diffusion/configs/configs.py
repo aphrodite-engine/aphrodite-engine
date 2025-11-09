@@ -5,8 +5,8 @@ from enum import Enum
 from typing import Any, Optional
 
 from aphrodite.diffusion.configs.utils import update_config_from_args
-from aphrodite.diffusion.utils import FlexibleArgumentParser, StoreBoolean
 from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser, StoreBoolean
 
 logger = init_logger(__name__)
 

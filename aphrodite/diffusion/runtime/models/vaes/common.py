@@ -267,7 +267,7 @@ class ParallelTiledVAE(ABC):
         gathered_results = (
             torch.zeros_like(padded_results).repeat(world_size, *[1] * len(padded_results.shape)).contiguous()
         )  # use contiguous to make sure it won't copy data in the following operations
-        # TODO (PY): use sgl_diffusion distributed methods
+        # TODO (PY): use aphrodite distributed methods
         dist.all_gather_into_tensor(gathered_results, padded_results)
         dist.all_gather_object(gathered_dim_metadata, local_dim_metadata)
         # Process gathered results

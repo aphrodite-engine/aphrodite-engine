@@ -1,7 +1,7 @@
 # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
 
 import pickle
-from typing import Any, list
+from typing import Any
 
 import numpy as np
 import torch

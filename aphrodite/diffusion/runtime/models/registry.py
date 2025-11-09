@@ -71,7 +71,7 @@ def _discover_and_register_models() -> dict[str, tuple[str, str, str]]:
                     if isinstance(value_node, ast.Name):
                         model_cls_name_list.append(value_node.id)
                     # EntryClass = ["...", ClassName, ...]
-                    elif isinstance(value_node, (ast.list, ast.tuple)):
+                    elif isinstance(value_node, (ast.List, ast.Tuple)):
                         for elt in value_node.elts:
                             if isinstance(elt, ast.Constant):
                                 model_cls_name_list.append(elt.value)

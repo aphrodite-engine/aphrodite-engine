@@ -144,7 +144,7 @@ def get_pipeline_config_cls_from_name(
             config = maybe_download_model_index(pipeline_name_or_path)
         logger.warning(
             "Trying to use the config from the model_index.json. "
-            "sgl-diffusion may not correctly identify the optimal config "
+            "Aphrodite may not correctly identify the optimal config "
             "for this model in this situation."
         )
 

@@ -18,8 +18,8 @@ from aphrodite.diffusion.runtime.entrypoints.cli.utils import (
     RaiseNotImplementedAction,
 )
 from aphrodite.diffusion.runtime.server_args import ServerArgs
-from aphrodite.diffusion.utils import FlexibleArgumentParser
 from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 logger = init_logger(__name__)
 
@@ -60,7 +60,7 @@ def generate_cmd(args: argparse.Namespace):
 
 
 class GenerateSubcommand(CLISubcommand):
-    """The `generate` subcommand for the sgl-diffusion CLI"""
+    """The `generate` subcommand for the Aphrodite CLI"""
 
     def __init__(self) -> None:
         self.name = "generate"
@@ -92,9 +92,7 @@ class GenerateSubcommand(CLISubcommand):
             "generate",
             help="Run inference on a model",
             usage=(
-                "sgl_diffusion generate "
-                "(--model-path MODEL_PATH_OR_ID --prompt PROMPT) | "
-                "--config CONFIG_FILE [OPTIONS]"
+                "aphrodite generate (--model-path MODEL_PATH_OR_ID --prompt PROMPT) | --config CONFIG_FILE [OPTIONS]"
             ),
         )
 

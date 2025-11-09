@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 import time
-from typing import Any, dict
+from typing import Any
 
 from fastapi import (
     APIRouter,

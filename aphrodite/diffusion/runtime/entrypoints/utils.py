@@ -2,7 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 """
-DiffGenerator module for sgl-diffusion.
+DiffGenerator module for Aphrodite.
 
 This module provides a consolidated interface for generating videos using
 diffusion models.
@@ -18,8 +18,8 @@ logging.getLogger("imageio_ffmpeg").setLevel(logging.WARNING)
 from aphrodite.diffusion.configs.sample.base import DataType, SamplingParams  # noqa: E402
 from aphrodite.diffusion.runtime.pipelines.pipeline_batch_info import Req  # noqa: E402
 from aphrodite.diffusion.runtime.server_args import ServerArgs  # noqa: E402
-from aphrodite.diffusion.utils import shallow_asdict  # noqa: E402
 from aphrodite.logger import init_logger  # noqa: E402
+from aphrodite.utils.argparse_utils import shallow_asdict  # noqa: E402
 
 logger = init_logger(__name__)
 

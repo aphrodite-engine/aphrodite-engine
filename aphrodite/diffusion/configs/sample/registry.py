@@ -90,7 +90,7 @@ def get_sampling_param_cls_for_name(pipeline_name_or_path: str) -> Any | None:
     if os.path.exists(pipeline_name_or_path):
         config = verify_model_config_and_directory(pipeline_name_or_path)
         logger.warning(
-            "sgl-diffusion may not correctly identify the optimal sampling "
+            "Aphrodite may not correctly identify the optimal sampling "
             "param for this model, as the local directory may have been "
             "renamed."
         )

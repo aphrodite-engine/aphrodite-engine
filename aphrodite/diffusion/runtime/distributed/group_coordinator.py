@@ -9,7 +9,7 @@ import pickle
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, dict, list, tuple
+from typing import Any
 
 import torch
 import torch.distributed

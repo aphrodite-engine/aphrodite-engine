@@ -3,7 +3,6 @@
 import base64
 import os
 import time
-from typing import list
 
 from fastapi import APIRouter, File, Form, HTTPException, Path, Query, UploadFile
 from fastapi.responses import FileResponse

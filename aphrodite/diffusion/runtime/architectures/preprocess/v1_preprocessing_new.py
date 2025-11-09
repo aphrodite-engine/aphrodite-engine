@@ -5,8 +5,8 @@ from aphrodite.diffusion.runtime.distributed import (
 )
 from aphrodite.diffusion.runtime.server_args import ServerArgs
 from aphrodite.diffusion.runtime.workflow.workflow_base import WorkflowBase
-from aphrodite.diffusion.utils import FlexibleArgumentParser
 from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 logger = init_logger(__name__)
 

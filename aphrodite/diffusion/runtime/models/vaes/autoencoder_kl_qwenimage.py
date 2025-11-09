@@ -1,7 +1,5 @@
 # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
 
-from typing import tuple
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

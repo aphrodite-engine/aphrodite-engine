@@ -4,8 +4,6 @@
 # Adapted from vllm: https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/model_executor/layers/layernorm.py
 """Custom normalization layers."""
 
-from typing import tuple
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,14 +22,13 @@ from aphrodite.diffusion.runtime.utils.common import (
     is_npu,
     is_xpu,
 )
+from aphrodite.modeling.layers.layernorm import fused_add_rms_norm, rms_norm
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
 _is_npu = is_npu()
 _is_cpu = is_cpu()
 _is_xpu = is_xpu()
-
-from sgl_kernel import fused_add_rmsnorm, rmsnorm  # noqa: E402
 
 
 # Copied and adapted from sglang
@@ -78,10 +75,10 @@ class RMSNorm(CustomOp):
         elif self.variance_size_override is not None:
             return self.forward_native(x, residual)
         elif residual is not None:
-            fused_add_rmsnorm(x, residual, self.weight.data, self.variance_epsilon)
+            fused_add_rms_norm(x, residual, self.weight.data, self.variance_epsilon)
             return x.view(shape), residual.view(residual_shape)
         else:
-            out = rmsnorm(x, self.weight.data, self.variance_epsilon)
+            out = rms_norm(x, self.weight.data, self.variance_epsilon)
         out = out.view(shape)
         return out
 

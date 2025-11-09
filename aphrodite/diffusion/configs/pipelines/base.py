@@ -18,12 +18,12 @@ from aphrodite.diffusion.configs.models import (
 )
 from aphrodite.diffusion.configs.models.encoders import BaseEncoderOutput
 from aphrodite.diffusion.configs.utils import update_config_from_args
-from aphrodite.diffusion.utils import (
+from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import (
     FlexibleArgumentParser,
     StoreBoolean,
     shallow_asdict,
 )
-from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
 

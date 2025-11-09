@@ -45,7 +45,7 @@ class ModelConfig:
     # Diffuser/Transformer parameters
     arch_config: ArchConfig = field(default_factory=ArchConfig)
 
-    # sgl-diffusion-specific parameters here
+    # Aphrodite-specific parameters here
     # i.e. STA, quantization, teacache
 
     def __getattr__(self, name):

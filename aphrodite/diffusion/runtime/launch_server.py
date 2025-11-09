@@ -3,15 +3,13 @@
 import multiprocessing as mp
 
 import uvicorn
-from aphrodite.diffusion.runtime.utils.logging_utils import (
-    configure_logger,
-    logger,
-    suppress_other_loggers,
-)
 
 from aphrodite.diffusion.runtime.entrypoints.http_server import create_app
 from aphrodite.diffusion.runtime.managers.gpu_worker import run_scheduler_process
 from aphrodite.diffusion.runtime.server_args import ServerArgs, set_global_server_args
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 def launch_server(server_args: ServerArgs, launch_http_server: bool = True):
@@ -19,9 +17,6 @@ def launch_server(server_args: ServerArgs, launch_http_server: bool = True):
     Args:
         launch_http_server: False for offline local mode
     """
-    configure_logger(server_args)
-    suppress_other_loggers()
-
     # Start a new server with multiple worker processes
     logger.info("Starting server...")
 
@@ -66,7 +61,7 @@ def launch_server(server_args: ServerArgs, launch_http_server: bool = True):
                     task_pipes_to_slaves_w,
                     result_pipes_from_slaves_r,
                 ),
-                name=f"sgl-diffusionWorker-{i}",
+                name=f"AphroditeWorker-{i}",
                 daemon=True,
             )
         else:  # Slave workers
@@ -83,7 +78,7 @@ def launch_server(server_args: ServerArgs, launch_http_server: bool = True):
                     task_pipes_to_slaves_r[i - 1],
                     result_pipes_from_slaves_w[i - 1],
                 ),
-                name=f"sgl-diffusionWorker-{i}",
+                name=f"AphroditeWorker-{i}",
                 daemon=True,
             )
         scheduler_pipe_readers.append(reader)
@@ -109,9 +104,9 @@ def launch_server(server_args: ServerArgs, launch_http_server: bool = True):
         try:
             data = reader.recv()
         except EOFError:
-            logger.error(f"Rank {i} scheduler is dead. Please check if there are relevant logs.")
+            logger.error("Rank %s scheduler is dead. Please check if there are relevant logs.", i)
             processes[i].join()
-            logger.error(f"Exit code: {processes[i].exitcode}")
+            logger.error("Exit code: %s", processes[i].exitcode)
             raise
 
         if data["status"] != "ready":

@@ -7,7 +7,6 @@ Base class for all pipeline executors.
 
 import time
 from abc import ABC, abstractmethod
-from typing import list
 
 from aphrodite.diffusion.runtime.pipelines.pipeline_batch_info import Req
 from aphrodite.diffusion.runtime.pipelines.stages import PipelineStage

@@ -454,7 +454,7 @@ class TransformerLoader(ComponentLoader):
 
         server_args.model_paths["transformer"] = model_path
 
-        # Config from Diffusers supersedes sgl_diffusion's model config
+        # Config from Diffusers supersedes aphrodite's model config
         dit_config = server_args.pipeline_config.dit_config
         dit_config.update_model_arch(config)
 

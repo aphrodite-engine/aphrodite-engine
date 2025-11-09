@@ -12,8 +12,8 @@ from aphrodite.diffusion.runtime.platforms.interface import (  # noqa: F401
     Platform,
     PlatformEnum,
 )
-from aphrodite.diffusion.utils import resolve_obj_by_qualname
 from aphrodite.logger import init_logger
+from aphrodite.utils.import_utils import resolve_obj_by_qualname
 
 logger = init_logger(__name__)
 
@@ -22,15 +22,15 @@ def cuda_platform_plugin() -> str | None:
     is_cuda = False
 
     try:
-        from aphrodite.diffusion.utils import import_pynvml
+        from aphrodite.utils.import_utils import import_pynvml
 
         pynvml = import_pynvml()  # type: ignore[no-untyped-call]
         pynvml.nvmlInit()
         try:
-            # NOTE: Edge case: sgl_diffusion cpu build on a GPU machine.
+            # NOTE: Edge case: aphrodite cpu build on a GPU machine.
             # Third-party pynvml can be imported in cpu build,
-            # we need to check if sgl_diffusion is built with cpu too.
-            # Otherwise, sgl_diffusion will always activate cuda plugin
+            # we need to check if aphrodite is built with cpu too.
+            # Otherwise, aphrodite will always activate cuda plugin
             # on a GPU machine, even if in a cpu build.
             is_cuda = pynvml.nvmlDeviceGetCount() > 0
         finally:
@@ -49,7 +49,7 @@ def cuda_platform_plugin() -> str | None:
         if cuda_is_jetson():
             is_cuda = True
     if is_cuda:
-        logger.info("CUDA is available")
+        logger.debug("CUDA is available")
 
     return "aphrodite.diffusion.runtime.platforms.cuda.CudaPlatform" if is_cuda else None
 
@@ -86,11 +86,11 @@ def rocm_platform_plugin() -> str | None:
         try:
             if len(amdsmi.amdsmi_get_processor_handles()) > 0:
                 is_rocm = True
-                logger.info("ROCm platform is available")
+                logger.debug("ROCm platform is available")
         finally:
             amdsmi.amdsmi_shut_down()
     except Exception as e:
-        logger.info("ROCm platform is unavailable: %s", e)
+        logger.debug("ROCm platform is unavailable: %s", e)
 
     return "aphrodite.diffusion.runtime.platforms.rocm.RocmPlatform" if is_rocm else None
 
@@ -145,7 +145,7 @@ def __getattr__(name: str):
         #    we cannot resolve `current_platform` during the import of
         #    `aphrodite.diffusion.runtime.platforms`.
         # 2. when users use out-of-tree platform plugins, they might run
-        #    `import sgl_diffusion`, some sgl_diffusion internal code might access
+        #    `import aphrodite`, some aphrodite internal code might access
         #    `current_platform` during the import, and we need to make sure
         #    `current_platform` is only resolved after the plugins are loaded
         #    (we have tests for this, if any developer violate this, they will
@@ -163,4 +163,4 @@ def __getattr__(name: str):
         raise AttributeError(f"No attribute named '{name}' exists in {__name__}.")
 
 
-__all__ = ["Platform", "PlatformEnum", "current_platform", "_init_trace"]
+__all__ = ["AttentionBackendEnum", "Platform", "PlatformEnum", "current_platform", "_init_trace"]

@@ -9,8 +9,8 @@ from typing import cast
 from aphrodite.diffusion.runtime.entrypoints.cli.cli_types import CLISubcommand
 from aphrodite.diffusion.runtime.launch_server import launch_server
 from aphrodite.diffusion.runtime.server_args import ServerArgs
-from aphrodite.diffusion.utils import FlexibleArgumentParser
 from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 logger = init_logger(__name__)
 
@@ -35,7 +35,7 @@ def execute_serve_cmd(args: argparse.Namespace, unknown_args: list[str] | None =
 
 
 class ServeSubcommand(CLISubcommand):
-    """The `serve` subcommand for the sgl-diffusion CLI"""
+    """The `serve` subcommand for the Aphrodite CLI"""
 
     def __init__(self) -> None:
         self.name = "serve"
@@ -51,9 +51,9 @@ class ServeSubcommand(CLISubcommand):
 
     def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         serve_parser = subparsers.add_parser(
-            "serve",
+            "run",
             help="Launch the server and start FastAPI listener.",
-            usage="sgl_diffusion serve --model-path MODEL_PATH_OR_ID [OPTIONS]",
+            usage="aphrodite run --model-path MODEL_PATH_OR_ID [OPTIONS]",
         )
 
         serve_parser = add_multimodal_gen_serve_args(serve_parser)

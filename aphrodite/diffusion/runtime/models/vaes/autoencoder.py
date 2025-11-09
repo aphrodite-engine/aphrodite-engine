@@ -1,7 +1,5 @@
 # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
 
-from typing import dict, tuple
-
 import torch
 from diffusers.models.attention_processor import (
     ADDED_KV_ATTENTION_PROCESSORS,

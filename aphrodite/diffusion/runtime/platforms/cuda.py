@@ -21,8 +21,8 @@ from aphrodite.diffusion.runtime.platforms.interface import (
     PlatformEnum,
 )
 from aphrodite.diffusion.runtime.utils.common import is_blackwell
-from aphrodite.diffusion.utils import import_pynvml
 from aphrodite.logger import init_logger
+from aphrodite.utils.import_utils import import_pynvml
 
 logger = init_logger(__name__)
 

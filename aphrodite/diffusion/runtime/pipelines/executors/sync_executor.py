@@ -5,8 +5,6 @@
 Synchronous pipeline executor implementation.
 """
 
-from typing import list
-
 from aphrodite.diffusion.runtime.pipelines.executors.pipeline_executor import (
     PipelineExecutor,
     Timer,

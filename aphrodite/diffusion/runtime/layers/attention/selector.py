@@ -16,8 +16,9 @@ from aphrodite.diffusion.runtime.layers.attention.backends.attention_backend imp
 )
 from aphrodite.diffusion.runtime.platforms import AttentionBackendEnum
 from aphrodite.diffusion.runtime.server_args import get_global_server_args
-from aphrodite.diffusion.utils import STR_BACKEND_ENV_VAR, resolve_obj_by_qualname
 from aphrodite.logger import init_logger
+from aphrodite.utils import STR_BACKEND_ENV_VAR
+from aphrodite.utils.import_utils import resolve_obj_by_qualname
 
 logger = init_logger(__name__)
 
@@ -37,7 +38,7 @@ def backend_name_to_enum(backend_name: str) -> AttentionBackendEnum | None:
 
 def get_env_variable_attn_backend() -> AttentionBackendEnum | None:
     """
-    Get the backend override specified by the sgl-diffusion attention
+    Get the backend override specified by the Aphrodite attention
     backend environment variable, if one is specified.
 
     Returns:
@@ -153,7 +154,7 @@ def global_force_attn_backend_context_manager(
     attn_backend: AttentionBackendEnum,
 ) -> Generator[None, None, None]:
     """
-    Globally force a sgl-diffusion attention backend override within a
+    Globally force a Aphrodite attention backend override within a
     context manager, reverting the global attention backend
     override to its prior state upon exiting the context
     manager.

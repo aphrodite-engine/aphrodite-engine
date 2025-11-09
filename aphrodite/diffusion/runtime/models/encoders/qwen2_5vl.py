@@ -43,7 +43,7 @@ from aphrodite.diffusion.runtime.utils.common import add_prefix
 """Inference-only Qwen2-VL model compatible with HuggingFace weights."""
 import logging  # noqa: E402
 from collections.abc import Iterable  # noqa: E402
-from typing import Unpack, tuple  # noqa: E402
+from typing import Unpack  # noqa: E402
 
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402

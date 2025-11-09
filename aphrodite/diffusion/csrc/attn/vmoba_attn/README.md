@@ -1,4 +1,4 @@
-# Attention Kernel Used in sgl-diffusion
+# Attention Kernel Used in Aphrodite
 
 ## VMoBA: Mixture-of-Block Attention for Video Diffusion Models (VMoBA)
 

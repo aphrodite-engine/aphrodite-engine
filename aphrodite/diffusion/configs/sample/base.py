@@ -17,8 +17,8 @@ from typing import Any
 import regex as re
 
 from aphrodite.diffusion.runtime.server_args import ServerArgs
-from aphrodite.diffusion.utils import align_to
 from aphrodite.logger import init_logger
+from aphrodite.utils.math_utils import align_to
 
 logger = init_logger(__name__)
 

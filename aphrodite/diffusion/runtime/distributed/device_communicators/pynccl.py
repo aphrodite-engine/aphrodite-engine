@@ -18,8 +18,8 @@ from aphrodite.diffusion.runtime.distributed.device_communicators.pynccl_wrapper
     ncclUniqueId,
 )
 from aphrodite.diffusion.runtime.distributed.utils import StatelessProcessGroup
-from aphrodite.diffusion.utils import current_stream
 from aphrodite.logger import init_logger
+from aphrodite.utils.torch_utils import current_stream
 
 logger = init_logger(__name__)
 
@@ -73,7 +73,7 @@ class PyNcclCommunicator:
         self.available = True
         self.disabled = False
 
-        logger.info("sgl-diffusion is using nccl==%s", self.nccl.ncclGetVersion())
+        logger.info("Aphrodite is using nccl==%s", self.nccl.ncclGetVersion())
 
         if self.rank == 0:
             # get the unique id from NCCL

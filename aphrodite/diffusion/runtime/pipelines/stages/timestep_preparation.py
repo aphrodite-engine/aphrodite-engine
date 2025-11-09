@@ -9,7 +9,7 @@ This module contains implementations of timestep preparation stages for diffusio
 
 import inspect
 from collections.abc import Callable
-from typing import Any, tuple
+from typing import Any
 
 import numpy as np
 

@@ -1,7 +1,5 @@
 # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
 
-from typing import list
-
 import torch
 
 from aphrodite.diffusion.runtime.distributed import get_sp_group

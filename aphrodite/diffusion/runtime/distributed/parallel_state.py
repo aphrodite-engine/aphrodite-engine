@@ -13,7 +13,7 @@
 # Copyright 2023 The vLLM team.
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-"""sgl-diffusion distributed state.
+"""Aphrodite distributed state.
 
 It takes over the control of the distributed environment from PyTorch.
 The typical workflow is:
@@ -38,7 +38,7 @@ from collections import namedtuple
 from collections.abc import Callable
 from contextlib import contextmanager
 from multiprocessing import shared_memory
-from typing import Any, Optional, list
+from typing import Any, Optional
 from unittest.mock import patch
 
 import torch

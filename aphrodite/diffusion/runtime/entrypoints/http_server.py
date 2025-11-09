@@ -3,7 +3,6 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from aphrodite.diffusion.runtime.utils.logging_utils import configure_logger
 from fastapi import FastAPI
 
 from aphrodite.diffusion.runtime.entrypoints.openai import image_api, video_api
@@ -47,7 +46,6 @@ if __name__ == "__main__":
     import uvicorn
 
     server_args = prepare_server_args([])
-    configure_logger(server_args)
     app = create_app(server_args)
     uvicorn.run(
         app,

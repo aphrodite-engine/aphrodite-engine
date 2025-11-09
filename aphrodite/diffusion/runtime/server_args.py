@@ -2,7 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 # Inspired by SGLang: https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/server_args.py
-"""The arguments of sgl-diffusion Inference."""
+"""The arguments of Aphrodite Inference."""
 
 import argparse
 import dataclasses
@@ -31,8 +31,8 @@ from aphrodite.diffusion.runtime.utils.common import (
     is_port_available,
     is_valid_ipv6_address,
 )
-from aphrodite.diffusion.utils import FlexibleArgumentParser, StoreBoolean
 from aphrodite.logger import init_logger
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser, StoreBoolean
 
 logger = init_logger(__name__)
 
@@ -195,7 +195,7 @@ class WorkloadType(str, Enum):
         return [workload.value for workload in cls]
 
 
-# args for sgl_diffusion framework
+# args for aphrodite framework
 @dataclasses.dataclass
 class ServerArgs:
     # Model and path configuration (for convenience)
@@ -379,7 +379,7 @@ class ServerArgs:
             type=str,
             choices=ExecutionMode.choices(),
             default=ServerArgs.mode.value,
-            help="The mode to run sgl-diffusion",
+            help="The mode to run Aphrodite",
         )
 
         # Workload type
@@ -950,11 +950,11 @@ def prepare_server_args(argv: list[str]) -> ServerArgs:
 @contextmanager
 def set_current_server_args(server_args: ServerArgs):
     """
-    Temporarily set the current sgl_diffusion config.
+    Temporarily set the current aphrodite config.
     Used during model initialization.
-    We save the current sgl_diffusion config in a global variable,
+    We save the current aphrodite config in a global variable,
     so that all modules can access it, e.g. custom ops
-    can access the sgl_diffusion config to determine how to dispatch.
+    can access the aphrodite config to determine how to dispatch.
     """
     global _current_server_args
     old_server_args = _current_server_args
@@ -967,7 +967,7 @@ def set_current_server_args(server_args: ServerArgs):
 
 def set_global_server_args(server_args: ServerArgs):
     """
-    Set the global sgl_diffusion config for each process
+    Set the global aphrodite config for each process
     """
     global _global_server_args
     _global_server_args = server_args
@@ -976,20 +976,20 @@ def set_global_server_args(server_args: ServerArgs):
 def get_current_server_args() -> ServerArgs:
     if _current_server_args is None:
         # in ci, usually when we test custom ops/modules directly,
-        # we don't set the sgl_diffusion config. In that case, we set a default
+        # we don't set the aphrodite config. In that case, we set a default
         # config.
         # TODO(will): may need to handle this for CI.
-        raise ValueError("Current sgl_diffusion args is not set.")
+        raise ValueError("Current aphrodite args is not set.")
     return _current_server_args
 
 
 def get_global_server_args() -> ServerArgs:
     if _global_server_args is None:
         # in ci, usually when we test custom ops/modules directly,
-        # we don't set the sgl_diffusion config. In that case, we set a default
+        # we don't set the aphrodite config. In that case, we set a default
         # config.
         # TODO(will): may need to handle this for CI.
-        raise ValueError("Global sgl_diffusion args is not set.")
+        raise ValueError("Global aphrodite args is not set.")
     return _global_server_args
 
 

@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 import torch
 
-from aphrodite.diffusion.utils import resolve_obj_by_qualname
 from aphrodite.logger import init_logger
+from aphrodite.utils.import_utils import resolve_obj_by_qualname
 
 if TYPE_CHECKING:
     from aphrodite.diffusion.runtime.layers.attention.backends.attention_backend import (

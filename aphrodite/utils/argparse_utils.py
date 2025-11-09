@@ -13,6 +13,7 @@ from argparse import (
     _ArgumentGroup,
 )
 from collections import defaultdict
+from dataclasses import fields, is_dataclass
 from typing import Any
 
 import regex as re
@@ -42,6 +43,32 @@ class SortedHelpFormatter(ArgumentDefaultsHelpFormatter, RawDescriptionHelpForma
     def add_arguments(self, actions):
         actions = sorted(actions, key=lambda x: x.option_strings)
         super().add_arguments(actions)
+
+
+class StoreBoolean(Action):
+    def __init__(self, option_strings, dest, default=False, required=False, help=None):
+        super().__init__(
+            option_strings=option_strings,
+            dest=dest,
+            nargs="?",
+            const=True,
+            default=default,
+            required=required,
+            help=help,
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if values is None:
+            setattr(namespace, self.dest, True)
+        elif isinstance(values, str):
+            if values.lower() == "true":
+                setattr(namespace, self.dest, True)
+            elif values.lower() == "false":
+                setattr(namespace, self.dest, False)
+            else:
+                raise ValueError(f"Invalid boolean value: {values}. Expected 'true' or 'false'.")
+        else:
+            setattr(namespace, self.dest, bool(values))
 
 
 class FlexibleArgumentParser(ArgumentParser):
@@ -461,3 +488,9 @@ class FlexibleArgumentParser(ArgumentParser):
                 processed_args.append(str(value))
 
         return processed_args
+
+
+def shallow_asdict(obj) -> dict[str, Any]:
+    if not is_dataclass(obj):
+        raise TypeError("Expected dataclass instance")
+    return {f.name: getattr(obj, f.name) for f in fields(obj)}

@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Adapted from vllm: https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/utils.py
 
-import argparse
 import ctypes
 import importlib
 import importlib.util
@@ -16,7 +15,7 @@ import sys
 import threading
 import traceback
 from collections.abc import Callable
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 from functools import lru_cache, partial, wraps
 from typing import Any, TypeVar, cast
 
@@ -25,20 +24,14 @@ import imageio
 import numpy as np
 import torch
 import torchvision
-import yaml
 from einops import rearrange
 from remote_pdb import RemotePdb
 from torch.distributed.fsdp import MixedPrecisionPolicy
 
-import aphrodite.envs as envs
-from aphrodite.diffusion.runtime.utils.logging_utils import (
-    SortedHelpFormatter,
-    init_logger,
-)
-
-logger = init_logger(__name__)
+from aphrodite.logger import init_logger
 
 T = TypeVar("T")
+logger = init_logger(__name__)
 
 # TODO(will): used to convert server_args.precision to torch.dtype. Find a
 # cleaner way to do this.
@@ -50,32 +43,6 @@ PRECISION_TO_TYPE = {
 
 STR_BACKEND_ENV_VAR: str = "APHRODITE_ATTENTION_BACKEND"
 STR_ATTN_CONFIG_ENV_VAR: str = "APHRODITE_ATTENTION_CONFIG"
-
-
-def find_nccl_library() -> str:
-    """
-    We either use the library file specified by the `VLLM_NCCL_SO_PATH`
-    environment variable, or we find the library file brought by PyTorch.
-    After importing `torch`, `libnccl.so.2` or `librccl.so.1` can be
-    found by `ctypes` automatically.
-    """
-    so_file = envs.APHRODITE_NCCL_SO_PATH
-
-    # manually load the nccl library
-    if so_file:
-        logger.info(
-            "Found nccl from environment variable APHRODITE_NCCL_SO_PATH=%s",
-            so_file,
-        )
-    else:
-        if torch.version.cuda is not None:
-            so_file = "libnccl.so.2"
-        elif torch.version.hip is not None:
-            so_file = "librccl.so.1"
-        else:
-            raise ValueError("NCCL only supports CUDA and ROCm backends.")
-        logger.info("Found nccl from library %s", so_file)
-    return str(so_file)
 
 
 prev_set_stream = torch.cuda.set_stream
@@ -91,268 +58,6 @@ def _patched_set_stream(stream: torch.cuda.Stream | None) -> None:
 
 
 torch.cuda.set_stream = _patched_set_stream
-
-
-def current_stream() -> torch.cuda.Stream | None:
-    """
-    replace `torch.cuda.current_stream()` with `aphrodite.diffusion.utils.current_stream()`.
-    it turns out that `torch.cuda.current_stream()` is quite expensive,
-    as it will construct a new stream object at each call.
-    here we patch `torch.cuda.set_stream` to keep track of the current stream
-    directly, so that we can avoid calling `torch.cuda.current_stream()`.
-
-    the underlying hypothesis is that we do not call `torch._C._cuda_setStream`
-    from C/C++ code.
-    """
-    from aphrodite.diffusion.runtime.platforms import current_platform
-
-    # For non-CUDA platforms, return None
-    if not current_platform.is_cuda_alike():
-        return None
-
-    global _current_stream
-    if _current_stream is None:
-        # when this function is called before any stream is set,
-        # we return the default stream.
-        # On ROCm using the default 0 stream in combination with RCCL
-        # is hurting performance. Therefore creating a dedicated stream
-        # per process
-        _current_stream = torch.cuda.Stream() if current_platform.is_rocm() else torch.cuda.current_stream()
-    return _current_stream
-
-
-class StoreBoolean(argparse.Action):
-    def __init__(self, option_strings, dest, default=False, required=False, help=None):
-        super().__init__(
-            option_strings=option_strings,
-            dest=dest,
-            nargs="?",
-            const=True,
-            default=default,
-            required=required,
-            help=help,
-        )
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        if values is None:
-            setattr(namespace, self.dest, True)
-        elif isinstance(values, str):
-            if values.lower() == "true":
-                setattr(namespace, self.dest, True)
-            elif values.lower() == "false":
-                setattr(namespace, self.dest, False)
-            else:
-                raise ValueError(f"Invalid boolean value: {values}. Expected 'true' or 'false'.")
-        else:
-            setattr(namespace, self.dest, bool(values))
-
-
-class FlexibleArgumentParser(argparse.ArgumentParser):
-    """ArgumentParser that allows both underscore and dash in names."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        # Set the default 'formatter_class' to SortedHelpFormatter
-        if "formatter_class" not in kwargs:
-            kwargs["formatter_class"] = SortedHelpFormatter
-        super().__init__(*args, **kwargs)
-
-    def parse_args(  # type: ignore[override]
-        self, args=None, namespace=None
-    ) -> argparse.Namespace:
-        if args is None:
-            args = sys.argv[1:]
-
-        if any(arg.startswith("--config") for arg in args):
-            args = self._pull_args_from_config(args)
-
-        # Convert underscores to dashes and vice versa in argument names
-        processed_args = []
-        for arg in args:
-            if arg.startswith("--"):
-                if "=" in arg:
-                    key, value = arg.split("=", 1)
-                    key = "--" + key[len("--") :].replace("_", "-")
-                    processed_args.append(f"{key}={value}")
-                else:
-                    processed_args.append("--" + arg[len("--") :].replace("_", "-"))
-            elif arg.startswith("-O") and arg != "-O" and len(arg) == 2:
-                # allow -O flag to be used without space, e.g. -O3
-                processed_args.append("-O")
-                processed_args.append(arg[2:])
-            else:
-                processed_args.append(arg)
-
-        namespace = super().parse_args(processed_args, namespace)
-
-        # Track which arguments were explicitly provided
-        namespace._provided = set()
-
-        i = 0
-        while i < len(args):
-            arg = args[i]
-            if arg.startswith("--"):
-                # Handle --key=value format
-                if "=" in arg:
-                    key = arg.split("=")[0][2:].replace("-", "_")
-                    namespace._provided.add(key)
-                    i += 1
-                # Handle --key value format
-                else:
-                    key = arg[2:].replace("-", "_")
-                    namespace._provided.add(key)
-                    # Skip the value if there is one
-                    if i + 1 < len(args) and not args[i + 1].startswith("-"):
-                        i += 2
-                    else:
-                        i += 1
-            else:
-                i += 1
-
-        return namespace  # type: ignore[no-any-return]
-
-    def _pull_args_from_config(self, args: list[str]) -> list[str]:
-        """Method to pull arguments specified in the config file
-        into the command-line args variable.
-
-        The arguments in config file will be inserted between
-        the argument list.
-
-        example:
-        ```yaml
-            port: 12323
-            tensor-parallel-size: 4
-        ```
-        ```python
-        $: vllm {serve,chat,complete} "facebook/opt-12B" \
-            --config config.yaml -tp 2
-        $: args = [
-            "serve,chat,complete",
-            "facebook/opt-12B",
-            '--config', 'config.yaml',
-            '-tp', '2'
-        ]
-        $: args = [
-            "serve,chat,complete",
-            "facebook/opt-12B",
-            '--port', '12323',
-            '--tp-size', '4',
-            '-tp', '2'
-            ]
-        ```
-
-        Please note how the config args are inserted after the sub command.
-        this way the order of priorities is maintained when these are args
-        parsed by super().
-        """
-        index = -1
-        config_arg = None
-        for i, arg in enumerate(args):
-            if arg.startswith("--config"):
-                if index != -1:
-                    raise ValueError("More than one config file specified!")
-                index = i
-                config_arg = arg
-
-        if config_arg is None:
-            return args
-        args_before_config = args[:index]
-        if "=" in config_arg:
-            file_path = config_arg.split("=", 1)[1]
-            args_after_config = args[index + 1 :]
-        else:
-            if index == len(args) - 1:
-                raise ValueError("No config file specified! Please check your command-line arguments.")
-            file_path = args[index + 1]
-            args_after_config = args[index + 2 :]
-
-        config_args = self._load_config_file(file_path)
-
-        # 0th index is for {serve,chat,complete}
-        # followed by model_tag (only for serve)
-        # followed by config args
-        # followed by rest of cli args.
-        # maintaining this order will enforce the precedence
-        # of cli > config > defaults
-        if args[0] == "serve":
-            if index == 1:
-                raise ValueError("No model_tag specified! Please check your command-line arguments.")
-            command = args_before_config[0]
-            model_tag = args_before_config[1]
-            other_args_before = args_before_config[2:]
-            args = [command, model_tag] + config_args + other_args_before + args_after_config
-        else:
-            command = args_before_config[0]
-            other_args_before = args_before_config[1:]
-            args = [command] + config_args + other_args_before + args_after_config
-
-        return args
-
-    def _load_config_file(self, file_path: str) -> list[str]:
-        """Loads a yaml file and returns the key value pairs as a
-        flattened list with argparse like pattern
-        ```yaml
-            port: 12323
-            tensor-parallel-size: 4
-            vae_config:
-                load_encoder: false
-                load_decoder: true
-        ```
-        returns:
-            processed_args: list[str] = [
-                '--port': '12323',
-                '--tp-size': '4',
-                '--vae-config.load-encoder': 'false',
-                '--vae-config.load-decoder': 'true'
-            ]
-        """
-
-        extension: str = file_path.split(".")[-1]
-        if extension not in ("yaml", "yml", "json"):
-            raise ValueError(
-                "Config file must be of a yaml/yml/json type.\
-                              %s supplied",
-                extension,
-            )
-
-        processed_args: list[str] = []
-
-        config: dict[str, Any] = {}
-        try:
-            with open(file_path) as config_file:
-                config = yaml.safe_load(config_file)
-        except Exception as ex:
-            logger.error(
-                "Unable to read the config file at %s. \
-                Make sure path is correct",
-                file_path,
-            )
-            raise ex
-
-        store_boolean_arguments = [action.dest for action in self._actions if isinstance(action, StoreBoolean)]
-
-        def process_dict(prefix: str, d: dict[str, Any]):
-            for key, value in d.items():
-                full_key = f"{prefix}.{key}" if prefix else key
-
-                if isinstance(value, bool) and full_key not in store_boolean_arguments:
-                    if value:
-                        processed_args.append("--" + full_key)
-                    else:
-                        processed_args.append("--" + full_key)
-                        processed_args.append("false")
-                elif isinstance(value, list):
-                    processed_args.append("--" + full_key)
-                    for item in value:
-                        processed_args.append(str(item))
-                elif isinstance(value, dict):
-                    process_dict(full_key, value)
-                else:
-                    processed_args.append("--" + full_key)
-                    processed_args.append(str(value))
-
-        process_dict("", config)
-
-        return processed_args
 
 
 def warn_for_unimplemented_methods(cls: type[T]) -> type[T]:
@@ -411,46 +116,6 @@ def align_to(value: int, alignment: int) -> int:
     return int(math.ceil(value / alignment) * alignment)
 
 
-def resolve_obj_by_qualname(qualname: str) -> Any:
-    """
-    Resolve an object by its fully qualified name.
-    """
-    module_name, obj_name = qualname.rsplit(".", 1)
-    module = importlib.import_module(module_name)
-    return getattr(module, obj_name)
-
-
-# From vllm: https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/utils.py
-def import_pynvml():
-    """
-    Historical comments:
-
-    libnvml.so is the library behind nvidia-smi, and
-    pynvml is a Python wrapper around it. We use it to get GPU
-    status without initializing CUDA context in the current process.
-    Historically, there are two packages that provide pynvml:
-    - `nvidia-ml-py` (https://pypi.org/project/nvidia-ml-py/): The official
-        wrapper. It is a dependency of sgl-diffusion, and is installed when users
-        install sgl-diffusion. It provides a Python module named `pynvml`.
-    - `pynvml` (https://pypi.org/project/pynvml/): An unofficial wrapper.
-        Prior to version 12.0, it also provides a Python module `pynvml`,
-        and therefore conflicts with the official one which is a standalone Python file.
-        This causes errors when both of them are installed.
-        Starting from version 12.0, it migrates to a new module
-        named `pynvml_utils` to avoid the conflict.
-    It is so confusing that many packages in the community use the
-    unofficial one by mistake, and we have to handle this case.
-    For example, `nvcr.io/nvidia/pytorch:24.12-py3` uses the unofficial
-    one, and it will cause errors, see the issue
-    https://github.com/vllm-project/vllm/issues/12847 for example.
-    After all the troubles, we decide to copy the official `pynvml`
-    module to our codebase, and use it directly.
-    """
-    import aphrodite.diffusion.third_party.pynvml as pynvml
-
-    return pynvml
-
-
 def update_environment_variables(envs: dict[str, str]):
     for k, v in envs.items():
         if k in os.environ and os.environ[k] != v:
@@ -481,12 +146,6 @@ def run_method(obj: Any, method: str | bytes | Callable, args: tuple[Any], kwarg
     else:
         func = partial(method, obj)  # type: ignore
     return func(*args, **kwargs)
-
-
-def shallow_asdict(obj) -> dict[str, Any]:
-    if not is_dataclass(obj):
-        raise TypeError("Expected dataclass instance")
-    return {f.name: getattr(obj, f.name) for f in fields(obj)}
 
 
 # TODO: validate that this is fine

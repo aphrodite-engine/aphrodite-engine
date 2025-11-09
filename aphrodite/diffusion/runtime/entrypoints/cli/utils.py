@@ -23,14 +23,14 @@ def launch_distributed(num_gpus: int, args: list[str], master_port: int | None =
 
     Args:
         num_gpus: Number of GPUs to use
-        args: Arguments to pass to v1_sgl_diffusion_inference.py (defaults to sys.argv[1:])
+        args: Arguments to pass to v1_aphrodite_inference.py (defaults to sys.argv[1:])
         master_port: Port for the master process (default: random)
     """
 
     current_env = os.environ.copy()
     python_executable = sys.executable
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
-    main_script = os.path.join(project_root, "sgl_diffusion/sample/v1_sgl_diffusion_inference.py")
+    main_script = os.path.join(project_root, "aphrodite/sample/v1_aphrodite_inference.py")
 
     cmd = [
         python_executable,
