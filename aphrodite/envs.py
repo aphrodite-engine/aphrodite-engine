@@ -222,6 +222,7 @@ if TYPE_CHECKING:
     APHRODITE_DISABLE_FLASH_ATTN_COMPILE: bool = False
     APHRODITE_ENABLE_DYNAMIC_KV_CACHE: bool = False
     APHRODITE_COMPILE_CACHE_SAVE_FORMAT: Literal["binary", "unpacked"] = "binary"
+    APHRODITE_DIFFUSION_STAGE_LOGGING: bool = False
 
 
 def get_default_cache_root():
@@ -1304,6 +1305,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_COMPILE_CACHE_SAVE_FORMAT": env_with_choices(
         "APHRODITE_COMPILE_CACHE_SAVE_FORMAT", "binary", ["binary", "unpacked"]
     ),
+    # If set, Aphrodite will enable stage logging, which will print the time
+    # taken for each stage
+    "APHRODITE_DIFFUSION_STAGE_LOGGING": lambda: bool(int(os.getenv("APHRODITE_DIFFUSION_STAGE_LOGGING", "0"))),
 }
 
 # --8<-- [end:env-vars-definition]

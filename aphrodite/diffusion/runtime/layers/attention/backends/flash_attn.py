@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from aphrodite.forward_context import get_forward_context
+from aphrodite.diffusion.runtime.managers.forward_context import get_forward_context
 
 try:
     from aphrodite_kernels.aphrodite_flash_attn import flash_attn_varlen_func
@@ -114,16 +114,49 @@ class FlashAttentionImpl(AttentionImpl):
         else:
             max_seqlen_q = query.shape[1]
             max_seqlen_k = key.shape[1]
-        output = flash_attn_func(
-            q=query,  # type: ignore[no-untyped-call]
-            k=key,
-            v=value,
-            cu_seqlens_q=None,
-            cu_seqlens_k=None,
+
+        batch_size = query.shape[0]
+        seq_len_q = query.shape[1]
+        seq_len_k = key.shape[1]
+
+        cu_seqlens_q = None
+        cu_seqlens_k = None
+
+        if attn_metadata is not None:
+            cu_seqlens_q = attn_metadata.cu_seqlens_q
+            cu_seqlens_k = attn_metadata.cu_seqlens_k
+
+        if cu_seqlens_q is None:
+            cu_seqlens_q = torch.arange(
+                0, (batch_size + 1) * seq_len_q, seq_len_q, dtype=torch.int32, device=query.device
+            )
+
+        if cu_seqlens_k is None:
+            cu_seqlens_k = torch.arange(
+                0, (batch_size + 1) * seq_len_k, seq_len_k, dtype=torch.int32, device=key.device
+            )
+
+        q_flat = query.flatten(0, 1)
+        k_flat = key.flatten(0, 1)
+        v_flat = value.flatten(0, 1)
+
+        output_flat = flash_attn_func(
+            q=q_flat,  # type: ignore[no-untyped-call]
+            k=k_flat,
+            v=v_flat,
+            cu_seqlens_q=cu_seqlens_q,
+            cu_seqlens_k=cu_seqlens_k,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_k=max_seqlen_k,
             softmax_scale=self.softmax_scale,
             causal=self.causal,
             return_softmax_lse=return_softmax_lse,
         )
-        return output
+
+        if return_softmax_lse:
+            output, softmax_lse = output_flat
+            output = output.view(batch_size, seq_len_q, *output.shape[1:])
+            return output, softmax_lse
+        else:
+            output = output_flat.view(batch_size, seq_len_q, *output_flat.shape[1:])
+            return output

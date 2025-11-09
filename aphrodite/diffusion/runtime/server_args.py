@@ -342,10 +342,10 @@ class ServerArgs:
         # log clean server_args
         try:
             safe_args = _sanitize_for_logging(self, key_hint="server_args")
-            logger.info("server_args: %s", json.dumps(safe_args, ensure_ascii=False))
+            logger.debug("server_args: %s", json.dumps(safe_args, ensure_ascii=False))
         except Exception:
             # Fallback to default repr if sanitization fails
-            logger.info("server_args: %s", self)
+            logger.debug("server_args: %s", self)
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:

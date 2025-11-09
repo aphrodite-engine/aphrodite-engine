@@ -47,6 +47,7 @@ from torch.distributed import ProcessGroup
 
 import aphrodite.envs as envs
 from aphrodite.diffusion.runtime.distributed.utils import StatelessProcessGroup
+from aphrodite.diffusion.utils import get_torch_distributed_backend
 from aphrodite.logger import init_logger
 
 from ..utils.distributed import RankGenerator
@@ -337,7 +338,7 @@ def initialize_model_parallel(
     """
 
     if backend is None:
-        backend = envs.get_torch_distributed_backend()
+        backend = get_torch_distributed_backend()
     # Get world size and rank. Ensure some consistencies.
     assert torch.distributed.is_initialized()
     world_size: int = torch.distributed.get_world_size()
@@ -573,11 +574,11 @@ def maybe_init_distributed_environment_and_model_parallel(
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     rank = int(os.environ.get("RANK", 0))
     device = get_local_torch_device()
-    logger.info(
+    logger.info_once(
         "Initializing distributed environment with world_size=%d, device=%s",
         world_size,
         device,
-        main_process_only=False,
+        scope="global",
     )
 
     init_distributed_environment(

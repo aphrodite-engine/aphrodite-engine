@@ -23,6 +23,7 @@ from aphrodite.diffusion.runtime.distributed.device_communicators.base_device_co
 from aphrodite.diffusion.runtime.distributed.device_communicators.cpu_communicator import (
     CpuCommunicator,
 )
+from aphrodite.diffusion.utils import get_device
 from aphrodite.logger import init_logger
 
 try:
@@ -758,7 +759,7 @@ class PipelineGroupCoordinator(GroupCoordinator):
         assert self.cpu_group is not None
         assert self.device_group is not None
 
-        self.device = envs.get_device(local_rank)
+        self.device = get_device(local_rank)
 
         self.recv_buffer_set: bool = False
         self.recv_tasks_queue: list[tuple[str, int]] = []

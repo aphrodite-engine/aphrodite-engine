@@ -185,7 +185,7 @@ class PipelineStage(ABC):
                 raise
 
         # Execute the actual stage logic
-        if envs.APHRODITE_STAGE_LOGGING:
+        if envs.APHRODITE_DIFFUSION_STAGE_LOGGING:
             logger.info("[%s] Starting execution", stage_name)
             start_time = time.perf_counter()
 

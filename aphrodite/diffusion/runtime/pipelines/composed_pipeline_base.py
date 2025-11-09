@@ -335,9 +335,9 @@ class ComposedPipelineBase(ABC):
             self.post_init()
 
         # Execute each stage
-        logger.info(
+        logger.info_once(
             "Running pipeline stages: %s",
-            list(self._stage_name_mapping.keys()),
-            main_process_only=True,
+            tuple(self._stage_name_mapping.keys()),
+            scope="global",
         )
         return self.executor.execute(self.stages, batch, server_args)

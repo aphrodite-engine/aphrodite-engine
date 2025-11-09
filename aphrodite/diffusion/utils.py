@@ -393,3 +393,37 @@ def save_decoded_latents_as_video(decoded_latents: list[torch.Tensor], output_pa
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     imageio.mimsave(output_path, frames, fps=fps, format="mp4")
+
+
+def _is_musa():
+    try:
+        if hasattr(torch, "musa") and torch.musa.is_available():
+            return True
+    except ModuleNotFoundError:
+        return False
+
+
+def _is_mps():
+    return torch.backends.mps.is_available()
+
+
+def get_torch_distributed_backend() -> str:
+    if torch.cuda.is_available():
+        return "nccl"
+    elif _is_musa():
+        return "mccl"
+    elif _is_mps():
+        return "gloo"
+    else:
+        raise NotImplementedError("No Accelerators(AMD/NV/MTT GPU, AMD MI instinct accelerators) available")
+
+
+def get_device(local_rank: int) -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda", local_rank)
+    elif _is_musa():
+        return torch.device("musa", local_rank)
+    elif _is_mps():
+        return torch.device("mps")
+    else:
+        return torch.device("cpu")
