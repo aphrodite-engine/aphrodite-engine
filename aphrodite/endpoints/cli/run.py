@@ -55,7 +55,10 @@ class ServeSubcommand(CLISubcommand):
 
     def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         serve_parser = subparsers.add_parser(
-            self.name, description=DESCRIPTION, usage="aphrodite run [model_tag] [options]"
+            self.name,
+            help="Launch a local OpenAI-compatible API server to serve LLM completions via HTTP.",
+            description=DESCRIPTION,
+            usage="aphrodite run [model_tag] [options]",
         )
 
         serve_parser = make_arg_parser(serve_parser)

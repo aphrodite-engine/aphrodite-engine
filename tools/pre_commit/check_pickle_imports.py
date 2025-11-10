@@ -40,6 +40,11 @@ ALLOWED_FILES = {
     "tests/utils.py",
     # pickle and cloudpickle
     "aphrodite/v1/serial_utils.py",
+    "aphrodite/diffusion/runtime/utils/distributed.py",
+    "aphrodite/diffusion/runtime/distributed/group_coordinator.py",
+    "aphrodite/diffusion/utils.py",
+    "aphrodite/diffusion/runtime/distributed/utils.py",
+    "aphrodite/diffusion/runtime/models/registry.py",
 }
 
 PICKLE_RE = re.compile(

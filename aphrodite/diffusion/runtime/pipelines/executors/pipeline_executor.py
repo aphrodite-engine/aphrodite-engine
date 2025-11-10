@@ -1,0 +1,71 @@
+# Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+
+# SPDX-License-Identifier: Apache-2.0
+"""
+Base class for all pipeline executors.
+"""
+
+import time
+from abc import ABC, abstractmethod
+
+from aphrodite.diffusion.runtime.pipelines.pipeline_batch_info import Req
+from aphrodite.diffusion.runtime.pipelines.stages import PipelineStage
+from aphrodite.diffusion.runtime.server_args import ServerArgs
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
+
+
+class Timer:
+    """
+    A very simple timer that doesn't for cuda-stream to be synced
+    """
+
+    def __init__(self, name="Stage"):
+        self.name = name
+        self.start = None
+        self.end = None
+        self.elapsed = None
+
+    def __enter__(self):
+        self.start = time.perf_counter()
+        logger.debug("[%s] started...", self.name)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end = time.perf_counter()
+        self.elapsed = self.end - self.start
+        logger.debug("[%s] finished in %.4f seconds", self.name, self.elapsed)
+        return False
+
+
+class PipelineExecutor(ABC):
+    """
+    Abstract base class for all pipeline executors.
+
+    Executors orchestrate the execution of pipeline, with managing the parallel and communications required by stages
+
+    """
+
+    def __init__(self, server_args):
+        self.server_args = server_args
+
+    @abstractmethod
+    def execute(
+        self,
+        stages: list[PipelineStage],
+        batch: Req,
+        server_args: ServerArgs,
+    ) -> Req:
+        """
+        Execute the pipeline stages.
+
+        Args:
+            stages: A list of pipeline stages to execute.
+            batch: The batch to process.
+            server_args: The server arguments.
+
+        Returns:
+            The processed batch.
+        """
+        raise NotImplementedError

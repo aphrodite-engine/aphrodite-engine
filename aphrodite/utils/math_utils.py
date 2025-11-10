@@ -28,3 +28,16 @@ def round_up(x: int, y: int) -> int:
 def round_down(x: int, y: int) -> int:
     """Round down x to the nearest multiple of y."""
     return (x // y) * y
+
+
+def align_to(value: int, alignment: int) -> int:
+    """align height, width according to alignment
+
+    Args:
+        value (int): height or width
+        alignment (int): target alignment factor
+
+    Returns:
+        int: the aligned value
+    """
+    return round_up(value, alignment)

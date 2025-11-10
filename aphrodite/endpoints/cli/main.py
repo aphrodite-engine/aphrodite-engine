@@ -14,6 +14,7 @@ logger = init_logger(__name__)
 def main():
     import aphrodite.endpoints.cli.benchmark.main
     import aphrodite.endpoints.cli.collect_env
+    import aphrodite.endpoints.cli.diffusion
     import aphrodite.endpoints.cli.openai
     import aphrodite.endpoints.cli.run
     import aphrodite.endpoints.cli.run_batch
@@ -28,6 +29,7 @@ def main():
         aphrodite.endpoints.cli.collect_env,
         aphrodite.endpoints.cli.run_batch,
         aphrodite.endpoints.cli.tokenizer,
+        aphrodite.endpoints.cli.diffusion,
     ]
 
     cli_env_setup()
