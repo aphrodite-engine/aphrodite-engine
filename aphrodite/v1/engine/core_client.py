@@ -575,11 +575,15 @@ class MPClient(EngineCoreClient):
 
     @property
     def max_concurrency(self) -> float:
-        return self.call_utility("get_max_concurrency")
+        if self._cached_max_concurrency is None:
+            self._cached_max_concurrency = self.call_utility("get_max_concurrency")
+        return self._cached_max_concurrency
 
     @property
     def kv_cache_size_tokens(self) -> int:
-        return self.call_utility("get_kv_cache_size_tokens")
+        if self._cached_kv_cache_size_tokens is None:
+            self._cached_kv_cache_size_tokens = self.call_utility("get_kv_cache_size_tokens")
+        return self._cached_kv_cache_size_tokens
 
     @property
     def kv_cache_size_tokens_str(self) -> str:
@@ -820,6 +824,9 @@ class AsyncMPClient(MPClient):
         self.client_count = client_count
         self.client_index = client_index
         self.outputs_queue = asyncio.Queue[EngineCoreOutputs | Exception]()
+        # Cache KV cache properties for synchronous access
+        self._cached_max_concurrency: float | None = None
+        self._cached_kv_cache_size_tokens: int | None = None
         try:
             # If we are running in an asyncio event loop, start the queue task.
             # Otherwise, it will be started lazily. If it is not started here,
@@ -919,6 +926,50 @@ class AsyncMPClient(MPClient):
 
         future.add_done_callback(add_pending)
         return future
+
+    def call_utility(self, method: str, *args) -> Any:
+        """Synchronous wrapper for call_utility_async.
+
+        For AsyncMPClient, this caches the KV cache properties on first access.
+        Uses the sync ZMQ context from the parent to make a blocking call.
+        """
+        if method in ("get_max_concurrency", "get_kv_cache_size_tokens"):
+            if method == "get_max_concurrency" and self._cached_max_concurrency is not None:
+                return self._cached_max_concurrency
+            if method == "get_kv_cache_size_tokens" and self._cached_kv_cache_size_tokens is not None:
+                return self._cached_kv_cache_size_tokens
+
+        # Use sync ZMQ sockets for blocking call (shadow the async ones)
+        sync_input_socket = zmq.Socket.shadow(self.input_socket)
+        sync_output_socket = zmq.Socket.shadow(self.resources.output_socket)
+
+        call_id = uuid.uuid1().int >> 64
+        future: Future[Any] = Future()
+        self.utility_results[call_id] = future
+
+        message = (
+            EngineCoreRequestType.UTILITY.value,
+            *self.encoder.encode((self.client_index, call_id, method, args)),
+        )
+        sync_input_socket.send_multipart((self.core_engine,) + message, copy=False)
+
+        # Poll for response
+        while not future.done():
+            if sync_output_socket.poll(timeout=1000):
+                frames = sync_output_socket.recv_multipart(copy=False)
+                self.resources.validate_alive(frames)
+                outputs: EngineCoreOutputs = self.decoder.decode(frames)
+                if outputs.utility_output:
+                    _process_utility_output(outputs.utility_output, self.utility_results)
+
+        result = future.result()
+
+        if method == "get_max_concurrency":
+            self._cached_max_concurrency = result
+        elif method == "get_kv_cache_size_tokens":
+            self._cached_kv_cache_size_tokens = result
+
+        return result
 
     async def call_utility_async(self, method: str, *args) -> Any:
         return await self._call_utility_async(method, *args, engine=self.core_engine)

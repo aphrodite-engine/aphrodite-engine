@@ -106,6 +106,10 @@ class EngineCore:
         num_gpu_blocks, num_cpu_blocks, kv_cache_config = self._initialize_kv_caches(aphrodite_config)
         self.kv_cache_config = kv_cache_config
 
+        # Cache KV cache properties for synchronous access
+        self._max_concurrency = get_max_concurrency_for_kv_cache_config(aphrodite_config, kv_cache_config)
+        self._kv_cache_size_tokens = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
+
         aphrodite_config.cache_config.num_gpu_blocks = num_gpu_blocks
         aphrodite_config.cache_config.num_cpu_blocks = num_cpu_blocks
         self.collective_rpc("initialize_cache", args=(num_gpu_blocks, num_cpu_blocks))
@@ -261,7 +265,7 @@ class EngineCore:
             The maximum number of concurrent requests that can be processed
             based on the available KV cache blocks and memory requirements.
         """
-        return get_max_concurrency_for_kv_cache_config(self.aphrodite_config, self.kv_cache_config)
+        return self._max_concurrency
 
     def get_max_concurrency(self) -> float:
         """Get the maximum concurrency supported by the KV cache configuration.
@@ -281,7 +285,7 @@ class EngineCore:
         Returns:
             The total number of tokens that can be cached.
         """
-        return get_kv_cache_size_tokens(self.aphrodite_config, self.kv_cache_config)
+        return self._kv_cache_size_tokens
 
     @property
     def kv_cache_size_tokens_str(self) -> str:

@@ -426,3 +426,42 @@ def test_engine_core_invalid_request_id_type():
     engine_core.add_request(*engine_core.preprocess_add_request(valid_request))
     assert len(engine_core.scheduler.waiting) == 1
     assert len(engine_core.scheduler.running) == 0
+
+
+@create_new_process_for_each_test()
+def test_engine_core_kv_cache_properties():
+    """Test that max_concurrency and kv_cache_size_tokens properties are accessible on EngineCore."""
+    engine_args = EngineArgs(model=MODEL_NAME)
+    aphrodite_config = engine_args.create_engine_config()
+    executor_class = Executor.get_class(aphrodite_config)
+
+    with set_default_torch_num_threads(1):
+        engine_core = EngineCore(aphrodite_config=aphrodite_config, executor_class=executor_class, log_stats=False)
+
+    # Test max_concurrency property
+    max_conc = engine_core.max_concurrency
+    assert isinstance(max_conc, float)
+    assert max_conc > 0
+
+    # Test kv_cache_size_tokens property
+    kv_cache_tokens = engine_core.kv_cache_size_tokens
+    assert isinstance(kv_cache_tokens, int)
+    assert kv_cache_tokens >= 0  # Can be 0 for models without KV cache
+
+    # Test kv_cache_size_tokens_str property
+    kv_cache_tokens_str = engine_core.kv_cache_size_tokens_str
+    assert isinstance(kv_cache_tokens_str, str)
+    assert len(kv_cache_tokens_str) > 0
+    # Verify the string represents the same number
+    tokens_from_str = int(kv_cache_tokens_str.replace(",", "")) if kv_cache_tokens_str.replace(",", "") else 0
+    assert tokens_from_str == kv_cache_tokens
+
+    # Test get_max_concurrency method (for RPC access)
+    max_conc_method = engine_core.get_max_concurrency()
+    assert isinstance(max_conc_method, float)
+    assert max_conc_method == max_conc
+
+    # Test get_kv_cache_size_tokens method (for RPC access)
+    kv_cache_tokens_method = engine_core.get_kv_cache_size_tokens()
+    assert isinstance(kv_cache_tokens_method, int)
+    assert kv_cache_tokens_method == kv_cache_tokens
