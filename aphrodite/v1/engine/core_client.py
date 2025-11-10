@@ -174,6 +174,35 @@ class EngineCoreClient(ABC):
         running state."""
         raise NotImplementedError
 
+    @property
+    def max_concurrency(self) -> float:
+        """Get the maximum concurrency supported by the KV cache configuration.
+
+        Returns:
+            The maximum number of concurrent requests that can be processed
+            based on the available KV cache blocks and memory requirements.
+        """
+        raise NotImplementedError
+
+    @property
+    def kv_cache_size_tokens(self) -> int:
+        """Get the total number of tokens that can be stored in the KV cache.
+
+        Returns:
+            The total number of tokens that can be cached.
+        """
+        raise NotImplementedError
+
+    @property
+    def kv_cache_size_tokens_str(self) -> str:
+        """Get a formatted string representation of the KV cache size in tokens.
+
+        Returns:
+            A comma-formatted string representing the total number of tokens
+            that can be cached (e.g., "1,048,576").
+        """
+        raise NotImplementedError
+
     async def scale_elastic_ep(self, new_data_parallel_size: int) -> None:
         raise NotImplementedError
 
@@ -312,6 +341,18 @@ class InprocClient(EngineCoreClient):
 
     def dp_engines_running(self) -> bool:
         return False
+
+    @property
+    def max_concurrency(self) -> float:
+        return self.engine_core.max_concurrency
+
+    @property
+    def kv_cache_size_tokens(self) -> int:
+        return self.engine_core.kv_cache_size_tokens
+
+    @property
+    def kv_cache_size_tokens_str(self) -> str:
+        return self.engine_core.kv_cache_size_tokens_str
 
 
 @dataclass
@@ -531,6 +572,19 @@ class MPClient(EngineCoreClient):
 
     def dp_engines_running(self) -> bool:
         return self.engines_running
+
+    @property
+    def max_concurrency(self) -> float:
+        return self.call_utility("get_max_concurrency")
+
+    @property
+    def kv_cache_size_tokens(self) -> int:
+        return self.call_utility("get_kv_cache_size_tokens")
+
+    @property
+    def kv_cache_size_tokens_str(self) -> str:
+        tokens = self.kv_cache_size_tokens
+        return f"{tokens:,}"
 
     def start_engine_core_monitor(self):
         """Start a monitor thread for engine core processes."""

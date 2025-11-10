@@ -617,6 +617,35 @@ class AsyncLLM(EngineClient):
 
         return self.tokenizer
 
+    @property
+    def max_concurrency(self) -> float:
+        """Get the maximum concurrency supported by the KV cache configuration.
+
+        Returns:
+            The maximum number of concurrent requests that can be processed
+            based on the available KV cache blocks and memory requirements.
+        """
+        return self.engine_core.max_concurrency
+
+    @property
+    def kv_cache_size_tokens(self) -> int:
+        """Get the total number of tokens that can be stored in the KV cache.
+
+        Returns:
+            The total number of tokens that can be cached.
+        """
+        return self.engine_core.kv_cache_size_tokens
+
+    @property
+    def kv_cache_size_tokens_str(self) -> str:
+        """Get a formatted string representation of the KV cache size in tokens.
+
+        Returns:
+            A comma-formatted string representing the total number of tokens
+            that can be cached (e.g., "1,048,576").
+        """
+        return self.engine_core.kv_cache_size_tokens_str
+
     async def is_tracing_enabled(self) -> bool:
         return self.observability_config.otlp_traces_endpoint is not None  # type: ignore
 

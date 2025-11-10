@@ -737,6 +737,26 @@ def get_max_concurrency_for_kv_cache_config(aphrodite_config: AphroditeConfig, k
     return max_concurrency
 
 
+def get_kv_cache_size_tokens(aphrodite_config: AphroditeConfig, kv_cache_config: KVCacheConfig) -> int:
+    """
+    Get the total number of tokens that can be stored in the KV cache.
+
+    Args:
+        aphrodite_config: The global AphroditeConfig
+        kv_cache_config: The resolved KV cache configuration
+
+    Returns:
+        The total number of tokens that can be cached.
+    """
+    if len(kv_cache_config.kv_cache_groups) == 0:
+        return 0
+    min_block_size = min([group.kv_cache_spec.block_size for group in kv_cache_config.kv_cache_groups])
+    num_tokens = kv_cache_config.num_blocks // len(kv_cache_config.kv_cache_groups) * min_block_size
+    if aphrodite_config.parallel_config.decode_context_parallel_size > 1:
+        num_tokens *= aphrodite_config.parallel_config.decode_context_parallel_size
+    return num_tokens
+
+
 def may_override_num_blocks(aphrodite_config: AphroditeConfig, num_blocks: int) -> int:
     """
     Override the number of kv cache blocks if `num_gpu_blocks_override` is set.
@@ -1129,12 +1149,9 @@ def _report_kv_cache_config(aphrodite_config: AphroditeConfig, kv_cache_config: 
         aphrodite_config: The global AphroditeConfig
         kv_cache_config: The resolved KV cache configuration
     """
-    min_block_size = min([group.kv_cache_spec.block_size for group in kv_cache_config.kv_cache_groups])
-
     # Log the KV cache size and maximum concurrency.
-    num_tokens = kv_cache_config.num_blocks // len(kv_cache_config.kv_cache_groups) * min_block_size
+    num_tokens = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
     if aphrodite_config.parallel_config.decode_context_parallel_size > 1:
-        num_tokens *= aphrodite_config.parallel_config.decode_context_parallel_size
         logger.info(
             "Multiplying the GPU KV cache size by the dcp_world_size %d.",
             aphrodite_config.parallel_config.decode_context_parallel_size,
