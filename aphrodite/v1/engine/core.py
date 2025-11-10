@@ -35,6 +35,8 @@ from aphrodite.v1.core.kv_cache_utils import (
     BlockHash,
     generate_scheduler_kv_cache_config,
     get_kv_cache_configs,
+    get_kv_cache_size_tokens,
+    get_max_concurrency_for_kv_cache_config,
     get_request_block_hasher,
     init_none_hash,
 )
@@ -102,6 +104,11 @@ class EngineCore:
 
         # Setup KV Caches and update CacheConfig after profiling.
         num_gpu_blocks, num_cpu_blocks, kv_cache_config = self._initialize_kv_caches(aphrodite_config)
+        self.kv_cache_config = kv_cache_config
+
+        # Cache KV cache properties for synchronous access
+        self._max_concurrency = get_max_concurrency_for_kv_cache_config(aphrodite_config, kv_cache_config)
+        self._kv_cache_size_tokens = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
 
         aphrodite_config.cache_config.num_gpu_blocks = num_gpu_blocks
         aphrodite_config.cache_config.num_cpu_blocks = num_cpu_blocks
@@ -249,6 +256,56 @@ class EngineCore:
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.modeling.supported_tasks
+
+    @property
+    def max_concurrency(self) -> float:
+        """Get the maximum concurrency supported by the KV cache configuration.
+
+        Returns:
+            The maximum number of concurrent requests that can be processed
+            based on the available KV cache blocks and memory requirements.
+        """
+        return self._max_concurrency
+
+    def get_max_concurrency(self) -> float:
+        """Get the maximum concurrency supported by the KV cache configuration.
+
+        This method is provided for RPC access in multiprocess mode.
+
+        Returns:
+            The maximum number of concurrent requests that can be processed
+            based on the available KV cache blocks and memory requirements.
+        """
+        return self.max_concurrency
+
+    @property
+    def kv_cache_size_tokens(self) -> int:
+        """Get the total number of tokens that can be stored in the KV cache.
+
+        Returns:
+            The total number of tokens that can be cached.
+        """
+        return self._kv_cache_size_tokens
+
+    @property
+    def kv_cache_size_tokens_str(self) -> str:
+        """Get a formatted string representation of the KV cache size in tokens.
+
+        Returns:
+            A comma-formatted string representing the total number of tokens
+            that can be cached (e.g., "1,048,576").
+        """
+        return f"{self.kv_cache_size_tokens:,}"
+
+    def get_kv_cache_size_tokens(self) -> int:
+        """Get the total number of tokens that can be stored in the KV cache.
+
+        This method is provided for RPC access in multiprocess mode.
+
+        Returns:
+            The total number of tokens that can be cached.
+        """
+        return self.kv_cache_size_tokens
 
     def add_request(self, request: Request, request_wave: int = 0):
         """Add request to the scheduler.

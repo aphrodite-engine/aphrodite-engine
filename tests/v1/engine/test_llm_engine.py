@@ -224,3 +224,34 @@ def test_skip_tokenizer_initialization(model: str):
     assert len(completions) > 0
     assert completions[0].text == ""
     assert completions[0].token_ids
+
+
+def test_kv_cache_properties(aphrodite_runner):
+    """Test that max_concurrency and kv_cache_size_tokens properties are accessible."""
+    with aphrodite_runner(
+        MODEL,
+        dtype=DTYPE,
+        max_model_len=128,
+        enforce_eager=True,
+        gpu_memory_utilization=0.5,
+    ) as aphrodite_model:
+        llm: LLM = aphrodite_model.llm
+        llm_engine = llm.llm_engine
+
+        # Test max_concurrency property
+        max_conc = llm_engine.max_concurrency
+        assert isinstance(max_conc, float)
+        assert max_conc > 0
+
+        # Test kv_cache_size_tokens property
+        kv_cache_tokens = llm_engine.kv_cache_size_tokens
+        assert isinstance(kv_cache_tokens, int)
+        assert kv_cache_tokens > 0
+
+        # Test kv_cache_size_tokens_str property
+        kv_cache_tokens_str = llm_engine.kv_cache_size_tokens_str
+        assert isinstance(kv_cache_tokens_str, str)
+        assert "," in kv_cache_tokens_str or len(kv_cache_tokens_str) > 0
+        # Verify the string represents the same number
+        tokens_from_str = int(kv_cache_tokens_str.replace(",", ""))
+        assert tokens_from_str == kv_cache_tokens

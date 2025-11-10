@@ -536,3 +536,30 @@ async def collect_outputs(
             outputs_list.append(output)
         final_output = output
     return final_output
+
+
+@pytest.mark.asyncio
+async def test_kv_cache_properties():
+    """Test that max_concurrency and kv_cache_size_tokens properties are accessible."""
+    with ExitStack() as after:
+        with set_default_torch_num_threads(1):
+            engine = AsyncLLM.from_engine_args(TEXT_ENGINE_ARGS)
+        after.callback(engine.shutdown)
+
+        # Test max_concurrency property
+        max_conc = engine.max_concurrency
+        assert isinstance(max_conc, float)
+        assert max_conc > 0
+
+        # Test kv_cache_size_tokens property
+        kv_cache_tokens = engine.kv_cache_size_tokens
+        assert isinstance(kv_cache_tokens, int)
+        assert kv_cache_tokens > 0
+
+        # Test kv_cache_size_tokens_str property
+        kv_cache_tokens_str = engine.kv_cache_size_tokens_str
+        assert isinstance(kv_cache_tokens_str, str)
+        assert "," in kv_cache_tokens_str or len(kv_cache_tokens_str) > 0
+        # Verify the string represents the same number
+        tokens_from_str = int(kv_cache_tokens_str.replace(",", ""))
+        assert tokens_from_str == kv_cache_tokens

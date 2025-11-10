@@ -21,6 +21,7 @@ from aphrodite.v1.core.kv_cache_utils import (
     generate_block_hash_extra_keys,
     generate_scheduler_kv_cache_config,
     get_kv_cache_configs,
+    get_kv_cache_size_tokens,
     get_max_concurrency_for_kv_cache_config,
     get_request_block_hasher,
     hash_block_tokens,
@@ -1153,6 +1154,74 @@ def test_get_max_concurrency_for_kv_cache_config():
         aphrodite_config, kv_cache_config_hybrid_model
     )
     assert max_concurrency_hybrid_model == 3
+
+
+def test_get_kv_cache_size_tokens():
+    """Test get_kv_cache_size_tokens function."""
+    model_id = "Qwen/Qwen1.5-7B"
+    max_model_len = 16384
+    model_config = ModelConfig(
+        model_id,
+        runner="generate",
+        dtype="float16",
+        max_model_len=max_model_len,
+    )
+    scheduler_config = SchedulerConfig(max_num_batched_tokens=1024, enable_chunked_prefill=True)
+
+    aphrodite_config = AphroditeConfig(
+        model_config=model_config,
+        scheduler_config=scheduler_config,
+    )
+
+    full_attention_spec = FullAttentionSpec(
+        block_size=16,
+        num_kv_heads=32,
+        head_size=128,
+        dtype=torch.float16,
+    )
+
+    # Test with single group
+    kv_cache_config = KVCacheConfig(
+        num_blocks=1024,
+        kv_cache_tensors=[],
+        kv_cache_groups=[
+            KVCacheGroupSpec([f"layer_{i}" for i in range(32)], full_attention_spec),
+        ],
+        kv_bytes_per_block=1024,
+    )
+    tokens = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
+    expected_tokens = 1024 * 16  # num_blocks * block_size
+    assert tokens == expected_tokens
+
+    # Test with multiple groups
+    kv_cache_config_multi = KVCacheConfig(
+        num_blocks=2048,
+        kv_cache_tensors=[],
+        kv_cache_groups=[
+            KVCacheGroupSpec([f"layer_{i}" for i in range(16)], full_attention_spec),
+            KVCacheGroupSpec([f"layer_{i}" for i in range(16, 32)], full_attention_spec),
+        ],
+        kv_bytes_per_block=1024,
+    )
+    tokens_multi = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config_multi)
+    expected_tokens_multi = 2048 // 2 * 16  # num_blocks // num_groups * block_size
+    assert tokens_multi == expected_tokens_multi
+
+    # Test with decode_context_parallel_size > 1
+    aphrodite_config.parallel_config.decode_context_parallel_size = 2
+    tokens_dcp = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
+    expected_tokens_dcp = expected_tokens * 2
+    assert tokens_dcp == expected_tokens_dcp
+
+    # Test with empty kv_cache_groups
+    kv_cache_config_empty = KVCacheConfig(
+        num_blocks=0,
+        kv_cache_tensors=[],
+        kv_cache_groups=[],
+        kv_bytes_per_block=0,
+    )
+    tokens_empty = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config_empty)
+    assert tokens_empty == 0
 
 
 def test_allocate_with_lookahead():
