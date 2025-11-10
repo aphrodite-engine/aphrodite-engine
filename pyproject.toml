@@ -63,7 +63,7 @@ diffusion = [
     "torchcodec==0.5.0",
     "st_attn ==0.0.7",
     "vsa==0.0.4",
-    "dateutil",
+    "python-dateutil",
 ]
 
 
