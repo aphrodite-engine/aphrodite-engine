@@ -353,6 +353,14 @@ class ServerArgs:
         parser.add_argument(
             "--model-path",
             type=str,
+            dest="model_path",
+            help="The path of the model weights. This can be a local folder or a Hugging Face repo ID. "
+            "(Deprecated: use --model instead)",
+        )
+        parser.add_argument(
+            "--model",
+            type=str,
+            dest="model_path",
             help="The path of the model weights. This can be a local folder or a Hugging Face repo ID.",
         )
         parser.add_argument(
@@ -745,9 +753,17 @@ class ServerArgs:
                 arg_name = arg.split("=", 1)[0].replace("-", "_").lstrip("_")
                 provided_arg_names.add(arg_name)
 
+        # Handle positional model_tag argument (maps to model_path)
+        if hasattr(args, "model_tag") and args.model_tag is not None:
+            provided_args["model_path"] = args.model_tag
+
         # Populate provided_args if the argument from the namespace was on the command line.
         for k, v in vars(args).items():
             if k in provided_arg_names:
+                # If model_path was already set from model_tag, don't override it
+                # (positional argument takes precedence)
+                if k == "model_path" and "model_path" in provided_args:
+                    continue
                 provided_args[k] = v
 
         return provided_args
