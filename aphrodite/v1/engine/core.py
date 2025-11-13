@@ -4,13 +4,12 @@ import queue
 import signal
 import threading
 import time
-from collections import deque
 from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
 from inspect import isclass, signature
 from logging import DEBUG
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 import msgspec
 import zmq
@@ -192,10 +191,10 @@ class EngineCore:
         # schedule and execute batches, and is required by pipeline parallelism
         # to eliminate pipeline bubbles.
         self.batch_queue_size = self.modeling.max_concurrent_batches
-        self.batch_queue: deque[tuple[Future[ModelRunnerOutput], SchedulerOutput]] | None = None
+        self.batch_queue: queue.Queue[tuple[Future[ModelRunnerOutput], SchedulerOutput]] | None = None
         if self.batch_queue_size > 1:
             logger.info_once("Batch queue is enabled with size %d", self.batch_queue_size, scope="global")
-            self.batch_queue = deque(maxlen=self.batch_queue_size)
+            self.batch_queue = queue.Queue(self.batch_queue_size)
 
         self.request_block_hasher: Callable[[Request], list[BlockHash]] | None = None
         if self.aphrodite_config.cache_config.enable_prefix_caching or kv_connector is not None:
@@ -399,73 +398,40 @@ class EngineCore:
         batch in the job queue is finished.
         3. Update the scheduler from the output.
         """
-        batch_queue = self.batch_queue
-        assert batch_queue is not None
+        assert self.batch_queue is not None
 
+        engine_core_outputs = None
+        scheduler_output = None
         # Try to schedule a new batch if the batch queue is not full, but
         # the scheduler may return an empty batch if all requests are scheduled.
         # Note that this is not blocking.
-        assert len(batch_queue) < self.batch_queue_size
-
-        model_executed = False
-        deferred_scheduler_output = None
-        if self.scheduler.has_requests():
+        if not self.batch_queue.full():
             scheduler_output = self.scheduler.schedule()
-            exec_future = self.modeling.execute_model(scheduler_output, non_block=True)
+            if scheduler_output.total_num_scheduled_tokens > 0:
+                # In v0.11.0, execute_model has non_block parameter
+                # We need non_block=True to get a Future
+                future = self.modeling.execute_model(scheduler_output, non_block=True)
+                self.batch_queue.put_nowait((future, scheduler_output))  # type: ignore
 
-            model_executed = scheduler_output.total_num_scheduled_tokens > 0
-            if scheduler_output.pending_structured_output_tokens:
-                # We need to defer sampling until we have processed the model output
-                # from the prior step.
-                deferred_scheduler_output = scheduler_output
-                # Block-wait for execute to return (continues running async on the GPU).
-                with self.log_error_detail(scheduler_output):
-                    exec_result = exec_future.result()
-                    assert exec_result is None
-            else:
-                # We aren't waiting for any tokens, get any grammar output immediately.
-                grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
-                # Block-wait for execute to return (continues running async on the GPU).
-                with self.log_error_detail(scheduler_output):
-                    exec_result = exec_future.result()
+        scheduled_batch = scheduler_output is not None and scheduler_output.total_num_scheduled_tokens > 0
 
-                if exec_result is None:
-                    # Call sample tokens.
-                    future = self.modeling.sample_tokens(grammar_output, non_block=True)
-                else:
-                    # No sampling required (e.g. all requests finished).
-                    future = cast(Future[ModelRunnerOutput], exec_future)
-                # Add this step's future to the queue.
-                batch_queue.appendleft((future, scheduler_output))
-                if model_executed and len(batch_queue) < self.batch_queue_size and not batch_queue[-1][0].done():
-                    # Don't block on next worker response unless the queue is full
-                    # or there are no more requests to schedule.
-                    return None, True
+        # If no more requests can be scheduled and the job queue is not empty,
+        # block until the first batch in the job queue is finished.
+        # TODO(comaniac): Ideally we should peek the first batch in the
+        # job queue to check if it's finished before scheduling a new batch,
+        # but peeking the first element in a queue is not thread-safe,
+        # so we need more work.
+        if not scheduled_batch and not self.batch_queue.empty():
+            future, scheduler_output = self.batch_queue.get_nowait()
 
-        elif not batch_queue:
-            # Queue is empty. We should not reach here since this method should
-            # only be called when the scheduler contains requests or the queue
-            # is non-empty.
-            return None, False
+            # Blocking until the first result is available.
+            with self.log_error_detail(scheduler_output):
+                model_output = future.result()
 
-        # Block until the next result is available.
-        future, scheduler_output = batch_queue.pop()
-        with self.log_error_detail(scheduler_output):
-            model_output = future.result()
+            self.batch_queue.task_done()
+            engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 
-        engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
-
-        # NOTE: We can either handle the deferred tasks here or save
-        # in a field and do it immediately once step_with_batch_queue is
-        # re-called. The latter slightly favors TTFT over TPOT/throughput.
-        if deferred_scheduler_output:
-            # We now have the tokens needed to compute the bitmask for the
-            # deferred request. Get the bitmask and call sample tokens.
-            grammar_output = self.scheduler.get_grammar_bitmask(deferred_scheduler_output)
-            future = self.modeling.sample_tokens(grammar_output, non_block=True)
-            batch_queue.appendleft((future, deferred_scheduler_output))
-
-        return engine_core_outputs, model_executed
+        return engine_core_outputs, scheduled_batch
 
     def shutdown(self):
         self.structured_output_manager.clear_backend()
@@ -863,7 +829,8 @@ class EngineCoreProc(EngineCore):
         """Exits when an engine step needs to be performed."""
 
         waited = False
-        while not self.engines_running and not self.scheduler.has_requests() and not self.batch_queue:
+        while not self.engines_running and not self.scheduler.has_requests() \
+                and (self.batch_queue is None or self.batch_queue.empty()):
             if logger.isEnabledFor(DEBUG) and self.input_queue.empty():
                 logger.debug("EngineCore waiting for work.")
                 waited = True
@@ -1021,7 +988,9 @@ class EngineCoreProc(EngineCore):
         # Keep references to outputs and buffers until zmq is finished
         # with them (outputs may contain tensors/np arrays whose
         # backing buffers were extracted for zero-copy send).
-        pending = deque[tuple[zmq.MessageTracker, Any, bytearray]]()
+        from collections import deque as DequeType
+
+        pending = DequeType[tuple[zmq.MessageTracker, Any, bytearray]]()
 
         # We must set linger to ensure the ENGINE_CORE_DEAD
         # message is sent prior to closing the socket.
