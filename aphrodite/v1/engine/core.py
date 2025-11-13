@@ -400,38 +400,76 @@ class EngineCore:
         """
         assert self.batch_queue is not None
 
-        engine_core_outputs = None
-        scheduler_output = None
+        model_executed = False
+        deferred_scheduler_output = None
+        
         # Try to schedule a new batch if the batch queue is not full, but
         # the scheduler may return an empty batch if all requests are scheduled.
         # Note that this is not blocking.
         if not self.batch_queue.full():
             scheduler_output = self.scheduler.schedule()
-            if scheduler_output.total_num_scheduled_tokens > 0:
-                # In v0.11.0, execute_model has non_block parameter
-                # We need non_block=True to get a Future
-                future = self.modeling.execute_model(scheduler_output, non_block=True)
-                self.batch_queue.put_nowait((future, scheduler_output))  # type: ignore
+            exec_future = self.modeling.execute_model(scheduler_output, non_block=True)
 
-        scheduled_batch = scheduler_output is not None and scheduler_output.total_num_scheduled_tokens > 0
+            model_executed = scheduler_output.total_num_scheduled_tokens > 0
+            if scheduler_output.pending_structured_output_tokens:
+                # We need to defer sampling until we have processed the model output
+                # from the prior step.
+                deferred_scheduler_output = scheduler_output
+                # Block-wait for execute to return (continues running async on the GPU).
+                with self.log_error_detail(scheduler_output):
+                    exec_result = exec_future.result()
+                    assert exec_result is None
+            else:
+                # We aren't waiting for any tokens, get any grammar output immediately.
+                grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+                # Block-wait for execute to return (continues running async on the GPU).
+                with self.log_error_detail(scheduler_output):
+                    exec_result = exec_future.result()
 
-        # If no more requests can be scheduled and the job queue is not empty,
-        # block until the first batch in the job queue is finished.
-        # TODO(comaniac): Ideally we should peek the first batch in the
-        # job queue to check if it's finished before scheduling a new batch,
-        # but peeking the first element in a queue is not thread-safe,
-        # so we need more work.
-        if not scheduled_batch and not self.batch_queue.empty():
+                if exec_result is None:
+                    # Call sample tokens.
+                    future = self.modeling.sample_tokens(grammar_output, non_block=True)
+                else:
+                    # No sampling required (e.g. all requests finished).
+                    from concurrent.futures import Future
+                    future = exec_future
+                # Add this step's future to the queue.
+                self.batch_queue.put_nowait((future, scheduler_output))
+                if model_executed and not self.batch_queue.full() and self.batch_queue.qsize() > 0:
+                    # Don't block on next worker response unless the queue is full
+                    # or there are no more requests to schedule.
+                    # Note: We can't easily peek at the first item in a thread-safe way,
+                    # so we just check if queue is not full.
+                    return None, True
+
+        elif self.batch_queue.empty():
+            # Queue is empty. We should not reach here since this method should
+            # only be called when the scheduler contains requests or the queue
+            # is non-empty.
+            return None, False
+
+        # Block until the next result is available if queue is not empty.
+        if not self.batch_queue.empty():
             future, scheduler_output = self.batch_queue.get_nowait()
-
-            # Blocking until the first result is available.
             with self.log_error_detail(scheduler_output):
                 model_output = future.result()
 
             self.batch_queue.task_done()
             engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 
-        return engine_core_outputs, scheduled_batch
+            # NOTE: We can either handle the deferred tasks here or save
+            # in a field and do it immediately once step_with_batch_queue is
+            # re-called. The latter slightly favors TTFT over TPOT/throughput.
+            if deferred_scheduler_output:
+                # We now have the tokens needed to compute the bitmask for the
+                # deferred request. Get the bitmask and call sample tokens.
+                grammar_output = self.scheduler.get_grammar_bitmask(deferred_scheduler_output)
+                future = self.modeling.sample_tokens(grammar_output, non_block=True)
+                self.batch_queue.put_nowait((future, deferred_scheduler_output))
+
+            return engine_core_outputs, model_executed
+        
+        return None, model_executed
 
     def shutdown(self):
         self.structured_output_manager.clear_backend()
