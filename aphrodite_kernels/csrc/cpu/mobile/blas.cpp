@@ -636,7 +636,7 @@ void transpose_f32(const float* source, float* destination, const size_t* shape,
               size_t start_row = block_idx * TILE_ROWS;
               size_t end_row = std::min(start_row + TILE_ROWS, num_rows);
 
-              cactus_transpose_2d_f32(source, destination, num_rows, num_cols,
+              transpose_2d_f32(source, destination, num_rows, num_cols,
                                       start_row, end_row);
             }
           });
