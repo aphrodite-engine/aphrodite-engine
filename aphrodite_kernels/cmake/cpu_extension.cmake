@@ -337,6 +337,32 @@ if(USE_ONEDNN)
         ${APHRODITE_EXT_SRC})
 endif()
 
+# Mobile-optimized kernels (ARM NEON) for Android
+if(APHRODITE_TARGET_DEVICE STREQUAL "android")
+    message(STATUS "Building mobile-optimized kernels for Android")
+    set(APHRODITE_MOBILE_SRC
+        "csrc/cpu/mobile/quant.cpp"
+        "csrc/cpu/mobile/blas.cpp"
+        "csrc/cpu/mobile/gemm.cpp"
+        "csrc/cpu/mobile/reduce.cpp"
+        "csrc/cpu/mobile/scalar.cpp"
+        "csrc/cpu/mobile/nn.cpp"
+        "csrc/cpu/mobile/attention.cpp"
+        "csrc/cpu/mobile/torch_bindings.cpp")
+    set(APHRODITE_EXT_SRC
+        ${APHRODITE_EXT_SRC}
+        ${APHRODITE_MOBILE_SRC})
+    # Add ARM NEON compile flags for mobile kernels
+    # Note: These flags may already be set by ASIMD_FOUND detection above
+    # but we ensure they're present for Android builds
+    if(NOT ASIMD_FOUND)
+        list(APPEND CXX_COMPILE_FLAGS
+            "-march=armv8-a+neon"
+            "-mfpu=neon-fp-armv8")
+    endif()
+    message(STATUS "Mobile kernel source files: ${APHRODITE_MOBILE_SRC}")
+endif()
+
 message(STATUS "CPU extension source files: ${APHRODITE_EXT_SRC}")
 
 #

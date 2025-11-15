@@ -4,6 +4,10 @@
 
 #include <torch/library.h>
 
+#if defined(__aarch64__) || defined(__ARM_NEON)
+  #include "mobile/torch_bindings.cpp"
+#endif
+
 std::string init_cpu_threads_env(const std::string& cpu_ids);
 
 void release_dnnl_matmul_handler(int64_t handler);
@@ -258,6 +262,65 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "Tensor? bias, ScalarType out_dtype, bool is_vnni) -> Tensor");
   ops.impl("int8_scaled_mm_with_quant", torch::kCPU,
            &int8_scaled_mm_with_quant);
+#endif
+
+  // Mobile-optimized kernels (ARM NEON)
+#if defined(__aarch64__) || defined(__ARM_NEON)
+  // Quantization ops
+  ops.def("mobile_int8_to_fp32(Tensor src, Tensor! dst, float scale) -> ()");
+  ops.impl("mobile_int8_to_fp32", torch::kCPU, &mobile_int8_to_fp32);
+
+  ops.def("mobile_fp32_to_int8(Tensor src, Tensor! dst, float scale) -> ()");
+  ops.impl("mobile_fp32_to_int8", torch::kCPU, &mobile_fp32_to_int8);
+
+  ops.def(
+      "mobile_dynamic_quantize_fp32_to_int8(Tensor src, Tensor! dst, Tensor! "
+      "computed_scale) -> ()");
+  ops.impl("mobile_dynamic_quantize_fp32_to_int8", torch::kCPU,
+           &mobile_dynamic_quantize_fp32_to_int8);
+
+  // Matrix multiplication ops
+  ops.def(
+      "mobile_matmul_int8(Tensor a, Tensor b_transposed, Tensor! c, float "
+      "a_scale, float b_scale, float c_scale) -> ()");
+  ops.impl("mobile_matmul_int8", torch::kCPU, &mobile_matmul_int8);
+
+  ops.def("mobile_matmul_f16(Tensor a, Tensor b_transposed, Tensor! c) -> ()");
+  ops.impl("mobile_matmul_f16", torch::kCPU, &mobile_matmul_f16);
+
+  ops.def("mobile_matmul_f32(Tensor a, Tensor b_transposed, Tensor! c) -> ()");
+  ops.impl("mobile_matmul_f32", torch::kCPU, &mobile_matmul_f32);
+
+  // Activation ops
+  ops.def("mobile_silu_f32(Tensor input, Tensor! output) -> ()");
+  ops.impl("mobile_silu_f32", torch::kCPU, &mobile_silu_f32);
+
+  ops.def("mobile_gelu_f32(Tensor input, Tensor! output) -> ()");
+  ops.impl("mobile_gelu_f32", torch::kCPU, &mobile_gelu_f32);
+
+  // Normalization ops
+  ops.def(
+      "mobile_rms_norm_f32(Tensor input, Tensor weight, Tensor! output, float "
+      "eps) -> ()");
+  ops.impl("mobile_rms_norm_f32", torch::kCPU, &mobile_rms_norm_f32);
+
+  // Reduction ops
+  ops.def("mobile_sum_all_int8(Tensor data) -> int");
+  ops.impl("mobile_sum_all_int8", torch::kCPU, &mobile_sum_all_int8);
+
+  ops.def("mobile_mean_all_int8(Tensor data) -> float");
+  ops.impl("mobile_mean_all_int8", torch::kCPU, &mobile_mean_all_int8);
+
+  // Scalar operation ops
+  ops.def(
+      "mobile_scalar_op_int8(Tensor input, Tensor! output, float scalar_value, "
+      "int op_type) -> ()");
+  ops.impl("mobile_scalar_op_int8", torch::kCPU, &mobile_scalar_op_int8);
+
+  ops.def(
+      "mobile_scalar_op_f32(Tensor input, Tensor! output, float scalar_value, "
+      "int op_type) -> ()");
+  ops.impl("mobile_scalar_op_f32", torch::kCPU, &mobile_scalar_op_f32);
 #endif
 }
 
