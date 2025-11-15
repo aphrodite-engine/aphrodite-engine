@@ -447,3 +447,32 @@ void qr_all_reduce(fptr_t _fa, torch::Tensor& inp, torch::Tensor& out,
                    int64_t quant_level, bool cast_bf2half = false);
 int64_t qr_max_size();
 #endif
+
+// Mobile-optimized kernels (ARM NEON)
+#if defined(__aarch64__) || defined(__ARM_NEON)
+void mobile_int8_to_fp32(const torch::Tensor& src, torch::Tensor& dst,
+                         double scale);
+void mobile_fp32_to_int8(const torch::Tensor& src, torch::Tensor& dst,
+                         double scale);
+void mobile_dynamic_quantize_fp32_to_int8(const torch::Tensor& src,
+                                          torch::Tensor& dst,
+                                          torch::Tensor& computed_scale);
+void mobile_matmul_int8(const torch::Tensor& a,
+                        const torch::Tensor& b_transposed, torch::Tensor& c,
+                        double a_scale, double b_scale, double c_scale);
+void mobile_matmul_f16(const torch::Tensor& a,
+                       const torch::Tensor& b_transposed, torch::Tensor& c);
+void mobile_matmul_f32(const torch::Tensor& a,
+                       const torch::Tensor& b_transposed, torch::Tensor& c);
+void mobile_silu_f32(const torch::Tensor& input, torch::Tensor& output);
+void mobile_gelu_f32(const torch::Tensor& input, torch::Tensor& output);
+void mobile_rms_norm_f32(const torch::Tensor& input,
+                         const torch::Tensor& weight, torch::Tensor& output,
+                         double eps);
+int64_t mobile_sum_all_int8(const torch::Tensor& data);
+double mobile_mean_all_int8(const torch::Tensor& data);
+void mobile_scalar_op_int8(const torch::Tensor& input, torch::Tensor& output,
+                           double scalar_value, int64_t op_type);
+void mobile_scalar_op_f32(const torch::Tensor& input, torch::Tensor& output,
+                          double scalar_value, int64_t op_type);
+#endif
