@@ -1013,7 +1013,7 @@ void transpose_int8(const int8_t* source, int8_t* destination,
               size_t start_row = block_idx * TILE_ROWS;
               size_t end_row = std::min(start_row + TILE_ROWS, num_rows);
 
-              cactus_transpose_2d_int8(source, destination, num_rows, num_cols,
+              transpose_2d_int8(source, destination, num_rows, num_cols,
                                        start_row, end_row);
             }
           });
