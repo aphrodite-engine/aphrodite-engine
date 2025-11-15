@@ -637,7 +637,7 @@ void transpose_f32(const float* source, float* destination, const size_t* shape,
               size_t end_row = std::min(start_row + TILE_ROWS, num_rows);
 
               transpose_2d_f32(source, destination, num_rows, num_cols,
-                                      start_row, end_row);
+                               start_row, end_row);
             }
           });
     } else {
@@ -1014,7 +1014,7 @@ void transpose_int8(const int8_t* source, int8_t* destination,
               size_t end_row = std::min(start_row + TILE_ROWS, num_rows);
 
               transpose_2d_int8(source, destination, num_rows, num_cols,
-                                       start_row, end_row);
+                                start_row, end_row);
             }
           });
     } else {
