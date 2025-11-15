@@ -75,7 +75,7 @@ class DecodingStage(PipelineStage):
         # Check if scaling_factor is valid (not 0 or None)
         if scaling_factor == 0 or scaling_factor is None:
             raise ValueError(f"Invalid scaling_factor: {scaling_factor}. Must be non-zero.")
-        
+
         if isinstance(scaling_factor, torch.Tensor):
             latents = latents / scaling_factor.to(latents.device, latents.dtype)
         else:
@@ -118,24 +118,26 @@ class DecodingStage(PipelineStage):
         """
         self.vae = self.vae.to(get_local_torch_device())
         latents = latents.to(get_local_torch_device())
-        
+
         # Handle 4D (images) vs 5D (videos) latents
         is_image = latents.dim() == 4
         if is_image:
             # Add frame dimension: [B, C, H, W] -> [B, C, 1, H, W]
             latents = latents.unsqueeze(2)
-        
+
         # Setup VAE precision
         # Force fp32 for VAE decoding to prevent NaN (ComfyUI default behavior)
         # VAE decoding is very sensitive to precision issues, especially with large latent values
         vae_dtype = PRECISION_TO_TYPE.get(server_args.pipeline_config.vae_precision, torch.float32)
         # Always use fp32 for VAE to match ComfyUI's default behavior and prevent NaN
         if vae_dtype != torch.float32:
-            logger.warning(f"VAE precision was set to {server_args.pipeline_config.vae_precision}, but forcing fp32 to prevent NaN issues")
+            logger.warning(
+                f"VAE precision was set to {server_args.pipeline_config.vae_precision}, but forcing fp32 to prevent NaN issues"
+            )
             vae_dtype = torch.float32
         vae_autocast_enabled = False  # Disable autocast since we're using fp32
         vae_arch_config = server_args.pipeline_config.vae_config.arch_config
-        
+
         # Ensure VAE model is in fp32
         if next(self.vae.parameters()).dtype != torch.float32:
             logger.info("Converting VAE model to float32 for decoding")
@@ -145,25 +147,31 @@ class DecodingStage(PipelineStage):
         if torch.allclose(latents, torch.zeros_like(latents), atol=1e-6):
             logger.error(f"ERROR: Latents are all zeros before VAE decoding! Shape: {latents.shape}")
             raise ValueError("Latents are all zeros - denoising may have failed")
-        
+
         # Debug: Check latents before scaling
-        logger.info(f"Latents before scaling - shape: {latents.shape}, min: {latents.min().item():.6f}, max: {latents.max().item():.6f}, mean: {latents.mean().item():.6f}")
-        
+        logger.info(
+            f"Latents before scaling - shape: {latents.shape}, min: {latents.min().item():.6f}, max: {latents.max().item():.6f}, mean: {latents.mean().item():.6f}"
+        )
+
         # scale and shift
         latents = self.scale_and_shift(vae_arch_config, latents, server_args)
-        
+
         # Debug: Check latents after scaling
-        logger.info(f"Latents after scaling - shape: {latents.shape}, min: {latents.min().item():.6f}, max: {latents.max().item():.6f}, mean: {latents.mean().item():.6f}, scaling_factor: {vae_arch_config.scaling_factor}")
-        
+        logger.info(
+            f"Latents after scaling - shape: {latents.shape}, min: {latents.min().item():.6f}, max: {latents.max().item():.6f}, mean: {latents.mean().item():.6f}, scaling_factor: {vae_arch_config.scaling_factor}"
+        )
+
         # Check if latents became all zeros after scaling
         if torch.allclose(latents, torch.zeros_like(latents), atol=1e-6):
-            logger.error(f"ERROR: Latents became all zeros after scaling! scaling_factor: {vae_arch_config.scaling_factor}")
+            logger.error(
+                f"ERROR: Latents became all zeros after scaling! scaling_factor: {vae_arch_config.scaling_factor}"
+            )
             raise ValueError("Latents became all zeros after scaling - check scaling_factor")
 
         # Decode latents frame by frame (VAE expects 4D: [B, C, H, W])
         batch_size, channels, num_frames, height, width = latents.shape
         decoded_frames = []
-        
+
         with torch.autocast(device_type="cuda", dtype=vae_dtype, enabled=vae_autocast_enabled):
             try:
                 # TODO: make it more specific
@@ -171,54 +179,62 @@ class DecodingStage(PipelineStage):
                     self.vae.enable_tiling()
             except Exception:
                 pass
-            
+
             for frame_idx in range(num_frames):
                 # Extract frame: [B, C, H, W]
                 frame_latents = latents[:, :, frame_idx, :, :]
                 if not vae_autocast_enabled:
                     frame_latents = frame_latents.to(vae_dtype)
-                
+
                 # Check for NaN/inf in frame latents before VAE decode
                 if torch.isnan(frame_latents).any() or torch.isinf(frame_latents).any():
                     logger.error(f"ERROR: NaN/inf in frame {frame_idx} latents before VAE decode!")
-                    logger.error(f"  Latents stats: min={frame_latents.min().item():.6f}, max={frame_latents.max().item():.6f}, "
-                               f"has_nan={torch.isnan(frame_latents).any().item()}, has_inf={torch.isinf(frame_latents).any().item()}")
+                    logger.error(
+                        f"  Latents stats: min={frame_latents.min().item():.6f}, max={frame_latents.max().item():.6f}, "
+                        f"has_nan={torch.isnan(frame_latents).any().item()}, has_inf={torch.isinf(frame_latents).any().item()}"
+                    )
                     # Replace NaN/inf with zeros
                     frame_latents = torch.nan_to_num(frame_latents, nan=0.0, posinf=0.0, neginf=0.0)
-                
+
                 # Ensure frame latents are in fp32 before VAE decode
                 frame_latents = frame_latents.to(dtype=torch.float32)
-                
+
                 # Decode frame
                 try:
                     decoded_frame = self.vae.decode(frame_latents)
                 except Exception as e:
                     logger.error(f"ERROR: VAE decode failed for frame {frame_idx}: {e}")
-                    logger.error(f"  Frame latents stats: min={frame_latents.min().item():.6f}, max={frame_latents.max().item():.6f}, "
-                               f"shape={frame_latents.shape}, dtype={frame_latents.dtype}, device={frame_latents.device}")
+                    logger.error(
+                        f"  Frame latents stats: min={frame_latents.min().item():.6f}, max={frame_latents.max().item():.6f}, "
+                        f"shape={frame_latents.shape}, dtype={frame_latents.dtype}, device={frame_latents.device}"
+                    )
                     raise
-                
+
                 # Convert output to float32 (like ComfyUI does)
                 decoded_frame = decoded_frame.float()
-                
+
                 # Debug: Check decoded output before denormalization
-                logger.info(f"Decoded frame {frame_idx} before denorm - shape: {decoded_frame.shape}, min: {decoded_frame.min().item():.6f}, max: {decoded_frame.max().item():.6f}, mean: {decoded_frame.mean().item():.6f}")
-                
+                logger.info(
+                    f"Decoded frame {frame_idx} before denorm - shape: {decoded_frame.shape}, min: {decoded_frame.min().item():.6f}, max: {decoded_frame.max().item():.6f}, mean: {decoded_frame.mean().item():.6f}"
+                )
+
                 # De-normalize image to [0, 1] range
                 decoded_frame = (decoded_frame / 2 + 0.5).clamp(0, 1)
-                
+
                 # Debug: Check after denormalization
-                logger.info(f"Decoded frame {frame_idx} after denorm - min: {decoded_frame.min().item():.6f}, max: {decoded_frame.max().item():.6f}, mean: {decoded_frame.mean().item():.6f}")
-                
+                logger.info(
+                    f"Decoded frame {frame_idx} after denorm - min: {decoded_frame.min().item():.6f}, max: {decoded_frame.max().item():.6f}, mean: {decoded_frame.mean().item():.6f}"
+                )
+
                 decoded_frames.append(decoded_frame)
-        
+
         # Stack frames: [B, C, T, H, W]
         image = torch.stack(decoded_frames, dim=2)
-        
+
         # Remove frame dimension for images
         if is_image:
             image = image.squeeze(2)
-        
+
         return image
 
     @torch.no_grad()

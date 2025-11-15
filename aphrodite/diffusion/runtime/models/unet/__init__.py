@@ -7,4 +7,3 @@ from aphrodite.diffusion.runtime.models.unet.adm_conditioning import (
 from aphrodite.diffusion.runtime.models.unet.unet_model import SDXLUNetModel
 
 __all__ = ["SDXLUNetModel", "ADMConditioning", "encode_sdxl_adm"]
-

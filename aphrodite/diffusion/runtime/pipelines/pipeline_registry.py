@@ -173,7 +173,7 @@ def import_pipeline_classes(
                                 for entry_cls, pipeline_name in zip(entry_cls_list, pipeline_names):
                                     assert hasattr(entry_cls, "pipeline_name"), f"{entry_cls}"
                                     registry_key = entry_cls.pipeline_name
-                                    
+
                                     # Check for duplicates by registry key (pipeline_name attribute)
                                     if registry_key in pipeline_dict:
                                         existing_cls = pipeline_dict[registry_key]
@@ -182,7 +182,7 @@ def import_pipeline_classes(
                                                 f"Pipeline {registry_key} already registered as {existing_cls.__name__}, "
                                                 f"overwriting with {entry_cls.__name__}"
                                             )
-                                    
+
                                     # Register by pipeline_name attribute (matches diffusers _class_name)
                                     pipeline_dict[registry_key] = entry_cls
 

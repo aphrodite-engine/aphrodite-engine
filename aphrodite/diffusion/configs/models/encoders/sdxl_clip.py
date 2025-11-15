@@ -9,10 +9,6 @@ from aphrodite.diffusion.configs.models.encoders.base import (
     TextEncoderArchConfig,
     TextEncoderConfig,
 )
-from aphrodite.diffusion.configs.models.encoders.clip import (
-    CLIPTextArchConfig,
-    CLIPTextConfig,
-)
 
 
 def _is_transformer_layer(n: str, m) -> bool:
@@ -27,14 +23,14 @@ def _is_embeddings(n: str, m) -> bool:
 class SDXLClipLArchConfig(TextEncoderArchConfig):
     """
     SDXL CLIP-L (Large) architecture configuration.
-    
+
     CLIP-L specifications:
     - hidden_size: 768
     - num_hidden_layers: 12
     - num_attention_heads: 12
     - intermediate_size: 3072
     """
-    
+
     vocab_size: int = 49408
     hidden_size: int = 768
     intermediate_size: int = 3072
@@ -67,14 +63,14 @@ class SDXLClipLArchConfig(TextEncoderArchConfig):
 class SDXLClipGArchConfig(TextEncoderArchConfig):
     """
     SDXL CLIP-G (Gigantic) architecture configuration.
-    
+
     CLIP-G specifications:
     - hidden_size: 1280
     - num_hidden_layers: 32
     - num_attention_heads: 20
     - intermediate_size: 5120
     """
-    
+
     vocab_size: int = 49408
     hidden_size: int = 1280
     intermediate_size: int = 5120
@@ -107,17 +103,17 @@ class SDXLClipGArchConfig(TextEncoderArchConfig):
 class SDXLClipArchConfig(TextEncoderArchConfig):
     """
     SDXL dual CLIP architecture configuration.
-    
+
     Combines CLIP-L and CLIP-G configurations.
     The actual model uses both encoders and concatenates their outputs.
     """
-    
+
     # CLIP-L config
     clip_l_config: SDXLClipLArchConfig = field(default_factory=SDXLClipLArchConfig)
-    
+
     # CLIP-G config
     clip_g_config: SDXLClipGArchConfig = field(default_factory=SDXLClipGArchConfig)
-    
+
     # Combined output dimension (CLIP-L 768 + CLIP-G 1280 = 2048)
     hidden_size: int = 2048
 
@@ -125,9 +121,9 @@ class SDXLClipArchConfig(TextEncoderArchConfig):
 @dataclass
 class SDXLClipLConfig(TextEncoderConfig):
     """SDXL CLIP-L model configuration."""
-    
+
     arch_config: TextEncoderArchConfig = field(default_factory=SDXLClipLArchConfig)
-    
+
     num_hidden_layers_override: int | None = None
     require_post_norm: bool | None = None
     prefix: str = "clip_l"
@@ -136,9 +132,9 @@ class SDXLClipLConfig(TextEncoderConfig):
 @dataclass
 class SDXLClipGConfig(TextEncoderConfig):
     """SDXL CLIP-G model configuration."""
-    
+
     arch_config: TextEncoderArchConfig = field(default_factory=SDXLClipGArchConfig)
-    
+
     num_hidden_layers_override: int | None = None
     require_post_norm: bool | None = None
     prefix: str = "clip_g"
@@ -148,21 +144,21 @@ class SDXLClipGConfig(TextEncoderConfig):
 class SDXLClipConfig(TextEncoderConfig):
     """
     SDXL dual CLIP model configuration.
-    
+
     Wraps both CLIP-L and CLIP-G configurations.
     """
-    
+
     arch_config: TextEncoderArchConfig = field(default_factory=SDXLClipArchConfig)
-    
+
     # Individual encoder configs
     clip_l_config: SDXLClipLArchConfig = field(default_factory=SDXLClipLArchConfig)
     clip_g_config: SDXLClipGArchConfig = field(default_factory=SDXLClipGArchConfig)
-    
+
     prefix: str = "sdxl_clip"
-    
+
     # Set architectures to ensure SDXLClipModel is loaded
     architectures: list[str] = field(default_factory=lambda: ["SDXLClipModel"])
-    
+
     def __post_init__(self):
         """Post-initialization validation."""
         # Ensure arch_config is SDXLClipArchConfig
@@ -175,4 +171,3 @@ class SDXLClipConfig(TextEncoderConfig):
                 )
             else:
                 self.arch_config = SDXLClipArchConfig()
-

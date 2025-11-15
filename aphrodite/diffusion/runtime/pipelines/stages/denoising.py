@@ -104,7 +104,10 @@ class DenoisingStage(PipelineStage):
 
         # Handle both DiT (transformer) and UNet models
         # For UNet models, we don't need attention head size calculation
-        if hasattr(self.server_args.pipeline_config, "dit_config") and self.server_args.pipeline_config.dit_config is not None:
+        if (
+            hasattr(self.server_args.pipeline_config, "dit_config")
+            and self.server_args.pipeline_config.dit_config is not None
+        ):
             hidden_size = self.server_args.pipeline_config.dit_config.hidden_size
             num_attention_heads = self.server_args.pipeline_config.dit_config.num_attention_heads
             if num_attention_heads > 0:
@@ -670,11 +673,15 @@ class DenoisingStage(PipelineStage):
                     guidance=guidance,
                     latents=latents,
                 )
-                
+
                 # Check for NaN in noise prediction
                 if torch.isnan(noise_pred).any():
-                    logger.error(f"ERROR: NaN detected in noise_pred at step {i}! noise_pred stats: min={noise_pred.min().item():.6f}, max={noise_pred.max().item():.6f}, mean={noise_pred.mean().item():.6f}")
-                    logger.error(f"latent_model_input stats: min={latent_model_input.min().item():.6f}, max={latent_model_input.max().item():.6f}, mean={latent_model_input.mean().item():.6f}")
+                    logger.error(
+                        f"ERROR: NaN detected in noise_pred at step {i}! noise_pred stats: min={noise_pred.min().item():.6f}, max={noise_pred.max().item():.6f}, mean={noise_pred.mean().item():.6f}"
+                    )
+                    logger.error(
+                        f"latent_model_input stats: min={latent_model_input.min().item():.6f}, max={latent_model_input.max().item():.6f}, mean={latent_model_input.mean().item():.6f}"
+                    )
                     raise ValueError(f"NaN detected in noise prediction at step {i}")
 
                 if batch.perf_logger:
@@ -687,7 +694,7 @@ class DenoisingStage(PipelineStage):
                     **extra_step_kwargs,
                     return_dict=False,
                 )[0]
-                
+
                 # Check for NaN in latents after scheduler step
                 if torch.isnan(latents).any():
                     logger.error(f"ERROR: NaN detected in latents after scheduler step {i}!")
@@ -859,33 +866,34 @@ class DenoisingStage(PipelineStage):
         # UNet models have forward(x, timesteps, context, y, ...)
         # DiT models have forward(hidden_states, encoder_hidden_states, timestep, guidance, ...)
         import inspect
+
         model_sig = inspect.signature(current_model.forward)
         param_names = list(model_sig.parameters.keys())
-        
+
         # UNet models typically have 'x' and 'timesteps' as first params
-        if 'x' in param_names and 'timesteps' in param_names:
+        if "x" in param_names and "timesteps" in param_names:
             # UNet calling convention: forward(x, timesteps, context=None, y=None, ...)
             # For SDXL, ADM conditioning (y) should be in kwargs from prepare_pos_cond_kwargs/prepare_neg_cond_kwargs
             # Extract y from kwargs if present, otherwise use None
-            y = kwargs.pop('y', None)
-            
+            y = kwargs.pop("y", None)
+
             # Ensure prompt_embeds is a tensor, not a list
             if isinstance(prompt_embeds, list):
                 prompt_embeds = prompt_embeds[0] if len(prompt_embeds) > 0 else None
-            
+
             # Ensure prompt_embeds has batch dimension
             if prompt_embeds is not None and prompt_embeds.dim() == 2:
                 # Add batch dimension: [seq_len, hidden_dim] -> [1, seq_len, hidden_dim]
                 prompt_embeds = prompt_embeds.unsqueeze(0)
-            
+
             # Debug: Check inputs before UNet forward
             if torch.isnan(latent_model_input).any():
-                logger.error(f"ERROR: NaN in latent_model_input before UNet forward!")
+                logger.error("ERROR: NaN in latent_model_input before UNet forward!")
             if prompt_embeds is not None and torch.isnan(prompt_embeds).any():
-                logger.error(f"ERROR: NaN in prompt_embeds before UNet forward!")
+                logger.error("ERROR: NaN in prompt_embeds before UNet forward!")
             if y is not None and torch.isnan(y).any():
-                logger.error(f"ERROR: NaN in ADM conditioning (y) before UNet forward!")
-            
+                logger.error("ERROR: NaN in ADM conditioning (y) before UNet forward!")
+
             output = current_model(
                 latent_model_input,  # x
                 t_expand,  # timesteps
@@ -893,11 +901,13 @@ class DenoisingStage(PipelineStage):
                 y=y,  # y (ADM conditioning)
                 **kwargs,
             )
-            
+
             # Debug: Check output after UNet forward
             if torch.isnan(output).any():
-                logger.error(f"ERROR: NaN in UNet output! Input stats - latent_model_input: min={latent_model_input.min().item():.6f}, max={latent_model_input.max().item():.6f}, prompt_embeds shape: {prompt_embeds.shape if prompt_embeds is not None else None}, y shape: {y.shape if y is not None else None}")
-            
+                logger.error(
+                    f"ERROR: NaN in UNet output! Input stats - latent_model_input: min={latent_model_input.min().item():.6f}, max={latent_model_input.max().item():.6f}, prompt_embeds shape: {prompt_embeds.shape if prompt_embeds is not None else None}, y shape: {y.shape if y is not None else None}"
+                )
+
             return output
         else:
             # DiT calling convention: forward(hidden_states, encoder_hidden_states, timestep, guidance, ...)

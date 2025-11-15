@@ -9,7 +9,7 @@ This module contains an implementation of the SDXL (Stable Diffusion XL) pipelin
 using the modular pipeline architecture.
 """
 
-from aphrodite.diffusion.runtime.pipelines import ComposedPipelineBase, Req
+from aphrodite.diffusion.runtime.pipelines import ComposedPipelineBase
 from aphrodite.diffusion.runtime.pipelines.stages import (
     ConditioningStage,
     DecodingStage,
@@ -28,16 +28,16 @@ logger = init_logger(__name__)
 class SDXLPipeline(ComposedPipelineBase):
     """
     SDXL (Stable Diffusion XL) image generation pipeline.
-    
+
     Based on ComfyUI's SDXL implementation:
     - Dual CLIP text encoder (CLIP-L + CLIP-G)
     - UNet with ADM conditioning
     - Standard AutoencoderKL VAE
     - 4-channel latent format
     """
-    
+
     pipeline_name = "StableDiffusionXLPipeline"  # Matches diffusers _class_name
-    
+
     _required_config_modules = [
         "text_encoder",  # SDXLClipModel (dual CLIP)
         "tokenizer",  # SDXL tokenizer
@@ -45,16 +45,16 @@ class SDXLPipeline(ComposedPipelineBase):
         "vae",  # Standard AutoencoderKL
         "scheduler",  # Diffusion scheduler (e.g., EulerDiscreteScheduler)
     ]
-    
+
     def create_pipeline_stages(self, server_args: ServerArgs):
         """Set up pipeline stages with proper dependency injection."""
-        
+
         # Input validation
         self.add_stage(
             stage_name="input_validation_stage",
             stage=InputValidationStage(),
         )
-        
+
         # Text encoding with dual CLIP
         self.add_stage(
             stage_name="prompt_encoding_stage",
@@ -63,13 +63,13 @@ class SDXLPipeline(ComposedPipelineBase):
                 tokenizers=[self.get_module("tokenizer")],
             ),
         )
-        
+
         # Conditioning stage (handles ADM conditioning)
         self.add_stage(
             stage_name="conditioning_stage",
             stage=ConditioningStage(),
         )
-        
+
         # Timestep preparation
         self.add_stage(
             stage_name="timestep_preparation_stage",
@@ -77,7 +77,7 @@ class SDXLPipeline(ComposedPipelineBase):
                 scheduler=self.get_module("scheduler"),
             ),
         )
-        
+
         # Latent preparation (for UNet, we don't need transformer)
         self.add_stage(
             stage_name="latent_preparation_stage",
@@ -86,7 +86,7 @@ class SDXLPipeline(ComposedPipelineBase):
                 transformer=None,  # UNet doesn't use transformer
             ),
         )
-        
+
         # Denoising stage with UNet
         # Note: DenoisingStage expects 'transformer' parameter, but we'll pass UNet
         # The stage should handle both transformer and UNet models
@@ -97,7 +97,7 @@ class SDXLPipeline(ComposedPipelineBase):
                 scheduler=self.get_module("scheduler"),
             ),
         )
-        
+
         # VAE decoding
         self.add_stage(
             stage_name="decoding_stage",
@@ -106,4 +106,3 @@ class SDXLPipeline(ComposedPipelineBase):
 
 
 EntryClass = SDXLPipeline
-
