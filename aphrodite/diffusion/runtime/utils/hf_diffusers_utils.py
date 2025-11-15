@@ -224,19 +224,35 @@ def verify_model_config_and_directory(model_path: str) -> dict[str, Any]:
             "Only HuggingFace diffusers format is supported."
         )
 
-    # Check for transformer and vae directories
-    transformer_dir = os.path.join(model_path, "transformer")
-    vae_dir = os.path.join(model_path, "vae")
-
-    if not os.path.exists(transformer_dir):
-        raise ValueError(f"Model directory {model_path} does not contain a transformer/ directory.")
-
-    if not os.path.exists(vae_dir):
-        raise ValueError(f"Model directory {model_path} does not contain a vae/ directory.")
-
-    # Load the config
+    # Load the config first to determine which modules are expected
     with open(config_path) as f:
         config = json.load(f)
+
+    # Check for required directories based on config
+    # SDXL uses "unet" instead of "transformer"
+    model_index = {k: v for k, v in config.items() if not k.startswith("_")}
+    
+    # Check for transformer or unet directory
+    transformer_dir = os.path.join(model_path, "transformer")
+    unet_dir = os.path.join(model_path, "unet")
+    
+    if "transformer" in model_index:
+        if not os.path.exists(transformer_dir):
+            raise ValueError(f"Model directory {model_path} does not contain a transformer/ directory.")
+    elif "unet" in model_index:
+        if not os.path.exists(unet_dir):
+            raise ValueError(f"Model directory {model_path} does not contain a unet/ directory.")
+    else:
+        # Fallback: check for either
+        if not os.path.exists(transformer_dir) and not os.path.exists(unet_dir):
+            raise ValueError(
+                f"Model directory {model_path} does not contain a transformer/ or unet/ directory."
+            )
+
+    # Check for vae directory
+    vae_dir = os.path.join(model_path, "vae")
+    if "vae" in model_index and not os.path.exists(vae_dir):
+        raise ValueError(f"Model directory {model_path} does not contain a vae/ directory.")
 
     # Verify diffusers version exists
     if "_diffusers_version" not in config:

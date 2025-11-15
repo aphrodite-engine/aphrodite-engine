@@ -11,6 +11,14 @@ from aphrodite.diffusion.configs.models.encoders.clip import (
     CLIPVisionConfig,
 )
 from aphrodite.diffusion.configs.models.encoders.llama import LlamaConfig
+from aphrodite.diffusion.configs.models.encoders.sdxl_clip import (
+    SDXLClipArchConfig,
+    SDXLClipConfig,
+    SDXLClipGArchConfig,
+    SDXLClipGConfig,
+    SDXLClipLArchConfig,
+    SDXLClipLConfig,
+)
 from aphrodite.diffusion.configs.models.encoders.t5 import T5Config
 
 __all__ = [
@@ -22,4 +30,10 @@ __all__ = [
     "CLIPVisionConfig",
     "LlamaConfig",
     "T5Config",
+    "SDXLClipLArchConfig",
+    "SDXLClipLConfig",
+    "SDXLClipGArchConfig",
+    "SDXLClipGConfig",
+    "SDXLClipArchConfig",
+    "SDXLClipConfig",
 ]

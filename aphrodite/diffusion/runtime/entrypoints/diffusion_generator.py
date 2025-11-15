@@ -175,7 +175,10 @@ class DiffGenerator:
         for x in sample:
             x = torchvision.utils.make_grid(x, nrow=6)
             x = x.transpose(0, 1).transpose(1, 2).squeeze(-1)
-            frames.append((x * 255).numpy().astype(np.uint8))
+            # Clamp to [0, 1] and handle NaN/Inf before casting to uint8
+            x_clamped = torch.clamp(x, 0.0, 1.0)
+            x_clamped = torch.nan_to_num(x_clamped, nan=0.0, posinf=1.0, neginf=0.0)
+            frames.append((x_clamped * 255).numpy().astype(np.uint8))
 
         # Save outputs if requested
         if save_output:

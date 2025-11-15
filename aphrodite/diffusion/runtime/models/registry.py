@@ -35,10 +35,16 @@ _IMAGE_ENCODER_MODELS: dict[str, tuple] = {
     "CLIPVisionModelWithProjection": ("encoders", "clip", "CLIPVisionModel"),
 }
 
+# Mapping from diffusers model class names to Aphrodite model classes
+_DIFFUSERS_MODEL_MAPPING: dict[str, tuple] = {
+    "UNet2DConditionModel": ("unet", "unet_model", "SDXLUNetModel"),
+    "CLIPTextModel": ("encoders", "sdxl_clip", "SDXLClipModel"),  # SDXL uses dual CLIP
+}
+
 
 @cache
 def _discover_and_register_models() -> dict[str, tuple[str, str, str]]:
-    discovered_models = _IMAGE_ENCODER_MODELS
+    discovered_models = {**_IMAGE_ENCODER_MODELS, **_DIFFUSERS_MODEL_MAPPING}
     for component in COMPONENT_DIRS:
         component_path = os.path.join(MODELS_PATH, component)
         for filename in os.listdir(component_path):
@@ -303,8 +309,8 @@ class _ModelRegistry:
         normalized_arch = []
         for model in architectures:
             if model not in self.models:
-                raise Exception(f"Unsupported model architecture: {model}. Registered architectures: {architectures}")
-                model = "TransformersModel"
+                registered = list(self.models.keys())
+                raise Exception(f"Unsupported model architecture: {model}. Registered architectures: {registered}")
             normalized_arch.append(model)
         return normalized_arch
 

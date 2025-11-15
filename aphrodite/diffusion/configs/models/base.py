@@ -25,6 +25,11 @@ class ArchConfig:
         extras = d.get("extra_attrs")
         if extras is not None and name in extras:
             return extras[name]
+        # Try to get from dataclass fields with defaults
+        if hasattr(self, "__dataclass_fields__"):
+            field = self.__dataclass_fields__.get(name)
+            if field is not None and hasattr(field, "default") and field.default is not None:
+                return field.default
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, key, value):

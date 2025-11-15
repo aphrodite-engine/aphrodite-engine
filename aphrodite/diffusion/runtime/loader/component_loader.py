@@ -83,6 +83,7 @@ class ComponentLoader(ABC):
             "scheduler": (SchedulerLoader, "diffusers"),
             "transformer": (TransformerLoader, "diffusers"),
             "transformer_2": (TransformerLoader, "diffusers"),
+            "unet": (UNetLoader, "diffusers"),
             "vae": (VAELoader, "diffusers"),
             "text_encoder": (TextEncoderLoader, "transformers"),
             "text_encoder_2": (TextEncoderLoader, "transformers"),
@@ -328,7 +329,34 @@ class TextEncoderLoader(ComponentLoader):
                 model = model_cls(model_config)
 
             weights_to_load = {name for name, _ in model.named_parameters()}
-            weights_iter, total_bytes = self._get_all_weights_with_size(model, model_path, to_cpu=use_cpu_offload)
+            
+            # For SDXL, we need to load weights from both text_encoder/ and text_encoder_2/
+            # Check if this is SDXLClipModel by checking the model class name
+            is_sdxl = model_cls.__name__ == "SDXLClipModel"
+            
+            if is_sdxl and os.path.basename(model_path) == "text_encoder":
+                # Load weights from both text_encoder/ (CLIP-L) and text_encoder_2/ (CLIP-G)
+                base_path = os.path.dirname(model_path)
+                text_encoder_2_path = os.path.join(base_path, "text_encoder_2")
+                
+                # Get weights from text_encoder/ (CLIP-L) - no prefix needed, will be mapped to clip_l.*
+                weights_iter_1, total_bytes_1 = self._get_all_weights_with_size(model, model_path, to_cpu=use_cpu_offload)
+                
+                # Get weights from text_encoder_2/ (CLIP-G) - add prefix to distinguish from CLIP-L
+                weights_iter_2 = iter([])
+                total_bytes_2 = 0
+                if os.path.exists(text_encoder_2_path):
+                    weights_iter_2_raw, total_bytes_2 = self._get_all_weights_with_size(model, text_encoder_2_path, to_cpu=use_cpu_offload)
+                    # Add "text_encoder_2." prefix to all weights from text_encoder_2/
+                    weights_iter_2 = (("text_encoder_2." + name, tensor) for name, tensor in weights_iter_2_raw)
+                
+                # Combine both iterators
+                from itertools import chain
+                weights_iter = chain(weights_iter_1, weights_iter_2)
+                total_bytes = total_bytes_1 + total_bytes_2
+            else:
+                weights_iter, total_bytes = self._get_all_weights_with_size(model, model_path, to_cpu=use_cpu_offload)
+            
             from aphrodite.utils import tensor_progress_bar
 
             loaded_weights = model.load_weights(tensor_progress_bar(weights_iter, total_bytes, "Loading model weights"))
@@ -479,9 +507,16 @@ class VAELoader(ComponentLoader):
 
         # Find all safetensors files
         safetensors_list = glob.glob(os.path.join(str(model_path), "*.safetensors"))
-        # TODO(PY)
-        assert len(safetensors_list) == 1, f"Found {len(safetensors_list)} safetensors files in {model_path}"
-        loaded = safetensors_load_file(safetensors_list[0])
+        # Filter duplicates (check for index file)
+        index_file = "model.safetensors.index.json"
+        safetensors_list = filter_duplicate_safetensors_files(
+            safetensors_list, str(model_path), index_file
+        )
+        # Load all safetensors files and merge
+        loaded = {}
+        for safetensors_file in safetensors_list:
+            file_loaded = safetensors_load_file(safetensors_file)
+            loaded.update(file_loaded)
         vae.load_state_dict(loaded, strict=False)  # We might only load encoder or decoder
 
         return vae.eval()
@@ -570,6 +605,89 @@ class TransformerLoader(ComponentLoader):
         return model
 
 
+class UNetLoader(ComponentLoader):
+    """Loader for UNet models (e.g., SDXL UNet)."""
+
+    def load(self, model_path: str, server_args: ServerArgs, *args):
+        """Load the UNet based on the model path, and inference args."""
+        config = get_diffusers_config(model=model_path)
+        hf_config = deepcopy(config)
+        cls_name = config.pop("_class_name")
+        if cls_name is None:
+            raise ValueError(
+                "Model config does not contain a _class_name attribute. Only diffusers format is supported."
+            )
+
+        logger.debug("unet cls_name: %s", cls_name)
+        if server_args.override_transformer_cls_name is not None:
+            cls_name = server_args.override_transformer_cls_name
+            logger.info("Overriding unet cls_name to %s", cls_name)
+
+        server_args.model_paths["unet"] = model_path
+
+        # Config from Diffusers supersedes aphrodite's model config
+        # For SDXL, we use unet_config instead of dit_config
+        unet_config = server_args.pipeline_config.unet_config
+        unet_config.update_model_arch(config)
+
+        model_cls, _ = ModelRegistry.resolve_model_cls(cls_name)
+
+        # Find all safetensors files
+        safetensors_list = glob.glob(os.path.join(str(model_path), "*.safetensors"))
+        if not safetensors_list:
+            raise ValueError(f"No safetensors files found in {model_path}")
+
+        # Filter duplicates (check for index file)
+        index_file = "model.safetensors.index.json"
+        safetensors_list = filter_duplicate_safetensors_files(
+            safetensors_list, str(model_path), index_file
+        )
+
+        logger.debug(
+            "Loading UNet from %s safetensors files: %s",
+            len(safetensors_list),
+            safetensors_list,
+        )
+
+        default_dtype = PRECISION_TO_TYPE[server_args.pipeline_config.unet_precision]
+
+        # Create model instance
+        logger.info("Loading UNet %s, default_dtype: %s", cls_name, default_dtype)
+        with set_default_torch_dtype(default_dtype):
+            with get_local_torch_device():
+                # Filter out non-UNet fields from arch_config
+                import inspect
+                model_sig = inspect.signature(model_cls.__init__)
+                valid_params = set(model_sig.parameters.keys()) - {"self"}
+                arch_dict = {
+                    k: v
+                    for k, v in unet_config.arch_config.__dict__.items()
+                    if k in valid_params
+                }
+                model = model_cls(**arch_dict)
+
+        # Load weights
+        weights_iter = safetensors_weights_iterator(safetensors_list, to_cpu=False)
+        from aphrodite.utils import tensor_progress_bar
+
+        total_bytes = sum(
+            os.path.getsize(f) for f in safetensors_list if os.path.exists(f)
+        )
+        loaded_params = model.load_weights(
+            tensor_progress_bar(weights_iter, total_bytes, "Loading UNet weights")
+        )
+
+        logger.info(
+            "Loaded UNet with %d parameters",
+            sum(p.numel() for p in model.parameters()),
+        )
+
+        model = model.to(get_local_torch_device()).eval()
+        assert next(model.parameters()).dtype == default_dtype
+
+        return model
+
+
 class SchedulerLoader(ComponentLoader):
     """Loader for scheduler."""
 
@@ -582,9 +700,26 @@ class SchedulerLoader(ComponentLoader):
             "Model config does not contain a _class_name attribute. Only diffusers format is supported."
         )
 
-        scheduler_cls, _ = ModelRegistry.resolve_model_cls(class_name)
+        # Schedulers are loaded directly from diffusers, not from model registry
+        try:
+            # Try direct import from diffusers.schedulers
+            import importlib
+            schedulers_module = importlib.import_module("diffusers.schedulers")
+            scheduler_cls = getattr(schedulers_module, class_name, None)
+            
+            if scheduler_cls is None:
+                raise ValueError(f"Could not find scheduler class {class_name} in diffusers.schedulers")
+        except Exception as e:
+            logger.error(f"Failed to load scheduler {class_name} from diffusers: {e}")
+            raise
 
-        scheduler = scheduler_cls(**config)
+        # Filter out deprecated parameters that may not be in the scheduler's __init__
+        import inspect
+        scheduler_sig = inspect.signature(scheduler_cls.__init__)
+        valid_params = set(scheduler_sig.parameters.keys()) - {"self", "kwargs"}
+        filtered_config = {k: v for k, v in config.items() if k in valid_params}
+        
+        scheduler = scheduler_cls(**filtered_config)
         if server_args.pipeline_config.flow_shift is not None:
             scheduler.set_shift(server_args.pipeline_config.flow_shift)
         if server_args.pipeline_config.timesteps_scale is not None:

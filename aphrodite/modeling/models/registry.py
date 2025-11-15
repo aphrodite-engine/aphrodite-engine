@@ -1,6 +1,6 @@
 """
 Whenever you add an architecture to this page, please also update
-`tests/models/registry.py` with example HuggingFace models for it.
+tests/models/registry.py` with example HuggingFace models for it.
 """
 
 import hashlib

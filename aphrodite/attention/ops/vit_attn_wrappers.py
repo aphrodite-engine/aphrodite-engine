@@ -1,7 +1,7 @@
 """
 This file contains ops for ViT attention to be compatible with torch.compile
 as there are operations here not supported by torch.compile (for instance,
-`to_list` in xformers attn, or `.item()` in flash attention)
+to_list` in xformers attn, or `.item()` in flash attention)
 
 Using these ops and wrapping vision blocks with `torch.compile` can speed up
 throughput in vision models by ~5% relative on H100, and improve token

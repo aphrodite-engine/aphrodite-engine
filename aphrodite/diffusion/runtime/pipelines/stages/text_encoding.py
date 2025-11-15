@@ -244,6 +244,12 @@ class TextEncodingStage(PipelineStage):
                 attention_mask = torch.ones(input_ids.shape[:2], device=target_device)
             else:
                 attention_mask = text_inputs["attention_mask"]
+            
+            # Ensure text encoder is on the correct device
+            text_encoder_device = next(text_encoder.parameters()).device
+            if text_encoder_device != target_device:
+                text_encoder = text_encoder.to(target_device)
+            
             with set_forward_context(current_timestep=0, attn_metadata=None):
                 outputs: BaseEncoderOutput = text_encoder(
                     input_ids=input_ids,

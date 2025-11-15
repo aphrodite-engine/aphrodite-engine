@@ -16,6 +16,7 @@ from aphrodite.diffusion.configs.pipelines.qwen_image import (
     QwenImageEditPipelineConfig,
     QwenImagePipelineConfig,
 )
+from aphrodite.diffusion.configs.pipelines.sdxl import SDXLPipelineConfig
 from aphrodite.diffusion.configs.pipelines.stepvideo import StepVideoT2VConfig
 
 # isort: off
@@ -63,6 +64,8 @@ PIPE_NAME_TO_CONFIG: dict[str, type[PipelineConfig]] = {
     "black-forest-labs/FLUX.1-dev": FluxPipelineConfig,
     "Qwen/Qwen-Image": QwenImagePipelineConfig,
     "Qwen/Qwen-Image-Edit": QwenImageEditPipelineConfig,
+    "stabilityai/stable-diffusion-xl-base-1.0": SDXLPipelineConfig,
+    "stabilityai/stable-diffusion-xl-refiner-1.0": SDXLPipelineConfig,
 }
 
 # For determining pipeline type from model ID
@@ -75,6 +78,7 @@ PIPELINE_DETECTOR: dict[str, Callable[[str], bool]] = {
     "stepvideo": lambda id: "stepvideo" in id.lower(),
     "qwenimage": lambda id: "qwen-image" in id.lower() and "edit" not in id.lower(),
     "qwenimageedit": lambda id: "qwen-image-edit" in id.lower(),
+    "sdxl": lambda id: "stable-diffusion-xl" in id.lower() or "sdxl" in id.lower(),
     # Add other pipeline architecture detectors
 }
 
@@ -88,6 +92,7 @@ PIPELINE_FALLBACK_CONFIG: dict[str, type[PipelineConfig]] = {
     "stepvideo": StepVideoT2VConfig,
     "qwenimage": QwenImagePipelineConfig,
     "qwenimageedit": QwenImageEditPipelineConfig,
+    "sdxl": SDXLPipelineConfig,
     # Other fallbacks by architecture
 }
 

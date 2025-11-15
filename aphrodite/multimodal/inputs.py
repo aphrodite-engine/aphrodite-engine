@@ -85,7 +85,7 @@ Either a single data item, or a list of data items. Can only be None if UUID
 is provided.
 
 The number of data items allowed per modality is restricted by
-`--limit-mm-per-prompt`.
+--limit-mm-per-prompt`.
 """
 
 

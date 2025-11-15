@@ -393,7 +393,7 @@ def resolve_mistral_chat_template(
 _PROCESSOR_CHAT_TEMPLATES = dict[tuple[str, bool], str | None]()
 """
 Used in `_try_get_processor_chat_template` to avoid calling
-`cached_get_processor` again if the processor fails to be loaded.
+cached_get_processor` again if the processor fails to be loaded.
 
 This is needed because `lru_cache` does not cache when an exception happens.
 """

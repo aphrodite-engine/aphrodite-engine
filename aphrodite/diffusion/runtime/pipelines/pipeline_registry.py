@@ -171,13 +171,20 @@ def import_pipeline_classes(
                                     pipeline_names = [pipeline_module.EntryClass.__name__]
 
                                 for entry_cls, pipeline_name in zip(entry_cls_list, pipeline_names):
-                                    assert pipeline_name not in pipeline_dict, (
-                                        f"Duplicated pipeline implementation for {pipeline_name} "
-                                        f"in {pipeline_type_str}.{arch_package_name}"
-                                    )
-
                                     assert hasattr(entry_cls, "pipeline_name"), f"{entry_cls}"
-                                    pipeline_dict[pipeline_name] = entry_cls
+                                    registry_key = entry_cls.pipeline_name
+                                    
+                                    # Check for duplicates by registry key (pipeline_name attribute)
+                                    if registry_key in pipeline_dict:
+                                        existing_cls = pipeline_dict[registry_key]
+                                        if existing_cls is not entry_cls:
+                                            logger.warning(
+                                                f"Pipeline {registry_key} already registered as {existing_cls.__name__}, "
+                                                f"overwriting with {entry_cls.__name__}"
+                                            )
+                                    
+                                    # Register by pipeline_name attribute (matches diffusers _class_name)
+                                    pipeline_dict[registry_key] = entry_cls
 
             type_to_pipeline_dict[pipeline_type_str] = pipeline_dict
 

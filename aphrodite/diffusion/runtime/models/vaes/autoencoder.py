@@ -78,9 +78,9 @@ class AutoencoderKL(nn.Module):
         latent_channels = arch_config.latent_channels
         norm_num_groups = arch_config.norm_num_groups
         sample_size = arch_config.sample_size
-        use_quant_conv = arch_config.use_quant_conv
-        use_post_quant_conv = arch_config.use_post_quant_conv
-        mid_block_add_attention = arch_config.mid_block_add_attention
+        use_quant_conv = getattr(arch_config, "use_quant_conv", True)
+        use_post_quant_conv = getattr(arch_config, "use_post_quant_conv", True)
+        mid_block_add_attention = getattr(arch_config, "mid_block_add_attention", True)
 
         # pass init params to Encoder
         self.encoder = Encoder(
@@ -465,7 +465,7 @@ class AutoencoderKL(nn.Module):
                     i : i + self.tile_latent_min_size,
                     j : j + self.tile_latent_min_size,
                 ]
-                if self.config.use_post_quant_conv:
+                if getattr(self.config, "use_post_quant_conv", True):
                     tile = self.post_quant_conv(tile)
                 decoded = self.decoder(tile)
                 row.append(decoded)

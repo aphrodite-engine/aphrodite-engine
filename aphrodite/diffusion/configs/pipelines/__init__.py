@@ -12,6 +12,10 @@ from aphrodite.diffusion.configs.pipelines.hunyuan import (
 from aphrodite.diffusion.configs.pipelines.registry import (
     get_pipeline_config_cls_from_name,
 )
+from aphrodite.diffusion.configs.pipelines.sdxl import (
+    SDXLPipelineConfig,
+    SDXLVAEConfig,
+)
 from aphrodite.diffusion.configs.pipelines.stepvideo import StepVideoT2VConfig
 from aphrodite.diffusion.configs.pipelines.wan import (
     SelfForcingWanT2V480PConfig,
@@ -26,6 +30,8 @@ __all__ = [
     "FastHunyuanConfig",
     "FluxPipelineConfig",
     "PipelineConfig",
+    "SDXLPipelineConfig",
+    "SDXLVAEConfig",
     "SlidingTileAttnConfig",
     "WanT2V480PConfig",
     "WanI2V480PConfig",

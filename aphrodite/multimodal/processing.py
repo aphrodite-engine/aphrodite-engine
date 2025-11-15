@@ -1170,9 +1170,9 @@ A collection of prompt updates with a similar structure as
 MultiModalPromptUpdatesApplyResult = Mapping[str, list[int | None]]
 """
 For an item `MultiModalPromptUpdates[k][i]`,
-`MultiModalPromptUpdatesApplyResult[k][i]` represents the index of the
-`ResolvedPromptUpdate` instance that has been applied, or `None` if none of the
-`ResolvedPromptUpdate` instances have been applied.
+MultiModalPromptUpdatesApplyResult[k][i]` represents the index of the
+ResolvedPromptUpdate` instance that has been applied, or `None` if none of the
+ResolvedPromptUpdate` instances have been applied.
 """
 
 
