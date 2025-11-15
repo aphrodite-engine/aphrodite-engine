@@ -150,7 +150,7 @@ void sum_axis_int8(const int8_t* input, int8_t* output, size_t outer_size,
 }
 
 double mean_all_int8(const int8_t* data, size_t num_elements) {
-  int64_t sum = cactus_sum_all_int8(data, num_elements);
+  int64_t sum = sum_all_int8(data, num_elements);
   return static_cast<double>(sum) / static_cast<double>(num_elements);
 }
 
