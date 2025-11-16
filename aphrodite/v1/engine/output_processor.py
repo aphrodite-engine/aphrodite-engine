@@ -553,6 +553,7 @@ class OutputProcessor:
             ),
             max_tokens_param=req_state.max_tokens_param,
             req_stats=req_state.stats,
+            num_cached_tokens=req_state.num_cached_tokens,
         )
         self.lora_states.finish_request(req_state)
 

@@ -153,6 +153,15 @@ class LoggingStatLogger(StatLoggerBase):
                 else 0
             )
 
+            cache_hit_info = ""
+            if finished_request.num_cached_tokens > 0:
+                cache_hit_rate = (
+                    finished_request.num_cached_tokens / finished_request.num_prompt_tokens * 100
+                    if finished_request.num_prompt_tokens > 0
+                    else 0
+                )
+                cache_hit_info = f", Cache hits: {finished_request.num_cached_tokens} tokens ({cache_hit_rate:.1f}%)"
+
             log_msg = (
                 f"Request completed - "
                 f"E2E time: {finished_request.e2e_latency:.2f}s, "
@@ -161,6 +170,7 @@ class LoggingStatLogger(StatLoggerBase):
                 f"({prefill_throughput:.1f} tokens/s), "
                 f"Decode: {finished_request.num_generation_tokens} tokens "
                 f"({decode_throughput:.1f} tokens/s)"
+                f"{cache_hit_info}"
             )
             self.log_queue.put(log_msg)
 
