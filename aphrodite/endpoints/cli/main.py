@@ -39,7 +39,13 @@ def main():
         except ImportError:
             pip_cmd = "uv pip" if which("uv") else "pip"
             install_cmd = f"{pip_cmd} install aphrodite-engine[diffusion]"
-            error_msg = f"Failed to import diffusion module. Please install it using:\n  {install_cmd}"
+            install_cmd_source = f"{pip_cmd} install -e .[diffusion]"
+            error_msg = (
+                f"Failed to import diffusion module. Please install it using:\n"
+                f"  {install_cmd}\n"
+                f"Or if you built from source:\n"
+                f"  {install_cmd_source}"
+            )
 
             original_excepthook = sys.excepthook
 
