@@ -205,6 +205,7 @@ class FinishedRequestStats:
     inference_time: float = 0.0
     decode_time: float = 0.0
     mean_time_per_output_token: float = 0.0
+    num_cached_tokens: int = 0
 
 
 class IterationStats:
@@ -295,6 +296,7 @@ class IterationStats:
         num_prompt_tokens: int,
         max_tokens_param: int | None,
         req_stats: RequestStateStats,
+        num_cached_tokens: int = 0,
     ):
         e2e_latency = self._time_since(req_stats.arrival_time)
 
@@ -329,6 +331,7 @@ class IterationStats:
             inference_time=inference_time,
             decode_time=decode_time,
             mean_time_per_output_token=mean_time_per_output_token,
+            num_cached_tokens=num_cached_tokens,
         )
         self.finished_requests.append(finished_req)
 
