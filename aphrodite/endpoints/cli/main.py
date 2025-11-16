@@ -5,6 +5,7 @@ to avoid certain eager import breakage."""
 
 import importlib.metadata
 import sys
+from shutil import which
 
 from aphrodite.logger import init_logger
 
@@ -14,7 +15,6 @@ logger = init_logger(__name__)
 def main():
     import aphrodite.endpoints.cli.benchmark.main
     import aphrodite.endpoints.cli.collect_env
-    import aphrodite.endpoints.cli.diffusion
     import aphrodite.endpoints.cli.openai
     import aphrodite.endpoints.cli.run
     import aphrodite.endpoints.cli.run_batch
@@ -29,8 +29,29 @@ def main():
         aphrodite.endpoints.cli.collect_env,
         aphrodite.endpoints.cli.run_batch,
         aphrodite.endpoints.cli.tokenizer,
-        aphrodite.endpoints.cli.diffusion,
     ]
+
+    if len(sys.argv) > 1 and sys.argv[1] == "diffusion":
+        try:
+            import aphrodite.endpoints.cli.diffusion
+
+            CMD_MODULES.append(aphrodite.endpoints.cli.diffusion)
+        except ImportError:
+            pip_cmd = "uv pip" if which("uv") else "pip"
+            install_cmd = f"{pip_cmd} install aphrodite-engine[diffusion]"
+            error_msg = f"Failed to import diffusion module. Please install it using:\n  {install_cmd}"
+
+            original_excepthook = sys.excepthook
+
+            def clean_excepthook(exc_type, exc_value, exc_traceback):
+                if exc_type is ImportError and exc_value and "Failed to import diffusion module" in str(exc_value):
+                    print(str(exc_value), file=sys.stderr)
+                    sys.exit(1)
+                else:
+                    original_excepthook(exc_type, exc_value, exc_traceback)
+
+            sys.excepthook = clean_excepthook
+            raise ImportError(error_msg) from None
 
     cli_env_setup()
 
