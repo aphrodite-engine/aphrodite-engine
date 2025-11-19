@@ -484,11 +484,6 @@ class Platform:
         if device is not None and hasattr(device, key):
             return getattr(device, key)
         else:
-            logger.warning(
-                "Current platform %s does not have '%s' attribute.",
-                self.device_type,
-                key,
-            )
             return None
 
     def get_global_graph_pool(self) -> Any:
