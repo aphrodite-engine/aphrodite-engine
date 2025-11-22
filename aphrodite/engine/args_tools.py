@@ -463,6 +463,7 @@ class EngineArgs:
     override_generation_config: dict[str, Any] = get_field(ModelConfig, "override_generation_config")
     model_impl: str = ModelConfig.model_impl
     override_attention_dtype: str = ModelConfig.override_attention_dtype
+    attention_backend: str | None = ModelConfig.attention_backend
 
     calculate_kv_scales: bool = CacheConfig.calculate_kv_scales
     mamba_cache_dtype: MambaDType = CacheConfig.mamba_cache_dtype
@@ -578,6 +579,12 @@ class EngineArgs:
         model_group.add_argument("--enable-sleep-mode", **model_kwargs["enable_sleep_mode"])
         model_group.add_argument("--model-impl", **model_kwargs["model_impl"])
         model_group.add_argument("--override-attention-dtype", **model_kwargs["override_attention_dtype"])
+        model_group.add_argument(
+            "--attention-backend",
+            type=lambda s: s.upper() if s is not None else None,
+            default=model_kwargs["attention_backend"]["default"],
+            help=model_kwargs["attention_backend"]["help"],
+        )
         model_group.add_argument("--logits-processors", **model_kwargs["logits_processors"])
         model_group.add_argument("--io-processor-plugin", **model_kwargs["io_processor_plugin"])
 
@@ -1018,6 +1025,7 @@ class EngineArgs:
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
             override_attention_dtype=self.override_attention_dtype,
+            attention_backend=self.attention_backend,
             logits_processors=self.logits_processors,
             video_pruning_rate=self.video_pruning_rate,
             io_processor_plugin=self.io_processor_plugin,
@@ -1520,8 +1528,8 @@ class EngineArgs:
             "ROCM_ATTN",
             "ROCM_AITER_UNIFIED_ATTN",
         ]
-        if envs.is_set("APHRODITE_ATTENTION_BACKEND") and envs.APHRODITE_ATTENTION_BACKEND not in V1_BACKENDS:
-            name = f"APHRODITE_ATTENTION_BACKEND={envs.APHRODITE_ATTENTION_BACKEND}"
+        if self.attention_backend and self.attention_backend not in V1_BACKENDS:
+            name = f"attention_backend={self.attention_backend}"
             _raise_or_fallback(feature_name=name, recommend_to_remove=True)
             return False
 

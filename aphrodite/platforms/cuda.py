@@ -33,7 +33,6 @@ except ImportError:
 import torch
 from typing_extensions import ParamSpec
 
-import aphrodite.envs as envs
 from aphrodite.logger import init_logger
 from aphrodite.utils.import_utils import import_pynvml
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
@@ -150,7 +149,7 @@ class CudaPlatformBase(Platform):
             use_cutlass_mla = False
             use_flashinfer_mla = False
 
-            if envs.APHRODITE_ATTENTION_BACKEND is None:
+            if model_config.attention_backend is None:
                 # Default case
                 if cls.is_device_capability(100):
                     # Blackwell => Force CutlassMLA.
@@ -158,15 +157,15 @@ class CudaPlatformBase(Platform):
                     # TODO: This does not work, because the
                     # global_force_attn_backend_context_manager is not set.
                     # See aphrodite/attention/selector.py:_cached_get_attn_backend
-                    envs.APHRODITE_ATTENTION_BACKEND = "CUTLASS_MLA"
+                    model_config.attention_backend = "CUTLASS_MLA"
                 else:
                     # Not Blackwell
                     use_flashmla = True
             else:
                 # Forced case
-                use_flashmla = envs.APHRODITE_ATTENTION_BACKEND == "FLASHMLA"
-                use_cutlass_mla = envs.APHRODITE_ATTENTION_BACKEND == "CUTLASS_MLA"
-                use_flashinfer_mla = envs.APHRODITE_ATTENTION_BACKEND == "FLASHINFER_MLA"
+                use_flashmla = model_config.attention_backend == "FLASHMLA"
+                use_cutlass_mla = model_config.attention_backend == "CUTLASS_MLA"
+                use_flashinfer_mla = model_config.attention_backend == "FLASHINFER_MLA"
 
             from aphrodite.attention.ops.flashmla import is_flashmla_dense_supported
 

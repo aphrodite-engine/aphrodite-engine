@@ -336,7 +336,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
         #   * CUTLASS_MLA backend: kernel_block_size 128 alignment
         #   * Other MLA backends: kernel_block_size 64 alignment
         if model_config.use_mla:
-            use_cutlass_mla = envs.APHRODITE_ATTENTION_BACKEND == "CUTLASS_MLA"
+            use_cutlass_mla = model_config.attention_backend == "CUTLASS_MLA"
             kernel_block_alignment_size = 128 if use_cutlass_mla else 64
             attn_page_size_1_token = MLAAttentionSpec(
                 block_size=1,
