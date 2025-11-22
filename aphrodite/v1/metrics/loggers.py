@@ -15,7 +15,7 @@ from aphrodite.logger import init_logger
 from aphrodite.plugins import load_plugins_by_group
 from aphrodite.v1.engine import FinishReason
 from aphrodite.v1.metrics.prometheus import unregister_aphrodite_metrics
-from aphrodite.v1.metrics.stats import CachingMetrics, IterationStats, MultiModalCacheStats, SchedulerStats
+from aphrodite.v1.metrics.stats import CachingMetrics, IterationStats, MultiModalCacheStats, PerfStats, SchedulerStats
 from aphrodite.v1.spec_decode.metrics import SpecDecodingLogging, SpecDecodingProm
 
 logger = init_logger(__name__)
@@ -97,6 +97,22 @@ class LoggingStatLogger(StatLoggerBase):
         self.engine_is_idle = False
         self.aggregated = False
 
+        self.has_perf_stats = False
+        self.last_avg_tflops_per_gpu = 0.0
+        self.last_avg_gbps_per_gpu = 0.0
+        self.last_mfu_pct = 0.0
+        self.tp_size = aphrodite_config.parallel_config.tensor_parallel_size
+        self.pp_size = aphrodite_config.parallel_config.pipeline_parallel_size
+        
+        # Get theoretical peak TFLOPS for MFU calculation
+        from aphrodite.platforms import current_platform
+        model_dtype = aphrodite_config.model_config.dtype
+        import torch
+        torch_dtype = torch.bfloat16  # default
+        if isinstance(model_dtype, torch.dtype):
+            torch_dtype = model_dtype
+        self.peak_tflops_per_gpu = current_platform.get_peak_tflops(device_id=0, dtype=torch_dtype)
+
         self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
         if self.request_level_metrics:
             self.log_queue: queue.Queue = queue.Queue()
@@ -109,6 +125,9 @@ class LoggingStatLogger(StatLoggerBase):
         # Tracked stats over current local logging interval.
         self.num_prompt_tokens: int = 0
         self.num_generation_tokens: int = 0
+        self.total_num_flops_per_gpu: int = 0
+        self.total_read_bytes_per_gpu: int = 0
+        self.total_write_bytes_per_gpu: int = 0
 
     def _log_worker(self):
         """Worker thread that processes log messages from the queue."""
@@ -128,6 +147,15 @@ class LoggingStatLogger(StatLoggerBase):
         self.num_prompt_tokens += iteration_stats.num_prompt_tokens
         self.num_generation_tokens += iteration_stats.num_generation_tokens
 
+    def _enable_perf_stats(self) -> bool:
+        return True
+
+    def _track_perf_stats(self, perf_stats: PerfStats) -> None:
+        self.has_perf_stats = True
+        self.total_num_flops_per_gpu += perf_stats.num_flops
+        self.total_read_bytes_per_gpu += perf_stats.num_read_bytes
+        self.total_write_bytes_per_gpu += perf_stats.num_write_bytes
+
     def _get_throughput(self, tracked_stats: int, now: float) -> float:
         # Compute summary metrics for tracked stats
         delta_time = now - self.last_log_time
@@ -139,6 +167,28 @@ class LoggingStatLogger(StatLoggerBase):
         """Log individual finished requests for request-level metrics."""
         if not iteration_stats.finished_requests:
             return
+
+        # Calculate current MFU stats for request-level metrics
+        now = time.monotonic()
+        delta_time = now - self.last_log_time
+        if delta_time > 0:
+            delta_time_per_gpu = delta_time / self.pp_size
+            current_tflops_per_gpu = (
+                self.total_num_flops_per_gpu / delta_time_per_gpu / 1e12
+            )
+            current_gbps_per_gpu = (
+                (self.total_read_bytes_per_gpu + self.total_write_bytes_per_gpu)
+                / delta_time_per_gpu
+                / 1e9
+            )
+            if self.peak_tflops_per_gpu > 0:
+                current_mfu_pct = 100.0 * current_tflops_per_gpu / self.peak_tflops_per_gpu
+            else:
+                current_mfu_pct = 0.0
+        else:
+            current_tflops_per_gpu = 0.0
+            current_gbps_per_gpu = 0.0
+            current_mfu_pct = 0.0
 
         for finished_request in iteration_stats.finished_requests:
             prefill_throughput = (
@@ -162,6 +212,20 @@ class LoggingStatLogger(StatLoggerBase):
                 )
                 cache_hit_info = f", Cache hits: {finished_request.num_cached_tokens} tokens ({cache_hit_rate:.1f}%)"
 
+            mfu_info = ""
+            if self.has_perf_stats and self._enable_perf_stats():
+                if self.peak_tflops_per_gpu > 0:
+                    mfu_info = (
+                        f", MFU: {current_mfu_pct:.1f}% "
+                        f"({current_tflops_per_gpu:.1f} TF/s/GPU, "
+                        f"{current_gbps_per_gpu:.1f} GB/s/GPU)"
+                    )
+                else:
+                    mfu_info = (
+                        f", MFU: {current_tflops_per_gpu:.1f} TF/s/GPU "
+                        f"{current_gbps_per_gpu:.1f} GB/s/GPU"
+                    )
+
             log_msg = (
                 f"Request completed - "
                 f"E2E time: {finished_request.e2e_latency:.2f}s, "
@@ -171,6 +235,7 @@ class LoggingStatLogger(StatLoggerBase):
                 f"Decode: {finished_request.num_generation_tokens} tokens "
                 f"({decode_throughput:.1f} tokens/s)"
                 f"{cache_hit_info}"
+                f"{mfu_info}"
             )
             self.log_queue.put(log_msg)
 
@@ -202,6 +267,8 @@ class LoggingStatLogger(StatLoggerBase):
                 self.spec_decoding_logging.observe(scheduler_stats.spec_decoding_stats)
             if kv_connector_stats := scheduler_stats.kv_connector_stats:
                 self.kv_connector_logging.observe(kv_connector_stats)
+            if scheduler_stats.perf_stats:
+                self._track_perf_stats(scheduler_stats.perf_stats)
             if not self.aggregated:
                 self.last_scheduler_stats = scheduler_stats
         if mm_cache_stats:
@@ -211,6 +278,24 @@ class LoggingStatLogger(StatLoggerBase):
         now = time.monotonic()
         prompt_throughput = self._get_throughput(self.num_prompt_tokens, now)
         generation_throughput = self._get_throughput(self.num_generation_tokens, now)
+
+        delta_time = now - self.last_log_time
+        delta_time_per_gpu = delta_time / self.pp_size
+
+        self.last_avg_tflops_per_gpu = (
+            self.total_num_flops_per_gpu / delta_time_per_gpu / 1e12
+        )
+        self.last_avg_gbps_per_gpu = (
+            (self.total_read_bytes_per_gpu + self.total_write_bytes_per_gpu)
+            / delta_time_per_gpu
+            / 1e9
+        )
+        
+        # Calculate MFU percentage
+        if self.peak_tflops_per_gpu > 0:
+            self.last_mfu_pct = 100.0 * self.last_avg_tflops_per_gpu / self.peak_tflops_per_gpu
+        else:
+            self.last_mfu_pct = 0.0
 
         self._reset(now)
         self.engine_is_idle = not any(
@@ -256,6 +341,26 @@ class LoggingStatLogger(StatLoggerBase):
         if not self.connector_prefix_caching_metrics.empty:
             log_parts.append("External prefix cache hit rate: %.1f%%")
             log_args.append(self.connector_prefix_caching_metrics.hit_rate * 100)
+
+        if self.has_perf_stats and self._enable_perf_stats():
+            if self.peak_tflops_per_gpu > 0:
+                log_parts.append("MFU: %.1f%% (%.1f TF/s/GPU, %.1f GB/s/GPU)")
+                log_args.extend(
+                    [
+                        self.last_mfu_pct,
+                        self.last_avg_tflops_per_gpu,
+                        self.last_avg_gbps_per_gpu,
+                    ]
+                )
+            else:
+                log_parts.append("MFU: %.1f TF/s/GPU %.1f GB/s/GPU")
+                log_args.extend(
+                    [
+                        self.last_avg_tflops_per_gpu,
+                        self.last_avg_gbps_per_gpu,
+                    ]
+                )
+
         if not self.mm_caching_metrics.empty:
             log_parts.append("MM cache hit rate: %.1f%%")
             log_args.append(self.mm_caching_metrics.hit_rate * 100)
@@ -301,6 +406,18 @@ class AggregatedLoggingStatLogger(LoggingStatLogger, AggregateStatLoggerBase):
     @property
     def log_prefix(self):
         return "{} Engines Aggregated: ".format(len(self.engine_indexes))
+
+    def _enable_perf_stats(self) -> bool:
+        # Enable only when DP==1 for multiple reasons
+        # - Currently, LoggingStatLogger will not get instantiated and only
+        #   AggregatedLoggingStatLogger will be used in case of DP==1 and
+        #   if entered from FB-entrypoint.
+        # - When DP>1, both AggregatedStatLogger and LoggingStatLogger will
+        #   be used. But AggregatedStatLogger's per-gpu MFU stats can be misleading
+        #   because all stats are "added" across engines, which is a wrong arithmetic
+        #   for per-GPU MFU stats. So we disable perf stats in this class in those
+        #   cases and only emit MFU stats from per-engine LoggingStatLogger.
+        return self.aphrodite_config.parallel_config.data_parallel_size == 1
 
     def record(
         self,

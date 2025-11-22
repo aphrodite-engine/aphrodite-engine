@@ -530,6 +530,78 @@ class NvmlCudaPlatform(CudaPlatformBase):
         return pynvml.nvmlDeviceGetUUID(handle)
 
     @classmethod
+    def get_peak_tflops(cls, device_id: int = 0, dtype: torch.dtype = torch.bfloat16) -> float:
+        """
+        Get theoretical peak TFLOPS for the GPU.
+        
+        Args:
+            device_id: The device ID
+            dtype: The data type (bfloat16, float16, float32, etc.)
+        
+        Returns:
+            Peak TFLOPS for the specified dtype, or 0.0 if unknown
+        """
+        device_name = cls.get_device_name(device_id).upper()
+        
+        # Peak TFLOPS lookup table for bfloat16/float16
+        # Source: NVIDIA spec sheets and nanochat
+        peak_tflops_bf16 = {
+            # Blackwell (B-series) - datacenter
+            "B200": 4500.0,  # B200 (estimated FP16 tensor core performance)
+            "GB200": 4500.0, # GB200 Superchip
+            
+            # Hopper (H-series)
+            "H100": 989.0,  # H100 SXM (80GB)
+            "H200": 989.0,  # H200
+            "H800": 989.0,  # H800
+            
+            # Ampere (A-series)
+            "A100": 312.0,  # A100 SXM/PCIe (40GB/80GB)
+            "A800": 312.0,  # A800
+            "A10": 125.0,   # A10
+            "A30": 165.0,   # A30
+            "A40": 150.0,   # A40
+            "A6000": 150.0, # RTX A6000
+            "A5000": 100.0, # RTX A5000
+            
+            # Blackwell (RTX 50-series) - consumer
+            "RTX 5090": 1676.0,  # RTX 5090 (3,352 AI TOPS / 2 for FP16)
+            "RTX 5080": 1000.0,  # RTX 5080 (estimated)
+            
+            # Ada Lovelace (RTX 40-series)
+            "RTX 4090": 330.0,  # RTX 4090
+            "RTX 4080": 243.0,  # RTX 4080
+            "RTX 4070": 184.0,  # RTX 4070 Ti
+            "RTX 4060": 110.0,  # RTX 4060 Ti
+            "L40": 362.0,       # L40
+            "L40S": 733.0,      # L40S
+            
+            # Turing (RTX 20-series, T4, etc.)
+            "RTX 2080": 114.0,  # RTX 2080 Ti
+            "T4": 65.0,         # Tesla T4
+            
+            # Volta
+            "V100": 125.0,  # V100 (FP16 with Tensor Cores)
+        }
+        
+        # For FP32, divide by approximately 2
+        # For FP64, divide by approximately 16-32 depending on GPU
+        dtype_multiplier = 1.0
+        if dtype == torch.float32:
+            dtype_multiplier = 0.5
+        elif dtype == torch.float64:
+            dtype_multiplier = 0.03125  # 1/32
+        
+        # Try to match GPU name with known models
+        for gpu_model, tflops in peak_tflops_bf16.items():
+            if gpu_model in device_name:
+                return tflops * dtype_multiplier
+        
+        # Unknown GPU - return 0.0 to disable MFU percentage calculation
+        logger.debug("Unknown GPU model '%s' for peak TFLOPS calculation", device_name)
+        return 0.0
+
+    @classmethod
     @with_nvml_context
     def get_device_total_memory(cls, device_id: int = 0) -> int:
         physical_device_id = cls.device_id_to_physical_device_id(device_id)
