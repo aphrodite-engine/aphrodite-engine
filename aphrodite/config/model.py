@@ -275,6 +275,9 @@ class ModelConfig:
     """
     override_attention_dtype: str | None = None
     """Override dtype for attention"""
+    attention_backend: str | None = None
+    """Attention backend to use. If not set, uses the value from
+    APHRODITE_ATTENTION_BACKEND environment variable."""
     logits_processors: list[str | type[LogitsProcessor]] | None = None
     """One or more logits processors' fully-qualified class names or class
     definitions"""
@@ -490,15 +493,28 @@ class ModelConfig:
 
         self.maybe_pull_model_tokenizer_for_runai(self.model, self.tokenizer)
 
-        if (
-            (backend := envs.APHRODITE_ATTENTION_BACKEND)
-            and backend == "FLASHINFER"
-            and find_spec("flashinfer") is None
-        ):
+        # Set attention_backend from env var if not specified, with deprecation warning
+        if self.attention_backend is None:
+            self.attention_backend = envs.APHRODITE_ATTENTION_BACKEND
+            if envs.is_set("APHRODITE_ATTENTION_BACKEND"):
+                logger.warning_once(
+                    "APHRODITE_ATTENTION_BACKEND environment variable is deprecated and "
+                    "will be removed in a future release. Please use the "
+                    "--attention-backend command-line argument instead."
+                )
+        else:
+            # If attention_backend was set via CLI arg, update the env var
+            # so that internal components that read from envs still work
+            import os
+
+            os.environ["APHRODITE_ATTENTION_BACKEND"] = self.attention_backend
+            envs.APHRODITE_ATTENTION_BACKEND = self.attention_backend
+
+        if self.attention_backend and self.attention_backend == "FLASHINFER" and find_spec("flashinfer") is None:
             raise ValueError(
-                "APHRODITE_ATTENTION_BACKEND is set to FLASHINFER, but flashinfer "
+                "attention_backend is set to FLASHINFER, but flashinfer "
                 "module was not found. See "
-                "https://github.com/aphrodite-project/aphrodite/blob/main/docker/Dockerfile "  # noqa: E501
+                "https://github.com/aphrodite-engine/aphrodite-engine/blob/main/docker/Dockerfile "  # noqa: E501
                 "for instructions on how to install it."
             )
 
