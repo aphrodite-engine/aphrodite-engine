@@ -223,6 +223,12 @@ if TYPE_CHECKING:
     APHRODITE_ENABLE_DYNAMIC_KV_CACHE: bool = False
     APHRODITE_COMPILE_CACHE_SAVE_FORMAT: Literal["binary", "unpacked"] = "binary"
     APHRODITE_DIFFUSION_STAGE_LOGGING: bool = False
+    APHRODITE_WEIGHT_PROOF_ENABLED: bool = False
+    APHRODITE_WEIGHT_PROOF_INTERVAL_S: int = 900
+    APHRODITE_WEIGHT_PROOF_RTOL: float = 1e-4
+    APHRODITE_WEIGHT_PROOF_ATOL: float = 1e-3
+    APHRODITE_WEIGHT_PROOF_TASK_TTL_S: int = 120
+    APHRODITE_WEIGHT_PROOF_ASSET_ROOT: str = ""
 
 
 def get_default_cache_root():
@@ -1308,6 +1314,18 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, Aphrodite will enable stage logging, which will print the time
     # taken for each stage
     "APHRODITE_DIFFUSION_STAGE_LOGGING": lambda: bool(int(os.getenv("APHRODITE_DIFFUSION_STAGE_LOGGING", "0"))),
+    # Enable the weight verification challenge API
+    "APHRODITE_WEIGHT_PROOF_ENABLED": lambda: bool(int(os.getenv("APHRODITE_WEIGHT_PROOF_ENABLED", "0"))),
+    # Minimum interval between background verification tasks
+    "APHRODITE_WEIGHT_PROOF_INTERVAL_S": lambda: int(os.getenv("APHRODITE_WEIGHT_PROOF_INTERVAL_S", "900")),
+    # Default relative tolerance for challenge comparisons
+    "APHRODITE_WEIGHT_PROOF_RTOL": lambda: float(os.getenv("APHRODITE_WEIGHT_PROOF_RTOL", "1e-4")),
+    # Default absolute tolerance for challenge comparisons
+    "APHRODITE_WEIGHT_PROOF_ATOL": lambda: float(os.getenv("APHRODITE_WEIGHT_PROOF_ATOL", "1e-3")),
+    # TTL for issued weight challenges
+    "APHRODITE_WEIGHT_PROOF_TASK_TTL_S": lambda: int(os.getenv("APHRODITE_WEIGHT_PROOF_TASK_TTL_S", "120")),
+    # Custom asset root for weight proof bundles
+    "APHRODITE_WEIGHT_PROOF_ASSET_ROOT": lambda: os.getenv("APHRODITE_WEIGHT_PROOF_ASSET_ROOT", ""),
 }
 
 # --8<-- [end:env-vars-definition]

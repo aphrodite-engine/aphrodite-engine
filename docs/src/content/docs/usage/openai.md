@@ -20,12 +20,96 @@ Otherwise, we support everything, plus many other parameters.
 
 Aphrodite also provides experimental support for the OpenAI Vision API.
 
+## Weight Verification Challenges (Experimental)
+
+Set `APHRODITE_WEIGHT_PROOF_ENABLED=1` to expose a lightweight `/weights` API that proves remote workers are serving the expected weights. Challenges are described in JSON bundles stored under `aphrodite/assets/weight_proofs/<model>.json` (forward slashes in model names should be replaced with `__`). Each bundle lists one or more micro-tasks that contain:
+
+- the logical layer identifier (`layer`)
+- an input vector plus dtype/shape metadata
+- the canonical output vector (used only for verification)
+
+The server currently exposes two endpoints:
+
+| Endpoint | Description |
+| --- | --- |
+| `POST /weights/challenge` | Returns a random challenge for `{model, worker_id}` along with TTL and tolerances. |
+| `POST /weights/verify` | Submits the computed vector for a previously issued challenge and reports pass/fail state. |
+| `POST /weights/execute` | Accepts a JSON challenge payload, runs it against the live model weights, and returns the computed vector (no verification performed server-side). |
+
+Example exchange:
+
+```json
+POST /weights/challenge
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "worker_id": "gpu-worker-42"
+}
+
+HTTP/1.1 200 OK
+{
+  "challenge_id": "2fd9d7b7c5b84e29be01ddc1b36f77af",
+  "layer": {"layer": "decoder.layers.0.linear"},
+  "input": {"data": [1.0, 2.0], "dtype": "float32", "shape": [2]},
+  "ttl_seconds": 120,
+  "tolerances": {"rtol": 1e-4, "atol": 1e-3}
+}
+```
+
+```json
+POST /weights/verify
+{
+  "challenge_id": "2fd9d7b7c5b84e29be01ddc1b36f77af",
+  "worker_id": "gpu-worker-42",
+  "result": [3.0, 5.0]
+}
+
+HTTP/1.1 200 OK
+{ "outcome": "passed" }
+```
+
+```
+python examples/generate_weight_challenge.py Qwen/Qwen3-0.6B \
+  --layer-pattern "mlp.down_proj" \
+  --output /tmp/down_proj.json \
+  --pretty
+
+curl http://localhost:2242/weights/execute \
+  -H "Content-Type: application/json" \
+  -d @/tmp/down_proj.json
+```
+
+```json
+HTTP/1.1 200 OK
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "worker_id": "gpu-worker-42",
+  "layer": "model.layers.0.mlp.down_proj.weight",
+  "output": {"data": [...], "dtype": "float32", "shape": [1024]},
+  "shards": [{"shard_type": "row", "tp_rank": 0, "tp_size": 1, "length": 1024}]
+}
+```
+
+Notes:
+
+1. `examples/generate_weight_challenge.py` outputs a single ready-to-send challenge by default (pass `--bundle` for the legacy multi-challenge JSON or `--output-dir` to emit one file per layer).
+2. Use Aphrodite layer names, not raw Hugging Face checkpoint names: e.g. `model.layers.0.self_attn.qkv_proj.weight` (fused q/k/v) or `model.layers.0.mlp.gate_up_proj.weight` (fused gate/up).
+3. Tensor parallel deployments return shard metadata; aggregate the partial vectors if you need the full concatenated result.
+
+Relevant knobs:
+
+- `APHRODITE_WEIGHT_PROOF_ASSET_ROOT` — override the directory that hosts the canonical bundles.
+- `APHRODITE_WEIGHT_PROOF_RTOL` / `APHRODITE_WEIGHT_PROOF_ATOL` — default tolerances for vector comparisons.
+- `APHRODITE_WEIGHT_PROOF_TASK_TTL_S` — expiry window for issued challenges.
+- `APHRODITE_WEIGHT_PROOF_INTERVAL_S` — cadence for background sampling (used by future schedulers).
+
+If a worker fails more than `WeightVerificationService.failure_threshold` times (default 3) it is marked as blocked until it successfully completes a challenge.
+
 ## Extra Parameters
 If using the `openai` python library, you cannot pass extra parameters such as `min_p`, `guided_choice`, etc. Thankfully, the library allows you to extend the body as needed:
 
 ```py
 completion = client.chat.completions.create(
-    model="meta-llama/Meta-Llama-3.1-8B-Instruct",
+    model="Qwen/Qwen3-0.6B",
     messages=[
         {"role": "user", "content": "Classify this sentiment: LLMs are wonderful!"}
     ],

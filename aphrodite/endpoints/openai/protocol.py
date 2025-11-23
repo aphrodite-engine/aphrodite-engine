@@ -2,6 +2,7 @@
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
 import json
 import time
+from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated, Any, ClassVar, Generic, Literal, TypeAlias, TypeVar
 
@@ -40,6 +41,8 @@ from openai_harmony import Message as OpenAIHarmonyMessage
 from pydantic_core.core_schema import NoneSchema
 
 from aphrodite.config.pooler import get_use_activation
+from aphrodite.security.weight_proofs import ChallengeVector, LayerAddress
+from aphrodite.security.weight_verifier import VerificationOutcome
 from aphrodite.tasks import PoolingTask
 from aphrodite.utils.serial_utils import EmbedDType, EncodingFormat, Endianness
 
@@ -3357,6 +3360,59 @@ AnthropicStreamEvent = (
     | AnthropicPing
     | AnthropicError
 )
+
+
+class WeightChallengeRequest(OpenAIBaseModel):
+    model: str
+    worker_id: str
+
+
+class WeightChallengeResponse(OpenAIBaseModel):
+    challenge_id: str
+    model: str
+    layer: LayerAddress
+    input: ChallengeVector
+    expires_at: datetime
+    ttl_seconds: int
+    tolerances: dict[str, float]
+
+
+class WeightChallengeVerifyRequest(OpenAIBaseModel):
+    challenge_id: str
+    worker_id: str
+    result: list[Any]
+
+
+class WeightChallengeVerifyResponse(OpenAIBaseModel):
+    outcome: VerificationOutcome
+    failure_streak: int = 0
+    blocked: bool = False
+    message: str | None = None
+
+
+class WeightExecutionShard(OpenAIBaseModel):
+    shard_type: str
+    length: int
+    partition_index: int | None = None
+    tp_rank: int | None = None
+
+
+class WeightExecutionRequest(OpenAIBaseModel):
+    model: str
+    worker_id: str
+    layer: str
+    input: ChallengeVector
+    parameter: str | None = None
+    challenge_id: str | None = None
+
+
+class WeightExecutionResponse(OpenAIBaseModel):
+    model: str
+    worker_id: str
+    layer: str
+    output: ChallengeVector
+    shards: list[WeightExecutionShard]
+    challenge_id: str | None = None
 
 
 # ========== KoboldAI ========== #

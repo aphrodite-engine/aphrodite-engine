@@ -10,6 +10,11 @@ from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import worker_receiver_cache_from_config
+from aphrodite.security.weight_executor import (
+    WorkerExecutionPayload,
+    WorkerExecutionResult,
+    run_weight_execution_on_model,
+)
 from aphrodite.utils import warn_for_unimplemented_methods
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.utils.system_utils import update_environment_variables
@@ -159,6 +164,19 @@ class WorkerBase:
     def shutdown(self) -> None:
         """Clean up resources held by the worker."""
         return
+
+    def execute_weight_challenge(self, payload: dict[str, Any]) -> dict[str, Any]:
+        dp_rank = getattr(self.parallel_config, "data_parallel_rank", 0)
+        model = self.get_model()
+        if model is None:
+            return WorkerExecutionResult(status="error", detail="Model not initialized", dp_rank=dp_rank).to_dict()
+        try:
+            request = WorkerExecutionPayload.from_dict(payload)
+        except Exception as exc:  # pragma: no cover - defensive
+            return WorkerExecutionResult(status="error", detail=str(exc), dp_rank=dp_rank).to_dict()
+
+        result = run_weight_execution_on_model(model, request, dp_rank=dp_rank)
+        return result.to_dict()
 
 
 class WorkerWrapperBase:

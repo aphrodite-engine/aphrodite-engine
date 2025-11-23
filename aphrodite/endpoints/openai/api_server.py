@@ -52,10 +52,12 @@ from aphrodite.endpoints.openai.orca_metrics import metrics_header
 from aphrodite.endpoints.openai.protocol import (
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatCompletionStreamResponse,
     ClassificationRequest,
     ClassificationResponse,
     CompletionRequest,
     CompletionResponse,
+    CompletionStreamResponse,
     DetokenizeRequest,
     DetokenizeResponse,
     EmbeddingRequest,
@@ -65,6 +67,9 @@ from aphrodite.endpoints.openai.protocol import (
     IOProcessorResponse,
     KAIGenerationInputSchema,
     LoadLoRAAdapterRequest,
+    ModelCard,
+    ModelList,
+    ModelPermission,
     PoolingBytesResponse,
     PoolingRequest,
     PoolingResponse,
@@ -82,6 +87,13 @@ from aphrodite.endpoints.openai.protocol import (
     TranslationRequest,
     TranslationResponse,
     UnloadLoRAAdapterRequest,
+    WeightChallengeRequest,
+    WeightChallengeResponse,
+    WeightChallengeVerifyRequest,
+    WeightChallengeVerifyResponse,
+    WeightExecutionRequest,
+    WeightExecutionResponse,
+    WeightExecutionShard,
 )
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
 from aphrodite.endpoints.openai.serving_classification import ServingClassification
@@ -111,6 +123,9 @@ from aphrodite.logger import init_logger
 from aphrodite.logging_utils.formatter import Colors, _supports_color
 from aphrodite.modeling.model_loader.weight_utils import get_model_config_yaml
 from aphrodite.reasoning import ReasoningParserManager
+from aphrodite.security.weight_executor import WeightChallengeExecutor, WeightExecutionError
+from aphrodite.security.weight_proofs import ChallengeVector
+from aphrodite.security.weight_verifier import WeightVerificationService
 from aphrodite.server import serve_http
 from aphrodite.tasks import POOLING_TASKS
 from aphrodite.usage.usage_lib import UsageContext
@@ -126,6 +141,7 @@ SERVE_KOBOLD_LITE_UI = strtobool(os.getenv("SERVE_KOBOLD_LITE_UI", "1"))
 router = APIRouter()
 kai_api = APIRouter()
 extra_api = APIRouter()
+weight_router = APIRouter(prefix="/weights", tags=["weight-proof"])
 kobold_lite_ui = ""
 sampler_json = ""
 prometheus_multiproc_dir: tempfile.TemporaryDirectory
@@ -135,6 +151,103 @@ logger = init_logger("aphrodite.endpoints.openai.api_server")
 ENDPOINT_LOAD_METRICS_FORMAT_HEADER_LABEL = "endpoint-load-metrics-format"
 
 _running_tasks: set[asyncio.Task] = set()
+
+
+def _weight_service_from_state(state: State) -> WeightVerificationService | None:
+    return getattr(state, "weight_verification_service", None)
+
+
+def _weight_executor_from_state(state: State) -> WeightChallengeExecutor | None:
+    return getattr(state, "weight_execution_executor", None)
+
+
+def _model_is_loaded(state: State, model_name: str) -> bool:
+    if hasattr(state, "model_registry") and state.model_registry:
+        return model_name in state.model_registry
+    served = getattr(state, "served_model_names", None)
+    if served:
+        return model_name in served
+    return False
+
+
+def _configure_weight_routes(app: FastAPI) -> None:
+    app.state.weight_verification_service = None
+    app.state.weight_execution_executor = None
+    if not envs.APHRODITE_WEIGHT_PROOF_ENABLED:
+        return
+    app.include_router(weight_router)
+    app.state.weight_verification_service = WeightVerificationService()
+    app.state.weight_execution_executor = WeightChallengeExecutor(app.state)
+
+
+@weight_router.post("/challenge", response_model=WeightChallengeResponse)
+async def create_weight_challenge(payload: WeightChallengeRequest, request: Request) -> WeightChallengeResponse:
+    service = _weight_service_from_state(request.app.state)
+    if service is None:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "Weight verification disabled")
+    if not _model_is_loaded(request.app.state, payload.model):
+        raise HTTPException(HTTPStatus.NOT_FOUND, f"Model '{payload.model}' is not loaded")
+    issued = service.issue_challenge(model_key=payload.model, worker_id=payload.worker_id)
+    if issued is None:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "No challenge available for model")
+    ttl_seconds = int(envs.APHRODITE_WEIGHT_PROOF_TASK_TTL_S)
+    tolerances = {
+        "rtol": issued.challenge.resolved_rtol(None),
+        "atol": issued.challenge.resolved_atol(None),
+    }
+    return WeightChallengeResponse(
+        challenge_id=issued.challenge_id,
+        model=payload.model,
+        layer=issued.challenge.layer,
+        input=issued.challenge.input_vector,
+        expires_at=issued.expires_at,
+        ttl_seconds=ttl_seconds,
+        tolerances=tolerances,
+    )
+
+
+@weight_router.post("/verify", response_model=WeightChallengeVerifyResponse)
+async def verify_weight_challenge(
+    payload: WeightChallengeVerifyRequest, request: Request
+) -> WeightChallengeVerifyResponse:
+    service = _weight_service_from_state(request.app.state)
+    if service is None:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "Weight verification disabled")
+    result = service.verify_response(
+        challenge_id=payload.challenge_id,
+        worker_id=payload.worker_id,
+        result_vector=payload.result,
+    )
+    return WeightChallengeVerifyResponse(
+        outcome=result.outcome,
+        failure_streak=result.failure_streak,
+        blocked=result.blocked,
+        message=result.message or None,
+    )
+
+
+@weight_router.post("/execute", response_model=WeightExecutionResponse)
+async def execute_weight_challenge(payload: WeightExecutionRequest, request: Request) -> WeightExecutionResponse:
+    executor = _weight_executor_from_state(request.app.state)
+    if executor is None:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "Weight execution disabled")
+    if not _model_is_loaded(request.app.state, payload.model):
+        raise HTTPException(HTTPStatus.NOT_FOUND, f"Model '{payload.model}' is not loaded")
+    try:
+        vector, shards = await executor.execute(payload)
+    except WeightExecutionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    output_vector = ChallengeVector(data=vector, dtype="float32", shape=[len(vector)])
+    shard_models = [WeightExecutionShard.model_validate(shard) for shard in shards]
+    return WeightExecutionResponse(
+        model=payload.model,
+        worker_id=payload.worker_id,
+        layer=payload.layer,
+        output=output_vector,
+        shards=shard_models,
+        challenge_id=payload.challenge_id,
+    )
 
 
 @dataclass
@@ -570,7 +683,6 @@ def maybe_register_tokenizer_info_endpoint(args):
 @router.get("/v1/models")
 async def show_available_models(raw_request: Request):
     """List all available models from the registry."""
-    from aphrodite.endpoints.openai.protocol import ModelCard, ModelList, ModelPermission
 
     model_cards = []
 
@@ -2052,8 +2164,6 @@ class ScalingMiddleware:
 def _extract_content_from_chunk(chunk_data: dict) -> str:
     """Extract content from a streaming response chunk."""
     try:
-        from aphrodite.endpoints.openai.protocol import ChatCompletionStreamResponse, CompletionStreamResponse
-
         # Try using Completion types for type-safe parsing
         if chunk_data.get("object") == "chat.completion.chunk":
             chat_response = ChatCompletionStreamResponse.model_validate(chunk_data)
@@ -2187,6 +2297,7 @@ def build_app(args: Namespace) -> FastAPI:
     app.include_router(kai_api, prefix="/api/v1")
     app.include_router(extra_api, prefix="/api/extra")
     logger.info("KoboldAI API routes enabled")
+    _configure_weight_routes(app)
 
     app.root_path = args.root_path
 
