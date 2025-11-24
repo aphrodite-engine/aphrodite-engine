@@ -100,7 +100,8 @@ endif()
 #
 if (NOT APHRODITE_TARGET_DEVICE STREQUAL "cuda" AND
     NOT APHRODITE_TARGET_DEVICE STREQUAL "rocm")
-    if (APHRODITE_TARGET_DEVICE STREQUAL "cpu")
+    if (APHRODITE_TARGET_DEVICE STREQUAL "cpu" OR
+        APHRODITE_TARGET_DEVICE STREQUAL "android")
         include(${CMAKE_CURRENT_LIST_DIR}/cmake/cpu_extension.cmake)
     else()
         return()
