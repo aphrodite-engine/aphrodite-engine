@@ -79,6 +79,8 @@ class DummyEngineClient:
     def __init__(self, model_config: MinimalModelConfig):
         self.model_config = model_config
         self._tokenizer: AnyTokenizer | None = None
+        self.processor = None  # Not needed for tokenizer-only server
+        self.io_processor = None  # Not needed for tokenizer-only server
 
     def _ensure_tokenizer(self) -> AnyTokenizer:
         """Lazy-load the tokenizer on first use."""
@@ -314,7 +316,6 @@ async def init_app_state(
 
     app.state.openai_serving_models = OpenAIServingModels(
         engine_client=engine_client,
-        model_config=model_config,
         base_model_paths=base_model_paths,
         lora_modules=None,
     )
@@ -324,7 +325,6 @@ async def init_app_state(
 
     app.state.openai_serving_tokenization = OpenAIServingTokenization(
         engine_client,
-        model_config,
         app.state.openai_serving_models,
         request_logger=request_logger,
         chat_template=chat_template,
