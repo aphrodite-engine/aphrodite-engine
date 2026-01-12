@@ -415,7 +415,8 @@ __device__ void paged_attention_kernel(
         if (block_idx == num_seq_blocks - 1) {
           // NOTE(woosuk): When v_vec contains the tokens that are out of the
           // context, we should explicitly zero out the values since they may
-          // contain NaNs.
+          // contain NaNs. See
+          // https://github.com/aphrodite-project/aphrodite/issues/641#issuecomment-1682544472
           scalar_t* v_vec_ptr = reinterpret_cast<scalar_t*>(&v_vec);
 #pragma unroll
           for (int j = 0; j < V_VEC_SIZE; j++) {
