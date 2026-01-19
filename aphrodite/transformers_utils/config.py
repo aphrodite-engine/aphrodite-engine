@@ -66,6 +66,7 @@ _CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = LazyConfigDict(
     deepseek_v3="DeepseekV3Config",
     deepseek_v32="DeepseekV3Config",
     flex_olmo="FlexOlmoConfig",
+    glm4_moe_lite="Glm4MoeLiteConfig",
     kimi_linear="KimiLinearConfig",
     kimi_vl="KimiVLConfig",
     Llama_Nemotron_Nano_VL="Nemotron_Nano_VL_Config",

@@ -16,6 +16,7 @@ from aphrodite.transformers_utils.configs.eagle import EAGLEConfig
 # `FalconConfig` class from the official HuggingFace transformers library.
 from aphrodite.transformers_utils.configs.falcon import RWConfig
 from aphrodite.transformers_utils.configs.flex_olmo import FlexOlmoConfig
+from aphrodite.transformers_utils.configs.glm4_moe_lite import Glm4MoeLiteConfig
 from aphrodite.transformers_utils.configs.jais import JAISConfig
 from aphrodite.transformers_utils.configs.kimi_linear import KimiLinearConfig
 from aphrodite.transformers_utils.configs.kimi_vl import KimiVLConfig
@@ -42,6 +43,7 @@ __all__ = [
     "DotsOCRConfig",
     "EAGLEConfig",
     "FlexOlmoConfig",
+    "Glm4MoeLiteConfig",
     "RWConfig",
     "JAISConfig",
     "Lfm2MoeConfig",
