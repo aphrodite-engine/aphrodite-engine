@@ -1205,6 +1205,7 @@ class ModelConfig:
             "kimi_k2",
             "kimi_linear",
             "longcat_flash",
+            "glm4_moe_lite",
         ):
             return self.hf_text_config.kv_lora_rank is not None
         elif self.hf_text_config.model_type == "eagle":
