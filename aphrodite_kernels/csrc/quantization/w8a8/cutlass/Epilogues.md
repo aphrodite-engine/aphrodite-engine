@@ -21,6 +21,7 @@ That induces a redundant addition operation (and runtime check), but the perform
 
 ## Underlying Linear Algebra
 
+More details available in the [Activation Quantization RFC](https://github.com/aphrodite-project/aphrodite/issues/3975).
 
 If $` \widehat X `$ is the quantized $` X `$, our matrices become the following
 
