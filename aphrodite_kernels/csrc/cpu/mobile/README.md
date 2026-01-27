@@ -1,0 +1,1 @@
+Mobile-optimized compute kernels, based on [cactus](https://github.com/cactus-compute/cactus).
