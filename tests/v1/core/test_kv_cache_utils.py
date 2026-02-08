@@ -23,6 +23,7 @@ from aphrodite.v1.core.kv_cache_utils import (
     get_kv_cache_configs,
     get_kv_cache_size_tokens,
     get_max_concurrency_for_kv_cache_config,
+    get_max_concurrency_for_kv_cache_configs,
     get_request_block_hasher,
     hash_block_tokens,
     init_none_hash,
@@ -1154,6 +1155,75 @@ def test_get_max_concurrency_for_kv_cache_config():
         aphrodite_config, kv_cache_config_hybrid_model
     )
     assert max_concurrency_hybrid_model == 3
+
+
+def test_get_max_concurrency_for_kv_cache_configs():
+    model_id = "Qwen/Qwen1.5-7B"
+    max_model_len = 16384
+    model_config = ModelConfig(
+        model_id,
+        runner="generate",
+        dtype="float16",
+        max_model_len=max_model_len,
+    )
+    scheduler_config = SchedulerConfig(max_num_batched_tokens=1024, enable_chunked_prefill=True)
+    aphrodite_config = AphroditeConfig(
+        model_config=model_config,
+        scheduler_config=scheduler_config,
+    )
+
+    full_attention_spec = FullAttentionSpec(
+        block_size=16,
+        num_kv_heads=32,
+        head_size=128,
+        dtype=torch.float16,
+    )
+
+    low_concurrency_cfg = KVCacheConfig(
+        num_blocks=1024,
+        kv_cache_tensors=[],
+        kv_cache_groups=[
+            KVCacheGroupSpec([f"layer_{i}" for i in range(32)], full_attention_spec),
+        ],
+        kv_bytes_per_block=1,
+    )
+    high_concurrency_cfg = KVCacheConfig(
+        num_blocks=1024 * 3,
+        kv_cache_tensors=[],
+        kv_cache_groups=[
+            KVCacheGroupSpec([f"layer_{i}" for i in range(32)], full_attention_spec),
+        ],
+        kv_bytes_per_block=1,
+    )
+
+    max_concurrency = get_max_concurrency_for_kv_cache_configs(
+        aphrodite_config,
+        [high_concurrency_cfg, low_concurrency_cfg],
+    )
+    assert max_concurrency == 1
+
+
+def test_get_max_concurrency_for_kv_cache_configs_attention_free_model():
+    model_config = ModelConfig(
+        "Qwen/Qwen1.5-7B",
+        runner="generate",
+        dtype="float16",
+        max_model_len=16384,
+    )
+    scheduler_config = SchedulerConfig(max_num_batched_tokens=1024, enable_chunked_prefill=True)
+    aphrodite_config = AphroditeConfig(
+        model_config=model_config,
+        scheduler_config=scheduler_config,
+    )
+
+    attention_free_cfg = KVCacheConfig(
+        num_blocks=1,
+        kv_cache_tensors=[],
+        kv_cache_groups=[],
+        kv_bytes_per_block=0,
+    )
+
+    assert get_max_concurrency_for_kv_cache_configs(aphrodite_config, [attention_free_cfg]) == 0
 
 
 def test_get_kv_cache_size_tokens():

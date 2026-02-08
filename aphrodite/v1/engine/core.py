@@ -36,7 +36,7 @@ from aphrodite.v1.core.kv_cache_utils import (
     generate_scheduler_kv_cache_config,
     get_kv_cache_configs,
     get_kv_cache_size_tokens,
-    get_max_concurrency_for_kv_cache_config,
+    get_max_concurrency_for_kv_cache_configs,
     get_request_block_hasher,
     init_none_hash,
 )
@@ -103,11 +103,11 @@ class EngineCore:
         self.available_gpu_memory_for_kv_cache = -1
 
         # Setup KV Caches and update CacheConfig after profiling.
-        num_gpu_blocks, num_cpu_blocks, kv_cache_config = self._initialize_kv_caches(aphrodite_config)
+        num_gpu_blocks, num_cpu_blocks, kv_cache_config, max_concurrency = self._initialize_kv_caches(aphrodite_config)
         self.kv_cache_config = kv_cache_config
 
         # Cache KV cache properties for synchronous access
-        self._max_concurrency = get_max_concurrency_for_kv_cache_config(aphrodite_config, kv_cache_config)
+        self._max_concurrency = max_concurrency
         self._kv_cache_size_tokens = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
 
         aphrodite_config.cache_config.num_gpu_blocks = num_gpu_blocks
@@ -206,7 +206,7 @@ class EngineCore:
 
         self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
 
-    def _initialize_kv_caches(self, aphrodite_config: AphroditeConfig) -> tuple[int, int, KVCacheConfig]:
+    def _initialize_kv_caches(self, aphrodite_config: AphroditeConfig) -> tuple[int, int, KVCacheConfig, float]:
         start = time.time()
 
         # Get all kv cache needed by the model
@@ -231,6 +231,7 @@ class EngineCore:
         assert len(kv_cache_specs) == len(available_gpu_memory)
 
         kv_cache_configs = get_kv_cache_configs(aphrodite_config, kv_cache_specs, available_gpu_memory)
+        max_concurrency = get_max_concurrency_for_kv_cache_configs(aphrodite_config, kv_cache_configs)
         scheduler_kv_cache_config = generate_scheduler_kv_cache_config(kv_cache_configs)
         num_gpu_blocks = scheduler_kv_cache_config.num_blocks
         num_cpu_blocks = 0
@@ -252,7 +253,7 @@ class EngineCore:
                 "metrics, set APHRODITE_REQUEST_LEVEL_METRICS=0.",
                 scope="global",
             )
-        return num_gpu_blocks, num_cpu_blocks, scheduler_kv_cache_config
+        return num_gpu_blocks, num_cpu_blocks, scheduler_kv_cache_config, max_concurrency
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.modeling.supported_tasks

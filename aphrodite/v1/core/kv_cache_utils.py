@@ -737,6 +737,25 @@ def get_max_concurrency_for_kv_cache_config(aphrodite_config: AphroditeConfig, k
     return max_concurrency
 
 
+def get_max_concurrency_for_kv_cache_configs(
+    aphrodite_config: AphroditeConfig,
+    kv_cache_configs: Sequence[KVCacheConfig],
+) -> float:
+    """
+    Get the maximum concurrency that is simultaneously feasible on all workers.
+
+    Returns 0 for attention-free models where no worker has KV cache groups.
+    """
+    max_concurrencies = [
+        get_max_concurrency_for_kv_cache_config(aphrodite_config, cfg)
+        for cfg in kv_cache_configs
+        if len(cfg.kv_cache_groups) > 0
+    ]
+    if not max_concurrencies:
+        return 0.0
+    return min(max_concurrencies)
+
+
 def get_kv_cache_size_tokens(aphrodite_config: AphroditeConfig, kv_cache_config: KVCacheConfig) -> int:
     """
     Get the total number of tokens that can be stored in the KV cache.
