@@ -250,7 +250,7 @@ class cmake_build_ext(build_ext):
                     # environment variable (if defined) or 1.
                     # when it is set, we reduce `num_jobs` to avoid
                     # overloading the system.
-                    nvcc_threads = envs.NVCC_THREADS
+                    nvcc_threads = os.getenv("NVCC_THREADS")
                     if nvcc_threads is not None:
                         nvcc_threads = int(nvcc_threads)
                         logger.info(
@@ -644,9 +644,7 @@ if not ext_modules:
     }
 else:
     cmdclass = {
-        "build_ext": precompiled_build_ext
-        if envs.APHRODITE_USE_PRECOMPILED
-        else cmake_build_ext,
+        "build_ext": precompiled_build_ext if use_precompiled else cmake_build_ext,
         "build_py": BuildPyAndGenerateGrpc,
         "develop": DevelopAndGenerateGrpc,
     }
