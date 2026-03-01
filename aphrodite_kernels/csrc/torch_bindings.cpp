@@ -288,15 +288,13 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "aqlm_gemm(Tensor input, Tensor codes, Tensor codebooks, "
       "Tensor scales, int[] codebook_partition_sizes, Tensor? bias) "
-      "-> Tensor",
-      {stride_tag});
+      "-> Tensor");
   ops.impl("aqlm_gemm", torch::kCUDA, &aqlm_gemm);
 
   // Decompression method for AQLM.
   ops.def(
       "aqlm_dequant(Tensor codes, Tensor codebooks, "
-      "int[] codebook_partition_sizes) -> Tensor",
-      {stride_tag});
+      "int[] codebook_partition_sizes) -> Tensor");
   ops.impl("aqlm_dequant", torch::kCUDA, &aqlm_dequant);
 
   // Quantized GEMM for AWQ.
@@ -324,8 +322,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "          Tensor? q_indice_outliers,"
       "          Tensor? outliers_centroids,"
       "          Tensor? invperm,"
-      "          Tensor? bias) -> Tensor",
-      {stride_tag});
+      "          Tensor? bias) -> Tensor");
   ops.impl("vptq_gemm", torch::kCUDA, &vptq_gemm);
 
   // Decompression method for VPTQ.
@@ -340,8 +337,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "  Tensor? residual_centroids,"
       "  Tensor? q_indice_outliers,"
       "  Tensor? outliers_centroids,"
-      "  Tensor? invperm) -> Tensor",
-      {stride_tag});
+      "  Tensor? invperm) -> Tensor");
   ops.impl("vptq_dequant", torch::kCUDA, &vptq_dequant);
 
   // Note about marlin kernel 'workspace' arguments:
@@ -362,8 +358,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "marlin_gemm(Tensor a, Tensor b_q_weight, Tensor b_scales, "
       "Tensor! workspace, SymInt size_m, SymInt size_n, SymInt size_k) -> "
-      "Tensor",
-      {stride_tag});
+      "Tensor");
   // conditionally compiled so impl in source file
 
   // Machete (Dense) Optimized Mixed Precision GEMM for Hopper.
@@ -513,8 +508,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "marlin_qqq_gemm(Tensor a, Tensor b_q_weight, "
       "Tensor s_tok, Tensor s_ch, Tensor s_group, "
       "Tensor! workspace, SymInt size_m, SymInt size_n, "
-      "SymInt size_k) -> Tensor",
-      {stride_tag});
+      "SymInt size_k) -> Tensor");
   // conditionally compiled so impl registration is in source file
 
   // CUTLASS nvfp4 block scaled GEMM
@@ -639,8 +633,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "fp_eXmY_linear_forward_cuda(int EXPONENT, int MANTISSA,"
       "                            Tensor _in_feats, Tensor _weights,"
-      "                            Tensor _scales, int splitK=1) -> Tensor",
-      {stride_tag});
+      "                            Tensor _scales, int splitK=1) -> Tensor");
 
   // SM100 CUTLASS MLA decode
   ops.def(
