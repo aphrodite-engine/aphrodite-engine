@@ -45,6 +45,7 @@ if(NOT DEFINED ROCM_PATH)
   set(ROCM_PATH "/opt/rocm" CACHE PATH "ROCm installation prefix")
 else()
   set(ROCM_PATH ${ROCM_PATH} CACHE PATH "ROCm installation prefix" FORCE)
+endif()
 
 #
 # Supported/expected torch versions for CUDA/ROCm.
@@ -908,6 +909,7 @@ set(APHRODITE_EXT_SRC
        "csrc/quantization/cutlass_w4a8/w4a8_mm_entry.cu"
        "csrc/quantization/cutlass_w4a8/w4a8_grouped_mm_entry.cu"
        "csrc/quantization/cutlass_w4a8/w4a8_utils.cu"
+    )
 
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
