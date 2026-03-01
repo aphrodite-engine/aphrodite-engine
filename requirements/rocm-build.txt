@@ -3,7 +3,7 @@
 
 --extra-index-url https://download.pytorch.org/whl/rocm6.4
 torch==2.10.0
-torchvision==0.24.0
+torchvision==0.25.0
 torchaudio==2.10.0
 
 triton==3.5.0
