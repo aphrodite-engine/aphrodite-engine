@@ -14,8 +14,7 @@
   // arm implementation
   #include "cpu_types_arm.hpp"
 #else
-  #warning \
-      "unsupported Aphrodite cpu implementation, Aphrodite will compile with scalar"
+  #warning "unsupported Aphrodite cpu implementation, Aphrodite will compile with scalar"
   #include "cpu_types_scalar.hpp"
 #endif
 

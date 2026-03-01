@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 import sys
+import sysconfig
 from contextlib import suppress
 from pathlib import Path
 from shutil import which
@@ -12,6 +13,8 @@ import torch
 from packaging.version import Version, parse
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+from setuptools.command.build_py import build_py
+from setuptools.command.develop import develop
 from setuptools_scm import get_version
 from torch.utils.cpp_extension import CUDA_HOME, ROCM_HOME
 
@@ -42,15 +45,15 @@ elif not (sys.platform.startswith("linux") or sys.platform.startswith("darwin"))
         sys.platform,
     )
     APHRODITE_TARGET_DEVICE = "empty"
-elif (
-    sys.platform.startswith("linux")
-    and torch.version.cuda is None
-    and os.getenv("APHRODITE_TARGET_DEVICE") is None
-    and torch.version.hip is None
-):
-    # if cuda or hip is not available and APHRODITE_TARGET_DEVICE is not set,
-    # fallback to cpu
-    APHRODITE_TARGET_DEVICE = "cpu"
+elif sys.platform.startswith("linux") and os.getenv("APHRODITE_TARGET_DEVICE") is None:
+    if torch.version.hip is not None:
+        APHRODITE_TARGET_DEVICE = "rocm"
+        logger.info("Auto-detected ROCm")
+    elif torch.version.cuda is not None:
+        APHRODITE_TARGET_DEVICE = "cuda"
+        logger.info("Auto-detected CUDA")
+    else:
+        APHRODITE_TARGET_DEVICE = "cpu"
 
 MAIN_CUDA_VERSION = "12.8"
 
@@ -121,21 +124,81 @@ def is_ninja_available() -> bool:
     return which("ninja") is not None
 
 
-def is_url_available(url: str) -> bool:
-    from urllib.request import urlopen
+def is_freethreaded():
+    return bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 
-    status = None
+
+def compile_grpc_protos():
+    """Compile gRPC protobuf definitions during build.
+
+    This generates *_pb2.py, *_pb2_grpc.py, and *_pb2.pyi files from
+    the aphrodite_engine.proto definition.
+    """
     try:
-        with urlopen(url) as f:
-            status = f.status
-    except Exception:
+        from grpc_tools import protoc
+    except ImportError:
+        logger.warning(
+            "grpcio-tools not installed, skipping gRPC proto compilation. "
+            "gRPC server functionality will not be available."
+        )
         return False
-    return status == 200
+
+    proto_file = ROOT_DIR / "vllm" / "grpc" / "vllm_engine.proto"
+    if not proto_file.exists():
+        logger.warning("Proto file not found at %s, skipping compilation", proto_file)
+        return False
+
+    logger.info("Compiling gRPC protobuf: %s", proto_file)
+
+    result = protoc.main(
+        [
+            "grpc_tools.protoc",
+            f"--proto_path={ROOT_DIR}",
+            f"--python_out={ROOT_DIR}",
+            f"--grpc_python_out={ROOT_DIR}",
+            f"--pyi_out={ROOT_DIR}",
+            str(proto_file),
+        ]
+    )
+
+    if result != 0:
+        logger.error("protoc failed with exit code %s", result)
+        return False
+
+    grpc_dir = ROOT_DIR / "vllm" / "grpc"
+    for generated_file in [
+        grpc_dir / "aphrodite_engine_pb2.py",
+        grpc_dir / "aphrodite_engine_pb2_grpc.py",
+        grpc_dir / "aphrodite_engine_pb2.pyi",
+    ]:
+        if generated_file.exists():
+            content = generated_file.read_text()
+            if not content.startswith("# SPDX-License-Identifier"):
+                generated_file.write_text(content)
+
+    logger.info("gRPC protobuf compilation successful")
+    return True
+
+
+class BuildPyAndGenerateGrpc(build_py):
+    """Build Python modules and generate gRPC stubs from proto files."""
+
+    def run(self):
+        compile_grpc_protos()
+        super().run()
+
+
+class DevelopAndGenerateGrpc(develop):
+    """Develop mode that also generates gRPC stubs from proto files."""
+
+    def run(self):
+        compile_grpc_protos()
+        super().run()
 
 
 class CMakeExtension(Extension):
     def __init__(self, name: str, cmake_lists_dir: str = ".", **kwa) -> None:
-        super().__init__(name, sources=[], py_limited_api=True, **kwa)
+        super().__init__(name, sources=[], py_limited_api=not is_freethreaded(), **kwa)
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
 
 
@@ -179,20 +242,26 @@ class cmake_build_ext(build_ext):
                     logger.info("CPU heuristic: os.cpu_count()=%d (RAM unk).", num_jobs)
 
         nvcc_threads = None
-        if _is_cuda() and get_nvcc_cuda_version() >= Version("11.2"):
-            # `nvcc_threads` is either the value of the NVCC_THREADS
-            # environment variable (if defined) or 1.
-            # when it is set, we reduce `num_jobs` to avoid
-            # overloading the system.
-            nvcc_threads = getattr(envs, "NVCC_THREADS", None) if envs else None
-            if nvcc_threads is None:
-                nvcc_threads = os.getenv("NVCC_THREADS")
-            if nvcc_threads is not None:
-                nvcc_threads = int(nvcc_threads)
-                logger.info("Using NVCC_THREADS=%d as the number of nvcc threads.", nvcc_threads)
-            else:
-                nvcc_threads = 1
-            num_jobs = max(1, num_jobs // nvcc_threads)
+        if _is_cuda() and CUDA_HOME is not None:
+            try:
+                nvcc_version = get_nvcc_cuda_version()
+                if nvcc_version >= Version("11.2"):
+                    # `nvcc_threads` is either the value of the NVCC_THREADS
+                    # environment variable (if defined) or 1.
+                    # when it is set, we reduce `num_jobs` to avoid
+                    # overloading the system.
+                    nvcc_threads = envs.NVCC_THREADS
+                    if nvcc_threads is not None:
+                        nvcc_threads = int(nvcc_threads)
+                        logger.info(
+                            "Using NVCC_THREADS=%d as the number of nvcc threads.",
+                            nvcc_threads,
+                        )
+                    else:
+                        nvcc_threads = 1
+                    num_jobs = max(1, num_jobs // nvcc_threads)
+            except Exception as e:
+                logger.warning("Failed to get NVCC version: %s", e)
 
         return num_jobs, nvcc_threads
 
@@ -271,8 +340,10 @@ class cmake_build_ext(build_ext):
             # Default build tool to whatever cmake picks.
             build_tool = []
         # Make sure we use the nvcc from CUDA_HOME
-        if _is_cuda():
+        if _is_cuda() and CUDA_HOME is not None:
             cmake_args += [f"-DCMAKE_CUDA_COMPILER={CUDA_HOME}/bin/nvcc"]
+        elif _is_hip() and ROCM_HOME is not None:
+            cmake_args += [f"-DROCM_PATH={ROCM_HOME}"]
 
         other_cmake_args = os.environ.get("CMAKE_ARGS")
         if other_cmake_args:
@@ -338,6 +409,17 @@ class cmake_build_ext(build_ext):
         # Run the standard build_ext command to compile the extensions
         super().run()
 
+class precompiled_build_ext(build_ext):
+    """Disables extension building when using precompiled binaries."""
+
+    def run(self) -> None:
+        return
+
+    def build_extensions(self) -> None:
+        print("Skipping build_ext: using precompiled extensions.")
+        return
+
+
 
 def _is_hpu() -> bool:
     # if APHRODITE_TARGET_DEVICE env var was set explicitly, skip autodetection
@@ -390,16 +472,15 @@ def _is_xpu() -> bool:
 
 
 def _build_custom_ops() -> bool:
-    # Skip building custom ops if using precompiled binaries
-    if os.environ.get("APHRODITE_USE_PRECOMPILED", "").strip().lower() in ("1", "true"):
-        return False
-    return _is_cuda() or _is_hip() or _is_cpu()
+    return _is_cuda() or _is_hip()
 
 
 def get_rocm_version():
     # Get the Rocm version from the ROCM_HOME/bin/librocm-core.so
     # see https://github.com/ROCm/rocm-core/blob/d11f5c20d500f729c393680a01fa902ebf92094b/rocm_version.cpp#L21
     try:
+        if ROCM_HOME is None:
+            return None
         librocm_core_file = Path(ROCM_HOME) / "lib" / "librocm-core.so"
         if not librocm_core_file.is_file():
             return None
@@ -436,21 +517,12 @@ def get_nvcc_cuda_version() -> Version:
     return nvcc_cuda_version
 
 
-def get_gaudi_sw_version():
-    """
-    Returns the driver version.
-    """
-    # Enable console printing for `hl-smi` check
-    output = subprocess.run("hl-smi", shell=True, text=True, capture_output=True, env={"ENABLE_CONSOLE": "true"})
-    if output.returncode == 0 and output.stdout:
-        return output.stdout.split("\n")[2].replace(" ", "").split(":")[1][:-1].split("-")[0]
-    return "0.0.0"  # when hl-smi is not available
-
-
 def get_kernels_version() -> str:
     """Get the version string for aphrodite-kernels with platform-specific suffix."""
     if env_version := os.getenv("APHRODITE_KERNELS_VERSION_OVERRIDE"):
-        return env_version
+        print(f"Overriding Aphrodite version with {env_version} from APHRODITE_KERNELS_VERSION_OVERRIDE")
+        os.environ["SETUPTOOLS_SCM_PRETEND_VERSION"] = env_version
+        return get_version(write_to="../aphrodite/_version.py")
 
     # Use setuptools-scm to get version - works from current directory or parent git repo
     try:
@@ -524,6 +596,10 @@ use_precompiled = os.environ.get("APHRODITE_USE_PRECOMPILED", "").strip().lower(
 if not use_precompiled:
     if _is_cuda() or _is_hip():
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._moe_C"))
+        ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
+        # Optional since this doesn't get built (produce an .so file). This is just
+        # copying the relevant .py files from the source repository.
+        ext_modules.append(CMakeExtension(name="aphrodite.triton_kernels", optional=True))
 
     if _is_hip():
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._rocm_C"))
@@ -545,18 +621,35 @@ if not use_precompiled:
         if use_precompiled or get_nvcc_cuda_version() >= Version("12.3"):
             ext_modules.append(CMakeExtension(name="aphrodite_kernels._flashmla_C", optional=True))
             ext_modules.append(CMakeExtension(name="aphrodite_kernels._flashmla_extension_C", optional=True))
-        ext_modules.append(CMakeExtension(name="aphrodite_kernels.cumem_allocator"))
 
     if _build_custom_ops():
         ext_modules.append(CMakeExtension(name="aphrodite_kernels._C"))
+
+if _is_cpu():
+    import platform
+
+    if platform.machine() in ("x86_64", "AMD64"):
+        ext_modules.append(CMakeExtension(name="vllm._C"))
+        ext_modules.append(CMakeExtension(name="vllm._C_AVX2"))
+    else:
+        ext_modules.append(CMakeExtension(name="vllm._C"))
 
 if _no_device():
     ext_modules = []
 
 if not ext_modules:
-    cmdclass = {}
+    cmdclass = {
+        "build_py": BuildPyAndGenerateGrpc,
+        "develop": DevelopAndGenerateGrpc,
+    }
 else:
-    cmdclass = {"build_ext": cmake_build_ext}
+    cmdclass = {
+        "build_ext": precompiled_build_ext
+        if envs.APHRODITE_USE_PRECOMPILED
+        else cmake_build_ext,
+        "build_py": BuildPyAndGenerateGrpc,
+        "develop": DevelopAndGenerateGrpc,
+    }
 
 _kernels_version = get_kernels_version()
 

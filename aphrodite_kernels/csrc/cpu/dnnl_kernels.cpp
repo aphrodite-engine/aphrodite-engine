@@ -14,13 +14,11 @@ struct KernelVecType<float> {
   using cvt_vec_type = vec_op::FP32Vec16;
 };
 
-#if !defined(__aarch64__) || defined(ARM_BF16_SUPPORT)
 template <>
 struct KernelVecType<c10::BFloat16> {
   using load_vec_type = vec_op::BF16Vec16;
   using cvt_vec_type = vec_op::FP32Vec16;
 };
-#endif
 
 template <>
 struct KernelVecType<c10::Half> {
@@ -341,14 +339,14 @@ int64_t create_onednn_scaled_mm_handler(
     args.use_a_zero_point = use_azp;
   }
 
-  APHRODITE_DISPATCH_FLOATING_TYPES(output_type,
-                                    "create_onednn_scaled_mm_handler", [&] {
-                                      if (dynamic_act_quant) {
-                                        args.c_type = get_dnnl_type<float>();
-                                      } else {
-                                        args.c_type = get_dnnl_type<scalar_t>();
-                                      }
-                                    });
+  APHRODITE_DISPATCH_FLOATING_TYPES(output_type, "create_onednn_scaled_mm_handler",
+                               [&] {
+                                 if (dynamic_act_quant) {
+                                   args.c_type = get_dnnl_type<float>();
+                                 } else {
+                                   args.c_type = get_dnnl_type<scalar_t>();
+                                 }
+                               });
 
   return reinterpret_cast<int64_t>(new W8A8MatMulPrimitiveHandler(args));
 }
@@ -360,13 +358,14 @@ void onednn_scaled_mm(
     const std::optional<torch::Tensor>& azp,      // [M] or [1]
     const std::optional<torch::Tensor>& azp_adj,  // [M] or [1]
     const std::optional<torch::Tensor>& bias,     // [N]
-    int64_t handler) {
+    const torch::Tensor& handler_tensor) {
   CPU_KERNEL_GUARD_IN(onednn_scaled_mm)
   TORCH_CHECK(a.dim() == 2);
   TORCH_CHECK(a.is_contiguous());
   TORCH_CHECK(c.is_contiguous());
   W8A8MatMulPrimitiveHandler* ptr =
-      reinterpret_cast<W8A8MatMulPrimitiveHandler*>(handler);
+      reinterpret_cast<W8A8MatMulPrimitiveHandler*>(
+          handler_tensor.item<int64_t>());
   const int32_t* azp_ptr = nullptr;
   if (azp.has_value()) {
     azp_ptr = azp->data_ptr<int32_t>();
@@ -509,23 +508,24 @@ int64_t create_onednn_mm_handler(const torch::Tensor& b,
   args.b_ptr = b.data_ptr();
 
   APHRODITE_DISPATCH_FLOATING_TYPES(b.scalar_type(), "create_onednn_mm_handler",
-                                    [&] {
-                                      args.c_type = get_dnnl_type<scalar_t>();
-                                      args.ab_type = get_dnnl_type<scalar_t>();
-                                    });
+                               [&] {
+                                 args.c_type = get_dnnl_type<scalar_t>();
+                                 args.ab_type = get_dnnl_type<scalar_t>();
+                               });
 
   return reinterpret_cast<int64_t>(new MatMulPrimitiveHandler(args));
 }
 
 void onednn_mm(torch::Tensor& c,        // [M, OC], row-major
                const torch::Tensor& a,  // [M, IC], row-major
-               const std::optional<torch::Tensor>& bias, int64_t handler) {
+               const std::optional<torch::Tensor>& bias,
+               const torch::Tensor& handler_tensor) {
   CPU_KERNEL_GUARD_IN(onednn_mm)
   TORCH_CHECK(a.dim() == 2);
   TORCH_CHECK(a.stride(-1) == 1);
   TORCH_CHECK(c.stride(-1) == 1);
   MatMulPrimitiveHandler* ptr =
-      reinterpret_cast<MatMulPrimitiveHandler*>(handler);
+      reinterpret_cast<MatMulPrimitiveHandler*>(handler_tensor.item<int64_t>());
 
 // ACL matmuls expect contiguous source tensors
 #ifdef APHRODITE_USE_ACL

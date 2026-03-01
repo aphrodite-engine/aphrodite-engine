@@ -1,5 +1,6 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/all.h>
+#include <c10/cuda/CUDAGuard.h>
 
 #include <cmath>
 
@@ -275,6 +276,7 @@ void static_scaled_int8_quant(torch::Tensor& out,          // [..., hidden_size]
   int const num_tokens = input.numel() / hidden_size;
   dim3 const grid(num_tokens);
   dim3 const block(std::min(hidden_size, 256));
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   APHRODITE_DISPATCH_FLOATING_TYPES(
       input.scalar_type(), "static_scaled_int8_quant_kernel", [&] {
@@ -284,8 +286,7 @@ void static_scaled_int8_quant(torch::Tensor& out,          // [..., hidden_size]
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scale.data_ptr<float>(), hidden_size);
         } else {
-          aphrodite::static_scaled_int8_azp_quant_kernel<scalar_t, float,
-                                                         int32_t>
+          aphrodite::static_scaled_int8_azp_quant_kernel<scalar_t, float, int32_t>
               <<<grid, block, 0, stream>>>(
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scale.data_ptr<float>(), azp->data_ptr<int32_t>(),
@@ -307,6 +308,7 @@ void dynamic_scaled_int8_quant(
   int const num_tokens = input.numel() / hidden_size;
   dim3 const grid(num_tokens);
   dim3 const block(std::min(hidden_size, 256));
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   APHRODITE_DISPATCH_FLOATING_TYPES(
       input.scalar_type(), "dynamic_scaled_int8_quant_kernel", [&] {
@@ -316,8 +318,7 @@ void dynamic_scaled_int8_quant(
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scales.data_ptr<float>(), hidden_size);
         } else {
-          aphrodite::dynamic_scaled_int8_azp_quant_kernel<scalar_t, float,
-                                                          int32_t>
+          aphrodite::dynamic_scaled_int8_azp_quant_kernel<scalar_t, float, int32_t>
               <<<grid, block, 0, stream>>>(
                   input.data_ptr<scalar_t>(), out.data_ptr<int8_t>(),
                   scales.data_ptr<float>(), azp->data_ptr<int32_t>(),

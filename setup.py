@@ -569,6 +569,8 @@ package_data = {
         "quantization/hadamard.safetensors",
         "py.typed",
         "modeling/layers/fused_moe/configs/*.json",
+        "endpoints/serve/instrumentator/static/*.js",
+        "endpoints/serve/instrumentator/static/*.css",
     ]
 }
 
@@ -578,12 +580,13 @@ setup(
     version=get_aphrodite_version(),
     install_requires=get_requirements(),
     extras_require={
-        "bench": ["pandas", "matplotlib", "seaborn", "datasets"],
+        "bench": ["pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly"],
         "tensorizer": ["tensorizer==2.10.1"],
-        "fastsafetensors": ["fastsafetensors >= 0.1.10"],
-        "runai": ["runai-model-streamer[s3,gcs] >= 0.15.0"],
+        "fastsafetensors": ["fastsafetensors >= 0.2.2"],
+        "runai": ["runai-model-streamer[s3,gcs] >= 0.15.3"],
         "audio": [
             "librosa",
+            "scipy",
             "soundfile",
             "mistral_common[audio]",
         ],  # Required for audio processing
@@ -592,6 +595,15 @@ setup(
         "flashinfer": [],  # Kept for backwards compatibility
         # Optional deps for AMD FP4 quantization support
         "petit-kernel": ["petit-kernel"],
+        # Optional deps for Helion kernel development
+        "helion": ["helion"],
+        # Optional deps for OpenTelemetry tracing
+        "otel": [
+            "opentelemetry-sdk>=1.26.0",
+            "opentelemetry-api>=1.26.0",
+            "opentelemetry-exporter-otlp>=1.26.0",
+            "opentelemetry-semantic-conventions-ai>=0.4.1",
+        ],
     },
     ext_modules=ext_modules,
     cmdclass={},
