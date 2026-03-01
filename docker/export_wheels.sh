@@ -23,6 +23,7 @@ CUDA_VERSION="${CUDA_VERSION:-12.9.1}"
 TARGETPLATFORM="${TARGETPLATFORM:-linux/amd64}"
 MAX_JOBS="${MAX_JOBS:-2}"
 NVCC_THREADS="${NVCC_THREADS:-8}"
+APHRODITE_KERNELS_VERSION_OVERRIDE="${APHRODITE_KERNELS_VERSION_OVERRIDE:-0.0.2}"
 EXPORT_KERNELS="${1:-true}"
 EXPORT_MAIN="${2:-true}"
 
@@ -44,7 +45,7 @@ if [ "$EXPORT_KERNELS" = "true" ]; then
         --build-arg TARGETPLATFORM="${TARGETPLATFORM}" \
         --build-arg max_jobs="${MAX_JOBS}" \
         --build-arg nvcc_threads="${NVCC_THREADS}" \
-        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="0.0.2" \
+        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="${APHRODITE_KERNELS_VERSION_OVERRIDE}" \
         -f docker/Dockerfile . || true
     
     echo "Exporting kernels wheel..."
@@ -56,7 +57,7 @@ if [ "$EXPORT_KERNELS" = "true" ]; then
         --build-arg TARGETPLATFORM="${TARGETPLATFORM}" \
         --build-arg max_jobs="${MAX_JOBS}" \
         --build-arg nvcc_threads="${NVCC_THREADS}" \
-        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="0.0.2" \
+        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="${APHRODITE_KERNELS_VERSION_OVERRIDE}" \
         -f docker/Dockerfile .
     echo "✓ Kernels wheel exported to ./wheels/kernels"
 fi
@@ -70,7 +71,7 @@ if [ "$EXPORT_MAIN" = "true" ]; then
         --build-arg TARGETPLATFORM="${TARGETPLATFORM}" \
         --build-arg max_jobs="${MAX_JOBS}" \
         --build-arg nvcc_threads="${NVCC_THREADS}" \
-        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="0.0.2" \
+        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="${APHRODITE_KERNELS_VERSION_OVERRIDE}" \
         -f docker/Dockerfile . || true
     
     echo "Exporting main wheel..."
@@ -82,10 +83,9 @@ if [ "$EXPORT_MAIN" = "true" ]; then
         --build-arg TARGETPLATFORM="${TARGETPLATFORM}" \
         --build-arg max_jobs="${MAX_JOBS}" \
         --build-arg nvcc_threads="${NVCC_THREADS}" \
-        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="0.0.2" \
+        --build-arg APHRODITE_KERNELS_VERSION_OVERRIDE="${APHRODITE_KERNELS_VERSION_OVERRIDE}" \
         -f docker/Dockerfile .
     echo "✓ Main wheel exported to ./wheels/main"
 fi
 
 echo "Done!"
-

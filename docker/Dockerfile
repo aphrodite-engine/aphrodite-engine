@@ -149,6 +149,7 @@ ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 FROM base AS build-kernels
 ARG TARGETPLATFORM
 ARG CUDA_VERSION
+ARG APHRODITE_KERNELS_VERSION_OVERRIDE
 
 ARG PIP_INDEX_URL UV_INDEX_URL
 ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
@@ -180,6 +181,7 @@ ENV NVCC_THREADS=$nvcc_threads
 
 ARG aphrodite_target_device="cuda"
 ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
+ENV APHRODITE_KERNELS_VERSION_OVERRIDE=${APHRODITE_KERNELS_VERSION_OVERRIDE}
 ENV CCACHE_DIR=/root/.cache/ccache
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
@@ -201,6 +203,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 FROM base AS build
 ARG TARGETPLATFORM
 ARG CUDA_VERSION
+ARG APHRODITE_KERNELS_VERSION_OVERRIDE
 
 ARG PIP_INDEX_URL UV_INDEX_URL
 ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
@@ -226,6 +229,7 @@ COPY --from=build-kernels /workspace/aphrodite_kernels/dist/*.whl /tmp/kernels-w
 # Install kernels wheel before building main package
 ARG aphrodite_target_device="cuda"
 ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
+ENV APHRODITE_KERNELS_VERSION_OVERRIDE=${APHRODITE_KERNELS_VERSION_OVERRIDE}
 
 # Determine kernels extra index URL based on CUDA version and install kernels wheel
 RUN CUDA_MAJOR_MINOR=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \

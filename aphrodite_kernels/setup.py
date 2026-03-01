@@ -365,7 +365,16 @@ class cmake_build_ext(build_ext):
         targets = []
 
         def target_name(s: str) -> str:
-            return s.removeprefix("aphrodite_kernels.").removeprefix("aphrodite_flash_attn.")
+            # CMake target/component names are unqualified (e.g. "cumem_allocator"),
+            # while setuptools extension names are package-qualified.
+            for prefix in (
+                "aphrodite_kernels.aphrodite_flash_attn.",
+                "aphrodite_kernels.",
+                "aphrodite_flash_attn.",
+                "aphrodite.",
+            ):
+                s = s.removeprefix(prefix)
+            return s
 
         # Build all the extensions
         for ext in self.extensions:
