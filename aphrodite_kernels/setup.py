@@ -522,7 +522,7 @@ def get_kernels_version() -> str:
     if env_version := os.getenv("APHRODITE_KERNELS_VERSION_OVERRIDE"):
         print(f"Overriding Aphrodite version with {env_version} from APHRODITE_KERNELS_VERSION_OVERRIDE")
         os.environ["SETUPTOOLS_SCM_PRETEND_VERSION"] = env_version
-        return get_version(write_to="../aphrodite/_version.py")
+        return get_version(write_to="aphrodite_kernels/_version.py")
 
     # Use setuptools-scm to get version - works from current directory or parent git repo
     try:
