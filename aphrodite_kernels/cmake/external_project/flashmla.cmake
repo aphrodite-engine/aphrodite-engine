@@ -31,7 +31,7 @@ FetchContent_MakeAvailable(flashmla)
 message(STATUS "FlashMLA is available at ${flashmla_SOURCE_DIR}")
 
 # Vendor FlashMLA interface into vLLM with torch-ops shim.
-set(FLASHMLA_VENDOR_DIR "${CMAKE_SOURCE_DIR}/../aphrodite/third_party/flashmla")
+set(FLASHMLA_VENDOR_DIR "${CMAKE_SOURCE_DIR}/../../aphrodite/third_party/flashmla")
 file(MAKE_DIRECTORY "${FLASHMLA_VENDOR_DIR}")
 file(READ "${flashmla_SOURCE_DIR}/flash_mla/flash_mla_interface.py"
      FLASHMLA_INTERFACE_CONTENT)
@@ -45,7 +45,7 @@ file(WRITE "${FLASHMLA_VENDOR_DIR}/flash_mla_interface.py"
 # Install the generated flash_mla_interface.py to the wheel
 # Use COMPONENT _flashmla_C to ensure it's installed with the C extension
 install(FILES "${FLASHMLA_VENDOR_DIR}/flash_mla_interface.py"
-        DESTINATION aphrodite/third_party/flashmla/
+        DESTINATION ../../aphrodite/third_party/flashmla/
         COMPONENT _flashmla_C)
 
 # The FlashMLA kernels only work on hopper and require CUDA 12.3 or later.

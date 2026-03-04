@@ -42,7 +42,7 @@ message (STATUS "[triton_kernels] triton_kernels is available at ${TRITON_KERNEL
 add_custom_target(triton_kernels)
 
 # Ensure the aphrodite/third_party directory exists before installation
-install(CODE "file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/../aphrodite/third_party/triton_kernels\")")
+install(CODE "file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/../../aphrodite/third_party/triton_kernels\")")
 
 ## Copy .py files to install directory.
 install(DIRECTORY
