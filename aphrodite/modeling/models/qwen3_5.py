@@ -295,11 +295,6 @@ class Qwen3_5Model(Qwen3NextModel):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        qkvz_split_sizes = [
-            self.config.linear_num_key_heads * self.config.linear_key_head_dim,
-            self.config.linear_num_key_heads * self.config.linear_key_head_dim,
-            self.config.linear_num_value_heads * self.config.linear_value_head_dim,
-        ]
         stacked_params_mapping = [
             ("qkv_proj", "q_proj", "q"),
             ("qkv_proj", "k_proj", "k"),
@@ -347,11 +342,7 @@ class Qwen3_5Model(Qwen3NextModel):
                 if is_pp_missing_parameter(name, self) or name not in params_dict:
                     continue
                 param = params_dict[name]
-                if isinstance(shard_id, tuple):
-                    for chunk, chunk_shard_id in zip(loaded_weight.split(qkvz_split_sizes, dim=0), shard_id):
-                        param.weight_loader(param, chunk, chunk_shard_id)
-                else:
-                    param.weight_loader(param, loaded_weight, shard_id)
+                param.weight_loader(param, loaded_weight, shard_id)
                 break
             else:
                 is_expert_weight = False
