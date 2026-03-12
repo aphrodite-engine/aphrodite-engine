@@ -48,7 +48,7 @@ class MambaBase(AttentionLayerBase):
     def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec | None:
         if (
             aphrodite_config.speculative_config is not None
-            and aphrodite_config.model_config.hf_config.model_type not in ["qwen3_next"]
+            and aphrodite_config.model_config.hf_config.model_type not in ["qwen3_next", "qwen3_5", "qwen3_5_moe"]
         ):
             raise NotImplementedError("Mamba with speculative decoding is not supported yet.")
         mamba_block_size = aphrodite_config.cache_config.mamba_block_size

@@ -27,6 +27,7 @@ from aphrodite.modeling.layers.fused_moe import SharedFusedMoE
 from aphrodite.modeling.layers.layernorm import GemmaRMSNorm as Qwen3NextRMSNorm
 from aphrodite.modeling.layers.linear import (
     ColumnParallelLinear,
+    MergedColumnParallelLinear,
     QKVParallelLinear,
     ReplicatedLinear,
     RowParallelLinear,
@@ -42,7 +43,11 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
 )
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, sharded_weight_loader
+from aphrodite.modeling.model_loader.weight_utils import (
+    default_weight_loader,
+    maybe_remap_kv_scale_name,
+    sharded_weight_loader,
+)
 from aphrodite.modeling.models.qwen2_moe import Qwen2MoeMLP as Qwen3NextMLP
 from aphrodite.modeling.models.utils import sequence_parallel_chunk
 from aphrodite.modeling.utils import set_weight_attrs
@@ -186,7 +191,9 @@ class Qwen3NextGatedDeltaNet(nn.Module, MambaBase):
 
     def get_state_dtype(self) -> tuple[torch.dtype, torch.dtype]:
         return MambaStateDtypeCalculator.gated_delta_net_state_dtype(
-            self.model_config.dtype, self.cache_config.mamba_cache_dtype
+            self.model_config.dtype,
+            self.cache_config.mamba_cache_dtype,
+            self.cache_config.mamba_ssm_cache_dtype,
         )
 
     def get_state_shape(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -245,20 +252,17 @@ class Qwen3NextGatedDeltaNet(nn.Module, MambaBase):
         self.conv1d.weight.data = self.conv1d.weight.data.unsqueeze(1)
 
         # projection of the input hidden states
-        self.projection_size_qkvz = self.key_dim * 2 + self.value_dim * 2
-        self.projection_size_ba = self.num_v_heads * 2
-        self.in_proj_qkvz = ColumnParallelLinear(
-            input_size=self.hidden_size,
-            output_size=self.projection_size_qkvz,
-            bias=False,
+        self.in_proj_qkvz = self.create_qkvz_proj(
+            hidden_size=self.hidden_size,
+            key_dim=self.key_dim,
+            value_dim=self.value_dim,
             quant_config=quant_config,
             prefix=f"{prefix}.in_proj_qkvz",
         )
         # ba_proj doesn't support blockwise fp8 quantization.
-        self.in_proj_ba = ColumnParallelLinear(
-            input_size=self.hidden_size,
-            output_size=self.projection_size_ba,
-            bias=False,
+        self.in_proj_ba = self.create_ba_proj(
+            hidden_size=self.hidden_size,
+            num_v_heads=self.num_v_heads,
             quant_config=quant_config,
             prefix=f"{prefix}.in_proj_ba",
         )
@@ -320,6 +324,39 @@ class Qwen3NextGatedDeltaNet(nn.Module, MambaBase):
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
+
+    def create_qkvz_proj(
+        self,
+        hidden_size: int,
+        key_dim: int,
+        value_dim: int,
+        quant_config: QuantizationConfig | None,
+        prefix: str,
+    ) -> MergedColumnParallelLinear:
+        return MergedColumnParallelLinear(
+            input_size=hidden_size,
+            output_sizes=[sum((key_dim, key_dim, value_dim, value_dim))],
+            bias=False,
+            quant_config=quant_config,
+            prefix=prefix,
+        )
+
+    def create_ba_proj(
+        self,
+        hidden_size: int,
+        num_v_heads: int,
+        quant_config: QuantizationConfig | None,
+        prefix: str,
+    ) -> MergedColumnParallelLinear:
+        # Qwen3-Next stores in_proj_ba as a single fused weight with an
+        # interleaved GQA layout: [b_g0, a_g0, b_g1, a_g1, ...].
+        return MergedColumnParallelLinear(
+            input_size=hidden_size,
+            output_sizes=[num_v_heads * 2],
+            bias=False,
+            quant_config=quant_config,
+            prefix=prefix,
+        )
 
     def fix_query_key_value_ordering(
         self,
@@ -881,6 +918,8 @@ class Qwen3NextModel(nn.Module):
         else:
             self.norm = PPMissingLayer()
 
+        self.aux_hidden_state_layers: tuple[int, ...] = ()
+
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
@@ -890,7 +929,7 @@ class Qwen3NextModel(nn.Module):
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -902,7 +941,13 @@ class Qwen3NextModel(nn.Module):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        for layer in islice(self.layers, self.start_layer, self.end_layer):
+        aux_hidden_states = []
+        for layer_idx, layer in enumerate(
+            islice(self.layers, self.start_layer, self.end_layer),
+            start=self.start_layer,
+        ):
+            if layer_idx in self.aux_hidden_state_layers:
+                aux_hidden_states.append(hidden_states + residual if residual is not None else hidden_states)
             hidden_states, residual = layer(
                 positions=positions,
                 hidden_states=hidden_states,
@@ -912,6 +957,8 @@ class Qwen3NextModel(nn.Module):
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
+        if len(aux_hidden_states) > 0:
+            return hidden_states, aux_hidden_states
         return hidden_states
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
@@ -944,6 +991,11 @@ class Qwen3NextModel(nn.Module):
 
             if name.startswith("mtp."):
                 continue
+
+            if name.endswith("scale"):
+                name = maybe_remap_kv_scale_name(name, params_dict)
+                if name is None:
+                    continue
 
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
@@ -1009,6 +1061,8 @@ class Qwen3NextForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, M
             "v_proj",
         ],
         "gate_up_proj": ["gate_proj", "up_proj"],
+        "in_proj_qkvz": ["in_proj_qkvz"],
+        "in_proj_ba": ["in_proj_ba"],
     }
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
@@ -1104,6 +1158,13 @@ class Qwen3NextForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, M
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
 
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        self.model.aux_hidden_state_layers = layers
+
+    def get_eagle3_aux_hidden_state_layers(self) -> tuple[int, ...]:
+        num_layers = len(self.model.layers)
+        return (2, num_layers // 2, num_layers - 3)
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -1122,7 +1183,9 @@ class Qwen3NextForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, M
         aphrodite_config: "AphroditeConfig",
     ) -> tuple[torch.dtype, torch.dtype]:
         return MambaStateDtypeCalculator.gated_delta_net_state_dtype(
-            aphrodite_config.model_config.dtype, aphrodite_config.cache_config.mamba_cache_dtype
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
         )
 
     @classmethod

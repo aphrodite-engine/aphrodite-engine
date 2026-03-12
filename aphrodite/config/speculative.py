@@ -34,6 +34,7 @@ SpeculativeMethod = Literal[
     "deepseek_mtp",
     "ernie_mtp",
     "qwen3_next_mtp",
+    "qwen3_5_mtp",
     "mimo_mtp",
     "longcat_flash_mtp",
     "mtp",
@@ -46,6 +47,7 @@ MTP_MODEL_TYPES = (
     "glm4_moe_lite_mtp",
     "ernie_mtp",
     "qwen3_next_mtp",
+    "qwen3_5_mtp",
     "longcat_flash_mtp",
 )
 
@@ -218,6 +220,11 @@ class SpeculativeConfig:
         if hf_config.model_type == "qwen3_next_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
             hf_config.update({"n_predict": n_predict, "architectures": ["Qwen3NextMTP"]})
+        if hf_config.model_type in ("qwen3_5", "qwen3_5_moe"):
+            hf_config.model_type = "qwen3_5_mtp"
+        if hf_config.model_type == "qwen3_5_mtp":
+            n_predict = getattr(hf_config.text_config, "mtp_num_hidden_layers", 1)
+            hf_config.update({"n_predict": n_predict, "architectures": ["Qwen3_5MTP"]})
         if hf_config.model_type == "longcat_flash":
             hf_config.model_type = "longcat_flash_mtp"
             n_predict = getattr(hf_config, "num_nextn_predict_layers", 1)
