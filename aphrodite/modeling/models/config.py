@@ -457,6 +457,17 @@ class DeepseekV32ForCausalLM(VerifyAndUpdateConfig):
             logger.info("Using bfloat16 kv-cache for DeepSeekV3.2")
 
 
+class Qwen3_5ForConditionalGenerationConfig(HybridAttentionMambaModelConfig):
+    @classmethod
+    def verify_and_update_config(cls, aphrodite_config: "AphroditeConfig") -> None:
+        super().verify_and_update_config(aphrodite_config)
+
+        cache_config = aphrodite_config.cache_config
+        if cache_config.mamba_ssm_cache_dtype == "auto":
+            text_config = aphrodite_config.model_config.hf_text_config
+            cache_config.mamba_ssm_cache_dtype = getattr(text_config, "mamba_ssm_dtype", "float32")
+
+
 MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "GteModel": SnowflakeGteNewModelConfig,
     "GteNewModel": GteNewModelConfig,
@@ -474,4 +485,6 @@ MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "Mamba2ForCausalLM": MambaModelConfig,
     "FalconMambaForCausalLM": MambaModelConfig,
     "DeepseekV32ForCausalLM": DeepseekV32ForCausalLM,
+    "Qwen3_5ForConditionalGeneration": Qwen3_5ForConditionalGenerationConfig,
+    "Qwen3_5MoeForConditionalGeneration": Qwen3_5ForConditionalGenerationConfig,
 }
