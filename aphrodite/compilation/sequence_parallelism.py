@@ -117,6 +117,44 @@ class _SequenceParallelPatternHelper(_RMSNormAndQuantOpHelper):
         )
 
 
+class AllReduceActivationPattern(_SequenceParallelPatternHelper):
+
+    def __init__(self,
+                 activation_op: torch._ops.OpOverload,
+                 dtype: torch.dtype,
+                 device: str,
+                 **kwargs):
+        # activation_op is e.g. torch.ops.aten.silu.default
+        super().__init__(epsilon=0.0, dtype=dtype, device=device, **kwargs)
+        self.activation_op = activation_op
+
+    def get_inputs(self):
+        input_tensor = torch.empty([1, 8, 4],
+                                   device=self.device,
+                                   dtype=self.dtype)
+        return [input_tensor]
+
+    def register(self, pm_pass: PatternMatcherPass):
+
+        def pattern(
+            input_tensor: torch.Tensor,
+        ):
+            all_reduce = self._all_reduce(input_tensor)
+            activation = self.activation_op(all_reduce)
+            return activation
+
+        def replacement(
+            input_tensor: torch.Tensor,
+        ):
+            reduce_scatter = self._reduce_scatter(input_tensor)
+            activation = self.activation_op(reduce_scatter)
+            all_gather = self._all_gather(activation)
+            return all_gather
+
+        pm.register_replacement(pattern, replacement, self.get_inputs(),
+                                pm.fwd_only, pm_pass)
+
+
 class FirstAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
     def get_inputs(self):
         input = torch.empty([1, 8, 4], device=self.device, dtype=self.dtype)
@@ -405,6 +443,12 @@ class SequenceParallelismPass(AphroditePatternMatcherPass):
         super().__init__(config)
 
         self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="sequence_parallelism_pass")
+
+        # Activation patterns
+        for act_op in [torch.ops.aten.silu.default, torch.ops.aten.gelu.default]:
+            AllReduceActivationPattern(
+                act_op, self.model_dtype,
+                self.device).register(self.patterns)
 
         for epsilon in [1e-5, 1e-6]:
             # RMSNorm + Static FP8 quantization patterns
