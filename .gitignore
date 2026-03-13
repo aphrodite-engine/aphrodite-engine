@@ -216,3 +216,8 @@ ep_kernels_workspace/
 CMakeUserPresets.json
 cmake-build*/
 aphrodite/aphrodite_flash_attn/*
+
+aphrodite/third_party/triton_kernels/*
+aphrodite/grpc/aphrodite_engine_pb2.py
+aphrodite/grpc/aphrodite_engine_pb2_grpc.py
+aphrodite/grpc/aphrodite_engine_pb2.pyi

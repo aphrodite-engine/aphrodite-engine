@@ -455,22 +455,13 @@ def get_nvcc_cuda_version() -> Version:
     return nvcc_cuda_version
 
 
-def get_gaudi_sw_version():
-    """
-    Returns the driver version.
-    """
-    # Enable console printing for `hl-smi` check
-    output = subprocess.run("hl-smi", shell=True, text=True, capture_output=True, env={"ENABLE_CONSOLE": "true"})
-    if output.returncode == 0 and output.stdout:
-        return output.stdout.split("\n")[2].replace(" ", "").split(":")[1][:-1].split("-")[0]
-    return "0.0.0"  # when hl-smi is not available
-
-
 def get_aphrodite_version() -> str:
     # Allow overriding the version. This is useful to build platform-specific
     # wheels (e.g. CPU, TPU) without modifying the source.
     if env_version := os.getenv("APHRODITE_VERSION_OVERRIDE"):
-        return env_version
+        print(f"Overriding Aphrodite version with {env_version} from APHRODITE_VERSION_OVERRIDE")
+        os.environ["SETUPTOOLS_SCM_PRETEND_VERSION"] = env_version
+        return get_version(write_to="aphrodite/_version.py")
 
     version = get_version(write_to="aphrodite/_version.py")
     sep = "+" if "+" not in version else "."  # dev versions might contain +
@@ -479,7 +470,7 @@ def get_aphrodite_version() -> str:
         if envs.APHRODITE_TARGET_DEVICE == "empty":
             version += f"{sep}empty"
     elif _is_cuda():
-        if envs.APHRODITE_USE_PRECOMPILED:
+        if envs.APHRODITE_USE_PRECOMPILED and not envs.APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX:
             version += f"{sep}precompiled"
         else:
             cuda_version = str(get_nvcc_cuda_version())
@@ -493,12 +484,6 @@ def get_aphrodite_version() -> str:
         rocm_version = get_rocm_version() or torch.version.hip
         if rocm_version and rocm_version != envs.APHRODITE_MAIN_CUDA_VERSION:
             version += f"{sep}rocm{rocm_version.replace('.', '')[:3]}"
-    elif _is_hpu():
-        # Get the Intel Gaudi Software Suite version
-        gaudi_sw_version = str(get_gaudi_sw_version())
-        if gaudi_sw_version != envs.APHRODITE_MAIN_CUDA_VERSION:
-            gaudi_sw_version = gaudi_sw_version.replace(".", "")[:3]
-            version += f"{sep}gaudi{gaudi_sw_version}"
     elif _is_tpu():
         version += f"{sep}tpu"
     elif _is_cpu():
@@ -569,6 +554,8 @@ package_data = {
         "quantization/hadamard.safetensors",
         "py.typed",
         "modeling/layers/fused_moe/configs/*.json",
+        "endpoints/serve/instrumentator/static/*.js",
+        "endpoints/serve/instrumentator/static/*.css",
     ]
 }
 
@@ -578,12 +565,13 @@ setup(
     version=get_aphrodite_version(),
     install_requires=get_requirements(),
     extras_require={
-        "bench": ["pandas", "matplotlib", "seaborn", "datasets"],
+        "bench": ["pandas", "matplotlib", "seaborn", "datasets", "scipy"],
         "tensorizer": ["tensorizer==2.10.1"],
         "fastsafetensors": ["fastsafetensors >= 0.1.10"],
-        "runai": ["runai-model-streamer[s3,gcs] >= 0.15.0"],
+        "runai": ["runai-model-streamer[s3,gcs] >= 0.15.3"],
         "audio": [
             "librosa",
+            "scipy",
             "soundfile",
             "mistral_common[audio]",
         ],  # Required for audio processing

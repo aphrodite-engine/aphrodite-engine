@@ -93,6 +93,7 @@ def install_system_dependencies():
         "meson",
         "libtool",
         "libtool-bin",
+        "pkg-config",
     ]
     run_command(["apt-get", "update"])
     run_command(["apt-get", "install", "-y"] + apt_packages)
@@ -171,6 +172,7 @@ def build_and_install_prerequisites(args):
     ucx_plugin_path = os.path.join(ucx_lib_path, "ucx")
     existing_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
     build_env["LD_LIBRARY_PATH"] = f"{ucx_lib_path}:{ucx_plugin_path}:{existing_ld_path}".strip(":")
+    build_env["LDFLAGS"] = "-Wl,-rpath,$ORIGIN"
     print(f"--> Using LD_LIBRARY_PATH: {build_env['LD_LIBRARY_PATH']}", flush=True)
 
     temp_wheel_dir = os.path.join(ROOT_DIR, "temp_wheelhouse")
