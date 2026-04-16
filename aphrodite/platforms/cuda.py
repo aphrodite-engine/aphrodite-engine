@@ -353,9 +353,11 @@ class CudaPlatformBase(Platform):
             logger.info_once("Using XFormers backend.")
             return XFORMERS_V1
 
-        from aphrodite.attention.selector import is_attn_backend_supported
+        from aphrodite.attention.selector import _IsSupported, is_attn_backend_supported
 
         # Default backends for V1 engine
+        is_default_backend_supported = _IsSupported(can_import=False, head_size=False, dtype=False)
+
         # Prefer FlashInfer for Blackwell GPUs if installed
         if cls.is_device_capability(100):
             if is_default_backend_supported := is_attn_backend_supported(FLASHINFER_V1, head_size, dtype):
