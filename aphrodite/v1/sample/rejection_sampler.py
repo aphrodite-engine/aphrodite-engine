@@ -193,7 +193,9 @@ class RejectionSampler(nn.Module):
     def parse_output(
         output_token_ids: torch.Tensor,
         vocab_size: int,
-    ) -> list[list[int]]:
+        invalid_req_indices: list[int] | torch.Tensor | None = None,
+        logprobs_tensors: LogprobsTensors | None = None,
+    ) -> tuple[list[list[int]], "LogprobsLists | None"]:
         """Parse the output of the rejection sampler.
         Args:
             output_token_ids: The sampled token IDs in shape
@@ -201,14 +203,38 @@ class RejectionSampler(nn.Module):
                 replaced with `PLACEHOLDER_TOKEN_ID` by the rejection sampler
                 and will be filtered out in this function.
             vocab_size: The size of the vocabulary.
+            invalid_req_indices: Request indices whose sampled outputs should be
+                discarded after filtering.
+            logprobs_tensors: Optional logprob tensors aligned to the accepted
+                tokens emitted by speculative decoding.
         Returns:
-            A list of lists of token IDs.
+            The filtered token IDs and optional logprobs lists.
         """
         output_token_ids_np = output_token_ids.cpu().numpy()
         # Create mask for valid tokens.
         valid_mask = (output_token_ids_np != PLACEHOLDER_TOKEN_ID) & (output_token_ids_np < vocab_size)
         outputs = [row[valid_mask[i]].tolist() for i, row in enumerate(output_token_ids_np)]
-        return outputs
+        cu_num_generated_tokens = [0]
+
+        invalid_set: set[int] = set()
+        if invalid_req_indices is not None:
+            if isinstance(invalid_req_indices, torch.Tensor):
+                invalid_set = {int(i) for i in invalid_req_indices.tolist()}
+            else:
+                invalid_set = {int(i) for i in invalid_req_indices}
+
+        for i in range(len(outputs)):
+            if i in invalid_set:
+                outputs[i].clear()
+            cu_num_generated_tokens.append(cu_num_generated_tokens[-1] + len(outputs[i]))
+
+        logprobs_lists = None
+        if logprobs_tensors is not None:
+            logprobs_lists = logprobs_tensors.tolists(
+                cu_num_generated_tokens=cu_num_generated_tokens
+            )
+
+        return outputs, logprobs_lists
 
     def apply_logits_processors(
         self,
