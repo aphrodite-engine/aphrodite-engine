@@ -232,6 +232,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     prompt_logprobs: int | None = None
     allowed_token_ids: list[int] | None = None
     bad_words: list[str] = Field(default_factory=list)
+    temperature_last: bool | None = False
     xtc_threshold: float | None = 0.1
     xtc_probability: float | None = 0.0
     dry_multiplier: float | None = 0.0
@@ -599,6 +600,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             dynatemp_min=self.dynatemp_min,
             dynatemp_max=self.dynatemp_max,
             dynatemp_exponent=self.dynatemp_exponent,
+            temperature_last=self.temperature_last,
             top_p=top_p,
             top_k=top_k,
             top_a=self.top_a,

@@ -65,6 +65,7 @@ def _metadata(**overrides) -> SamplingMetadata:
         logit_bias={},
         logitsprocs=LogitsProcessors(),
         logprob_token_ids=None,
+        temperature_last=None,
         persistent_data={},
         spec_token_ids=[[]],
     )
@@ -365,6 +366,79 @@ def test_mirostat_short_circuits_other_samplers(monkeypatch):
     assert call_order == ["mirostat"]
 
 
+def test_temperature_last_moves_temperature_to_the_end(monkeypatch):
+    sampler = Sampler()
+    call_order = []
+
+    monkeypatch.setattr(
+        sampler.sampling_ops,
+        "apply_top_a",
+        lambda logits, metadata: call_order.append("top_a") or logits,
+    )
+    monkeypatch.setattr(
+        sampler.sampling_ops,
+        "apply_tfs",
+        lambda logits, metadata: call_order.append("tfs") or logits,
+    )
+    monkeypatch.setattr(
+        sampler,
+        "apply_temperature",
+        lambda logits, metadata: call_order.append("temperature") or logits,
+    )
+
+    metadata = _metadata(
+        top_a=torch.tensor([0.5], dtype=torch.float32),
+        tfs=torch.tensor([0.5], dtype=torch.float32),
+        temperature_last=[True],
+    )
+
+    sampler._execute_samplers_in_order(torch.zeros((1, 4), dtype=torch.float32), metadata)
+
+    assert call_order == ["top_a", "tfs", "temperature"]
+
+
+def test_mixed_request_temperature_last_matches_separate_execution():
+    sampler = Sampler()
+    logits = torch.tensor(
+        [
+            [4.0, 3.0, 2.0, 1.0],
+            [4.0, 3.0, 2.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    combined_metadata = _metadata(
+        temperature=torch.tensor([2.0, 2.0], dtype=torch.float32),
+        top_a=torch.tensor([0.2, 0.2], dtype=torch.float32),
+        tfs=torch.tensor([0.5, 0.5], dtype=torch.float32),
+        prompt_token_ids=torch.tensor([[1, 2, 3], [1, 2, 3]], dtype=torch.int64),
+        output_token_ids=[[], []],
+        frequency_penalties=torch.tensor([0.0, 0.0], dtype=torch.float32),
+        presence_penalties=torch.tensor([0.0, 0.0], dtype=torch.float32),
+        repetition_penalties=torch.tensor([1.0, 1.0], dtype=torch.float32),
+        temperature_last=[False, True],
+    )
+
+    separate_default_metadata = _metadata(
+        temperature=torch.tensor([2.0], dtype=torch.float32),
+        top_a=torch.tensor([0.2], dtype=torch.float32),
+        tfs=torch.tensor([0.5], dtype=torch.float32),
+        temperature_last=[False],
+    )
+    separate_temp_last_metadata = _metadata(
+        temperature=torch.tensor([2.0], dtype=torch.float32),
+        top_a=torch.tensor([0.2], dtype=torch.float32),
+        tfs=torch.tensor([0.5], dtype=torch.float32),
+        temperature_last=[True],
+    )
+
+    combined_result = sampler._execute_samplers_in_order(logits.clone(), combined_metadata)
+    expected_default = sampler._execute_samplers_in_order(logits[[0]].clone(), separate_default_metadata)
+    expected_temp_last = sampler._execute_samplers_in_order(logits[[1]].clone(), separate_temp_last_metadata)
+
+    assert torch.allclose(combined_result[0], expected_default[0])
+    assert torch.allclose(combined_result[1], expected_temp_last[0])
+
+
 def test_skew_is_applied_before_sampling(monkeypatch):
     sampler = Sampler()
     observed = {}
@@ -410,6 +484,7 @@ def test_input_batch_preserves_custom_sampler_metadata():
         dry_max_occurrences=4,
         dry_early_exit_match_len=8,
         no_repeat_ngram_size=3,
+        temperature_last=True,
     )
     request = CachedRequestState(
         req_id="req",
@@ -478,6 +553,7 @@ def test_input_batch_preserves_custom_sampler_metadata():
     )
     assert metadata.no_repeat_ngram_size is not None
     assert metadata.no_repeat_ngram_size[0].item() == sampling_params.no_repeat_ngram_size
+    assert metadata.temperature_last == [True]
     assert metadata.dry_sequence_breaker_ids is not None
     assert metadata.dry_sequence_breaker_ids[0, :2].tolist() == [9, 10]
     assert metadata.prompt_token_ids is not None

@@ -94,6 +94,9 @@ class SamplingMetadata:
 
     logprob_token_ids: dict[int, list[int]] | None = None
 
+    # Request-level temperature-last execution flag.
+    temperature_last: list[bool] | None = None
+
     # Persistent metadata for mirostat
     persistent_data: dict[int, dict[str, Any]] = field(default_factory=dict)
 

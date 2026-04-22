@@ -1,5 +1,7 @@
 """A layer that samples the next tokens from the model's outputs."""
 
+from dataclasses import replace
+
 import torch
 import torch.nn as nn
 
@@ -182,7 +184,44 @@ class Sampler(nn.Module):
             logits = self.sampling_ops.apply_mirostat(logits, sampling_metadata)
             return logits
 
-        sampler_order = DEFAULT_SAMPLER_ORDER
+        temperature_last_flags = sampling_metadata.temperature_last
+        if not temperature_last_flags:
+            return self._apply_sampler_order(logits, sampling_metadata, do_temperature_last=False)
+
+        if all(temperature_last_flags):
+            return self._apply_sampler_order(logits, sampling_metadata, do_temperature_last=True)
+
+        if not any(temperature_last_flags):
+            return self._apply_sampler_order(logits, sampling_metadata, do_temperature_last=False)
+
+        temp_last_indices = [i for i, enabled in enumerate(temperature_last_flags) if enabled]
+        default_indices = [i for i, enabled in enumerate(temperature_last_flags) if not enabled]
+
+        if default_indices:
+            default_metadata = self._subset_sampling_metadata(sampling_metadata, default_indices)
+            default_logits = self._apply_sampler_order(logits[default_indices], default_metadata, False)
+            logits[default_indices] = default_logits
+
+        if temp_last_indices:
+            temp_last_metadata = self._subset_sampling_metadata(sampling_metadata, temp_last_indices)
+            temp_last_logits = self._apply_sampler_order(logits[temp_last_indices], temp_last_metadata, True)
+            logits[temp_last_indices] = temp_last_logits
+
+        return logits
+
+    def _apply_sampler_order(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+        do_temperature_last: bool,
+    ) -> torch.Tensor:
+        sampler_order = []
+        for sampler_id in DEFAULT_SAMPLER_ORDER:
+            if sampler_id == SamplerID.TEMPERATURE and do_temperature_last:
+                continue
+            sampler_order.append(sampler_id)
+            if sampler_id == SamplerID.XTC and do_temperature_last:
+                sampler_order.append(SamplerID.TEMPERATURE)
 
         # Log the execution order for debugging
         logger.debug("Sampler execution order: ")
@@ -274,6 +313,111 @@ class Sampler(nn.Module):
                 logits = self.sampling_ops.apply_xtc(logits, sampling_metadata)
 
         return logits
+
+    @staticmethod
+    def _subset_sampling_metadata(
+        sampling_metadata: SamplingMetadata,
+        indices: list[int],
+    ) -> SamplingMetadata:
+        index_tensor = torch.tensor(indices, device=sampling_metadata.temperature.device if sampling_metadata.temperature is not None else None)
+
+        def maybe_index_tensor(tensor: torch.Tensor | None) -> torch.Tensor | None:
+            if tensor is None:
+                return None
+            return tensor.index_select(0, index_tensor.to(tensor.device))
+
+        def reindex_dict_list(
+            mapping: dict[int, list[int]] | None,
+        ) -> dict[int, list[int]] | None:
+            if mapping is None:
+                return None
+            return {
+                new_i: mapping[old_i]
+                for new_i, old_i in enumerate(indices)
+                if old_i in mapping
+            }
+
+        def reindex_dict_nested_list(
+            mapping: dict[int, list[list[int]]],
+        ) -> dict[int, list[list[int]]]:
+            return {
+                new_i: mapping[old_i]
+                for new_i, old_i in enumerate(indices)
+                if old_i in mapping
+            }
+
+        def reindex_dict_float_map(
+            mapping: dict[int, dict[int, float]],
+        ) -> dict[int, dict[int, float]]:
+            return {
+                new_i: mapping[old_i]
+                for new_i, old_i in enumerate(indices)
+                if old_i in mapping
+            }
+
+        return replace(
+            sampling_metadata,
+            temperature=maybe_index_tensor(sampling_metadata.temperature),
+            dynatemp_min=maybe_index_tensor(sampling_metadata.dynatemp_min),
+            dynatemp_max=maybe_index_tensor(sampling_metadata.dynatemp_max),
+            dynatemp_exp=maybe_index_tensor(sampling_metadata.dynatemp_exp),
+            top_p=maybe_index_tensor(sampling_metadata.top_p),
+            top_k=maybe_index_tensor(sampling_metadata.top_k),
+            top_a=maybe_index_tensor(sampling_metadata.top_a),
+            dry_multiplier=maybe_index_tensor(sampling_metadata.dry_multiplier),
+            dry_base=maybe_index_tensor(sampling_metadata.dry_base),
+            dry_allowed_length=maybe_index_tensor(sampling_metadata.dry_allowed_length),
+            dry_sequence_breaker_ids=maybe_index_tensor(sampling_metadata.dry_sequence_breaker_ids),
+            dry_ranges=maybe_index_tensor(sampling_metadata.dry_ranges),
+            dry_max_ngram=maybe_index_tensor(sampling_metadata.dry_max_ngram),
+            dry_max_occurrences=maybe_index_tensor(sampling_metadata.dry_max_occurrences),
+            dry_early_exit_match_len=maybe_index_tensor(sampling_metadata.dry_early_exit_match_len),
+            no_repeat_ngram_size=maybe_index_tensor(sampling_metadata.no_repeat_ngram_size),
+            tfs=maybe_index_tensor(sampling_metadata.tfs),
+            eta_cutoff=maybe_index_tensor(sampling_metadata.eta_cutoff),
+            epsilon_cutoff=maybe_index_tensor(sampling_metadata.epsilon_cutoff),
+            typical_p=maybe_index_tensor(sampling_metadata.typical_p),
+            quadratic_smoothing_factor=maybe_index_tensor(sampling_metadata.quadratic_smoothing_factor),
+            quadratic_smoothing_curve=maybe_index_tensor(sampling_metadata.quadratic_smoothing_curve),
+            xtc_threshold=maybe_index_tensor(sampling_metadata.xtc_threshold),
+            xtc_probability=maybe_index_tensor(sampling_metadata.xtc_probability),
+            top_nsigma=maybe_index_tensor(sampling_metadata.top_nsigma),
+            mirostat_mode=maybe_index_tensor(sampling_metadata.mirostat_mode),
+            mirostat_tau=maybe_index_tensor(sampling_metadata.mirostat_tau),
+            mirostat_eta=maybe_index_tensor(sampling_metadata.mirostat_eta),
+            skew=maybe_index_tensor(sampling_metadata.skew),
+            prompt_token_ids=maybe_index_tensor(sampling_metadata.prompt_token_ids),
+            frequency_penalties=maybe_index_tensor(sampling_metadata.frequency_penalties),
+            presence_penalties=maybe_index_tensor(sampling_metadata.presence_penalties),
+            repetition_penalties=maybe_index_tensor(sampling_metadata.repetition_penalties),
+            output_token_ids=[sampling_metadata.output_token_ids[i] for i in indices],
+            allowed_token_ids_mask=maybe_index_tensor(sampling_metadata.allowed_token_ids_mask),
+            bad_words_token_ids=reindex_dict_nested_list(sampling_metadata.bad_words_token_ids),
+            logit_bias=reindex_dict_float_map(sampling_metadata.logit_bias),
+            logprob_token_ids=reindex_dict_list(sampling_metadata.logprob_token_ids),
+            temperature_last=[sampling_metadata.temperature_last[i] for i in indices]
+            if sampling_metadata.temperature_last is not None
+            else None,
+            persistent_data={
+                new_i: sampling_metadata.persistent_data.get(old_i, {}).copy()
+                for new_i, old_i in enumerate(indices)
+            },
+            spec_token_ids=(
+                [
+                    sampling_metadata.spec_token_ids[i]
+                    if i < len(sampling_metadata.spec_token_ids)
+                    else []
+                    for i in indices
+                ]
+                if sampling_metadata.spec_token_ids is not None
+                else None
+            ),
+            generators={
+                new_i: sampling_metadata.generators[old_i]
+                for new_i, old_i in enumerate(indices)
+                if old_i in sampling_metadata.generators
+            },
+        )
 
     @staticmethod
     def greedy_sample(logits: torch.Tensor) -> torch.Tensor:

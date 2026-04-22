@@ -461,6 +461,7 @@ class InputBatch:
         self.bad_words_token_ids: dict[int, list[list[int]]] = {}
         self.logit_bias: dict[int, dict[int, float]] = {}
 
+        self.temperature_last: list[bool] = [False] * max_num_reqs
         self.persistent_data: dict[int, dict[str, Any]] = {}
 
         self.logits_processing_needs_token_ids = np.zeros(max_num_reqs, dtype=bool)
@@ -710,6 +711,7 @@ class InputBatch:
             if sampling_params.logit_bias:
                 self.logit_bias[req_index] = sampling_params.logit_bias
 
+            self.temperature_last[req_index] = sampling_params.temperature_last
             self.persistent_data[req_index] = request.persistent_data.copy()
         elif pooling_params := request.pooling_params:
             pooling_states = request.pooling_states
@@ -1489,6 +1491,7 @@ class InputBatch:
             bad_words_token_ids=self.bad_words_token_ids,
             logit_bias=self.logit_bias,
             logitsprocs=self.logitsprocs,
+            temperature_last=self.temperature_last[:num_reqs],
             persistent_data=self.persistent_data,
         )
 

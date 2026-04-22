@@ -108,6 +108,7 @@ class CompletionRequest(OpenAIBaseModel):
     skip_special_tokens: bool = True
     spaces_between_special_tokens: bool = True
     truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_INT64_MAX)] | None = None
+    temperature_last: bool | None = False
     xtc_threshold: float | None = 0.1
     xtc_probability: float | None = 0.0
     dry_multiplier: float | None = 0.0
@@ -353,6 +354,7 @@ class CompletionRequest(OpenAIBaseModel):
             dynatemp_min=self.dynatemp_min,
             dynatemp_max=self.dynatemp_max,
             dynatemp_exponent=self.dynatemp_exponent,
+            temperature_last=self.temperature_last,
             top_p=top_p,
             top_k=top_k,
             top_a=self.top_a,
