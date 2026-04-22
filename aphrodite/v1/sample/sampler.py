@@ -182,28 +182,7 @@ class Sampler(nn.Module):
             logits = self.sampling_ops.apply_mirostat(logits, sampling_metadata)
             return logits
 
-        # Determine the sampler execution order
-        sampler_order = sampling_metadata.sampler_priority
-        do_temp_last = sampling_metadata.temperature_last
-
-        if sampler_order is None:
-            # Use default order with temperature_last handling
-            sampler_order = []
-            for sampler_id in DEFAULT_SAMPLER_ORDER:
-                if sampler_id == SamplerID.TEMPERATURE and do_temp_last:
-                    continue
-                sampler_order.append(sampler_id)
-
-                if sampler_id == SamplerID.XTC and do_temp_last:
-                    sampler_order.append(SamplerID.TEMPERATURE)
-        else:
-            # Warn if both custom order and temp_last are specified
-            if do_temp_last:
-                logger.warning_once(
-                    "Both sampler_priority and temperature_last=True "
-                    "were specified. Using custom sampler_priority order "
-                    "and ignoring temperature_last."
-                )
+        sampler_order = DEFAULT_SAMPLER_ORDER
 
         # Log the execution order for debugging
         logger.debug("Sampler execution order: ")

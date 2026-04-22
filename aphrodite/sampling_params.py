@@ -241,8 +241,6 @@ class SamplingParams(
     """Maximum temperature for dynamic-temperature sampling."""
     dynatemp_exponent: float = 1.0
     """Exponent used for dynamic-temperature sampling."""
-    temperature_last: bool = False
-    """Apply temperature at the end of the sampler pipeline."""
     top_p: float = 1.0
     """Controls the cumulative probability of the top tokens to consider. Must
     be in (0, 1]. Set to 1 to consider all tokens."""
@@ -384,9 +382,6 @@ class SamplingParams(
     """DRY early-exit match threshold."""
     skew: float = 0.0
     """Probability skew sampling parameter."""
-    sampler_priority: list[int] | None = None
-    """Custom sampler execution order."""
-
     skip_reading_prefix_cache: bool | None = None
     thinking_token_budget: int | None = None
     """Maximum number of tokens allowed for thinking operations."""
@@ -410,7 +405,6 @@ class SamplingParams(
         dynatemp_min: float | None = 0.0,
         dynatemp_max: float | None = 0.0,
         dynatemp_exponent: float | None = 1.0,
-        temperature_last: bool | None = False,
         top_p: float | None = 1.0,
         top_k: int = 0,
         top_a: float | None = 0.0,
@@ -441,7 +435,6 @@ class SamplingParams(
         dry_max_occurrences: int | None = 8,
         dry_early_exit_match_len: int | None = 8,
         skew: float | None = 0.0,
-        sampler_priority: list[int] | None = None,
         thinking_token_budget: int | None = None,
         include_stop_str_in_output: bool = False,
         ignore_eos: bool = False,
@@ -484,9 +477,6 @@ class SamplingParams(
             dynatemp_exponent=1.0
             if dynatemp_exponent is None
             else dynatemp_exponent,
-            temperature_last=False
-            if temperature_last is None
-            else temperature_last,
             top_p=1.0 if top_p is None else top_p,
             top_k=top_k,
             top_a=0.0 if top_a is None else top_a,
@@ -531,7 +521,6 @@ class SamplingParams(
             if dry_early_exit_match_len is None
             else dry_early_exit_match_len,
             skew=0.0 if skew is None else skew,
-            sampler_priority=sampler_priority,
             thinking_token_budget=thinking_token_budget,
             include_stop_str_in_output=include_stop_str_in_output,
             ignore_eos=ignore_eos,

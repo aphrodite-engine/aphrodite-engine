@@ -39,7 +39,6 @@ from aphrodite.sampling_params import (
     BeamSearchParams,
     RepetitionDetectionParams,
     RequestOutputKind,
-    SamplerID,
     SamplingParams,
     StructuredOutputsParams,
 )
@@ -233,7 +232,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
     prompt_logprobs: int | None = None
     allowed_token_ids: list[int] | None = None
     bad_words: list[str] = Field(default_factory=list)
-    temperature_last: bool | None = False
     xtc_threshold: float | None = 0.1
     xtc_probability: float | None = 0.0
     dry_multiplier: float | None = 0.0
@@ -249,7 +247,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
     dynatemp_exponent: float | None = 1.0
     nsigma: float | None = 0.0
     skew: float | None = 0.0
-    sampler_priority: list[int] | list[str] | None = None
     mirostat_mode: int | None = 0
     mirostat_tau: float | None = 0.0
     mirostat_eta: float | None = 0.0
@@ -592,11 +589,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
-        sampler_priority = (
-            [int(SamplerID.from_str(x)) for x in self.sampler_priority]
-            if self.sampler_priority
-            else None
-        )
         return SamplingParams.from_optional(
             n=self.n,
             presence_penalty=self.presence_penalty,
@@ -607,7 +599,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
             dynatemp_min=self.dynatemp_min,
             dynatemp_max=self.dynatemp_max,
             dynatemp_exponent=self.dynatemp_exponent,
-            temperature_last=self.temperature_last,
             top_p=top_p,
             top_k=top_k,
             top_a=self.top_a,
@@ -633,7 +624,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
             dry_early_exit_match_len=self.dry_early_exit_match_len,
             nsigma=self.nsigma,
             skew=self.skew,
-            sampler_priority=sampler_priority,
             mirostat_mode=self.mirostat_mode,
             mirostat_tau=self.mirostat_tau,
             mirostat_eta=self.mirostat_eta,

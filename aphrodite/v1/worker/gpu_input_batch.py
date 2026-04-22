@@ -11,7 +11,7 @@ import torch
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.inputs import MultiModalFeatureSpec
 from aphrodite.pooling_params import PoolingParams
-from aphrodite.sampling_params import SamplerID, SamplingParams, SamplingType
+from aphrodite.sampling_params import SamplingParams, SamplingType
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
 from aphrodite.utils.collection_utils import swap_dict_values
 from aphrodite.v1.outputs import LogprobsTensors
@@ -461,9 +461,6 @@ class InputBatch:
         self.bad_words_token_ids: dict[int, list[list[int]]] = {}
         self.logit_bias: dict[int, dict[int, float]] = {}
 
-        # Sampler priority / execution metadata for custom Aphrodite samplers.
-        self.sampler_priority: list[list[int] | None] = [None] * max_num_reqs
-        self.temperature_last: list[bool] = [False] * max_num_reqs
         self.persistent_data: dict[int, dict[str, Any]] = {}
 
         self.logits_processing_needs_token_ids = np.zeros(max_num_reqs, dtype=bool)
@@ -713,8 +710,6 @@ class InputBatch:
             if sampling_params.logit_bias:
                 self.logit_bias[req_index] = sampling_params.logit_bias
 
-            self.sampler_priority[req_index] = sampling_params.sampler_priority
-            self.temperature_last[req_index] = sampling_params.temperature_last
             self.persistent_data[req_index] = request.persistent_data.copy()
         elif pooling_params := request.pooling_params:
             pooling_states = request.pooling_states
@@ -1494,15 +1489,6 @@ class InputBatch:
             bad_words_token_ids=self.bad_words_token_ids,
             logit_bias=self.logit_bias,
             logitsprocs=self.logitsprocs,
-            sampler_priority=next(
-                (
-                    [SamplerID(pid) for pid in priority_list]
-                    for priority_list in self.sampler_priority[:num_reqs]
-                    if priority_list is not None
-                ),
-                None,
-            ),
-            temperature_last=any(self.temperature_last[:num_reqs]),
             persistent_data=self.persistent_data,
         )
 

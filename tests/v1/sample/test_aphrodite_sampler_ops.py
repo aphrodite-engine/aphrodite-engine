@@ -1,7 +1,6 @@
 import torch
 import pytest
 
-from aphrodite.common.sampling_params import SamplerID
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.v1.sample.logits_processor import LogitsProcessors
 from aphrodite.v1.sample.metadata import SamplingMetadata
@@ -66,8 +65,6 @@ def _metadata(**overrides) -> SamplingMetadata:
         logit_bias={},
         logitsprocs=LogitsProcessors(),
         logprob_token_ids=None,
-        sampler_priority=None,
-        temperature_last=False,
         persistent_data={},
         spec_token_ids=[[]],
     )
@@ -341,68 +338,6 @@ def test_xtc_probability_zero_is_noop():
     assert torch.equal(result, logits)
 
 
-def test_temperature_last_moves_temperature_to_the_end(monkeypatch):
-    sampler = Sampler()
-    call_order = []
-
-    monkeypatch.setattr(
-        sampler.sampling_ops,
-        "apply_top_a",
-        lambda logits, metadata: call_order.append("top_a") or logits,
-    )
-    monkeypatch.setattr(
-        sampler.sampling_ops,
-        "apply_tfs",
-        lambda logits, metadata: call_order.append("tfs") or logits,
-    )
-    monkeypatch.setattr(
-        sampler,
-        "apply_temperature",
-        lambda logits, metadata: call_order.append("temperature") or logits,
-    )
-
-    metadata = _metadata(
-        top_a=torch.tensor([0.5], dtype=torch.float32),
-        tfs=torch.tensor([0.5], dtype=torch.float32),
-        temperature_last=True,
-    )
-
-    sampler._execute_samplers_in_order(torch.zeros((1, 4), dtype=torch.float32), metadata)
-
-    assert call_order == ["top_a", "tfs", "temperature"]
-
-
-def test_custom_sampler_priority_is_respected(monkeypatch):
-    sampler = Sampler()
-    call_order = []
-
-    monkeypatch.setattr(
-        sampler.sampling_ops,
-        "apply_top_a",
-        lambda logits, metadata: call_order.append("top_a") or logits,
-    )
-    monkeypatch.setattr(
-        sampler.sampling_ops,
-        "apply_tfs",
-        lambda logits, metadata: call_order.append("tfs") or logits,
-    )
-    monkeypatch.setattr(
-        sampler,
-        "apply_temperature",
-        lambda logits, metadata: call_order.append("temperature") or logits,
-    )
-
-    metadata = _metadata(
-        top_a=torch.tensor([0.5], dtype=torch.float32),
-        tfs=torch.tensor([0.5], dtype=torch.float32),
-        sampler_priority=[SamplerID.TFS, SamplerID.TOP_A, SamplerID.TEMPERATURE],
-    )
-
-    sampler._execute_samplers_in_order(torch.zeros((1, 4), dtype=torch.float32), metadata)
-
-    assert call_order == ["tfs", "top_a", "temperature"]
-
-
 def test_mirostat_short_circuits_other_samplers(monkeypatch):
     sampler = Sampler()
     call_order = []
@@ -475,8 +410,6 @@ def test_input_batch_preserves_custom_sampler_metadata():
         dry_max_occurrences=4,
         dry_early_exit_match_len=8,
         no_repeat_ngram_size=3,
-        sampler_priority=[SamplerID.TOP_A, SamplerID.TFS, SamplerID.TEMPERATURE],
-        temperature_last=True,
     )
     request = CachedRequestState(
         req_id="req",
@@ -545,12 +478,6 @@ def test_input_batch_preserves_custom_sampler_metadata():
     )
     assert metadata.no_repeat_ngram_size is not None
     assert metadata.no_repeat_ngram_size[0].item() == sampling_params.no_repeat_ngram_size
-    assert metadata.sampler_priority == [
-        SamplerID.TOP_A,
-        SamplerID.TFS,
-        SamplerID.TEMPERATURE,
-    ]
-    assert metadata.temperature_last is True
     assert metadata.dry_sequence_breaker_ids is not None
     assert metadata.dry_sequence_breaker_ids[0, :2].tolist() == [9, 10]
     assert metadata.prompt_token_ids is not None
