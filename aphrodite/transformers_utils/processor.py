@@ -3,6 +3,7 @@
 
 import importlib
 import inspect
+import warnings
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast, get_args, get_type_hints
 
@@ -83,6 +84,24 @@ def _transformers_v4_compatibility_init() -> Any:
 
 _transformers_v4_compatibility_import()
 _transformers_v4_compatibility_init()
+
+
+def _silence_transformers_processor_deprecation_warnings() -> None:
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The `use_fast` parameter is deprecated and will be removed in a future version\..*",
+        category=UserWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"`.*ImageProcessorFast` is deprecated\. The `Fast` suffix for image processors has been removed; use `.*ImageProcessor` instead\.",
+        category=UserWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The image processor of type `.*ImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor\..*",
+        category=UserWarning,
+    )
 
 _P = TypeVar("_P", bound=ProcessorMixin, default=ProcessorMixin)
 _V = TypeVar("_V", bound=BaseVideoProcessor, default=BaseVideoProcessor)
@@ -185,26 +204,28 @@ def get_processor(
         registered_processor_cls = cast(type[_P] | None, registered_processor_cls)
         # Use registered processor class when it's available
         # and explicit processor_cls is not set.
-        if isinstance(processor_cls, tuple) or processor_cls == ProcessorMixin:
-            _processor_cls = registered_processor_cls or AutoProcessor
-            processor = _processor_cls.from_pretrained(
-                processor_name,
-                *args,
-                revision=revision,
-                trust_remote_code=trust_remote_code,
-                **kwargs,
-            )
-        elif issubclass(processor_cls, ProcessorMixin):
-            processor = processor_cls.from_pretrained(
-                processor_name,
-                *args,
-                revision=revision,
-                trust_remote_code=trust_remote_code,
-                **kwargs,
-            )
-        else:
-            # Processors that are standalone classes unrelated to HF
-            processor = processor_cls(*args, **kwargs)
+        with warnings.catch_warnings():
+            _silence_transformers_processor_deprecation_warnings()
+            if isinstance(processor_cls, tuple) or processor_cls == ProcessorMixin:
+                _processor_cls = registered_processor_cls or AutoProcessor
+                processor = _processor_cls.from_pretrained(
+                    processor_name,
+                    *args,
+                    revision=revision,
+                    trust_remote_code=trust_remote_code,
+                    **kwargs,
+                )
+            elif issubclass(processor_cls, ProcessorMixin):
+                processor = processor_cls.from_pretrained(
+                    processor_name,
+                    *args,
+                    revision=revision,
+                    trust_remote_code=trust_remote_code,
+                    **kwargs,
+                )
+            else:
+                # Processors that are standalone classes unrelated to HF
+                processor = processor_cls(*args, **kwargs)
     except ValueError as e:
         # If the error pertains to the processor class not existing or not
         # currently being imported, suggest using the --trust-remote-code flag.
@@ -422,13 +443,15 @@ def get_image_processor(
     """Load an image processor for the given model name via HuggingFace."""
     try:
         processor_name = convert_model_repo_to_path(processor_name)
-        processor = AutoImageProcessor.from_pretrained(
-            processor_name,
-            *args,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
-            **kwargs,
-        )
+        with warnings.catch_warnings():
+            _silence_transformers_processor_deprecation_warnings()
+            processor = AutoImageProcessor.from_pretrained(
+                processor_name,
+                *args,
+                revision=revision,
+                trust_remote_code=trust_remote_code,
+                **kwargs,
+            )
     except ValueError as e:
         # If the error pertains to the processor class not existing or not
         # currently being imported, suggest using the --trust-remote-code flag.
