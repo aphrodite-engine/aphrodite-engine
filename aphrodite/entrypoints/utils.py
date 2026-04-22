@@ -283,10 +283,14 @@ def log_version_and_model(lgr: Logger, version: str, model_name: str) -> None:
     """
     if envs.APHRODITE_DISABLE_LOG_LOGO or (formatter := current_formatter_type(lgr)) is None:
         message = "Aphrodite server version %s, serving model %s"
+        lgr.info(message, version, model_name)
     else:
-        message = "\n%s  version %s\n      model   %s\n\n"
-
-    lgr.info(message, logo, version, model_name)
+        logo_lines = logo.splitlines()
+        logo_width = max((len(line.rstrip()) for line in logo_lines if line.strip()), default=0)
+        version_line = f"version: {version}".center(logo_width)
+        model_line = f"model: {model_name}".center(logo_width)
+        message = f"\n{logo}\n{version_line}\n{model_line}\n"
+        lgr.info("%s", message)
 
 
 def create_error_response(
