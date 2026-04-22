@@ -56,21 +56,21 @@ class SymmMemCommunicator:
         self.world_size = dist.get_world_size(self.group)
         capability = current_platform.get_device_capability()
         if capability is None:
-            logger.warning(
+            logger.warning_once(
                 "SymmMemCommunicator: device capability is unknown, "
                 "communicator is not available."
             )
             return
         self.device_capability = capability.as_version_str()
         if self.device_capability not in SYMM_MEM_ALL_REDUCE_MAX_SIZES:
-            logger.warning(
+            logger.warning_once(
                 "SymmMemCommunicator: Device capability %s not supported, "
                 "communicator is not available.",
                 self.device_capability,
             )
             return
         if self.world_size not in SYMM_MEM_ALL_REDUCE_MAX_SIZES[self.device_capability]:
-            logger.warning(
+            logger.warning_once(
                 "SymmMemCommunicator: World size %d not supported, "
                 "communicator is not available.",
                 self.world_size,
@@ -103,7 +103,7 @@ class SymmMemCommunicator:
             )
             return
         if handle.multicast_ptr == 0:
-            logger.warning(
+            logger.warning_once(
                 "SymmMemCommunicator: symmetric memory "
                 "multicast operations are not supported."
             )

@@ -5951,7 +5951,7 @@ class GPUModelRunner(
             self._cleanup_profiling_kv_cache()
             return 0
 
-        logger.info(
+        logger.info_once(
             "Profiling CUDA graph memory: %s",
             ", ".join(
                 f"{mode.name}={len(descs)} (largest={descs[0].num_tokens})"
@@ -6030,7 +6030,7 @@ class GPUModelRunner(
         total_estimate = max(shared_memory_estimate.values()) + sum(
             per_graph_estimate.values()
         )
-        logger.info(
+        logger.info_once(
             "Estimated CUDA graph memory: %.2f GiB total",
             total_estimate / (1 << 30),
         )

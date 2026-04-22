@@ -1355,7 +1355,7 @@ def init_distributed_environment(
     backend: str = "nccl",
     timeout: timedelta | None = None,
 ):
-    logger.debug(
+    logger.debug_once(
         "world_size=%d rank=%d local_rank=%d distributed_init_method=%s backend=%s",
         world_size,
         rank,
@@ -1399,7 +1399,7 @@ def init_distributed_environment(
                 distributed_init_method,
             )
     if not torch.distributed.is_initialized():
-        logger.info(
+        logger.info_once(
             "world_size=%d rank=%d local_rank=%d distributed_init_method=%s backend=%s",
             world_size,
             rank,

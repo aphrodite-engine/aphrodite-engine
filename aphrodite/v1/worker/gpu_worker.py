@@ -453,7 +453,7 @@ class Worker(WorkerBase):
                     round(current_util + cg_util_delta, 4),
                     1.0,
                 )
-                logger.info(
+                logger.info_once(
                     "CUDA graph memory profiling is enabled. "
                     "The current --gpu-memory-utilization=%.4f is "
                     "equivalent to --gpu-memory-utilization=%.4f without "
@@ -470,7 +470,7 @@ class Worker(WorkerBase):
                     round(current_util + cg_util_delta, 4),
                     1.0,
                 )
-                logger.warning(
+                logger.warning_once(
                     "CUDA graph memory profiling is disabled "
                     "(APHRODITE_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0). "
                     "Without it, CUDA graph memory is not accounted for "
