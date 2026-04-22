@@ -40,6 +40,27 @@ _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 
 
+def _coerce_stringified_str_list(
+    data: Any, field_name: str,
+) -> Any:
+    if not isinstance(data, dict):
+        return data
+
+    value = data.get(field_name)
+    if not isinstance(value, str):
+        return data
+
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return data
+
+    if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+        data[field_name] = parsed
+
+    return data
+
+
 class CompletionRequest(OpenAIBaseModel):
     # Ordered by official OpenAI API documentation
     # https://platform.openai.com/docs/api-reference/completions/create
@@ -388,6 +409,11 @@ class CompletionRequest(OpenAIBaseModel):
             skip_clone=True,  # Created fresh per request, safe to skip clone
             repetition_detection=self.repetition_detection,
         )
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_stringified_dry_sequence_breakers(cls, data):
+        return _coerce_stringified_str_list(data, "dry_sequence_breakers")
 
     @model_validator(mode="before")
     @classmethod
