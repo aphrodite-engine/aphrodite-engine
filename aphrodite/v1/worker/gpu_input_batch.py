@@ -1366,6 +1366,7 @@ class InputBatch:
         needs_prompt_token_ids = (
             not self.no_penalties
             or not self.no_dry
+            or not self.no_no_repeat_ngram
             or self.logits_processing_needs_token_ids[:num_reqs].any()
         )
         # The prompt tokens are used only for applying penalties or
@@ -1386,6 +1387,7 @@ class InputBatch:
         needs_output_token_ids = (
             not self.no_penalties
             or not self.no_dry
+            or not self.no_no_repeat_ngram
             or bool(self.bad_words_token_ids)
             or self.logitsprocs_need_output_token_ids
         )

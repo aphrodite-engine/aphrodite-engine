@@ -329,6 +329,12 @@ class Sampler(nn.Module):
 
         assert sampling_metadata.temperature is not None
 
+        # Apply skew
+        if sampling_metadata.skew is not None:
+            probs = logits.softmax(dim=-1, dtype=torch.float32)
+            probs = self.sampling_ops.apply_skew(probs, sampling_metadata)
+            logits = torch.log(probs.clamp_min(torch.finfo(probs.dtype).tiny))
+
         # Apply sampling (multinomial sampling from the processed logits)
         random_sampled, processed_logprobs = self.topk_topp_sampler(
             logits,
@@ -336,14 +342,6 @@ class Sampler(nn.Module):
             None,  # top_k already applied in priority system
             None,  # top_p already applied in priority system
         )
-
-        # Apply skew (after softmax, same as before)
-        if sampling_metadata.skew is not None:
-            # Convert logits back to probabilities for skew
-            probs = logits.softmax(dim=-1, dtype=torch.float32)
-            probs = self.sampling_ops.apply_skew(probs, sampling_metadata)
-            # Convert back to logits
-            logits = torch.log(probs)
 
         if greedy_sampled is None:
             return random_sampled, processed_logprobs
