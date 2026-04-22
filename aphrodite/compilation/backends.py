@@ -395,7 +395,7 @@ class CompilerManager:
                 compilation_config.encoder_compilation_time += elapsed
             else:
                 compilation_config.compilation_time += elapsed
-            logger.info_once(
+            logger.debug_once(
                 "Compiling a graph for compile range %s takes %.2f s",
                 str(compile_range),
                 elapsed,
