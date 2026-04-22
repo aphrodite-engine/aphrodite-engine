@@ -12,7 +12,6 @@ logger = init_logger(__name__)
 
 # Shared global so backends.py can read the start time for Dynamo timing.
 torch_compile_start_time: float = 0.0
-dynamo_progress_task = None
 
 
 @contextlib.contextmanager
@@ -25,7 +24,7 @@ def monitor_torch_compile(
     On normal exit: logs the compile time and exits depyf.
     On exception: cleans up depyf without logging (compilation failed).
     """
-    global torch_compile_start_time, dynamo_progress_task
+    global torch_compile_start_time
     torch_compile_start_time = time.perf_counter()
 
     compilation_config = aphrodite_config.compilation_config
@@ -39,31 +38,6 @@ def monitor_torch_compile(
         depyf_cm = depyf.prepare_debug(path.as_posix())
         depyf_cm.__enter__()
 
-    from aphrodite.distributed.parallel_state import is_global_first_rank
-
-    if is_global_first_rank():
-        from rich.progress import (
-            Progress,
-            SpinnerColumn,
-            TextColumn,
-            TimeElapsedColumn,
-        )
-
-        from aphrodite.utils import get_progress_log_prefix
-
-        log_prefix = get_progress_log_prefix()
-        progress = Progress(
-            TextColumn(log_prefix),
-            SpinnerColumn(),
-            TextColumn("{task.description}"),
-            TimeElapsedColumn(),
-        )
-        progress.start()
-        dynamo_progress_task = (
-            progress,
-            progress.add_task("Analyzing model for compilation (Dynamo)..."),
-        )
-
     try:
         yield
     except Exception:
@@ -73,10 +47,6 @@ def monitor_torch_compile(
         if compilation_config.mode == CompilationMode.APHRODITE_COMPILE:
             logger.info_once(message, total_compile_time, scope="local")
     finally:
-        if dynamo_progress_task is not None:
-            progress, _task = dynamo_progress_task
-            progress.stop()
-            dynamo_progress_task = None
         if depyf_cm is not None:
             try:
                 depyf_cm.__exit__(None, None, None)
