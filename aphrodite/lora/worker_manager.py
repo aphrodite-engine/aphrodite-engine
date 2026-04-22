@@ -1,19 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from contextlib import contextmanager
 from typing import Any, Literal
 
 import torch
 
 from aphrodite.config import AphroditeConfig
+from aphrodite.exceptions import LoRAAdapterNotFoundError
 from aphrodite.logger import init_logger
-from aphrodite.lora.models import (
-    LoRAModel,
+from aphrodite.lora.lora_model import LoRAModel
+from aphrodite.lora.model_manager import (
     LoRAModelManager,
     LRUCacheLoRAModelManager,
     create_lora_manager,
 )
 from aphrodite.lora.peft_helper import PEFTHelper
 from aphrodite.lora.request import LoRARequest
-from aphrodite.lora.utils import get_adapter_absolute_path
+from aphrodite.lora.utils import (
+    get_adapter_absolute_path,
+    is_in_target_modules,
+    is_supported_lora_module,
+)
 
 logger = init_logger(__name__)
 
@@ -31,22 +39,33 @@ class WorkerLoRAManager:
         aphrodite_config: AphroditeConfig,
         device: torch.device,
         embedding_modules: dict[str, str],
-        embedding_padding_modules: list[str],
         lora_model_cls: type[LoRAModel] = LoRAModel,
     ):
         self._lora_model_cls = lora_model_cls
         self.embedding_modules = embedding_modules
-        self.embedding_padding_modules = embedding_padding_modules
         self._cached_dummy_lora: None | Literal[False] | LoRAModel = False
         self.max_num_seqs = aphrodite_config.scheduler_config.max_num_seqs
-        self.max_num_batched_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
+        self.max_num_batched_tokens = (
+            aphrodite_config.scheduler_config.max_num_batched_tokens
+        )
         self.vocab_size = aphrodite_config.model_config.get_vocab_size()
         self.lora_config = aphrodite_config.lora_config
 
         # Use get_text_config() in case of multimodal models
         text_config = aphrodite_config.model_config.hf_config.get_text_config()
 
-        self.max_position_embeddings = text_config.max_position_embeddings
+        # For encoder-decoder models (e.g., Whisper), use max_target_positions
+        # instead of max_position_embeddings
+        # TODO: Generalize max_position_embeddings handling for
+        # out-of-tree (OOT) encoder-decoder models
+        if aphrodite_config.model_config.is_encoder_decoder:
+            self.max_position_embeddings = getattr(
+                text_config, "max_target_positions", None
+            )
+        else:
+            self.max_position_embeddings = getattr(
+                text_config, "max_position_embeddings", None
+            )
         self.device = device
         # Lazily initialized by create_lora_manager.
         self._adapter_manager: LoRAModelManager
@@ -66,6 +85,7 @@ class WorkerLoRAManager:
     def create_lora_manager(
         self,
         model: torch.nn.Module,
+        aphrodite_config: AphroditeConfig | None = None,
     ) -> Any:
         lora_manager = create_lora_manager(
             model,
@@ -75,6 +95,7 @@ class WorkerLoRAManager:
             lora_config=self.lora_config,
             device=self.device,
             lora_manager_cls=self._manager_cls,
+            aphrodite_config=aphrodite_config,
         )
         self._adapter_manager = lora_manager
         return lora_manager.model
@@ -83,15 +104,15 @@ class WorkerLoRAManager:
         try:
             supported_lora_modules = self._adapter_manager.supported_lora_modules
             packed_modules_mapping = self._adapter_manager.packed_modules_mapping
-            expected_lora_modules: list[str] = []
+            expected_lora_lst: list[str] = []
             for module in supported_lora_modules:
                 if module in packed_modules_mapping:
-                    expected_lora_modules.extend(packed_modules_mapping[module])
+                    expected_lora_lst.extend(packed_modules_mapping[module])
                 else:
-                    expected_lora_modules.append(module)
+                    expected_lora_lst.append(module)
                 if module == "experts":
-                    expected_lora_modules.append(module)
-            expected_lora_modules = list(set(expected_lora_modules))
+                    expected_lora_lst.append(module)
+            expected_lora_modules = set(expected_lora_lst)
             lora_path = get_adapter_absolute_path(lora_request.lora_path)
 
             peft_helper = PEFTHelper.from_local_dir(
@@ -109,6 +130,9 @@ class WorkerLoRAManager:
             model = self._adapter_manager.model
             hf_to_aphrodite_mapper = getattr(model, "hf_to_aphrodite_mapper", None)
 
+            # Get model-defined prefixes to skip during LoRA loading.
+            lora_skip_prefixes = getattr(model, "lora_skip_prefixes", None)
+
             lora = self._lora_model_cls.from_local_checkpoint(
                 lora_path,
                 expected_lora_modules,
@@ -116,12 +140,35 @@ class WorkerLoRAManager:
                 lora_model_id=lora_request.lora_int_id,
                 device="cpu",
                 dtype=self.lora_config.lora_dtype,
-                target_embedding_padding=self.vocab_size + self.lora_config.lora_extra_vocab_size,
-                embedding_modules=self.embedding_modules,
-                embedding_padding_modules=self.embedding_padding_modules,
+                model_vocab_size=self.vocab_size,
                 tensorizer_config_dict=lora_request.tensorizer_config_dict,
                 weights_mapper=hf_to_aphrodite_mapper,
+                skip_prefixes=lora_skip_prefixes,
             )
+
+            # Warn about adapter modules that will be ignored.
+            target_modules = self.lora_config.target_modules
+            expected_lora_modules_lst = list(expected_lora_modules)
+            for module_name in lora.loras:
+                if not is_supported_lora_module(module_name, expected_lora_modules_lst):
+                    logger.warning_once(
+                        "LoRA module '%s' in adapter '%s' is not in the "
+                        "model's supported LoRA target modules [%s]. "
+                        "These parameters will be ignored, which may "
+                        "cause abnormal model behavior.",
+                        module_name,
+                        lora_request.lora_path,
+                        ", ".join(sorted(expected_lora_modules_lst)),
+                    )
+                elif not is_in_target_modules(module_name, target_modules):
+                    logger.warning_once(
+                        "LoRA module '%s' in adapter '%s' is not in the "
+                        "deployment-time target_modules restriction [%s]."
+                        " These parameters will be ignored.",
+                        module_name,
+                        lora_request.lora_path,
+                        ", ".join(sorted(target_modules)),
+                    )
 
         except FileNotFoundError as e:
             # FileNotFoundError should be raised if both
@@ -129,19 +176,12 @@ class WorkerLoRAManager:
             #       offline mode)
             # - No local adapter files found at `lora_request.lora_path`
             # For NotFoundError
-            raise ValueError(
-                f"Loading lora {lora_request.lora_name} failed: No adapter found for {lora_request.lora_path}"
+            raise LoRAAdapterNotFoundError(
+                lora_request.lora_name, lora_request.lora_path
             ) from e
         except Exception as e:
-            # For BadRequestError
             raise e
 
-        if lora.extra_vocab_size > self.lora_config.lora_extra_vocab_size:
-            raise ValueError(
-                f"LoRA added vocab size {lora.extra_vocab_size} "
-                f"is greater than lora_extra_vocab_size "
-                f"{self.lora_config.lora_extra_vocab_size}."
-            )
         return lora
 
     def add_dummy_lora(self, lora_request: LoRARequest, rank: int) -> bool:
@@ -150,7 +190,9 @@ class WorkerLoRAManager:
         if isinstance(self._cached_dummy_lora, LoRAModel):
             dummy_lora = self._cached_dummy_lora.clone(lora_request.lora_int_id)
         else:
-            dummy_lora = self._adapter_manager.create_dummy_lora(lora_request.lora_int_id, rank, self.embedding_modules)
+            dummy_lora = self._adapter_manager.create_dummy_lora(
+                lora_request.lora_int_id, rank, self.embedding_modules
+            )
             if self._cached_dummy_lora is None:
                 self._cached_dummy_lora = dummy_lora
         return self._adapter_manager.add_adapter(dummy_lora)
@@ -163,10 +205,18 @@ class WorkerLoRAManager:
         if mapping is not None:
             self._adapter_manager.set_adapter_mapping(mapping)
 
+    def supports_tower_connector_lora(self) -> bool:
+        return (
+            self._adapter_manager.supports_mm
+            and self._adapter_manager.supports_tower_connector_lora
+        )
+
     def _apply_adapters(self, adapter_requests: set[Any]) -> None:
         existing_adapters = self.list_adapters()
         models_map = {
-            adapter_request.adapter_id: adapter_request for adapter_request in adapter_requests if adapter_request
+            adapter_request.adapter_id: adapter_request
+            for adapter_request in adapter_requests
+            if adapter_request
         }
         if len(models_map) > self._adapter_manager.adapter_slots:
             raise RuntimeError(
@@ -210,6 +260,7 @@ class LRUCacheWorkerLoRAManager(WorkerLoRAManager):
     def create_lora_manager(
         self,
         model: torch.nn.Module,
+        aphrodite_config: AphroditeConfig | None = None,
     ) -> Any:
         lora_manager = create_lora_manager(
             model,
@@ -219,12 +270,17 @@ class LRUCacheWorkerLoRAManager(WorkerLoRAManager):
             lora_config=self.lora_config,
             device=self.device,
             max_num_batched_tokens=self.max_num_batched_tokens,
+            aphrodite_config=aphrodite_config,
         )
         self._adapter_manager = lora_manager
         return lora_manager.model
 
     def _apply_adapters(self, lora_requests: set[LoRARequest]) -> None:
-        loras_map = {lora_request.lora_int_id: lora_request for lora_request in lora_requests if lora_request}
+        loras_map = {
+            lora_request.lora_int_id: lora_request
+            for lora_request in lora_requests
+            if lora_request
+        }
         if len(loras_map) > self._adapter_manager.lora_slots:
             raise RuntimeError(
                 f"Number of requested LoRAs ({len(loras_map)}) is greater "
@@ -240,12 +296,19 @@ class LRUCacheWorkerLoRAManager(WorkerLoRAManager):
         # This is ok because it's currently only called from
         # the single-threaded core engine loop.
 
-        if lora_request.lora_int_id not in self.list_adapters():
+        if (
+            lora_request.lora_int_id not in self.list_adapters()
+            or lora_request.load_inplace
+        ):
             # Load the new adapter first to ensure it is actually valid, before
             # evicting any existing adapters.
             # This may cause the # of loaded lora adapters to very temporarily
             # exceed `--max-cpu-loras`.
             lora = self._load_adapter(lora_request)
+
+            # Remove the existing adapter if it exists
+            # Use case for LoRA inplace
+            self._adapter_manager.remove_adapter(lora.id)
 
             # Loading succeeded, now check if we will exceed cache capacity and
             # evict if the oldest adapter if so
@@ -257,6 +320,8 @@ class LRUCacheWorkerLoRAManager(WorkerLoRAManager):
         else:
             # If the lora is already loaded, just touch it to
             # update its position in the caches
-            loaded = self._adapter_manager.get_adapter(lora_request.lora_int_id) is not None
+            loaded = (
+                self._adapter_manager.get_adapter(lora_request.lora_int_id) is not None
+            )
         self._adapter_manager.activate_adapter(lora_request.lora_int_id)
         return loaded

@@ -1,12 +1,13 @@
-from typing import TYPE_CHECKING, Optional
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+from typing import TYPE_CHECKING
 
-from aphrodite import envs
-from aphrodite.distributed.kv_transfer.kv_connector.base import (
-    KVConnectorBaseType)
-from aphrodite.distributed.kv_transfer.kv_connector.factory import (
-    KVConnectorFactory)
+from aphrodite.distributed.kv_transfer.kv_connector.base import KVConnectorBaseType
+from aphrodite.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
-    KVConnectorBase_V1, KVConnectorRole)
+    KVConnectorBase_V1,
+    KVConnectorRole,
+)
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
@@ -48,8 +49,7 @@ def is_v1_kv_transfer_group(connector: KVConnectorBaseType | None = None) -> boo
 
 
 def ensure_kv_transfer_initialized(
-    aphrodite_config: "AphroditeConfig",
-    kv_cache_config: Optional["KVCacheConfig"] = None,
+    aphrodite_config: "AphroditeConfig", kv_cache_config: "KVCacheConfig | None" = None
 ) -> None:
     """
     Initialize KV cache transfer parallel group.
@@ -64,12 +64,11 @@ def ensure_kv_transfer_initialized(
         aphrodite_config.kv_transfer_config.is_kv_transfer_instance
         and _KV_CONNECTOR_AGENT is None
     ):
-        if envs.APHRODITE_USE_V1:
-            _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
-                config=aphrodite_config, role=KVConnectorRole.WORKER, kv_cache_config=kv_cache_config
-            )
-        else:
-            raise ValueError("V0 is no longer supported")
+        _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
+            config=aphrodite_config,
+            role=KVConnectorRole.WORKER,
+            kv_cache_config=kv_cache_config,
+        )
 
 
 def ensure_kv_transfer_shutdown() -> None:

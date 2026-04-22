@@ -94,6 +94,8 @@ class SamplingMetadata:
     # Loaded logits processors
     logitsprocs: LogitsProcessors
 
+    logprob_token_ids: dict[int, list[int]] | None = None
+
     # Sampler priority and temperature_last for priority-based execution
     sampler_priority: list[SamplerID] | None = None
     temperature_last: bool = False

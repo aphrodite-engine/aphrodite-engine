@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from aphrodite.lora.ops.torch_ops.lora_ops import (
     bgmv_expand,  # noqa: F401
     bgmv_expand_slice,

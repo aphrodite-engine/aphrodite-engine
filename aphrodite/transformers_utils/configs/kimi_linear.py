@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from transformers.configuration_utils import PretrainedConfig
 
 from aphrodite.logger import init_logger
@@ -26,8 +29,7 @@ class KimiLinearConfig(PretrainedConfig):
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
-        rope_theta=10000.0,
-        rope_scaling=None,
+        rope_parameters=None,
         tie_word_embeddings=False,
         moe_intermediate_size: int | None = None,
         moe_renormalize: bool = True,
@@ -54,7 +56,9 @@ class KimiLinearConfig(PretrainedConfig):
         self.model_type = model_type
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
-        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
+        self.head_dim = (
+            head_dim if head_dim is not None else hidden_size // num_attention_heads
+        )
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
@@ -68,8 +72,13 @@ class KimiLinearConfig(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.rope_theta = rope_theta
-        self.rope_scaling = rope_scaling
+        # Try to set `rope_scaling` if available, otherwise use `rope_parameters`
+        rope_scaling = kwargs.pop("rope_scaling", None)
+        rope_parameters = rope_scaling or rope_parameters or {"rope_type": "default"}
+        rope_theta = kwargs.pop("rope_theta", 10000.0)
+        if "rope_theta" not in rope_parameters:
+            rope_parameters["rope_theta"] = rope_theta
+        self.rope_parameters = rope_parameters
 
         self.q_lora_rank = q_lora_rank
         self.kv_lora_rank = kv_lora_rank
@@ -133,4 +142,7 @@ class KimiLinearConfig(PretrainedConfig):
         )
 
     def is_kda_layer(self, layer_idx: int):
-        return self.linear_attn_config is not None and (layer_idx + 1) in self.linear_attn_config["kda_layers"]
+        return (
+            self.linear_attn_config is not None
+            and (layer_idx + 1) in self.linear_attn_config["kda_layers"]
+        )

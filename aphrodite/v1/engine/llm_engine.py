@@ -1,38 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import time
 from collections.abc import Callable, Mapping
 from copy import copy
-from typing import Any, cast
+from typing import Any
 
 import torch.nn as nn
 from typing_extensions import TypeVar
 
 import aphrodite.envs as envs
-from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import AphroditeConfig, ParallelConfig
+from aphrodite.config import ParallelConfig, AphroditeConfig
 from aphrodite.distributed import stateless_destroy_torch_distributed_process_group
 from aphrodite.distributed.parallel_state import get_dp_group
-from aphrodite.engine.args_tools import EngineArgs
-from aphrodite.engine.protocol import Device
-from aphrodite.inputs import PromptType
+from aphrodite.engine.arg_utils import EngineArgs
+from aphrodite.inputs import EngineInput, PromptType
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from aphrodite.outputs import PoolingRequestOutput, RequestOutput
-from aphrodite.plugins.io_processors import get_io_processor
+from aphrodite.pooling_params import PoolingParams
+from aphrodite.renderers import renderer_from_config
+from aphrodite.renderers.inputs.preprocess import extract_prompt_components
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.tasks import SupportedTask
+from aphrodite.tokenizers import TokenizerLike
 from aphrodite.tracing import init_tracer
-from aphrodite.transformers_utils.tokenizer import AnyTokenizer, init_tokenizer_from_configs
 from aphrodite.usage.usage_lib import UsageContext
-from aphrodite.v1.engine import EngineCoreRequest
+from aphrodite.v1.engine import EngineCoreRequest, PauseMode
 from aphrodite.v1.engine.core_client import EngineCoreClient
+from aphrodite.v1.engine.input_processor import InputProcessor
 from aphrodite.v1.engine.output_processor import OutputProcessor
 from aphrodite.v1.engine.parallel_sampling import ParentRequest
-from aphrodite.v1.engine.processor import Processor
 from aphrodite.v1.executor import Executor
 from aphrodite.v1.metrics.loggers import StatLoggerFactory, StatLoggerManager
 from aphrodite.v1.metrics.reader import Metric, get_metrics_snapshot
 from aphrodite.v1.metrics.stats import IterationStats
+from aphrodite.v1.utils import record_function_or_nullcontext
 from aphrodite.v1.worker.worker_base import WorkerBase
 
 logger = init_logger(__name__)
@@ -52,47 +56,49 @@ class LLMEngine:
         usage_context: UsageContext = UsageContext.ENGINE_CONTEXT,
         stat_loggers: list[StatLoggerFactory] | None = None,
         mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
-        use_cached_outputs: bool = False,
         multiprocess_mode: bool = False,
     ) -> None:
-        if stat_loggers is not None:
-            raise NotImplementedError("Passing StatLoggers to LLMEngine is not yet supported.")
-
         self.aphrodite_config = aphrodite_config
-        self.observability_config = aphrodite_config.observability_config
         self.model_config = aphrodite_config.model_config
-        self.cache_config = aphrodite_config.cache_config
+        self.observability_config = aphrodite_config.observability_config
+
+        tracing_endpoint = self.observability_config.otlp_traces_endpoint
+        if tracing_endpoint is not None:
+            init_tracer("aphrodite.llm_engine", tracing_endpoint)
 
         self.log_stats = log_stats
 
-        executor_backend = self.aphrodite_config.parallel_config.distributed_executor_backend
         parallel_config = aphrodite_config.parallel_config
-        self.external_launcher_dp = parallel_config.data_parallel_size > 1 and executor_backend == "external_launcher"
+        executor_backend = parallel_config.distributed_executor_backend
+
+        self.external_launcher_dp = (
+            parallel_config.data_parallel_size > 1
+            and executor_backend == "external_launcher"
+        )
         # important: init dp group before init the engine_core
         # In the decoupled engine case this is handled in EngineCoreProc.
-        if not multiprocess_mode and parallel_config.data_parallel_size > 1 and not self.external_launcher_dp:
+        if (
+            not multiprocess_mode
+            and parallel_config.data_parallel_size > 1
+            and not self.external_launcher_dp
+        ):
             self.dp_group = parallel_config.stateless_init_dp_group()
         else:
             self.dp_group = None
         self.should_execute_dummy_batch = False
 
-        if self.model_config.skip_tokenizer_init:
-            tokenizer = None
-        else:
-            tokenizer = init_tokenizer_from_configs(self.model_config)
+        self.renderer = renderer = renderer_from_config(self.aphrodite_config)
 
-        self.processor = Processor(self.aphrodite_config, tokenizer)
-        self.io_processor = get_io_processor(
-            self.aphrodite_config,
-            self.model_config.io_processor_plugin,
+        # Convert EngineInput --> EngineCoreRequest.
+        self.input_processor = InputProcessor(self.aphrodite_config, renderer)
+
+        # Converts EngineCoreOutputs --> RequestOutput.
+        self.output_processor = OutputProcessor(
+            renderer.tokenizer,
+            log_stats=self.log_stats,
+            stream_interval=self.aphrodite_config.scheduler_config.stream_interval,
+            tracing_enabled=tracing_endpoint is not None,
         )
-
-        # OutputProcessor (convert EngineCoreOutputs --> RequestOutput).
-        self.output_processor = OutputProcessor(self.tokenizer, log_stats=self.log_stats)
-        endpoint = self.observability_config.otlp_traces_endpoint
-        if endpoint is not None:
-            tracer = init_tracer("aphrodite.llm_engine", endpoint)
-            self.output_processor.tracer = tracer
 
         # EngineCore (gets EngineCoreRequests and gives EngineCoreOutputs)
         self.engine_core = EngineCoreClient.make_client(
@@ -115,7 +121,7 @@ class LLMEngine:
 
         if not multiprocess_mode:
             # for v0 compatibility
-            self.modeling = self.engine_core.engine_core.modeling  # type: ignore
+            self.model_executor = self.engine_core.engine_core.model_executor  # type: ignore
 
         if self.external_launcher_dp:
             # If we use DP in external launcher mode, we reuse the
@@ -180,28 +186,30 @@ class LLMEngine:
         return self.has_unfinished_requests_dp(has_unfinished)
 
     def has_unfinished_requests_dp(self, has_unfinished: bool) -> bool:
-        aggregated_has_unfinished = ParallelConfig.has_unfinished_dp(self.dp_group, has_unfinished)
+        aggregated_has_unfinished = ParallelConfig.has_unfinished_dp(
+            self.dp_group, has_unfinished
+        )
         if not has_unfinished and aggregated_has_unfinished:
             self.should_execute_dummy_batch = True
         return aggregated_has_unfinished
 
-    @classmethod
-    def validate_outputs(cls, outputs, output_type):
-        return outputs
-
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
-        return self.engine_core.get_supported_tasks()
+        if not hasattr(self, "_supported_tasks"):
+            # Cache the result
+            self._supported_tasks = self.engine_core.get_supported_tasks()
 
-    def abort_request(self, request_ids: list[str]) -> None:
+        return self._supported_tasks
+
+    def abort_request(self, request_ids: list[str], internal: bool = False) -> None:
         """Remove request_ids from EngineCore and Detokenizer."""
 
-        request_ids = self.output_processor.abort_requests(request_ids)
+        request_ids = self.output_processor.abort_requests(request_ids, internal)
         self.engine_core.abort_requests(request_ids)
 
     def add_request(
         self,
         request_id: str,
-        prompt: EngineCoreRequest | PromptType,
+        prompt: EngineCoreRequest | PromptType | EngineInput,
         params: SamplingParams | PoolingParams,
         arrival_time: float | None = None,
         lora_request: LoRARequest | None = None,
@@ -209,31 +217,46 @@ class LLMEngine:
         trace_headers: Mapping[str, str] | None = None,
         priority: int = 0,
         prompt_text: str | None = None,
-    ) -> None:
+    ) -> str:
         # Validate the request_id type.
         if not isinstance(request_id, str):
             raise TypeError(f"request_id must be a string, got {type(request_id)}")
 
         # Process raw inputs into the request.
         if isinstance(prompt, EngineCoreRequest):
+            logger.warning_once(
+                "Passing EngineCoreRequest to LLMEngine.generate() and .add_requests() "
+                "is deprecated and will be removed in v0.18. You should instead pass "
+                "the outputs of Renderer.render_cmpl() or Renderer.render_chat()."
+            )
+
             request = prompt
+            if request_id != request.request_id:
+                logger.warning_once(
+                    "LLMEngine.add_request() was passed a request_id parameter that "
+                    "does not match the EngineCoreRequest.request_id attribute. The "
+                    "latter will be used, and the former will be ignored."
+                )
         else:
-            assert prompt_text is None
-            logger.warning_once("Processor has been moved under LLM and will be removed from LLMEngine in v0.13.")
-            request = self.processor.process_inputs(
+            request = self.input_processor.process_inputs(
                 request_id,
                 prompt,
                 params,
-                arrival_time,
-                lora_request,
-                tokenization_kwargs,
-                trace_headers,
-                priority,
+                supported_tasks=self.get_supported_tasks(),
+                arrival_time=arrival_time,
+                lora_request=lora_request,
+                tokenization_kwargs=tokenization_kwargs,
+                trace_headers=trace_headers,
+                priority=priority,
             )
-            if isinstance(prompt, str):
-                prompt_text = prompt
-            elif isinstance(prompt, Mapping):
-                prompt_text = cast(str | None, prompt.get("prompt"))
+            prompt_text, _, _ = extract_prompt_components(self.model_config, prompt)
+
+        self.input_processor.assign_request_id(request)
+
+        req_id = request.request_id
+
+        # Use cloned params that may have been updated in process_inputs()
+        params = request.params
 
         n = params.n if isinstance(params, SamplingParams) else 1
 
@@ -242,20 +265,24 @@ class LLMEngine:
             self.output_processor.add_request(request, prompt_text, None, 0)
             # Add the request to EngineCore.
             self.engine_core.add_request(request)
-            return
+            return req_id
 
         # Fan out child requests (for n>1).
-        parent_req = ParentRequest(request_id, params)
+        parent_req = ParentRequest(request)
         for idx in range(n):
-            request_id, params = parent_req.get_child_info(idx)
+            request_id, child_params = parent_req.get_child_info(idx)
             child_request = request if idx == n - 1 else copy(request)
             child_request.request_id = request_id
-            child_request.sampling_params = params
+            child_request.sampling_params = child_params
 
             # Make a new RequestState and queue.
-            self.output_processor.add_request(child_request, prompt_text, parent_req, idx)
+            self.output_processor.add_request(
+                child_request, prompt_text, parent_req, idx
+            )
             # Add the request to EngineCore.
             self.engine_core.add_request(child_request)
+
+        return req_id
 
     def step(self) -> list[RequestOutput | PoolingRequestOutput]:
         if self.should_execute_dummy_batch:
@@ -264,45 +291,66 @@ class LLMEngine:
             return []
 
         # 1) Get EngineCoreOutput from the EngineCore.
-        outputs = self.engine_core.get_output()
+        with record_function_or_nullcontext("llm_engine step: get_output"):
+            outputs = self.engine_core.get_output()
 
         # 2) Process EngineCoreOutputs.
-        iteration_stats = IterationStats() if self.log_stats else None
-        processed_outputs = self.output_processor.process_outputs(
-            outputs.outputs,
-            engine_core_timestamp=outputs.timestamp,
-            iteration_stats=iteration_stats,
-        )
+        with record_function_or_nullcontext("llm_engine step: process_outputs"):
+            iteration_stats = IterationStats() if self.log_stats else None
+            processed_outputs = self.output_processor.process_outputs(
+                outputs.outputs,
+                engine_core_timestamp=outputs.timestamp,
+                iteration_stats=iteration_stats,
+            )
+            self.output_processor.update_scheduler_stats(outputs.scheduler_stats)
 
         # 3) Abort any reqs that finished due to stop strings.
-        self.engine_core.abort_requests(processed_outputs.reqs_to_abort)
+        with record_function_or_nullcontext("llm_engine step: abort_requests"):
+            self.engine_core.abort_requests(processed_outputs.reqs_to_abort)
 
         # 4) Record stats
-        if self.logger_manager is not None and outputs.scheduler_stats is not None:
-            self.logger_manager.record(
-                scheduler_stats=outputs.scheduler_stats,
-                iteration_stats=iteration_stats,
-                mm_cache_stats=self.processor.stat_mm_cache(),
-            )
-            self.do_log_stats_with_interval()
+        with record_function_or_nullcontext("llm_engine step: record_stats"):
+            if (
+                self.logger_manager is not None
+                and outputs.scheduler_stats is not None
+                and len(outputs.outputs) > 0
+            ):
+                self.logger_manager.record(
+                    scheduler_stats=outputs.scheduler_stats,
+                    iteration_stats=iteration_stats,
+                    mm_cache_stats=self.renderer.stat_mm_cache(),
+                )
+                self.do_log_stats_with_interval()
 
         return processed_outputs.request_outputs
 
-    def start_profile(self):
-        self.engine_core.profile(True)
+    def start_profile(self, profile_prefix: str | None = None):
+        self.engine_core.profile(True, profile_prefix)
 
     def stop_profile(self):
         self.engine_core.profile(False)
 
     def reset_mm_cache(self):
-        self.processor.clear_mm_cache()
+        self.renderer.clear_mm_cache()
         self.engine_core.reset_mm_cache()
 
-    def reset_prefix_cache(self, device: Device | None = None):
-        self.engine_core.reset_prefix_cache()
+    def reset_prefix_cache(
+        self, reset_running_requests: bool = False, reset_connector: bool = False
+    ) -> bool:
+        return self.engine_core.reset_prefix_cache(
+            reset_running_requests, reset_connector
+        )
 
-    def sleep(self, level: int = 1):
-        self.engine_core.sleep(level)
+    def reset_encoder_cache(self) -> None:
+        """Reset the encoder cache to invalidate all cached encoder outputs.
+
+        This should be called when model weights are updated to ensure
+        stale vision embeddings computed with old weights are not reused.
+        """
+        self.engine_core.reset_encoder_cache()
+
+    def sleep(self, level: int = 1, mode: PauseMode = "abort"):
+        self.engine_core.sleep(level, mode)
 
         if self.logger_manager is not None:
             self.logger_manager.record_sleep_state(1, level)
@@ -321,47 +369,11 @@ class LLMEngine:
         return get_metrics_snapshot()
 
     @property
-    def tokenizer(self) -> AnyTokenizer | None:
-        return self.processor.tokenizer
+    def tokenizer(self) -> TokenizerLike | None:
+        return self.renderer.tokenizer
 
-    @tokenizer.setter
-    def tokenizer(self, tokenizer: AnyTokenizer | None) -> None:
-        self.processor.tokenizer = tokenizer
-
-    def get_tokenizer(self) -> AnyTokenizer:
-        if self.tokenizer is None:
-            raise ValueError("Unable to get tokenizer because skip_tokenizer_init is True")
-
-        return self.tokenizer
-
-    @property
-    def max_concurrency(self) -> float:
-        """Get the maximum concurrency supported by the KV cache configuration.
-
-        Returns:
-            The maximum number of concurrent requests that can be processed
-            based on the available KV cache blocks and memory requirements.
-        """
-        return self.engine_core.max_concurrency
-
-    @property
-    def kv_cache_size_tokens(self) -> int:
-        """Get the total number of tokens that can be stored in the KV cache.
-
-        Returns:
-            The total number of tokens that can be cached.
-        """
-        return self.engine_core.kv_cache_size_tokens
-
-    @property
-    def kv_cache_size_tokens_str(self) -> str:
-        """Get a formatted string representation of the KV cache size in tokens.
-
-        Returns:
-            A comma-formatted string representing the total number of tokens
-            that can be cached (e.g., "1,048,576").
-        """
-        return self.engine_core.kv_cache_size_tokens_str
+    def get_tokenizer(self) -> TokenizerLike:
+        return self.renderer.get_tokenizer()
 
     def do_log_stats(self) -> None:
         """Log stats if logging is enabled."""
@@ -406,5 +418,6 @@ class LLMEngine:
         return self.collective_rpc("apply_model", args=(func,))
 
     def __del__(self):
-        if dp_group := getattr(self, "dp_group", None) and not self.external_launcher_dp:
+        dp_group = getattr(self, "dp_group", None)
+        if dp_group is not None and not self.external_launcher_dp:
             stateless_destroy_torch_distributed_process_group(dp_group)

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Based on:
 Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023).
@@ -29,7 +31,6 @@ class PunicaWrapperABC(ABC):
         lora_index_to_id: list[int | None],
         max_loras: int,
         vocab_size: int,
-        extra_vocab_size: int,
         **kwargs,
     ) -> None:
         """
@@ -134,10 +135,18 @@ class PunicaWrapperBase(PunicaWrapperABC):
         device: torch.device | str,
         **kwargs,
     ):
-        self._token_lora_indices = torch.empty(max_num_batched_tokens, dtype=torch.long, device=device)
-        self._sampler_indices = torch.empty(max_num_batched_tokens, dtype=torch.long, device=device)
-        self._sampler_indices_padded = torch.empty(max_num_batched_tokens, dtype=torch.long, device=device)
-        self._embeddings_indices = torch.empty(2, max_num_batched_tokens, dtype=torch.long, device=device)
+        self._token_lora_indices = torch.empty(
+            max_num_batched_tokens, dtype=torch.long, device=device
+        )
+        self._sampler_indices = torch.empty(
+            max_num_batched_tokens, dtype=torch.long, device=device
+        )
+        self._sampler_indices_padded = torch.empty(
+            max_num_batched_tokens, dtype=torch.long, device=device
+        )
+        self._embeddings_indices = torch.empty(
+            2, max_num_batched_tokens, dtype=torch.long, device=device
+        )
 
         # 4 is the number of indices tensors.
         # base_indices, sampler_indices, sampler_indices_padded,
@@ -146,7 +155,9 @@ class PunicaWrapperBase(PunicaWrapperABC):
         # these attributes are the information required for sgmv kernel
         self._seq_start_locs = torch.empty(max_batches, dtype=torch.long, device=device)
         self._seq_lengths = torch.empty(max_batches, dtype=torch.long, device=device)
-        self._lora_indices_per_batch = torch.empty(max_batches, dtype=torch.long, device=device)
+        self._lora_indices_per_batch = torch.empty(
+            max_batches, dtype=torch.long, device=device
+        )
         self.device: torch.device = device
         self.max_length: int = 0
         self.token_nums: int = 0
@@ -160,8 +171,11 @@ class PunicaWrapperBase(PunicaWrapperABC):
         lora_index_to_id: list[int | None],
         max_loras: int,
         vocab_size: int,
-        extra_vocab_size: int,
     ):
+        # NOTE We have remove lora extra vocab support for now. So we set
+        # extra_vocab_size always to 0, and extra_vocab_size will be removed.
+
+        extra_vocab_size = 0
         (
             base_indices,
             sampler_indices,
@@ -178,8 +192,12 @@ class PunicaWrapperBase(PunicaWrapperABC):
         )
         self._token_lora_indices[: base_indices.shape[0]].copy_(base_indices)
         self._sampler_indices[: sampler_indices.shape[0]].copy_(sampler_indices)
-        self._sampler_indices_padded[: sampler_indices_padded.shape[0]].copy_(sampler_indices_padded)
-        self._embeddings_indices[: embeddings_indices.shape[0], : embeddings_indices.shape[1]].copy_(embeddings_indices)
+        self._sampler_indices_padded[: sampler_indices_padded.shape[0]].copy_(
+            sampler_indices_padded
+        )
+        self._embeddings_indices[
+            : embeddings_indices.shape[0], : embeddings_indices.shape[1]
+        ].copy_(embeddings_indices)
 
         self.indices_len[:] = indices_len
 
@@ -196,7 +214,9 @@ class PunicaWrapperBase(PunicaWrapperABC):
 
         self._seq_start_locs[: b_seq_start_tensor.shape[0]].copy_(b_seq_start_tensor)
         self._seq_lengths[: seq_length_tensor.shape[0]].copy_(seq_length_tensor)
-        self._lora_indices_per_batch[: lora_indices_tensor.shape[0]].copy_(lora_indices_tensor)
+        self._lora_indices_per_batch[: lora_indices_tensor.shape[0]].copy_(
+            lora_indices_tensor
+        )
         self.batch_size = batch_size
         self.max_length = max_length
         self.token_nums = token_nums
@@ -267,10 +287,9 @@ class PunicaWrapperBase(PunicaWrapperABC):
         lora_index_to_id: list[int | None],
         max_loras: int,
         vocab_size: int,
-        extra_vocab_size: int,
         **kwargs,
     ):
-        self._update_base_metadata(mapping, lora_index_to_id, max_loras, vocab_size, extra_vocab_size)
+        self._update_base_metadata(mapping, lora_index_to_id, max_loras, vocab_size)
 
         if mapping.is_prefill:
             # Update metadata required for prefill-related operators.
@@ -439,7 +458,8 @@ class PunicaWrapperBase(PunicaWrapperABC):
         adapter_enabled: torch.Tensor,
         expert_map: torch.Tensor | None = None,
         pad_sorted_ids: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        naive_block_assignment: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Aligns tokens and experts into block-sized chunks for LoRA-based
         mixture-of-experts (MoE) execution.
@@ -451,18 +471,21 @@ class PunicaWrapperBase(PunicaWrapperABC):
         self,
         y: torch.Tensor,
         x: torch.Tensor,
-        lora_a_stacked: list[torch.Tensor],
-        lora_b_stacked: list[torch.Tensor],
+        lora_a_stacked: tuple[torch.Tensor, ...],
+        lora_b_stacked: tuple[torch.Tensor, ...],
         topk_weights: torch.Tensor,
-        sorted_token_ids: torch.Tensor,
+        sorted_token_ids: torch.Tensor | None,
         expert_ids: torch.Tensor,
-        num_tokens_post_padded: torch.Tensor,
+        num_tokens_post_padded: torch.Tensor | None,
         max_lora_rank: int,
         top_k_num: int,
         shrink_config,
         expand_config,
         adapter_enabled: torch.Tensor,
         mul_routed_weight=False,
+        fully_sharded: bool = False,
+        offset: int = 0,
+        token_lora_mapping: torch.Tensor | None = None,
     ):
         """
         Performs a fused forward computation for LoRA of

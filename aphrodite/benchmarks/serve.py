@@ -1,15 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 r"""Benchmark online serving throughput.
 
 On the server side, run one of the following commands
 to launch the Aphrodite OpenAI API server:
-    aphrodite run <your_model> <engine arguments>
+    aphrodite serve <your_model> <engine arguments>
 
 On the client side, run:
-    aphrodite bench run \
+    aphrodite bench serve \
         --backend <backend or endpoint type. Default 'openai'> \
         --label <benchmark result label. Default using backend> \
-        --model <your_model> \
+        --model <your_model. Optional, defaults to first model from server> \
         --dataset-name <dataset_name. Default 'random'> \
+        --input-len <general input length. Optional, maps to dataset-specific args> \
+        --output-len <general output length. Optional, maps to dataset-specific args> \
         --request-rate <request_rate. Default inf> \
         --num-prompts <num_prompts. Default 1000>
 """
@@ -17,39 +21,145 @@ On the client side, run:
 import argparse
 import asyncio
 import contextlib
-import gc
 import importlib.util
 import json
 import os
 import random
 import shutil
+import ssl
 import time
+import uuid
 import warnings
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
 
 import aiohttp
 import numpy as np
 from tqdm.asyncio import tqdm
-from transformers import PreTrainedTokenizerBase
 
 from aphrodite.benchmarks.datasets import SampleRequest, add_dataset_parser, get_samples
 from aphrodite.benchmarks.lib.endpoint_request_func import (
     ASYNC_REQUEST_FUNCS,
     OPENAI_COMPATIBLE_BACKENDS,
+    POOLING_BACKENDS,
     RequestFuncInput,
     RequestFuncOutput,
 )
 from aphrodite.benchmarks.lib.ready_checker import wait_for_endpoint
 from aphrodite.benchmarks.lib.utils import convert_to_pytorch_benchmark_format, write_to_json
-from aphrodite.transformers_utils.tokenizer import get_tokenizer
+from aphrodite.tokenizers import TokenizerLike, get_tokenizer
+from aphrodite.utils.gc_utils import freeze_gc_heap
+from aphrodite.utils.network_utils import join_host_port
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
 
-TERM_PLOTLIB_AVAILABLE = (importlib.util.find_spec("termplotlib") is not None) and (shutil.which("gnuplot") is not None)
+TERM_PLOTLIB_AVAILABLE = (importlib.util.find_spec("termplotlib") is not None) and (
+    shutil.which("gnuplot") is not None
+)
+
+
+async def get_first_model_from_server(
+    base_url: str,
+    headers: dict | None = None,
+    ssl_context: ssl.SSLContext | bool | None = None,
+) -> tuple[str, str]:
+    """Fetch the first model from the server's /v1/models endpoint."""
+    models_url = f"{base_url}/v1/models"
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        try:
+            async with session.get(models_url, headers=headers) as response:
+                response.raise_for_status()
+                data = await response.json()
+                if "data" in data and len(data["data"]) > 0:
+                    return data["data"][0]["id"], data["data"][0]["root"]
+                else:
+                    raise ValueError(
+                        f"No models found on the server at {base_url}. "
+                        "Make sure the server is running and has models loaded."
+                    )
+        except (aiohttp.ClientError, json.JSONDecodeError) as e:
+            raise RuntimeError(
+                f"Failed to fetch models from server at {models_url}. "
+                "Check that:\n"
+                "1. The server is running\n"
+                "2. The server URL is correct\n"
+                f"Error: {e}"
+            ) from e
+
+
+@dataclass
+class SpecDecodeMetrics:
+    """Speculative decoding metrics from the server's Prometheus endpoint."""
+
+    num_drafts: int
+    num_draft_tokens: int
+    num_accepted_tokens: int
+    accepted_per_pos: dict[int, int]
+
+
+async def fetch_spec_decode_metrics(
+    base_url: str, session: aiohttp.ClientSession
+) -> SpecDecodeMetrics | None:
+    """Fetch speculative decoding metrics from the server's Prometheus endpoint.
+
+    Returns None if speculative decoding is not enabled or metrics are not available.
+    """
+    metrics_url = f"{base_url}/metrics"
+    try:
+        async with session.get(metrics_url) as response:
+            if response.status != 200:
+                return None
+            text = await response.text()
+
+            num_drafts = 0
+            num_draft_tokens = 0
+            num_accepted_tokens = 0
+            accepted_per_pos: dict[int, int] = {}
+            found_spec_decode = False
+
+            for line in text.split("\n"):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                if line.startswith("aphrodite:spec_decode"):
+                    found_spec_decode = True
+                    parts = line.split()
+                    if parts:
+                        with contextlib.suppress(ValueError):
+                            if "num_drafts" in line:
+                                num_drafts += int(float(parts[-1]))
+                            elif "num_draft_tokens" in line:
+                                num_draft_tokens += int(float(parts[-1]))
+                            elif "num_accepted_tokens_per_pos" in line:
+                                pos_label = 'position="'
+                                if pos_label in line:
+                                    start = line.index(pos_label) + len(pos_label)
+                                    end = line.index('"', start)
+                                    pos = int(line[start:end])
+                                    val = int(float(parts[-1]))
+                                    accepted_per_pos[pos] = (
+                                        accepted_per_pos.get(pos, 0) + val
+                                    )
+                            elif "num_accepted_tokens" in line:
+                                num_accepted_tokens += int(float(parts[-1]))
+
+            if not found_spec_decode:
+                return None
+
+            return SpecDecodeMetrics(
+                num_drafts=num_drafts,
+                num_draft_tokens=num_draft_tokens,
+                num_accepted_tokens=num_accepted_tokens,
+                accepted_per_pos=accepted_per_pos,
+            )
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        return None
 
 
 class TaskType(Enum):
@@ -89,6 +199,7 @@ class BenchmarkMetrics:
     # Max output tokens per second and concurrent requests at that peak
     max_output_tokens_per_s: float
     max_concurrent_requests: int
+    rtfx: float = 0.0  # Inverse Real-Time Factor for ASR benchmarks
 
 
 @dataclass
@@ -112,7 +223,11 @@ def _get_current_request_rate(
     total_requests: int,
     request_rate: float,
 ) -> float:
-    if ramp_up_strategy and ramp_up_start_rps is not None and ramp_up_end_rps is not None:
+    if (
+        ramp_up_strategy
+        and ramp_up_start_rps is not None
+        and ramp_up_end_rps is not None
+    ):
         progress = request_index / max(total_requests - 1, 1)
         if ramp_up_strategy == "linear":
             increase = (ramp_up_end_rps - ramp_up_start_rps) * progress
@@ -158,7 +273,9 @@ async def get_request(
         ramp_up_end_rps (optional):
             The ending request rate for ramp-up.
     """
-    assert burstiness > 0, f"A positive burstiness factor is expected, but given {burstiness}."
+    assert burstiness > 0, (
+        f"A positive burstiness factor is expected, but given {burstiness}."
+    )
     # Convert to list to get length for ramp-up calculations
     if isinstance(input_requests, Iterable) and not isinstance(input_requests, list):
         input_requests = list(input_requests)
@@ -178,7 +295,9 @@ async def get_request(
             total_requests,
             request_rate,
         )
-        assert current_request_rate > 0.0, f"Obtained non-positive request rate {current_request_rate}."
+        assert current_request_rate > 0.0, (
+            f"Obtained non-positive request rate {current_request_rate}."
+        )
         request_rates.append(current_request_rate)
         if current_request_rate == float("inf"):
             delay_ts.append(0)
@@ -222,7 +341,9 @@ async def get_request(
 
 
 def calculate_metrics_for_embeddings(
-    outputs: list[RequestFuncOutput], dur_s: float, selected_percentiles: list[float]
+    outputs: list[RequestFuncOutput],
+    dur_s: float,
+    selected_percentiles: list[float],
 ) -> EmbedBenchmarkMetrics:
     """Calculate the metrics for the embedding requests.
 
@@ -248,7 +369,8 @@ def calculate_metrics_for_embeddings(
 
     if completed == 0:
         warnings.warn(
-            "All requests failed. This is likely due to a misconfiguration on the benchmark arguments.",
+            "All requests failed. This is likely due to a misconfiguration "
+            "on the benchmark arguments.",
             stacklevel=2,
         )
     metrics = EmbedBenchmarkMetrics(
@@ -260,7 +382,9 @@ def calculate_metrics_for_embeddings(
         mean_e2el_ms=np.mean(e2els or 0) * 1000,
         std_e2el_ms=np.std(e2els or 0) * 1000,
         median_e2el_ms=np.median(e2els or 0) * 1000,
-        percentiles_e2el_ms=[(p, np.percentile(e2els or 0, p) * 1000) for p in selected_percentiles],
+        percentiles_e2el_ms=[
+            (p, np.percentile(e2els or 0, p) * 1000) for p in selected_percentiles
+        ],
     )
     return metrics
 
@@ -269,7 +393,7 @@ def calculate_metrics(
     input_requests: list[SampleRequest],
     outputs: list[RequestFuncOutput],
     dur_s: float,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: TokenizerLike,
     selected_percentiles: list[float],
     goodput_config_dict: dict[str, float],
 ) -> tuple[BenchmarkMetrics, list[int]]:
@@ -295,19 +419,27 @@ def calculate_metrics(
     all_tpots: list[float] = []
     ttfts: list[float] = []
     e2els: list[float] = []
+    input_audio_duration = 0.0
     for i in range(len(outputs)):
         if outputs[i].success:
             output_len = outputs[i].output_tokens
 
             if not output_len:
-                # We use the tokenizer to count the number of output tokens
-                # for some serving backends instead of looking at
-                # len(outputs[i].itl) since multiple output tokens may be
-                # bundled together
-                # Note : this may inflate the output token count slightly
-                output_len = len(tokenizer(outputs[i].generated_text, add_special_tokens=False).input_ids)
+                if tokenizer is None:
+                    output_len = 1
+                else:
+                    # We use the tokenizer to count the number of output tokens
+                    # for some serving backends instead of looking at
+                    # len(outputs[i].itl) since multiple output tokens may be
+                    # bundled together
+                    # Note : this may inflate the output token count slightly
+                    output_len = len(
+                        tokenizer(
+                            outputs[i].generated_text, add_special_tokens=False
+                        ).input_ids
+                    )
             actual_output_lens.append(output_len)
-            total_input += input_requests[i].prompt_len
+            total_input += outputs[i].prompt_len
             tpot = 0
             if output_len > 1:
                 latency_minus_ttft = outputs[i].latency - outputs[i].ttft
@@ -318,6 +450,7 @@ def calculate_metrics(
             itls += outputs[i].itl
             ttfts.append(outputs[i].ttft)
             e2els.append(outputs[i].latency)
+            input_audio_duration += outputs[i].input_audio_duration
             completed += 1
         else:
             actual_output_lens.append(0)
@@ -328,13 +461,19 @@ def calculate_metrics(
 
         if "ttft" in goodput_config_dict:
             valid_metrics.append(ttfts)
-            slo_values.append(goodput_config_dict["ttft"] / MILLISECONDS_TO_SECONDS_CONVERSION)
+            slo_values.append(
+                goodput_config_dict["ttft"] / MILLISECONDS_TO_SECONDS_CONVERSION
+            )
         if "tpot" in goodput_config_dict:
             valid_metrics.append(all_tpots)
-            slo_values.append(goodput_config_dict["tpot"] / MILLISECONDS_TO_SECONDS_CONVERSION)
+            slo_values.append(
+                goodput_config_dict["tpot"] / MILLISECONDS_TO_SECONDS_CONVERSION
+            )
         if "e2el" in goodput_config_dict:
             valid_metrics.append(e2els)
-            slo_values.append(goodput_config_dict["e2el"] / MILLISECONDS_TO_SECONDS_CONVERSION)
+            slo_values.append(
+                goodput_config_dict["e2el"] / MILLISECONDS_TO_SECONDS_CONVERSION
+            )
 
         for req_metric in zip(*valid_metrics):
             is_good_req = all([s >= r for s, r in zip(slo_values, req_metric)])
@@ -343,7 +482,8 @@ def calculate_metrics(
 
     if completed == 0:
         warnings.warn(
-            "All requests failed. This is likely due to a misconfiguration on the benchmark arguments.",
+            "All requests failed. This is likely due to a misconfiguration "
+            "on the benchmark arguments.",
             stacklevel=2,
         )
 
@@ -354,9 +494,17 @@ def calculate_metrics(
     # Find the time range across all successful requests
     successful_outputs = [output for output in outputs if output.success]
     failed_outputs = [output for output in outputs if not output.success]
+
+    if len(failed_outputs) > 0:
+        print("Failed requests during benchmark run detected (capping to 10):")
+        for i, err in enumerate(failed_outputs[:10]):
+            print(f"Error {i}: {err.error}")
+
     if successful_outputs:
         min_start_time = min(output.start_time for output in successful_outputs)
-        max_end_time = max(output.start_time + output.latency for output in successful_outputs)
+        max_end_time = max(
+            output.start_time + output.latency for output in successful_outputs
+        )
 
         # Create second buckets (ceiling to ensure we capture all time)
         duration_seconds = int(np.ceil(max_end_time - min_start_time)) + 1
@@ -380,7 +528,9 @@ def calculate_metrics(
 
             # Track concurrent requests for each second this request was active
             request_start_second = int(output.start_time - min_start_time)
-            request_end_second = int((output.start_time + output.latency) - min_start_time)
+            request_end_second = int(
+                (output.start_time + output.latency) - min_start_time
+            )
 
             for second in range(request_start_second, request_end_second + 1):
                 concurrent_requests_per_second[second] += 1
@@ -418,24 +568,34 @@ def calculate_metrics(
         request_goodput=good_completed / dur_s,
         output_throughput=sum(actual_output_lens) / dur_s,
         total_token_throughput=(total_input + sum(actual_output_lens)) / dur_s,
-        mean_ttft_ms=np.mean(ttfts or 0) * 1000,  # ttfts is empty if streaming is not supported by the endpoint
+        mean_ttft_ms=np.mean(ttfts or 0)
+        * 1000,  # ttfts is empty if streaming is not supported by the endpoint
         std_ttft_ms=np.std(ttfts or 0) * 1000,
         median_ttft_ms=np.median(ttfts or 0) * 1000,
-        percentiles_ttft_ms=[(p, np.percentile(ttfts or 0, p) * 1000) for p in selected_percentiles],
+        percentiles_ttft_ms=[
+            (p, np.percentile(ttfts or 0, p) * 1000) for p in selected_percentiles
+        ],
         mean_tpot_ms=np.mean(tpots or 0) * 1000,
         std_tpot_ms=np.std(tpots or 0) * 1000,
         median_tpot_ms=np.median(tpots or 0) * 1000,
-        percentiles_tpot_ms=[(p, np.percentile(tpots or 0, p) * 1000) for p in selected_percentiles],
+        percentiles_tpot_ms=[
+            (p, np.percentile(tpots or 0, p) * 1000) for p in selected_percentiles
+        ],
         mean_itl_ms=np.mean(itls or 0) * 1000,
         std_itl_ms=np.std(itls or 0) * 1000,
         median_itl_ms=np.median(itls or 0) * 1000,
-        percentiles_itl_ms=[(p, np.percentile(itls or 0, p) * 1000) for p in selected_percentiles],
+        percentiles_itl_ms=[
+            (p, np.percentile(itls or 0, p) * 1000) for p in selected_percentiles
+        ],
         mean_e2el_ms=np.mean(e2els or 0) * 1000,
         std_e2el_ms=np.std(e2els or 0) * 1000,
         median_e2el_ms=np.median(e2els or 0) * 1000,
-        percentiles_e2el_ms=[(p, np.percentile(e2els or 0, p) * 1000) for p in selected_percentiles],
+        percentiles_e2el_ms=[
+            (p, np.percentile(e2els or 0, p) * 1000) for p in selected_percentiles
+        ],
         max_output_tokens_per_s=max_output_tokens_per_s,
         max_concurrent_requests=max_concurrent_requests,
+        rtfx=input_audio_duration / dur_s,
     )
 
     return metrics, actual_output_lens
@@ -448,7 +608,7 @@ async def benchmark(
     base_url: str,
     model_id: str,
     model_name: str,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: TokenizerLike,
     input_requests: list[SampleRequest],
     logprobs: int | None,
     request_rate: float,
@@ -464,10 +624,12 @@ async def benchmark(
     lora_modules: Iterable[str] | None,
     extra_headers: dict | None,
     extra_body: dict | None,
+    lora_assignment: Literal["random", "round-robin"] = "random",
     ramp_up_strategy: Literal["linear", "exponential"] | None = None,
     ramp_up_start_rps: int | None = None,
     ramp_up_end_rps: int | None = None,
     ready_check_timeout_sec: int = 600,
+    ssl_context: ssl.SSLContext | bool | None = None,
 ):
     try:
         request_func = ASYNC_REQUEST_FUNCS[endpoint_type]
@@ -475,6 +637,8 @@ async def benchmark(
         raise ValueError(f"Unknown backend: {endpoint_type}") from None
 
     # Reuses connections across requests to reduce TLS handshake overhead.
+    # Use ssl_context if provided, otherwise default to True for https URLs
+    ssl_setting = ssl_context if ssl_context is not None else ("https://" in api_url)
     connector = aiohttp.TCPConnector(
         limit=max_concurrency or 0,
         limit_per_host=max_concurrency or 0,
@@ -483,7 +647,7 @@ async def benchmark(
         keepalive_timeout=60,
         enable_cleanup_closed=True,
         force_close=False,
-        ssl=("https://" in api_url),
+        ssl=ssl_setting,
     )
 
     session = aiohttp.ClientSession(
@@ -503,7 +667,10 @@ async def benchmark(
     assert (
         test_mm_content is None
         or isinstance(test_mm_content, dict)
-        or (isinstance(test_mm_content, list) and all(isinstance(item, dict) for item in test_mm_content))
+        or (
+            isinstance(test_mm_content, list)
+            and all(isinstance(item, dict) for item in test_mm_content)
+        )
     ), "multi_modal_data must be a dict or list[dict]"
     test_input = RequestFuncInput(
         model=model_id,
@@ -540,12 +707,18 @@ async def benchmark(
     if num_warmups > 0:
         print(f"Warming up with {num_warmups} requests...")
         warmup_pbar = None if disable_tqdm else tqdm(total=num_warmups)
-        warmup_semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else contextlib.nullcontext()
+        warmup_semaphore = (
+            asyncio.Semaphore(max_concurrency)
+            if max_concurrency
+            else contextlib.nullcontext()
+        )
         warmup_tasks = []
 
         async def warmup_limited_request_func():
             async with warmup_semaphore:
-                return await request_func(request_func_input=test_input, session=session, pbar=warmup_pbar)
+                return await request_func(
+                    request_func_input=test_input, session=session, pbar=warmup_pbar
+                )
 
         for _ in range(num_warmups):
             request_task = asyncio.create_task(warmup_limited_request_func())
@@ -559,8 +732,20 @@ async def benchmark(
     print("Starting main benchmark run...")
 
     if lora_modules:
-        # For each input request, choose a LoRA module at random.
-        lora_modules = iter([random.choice(lora_modules) for _ in range(len(input_requests))])
+        lora_modules_list = list(lora_modules)
+        if lora_assignment == "round-robin":
+            # Deterministic round-robin assignment across requests.
+            lora_modules = iter(
+                [
+                    lora_modules_list[i % len(lora_modules_list)]
+                    for i in range(len(input_requests))
+                ]
+            )
+        else:
+            # For each input request, choose a LoRA module at random.
+            lora_modules = iter(
+                [random.choice(lora_modules_list) for _ in range(len(input_requests))]
+            )
 
     if profile:
         print("Starting profiler...")
@@ -577,7 +762,9 @@ async def benchmark(
             extra_headers=extra_headers,
             extra_body=extra_body,
         )
-        profile_output = await request_func(request_func_input=profile_input, session=session)
+        profile_output = await request_func(
+            request_func_input=profile_input, session=session
+        )
         if profile_output.success:
             print("Profiler started")
 
@@ -586,7 +773,8 @@ async def benchmark(
     if ramp_up_strategy is not None:
         print(f"Traffic ramp-up strategy: {ramp_up_strategy}.")
         print(
-            f"Will increase RPS from {ramp_up_start_rps} to {ramp_up_end_rps} RPS over the duration of the benchmark."
+            f"Will increase RPS from {ramp_up_start_rps} to "
+            f"{ramp_up_end_rps} RPS over the duration of the benchmark."
         )
     else:
         print(f"Traffic request rate: {request_rate}")
@@ -594,13 +782,21 @@ async def benchmark(
     print(f"Burstiness factor: {burstiness} ({distribution})")
     print(f"Maximum request concurrency: {max_concurrency}")
 
+    spec_decode_metrics_before = await fetch_spec_decode_metrics(base_url, session)
+
     pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
-    semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else contextlib.nullcontext()
+    semaphore = (
+        asyncio.Semaphore(max_concurrency)
+        if max_concurrency
+        else contextlib.nullcontext()
+    )
 
     async def limited_request_func(request_func_input, session, pbar):
         async with semaphore:
-            return await request_func(request_func_input=request_func_input, session=session, pbar=pbar)
+            return await request_func(
+                request_func_input=request_func_input, session=session, pbar=pbar
+            )
 
     benchmark_start_time = time.perf_counter()
     tasks: list[asyncio.Task] = []
@@ -658,7 +854,11 @@ async def benchmark(
             request_id=request_id,
         )
         tasks.append(
-            asyncio.create_task(limited_request_func(request_func_input=request_func_input, session=session, pbar=pbar))
+            asyncio.create_task(
+                limited_request_func(
+                    request_func_input=request_func_input, session=session, pbar=pbar
+                )
+            )
         )
     outputs: list[RequestFuncOutput] = await asyncio.gather(*tasks)
 
@@ -666,6 +866,48 @@ async def benchmark(
         pbar.close()
 
     benchmark_duration = time.perf_counter() - benchmark_start_time
+
+    spec_decode_metrics_after = await fetch_spec_decode_metrics(base_url, session)
+    spec_decode_stats: dict[str, Any] | None = None
+    if spec_decode_metrics_before is not None and spec_decode_metrics_after is not None:
+        delta_drafts = (
+            spec_decode_metrics_after.num_drafts - spec_decode_metrics_before.num_drafts
+        )
+        delta_draft_tokens = (
+            spec_decode_metrics_after.num_draft_tokens
+            - spec_decode_metrics_before.num_draft_tokens
+        )
+        delta_accepted = (
+            spec_decode_metrics_after.num_accepted_tokens
+            - spec_decode_metrics_before.num_accepted_tokens
+        )
+        per_pos_rates: list[float] = []
+        if delta_drafts > 0:
+            positions = sorted(
+                set(spec_decode_metrics_before.accepted_per_pos.keys())
+                | set(spec_decode_metrics_after.accepted_per_pos.keys())
+            )
+            for pos in positions:
+                before_val = spec_decode_metrics_before.accepted_per_pos.get(pos, 0)
+                after_val = spec_decode_metrics_after.accepted_per_pos.get(
+                    pos, before_val
+                )
+                delta_pos = after_val - before_val
+                per_pos_rates.append(delta_pos / delta_drafts)
+
+        if delta_draft_tokens > 0:
+            acceptance_rate = (delta_accepted / delta_draft_tokens) * 100
+            acceptance_length = (
+                1 + delta_accepted / delta_drafts if delta_drafts > 0 else 0.0
+            )
+            spec_decode_stats = {
+                "num_drafts": delta_drafts,
+                "draft_tokens": delta_draft_tokens,
+                "accepted_tokens": delta_accepted,
+                "acceptance_rate": acceptance_rate,
+                "acceptance_length": acceptance_length,
+                "per_position_acceptance_rates": per_pos_rates,
+            }
 
     if task_type == TaskType.GENERATION:
         metrics, actual_output_lens = calculate_metrics(
@@ -693,16 +935,49 @@ async def benchmark(
         print("{:<40} {:<10.2f}".format("Request rate configured (RPS):", request_rate))
     print("{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration))
     print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))
-    if isinstance(metrics, BenchmarkMetrics):
+    if isinstance(metrics, BenchmarkMetrics) and tokenizer:
         print("{:<40} {:<10}".format("Total generated tokens:", metrics.total_output))
-    print("{:<40} {:<10.2f}".format("Request throughput (req/s):", metrics.request_throughput))
+    print(
+        "{:<40} {:<10.2f}".format(
+            "Request throughput (req/s):", metrics.request_throughput
+        )
+    )
     if goodput_config_dict:
-        print("{:<40} {:<10.2f}".format("Request goodput (req/s):", metrics.request_goodput))
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Request goodput (req/s):", metrics.request_goodput
+            )
+        )
     if isinstance(metrics, BenchmarkMetrics):
-        print("{:<40} {:<10.2f}".format("Output token throughput (tok/s):", metrics.output_throughput))
-        print("{:<40} {:<10.2f}".format("Peak output token throughput (tok/s):", metrics.max_output_tokens_per_s))
-        print("{:<40} {:<10.2f}".format("Peak concurrent requests:", metrics.max_concurrent_requests))
-    print("{:<40} {:<10.2f}".format("Total Token throughput (tok/s):", metrics.total_token_throughput))
+        if tokenizer:
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Output token throughput (tok/s):", metrics.output_throughput
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Peak output token throughput (tok/s):",
+                    metrics.max_output_tokens_per_s,
+                )
+            )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Peak concurrent requests:", metrics.max_concurrent_requests
+            )
+        )
+        if metrics.rtfx > 0.0:
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "RTFx (Inverse Real-Time Factor):", metrics.rtfx
+                )
+            )
+    if tokenizer:
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Total token throughput (tok/s):", metrics.total_token_throughput
+            )
+        )
 
     if isinstance(metrics, BenchmarkMetrics):
         result = {
@@ -719,10 +994,12 @@ async def benchmark(
             "output_lens": actual_output_lens,
             "ttfts": [output.ttft for output in outputs],
             "itls": [output.itl for output in outputs],
+            "start_times": [output.start_time for output in outputs],
             "generated_texts": [output.generated_text for output in outputs],
             "errors": [output.error for output in outputs],
             "max_output_tokens_per_s": metrics.max_output_tokens_per_s,
             "max_concurrent_requests": metrics.max_concurrent_requests,
+            "rtfx": metrics.rtfx,
         }
     else:
         result = {
@@ -737,6 +1014,18 @@ async def benchmark(
 
     if rps_change_events:
         result["rps_change_events"] = rps_change_events
+
+    if spec_decode_stats is not None:
+        result["spec_decode_acceptance_rate"] = spec_decode_stats["acceptance_rate"]
+        result["spec_decode_acceptance_length"] = spec_decode_stats["acceptance_length"]
+        result["spec_decode_num_drafts"] = int(spec_decode_stats["num_drafts"])
+        result["spec_decode_draft_tokens"] = int(spec_decode_stats["draft_tokens"])
+        result["spec_decode_accepted_tokens"] = int(
+            spec_decode_stats["accepted_tokens"]
+        )
+        result["spec_decode_per_position_acceptance_rates"] = spec_decode_stats.get(
+            "per_position_acceptance_rates", []
+        )
 
     def process_one_metric(
         # E.g., "ttft"
@@ -763,19 +1052,54 @@ async def benchmark(
                 getattr(metrics, f"median_{metric_attribute_name}_ms"),
             )
         )
-        result[f"mean_{metric_attribute_name}_ms"] = getattr(metrics, f"mean_{metric_attribute_name}_ms")
-        result[f"median_{metric_attribute_name}_ms"] = getattr(metrics, f"median_{metric_attribute_name}_ms")
-        result[f"std_{metric_attribute_name}_ms"] = getattr(metrics, f"std_{metric_attribute_name}_ms")
+        result[f"mean_{metric_attribute_name}_ms"] = getattr(
+            metrics, f"mean_{metric_attribute_name}_ms"
+        )
+        result[f"median_{metric_attribute_name}_ms"] = getattr(
+            metrics, f"median_{metric_attribute_name}_ms"
+        )
+        result[f"std_{metric_attribute_name}_ms"] = getattr(
+            metrics, f"std_{metric_attribute_name}_ms"
+        )
         for p, value in getattr(metrics, f"percentiles_{metric_attribute_name}_ms"):
             p_word = str(int(p)) if int(p) == p else str(p)
             print("{:<40} {:<10.2f}".format(f"P{p_word} {metric_name} (ms):", value))
             result[f"p{p_word}_{metric_attribute_name}_ms"] = value
 
-    if task_type == TaskType.GENERATION:
+    if task_type == TaskType.GENERATION and tokenizer:
         process_one_metric("ttft", "TTFT", "Time to First Token")
         process_one_metric("tpot", "TPOT", "Time per Output Token (excl. 1st token)")
         process_one_metric("itl", "ITL", "Inter-token Latency")
     process_one_metric("e2el", "E2EL", "End-to-end Latency")
+
+    if spec_decode_stats is not None:
+        print("{s:{c}^{n}}".format(s="Speculative Decoding", n=50, c="-"))
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Acceptance rate (%):", spec_decode_stats["acceptance_rate"]
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Acceptance length:", spec_decode_stats["acceptance_length"]
+            )
+        )
+        print("{:<40} {:<10}".format("Drafts:", int(spec_decode_stats["num_drafts"])))
+        print(
+            "{:<40} {:<10}".format(
+                "Draft tokens:", int(spec_decode_stats["draft_tokens"])
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Accepted tokens:", int(spec_decode_stats["accepted_tokens"])
+            )
+        )
+        per_pos = spec_decode_stats.get("per_position_acceptance_rates", [])
+        if per_pos:
+            print("Per-position acceptance (%):")
+            for i, rate in enumerate(per_pos):
+                print("{:<40} {:<10.2f}".format(f"  Position {i}:", rate * 100))
 
     print("=" * 50)
 
@@ -789,7 +1113,9 @@ async def benchmark(
             output_len=test_output_len,
             logprobs=logprobs,
         )
-        profile_output = await request_func(request_func_input=profile_input, session=session)
+        profile_output = await request_func(
+            request_func_input=profile_input, session=session
+        )
         if profile_output.success:
             print("Profiler stopped")
 
@@ -835,7 +1161,9 @@ def parse_goodput(slo_pairs):
     return goodput_config_dict
 
 
-def save_to_pytorch_benchmark_format(args: argparse.Namespace, results: dict[str, Any], file_name: str) -> None:
+def save_to_pytorch_benchmark_format(
+    args: argparse.Namespace, results: dict[str, Any], file_name: str
+) -> None:
     metrics = [
         "median_ttft_ms",
         "mean_ttft_ms",
@@ -856,12 +1184,59 @@ def save_to_pytorch_benchmark_format(args: argparse.Namespace, results: dict[str
     pt_records = convert_to_pytorch_benchmark_format(
         args=args,
         metrics={k: [results[k]] for k in metrics if k in results},
-        extra_info={k: results[k] for k in results if k not in metrics and k not in ignored_metrics},
+        extra_info={
+            k: results[k]
+            for k in results
+            if k not in metrics and k not in ignored_metrics
+        },
     )
     if pt_records:
         # Don't use json suffix here as we don't want CI to pick it up
         pt_file = f"{os.path.splitext(file_name)[0]}.pytorch.json"
         write_to_json(pt_file, pt_records)
+
+
+def compute_result_filename(
+    args: argparse.Namespace,
+    model_id: str,
+    label: str,
+    current_dt: str,
+) -> str | None:
+    """Compute the result filename based on benchmark configuration.
+
+    Args:
+        args: Command line arguments containing result configuration
+        model_id: The model identifier
+        label: The benchmark label
+        current_dt: Current datetime string
+
+    Returns:
+        The computed filename path or None if no result saving is requested
+    """
+    if not (args.plot_timeline or args.save_result or args.append_result):
+        return None
+
+    base_model_id = model_id.split("/")[-1]
+    max_concurrency_str = (
+        f"-concurrency{args.max_concurrency}"
+        if args.max_concurrency is not None
+        else ""
+    )
+    label = label or args.backend
+
+    if args.ramp_up_strategy is not None:
+        file_name = f"{label}-ramp-up-{args.ramp_up_strategy}-{args.ramp_up_start_rps}qps-{args.ramp_up_end_rps}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
+    else:
+        file_name = f"{label}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
+
+    if args.result_filename:
+        file_name = args.result_filename
+
+    if args.result_dir:
+        os.makedirs(args.result_dir, exist_ok=True)
+        file_name = os.path.join(args.result_dir, file_name)
+
+    return file_name
 
 
 def add_cli_args(parser: argparse.ArgumentParser):
@@ -888,7 +1263,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
     )
     # Use 127.0.0.1 here instead of localhost to force the use of ipv4
     parser.add_argument("--host", type=str, default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=2242)
+    parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--endpoint",
         type=str,
@@ -902,7 +1277,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
         help="Key-value pairs (e.g, --header x-additional-info=0.3.3) "
         "for headers to be passed with each request. These headers override "
         "per backend constants and values set via environment variable, and "
-        "will be overriden by other arguments (such as request ids).",
+        "will be overridden by other arguments (such as request ids).",
     )
     parser.add_argument(
         "--max-concurrency",
@@ -921,13 +1296,45 @@ def add_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--model",
         type=str,
-        required=True,
-        help="Name of the model.",
+        required=False,
+        default=None,
+        help="Name of the model. If not specified, will fetch the first model "
+        "from the server's /v1/models endpoint.",
+    )
+    parser.add_argument(
+        "--input-len",
+        type=int,
+        default=None,
+        help="General input length for datasets. Maps to dataset-specific "
+        "input length arguments (e.g., --random-input-len, --sonnet-input-len). "
+        "If not specified, uses dataset defaults.",
+    )
+    parser.add_argument(
+        "--output-len",
+        type=int,
+        default=None,
+        help="General output length for datasets. Maps to dataset-specific "
+        "output length arguments (e.g., --random-output-len, --sonnet-output-len). "
+        "If not specified, uses dataset defaults.",
     )
     parser.add_argument(
         "--tokenizer",
         type=str,
         help="Name or path of the tokenizer, if not using the default tokenizer.",  # noqa: E501
+    )
+    parser.add_argument(
+        "--tokenizer-mode",
+        type=str,
+        default="auto",
+        help="""Tokenizer mode:\n
+        - "auto" will use the tokenizer from `mistral_common` for Mistral models
+        if available, otherwise it will use the "hf" tokenizer.\n
+        - "hf" will use the fast tokenizer if available.\n
+        - "slow" will always use the slow tokenizer.\n
+        - "mistral" will always use the tokenizer from `mistral_common`.\n
+        - "deepseek_v32" will always use the tokenizer from `deepseek_v32`.\n
+        - "qwen_vl" will always use the tokenizer from `qwen_vl`.\n
+        - Other custom values can be supported via plugins.""",
     )
     parser.add_argument("--use-beam-search", action="store_true")
     parser.add_argument(
@@ -964,11 +1371,6 @@ def add_cli_args(parser: argparse.ArgumentParser):
         "results in a more uniform arrival of requests.",
     )
     parser.add_argument(
-        "--trust-remote-code",
-        action="store_true",
-        help="Trust remote code from huggingface",
-    )
-    parser.add_argument(
         "--disable-tqdm",
         action="store_true",
         help="Specify to disable tqdm progress bar.",
@@ -982,7 +1384,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Use Torch Profiler. The endpoint must be launched with APHRODITE_TORCH_PROFILER_DIR to enable profiler.",
+        help="Use Aphrodite Profiling. --profiler-config must be provided on the server.",
     )
     parser.add_argument(
         "--save-result",
@@ -993,7 +1395,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
         "--save-detailed",
         action="store_true",
         help="When saving the results, whether to include per request "
-        "information such as response, error, ttfs, tpots, etc.",
+        "information such as response, error, ttfts, tpots, etc.",
     )
     parser.add_argument(
         "--append-result",
@@ -1034,7 +1436,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
         "--percentile-metrics",
         type=str,
         default=None,
-        help="Comma-separated list of selected metrics to report percentils. "
+        help="Comma-separated list of selected metrics to report percentiles. "
         "This argument specifies the metrics to report percentiles. "
         'Allowed metric names are "ttft", "tpot", "itl", "e2el". '
         'If not specified, defaults to "ttft,tpot,itl" for generative models '
@@ -1065,7 +1467,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
         "--request-id-prefix",
         type=str,
         required=False,
-        default="benchmark-serving",
+        default=f"bench-{uuid.uuid4().hex[:8]}-",
         help="Specify the prefix of request id.",
     )
 
@@ -1093,38 +1495,28 @@ def add_cli_args(parser: argparse.ArgumentParser):
         type=float,
         default=None,
         help="Temperature sampling parameter. Only has effect on "
-        "openai-compatible backends. If not specified, default to greedy "
-        "decoding (i.e. temperature==0.0).",
+        "openai-compatible backends.",
     )
     sampling_group.add_argument(
         "--frequency-penalty",
         type=float,
         default=None,
-        help="Frequency penalty sampling parameter. Only has effect on openai-compatible backends.",
+        help="Frequency penalty sampling parameter. Only has effect on "
+        "openai-compatible backends.",
     )
     sampling_group.add_argument(
         "--presence-penalty",
         type=float,
         default=None,
-        help="Presence penalty sampling parameter. Only has effect on openai-compatible backends.",
+        help="Presence penalty sampling parameter. Only has effect on "
+        "openai-compatible backends.",
     )
     sampling_group.add_argument(
         "--repetition-penalty",
         type=float,
         default=None,
-        help="Repetition penalty sampling parameter. Only has effect on openai-compatible backends.",
-    )
-
-    parser.add_argument(
-        "--tokenizer-mode",
-        type=str,
-        default="auto",
-        choices=["auto", "slow", "mistral", "custom"],
-        help='The tokenizer mode.\n\n* "auto" will use the '
-        'fast tokenizer if available.\n* "slow" will '
-        "always use the slow tokenizer. \n* "
-        '"mistral" will always use the `mistral_common` tokenizer. \n*'
-        '"custom" will use --tokenizer to select the preregistered tokenizer.',
+        help="Repetition penalty sampling parameter. Only has effect on "
+        "openai-compatible backends.",
     )
 
     parser.add_argument(
@@ -1142,7 +1534,18 @@ def add_cli_args(parser: argparse.ArgumentParser):
         default=None,
         help="A subset of LoRA module names passed in when "
         "launching the server. For each request, the "
-        "script chooses a LoRA module at random.",
+        "script chooses a LoRA module at random by default. "
+        "Use --lora-assignment to control selection strategy.",
+    )
+
+    parser.add_argument(
+        "--lora-assignment",
+        type=str,
+        default="random",
+        choices=["random", "round-robin"],
+        help="Strategy for assigning LoRA modules to requests. "
+        "'random' (default) selects a LoRA at random for each request. "
+        "'round-robin' cycles through LoRA modules deterministically.",
     )
 
     parser.add_argument(
@@ -1159,21 +1562,22 @@ def add_cli_args(parser: argparse.ArgumentParser):
         "--ramp-up-start-rps",
         type=int,
         default=None,
-        help="The starting request rate for ramp-up (RPS). Needs to be specified when --ramp-up-strategy is used.",
+        help="The starting request rate for ramp-up (RPS). "
+        "Needs to be specified when --ramp-up-strategy is used.",
     )
     parser.add_argument(
         "--ramp-up-end-rps",
         type=int,
         default=None,
-        help="The ending request rate for ramp-up (RPS). Needs to be specified when --ramp-up-strategy is used.",
+        help="The ending request rate for ramp-up (RPS). "
+        "Needs to be specified when --ramp-up-strategy is used.",
     )
     parser.add_argument(
         "--ready-check-timeout-sec",
         type=int,
-        default=600,
+        default=0,
         help="Maximum time to wait for the endpoint to become ready "
-        "in seconds (default: 600 seconds / 10 minutes). If set to 0, "
-        "the ready check will be skipped.",
+        "in seconds. Ready check will be skipped by default.",
     )
 
     parser.add_argument(
@@ -1183,6 +1587,44 @@ def add_cli_args(parser: argparse.ArgumentParser):
         'Example: \'{"chat_template_kwargs":{"enable_thinking":false}}\'',
         type=json.loads,
         default=None,
+    )
+    parser.add_argument(
+        "--skip-tokenizer-init",
+        action="store_true",
+        default=False,
+        help="Skip initialization of tokenizer and detokenizer",
+    )
+
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        default=False,
+        help="Disable SSL certificate verification. Use this option when "
+        "connecting to servers with self-signed certificates.",
+    )
+
+    parser.add_argument(
+        "--plot-timeline",
+        action="store_true",
+        help="Generate an HTML timeline plot showing request execution. "
+        "The plot will be saved alongside the results JSON file.",
+    )
+    parser.add_argument(
+        "--timeline-itl-thresholds",
+        type=float,
+        nargs=2,
+        default=[25.0, 50.0],
+        metavar=("THRESHOLD1", "THRESHOLD2"),
+        help="ITL thresholds in milliseconds for timeline plot coloring. "
+        "Specify two values to categorize inter-token latencies into three groups: "
+        "below first threshold (green), between thresholds (orange), "
+        "and above second threshold (red). Default: 25 50 (milliseconds).",
+    )
+    parser.add_argument(
+        "--plot-dataset-stats",
+        action="store_true",
+        help="Generate a matplotlib figure with dataset statistics showing "
+        "prompt tokens, output tokens, and combined token distributions.",
     )
 
 
@@ -1205,7 +1647,8 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             )
         if args.ramp_up_start_rps is None or args.ramp_up_end_rps is None:
             raise ValueError(
-                "When using --ramp-up-strategy, both --ramp-up-start-rps and --ramp-up-end-rps must be specified"
+                "When using --ramp-up-strategy, both --ramp-up-start-rps and "
+                "--ramp-up-end-rps must be specified"
             )
         if args.ramp_up_start_rps < 0 or args.ramp_up_end_rps < 0:
             raise ValueError("Ramp-up start and end RPS must be non-negative")
@@ -1215,17 +1658,14 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError("For exponential ramp-up, the start RPS cannot be 0.")
 
     label = args.label
-    model_id = args.model
-    model_name = args.served_model_name
-    tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
-    tokenizer_mode = args.tokenizer_mode
 
     if args.base_url is not None:
         api_url = f"{args.base_url}{args.endpoint}"
         base_url = f"{args.base_url}"
     else:
-        api_url = f"http://{args.host}:{args.port}{args.endpoint}"
-        base_url = f"http://{args.host}:{args.port}"
+        host_port = join_host_port(args.host, args.port)
+        api_url = f"http://{host_port}{args.endpoint}"
+        base_url = f"http://{host_port}"
 
     # Headers
     headers = None
@@ -1238,21 +1678,86 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             else:
                 raise ValueError("Invalid header format. Please use KEY=VALUE format.")
 
-    tokenizer = get_tokenizer(
-        tokenizer_id,
-        tokenizer_mode=tokenizer_mode,
-        trust_remote_code=args.trust_remote_code,
-    )
+    # SSL context configuration
+    ssl_context: ssl.SSLContext | bool | None = None
+    if args.insecure:
+        # Disable SSL certificate verification
+        ssl_context = False
+    elif "https://" in base_url:
+        # Use default SSL context for HTTPS
+        ssl_context = True
 
+    # Fetch model from server if not specified
+    if args.model is None:
+        print("Model not specified, fetching first model from server...")
+        model_name, model_id = await get_first_model_from_server(
+            base_url, headers, ssl_context
+        )
+        print(f"First model name: {model_name}, first model id: {model_id}")
+    else:
+        model_name = args.served_model_name
+        model_id = args.model
+
+    if args.skip_tokenizer_init:
+        tokenizer_id = None
+        tokenizer_mode = None
+        tokenizer = None
+    else:
+        tokenizer_id = args.tokenizer if args.tokenizer is not None else model_id
+        tokenizer_mode = args.tokenizer_mode
+        tokenizer = get_tokenizer(
+            tokenizer_id,
+            tokenizer_mode=tokenizer_mode,
+            trust_remote_code=args.trust_remote_code,
+        )
+
+    # Validate dataset name/path
     if args.dataset_name is None:
-        raise ValueError("Please specify '--dataset-name' and the corresponding '--dataset-path' if required.")
+        raise ValueError(
+            "Please specify '--dataset-name' and the corresponding "
+            "'--dataset-path' if required."
+        )
+
+    if (
+        args.dataset_name
+        in ["random", "random-mm", "random-rerank", "prefix_repetition"]
+        and args.dataset_path is not None
+    ):
+        raise ValueError(
+            f"Cannot use '{args.dataset_name}' dataset with --dataset-path. "
+            "Please specify the appropriate --dataset-name (e.g., "
+            "'sharegpt', 'custom', 'sonnet') for your dataset file: "
+            f"{args.dataset_path}"
+        )
+
+    # Map general --input-len and --output-len to all dataset-specific arguments
+    if args.input_len is not None:
+        args.random_input_len = args.input_len
+        args.sonnet_input_len = args.input_len
+
+    if args.output_len is not None:
+        args.random_output_len = args.output_len
+        args.sonnet_output_len = args.output_len
+        args.sharegpt_output_len = args.output_len
+        args.custom_output_len = args.output_len
+        args.hf_output_len = args.output_len
+        args.spec_bench_output_len = args.output_len
+        args.prefix_repetition_output_len = args.output_len
+
+    # when using random datasets, default to ignoring EOS
+    # so generation runs to the requested length
+    if (
+        args.dataset_name in ("random", "random-mm")
+        and args.backend in OPENAI_COMPATIBLE_BACKENDS
+    ):
+        args.ignore_eos = True
 
     # Load the dataset.
     input_requests = get_samples(args, tokenizer)
     goodput_config_dict = check_goodput_args(args)
 
     backend = args.backend
-    task_type = TaskType.POOLING if "embeddings" in backend or "rerank" in backend else TaskType.GENERATION
+    task_type = TaskType.POOLING if backend in POOLING_BACKENDS else TaskType.GENERATION
 
     # Collect the sampling parameters.
     if task_type == TaskType.GENERATION:
@@ -1272,10 +1777,17 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 
         # Sampling parameters are only supported by openai-compatible backend.
         if sampling_params and args.backend not in OPENAI_COMPATIBLE_BACKENDS:
-            raise ValueError("Sampling parameters are only supported by openai-compatible backends.")
+            raise ValueError(
+                "Sampling parameters are only supported by openai-compatible backends."
+            )
 
         if "temperature" not in sampling_params:
-            sampling_params["temperature"] = 0.0  # Default to greedy decoding.
+            print(
+                "WARNING: aphrodite bench serve no longer sets temperature==0 (greedy) "
+                "in requests by default. The default will be determined on the "
+                "server side and can be model/API specific. "
+                "For the old behavior, include --temperature=0."
+            )
 
         default_percentile_metrics = "ttft,tpot,itl"
     else:
@@ -1288,8 +1800,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     percentile_metrics: str = args.percentile_metrics or default_percentile_metrics
 
     # Avoid GC processing "static" data - reduce pause times.
-    gc.collect()
-    gc.freeze()
+    freeze_gc_heap()
 
     benchmark_result = await benchmark(
         task_type=task_type,
@@ -1312,12 +1823,14 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         goodput_config_dict=goodput_config_dict,
         max_concurrency=args.max_concurrency,
         lora_modules=args.lora_modules,
+        lora_assignment=args.lora_assignment,
         extra_headers=headers,
         extra_body=extra_body,
         ramp_up_strategy=args.ramp_up_strategy,
         ramp_up_start_rps=args.ramp_up_start_rps,
         ramp_up_end_rps=args.ramp_up_end_rps,
         ready_check_timeout_sec=args.ready_check_timeout_sec,
+        ssl_context=ssl_context,
     )
 
     # Save config and results to json
@@ -1340,10 +1853,14 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
                 kvstring = item.split("=", 1)
                 result_json[kvstring[0].strip()] = kvstring[1].strip()
             else:
-                raise ValueError("Invalid metadata format. Please use KEY=VALUE format.")
+                raise ValueError(
+                    "Invalid metadata format. Please use KEY=VALUE format."
+                )
 
     # Traffic
-    result_json["request_rate"] = args.request_rate if args.request_rate < float("inf") else "inf"
+    result_json["request_rate"] = (
+        args.request_rate if args.request_rate < float("inf") else "inf"
+    )
     result_json["burstiness"] = args.burstiness
     result_json["max_concurrency"] = args.max_concurrency
 
@@ -1355,11 +1872,92 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     # Merge with benchmark result
     result_json = {**result_json, **benchmark_result}
 
+    # Compute file_name once before using it for plots or saving results
+    file_name = compute_result_filename(args, model_id, label, current_dt)
+
+    # Generate timeline plot if requested
+    if args.plot_timeline:
+        try:
+            from aphrodite.benchmarks.plot import generate_timeline_plot
+
+            # Prepare per-request data for timeline
+            per_request_data = []
+            start_times = benchmark_result.get("start_times", [])
+            ttfts = benchmark_result.get("ttfts", [])
+            itls = benchmark_result.get("itls", [])
+            input_lens = benchmark_result.get("input_lens", [])
+            output_lens = benchmark_result.get("output_lens", [])
+
+            if start_times and ttfts and itls:
+                for i in range(len(start_times)):
+                    # Calculate latency as ttft + sum of all itls
+                    latency = ttfts[i] + sum(itls[i]) if itls[i] else ttfts[i]
+
+                    per_request_data.append(
+                        {
+                            "start_time": start_times[i],
+                            "ttft": ttfts[i],
+                            "itl": itls[i],
+                            "latency": latency,
+                            "prompt_len": input_lens[i],
+                            "output_tokens": output_lens[i],
+                        }
+                    )
+
+                timeline_path = Path(file_name).with_suffix(".timeline.html")
+                # Convert thresholds from milliseconds to seconds
+                itl_thresholds_sec = [t / 1000.0 for t in args.timeline_itl_thresholds]
+                generate_timeline_plot(
+                    per_request_data, timeline_path, itl_thresholds=itl_thresholds_sec
+                )
+            else:
+                warnings.warn(
+                    "Timeline plot requires detailed metrics. "
+                    "Ensure the benchmark completed successfully.",
+                    stacklevel=2,
+                )
+        except Exception as e:
+            warnings.warn(f"Failed to generate timeline plot: {e}", stacklevel=2)
+
+    # Generate dataset statistics plot if requested
+    if args.plot_dataset_stats:
+        try:
+            from aphrodite.benchmarks.plot import generate_dataset_stats_plot
+
+            # Prepare per-request data for dataset stats
+            per_request_data = []
+            input_lens = benchmark_result.get("input_lens", [])
+            output_lens = benchmark_result.get("output_lens", [])
+
+            if input_lens and output_lens:
+                for req_input_len, req_output_len in zip(input_lens, output_lens):
+                    per_request_data.append(
+                        {
+                            "prompt_len": req_input_len,
+                            "output_tokens": req_output_len,
+                        }
+                    )
+
+                stats_path = Path(file_name).with_suffix(".dataset_stats.png")
+                generate_dataset_stats_plot(per_request_data, stats_path)
+            else:
+                warnings.warn(
+                    "Dataset statistics plot requires input and "
+                    "output length data. Ensure the benchmark completed "
+                    "successfully.",
+                    stacklevel=2,
+                )
+        except Exception as e:
+            warnings.warn(
+                f"Failed to generate dataset statistics plot: {e}", stacklevel=2
+            )
+
     if not args.save_detailed:
         # Remove fields with too many data points
         for field in [
             "input_lens",
             "output_lens",
+            "start_times",
             "ttfts",
             "itls",
             "generated_texts",
@@ -1370,21 +1968,11 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             if field in benchmark_result:
                 del benchmark_result[field]
 
-        # Save to file
+    # Save to file
     if args.save_result or args.append_result:
-        base_model_id = model_id.split("/")[-1]
-        max_concurrency_str = f"-concurrency{args.max_concurrency}" if args.max_concurrency is not None else ""
-        label = label or args.backend
-        if args.ramp_up_strategy is not None:
-            file_name = f"{label}-ramp-up-{args.ramp_up_strategy}-{args.ramp_up_start_rps}qps-{args.ramp_up_end_rps}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
-        else:
-            file_name = f"{label}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
-        if args.result_filename:
-            file_name = args.result_filename
-        if args.result_dir:
-            os.makedirs(args.result_dir, exist_ok=True)
-            file_name = os.path.join(args.result_dir, file_name)
-        with open(file_name, mode="a+" if args.append_result else "w", encoding="utf-8") as outfile:
+        with open(
+            file_name, mode="a+" if args.append_result else "w", encoding="utf-8"
+        ) as outfile:
             # Append a newline.
             if args.append_result and outfile.tell() != 0:
                 outfile.write("\n")

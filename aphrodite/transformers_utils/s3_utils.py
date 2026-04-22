@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import fnmatch
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from aphrodite.utils.import_utils import PlaceholderModule
 
@@ -13,15 +16,23 @@ except ImportError:
 
 
 def _filter_allow(paths: list[str], patterns: list[str]) -> list[str]:
-    return [path for path in paths if any(fnmatch.fnmatch(path, pattern) for pattern in patterns)]
+    return [
+        path
+        for path in paths
+        if any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+    ]
 
 
 def _filter_ignore(paths: list[str], patterns: list[str]) -> list[str]:
-    return [path for path in paths if not any(fnmatch.fnmatch(path, pattern) for pattern in patterns)]
+    return [
+        path
+        for path in paths
+        if not any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+    ]
 
 
 def glob(
-    s3: Optional["BaseClient"] = None,
+    s3: "BaseClient | None" = None,
     path: str = "",
     allow_pattern: list[str] | None = None,
 ) -> list[str]:

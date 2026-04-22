@@ -7,10 +7,10 @@ import torch.nn as nn
 
 # isort: off
 # We need to import the CUDA kernels after importing torch
-# Use relative import to support build-from-source installation in vLLM
+# Use relative import to support build-from-source installation in Aphrodite
 
 try:
-    from . import _vllm_fa2_C  # noqa: F401
+    from . import _aphrodite_fa2_C  # noqa: F401
     FA2_UNAVAILABLE_REASON = None
     FA2_AVAILABLE = True
 except ImportError as e:
@@ -18,7 +18,7 @@ except ImportError as e:
     FA2_AVAILABLE = False
 
 try:
-    from . import _vllm_fa3_C  # noqa: F401
+    from . import _aphrodite_fa3_C  # noqa: F401
     FA3_UNAVAILABLE_REASON = None
     FA3_AVAILABLE = True
 except ImportError as e:
@@ -65,7 +65,7 @@ def fa_version_unsupported_reason(fa_version: int, device = None) \
         return _is_fa3_supported(device)[1]
 
 #
-#  For vLLM we only care about `flash_attn_varlen_func` and 
+#  For Aphrodite we only care about `flash_attn_varlen_func` and 
 #   `flash_attn_with_kvcache` so we only maintain wrappers for these two.
 #
 
@@ -94,7 +94,7 @@ def get_scheduler_metadata(
     cache_seqlens = maybe_contiguous(cache_seqlens)
     if headdim_v is None:
         headdim_v = headdim
-    scheduler_metadata = torch.ops._vllm_fa3_C.get_scheduler_metadata(
+    scheduler_metadata = torch.ops._aphrodite_fa3_C.get_scheduler_metadata(
         batch_size, max_seqlen_q, max_seqlen_k, num_heads_q, num_heads_kv, headdim, headdim_v,
         qkv_dtype,
         cache_seqlens,
@@ -233,7 +233,7 @@ def flash_attn_varlen_func(
             raise NotImplementedError("FA2 does not support s_aux")
         if num_splits > 1:
             raise NotImplementedError("FA2 does not support num_splits > 1")
-        out, softmax_lse = torch.ops._vllm_fa2_C.varlen_fwd(
+        out, softmax_lse = torch.ops._aphrodite_fa2_C.varlen_fwd(
             q, k, v,
             out,
             cu_seqlens_q,
@@ -258,7 +258,7 @@ def flash_attn_varlen_func(
         )
     elif fa_version == 3:
         assert alibi_slopes is None, "Alibi is not supported in FA3"
-        out, softmax_lse, _, _ = torch.ops._vllm_fa3_C.fwd(
+        out, softmax_lse, _, _ = torch.ops._aphrodite_fa3_C.fwd(
             q, k, v,
             None, None,       # k_new, v_new
             q_v,
@@ -434,7 +434,7 @@ def flash_attn_with_kvcache(
                 "k_descale, v_descale"
             )
 
-    out, softmax_lse = torch.ops._vllm_fa2_C.fwd_kvcache(
+    out, softmax_lse = torch.ops._aphrodite_fa2_C.fwd_kvcache(
         q, k_cache, v_cache,
         k, v,             # k_new, v_new
         cache_seqlens,
@@ -511,7 +511,7 @@ def sparse_attn_func(
         softmax_scale = q.shape[-1] ** (-0.5)
 
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
-    out, softmax_lse = torch.ops._vllm_fa2_C.fwd_sparse(
+    out, softmax_lse = torch.ops._aphrodite_fa2_C.fwd_sparse(
         q,
         k,
         v,
@@ -597,7 +597,7 @@ def sparse_attn_varlen_func(
         softmax_scale = q.shape[-1] ** (-0.5)
         
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
-    out, softmax_lse = torch.ops._vllm_fa2_C.varlen_fwd_sparse(
+    out, softmax_lse = torch.ops._aphrodite_fa2_C.varlen_fwd_sparse(
         q,
         k,
         v,

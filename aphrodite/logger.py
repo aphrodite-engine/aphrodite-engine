@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Logging configuration for Aphrodite."""
 
 import datetime
@@ -5,7 +7,8 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Hashable
+from collections.abc import Generator, Hashable
+from contextlib import contextmanager
 from functools import lru_cache, partial
 from logging import Logger
 from logging.config import dictConfig
@@ -14,21 +17,43 @@ from types import MethodType
 from typing import Any, Literal, cast
 
 import aphrodite.envs as envs
+from aphrodite.logging_utils import ColoredFormatter, NewLineFormatter
 
-APHRODITE_CONFIGURE_LOGGING = envs.APHRODITE_CONFIGURE_LOGGING
-APHRODITE_LOGGING_CONFIG_PATH = envs.APHRODITE_LOGGING_CONFIG_PATH
-APHRODITE_LOGGING_LEVEL = envs.APHRODITE_LOGGING_LEVEL
-APHRODITE_LOGGING_PREFIX = envs.APHRODITE_LOGGING_PREFIX
-APHRODITE_LOGGING_STREAM = envs.APHRODITE_LOGGING_STREAM
-
-_FORMAT = f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s [%(fileinfo)-15s:%(lineno)4d] %(message)s"
-_FORMAT_INFO = f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+_FORMAT = (
+    f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
+    "[%(fileinfo)-15s:%(lineno)4d] %(message)s"
+)
+_FORMAT_INFO = f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
-DEFAULT_LOGGING_CONFIG = {
+
+def _use_color() -> bool:
+    if envs.NO_COLOR or envs.APHRODITE_LOGGING_COLOR == "0":
+        return False
+    if envs.APHRODITE_LOGGING_COLOR == "1":
+        return True
+    if envs.APHRODITE_LOGGING_STREAM == "ext://sys.stdout":  # stdout
+        return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    elif envs.APHRODITE_LOGGING_STREAM == "ext://sys.stderr":  # stderr
+        return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+    return False
+
+
+DEFAULT_LOGGING_CONFIG: dict[str, dict[str, Any] | Any] = {
     "formatters": {
         "aphrodite": {
             "class": "aphrodite.logging_utils.NewLineFormatter",
+            "datefmt": _DATE_FORMAT,
+            "format": _FORMAT,
+        },
+        "aphrodite_color": {
+            "class": "aphrodite.logging_utils.ColoredFormatter",
+            "datefmt": _DATE_FORMAT,
+            "format": _FORMAT,
+        },
+        # Backward-compatible config key accepted by older logging configs.
+        "aphrodite_color": {
+            "class": "aphrodite.logging_utils.ColoredFormatter",
             "datefmt": _DATE_FORMAT,
             "format": _FORMAT,
         },
@@ -36,15 +61,16 @@ DEFAULT_LOGGING_CONFIG = {
     "handlers": {
         "aphrodite": {
             "class": "logging.StreamHandler",
-            "formatter": "aphrodite",
-            "level": APHRODITE_LOGGING_LEVEL,
-            "stream": APHRODITE_LOGGING_STREAM,
+            # Choose formatter based on color setting.
+            "formatter": "aphrodite_color" if _use_color() else "aphrodite",
+            "level": envs.APHRODITE_LOGGING_LEVEL,
+            "stream": envs.APHRODITE_LOGGING_STREAM,
         },
     },
     "loggers": {
         "aphrodite": {
             "handlers": ["aphrodite"],
-            "level": "DEBUG",
+            "level": envs.APHRODITE_LOGGING_LEVEL,
             "propagate": False,
         },
     },
@@ -84,7 +110,6 @@ def _should_log_with_scope(scope: LogScope) -> bool:
         from aphrodite.distributed.parallel_state import is_local_first_rank
 
         return is_local_first_rank()
-    # default "process" scope: always log
     return True
 
 
@@ -97,7 +122,7 @@ class _AphroditeLogger(Logger):
         `intel_extension_for_pytorch.utils._logger`.
     """
 
-    def debug_once(self, msg: str, *args: Hashable, scope: LogScope = "process") -> None:
+    def debug_once(self, msg: str, *args: Hashable, scope: LogScope = "local") -> None:
         """
         As [`debug`][logging.Logger.debug], but subsequent calls with
         the same message are silently dropped.
@@ -106,7 +131,7 @@ class _AphroditeLogger(Logger):
             return
         _print_debug_once(self, msg, *args)
 
-    def info_once(self, msg: str, *args: Hashable, scope: LogScope = "process") -> None:
+    def info_once(self, msg: str, *args: Hashable, scope: LogScope = "local") -> None:
         """
         As [`info`][logging.Logger.info], but subsequent calls with
         the same message are silently dropped.
@@ -115,7 +140,9 @@ class _AphroditeLogger(Logger):
             return
         _print_info_once(self, msg, *args)
 
-    def warning_once(self, msg: str, *args: Hashable, scope: LogScope = "process") -> None:
+    def warning_once(
+        self, msg: str, *args: Hashable, scope: LogScope = "local"
+    ) -> None:
         """
         As [`warning`][logging.Logger.warning], but subsequent calls with
         the same message are silently dropped.
@@ -134,9 +161,9 @@ _METHODS_TO_PATCH = {
 
 
 def _configure_aphrodite_root_logger() -> None:
-    logging_config = dict[str, Any]()
+    logging_config: dict[str, dict[str, Any] | Any] = {}
 
-    if not APHRODITE_CONFIGURE_LOGGING and APHRODITE_LOGGING_CONFIG_PATH:
+    if not envs.APHRODITE_CONFIGURE_LOGGING and envs.APHRODITE_LOGGING_CONFIG_PATH:
         raise RuntimeError(
             "APHRODITE_CONFIGURE_LOGGING evaluated to false, but "
             "APHRODITE_LOGGING_CONFIG_PATH was given. APHRODITE_LOGGING_CONFIG_PATH "
@@ -144,16 +171,27 @@ def _configure_aphrodite_root_logger() -> None:
             "APHRODITE_CONFIGURE_LOGGING or unset APHRODITE_LOGGING_CONFIG_PATH."
         )
 
-    if APHRODITE_CONFIGURE_LOGGING:
+    if envs.APHRODITE_CONFIGURE_LOGGING:
         logging_config = DEFAULT_LOGGING_CONFIG
 
-    if APHRODITE_LOGGING_CONFIG_PATH:
-        if not path.exists(APHRODITE_LOGGING_CONFIG_PATH):
+        aphrodite_handler = logging_config["handlers"]["aphrodite"]
+        # Refresh these values in case env vars have changed.
+        aphrodite_handler["level"] = envs.APHRODITE_LOGGING_LEVEL
+        aphrodite_handler["stream"] = envs.APHRODITE_LOGGING_STREAM
+        aphrodite_handler["formatter"] = (
+            "aphrodite_color" if _use_color() else "aphrodite"
+        )
+
+        aphrodite_loggers = logging_config["loggers"]["aphrodite"]
+        aphrodite_loggers["level"] = envs.APHRODITE_LOGGING_LEVEL
+
+    if envs.APHRODITE_LOGGING_CONFIG_PATH:
+        if not path.exists(envs.APHRODITE_LOGGING_CONFIG_PATH):
             raise RuntimeError(
                 "Could not load logging config. File does not exist: %s",
-                APHRODITE_LOGGING_CONFIG_PATH,
+                envs.APHRODITE_LOGGING_CONFIG_PATH,
             )
-        with open(APHRODITE_LOGGING_CONFIG_PATH, encoding="utf-8") as file:
+        with open(envs.APHRODITE_LOGGING_CONFIG_PATH, encoding="utf-8") as file:
             custom_config = json.loads(file.read())
 
         if not isinstance(custom_config, dict):
@@ -185,10 +223,36 @@ def init_logger(name: str) -> _AphroditeLogger:
     return cast(_AphroditeLogger, logger)
 
 
+@contextmanager
+def suppress_logging(level: int = logging.INFO) -> Generator[None, Any, None]:
+    current_level = logging.root.manager.disable
+    logging.disable(level)
+    yield
+    logging.disable(current_level)
+
+
+def current_formatter_type(logger: Logger) -> Literal["color", "newline", None]:
+    lgr: Logger | None = logger
+    while lgr is not None:
+        if lgr.handlers and len(lgr.handlers) == 1 and lgr.handlers[0].name == "aphrodite":
+            formatter = lgr.handlers[0].formatter
+            if isinstance(formatter, ColoredFormatter):
+                return "color"
+            if isinstance(formatter, NewLineFormatter):
+                return "newline"
+        lgr = lgr.parent
+    return None
+
+
 # The root logger is initialized when the module is imported.
 # This is thread-safe as the module is only imported once,
 # guaranteed by the Python GIL.
 _configure_aphrodite_root_logger()
+
+# Transformers uses httpx to access the Hugging Face Hub. httpx is quite verbose,
+# so we set its logging level to WARNING when Aphrodite's logging level is INFO.
+if envs.APHRODITE_LOGGING_LEVEL == "INFO":
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = init_logger(__name__)
 

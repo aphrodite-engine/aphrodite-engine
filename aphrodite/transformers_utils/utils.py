@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import json
 import os
 import struct
@@ -20,26 +23,19 @@ def is_gcs(model_or_path: str) -> bool:
     return model_or_path.lower().startswith("gs://")
 
 
+def is_azure(model_or_path: str) -> bool:
+    return model_or_path.lower().startswith("az://")
+
+
 def is_cloud_storage(model_or_path: str) -> bool:
-    return is_s3(model_or_path) or is_gcs(model_or_path)
+    return is_s3(model_or_path) or is_gcs(model_or_path) or is_azure(model_or_path)
 
 
-def check_gguf_file(model: str | PathLike) -> bool:
-    """Check if the file is a GGUF model."""
-    model = Path(model)
-    if not model.is_file():
-        return False
-    elif model.suffix == ".gguf":
-        return True
-
-    try:
-        with model.open("rb") as f:
-            header = f.read(4)
-
-        return header == b"GGUF"
-    except Exception as e:
-        logger.debug("Error reading file %s: %s", model, e)
-        return False
+def without_trust_remote_code(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return kwargs without trust_remote_code without modifying original dict."""
+    if "trust_remote_code" not in kwargs:
+        return kwargs
+    return {k: v for k, v in kwargs.items() if k != "trust_remote_code"}
 
 
 def modelscope_list_repo_files(
@@ -55,7 +51,9 @@ def modelscope_list_repo_files(
     # same as huggingface_hub.list_repo_files
     files = [
         file["Path"]
-        for file in api.get_model_files(model_id=repo_id, revision=revision, recursive=True)
+        for file in api.get_model_files(
+            model_id=repo_id, revision=revision, recursive=True
+        )
         if file["Type"] == "blob"
     ]
     return files
@@ -98,7 +96,9 @@ def maybe_model_redirect(model: str) -> str:
     if not Path(model_redirect_path).exists():
         return model
 
-    redirect_dict = _maybe_json_dict(model_redirect_path) or _maybe_space_split_dict(model_redirect_path)
+    redirect_dict = _maybe_json_dict(model_redirect_path) or _maybe_space_split_dict(
+        model_redirect_path
+    )
     if redirect_model := redirect_dict.get(model):
         logger.info("model redirect: [ %s ] -> [ %s ]", model, redirect_model)
         return redirect_model

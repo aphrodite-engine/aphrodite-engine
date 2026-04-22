@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Contains helpers that are applied to functions.
 
@@ -6,9 +8,8 @@ This is similar in concept to the `functools` module.
 
 import inspect
 import threading
-import warnings
 from collections.abc import Callable, Mapping
-from functools import lru_cache, partial, wraps
+from functools import lru_cache
 from typing import Any, TypeVar
 
 from typing_extensions import ParamSpec
@@ -43,81 +44,6 @@ def run_once(f: Callable[P, None]) -> Callable[P, None]:
     return wrapper
 
 
-def deprecate_args(
-    start_index: int,
-    is_deprecated: bool | Callable[[], bool] = True,
-    additional_message: str | None = None,
-) -> Callable[[F], F]:
-    if not callable(is_deprecated):
-        is_deprecated = partial(identity, is_deprecated)
-
-    def wrapper(fn: F) -> F:
-        params = inspect.signature(fn).parameters
-        pos_types = (
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        )
-        pos_kws = [kw for kw, param in params.items() if param.kind in pos_types]
-
-        @wraps(fn)
-        def inner(*args, **kwargs):
-            if is_deprecated():
-                deprecated_args = pos_kws[start_index : len(args)]
-                if deprecated_args:
-                    msg = (
-                        f"The positional arguments {deprecated_args} are "
-                        "deprecated and will be removed in a future update."
-                    )
-                    if additional_message is not None:
-                        msg += f" {additional_message}"
-
-                    warnings.warn(
-                        DeprecationWarning(msg),
-                        stacklevel=3,  # The inner function takes up one level
-                    )
-
-            return fn(*args, **kwargs)
-
-        return inner  # type: ignore
-
-    return wrapper
-
-
-def deprecate_kwargs(
-    *kws: str,
-    is_deprecated: bool | Callable[[], bool] = True,
-    additional_message: str | None = None,
-) -> Callable[[F], F]:
-    deprecated_kws = set(kws)
-
-    if not callable(is_deprecated):
-        is_deprecated = partial(identity, is_deprecated)
-
-    def wrapper(fn: F) -> F:
-        @wraps(fn)
-        def inner(*args, **kwargs):
-            if is_deprecated():
-                deprecated_kwargs = kwargs.keys() & deprecated_kws
-                if deprecated_kwargs:
-                    msg = (
-                        f"The keyword arguments {deprecated_kwargs} are "
-                        "deprecated and will be removed in a future update."
-                    )
-                    if additional_message is not None:
-                        msg += f" {additional_message}"
-
-                    warnings.warn(
-                        DeprecationWarning(msg),
-                        stacklevel=3,  # The inner function takes up one level
-                    )
-
-            return fn(*args, **kwargs)
-
-        return inner  # type: ignore
-
-    return wrapper
-
-
 @lru_cache
 def supports_kw(
     callable: Callable[..., object],
@@ -147,7 +73,11 @@ def supports_kw(
     if param_val:
         is_sig_param = param_val.kind in passable_kw_types
         # We want kwargs only, but this is passable as a positional arg
-        if requires_kw_only and is_sig_param and param_val.kind != inspect.Parameter.KEYWORD_ONLY:
+        if (
+            requires_kw_only
+            and is_sig_param
+            and param_val.kind != inspect.Parameter.KEYWORD_ONLY
+        ):
             return False
         if (requires_kw_only and param_val.kind == inspect.Parameter.KEYWORD_ONLY) or (
             not requires_kw_only and is_sig_param
@@ -161,7 +91,10 @@ def supports_kw(
         # mapping, but it wraps an ordered dict, and they appear in order.
         # Ref: https://docs.python.org/3/library/inspect.html#inspect.Signature.parameters
         last_param = params[next(reversed(params))]  # type: ignore
-        return last_param.kind == inspect.Parameter.VAR_KEYWORD and last_param.name != kw_name
+        return (
+            last_param.kind == inspect.Parameter.VAR_KEYWORD
+            and last_param.name != kw_name
+        )
 
     return False
 
@@ -213,12 +146,14 @@ def get_allowed_kwarg_only_overrides(
     if dropped_keys:
         if requires_kw_only:
             logger.warning(
-                "The following intended overrides are not keyword-only args and will be dropped: %s",
+                "The following intended overrides are not keyword-only args "
+                "and will be dropped: %s",
                 dropped_keys,
             )
         else:
             logger.warning(
-                "The following intended overrides are not keyword args and will be dropped: %s",
+                "The following intended overrides are not keyword args "
+                "and will be dropped: %s",
                 dropped_keys,
             )
 

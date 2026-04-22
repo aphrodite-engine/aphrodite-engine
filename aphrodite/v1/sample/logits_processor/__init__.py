@@ -1,23 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import importlib
 import inspect
 import itertools
 from abc import abstractmethod
 from collections.abc import Sequence
-from functools import partial
+from functools import lru_cache, partial
 from typing import TYPE_CHECKING
 
 import torch
 
-from aphrodite.common.logits_processor import LogitsProcessor as RequestLogitsProcessor
-from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.logger import init_logger
+from aphrodite.logits_process import LogitsProcessor as RequestLogitsProcessor
+from aphrodite.sampling_params import SamplingParams
+from aphrodite.utils.torch_utils import guard_cuda_initialization
 from aphrodite.v1.sample.logits_processor.builtin import (
     LogitBiasLogitsProcessor,
     MinPLogitsProcessor,
     MinTokensLogitsProcessor,
+    ThinkingTokenBudgetLogitsProcessor,
     process_dict_updates,
 )
-from aphrodite.v1.sample.logits_processor.interface import BatchUpdate, LogitsProcessor, MoveDirectionality
+from aphrodite.v1.sample.logits_processor.interface import (
+    BatchUpdate,
+    LogitsProcessor,
+    MoveDirectionality,
+)
 from aphrodite.v1.sample.logits_processor.state import BatchUpdateBuilder, LogitsProcessors
 
 if TYPE_CHECKING:
@@ -27,18 +35,23 @@ logger = init_logger(__name__)
 
 # Error message when the user tries to initialize Aphrodite with a pooling model
 # and custom logitsproces
-STR_POOLING_REJECTS_LOGITSPROCS = "Pooling models do not support custom logits processors."
+STR_POOLING_REJECTS_LOGITSPROCS = (
+    "Pooling models do not support custom logits processors."
+)
 
 # Error message when the user tries to initialize Aphrodite with a speculative
 # decoding enabled and custom logitsproces
-STR_SPEC_DEC_REJECTS_LOGITSPROCS = "Custom logits processors are not supportedwhen speculative decoding is enabled."
+STR_SPEC_DEC_REJECTS_LOGITSPROCS = (
+    "Custom logits processors are not supported when speculative decoding is enabled."
+)
 
-LOGITSPROCS_GROUP = "aphrodite.common.logits_processors"
+LOGITSPROCS_GROUP = "aphrodite.logits_processors"
 
 BUILTIN_LOGITS_PROCESSORS: list[type[LogitsProcessor]] = [
     MinTokensLogitsProcessor,
     LogitBiasLogitsProcessor,
     MinPLogitsProcessor,
+    ThinkingTokenBudgetLogitsProcessor,
 ]
 
 
@@ -62,9 +75,13 @@ def _load_logitsprocs_plugins() -> list[type[LogitsProcessor]]:
                 entrypoint.name,
                 entrypoint.value,
             )
-            classes.append(entrypoint.load())
+            with guard_cuda_initialization():
+                classes.append(entrypoint.load())
         except Exception as e:
-            raise RuntimeError(f"Failed to load LogitsProcessor plugin {entrypoint}") from e
+            logger.error("Failed to load LogitsProcessor plugin %s: %s", entrypoint, e)
+            raise RuntimeError(
+                f"Failed to load LogitsProcessor plugin {entrypoint}"
+            ) from e
     return classes
 
 
@@ -93,7 +110,8 @@ def _load_logitsprocs_by_fqcns(
         return []
 
     logger.debug(
-        "%s additional custom logits processors specified, checking whether they need to be loaded.",
+        "%s additional custom logits processors specified, checking whether "
+        "they need to be loaded.",
         len(logits_processors),
     )
 
@@ -102,7 +120,9 @@ def _load_logitsprocs_by_fqcns(
         if isinstance(logitproc, type):
             logger.debug(" - Already-loaded logit processor: %s", logitproc.__name__)
             if not issubclass(logitproc, LogitsProcessor):
-                raise ValueError(f"{logitproc.__name__} is not a subclass of LogitsProcessor")
+                raise ValueError(
+                    f"{logitproc.__name__} is not a subclass of LogitsProcessor"
+                )
             classes.append(logitproc)
             continue
 
@@ -111,9 +131,18 @@ def _load_logitsprocs_by_fqcns(
 
         try:
             # Load module
-            module = importlib.import_module(module_path)
+            with guard_cuda_initialization():
+                module = importlib.import_module(module_path)
         except Exception as e:
-            raise RuntimeError(f"Failed to load {ldx}th LogitsProcessor plugin {logitproc}") from e
+            logger.error(
+                "Failed to load %sth LogitsProcessor plugin %s: %s",
+                ldx,
+                logitproc,
+                e,
+            )
+            raise RuntimeError(
+                f"Failed to load {ldx}th LogitsProcessor plugin {logitproc}"
+            ) from e
 
         # Walk down dotted name to get logitproc class
         obj = module
@@ -164,7 +193,10 @@ def build_logitsprocs(
     if is_pooling_model:
         if custom_logitsprocs:
             raise ValueError(STR_POOLING_REJECTS_LOGITSPROCS)
-        logger.debug("Skipping logits processor loading because pooling models do not support logits processors.")
+        logger.debug(
+            "Skipping logits processor loading because pooling models"
+            " do not support logits processors."
+        )
         return LogitsProcessors()
 
     # Check if speculative decoding is enabled.
@@ -172,15 +204,33 @@ def build_logitsprocs(
         if custom_logitsprocs:
             raise ValueError(STR_SPEC_DEC_REJECTS_LOGITSPROCS)
         logger.warning(
-            "min_p, logit_bias, and min_tokens parameters won't currently work with speculative decoding enabled."
+            "min_p and logit_bias parameters won't work with speculative decoding."
         )
-        return LogitsProcessors()
+        return LogitsProcessors(
+            [MinTokensLogitsProcessor(aphrodite_config, device, is_pin_memory)]
+        )
 
     custom_logitsprocs_classes = _load_custom_logitsprocs(custom_logitsprocs)
     return LogitsProcessors(
         ctor(aphrodite_config, device, is_pin_memory)
-        for ctor in itertools.chain(BUILTIN_LOGITS_PROCESSORS, custom_logitsprocs_classes)
+        for ctor in itertools.chain(
+            BUILTIN_LOGITS_PROCESSORS, custom_logitsprocs_classes
+        )
     )
+
+
+cached_load_custom_logitsprocs = lru_cache(_load_custom_logitsprocs)
+
+
+def validate_logits_processors_parameters(
+    logits_processors: Sequence[str | type[LogitsProcessor]] | None,
+    sampling_params: SamplingParams,
+):
+    logits_processors = (
+        tuple(logits_processors) if logits_processors is not None else None
+    )
+    for logits_procs in cached_load_custom_logitsprocs(logits_processors):
+        logits_procs.validate_params(sampling_params)
 
 
 class AdapterLogitsProcessor(LogitsProcessor):
@@ -199,7 +249,9 @@ class AdapterLogitsProcessor(LogitsProcessor):
     `super().__init__(aphrodite_config, device, is_pin_memory)`
     """
 
-    def __init__(self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool):
+    def __init__(
+        self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool
+    ):
         """Subclass must invoke
         `super().__init__(aphrodite_config, device, is_pin_memory)`.
 
@@ -259,7 +311,15 @@ class AdapterLogitsProcessor(LogitsProcessor):
 
         """
         if req_lp := self.new_req_logits_processor(params):
-            args = [prompt_ids, output_ids] if (len(inspect.signature(req_lp).parameters) == 3) else [output_ids]
+            if len(inspect.signature(req_lp).parameters) == 3:
+                if prompt_ids is None:
+                    raise ValueError(
+                        "Prompt token ids are required for this "
+                        "logits processor but were not provided."
+                    )
+                args = [prompt_ids, output_ids]
+            else:
+                args = [output_ids]
             return partial(req_lp, *args)
         return None
 
@@ -296,4 +356,5 @@ __all__ = [
     "STR_POOLING_REJECTS_LOGITSPROCS",
     "LOGITSPROCS_GROUP",
     "AdapterLogitsProcessor",
+    "ThinkingTokenBudgetLogitsProcessor",
 ]

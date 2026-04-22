@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -14,12 +17,16 @@ IO_PROCESSOR_PLUGINS_GROUP = "aphrodite.io_processor_plugins"
 # Platform plugins group will be loaded in all processes when
 # `aphrodite.platforms.current_platform` is called and the value not initialized,
 PLATFORM_PLUGINS_GROUP = "aphrodite.platform_plugins"
+# Stat logger plugins group will be loaded in process0 only when serve Aphrodite with
+# async mode.
+STAT_LOGGER_PLUGINS_GROUP = "aphrodite.stat_logger_plugins"
 
 # make sure one process only loads plugins once
 plugins_loaded = False
 
 
 def load_plugins_by_group(group: str) -> dict[str, Callable[[], Any]]:
+    """Load plugins registered under the given entry point group."""
     from importlib.metadata import entry_points
 
     allowed_plugins = envs.APHRODITE_PLUGINS
@@ -39,7 +46,10 @@ def load_plugins_by_group(group: str) -> dict[str, Callable[[], Any]]:
         log_level("- %s -> %s", plugin.name, plugin.value)
 
     if allowed_plugins is None:
-        log_level("All plugins in this group will be loaded. Set `APHRODITE_PLUGINS` to control which plugins to load.")
+        log_level(
+            "All plugins in this group will be loaded. "
+            "Set `APHRODITE_PLUGINS` to control which plugins to load."
+        )
 
     plugins = dict[str, Callable[[], Any]]()
     for plugin in discovered_plugins:

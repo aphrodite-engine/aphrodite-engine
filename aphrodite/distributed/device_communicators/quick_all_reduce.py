@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from enum import Enum
 
 import torch
@@ -6,11 +9,10 @@ from torch.distributed import ProcessGroup
 
 import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
-from aphrodite.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config_or_none
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
 logger = init_logger(__name__)
 
@@ -24,7 +26,8 @@ except Exception:
 
 def is_weak_contiguous(inp: torch.Tensor):
     return inp.is_contiguous() or (
-        inp.storage().nbytes() - inp.storage_offset() * inp.element_size() == inp.numel() * inp.element_size()
+        inp.storage().nbytes() - inp.storage_offset() * inp.element_size()
+        == inp.numel() * inp.element_size()
     )
 
 
@@ -79,13 +82,18 @@ class QuickAllReduce:
         """
         self.disabled = True
         if not self._rocm_arch_available():
-            logger.debug("Custom quick allreduce is only supported on ROCm MI300 series.")
+            logger.debug(
+                "Custom quick allreduce is only supported on ROCm MI300 series."
+            )
             return
 
         if not quick_ar:
             # disable because of missing quick reduce library
             # e.g. in a cuda environment
-            logger.info("Custom quick allreduce is disabled because of missing custom quick allreduce library")
+            logger.info(
+                "Custom quick allreduce is disabled because "
+                "of missing custom quick allreduce library"
+            )
             return
 
         self.group = group
@@ -95,7 +103,10 @@ class QuickAllReduce:
         if not all(in_the_same_node_as(group, source_rank=0)):
             # No need to initialize custom quick allreduce for
             # multi-node case.
-            logger.warning("Custom quick allreduce is disabled because this process group spans across nodes.")
+            logger.warning(
+                "Custom quick allreduce is disabled because this "
+                "process group spans across nodes."
+            )
             return
         rank = dist.get_rank(group=self.group)
         world_size = dist.get_world_size(group=self.group)
@@ -107,7 +118,8 @@ class QuickAllReduce:
 
         if world_size not in QuickAllReduce._SUPPORTED_WORLD_SIZES:
             logger.warning(
-                "Custom quick allreduce is disabled due to an unsupported world size: %d. Supported world sizes: %s.",
+                "Custom quick allreduce is disabled due to an "
+                "unsupported world size: %d. Supported world sizes: %s.",
                 world_size,
                 str(QuickAllReduce._SUPPORTED_WORLD_SIZES),
             )
@@ -124,10 +136,13 @@ class QuickAllReduce:
         if cuda_visible_devices:
             device_ids = list(map(int, cuda_visible_devices.split(",")))
         else:
-            device_ids = list(range(cuda_device_count_stateless()))
+            device_ids = list(range(current_platform.device_count()))
         physical_device_id = device_ids[device.index]
         tensor = torch.tensor([physical_device_id], dtype=torch.int, device="cpu")
-        gather_list = [torch.tensor([0], dtype=torch.int, device="cpu") for _ in range(self.world_size)]
+        gather_list = [
+            torch.tensor([0], dtype=torch.int, device="cpu")
+            for _ in range(self.world_size)
+        ]
         dist.all_gather(gather_list, tensor, group=self.group)
         physical_device_ids = [t.item() for t in gather_list]
 
@@ -138,7 +153,8 @@ class QuickAllReduce:
         self.fully_connected = current_platform.is_fully_connected(physical_device_ids)
         if self.world_size > 2 and not self.fully_connected:
             logger.debug(
-                "Custom quick allreduce is disabled because it's not supported on more than two PCIe-only GPUs. "
+                "Custom quick allreduce is disabled because it's not supported "
+                "on more than two PCIe-only GPUs. "
             )
             return
 
@@ -167,7 +183,7 @@ class QuickAllReduce:
             )
             return
         self.qr_quant_level = QuickReduceRegime[regime_str]
-        aphrodite_config = get_current_aphrodite_config()
+        aphrodite_config = get_current_aphrodite_config_or_none()
         if (
             aphrodite_config is not None
             and hasattr(aphrodite_config, "model_config")
@@ -176,7 +192,8 @@ class QuickAllReduce:
             dtype = aphrodite_config.model_config.dtype
             if dtype not in [torch.float16, torch.bfloat16]:
                 logger.debug(
-                    "Custom quick allreduce disabled: only supports float16 and float16, but get %s.",
+                    "Custom quick allreduce disabled: only supports "
+                    "float16 and float16, but get %s.",
                     dtype,
                 )
                 return
@@ -246,7 +263,8 @@ class QuickAllReduce:
             dtype = torch.float16
         return (
             inp_size <= self.qr_max_size
-            and inp_size >= self._QR_MIN_SIZE[(dtype, self.world_size)][self.qr_quant_level.value]
+            and inp_size
+            >= self._QR_MIN_SIZE[(dtype, self.world_size)][self.qr_quant_level.value]
         )
 
     def quick_all_reduce(self, inp: torch.Tensor, *, out: torch.Tensor = None):
@@ -255,7 +273,9 @@ class QuickAllReduce:
         # as QR uses static IPC buffer.
         if out is None:
             out = torch.empty_like(inp)
-        ops.qr_all_reduce(self._ptr, inp, out, self.qr_quant_level.value, self.use_fp16_kernels)
+        ops.qr_all_reduce(
+            self._ptr, inp, out, self.qr_quant_level.value, self.use_fp16_kernels
+        )
         return out
 
     def close(self):

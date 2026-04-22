@@ -1,7 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import dataclasses
+import weakref
+from collections import Counter
 from collections.abc import Callable
 from contextlib import ExitStack
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import patch
 
 import torch
@@ -9,14 +14,114 @@ import torch
 import aphrodite.envs as envs
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.compilation.monitor import validate_cudagraph_capturing_enabled
-from aphrodite.config import AphroditeConfig, CUDAGraphMode
+from aphrodite.config import CUDAGraphMode, AphroditeConfig
 from aphrodite.distributed.device_communicators.pynccl_allocator import set_graph_pool_id
-from aphrodite.forward_context import BatchDescriptor, get_forward_context
+from aphrodite.forward_context import (
+    BatchDescriptor,
+    get_forward_context,
+    is_forward_context_available,
+)
 from aphrodite.logger import init_logger
+from aphrodite.model_executor.offloader.base import get_offloader
 from aphrodite.platforms import current_platform
-from aphrodite.utils.torch_utils import weak_ref_tensors
+from aphrodite.utils.torch_utils import current_stream, weak_ref_tensors
 
 logger = init_logger(__name__)
+
+
+@dataclasses.dataclass(frozen=True)
+class CUDAGraphStat:
+    num_unpadded_tokens: int
+    num_padded_tokens: int
+    num_paddings: int
+    runtime_mode: str
+
+
+class CUDAGraphLogging:
+    """Aggregate and log cudagraph metrics"""
+
+    COLUMN_HEADERS = [
+        "Unpadded Tokens",
+        "Padded Tokens",
+        "Num Paddings",
+        "Runtime Mode",
+        "Count",
+    ]
+
+    def __init__(
+        self, cg_mode: CUDAGraphMode, cg_capture_sizes: list[int] | None
+    ) -> None:
+        self.reset()
+        self.cg_mode = str(cg_mode)
+        self.cg_capture_sizes = str(cg_capture_sizes or [])
+
+        self.settings_header = (
+            "**CUDAGraph Config Settings:**\n\n"
+            f"- Mode: {self.cg_mode}\n"
+            f"- Capture sizes: {self.cg_capture_sizes}\n\n"
+            "**CUDAGraph Stats:**\n\n"
+        )
+
+    def reset(self) -> None:
+        self.stats: list[CUDAGraphStat] = []
+
+    def observe(self, cudagraph_stat: CUDAGraphStat) -> None:
+        self.stats.append(cudagraph_stat)
+
+    def generate_metric_table(self) -> str:
+        stats_counts = Counter(self.stats)
+
+        # Convert stats to rows of strings, in descending order of observed frequencies
+        rows = []
+        for stat, count in sorted(
+            stats_counts.items(), key=lambda item: item[1], reverse=True
+        ):
+            rows.append(
+                [
+                    str(stat.num_unpadded_tokens),
+                    str(stat.num_padded_tokens),
+                    str(stat.num_paddings),
+                    stat.runtime_mode,
+                    str(count),
+                ]
+            )
+
+        # Calculate column widths (max of header and data)
+        col_widths = []
+        for i, header_text in enumerate(self.COLUMN_HEADERS):
+            max_width = len(header_text)
+            for row in rows:
+                max_width = max(max_width, len(row[i]))
+            col_widths.append(max_width)
+
+        table_header_list = [
+            h.ljust(w) for h, w in zip(self.COLUMN_HEADERS, col_widths)
+        ]
+        table_header = "| " + " | ".join(table_header_list) + " |\n"
+
+        table_separator = "|" + "|".join("-" * (w + 2) for w in col_widths) + "|\n"
+
+        # Create data rows with proper alignment
+        data_rows = []
+        for row in rows:
+            formatted_row = [
+                str(val).ljust(width) for val, width in zip(row, col_widths)
+            ]
+            data_rows.append("| " + " | ".join(formatted_row) + " |")
+
+        return (
+            self.settings_header
+            + table_header
+            + table_separator
+            + "\n".join(data_rows)
+            + "\n"
+        )
+
+    def log(self, log_fn: Callable[..., Any] = logger.info) -> None:
+        if not self.stats:
+            return
+        log_fn(self.generate_metric_table())
+        self.reset()
 
 
 @dataclasses.dataclass
@@ -62,13 +167,21 @@ class CUDAGraphWrapper:
     guaranteed when APHRODITE_LOGGING_LEVEL == "DEBUG".
     """
 
+    _all_instances: ClassVar[weakref.WeakSet["CUDAGraphWrapper"]] = weakref.WeakSet()
+
+    @classmethod
+    def clear_all_graphs(cls) -> None:
+        """Clear captured graphs from all CUDAGraphWrapper instances."""
+        for instance in list(cls._all_instances):
+            instance.clear_graphs()
+
     def __init__(
         self,
-        runnable: Callable,
+        runnable: Callable[..., Any],
         aphrodite_config: AphroditeConfig,
         runtime_mode: CUDAGraphMode,
         cudagraph_options: CUDAGraphOptions | None = None,
-    ):
+    ) -> None:
         self.runnable = runnable
         self.aphrodite_config = aphrodite_config
         self.runtime_mode = runtime_mode
@@ -76,6 +189,7 @@ class CUDAGraphWrapper:
 
         self.first_run_finished = False
         self.is_debugging_mode = envs.APHRODITE_LOGGING_LEVEL == "DEBUG"
+        self._runnable_str = str(runnable) if self.is_debugging_mode else None
 
         # assert runtime_mode is not NONE(no cudagraph), otherwise, we don't
         # need to initialize a CUDAGraphWrapper.
@@ -92,22 +206,45 @@ class CUDAGraphWrapper:
         # cudagraphs for.
         self.concrete_cudagraph_entries: dict[BatchDescriptor, CUDAGraphEntry] = {}
 
-    def __getattr__(self, key: str):
+        CUDAGraphWrapper._all_instances.add(self)
+
+    def __getattr__(self, key: str) -> Any:
         # allow accessing the attributes of the runnable.
         if hasattr(self.runnable, key):
             return getattr(self.runnable, key)
-        raise AttributeError(f"Attribute {key} not exists in the runnable of cudagraph wrapper: {self.runnable}")
+        if self.is_debugging_mode:
+            raise AttributeError(
+                f"Attribute {key} not exists in the runnable of "
+                f"cudagraph wrapper: {self._runnable_str}"
+            )
+        raise AttributeError
 
-    def unwrap(self) -> Callable:
+    def unwrap(self) -> Callable[..., Any]:
         # in case we need to access the original runnable.
         return self.runnable
 
-    def __call__(self, *args, **kwargs):
+    @property
+    def cudagraph_wrapper(self) -> "CUDAGraphWrapper":
+        return self
+
+    def clear_graphs(self) -> None:
+        self.concrete_cudagraph_entries.clear()
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any | None:
+        if not is_forward_context_available():
+            # No forward context means we are outside the normal
+            # inference path (e.g. a vision encoder forward pass).
+            # Just run the underlying function without cudagraphs.
+            return self.runnable(*args, **kwargs)
+
         forward_context = get_forward_context()
         batch_descriptor = forward_context.batch_descriptor
         cudagraph_runtime_mode = forward_context.cudagraph_runtime_mode
 
-        if cudagraph_runtime_mode == CUDAGraphMode.NONE or cudagraph_runtime_mode != self.runtime_mode:
+        if (
+            cudagraph_runtime_mode == CUDAGraphMode.NONE
+            or cudagraph_runtime_mode != self.runtime_mode
+        ):
             # CUDAGraphMode.NONE could mean the profile run, a warmup run, or
             # running without cudagraphs.
             # We do not trigger capture/replay if the runtime mode is not
@@ -116,9 +253,12 @@ class CUDAGraphWrapper:
             # runtime modes.
             return self.runnable(*args, **kwargs)
 
+        assert batch_descriptor is not None
         if batch_descriptor not in self.concrete_cudagraph_entries:
             # create a new entry for this batch descriptor
-            self.concrete_cudagraph_entries[batch_descriptor] = CUDAGraphEntry(batch_descriptor=batch_descriptor)
+            self.concrete_cudagraph_entries[batch_descriptor] = CUDAGraphEntry(
+                batch_descriptor=batch_descriptor
+            )
 
         entry = self.concrete_cudagraph_entries[batch_descriptor]
 
@@ -136,7 +276,9 @@ class CUDAGraphWrapper:
             # validate that cudagraph capturing is legal at this point.
             validate_cudagraph_capturing_enabled()
 
-            input_addresses = [x.data_ptr() for x in args if isinstance(x, torch.Tensor)]
+            input_addresses = [
+                x.data_ptr() for x in args if isinstance(x, torch.Tensor)
+            ]
             entry.input_addresses = input_addresses
             cudagraph = torch.cuda.CUDAGraph()
 
@@ -149,16 +291,32 @@ class CUDAGraphWrapper:
                     # therefore, we only run gc for the first graph,
                     # and disable gc for the rest of the graphs.
                     stack.enter_context(patch("gc.collect", lambda: None))
-                    stack.enter_context(patch("torch.cuda.empty_cache", lambda: None))
+                    stack.enter_context(
+                        patch("torch.accelerator.empty_cache", lambda: None)
+                    )
 
                 if self.graph_pool is not None:
                     set_graph_pool_id(self.graph_pool)
                 else:
                     set_graph_pool_id(current_platform.graph_pool_handle())
+
+                # Sync offloader's copy stream before capture.
+                # Ensure any pre-capture prefetches from offloader are complete.
+                get_offloader().sync_prev_onload()
+
                 # mind-exploding: carefully manage the reference and memory.
-                with torch.cuda.graph(cudagraph, pool=self.graph_pool):
+                with torch.cuda.graph(
+                    cudagraph,
+                    pool=self.graph_pool,
+                    stream=current_stream(),
+                ):
                     # `output` is managed by pytorch's cudagraph pool
                     output = self.runnable(*args, **kwargs)
+                    # Join offloader's copy stream after forward to avoid
+                    # unjoined stream error. The last layer's start_prefetch
+                    # forks copy_stream, but wait_prefetch only happens in
+                    # the next forward pass.
+                    get_offloader().join_after_forward()
                     if self.cudagraph_options.weak_ref_output:
                         # by converting it to weak ref,
                         # the original `output` will immediately be released
@@ -182,12 +340,17 @@ class CUDAGraphWrapper:
 
         if self.is_debugging_mode:
             # check if the input addresses are the same
-            new_input_addresses = [x.data_ptr() for x in args if isinstance(x, torch.Tensor)]
+            new_input_addresses = [
+                x.data_ptr() for x in args if isinstance(x, torch.Tensor)
+            ]
             assert new_input_addresses == entry.input_addresses, (
                 f"Input addresses for cudagraphs are different "
                 f"during replay. Expected {entry.input_addresses}, "
                 f"got {new_input_addresses}"
             )
 
+        # Sync offloader before replay - ensures any external dependencies
+        # from pre-capture prefetches are satisfied.
+        get_offloader().sync_prev_onload()
         entry.cudagraph.replay()
         return entry.output

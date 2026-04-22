@@ -1,9 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
+
 import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.modeling.layers.linear import ReplicatedLinear
+from aphrodite.model_executor.custom_op import maybe_get_oot_by_class
+from aphrodite.model_executor.layers.linear import ReplicatedLinear
 
 from .base_linear import BaseLinearLayerWithLoRA
 
@@ -17,7 +22,9 @@ class ReplicatedLinearWithLoRA(BaseLinearLayerWithLoRA):
         self.output_size = self.base_layer.output_size
         self.n_slices = 1
 
-    def forward(self, input_: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
+    def forward(
+        self, input_: torch.Tensor
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
         """Forward of ReplicatedLinearWithLoRA
 
         Args:
@@ -47,9 +54,9 @@ class ReplicatedLinearWithLoRA(BaseLinearLayerWithLoRA):
         source_layer: nn.Module,
         lora_config: LoRAConfig,
         packed_modules_list: list,
-        model_config: PretrainedConfig | None,
+        model_config: PretrainedConfig | None = None,
     ) -> bool:
-        return type(source_layer) is ReplicatedLinear
+        return type(source_layer) is maybe_get_oot_by_class(ReplicatedLinear)
 
     def slice_lora_a(
         self, lora_a: torch.Tensor | list[torch.Tensor | None]

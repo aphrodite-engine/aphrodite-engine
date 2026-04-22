@@ -1,18 +1,19 @@
-import hashlib
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from dataclasses import field
 from typing import Any, Literal
 
 import torch
 from pydantic import ConfigDict, SkipValidation
-from pydantic.dataclasses import dataclass
 
 from aphrodite.config.utils import config
+from aphrodite.utils.hashing import safe_hash
 
 Device = Literal["auto", "cuda", "cpu", "tpu", "xpu"]
 
 
-@config
-@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+@config(config=ConfigDict(arbitrary_types_allowed=True))
 class DeviceConfig:
     """Configuration for the device to use for Aphrodite execution."""
 
@@ -42,7 +43,7 @@ class DeviceConfig:
         # the device/platform information will be summarized
         # by torch/aphrodite automatically.
         factors: list[Any] = []
-        hash_str = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()
+        hash_str = safe_hash(str(factors).encode(), usedforsecurity=False).hexdigest()
         return hash_str
 
     def __post_init__(self):

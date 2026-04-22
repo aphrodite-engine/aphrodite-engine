@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 # ruff: noqa: E501
+# coding=utf-8
 # adapted from https://github.com/deepseek-ai/DeepSeek-VL2/blob/ff23960c5cf9e6874b44be38af930cfb0ccbb620/deepseek_vl2/models/processing_deepseek_vl_v2.py
 # Copyright (c) 2023-2024 DeepSeek.
 #
@@ -25,7 +29,7 @@ from typing import Any
 import torch
 import torchvision.transforms as T
 from PIL import Image, ImageOps
-from transformers import AutoProcessor, BatchFeature, LlamaTokenizerFast
+from transformers import BatchFeature, LlamaTokenizerFast
 from transformers.processing_utils import ProcessorMixin
 
 
@@ -81,7 +85,9 @@ class DeepseekVLV2Processor(ProcessorMixin):
         self.normalize = normalize
         self.downsample_ratio = downsample_ratio
 
-        self.image_transform = ImageTransform(mean=image_mean, std=image_std, normalize=normalize)
+        self.image_transform = ImageTransform(
+            mean=image_mean, std=image_std, normalize=normalize
+        )
         self.tokenizer = tokenizer
         self.tokenizer.padding_side = "left"  # must set this，padding side with make a difference in batch inference
 
@@ -133,11 +139,14 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 int(original_width * scale),
                 int(original_height * scale),
             )
-            effective_resolution = min(downscaled_width * downscaled_height, original_width * original_height)
+            effective_resolution = min(
+                downscaled_width * downscaled_height, original_width * original_height
+            )
             wasted_resolution = (width * height) - effective_resolution
 
             if effective_resolution > max_effective_resolution or (
-                effective_resolution == max_effective_resolution and wasted_resolution < min_wasted_resolution
+                effective_resolution == max_effective_resolution
+                and wasted_resolution < min_wasted_resolution
             ):
                 max_effective_resolution = effective_resolution
                 min_wasted_resolution = wasted_resolution
@@ -194,7 +203,9 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 - num_image_tokens (list[int]): the number of image tokens
         """
 
-        assert prompt is not None and images is not None, "prompt and images must be used at the same time."
+        assert prompt is not None and images is not None, (
+            "prompt and images must be used at the same time."
+        )
 
         sft_format = prompt
         (
@@ -203,7 +214,9 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images_seq_mask,
             images_spatial_crop,
             num_image_tokens,
-        ) = self.tokenize_with_images(sft_format, images, bos=True, eos=True, cropping=len(images) <= 2)
+        ) = self.tokenize_with_images(
+            sft_format, images, bos=True, eos=True, cropping=len(images) <= 2
+        )
         masked_tokenized_str = []
         for token_index in tokenized_str:
             if token_index != self.image_token_id:
@@ -211,7 +224,9 @@ class DeepseekVLV2Processor(ProcessorMixin):
             else:
                 masked_tokenized_str.append(self.ignore_id)
 
-        assert len(tokenized_str) == len(images_seq_mask) == len(masked_tokenized_str), (
+        assert (
+            len(tokenized_str) == len(images_seq_mask) == len(masked_tokenized_str)
+        ), (
             f"tokenized_str's length {len(tokenized_str)}, input_ids' length {len(masked_tokenized_str)}, "
             f"imags_seq_mask's length {len(images_seq_mask)}, are not equal"
         )
@@ -221,7 +236,9 @@ class DeepseekVLV2Processor(ProcessorMixin):
         images_seq_mask = torch.tensor(images_seq_mask, dtype=torch.bool)
 
         # set input_ids < 0 | input_ids == self.image_token_id as ignore_id
-        target_ids[(input_ids < 0) | (input_ids == self.image_token_id)] = self.ignore_id
+        target_ids[(input_ids < 0) | (input_ids == self.image_token_id)] = (
+            self.ignore_id
+        )
         input_ids[input_ids < 0] = self.pad_id
 
         if inference_mode:
@@ -327,7 +344,11 @@ class DeepseekVLV2Processor(ProcessorMixin):
             for i in range(0, best_height, self.image_size):
                 for j in range(0, best_width, self.image_size):
                     images_list.append(
-                        self.image_transform(local_view.crop((j, i, j + self.image_size, i + self.image_size)))
+                        self.image_transform(
+                            local_view.crop(
+                                (j, i, j + self.image_size, i + self.image_size)
+                            )
+                        )
                     )
 
             """record height / width crop num"""
@@ -338,13 +359,19 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images_spatial_crop.append([num_width_tiles, num_height_tiles])
 
             """add image tokens"""
-            h = w = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+            h = w = math.ceil(
+                (self.image_size // self.patch_size) / self.downsample_ratio
+            )
             # global views tokens h * (w + 1), 1 is for line separator
             tokenized_image = [self.image_token_id] * h * (w + 1)
             # add a separator between global and local views
             tokenized_image += [self.image_token_id]
             # local views tokens, (num_height_tiles * h) * (num_width_tiles * w + 1)
-            tokenized_image += [self.image_token_id] * (num_height_tiles * h) * (num_width_tiles * w + 1)
+            tokenized_image += (
+                [self.image_token_id]
+                * (num_height_tiles * h)
+                * (num_width_tiles * w + 1)
+            )
 
             tokenized_str += tokenized_image
             images_seq_mask += [True] * len(tokenized_image)
@@ -374,6 +401,3 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images_spatial_crop,
             num_image_tokens,
         )
-
-
-AutoProcessor.register("DeepseekVLV2Processor", DeepseekVLV2Processor)

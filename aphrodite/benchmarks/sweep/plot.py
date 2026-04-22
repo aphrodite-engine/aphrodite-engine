@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import json
 from abc import ABC, abstractmethod
@@ -6,7 +8,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from types import TracebackType
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from typing_extensions import Self, override
 
@@ -15,14 +17,8 @@ from aphrodite.utils.import_utils import PlaceholderModule
 
 from .utils import sanitize_filename
 
-try:
-    import matplotlib.pyplot as plt
+if TYPE_CHECKING:
     import pandas as pd
-    import seaborn as sns
-except ImportError:
-    plt = PlaceholderModule("matplotlib").placeholder_attr("pyplot")
-    pd = PlaceholderModule("pandas")
-    seaborn = PlaceholderModule("seaborn")
 
 
 @dataclass
@@ -41,7 +37,8 @@ class PlotFilterBase(ABC):
                 )
         else:
             raise ValueError(
-                f"Invalid operator for plot filter '{s}'. Valid operators are: {sorted(PLOT_FILTERS)}",
+                f"Invalid operator for plot filter '{s}'. "
+                f"Valid operators are: {sorted(PLOT_FILTERS)}",
             )
 
     @abstractmethod
@@ -60,6 +57,18 @@ class PlotEqualTo(PlotFilterBase):
             target = self.target
 
         return df[df[self.var] == target]
+
+
+@dataclass
+class PlotNotEqualTo(PlotFilterBase):
+    @override
+    def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        try:
+            target = float(self.target)
+        except ValueError:
+            target = self.target
+
+        return df[df[self.var] != target]
 
 
 @dataclass
@@ -93,6 +102,7 @@ class PlotGreaterThanOrEqualTo(PlotFilterBase):
 # NOTE: The ordering is important! Match longer op_keys first
 PLOT_FILTERS: dict[str, type[PlotFilterBase]] = {
     "==": PlotEqualTo,
+    "!=": PlotNotEqualTo,
     "<=": PlotLessThanOrEqualTo,
     ">=": PlotGreaterThanOrEqualTo,
     "<": PlotLessThan,
@@ -128,7 +138,8 @@ class PlotBinner:
                 return PLOT_BINNERS[op_key](key, float(value.removeprefix(op_key)))
         else:
             raise ValueError(
-                f"Invalid operator for plot binner '{s}'. Valid operators are: {sorted(PLOT_BINNERS)}",
+                f"Invalid operator for plot binner '{s}'. "
+                f"Valid operators are: {sorted(PLOT_BINNERS)}",
             )
 
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
@@ -163,6 +174,27 @@ def _json_load_bytes(path: Path) -> list[dict[str, object]]:
         return json.load(f)
 
 
+def _convert_inf_nan_strings(data: list[dict[str, object]]) -> list[dict[str, object]]:
+    """
+    Convert string values "inf", "-inf", and "nan" to their float equivalents.
+
+    This handles the case where JSON serialization represents inf/nan as strings.
+    """
+    converted_data = []
+    for record in data:
+        converted_record = {}
+        for key, value in record.items():
+            if isinstance(value, str):
+                if value in ["inf", "-inf", "nan"]:
+                    converted_record[key] = float(value)
+                else:
+                    converted_record[key] = value
+            else:
+                converted_record[key] = value
+        converted_data.append(converted_record)
+    return converted_data
+
+
 def _get_metric(run_data: dict[str, object], metric_key: str):
     try:
         return run_data[metric_key]
@@ -174,12 +206,15 @@ def _get_group(run_data: dict[str, object], group_keys: list[str]):
     return tuple((k, str(_get_metric(run_data, k))) for k in group_keys)
 
 
-def _get_fig_path(fig_dir: Path, group: tuple[tuple[str, str], ...]):
+def _get_fig_path(fig_dir: Path, group: tuple[tuple[str, str], ...], fig_name: str):
     parts = list[str]()
+
+    # Start with figure name (always provided, defaults to "FIGURE")
+    parts.append(fig_name)
+
+    # Always append group data if present
     if group:
-        parts.extend(("FIGURE-", *(f"{k}={v}" for k, v in group)))
-    else:
-        parts.append("figure")
+        parts.extend(f"{k}={v}" for k, v in group)
 
     return fig_dir / sanitize_filename("-".join(parts) + ".png")
 
@@ -213,7 +248,25 @@ def _plot_fig(
     scale_x: str | None,
     scale_y: str | None,
     dry_run: bool,
+    fig_name: str,
+    error_bars: bool,
+    fig_height: float,
+    fig_dpi: int,
 ):
+    # Lazy-import matplotlib/pandas/seaborn
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        plt = PlaceholderModule("matplotlib").placeholder_attr("pyplot")
+    try:
+        import pandas as pd
+    except ImportError:
+        pd = PlaceholderModule("pandas")
+    try:
+        import seaborn as sns
+    except ImportError:
+        sns = PlaceholderModule("seaborn")
+
     fig_group, fig_data = fig_group_data
 
     row_groups = full_groupby(
@@ -221,9 +274,12 @@ def _plot_fig(
         key=lambda item: _get_group(item, row_by),
     )
     num_rows = len(row_groups)
-    num_cols = max(len(full_groupby(row_data, key=lambda item: _get_group(item, col_by))) for _, row_data in row_groups)
+    num_cols = max(
+        len(full_groupby(row_data, key=lambda item: _get_group(item, col_by)))
+        for _, row_data in row_groups
+    )
 
-    fig_path = _get_fig_path(fig_dir, fig_group)
+    fig_path = _get_fig_path(fig_dir, fig_group, fig_name)
 
     print("[BEGIN FIGURE]")
     print(f"Group: {dict(fig_group)}")
@@ -234,34 +290,50 @@ def _plot_fig(
         print("[END FIGURE]")
         return
 
+    # Convert string "inf", "-inf", and "nan" to their float equivalents
+    fig_data = _convert_inf_nan_strings(fig_data)
     df = pd.DataFrame.from_records(fig_data)
 
     if var_x not in df.columns:
         raise ValueError(
-            f"Cannot find {var_x=!r} in parameter sweep results. Available variables: {df.columns.tolist()}"
+            f"Cannot find {var_x=!r} in parameter sweep results. "
+            f"Available variables: {df.columns.tolist()}"
         )
     if var_y not in df.columns:
         raise ValueError(
-            f"Cannot find {var_y=!r} in parameter sweep results. Available variables: {df.columns.tolist()}"
+            f"Cannot find {var_y=!r} in parameter sweep results. "
+            f"Available variables: {df.columns.tolist()}"
         )
     for k in row_by:
         if k not in df.columns:
             raise ValueError(
-                f"Cannot find row_by={k!r} in parameter sweep results. Available variables: {df.columns.tolist()}"
+                f"Cannot find row_by={k!r} in parameter sweep results. "
+                f"Available variables: {df.columns.tolist()}"
             )
     for k in col_by:
         if k not in df.columns:
             raise ValueError(
-                f"Cannot find col_by={k!r} in parameter sweep results. Available variables: {df.columns.tolist()}"
+                f"Cannot find col_by={k!r} in parameter sweep results. "
+                f"Available variables: {df.columns.tolist()}"
             )
     for k in curve_by:
         if k not in df.columns:
             raise ValueError(
-                f"Cannot find curve_by={k!r} in parameter sweep results. Available variables: {df.columns.tolist()}"
+                f"Cannot find curve_by={k!r} in parameter sweep results. "
+                f"Available variables: {df.columns.tolist()}"
             )
 
     df = filter_by.apply(df)
     df = bin_by.apply(df)
+
+    if len(df) == 0:
+        print(f"No data to plot. Filters: {filter_by}")
+        print("[END FIGURE]")
+        return
+
+    # Sort by curve_by columns alphabetically for consistent legend ordering
+    if curve_by:
+        df = df.sort_values(by=curve_by)
 
     df["row_group"] = (
         pd.concat(
@@ -281,7 +353,45 @@ def _plot_fig(
         else "(All)"
     )
 
-    g = sns.FacetGrid(df, row="row_group", col="col_group")
+    if len(curve_by) <= 3:
+        hue, style, size, *_ = (*curve_by, None, None, None)
+
+        g = sns.relplot(
+            df,
+            x=var_x,
+            y=var_y,
+            hue=hue,
+            style=style,
+            size=size,
+            markers=True,
+            errorbar="sd" if error_bars else None,
+            kind="line",
+            row="row_group",
+            col="col_group",
+            height=fig_height,
+        )
+    else:
+        df["curve_group"] = (
+            pd.concat(
+                [k + "=" + df[k].astype(str) for k in curve_by],
+                axis=1,
+            ).agg("\n".join, axis=1)
+            if curve_by
+            else "(All)"
+        )
+
+        g = sns.relplot(
+            df,
+            x=var_x,
+            y=var_y,
+            hue="curve_group",
+            markers=True,
+            errorbar="sd" if error_bars else None,
+            kind="line",
+            row="row_group",
+            col="col_group",
+            height=fig_height,
+        )
 
     if row_by and col_by:
         g.set_titles("{row_name}\n{col_name}")
@@ -297,41 +407,7 @@ def _plot_fig(
     if scale_y:
         g.set(yscale=scale_y)
 
-    if len(curve_by) <= 3:
-        hue, style, size, *_ = (*curve_by, None, None, None)
-
-        g.map_dataframe(
-            sns.lineplot,
-            x=var_x,
-            y=var_y,
-            hue=hue,
-            style=style,
-            size=size,
-            markers=True,
-        )
-
-        g.add_legend(title=hue)
-    else:
-        df["curve_group"] = (
-            pd.concat(
-                [k + "=" + df[k].astype(str) for k in curve_by],
-                axis=1,
-            ).agg("\n".join, axis=1)
-            if curve_by
-            else "(All)"
-        )
-
-        g.map_dataframe(
-            sns.lineplot,
-            x=var_x,
-            y=var_y,
-            hue="curve_group",
-            markers=True,
-        )
-
-        g.add_legend()
-
-    g.savefig(fig_path)
+    g.savefig(fig_path, dpi=fig_dpi)
     plt.close(g.figure)
 
     print("[END FIGURE]")
@@ -352,8 +428,16 @@ def plot(
     scale_x: str | None,
     scale_y: str | None,
     dry_run: bool,
+    fig_name: str = "FIGURE",
+    error_bars: bool = True,
+    fig_height: float = 6.4,
+    fig_dpi: int = 300,
 ):
-    all_data = [run_data for path in output_dir.rglob("**/summary.json") for run_data in _json_load_bytes(path)]
+    all_data = [
+        run_data
+        for path in output_dir.rglob("**/summary.json")
+        for run_data in _json_load_bytes(path)
+    ]
 
     if not all_data:
         raise ValueError(f"Did not find any parameter sweep results under {output_dir}")
@@ -382,6 +466,10 @@ def plot(
                     scale_x=scale_x,
                     scale_y=scale_y,
                     dry_run=dry_run,
+                    fig_name=fig_name,
+                    error_bars=error_bars,
+                    fig_height=fig_height,
+                    fig_dpi=fig_dpi,
                 ),
                 fig_groups,
             )
@@ -403,13 +491,17 @@ class SweepPlotArgs:
     scale_x: str | None
     scale_y: str | None
     dry_run: bool
+    fig_name: str = "FIGURE"
+    error_bars: bool = True
+    fig_height: float = 6.4
+    fig_dpi: int = 300
 
     parser_name: ClassVar[str] = "plot"
     parser_help: ClassVar[str] = "Plot performance curves from parameter sweep results."
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
-        output_dir = Path(args.OUTPUT_DIR)
+        output_dir = Path(args.EXPERIMENT_DIR)
         if not output_dir.exists():
             raise ValueError(f"No parameter sweep results under {output_dir}")
 
@@ -432,22 +524,25 @@ class SweepPlotArgs:
             scale_x=args.scale_x,
             scale_y=args.scale_y,
             dry_run=args.dry_run,
+            fig_name=args.fig_name,
+            error_bars=not args.no_error_bars,
+            fig_height=args.fig_height,
+            fig_dpi=args.fig_dpi,
         )
 
     @classmethod
     def add_cli_args(cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         parser.add_argument(
-            "OUTPUT_DIR",
+            "EXPERIMENT_DIR",
             type=str,
-            default="results",
-            help="The directory containing the results to plot, "
-            "i.e., the `--output-dir` argument to the parameter sweep script.",
+            help="The directory containing the sweep results to plot.",
         )
         parser.add_argument(
             "--fig-dir",
             type=str,
             default="",
-            help="The directory to save the figures, relative to `OUTPUT_DIR`. By default, the same directory is used.",
+            help="The directory to save the figures, relative to `OUTPUT_DIR`. "
+            "By default, the same directory is used.",
         )
         parser.add_argument(
             "--fig-by",
@@ -480,13 +575,13 @@ class SweepPlotArgs:
         parser.add_argument(
             "--var-x",
             type=str,
-            default="request_throughput",
+            default="total_token_throughput",
             help="The variable for the x-axis.",
         )
         parser.add_argument(
             "--var-y",
             type=str,
-            default="p99_e2el_ms",
+            default="median_ttft_ms",
             help="The variable for the y-axis",
         )
         parser.add_argument(
@@ -525,9 +620,36 @@ class SweepPlotArgs:
             "See also: https://seaborn.pydata.org/generated/seaborn.objects.Plot.scale.html",
         )
         parser.add_argument(
+            "--fig-name",
+            type=str,
+            default="FIGURE",
+            help="Name prefix for the output figure file. "
+            "Group data is always appended when present. "
+            "Default: 'FIGURE'. Example: --fig-name my_performance_plot",
+        )
+        parser.add_argument(
+            "--no-error-bars",
+            action="store_true",
+            help="If set, disables error bars on the plot. "
+            "By default, error bars are shown.",
+        )
+        parser.add_argument(
+            "--fig-height",
+            type=float,
+            default=6.4,
+            help="Height of each subplot in inches. Default: 6.4",
+        )
+        parser.add_argument(
+            "--fig-dpi",
+            type=int,
+            default=300,
+            help="Resolution of the output figure in dots per inch. Default: 300",
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="If set, prints the information about each figure to plot, then exits without drawing them.",
+            help="If set, prints the information about each figure to plot, "
+            "then exits without drawing them.",
         )
 
         return parser
@@ -548,6 +670,10 @@ def run_main(args: SweepPlotArgs):
         scale_x=args.scale_x,
         scale_y=args.scale_y,
         dry_run=args.dry_run,
+        fig_name=args.fig_name,
+        error_bars=args.error_bars,
+        fig_height=args.fig_height,
+        fig_dpi=args.fig_dpi,
     )
 
 

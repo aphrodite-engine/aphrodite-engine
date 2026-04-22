@@ -1,4 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import logging
+import os
 import traceback
 from itertools import chain
 from typing import TYPE_CHECKING
@@ -36,7 +39,7 @@ def tpu_platform_plugin() -> str | None:
     # Check for Pathways TPU proxy
     if envs.APHRODITE_TPU_USING_PATHWAYS:
         logger.debug("Confirmed TPU platform is available via Pathways proxy.")
-        return "tpu_inference.platforms.tpu_jax.TpuPlatform"
+        return "tpu_inference.platforms.tpu_platform.TpuPlatform"
 
     # Check for libtpu installation
     try:
@@ -68,11 +71,16 @@ def cuda_platform_plugin() -> str | None:
             # we need to check if aphrodite is built with cpu too.
             # Otherwise, aphrodite will always activate cuda plugin
             # on a GPU machine, even if in a cpu build.
-            is_cuda = pynvml.nvmlDeviceGetCount() > 0 and not aphrodite_version_matches_substr("cpu")
+            is_cuda = (
+                pynvml.nvmlDeviceGetCount() > 0
+                and not aphrodite_version_matches_substr("cpu")
+            )
             if pynvml.nvmlDeviceGetCount() <= 0:
                 logger.debug("CUDA platform is not available because no GPU is found.")
             if aphrodite_version_matches_substr("cpu"):
-                logger.debug("CUDA platform is not available because Aphrodite is built with CPU.")
+                logger.debug(
+                    "CUDA platform is not available because Aphrodite is built with CPU."
+                )
             if is_cuda:
                 logger.debug("Confirmed CUDA platform is available.")
         finally:
@@ -87,7 +95,9 @@ def cuda_platform_plugin() -> str | None:
         import os
 
         def cuda_is_jetson() -> bool:
-            return os.path.isfile("/etc/nv_tegra_release") or os.path.exists("/sys/class/tegra-firmware")
+            return os.path.isfile("/etc/nv_tegra_release") or os.path.exists(
+                "/sys/class/tegra-firmware"
+            )
 
         if cuda_is_jetson():
             logger.debug("Confirmed CUDA platform is available on Jetson.")
@@ -123,27 +133,31 @@ def xpu_platform_plugin() -> str | None:
     is_xpu = False
     logger.debug("Checking if XPU platform is available.")
     try:
-        # installed IPEX if the machine has XPUs.
-        import intel_extension_for_pytorch  # noqa: F401
         import torch
 
         if supports_xccl():
             dist_backend = "xccl"
-        else:
-            dist_backend = "ccl"
-            import oneccl_bindings_for_pytorch  # noqa: F401
-
-        if hasattr(torch, "xpu") and torch.xpu.is_available():
-            is_xpu = True
             from aphrodite.platforms.xpu import XPUPlatform
 
             XPUPlatform.dist_backend = dist_backend
             logger.debug("Confirmed %s backend is available.", XPUPlatform.dist_backend)
+
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            is_xpu = True
             logger.debug("Confirmed XPU platform is available.")
     except Exception as e:
         logger.debug("XPU platform is not available because: %s", str(e))
 
     return "aphrodite.platforms.xpu.XPUPlatform" if is_xpu else None
+
+
+def _is_amd_zen_cpu() -> bool:
+    """Detect AMD CPU with AVX-512 via /proc/cpuinfo."""
+    if not os.path.exists("/proc/cpuinfo"):
+        return False
+    with open("/proc/cpuinfo") as f:
+        cpuinfo = f.read()
+    return "AuthenticAMD" in cpuinfo and "avx512" in cpuinfo
 
 
 def cpu_platform_plugin() -> str | None:
@@ -152,18 +166,39 @@ def cpu_platform_plugin() -> str | None:
     try:
         is_cpu = aphrodite_version_matches_substr("cpu")
         if is_cpu:
-            logger.debug("Confirmed CPU platform is available because Aphrodite is built with CPU.")
+            logger.debug(
+                "Confirmed CPU platform is available because Aphrodite is built with CPU."
+            )
         if not is_cpu:
             import sys
 
             is_cpu = sys.platform.startswith("darwin")
             if is_cpu:
-                logger.debug("Confirmed CPU platform is available because the machine is MacOS.")
+                logger.debug(
+                    "Confirmed CPU platform is available because the machine is MacOS."
+                )
 
     except Exception as e:
         logger.debug("CPU platform is not available because: %s", str(e))
 
-    return "aphrodite.platforms.cpu.CpuPlatform" if is_cpu else None
+    if not is_cpu:
+        return None
+
+    if _is_amd_zen_cpu():
+        try:
+            import zentorch  # noqa: F401
+
+            logger.debug(
+                "AMD Zen CPU detected with zentorch installed, using ZenCpuPlatform."
+            )
+            return "aphrodite.platforms.zen_cpu.ZenCpuPlatform"
+        except ImportError:
+            logger.debug(
+                "AMD Zen CPU detected but zentorch not installed, "
+                "falling back to CpuPlatform."
+            )
+
+    return "aphrodite.platforms.cpu.CpuPlatform"
 
 
 builtin_platform_plugins = {
@@ -189,19 +224,29 @@ def resolve_current_platform_cls_qualname() -> str:
         except Exception:
             pass
 
-    activated_builtin_plugins = list(set(activated_plugins) & set(builtin_platform_plugins.keys()))
+    activated_builtin_plugins = list(
+        set(activated_plugins) & set(builtin_platform_plugins.keys())
+    )
     activated_oot_plugins = list(set(activated_plugins) & set(platform_plugins.keys()))
 
     if len(activated_oot_plugins) >= 2:
-        raise RuntimeError(f"Only one platform plugin can be activated, but got: {activated_oot_plugins}")
+        raise RuntimeError(
+            "Only one platform plugin can be activated, but got: "
+            f"{activated_oot_plugins}"
+        )
     elif len(activated_oot_plugins) == 1:
         platform_cls_qualname = platform_plugins[activated_oot_plugins[0]]()
         logger.info("Platform plugin %s is activated", activated_oot_plugins[0])
     elif len(activated_builtin_plugins) >= 2:
-        raise RuntimeError(f"Only one platform plugin can be activated, but got: {activated_builtin_plugins}")
+        raise RuntimeError(
+            "Only one platform plugin can be activated, but got: "
+            f"{activated_builtin_plugins}"
+        )
     elif len(activated_builtin_plugins) == 1:
         platform_cls_qualname = builtin_platform_plugins[activated_builtin_plugins[0]]()
-        logger.debug("Automatically detected platform %s.", activated_builtin_plugins[0])
+        logger.debug(
+            "Automatically detected platform %s.", activated_builtin_plugins[0]
+        )
     else:
         platform_cls_qualname = "aphrodite.platforms.interface.UnspecifiedPlatform"
         logger.debug("No platform detected, Aphrodite is running on UnspecifiedPlatform")
@@ -251,4 +296,11 @@ def __setattr__(name: str, value):
         raise AttributeError(f"No attribute named '{name}' exists in {__name__}.")
 
 
-__all__ = ["Platform", "PlatformEnum", "current_platform", "CpuArchEnum", "_init_trace"]
+__all__ = [
+    "Platform",
+    "PlatformEnum",
+    "current_platform",
+    "CpuArchEnum",
+    "_init_trace",
+    "_is_amd_zen_cpu",
+]

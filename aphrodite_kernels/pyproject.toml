@@ -4,11 +4,11 @@ requires = [
     "cmake>=3.26.1",
     "ninja",
     "packaging>=24.2",
-    "setuptools>=77.0.3,<80.0.0",
+    "setuptools>=77.0.3,<81.0.0",
     "setuptools-scm>=8.0",
-    "torch == 2.9.0",
+    "torch == 2.11.0",
     "wheel",
-    "jinja2",
+    "jinja2>=3.1.6",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -82,4 +82,3 @@ ignore = [
     # ternary op
     "SIM108",
 ]
-

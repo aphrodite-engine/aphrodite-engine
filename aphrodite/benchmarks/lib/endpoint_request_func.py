@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """The request function for API endpoints."""
 
+import codecs
 import io
 import json
 import os
@@ -23,11 +26,12 @@ class StreamedResponseHandler:
 
     def __init__(self):
         self.buffer = ""
+        self._decoder = codecs.getincrementaldecoder("utf-8")()
 
     def add_chunk(self, chunk_bytes: bytes) -> list[str]:
         """Add a chunk of bytes to the buffer and return any complete
         messages."""
-        chunk_str = chunk_bytes.decode("utf-8")
+        chunk_str = self._decoder.decode(chunk_bytes)
         self.buffer += chunk_str
 
         messages = []
@@ -91,6 +95,7 @@ class RequestFuncOutput:
     prompt_len: int = 0
     error: str = ""
     start_time: float = 0.0
+    input_audio_duration: float = 0.0  # in seconds
 
 
 class RequestFunc(Protocol):
@@ -136,6 +141,16 @@ def _update_headers_common(
         headers["x-request-id"] = request_func_input.request_id
 
 
+def _get_headers(content_type: str | None = None) -> dict[str, str]:
+    headers = {}
+    if content_type:
+        headers["Content-Type"] = content_type
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 async def async_request_openai_completions(
     request_func_input: RequestFuncInput,
     session: aiohttp.ClientSession,
@@ -154,9 +169,10 @@ async def async_request_openai_completions(
     _validate_api_url(api_url, "OpenAI Completions API", "completions")
 
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
         "prompt": request_func_input.prompt,
-        "temperature": 0.0,
         "repetition_penalty": 1.0,
         "max_tokens": request_func_input.output_len,
         "logprobs": request_func_input.logprobs,
@@ -167,9 +183,7 @@ async def async_request_openai_completions(
     }
     _update_payload_common(payload, request_func_input)
 
-    headers = {
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers()
     _update_headers_common(headers, request_func_input)
 
     output = RequestFuncOutput()
@@ -225,12 +239,15 @@ async def async_request_openai_completions(
                                 generated_text += text or ""
                             elif usage := data.get("usage"):
                                 output.output_tokens = usage.get("completion_tokens")
+                                if (pt := usage.get("prompt_tokens")) is not None:
+                                    output.prompt_len = pt
                 if first_chunk_received:
                     output.success = True
                 else:
                     output.success = False
                     output.error = (
-                        "Never received a valid chunk to calculate TTFT.This response will be marked as failed!"
+                        "Never received a valid chunk to calculate TTFT."
+                        "This response will be marked as failed!"
                     )
                 output.generated_text = generated_text
                 output.latency = most_recent_timestamp - st
@@ -261,7 +278,9 @@ def _get_chat_content(
         elif isinstance(mm_content, dict):
             mm_contents.append(request_func_input.multi_modal_content)
         else:
-            raise TypeError("multi_modal_content must be a dict or list[dict] for openai-chat")
+            raise TypeError(
+                "multi_modal_content must be a dict or list[dict] for openai-chat"
+            )
 
     if mm_position == "first":
         return mm_contents + text_contents
@@ -281,11 +300,12 @@ async def async_request_openai_chat_completions(
     content = _get_chat_content(request_func_input, mm_position=mm_position)
 
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
         "messages": [
             {"role": "user", "content": content},
         ],
-        "temperature": 0.0,
         "max_completion_tokens": request_func_input.output_len,
         "stream": True,
         "stream_options": {
@@ -294,10 +314,7 @@ async def async_request_openai_chat_completions(
     }
     _update_payload_common(payload, request_func_input)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers("application/json")
     _update_headers_common(headers, request_func_input)
 
     output = RequestFuncOutput()
@@ -345,6 +362,8 @@ async def async_request_openai_chat_completions(
                                 generated_text += content or ""
                             elif usage := data.get("usage"):
                                 output.output_tokens = usage.get("completion_tokens")
+                                if (pt := usage.get("prompt_tokens")) is not None:
+                                    output.prompt_len = pt
 
                             most_recent_timestamp = timestamp
 
@@ -377,8 +396,9 @@ async def async_request_openai_audio(
 
     content = [{"type": "text", "text": request_func_input.prompt}]
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
-        "temperature": 0.0,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
         "max_completion_tokens": request_func_input.output_len,
         "stream": True,
         "language": "en",
@@ -388,9 +408,7 @@ async def async_request_openai_audio(
     }
     _update_payload_common(payload, request_func_input)
 
-    headers = {
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers()
     _update_headers_common(headers, request_func_input)
 
     # Send audio file
@@ -411,6 +429,8 @@ async def async_request_openai_audio(
 
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
+        output.input_audio_duration = soundfile.info(f).duration
+        f.seek(0)
 
         generated_text = ""
         ttft = 0.0
@@ -418,7 +438,9 @@ async def async_request_openai_audio(
         output.start_time = st
         most_recent_timestamp = st
         try:
-            async with session.post(url=api_url, data=form, headers=headers) as response:
+            async with session.post(
+                url=api_url, data=form, headers=headers
+            ) as response:
                 if response.status == 200:
                     handler = StreamedResponseHandler()
 
@@ -429,7 +451,9 @@ async def async_request_openai_audio(
 
                         messages = handler.add_chunk(chunk_bytes)
                         for message in messages:
-                            chunk = message.decode("utf-8").removeprefix("data: ")
+                            if type(message) is bytes:
+                                message = message.decode("utf-8")
+                            chunk = message.removeprefix("data: ")
                             if chunk != "[DONE]":
                                 timestamp = time.perf_counter()
                                 data = json.loads(chunk)
@@ -443,11 +467,15 @@ async def async_request_openai_audio(
 
                                     # Decoding phase
                                     else:
-                                        output.itl.append(timestamp - most_recent_timestamp)
+                                        output.itl.append(
+                                            timestamp - most_recent_timestamp
+                                        )
 
                                     generated_text += content or ""
                                 elif usage := data.get("usage"):
-                                    output.output_tokens = usage.get("completion_tokens")
+                                    output.output_tokens = usage.get(
+                                        "completion_tokens"
+                                    )
 
                                 most_recent_timestamp = timestamp
 
@@ -513,7 +541,9 @@ async def async_request_openai_embeddings(
     _validate_api_url(api_url, "OpenAI Embeddings API", "embeddings")
 
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
         "input": request_func_input.prompt,
         # Many embedding models have short context length,
         # this is to avoid dropping some of the requests.
@@ -521,10 +551,7 @@ async def async_request_openai_embeddings(
     }
     _update_payload_common(payload, request_func_input)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers("application/json")
     _update_headers_common(headers, request_func_input)
 
     return await _run_pooling_request(
@@ -544,10 +571,15 @@ async def async_request_aphrodite_rerank(
     api_url = request_func_input.api_url
     _validate_api_url(api_url, "Aphrodite score API", "rerank")
 
-    assert isinstance(request_func_input.prompt, list) and len(request_func_input.prompt) > 1
+    assert (
+        isinstance(request_func_input.prompt, list)
+        and len(request_func_input.prompt) > 1
+    )
 
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
         "query": request_func_input.prompt[0],
         "documents": request_func_input.prompt[1:],
         # Many reranker models have short context length,
@@ -555,10 +587,7 @@ async def async_request_aphrodite_rerank(
         "truncate_prompt_tokens": -1,
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers("application/json")
     _update_headers_common(headers, request_func_input)
 
     return await _run_pooling_request(
@@ -582,7 +611,9 @@ async def async_request_openai_embeddings_chat(
     content = _get_chat_content(request_func_input, mm_position=mm_position)
 
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
         "messages": [
             {"role": "user", "content": content},
         ],
@@ -592,10 +623,7 @@ async def async_request_openai_embeddings_chat(
     }
     _update_payload_common(payload, request_func_input)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers("application/json")
     _update_headers_common(headers, request_func_input)
 
     return await _run_pooling_request(
@@ -638,7 +666,8 @@ def _preprocess_vlm2vec(request_func_input: RequestFuncInput):
         else:
             # Text+Image input
             request_func_input.prompt = (
-                f"Represent the given image with the following question: {request_func_input.prompt}"
+                f"Represent the given image with the following question: "
+                f"{request_func_input.prompt}"
             )
 
 
@@ -680,7 +709,9 @@ async def async_request_infinity_embeddings(
     _validate_api_url(api_url, "Infinity Embeddings API", "embeddings")
 
     payload = {
-        "model": request_func_input.model_name if request_func_input.model_name else request_func_input.model,
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
     }
 
     if request_func_input.prompt:
@@ -695,10 +726,7 @@ async def async_request_infinity_embeddings(
 
     _update_payload_common(payload, request_func_input)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-    }
+    headers = _get_headers("application/json")
     _update_headers_common(headers, request_func_input)
 
     return await _run_pooling_request(
@@ -724,6 +752,37 @@ async def async_request_infinity_embeddings_clip(
     )
 
 
+async def async_request_aphrodite_pooling(
+    request_func_input: RequestFuncInput,
+    session: aiohttp.ClientSession,
+    pbar: tqdm | None = None,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    _validate_api_url(api_url, "Aphrodite Pooling API", "pooling")
+
+    payload = {
+        "model": request_func_input.model_name
+        if request_func_input.model_name
+        else request_func_input.model,
+        "truncate_prompt_tokens": -1,
+    }
+
+    payload = payload | request_func_input.prompt
+
+    _update_payload_common(payload, request_func_input)
+
+    headers = _get_headers("application/json")
+    _update_headers_common(headers, request_func_input)
+
+    return await _run_pooling_request(
+        session,
+        api_url,
+        payload=payload,
+        headers=headers,
+        pbar=pbar,
+    )
+
+
 # TODO: Add more request functions for different API protocols.
 ASYNC_REQUEST_FUNCS: dict[str, RequestFunc] = {
     "aphrodite": async_request_openai_completions,
@@ -738,7 +797,19 @@ ASYNC_REQUEST_FUNCS: dict[str, RequestFunc] = {
     "infinity-embeddings": async_request_infinity_embeddings,
     "infinity-embeddings-clip": async_request_infinity_embeddings_clip,
     # (Infinity embedding server does not support vlm2vec)
+    "aphrodite-pooling": async_request_aphrodite_pooling,
     "aphrodite-rerank": async_request_aphrodite_rerank,
+}
+
+POOLING_BACKENDS = {
+    "openai-embeddings",
+    "openai-embeddings-chat",
+    "openai-embeddings-clip",
+    "openai-embeddings-vlm2vec",
+    "infinity-embeddings",
+    "infinity-embeddings-clip",
+    "aphrodite-pooling",
+    "aphrodite-rerank",
 }
 
 OPENAI_COMPATIBLE_BACKENDS = [

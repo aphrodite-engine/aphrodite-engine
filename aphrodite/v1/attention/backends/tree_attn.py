@@ -1,58 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Attention layer with TreeAttention."""
 
 import ast
 from dataclasses import dataclass
-from typing import Optional
+from typing import ClassVar
 
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.attention.backends.abstract import (
+from aphrodite.config import AphroditeConfig
+from aphrodite.config.cache import CacheDType
+from aphrodite.logger import init_logger
+from aphrodite.v1.attention.backend import (
     AttentionBackend,
     AttentionImpl,
-    AttentionMetadata,
+    AttentionMetadataBuilder,
     AttentionType,
+    CommonAttentionMetadata,
     MultipleOf,
 )
-from aphrodite.attention.ops.triton_unified_attention import unified_attention
-from aphrodite.config import AphroditeConfig
-from aphrodite.logger import init_logger
 from aphrodite.v1.attention.backends.utils import (
-    AttentionMetadataBuilder,
-    CommonAttentionMetadata,
     split_decodes_and_prefills,
 )
+from aphrodite.v1.attention.ops.triton_unified_attention import unified_attention
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 logger = init_logger(__name__)
 
 
 class TreeAttentionBackend(AttentionBackend):
-    accept_output_buffer: bool = True
+    supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
+        "float16",
+        "bfloat16",
+    ]
+    forward_includes_kv_cache_update: bool = False
 
-    @classmethod
-    def get_supported_dtypes(cls) -> list[torch.dtype]:
-        return [torch.float16, torch.bfloat16]
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [MultipleOf(16)]
 
     @classmethod
     def get_supported_head_sizes(cls) -> list[int]:
         return [32, 64, 96, 128, 160, 192, 224, 256]
-
-    @staticmethod
-    def get_supported_kernel_block_size() -> list[int | MultipleOf]:
-        return [MultipleOf(16)]
-
-    @classmethod
-    def validate_head_size(cls, head_size: int) -> None:
-        supported_head_sizes = cls.get_supported_head_sizes()
-        if head_size not in supported_head_sizes:
-            attn_type = cls.__name__.removesuffix("Backend")
-            raise ValueError(
-                f"Head size {head_size} is not supported by {attn_type}. "
-                f"Supported head sizes are: {supported_head_sizes}. "
-                "Set APHRODITE_ATTENTION_BACKEND=FLEX_ATTENTION to use "
-                "FlexAttention backend which supports all head sizes."
-            )
 
     @staticmethod
     def get_name() -> str:
@@ -61,10 +53,6 @@ class TreeAttentionBackend(AttentionBackend):
     @staticmethod
     def get_impl_cls() -> type["TreeAttentionImpl"]:
         return TreeAttentionImpl
-
-    @staticmethod
-    def get_metadata_cls() -> type["AttentionMetadata"]:
-        return TreeAttentionMetadata
 
     @staticmethod
     def get_kv_cache_shape(
@@ -105,11 +93,11 @@ class TreeAttentionMetadata:
     tree_attn_bias: torch.Tensor | None = None
 
     # Cached Prefill/decode metadata.
-    _cached_prefill_metadata: Optional["TreeAttentionMetadata"] = None
-    _cached_decode_metadata: Optional["TreeAttentionMetadata"] = None
+    _cached_prefill_metadata: "TreeAttentionMetadata | None" = None
+    _cached_decode_metadata: "TreeAttentionMetadata | None" = None
 
     @property
-    def prefill_metadata(self) -> Optional["TreeAttentionMetadata"]:
+    def prefill_metadata(self) -> "TreeAttentionMetadata | None":
         if self.num_prefills == 0:
             return None
 
@@ -134,7 +122,7 @@ class TreeAttentionMetadata:
         return self._cached_prefill_metadata
 
     @property
-    def decode_metadata(self) -> Optional["TreeAttentionMetadata"]:
+    def decode_metadata(self) -> "TreeAttentionMetadata | None":
         if self.num_decode_tokens == 0:
             return None
 
@@ -173,7 +161,9 @@ class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadat
         self.block_size = kv_cache_spec.block_size
 
         spec_config = aphrodite_config.speculative_config
-        spec_token_tree = (spec := spec_config) and spec.speculative_token_tree
+        spec_token_tree: str | None = None
+        if spec := spec_config:
+            spec_token_tree = spec.speculative_token_tree
         tree_choices: list[tuple[int, ...]] = (
             ast.literal_eval(spec_token_tree) if spec_token_tree is not None else [(0,)]
         )
@@ -195,8 +185,10 @@ class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadat
         fast_build: bool = False,
     ) -> TreeAttentionMetadata:
         decode_threshold = self.tree_attn_bias.shape[0]
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
-            common_attn_metadata, decode_threshold=decode_threshold
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
+            split_decodes_and_prefills(
+                common_attn_metadata, decode_threshold=decode_threshold
+            )
         )
 
         num_actual_tokens = common_attn_metadata.num_actual_tokens
@@ -268,7 +260,9 @@ def _prepare_tree_attn_bias(
 ) -> torch.Tensor:
     # +1 comes from the additional root node.
     tree_len = len(sorted_tree_choices) + 1
-    tree_attn_mask = torch.full((tree_len, tree_len), -torch.inf, device=device, dtype=dtype)
+    tree_attn_mask = torch.full(
+        (tree_len, tree_len), -torch.inf, device=device, dtype=dtype
+    )
 
     # Set diagonal to all zeros. Each token should
     # attend to itself.
@@ -289,7 +283,9 @@ def _prepare_tree_attn_bias(
                 continue
             ancestor_idx = []
             for c in range(len(cur_tree_choice) - 1):
-                ancestor_idx.append(sorted_tree_choices.index(cur_tree_choice[: c + 1]) + 1)
+                ancestor_idx.append(
+                    sorted_tree_choices.index(cur_tree_choice[: c + 1]) + 1
+                )
             tree_attn_mask[j + start + 1, ancestor_idx] = mask_val
         start += depth_counts[i]
     return tree_attn_mask
@@ -328,12 +324,40 @@ class TreeAttentionImpl(AttentionImpl):
         else:
             self.sliding_window = (sliding_window - 1, 0)
 
-        TreeAttentionBackend.validate_head_size(head_size)
-
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and encoder/decoder cross-attention are not implemented for TreeAttentionImpl."
+                "Encoder self-attention and "
+                "encoder/decoder cross-attention "
+                "are not implemented for "
+                "TreeAttentionImpl."
             )
+
+    def do_kv_cache_update(
+        self,
+        layer: torch.nn.Module,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        slot_mapping: torch.Tensor,
+    ) -> None:
+        key_cache, value_cache = kv_cache.unbind(0)
+
+        # Reshape the input keys and values and store them in the cache.
+        # NOTE(woosuk): Here, key and value are padded while slot_mapping is
+        # not padded. However, we don't need to do key[:num_actual_tokens]
+        # and value[:num_actual_tokens] because the reshape_and_cache_flash
+        # op uses the slot_mapping's shape to determine the number of
+        # actual tokens.
+        ops.reshape_and_cache_flash(
+            key,
+            value,
+            key_cache,
+            value_cache,
+            slot_mapping,
+            self.kv_cache_dtype,
+            layer._k_scale,
+            layer._v_scale,
+        )
 
     def forward(
         self,
@@ -343,7 +367,7 @@ class TreeAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata: TreeAttentionMetadata,
-        output: torch.Tensor | None = None,
+        output: torch.Tensor,
         output_scale: torch.Tensor | None = None,
         output_block_scale: torch.Tensor | None = None,
     ) -> torch.Tensor:
@@ -359,35 +383,16 @@ class TreeAttentionImpl(AttentionImpl):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-        assert output is not None, "Output tensor must be provided."
-
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError("fused output quantization is not yet supported for TreeAttentionImpl")
+            raise NotImplementedError(
+                "fused output quantization is not yet supported for TreeAttentionImpl"
+            )
 
         if attn_metadata is None:
             # Profiling run.
             return output.fill_(0)
 
-        # Cache the input KVs.
         key_cache, value_cache = kv_cache.unbind(0)
-        if self.kv_sharing_target_layer_name is None:
-            # Reshape the input keys and values and store them in the cache.
-            # Skip this if sharing KV cache with an earlier attention layer.
-            # NOTE(woosuk): Here, key and value are padded while slot_mapping is
-            # not padded. However, we don't need to do key[:num_actual_tokens]
-            # and value[:num_actual_tokens] because the reshape_and_cache_flash
-            # op uses the slot_mapping's shape to determine the number of
-            # actual tokens.
-            ops.reshape_and_cache_flash(
-                key,
-                value,
-                key_cache,
-                value_cache,
-                attn_metadata.slot_mapping,
-                self.kv_cache_dtype,
-                layer._k_scale,
-                layer._v_scale,
-            )
 
         num_actual_tokens = attn_metadata.num_actual_tokens
         num_decode_tokens = attn_metadata.num_decode_tokens

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeAlias
@@ -31,7 +33,9 @@ _MODEL_TYPE_TO_CHAT_TEMPLATE_FALLBACK: dict[str, ChatTemplatePath] = {
     "blip-2": CHAT_TEMPLATES_DIR / "template_blip2.jinja",
     "chameleon": CHAT_TEMPLATES_DIR / "template_basic.jinja",
     "clip": CHAT_TEMPLATES_DIR / "template_basic.jinja",
+    "colpali": CHAT_TEMPLATES_DIR / "template_basic.jinja",
     "deepseek_ocr": CHAT_TEMPLATES_DIR / "template_deepseek_ocr.jinja",
+    "deepseek_ocr2": CHAT_TEMPLATES_DIR / "template_deepseek_ocr.jinja",
     "deepseek_vl_v2": CHAT_TEMPLATES_DIR / "template_deepseek_vl2.jinja",
     "fuyu": CHAT_TEMPLATES_DIR / "template_fuyu.jinja",
     "minicpmv": _get_minicpmv_chat_template_fallback,
@@ -48,7 +52,8 @@ def register_chat_template_fallback_path(
 ) -> None:
     if model_type in _MODEL_TYPE_TO_CHAT_TEMPLATE_FALLBACK:
         logger.warning(
-            "Model type %s already has a chat template registered. It will be overwritten by the new chat template %s.",
+            "Model type %s already has a chat template registered. "
+            "It will be overwritten by the new chat template %s.",
             model_type,
             chat_template,
         )

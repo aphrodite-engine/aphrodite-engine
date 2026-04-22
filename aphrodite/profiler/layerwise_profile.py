@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import copy
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Optional, TypeAlias
+from typing import Any, Generic, TypeAlias, TypeVar
 
 from torch._C._autograd import DeviceType, _KinetoEvent, _ProfilerResult
 from torch._C._profiler import _EventType, _ExperimentalConfig, _ProfilerEvent
@@ -28,7 +31,7 @@ except ImportError:
 @dataclass
 class _ModuleTreeNode:
     event: _ProfilerEvent
-    parent: Optional["_ModuleTreeNode"] = None
+    parent: "_ModuleTreeNode | None" = None
     children: list["_ModuleTreeNode"] = field(default_factory=list)
     trace: str = ""
 
@@ -42,7 +45,10 @@ class _ModuleTreeNode:
 
     @property
     def is_cuda(self):
-        return self.event.tag == _EventType.Kineto and self.event.typed[1].device_type == DeviceType.CUDA
+        return (
+            self.event.tag == _EventType.Kineto
+            and self.event.typed[1].device_type == DeviceType.CUDA
+        )
 
 
 @dataclass
@@ -63,13 +69,14 @@ class ModelStatsEntry:
 
 
 StatsEntry: TypeAlias = ModelStatsEntry | SummaryStatsEntry
+StatsEntryT = TypeVar("StatsEntryT", bound=StatsEntry)
 
 
 @dataclass
-class _StatsTreeNode:
-    entry: StatsEntry
-    children: list[StatsEntry]
-    parent: StatsEntry | None
+class _StatsTreeNode(Generic[StatsEntryT]):
+    entry: StatsEntryT
+    children: list["_StatsTreeNode[StatsEntryT]"] = field(default_factory=list)
+    parent: "_StatsTreeNode[StatsEntryT] | None" = None
 
 
 @dataclass
@@ -78,8 +85,8 @@ class LayerwiseProfileResults(profile):
     _kineto_event_correlation_map: dict[int, list[_KinetoEvent]] = field(init=False)
     _event_correlation_map: dict[int, list[FunctionEvent]] = field(init=False)
     _module_tree: list[_ModuleTreeNode] = field(init=False)
-    _model_stats_tree: list[_StatsTreeNode] = field(init=False)
-    _summary_stats_tree: list[_StatsTreeNode] = field(init=False)
+    _model_stats_tree: list[_StatsTreeNode[ModelStatsEntry]] = field(init=False)
+    _summary_stats_tree: list[_StatsTreeNode[SummaryStatsEntry]] = field(init=False)
 
     # profile metadata
     num_running_seqs: int | None = None
@@ -89,8 +96,10 @@ class LayerwiseProfileResults(profile):
         self._build_module_tree()
         self._build_stats_trees()
 
-    def print_model_table(self, column_widths: dict[str, int] = None):
-        _column_widths = dict(name=60, cpu_time_us=12, cuda_time_us=12, pct_cuda_time=12, trace=60)
+    def print_model_table(self, column_widths: dict[str, int] | None = None):
+        _column_widths = dict(
+            name=60, cpu_time_us=12, cuda_time_us=12, pct_cuda_time=12, trace=60
+        )
         if column_widths:
             _column_widths.update(**column_widths)
         filtered_model_table = [
@@ -105,12 +114,16 @@ class LayerwiseProfileResults(profile):
             )
         )
 
-    def print_summary_table(self, column_widths: dict[str, int] = None):
-        _column_widths = dict(name=80, cuda_time_us=12, pct_cuda_time=12, invocations=15)
+    def print_summary_table(self, column_widths: dict[str, int] | None = None):
+        _column_widths = dict(
+            name=80, cuda_time_us=12, pct_cuda_time=12, invocations=15
+        )
         if column_widths:
             _column_widths.update(**column_widths)
         filtered_summary_table = [
-            (depth, row) for depth, row in self._flatten_stats_tree(self._summary_stats_tree) if row.cuda_time_us > 0
+            (depth, row)
+            for depth, row in self._flatten_stats_tree(self._summary_stats_tree)
+            if row.cuda_time_us > 0
         ]
         TablePrinter(SummaryStatsEntry, _column_widths).print_table(
             self._indent_row_names_based_on_depth(
@@ -120,11 +133,18 @@ class LayerwiseProfileResults(profile):
         )
 
     def export_model_stats_table_csv(self, filename: str):
-        df = pd.DataFrame([asdict(row) for _, row in self._flatten_stats_tree(self._model_stats_tree)])
+        df = pd.DataFrame(
+            [asdict(row) for _, row in self._flatten_stats_tree(self._model_stats_tree)]
+        )
         df.to_csv(filename)
 
     def export_summary_stats_table_csv(self, filename: str):
-        df = pd.DataFrame([asdict(row) for _, row in self._flatten_stats_tree(self._summary_stats_tree)])
+        df = pd.DataFrame(
+            [
+                asdict(row)
+                for _, row in self._flatten_stats_tree(self._summary_stats_tree)
+            ]
+        )
         df.to_csv(filename)
 
     def convert_stats_to_dict(self) -> dict[str, Any]:
@@ -136,14 +156,14 @@ class LayerwiseProfileResults(profile):
 
     @staticmethod
     def _indent_row_names_based_on_depth(
-        depths_rows: list[tuple[int, StatsEntry]],
+        depths_rows: list[tuple[int, StatsEntryT]],
         indent_style: Callable[[int], str] | str = " ",
     ):
-        indented_rows = []
+        indented_rows: list[StatsEntryT] = []
         for depth, row in depths_rows:
             if row.cuda_time_us == 0:
                 continue
-            indented_row = copy.deepcopy(row)
+            indented_row: StatsEntryT = copy.deepcopy(row)
             indented_row.name = indent_string(indented_row.name, depth, indent_style)
             indented_rows.append(indented_row)
         return indented_rows
@@ -157,7 +177,9 @@ class LayerwiseProfileResults(profile):
         self._module_tree = []
         event_tree = self._kineto_results.experimental_event_tree()
 
-        def _df_traversal(event: _ProfilerEvent, curr_node: _ModuleTreeNode | None = None):
+        def _df_traversal(
+            event: _ProfilerEvent, curr_node: _ModuleTreeNode | None = None
+        ):
             # For the tensor parallel case for now only look at task 1
             if event.start_tid != 1:
                 return
@@ -175,7 +197,9 @@ class LayerwiseProfileResults(profile):
                 node = _ModuleTreeNode(
                     event=event,
                     parent=curr_node,
-                    trace=event_torch_op_stack_trace(event, until=lambda x: event_has_module(x)),
+                    trace=event_torch_op_stack_trace(
+                        event, until=lambda x: event_has_module(x)
+                    ),
                 )
                 curr_node.children.append(node)
                 curr_node = node
@@ -189,9 +213,13 @@ class LayerwiseProfileResults(profile):
     def _get_kineto_gpu_event(self, node: _ModuleTreeNode):
         if node.event.tag != _EventType.Kineto:
             return None
-        correlated_kineto_events = self._kineto_event_correlation_map.get(node.event.correlation_id, [])
+        correlated_kineto_events = self._kineto_event_correlation_map.get(
+            node.event.correlation_id, []
+        )
         iterator = (
-            x for x in correlated_kineto_events if x.device_type() == DeviceType.CUDA and x.name() == node.event.name
+            x
+            for x in correlated_kineto_events
+            if x.device_type() == DeviceType.CUDA and x.name() == node.event.name
         )
         return next(iterator, None)
 
@@ -213,7 +241,7 @@ class LayerwiseProfileResults(profile):
         return sum([self._cumulative_cuda_time(root) for root in self._module_tree])
 
     def _build_stats_trees(self):
-        summary_dict: dict[str, _StatsTreeNode] = {}
+        summary_dict: dict[tuple[str, ...], _StatsTreeNode[SummaryStatsEntry]] = {}
         total_cuda_time = self._total_cuda_time()
 
         def pct_cuda_time(cuda_time_us):
@@ -221,9 +249,9 @@ class LayerwiseProfileResults(profile):
 
         def build_summary_stats_tree_df(
             node: _ModuleTreeNode,
-            parent: _StatsTreeNode | None = None,
-            summary_trace: tuple[str] = (),
-        ):
+            parent: _StatsTreeNode[SummaryStatsEntry] | None = None,
+            summary_trace: tuple[str, ...] = (),
+        ) -> _StatsTreeNode[SummaryStatsEntry] | None:
             if event_has_module(node.event):
                 name = event_module_repr(node.event)
                 cuda_time_us = self._cumulative_cuda_time(node)
@@ -247,7 +275,6 @@ class LayerwiseProfileResults(profile):
                         pct_cuda_time=pct_cuda_time(cuda_time_us),
                         invocations=1,
                     ),
-                    children=[],
                     parent=parent,
                 )
                 if parent:
@@ -255,15 +282,22 @@ class LayerwiseProfileResults(profile):
                 summary_dict[summary_trace] = new_node
 
             for child in node.children:
-                build_summary_stats_tree_df(child, summary_dict[summary_trace], summary_trace)
+                build_summary_stats_tree_df(
+                    child, summary_dict[summary_trace], summary_trace
+                )
 
             return summary_dict[summary_trace]
 
         self._summary_stats_tree = []
         for root in self._module_tree:
-            self._summary_stats_tree.append(build_summary_stats_tree_df(root))
+            summary_node = build_summary_stats_tree_df(root)
+            if summary_node is not None:
+                self._summary_stats_tree.append(summary_node)
 
-        def build_model_stats_tree_df(node: _ModuleTreeNode, parent: _StatsTreeNode | None = None):
+        def build_model_stats_tree_df(
+            node: _ModuleTreeNode,
+            parent: _StatsTreeNode[ModelStatsEntry] | None = None,
+        ) -> _StatsTreeNode[ModelStatsEntry] | None:
             if event_has_module(
                 node.event,
             ):
@@ -288,7 +322,6 @@ class LayerwiseProfileResults(profile):
                     trace=trace,
                 ),
                 parent=parent,
-                children=[],
             )
             if parent:
                 parent.children.append(new_node)
@@ -300,12 +333,16 @@ class LayerwiseProfileResults(profile):
 
         self._model_stats_tree = []
         for root in self._module_tree:
-            self._model_stats_tree.append(build_model_stats_tree_df(root))
+            model_node = build_model_stats_tree_df(root)
+            if model_node is not None:
+                self._model_stats_tree.append(model_node)
 
-    def _flatten_stats_tree(self, tree: list[_StatsTreeNode]) -> list[tuple[int, StatsEntry]]:
-        entries: list[tuple[int, StatsEntry]] = []
+    def _flatten_stats_tree(
+        self, tree: list[_StatsTreeNode[StatsEntryT]]
+    ) -> list[tuple[int, StatsEntryT]]:
+        entries: list[tuple[int, StatsEntryT]] = []
 
-        def df_traversal(node: _StatsTreeNode, depth=0):
+        def df_traversal(node: _StatsTreeNode[StatsEntryT], depth: int = 0):
             entries.append((depth, node.entry))
             for child in node.children:
                 df_traversal(child, depth=depth + 1)
@@ -315,10 +352,14 @@ class LayerwiseProfileResults(profile):
 
         return entries
 
-    def _convert_stats_tree_to_dict(self, tree: list[_StatsTreeNode]) -> list[dict]:
-        root_dicts: list[dict] = []
+    def _convert_stats_tree_to_dict(
+        self, tree: list[_StatsTreeNode[StatsEntryT]]
+    ) -> list[dict[str, Any]]:
+        root_dicts: list[dict[str, Any]] = []
 
-        def df_traversal(node: _StatsTreeNode, curr_json_list: list[dict]):
+        def df_traversal(
+            node: _StatsTreeNode[StatsEntryT], curr_json_list: list[dict[str, Any]]
+        ):
             curr_json_list.append({"entry": asdict(node.entry), "children": []})
             for child in node.children:
                 df_traversal(child, curr_json_list[-1]["children"])
@@ -354,4 +395,6 @@ class layerwise_profile(profile):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
-        self.results = LayerwiseProfileResults(self.profiler.kineto_results, num_running_seqs=self.num_running_seqs)
+        self.results = LayerwiseProfileResults(
+            self.profiler.kineto_results, num_running_seqs=self.num_running_seqs
+        )

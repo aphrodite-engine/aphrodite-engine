@@ -534,10 +534,10 @@ if not use_precompiled:
             "true",
         )
         if not disable_flash_attn:
-            ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._vllm_fa2_C"))
+            ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._aphrodite_fa2_C"))
             # Build FA3 when using precompiled artifacts, nvcc >= 12.3, and architecture >= sm_90
             if use_precompiled or get_nvcc_cuda_version() >= Version("12.3"):
-                ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._vllm_fa3_C"))
+                ext_modules.append(CMakeExtension(name="aphrodite_kernels.aphrodite_flash_attn._aphrodite_fa3_C"))
 
         # Build flashmla when using precompiled artifacts or nvcc >= 12.3.
         # Optional since this doesn't get built (produce an .so file) when

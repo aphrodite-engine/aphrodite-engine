@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections import UserDict
 from collections.abc import Callable, Hashable, Iterator, KeysView, Mapping
 from types import MappingProxyType
-from typing import Generic, NamedTuple, TypeVar, cast, overload
+from typing import NamedTuple, TypeVar, cast, overload
 
 import cachetools
 
@@ -46,7 +48,7 @@ class CacheInfo(NamedTuple):
         )
 
 
-class LRUCache(cachetools.LRUCache[_K, _V], Generic[_K, _V]):
+class LRUCache(cachetools.LRUCache[_K, _V]):
     def __init__(self, capacity: float, getsizeof: Callable[[_V], float] | None = None):
         super().__init__(capacity, getsizeof)
 
@@ -195,7 +197,9 @@ class LRUCache(cachetools.LRUCache[_K, _V], Generic[_K, _V]):
                 ALL_PINNED_SENTINEL,
             )
             if lru_key is ALL_PINNED_SENTINEL:
-                raise RuntimeError("All items are pinned, cannot remove oldest from the cache.")
+                raise RuntimeError(
+                    "All items are pinned, cannot remove oldest from the cache."
+                )
         else:
             lru_key = next(iter(self.order))
         value = self.pop(cast(_K, lru_key))

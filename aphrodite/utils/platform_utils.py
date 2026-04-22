@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import multiprocessing
 from collections.abc import Sequence
 from concurrent.futures.process import ProcessPoolExecutor
@@ -21,7 +24,9 @@ def xpu_is_initialized() -> bool:
     return torch.xpu.is_initialized()
 
 
-def cuda_get_device_properties(device, names: Sequence[str], init_cuda=False) -> tuple[Any, ...]:
+def cuda_get_device_properties(
+    device, names: Sequence[str], init_cuda=False
+) -> tuple[Any, ...]:
     """Get specified CUDA device property values without initializing CUDA in
     the current process."""
     if init_cuda or cuda_is_initialized():
@@ -47,3 +52,11 @@ def is_uva_available() -> bool:
     # UVA requires pinned memory.
     # TODO: Add more requirements for UVA if needed.
     return is_pin_memory_available()
+
+
+@cache
+def num_compute_units(device_id: int = 0) -> int:
+    """Get the number of compute units of the current device."""
+    from aphrodite.platforms import current_platform
+
+    return current_platform.num_compute_units(device_id)

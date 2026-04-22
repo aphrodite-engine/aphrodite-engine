@@ -1,6 +1,6 @@
 ARG REMOTE_APHRODITE="0"
 ARG COMMON_WORKDIR=/app
-ARG BASE_IMAGE=rocm/vllm-dev:base
+ARG BASE_IMAGE=rocm/aphrodite-dev:base
 
 FROM ${BASE_IMAGE} AS base
 

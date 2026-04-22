@@ -1,26 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import contextlib
 import enum
 import os
 import platform
-import random
 import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-import numpy as np
 import torch
 
 from aphrodite.logger import init_logger
+from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 
 if TYPE_CHECKING:
     from torch.distributed import PrefixStore, ProcessGroup
 
-    from aphrodite.attention.backends.registry import _Backend
-    from aphrodite.common.pooling_params import PoolingParams
-    from aphrodite.common.sampling_params import SamplingParams
     from aphrodite.config import AphroditeConfig
-    from aphrodite.inputs import ProcessorInputs, PromptType
+    from aphrodite.config.kernel import IrOpPriorityConfig
+    from aphrodite.inputs import EngineInput
+    from aphrodite.pooling_params import PoolingParams
+    from aphrodite.sampling_params import SamplingParams
     from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+    from aphrodite.v1.attention.backend import AttentionBackend
+    from aphrodite.v1.attention.selector import AttentionSelectorConfig
 else:
     FlexibleArgumentParser = object
 
@@ -33,6 +36,8 @@ def in_wsl() -> bool:
 
 
 class PlatformEnum(enum.Enum):
+    """Enumeration of supported hardware platforms."""
+
     CUDA = enum.auto()
     ROCM = enum.auto()
     TPU = enum.auto()
@@ -55,6 +60,31 @@ class CpuArchEnum(enum.Enum):
 class DeviceCapability(NamedTuple):
     major: int
     minor: int
+
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(other, DeviceCapability):
+            return NotImplemented
+        return (self.major, self.minor) < (other.major, other.minor)
+
+    def __le__(self, other: Any) -> bool:
+        if not isinstance(other, DeviceCapability):
+            return NotImplemented
+        return (self.major, self.minor) <= (other.major, other.minor)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, DeviceCapability):
+            return NotImplemented
+        return (self.major, self.minor) == (other.major, other.minor)
+
+    def __ge__(self, other: Any) -> bool:
+        if not isinstance(other, DeviceCapability):
+            return NotImplemented
+        return (self.major, self.minor) >= (other.major, other.minor)
+
+    def __gt__(self, other: Any) -> bool:
+        if not isinstance(other, DeviceCapability):
+            return NotImplemented
+        return (self.major, self.minor) > (other.major, other.minor)
 
     def as_version_str(self) -> str:
         return f"{self.major}.{self.minor}"
@@ -90,6 +120,11 @@ class Platform:
     # https://github.com/ray-project/ray/tree/master/python/ray/_private/accelerators # noqa
     device_control_env_var: str = "APHRODITE_DEVICE_CONTROL_ENV_VAR_PLACEHOLDER"
 
+    # environment variables that need to be set to 1 to prevent ray from
+    # setting the visible devices e.g.
+    # RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES
+    ray_noset_device_env_vars: list[str] = []
+
     # The torch.compile backend for compiling simple and
     # standalone functions. The default value is "inductor" to keep
     # the same behavior as PyTorch.
@@ -105,6 +140,11 @@ class Platform:
     additional_env_vars: list[str] = []
 
     _global_graph_pool: Any | None = None
+
+    @property
+    def pass_key(self) -> str:
+        """Inductor config key for the PassManager custom pass"""
+        return "post_grad_custom_post_pass"
 
     @property
     def supported_dtypes(self) -> list[torch.dtype]:
@@ -129,6 +169,9 @@ class Platform:
     def is_cpu(self) -> bool:
         return self._enum == PlatformEnum.CPU
 
+    def is_zen_cpu(self) -> bool:
+        return False
+
     def is_out_of_tree(self) -> bool:
         return self._enum == PlatformEnum.OOT
 
@@ -143,14 +186,45 @@ class Platform:
         return self._enum in (PlatformEnum.CUDA, PlatformEnum.ROCM)
 
     def is_sleep_mode_available(self) -> bool:
-        return self._enum == PlatformEnum.CUDA
+        # TODO: Actually only mi3xx has the sleep mode support now
+        # for ROCm, but currently we don't have a way to detect the
+        # exact GPU model statelessly here. So we return True for
+        # all ROCm platforms for now.
+        return self._enum in (PlatformEnum.CUDA, PlatformEnum.ROCM)
+
+    @classmethod
+    def get_pass_manager_cls(cls) -> str:
+        """
+        Get the pass manager class for this platform.
+        It will be registered as a custom pass under the current_platform.pass_key.
+        """
+        return "aphrodite.compilation.passes.pass_manager.PostGradPassManager"
+
+    @classmethod
+    def get_compile_backend(cls) -> str:
+        """
+        Get the custom compile backend for current platform.
+        """
+        return cls.simple_compile_backend
+
+    @classmethod
+    def import_ir_kernels(cls) -> None:
+        """
+        The default implementation imports ``aphrodite.kernels``, which registers
+        the built-in IR op implementations. Out-of-tree (OOT) platforms should
+        override this method to import their own kernel modules.
+        """
+        import aphrodite.kernels  # noqa: F401
 
     @classmethod
     def device_id_to_physical_device_id(cls, device_id: int):
         # Treat empty device control env var as unset. This is a valid
         # configuration in Ray setups where the engine is launched in
         # a CPU-only placement group located on a GPU node.
-        if cls.device_control_env_var in os.environ and os.environ[cls.device_control_env_var] != "":
+        if (
+            cls.device_control_env_var in os.environ
+            and os.environ[cls.device_control_env_var] != ""
+        ):
             device_ids = os.environ[cls.device_control_env_var].split(",")
             physical_device_id = device_ids[device_id]
             return int(physical_device_id)
@@ -161,34 +235,58 @@ class Platform:
     def import_kernels(cls) -> None:
         """Import any platform-specific C kernels."""
         try:
-            import aphrodite_kernels._C  # noqa: F401
+            import aphrodite._C  # noqa: F401
         except ImportError as e:
-            logger.warning("Failed to import from aphrodite_kernels._C: %r", e)
+            logger.warning("Failed to import from aphrodite._C: %r", e)
         with contextlib.suppress(ImportError):
-            import aphrodite_kernels._moe_C  # noqa: F401
-
-    @classmethod
-    def get_vit_attn_backend(cls, head_size: int, dtype: torch.dtype) -> "_Backend":
-        # Import _Backend here to avoid circular import.
-        from aphrodite.attention.backends.registry import _Backend
-
-        return _Backend.TORCH_SDPA
+            import aphrodite._moe_C  # noqa: F401
 
     @classmethod
     def get_attn_backend_cls(
         cls,
-        selected_backend: "_Backend",
-        head_size: int,
-        dtype: torch.dtype,
-        kv_cache_dtype: str | None,
-        block_size: int,
-        use_v1: bool,
-        use_mla: bool,
-        has_sink: bool,
-        use_sparse: bool,
+        selected_backend: "AttentionBackendEnum",
+        attn_selector_config: "AttentionSelectorConfig",
+        num_heads: int | None = None,
     ) -> str:
         """Get the attention backend class of a device."""
         return ""
+
+    @classmethod
+    def get_supported_vit_attn_backends(cls) -> list["AttentionBackendEnum"]:
+        return [
+            AttentionBackendEnum.TORCH_SDPA,
+        ]
+
+    @classmethod
+    def get_vit_attn_backend(
+        cls,
+        head_size: int,
+        dtype: torch.dtype,
+        backend: "AttentionBackendEnum | None" = None,
+    ) -> "AttentionBackendEnum":
+        """
+        Get the vision attention backend class of a device.
+
+        NOTE: ViT Attention should be checked and override in the platform-specific
+        implementation. we should not override this in any other places, like
+        the model_executor/models/<model_name>.py.
+
+        We check if the backend is None or not:
+            1. If not, check if the backend is supported by the platform.
+            2. If None, continue to the default selection logic.
+        """
+        if backend is not None:
+            assert backend in cls.get_supported_vit_attn_backends(), (
+                f"Backend {backend} is not supported for vit attention"
+                f"Supported backends are: {cls.get_supported_vit_attn_backends()}"
+            )
+            logger.info_once(f"Using backend {backend} for vit attention")
+            return backend
+
+        logger.info_once(
+            f"Using default backend {AttentionBackendEnum.TORCH_SDPA} for vit attention"
+        )
+        return AttentionBackendEnum.TORCH_SDPA
 
     @classmethod
     def get_device_capability(
@@ -247,6 +345,21 @@ class Platform:
         return current_capability.to_int() == capability
 
     @classmethod
+    def is_device_capability_family(
+        cls,
+        capability: int,
+        device_id: int = 0,
+    ) -> bool:
+        """
+        Returns True if the device capability is any <major>.x.
+        Mirrors CUDA 13 'family' architecture semantics (e.g. 10.x, 11.x, 12.x).
+        """
+        current_capability = cls.get_device_capability(device_id=device_id)
+        if current_capability is None:
+            return False
+        return (current_capability.to_int() // 10) == (capability // 10)
+
+    @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
         """Get the name of a device."""
         raise NotImplementedError
@@ -272,19 +385,6 @@ class Platform:
         return torch.inference_mode(mode=True)
 
     @classmethod
-    def seed_everything(cls, seed: int | None = None) -> None:
-        """
-        Set the seed of each random module.
-        `torch.manual_seed` will set seed on all devices.
-
-        Loosely based on: https://github.com/Lightning-AI/pytorch-lightning/blob/2.4.0/src/lightning/fabric/utilities/seed.py#L20
-        """
-        if seed is not None:
-            random.seed(seed)
-            np.random.seed(seed)
-            torch.manual_seed(seed)
-
-    @classmethod
     def set_device(cls, device: torch.device) -> None:
         """
         Set the device for the current platform.
@@ -292,7 +392,14 @@ class Platform:
         raise NotImplementedError
 
     @classmethod
-    def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
+    def manual_seed_all(cls, seed: int) -> None:
+        """Set RNG seed across all devices for the current platform."""
+        raise NotImplementedError
+
+    @classmethod
+    def pre_register_and_update(
+        cls, parser: FlexibleArgumentParser | None = None
+    ) -> None:
         """
         Do some pre-registration or update action for the current platform.
 
@@ -302,6 +409,20 @@ class Platform:
 
         For example, the out-of-tree quantization config can be imported and
         registered here dynamically.
+        """
+        pass
+
+    @classmethod
+    def apply_config_platform_defaults(cls, aphrodite_config: "AphroditeConfig") -> None:
+        """
+        Apply the platform-specific default values to the config.
+
+        This function is called during the initialization of global AphroditeConfig, after
+        parsing cli arguments.
+        It can modify the defaults of the config according to the platform. For example,
+        it can enable custom_ops based on the enabled features.
+
+        The config is passed by reference, so it can be modified in place.
         """
         pass
 
@@ -317,6 +438,201 @@ class Platform:
         The config is passed by reference, so it can be modified in place.
         """
         pass
+
+    @classmethod
+    def _find_non_ssm_backend(
+        cls, aphrodite_config: "AphroditeConfig"
+    ) -> "type[AttentionBackend] | None":
+        """Find the first non-SSM attention backend from model layers."""
+        from aphrodite.config.aphrodite import get_layers_from_aphrodite_config
+        from aphrodite.model_executor.layers.attention_layer_base import (
+            AttentionLayerBase,
+        )
+
+        attn_layers = get_layers_from_aphrodite_config(
+            aphrodite_config,
+            AttentionLayerBase,  # type: ignore[type-abstract]
+        )
+        for layer in attn_layers.values():
+            b = layer.get_attn_backend()
+            if not b.is_ssm():
+                return b
+        return None
+
+    @classmethod
+    def update_block_size_for_backend(cls, aphrodite_config: "AphroditeConfig") -> None:
+        """
+        Ensure block_size is compatible with the attention backend.
+        For hybrid models, also aligns block_size with mamba page sizes.
+        """
+        from aphrodite.config.cache import CacheConfig
+        from aphrodite.config.aphrodite import set_current_aphrodite_config
+
+        cache_config = aphrodite_config.cache_config
+        model_config = aphrodite_config.model_config
+
+        # model_config may be None during testing.
+        if not model_config:
+            return
+
+        backend_cls = cls._find_non_ssm_backend(aphrodite_config)
+        if backend_cls is None:
+            return
+
+        # Phase 1: Pick block size from backend (skip if user set --block-size)
+        if not cache_config.user_specified_block_size:
+            with set_current_aphrodite_config(aphrodite_config):
+                preferred = backend_cls.get_preferred_block_size(
+                    CacheConfig.DEFAULT_BLOCK_SIZE
+                )
+            if preferred != CacheConfig.DEFAULT_BLOCK_SIZE:
+                logger.info(
+                    "Setting kv cache block size to %d for %s backend.",
+                    preferred,
+                    backend_cls.get_name(),
+                )
+            cache_config.block_size = preferred
+
+        # Phase 2: Align block/mamba sizes for hybrid models
+        # (may override user settings).
+        if model_config.is_hybrid:
+            cls._align_hybrid_block_size(aphrodite_config, backend_cls)
+
+    @classmethod
+    def _align_hybrid_block_size(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+        backend_cls: "type[AttentionBackend]",
+    ) -> None:
+        """
+        For hybrid attention/mamba models, ensure that the attention page
+        size is >= the mamba page size, and pad the mamba page size to match.
+        """
+        from math import lcm
+
+        from aphrodite.config.aphrodite import set_current_aphrodite_config
+        from aphrodite.model_executor.models import ModelRegistry
+        from aphrodite.utils.math_utils import cdiv
+        from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
+        from aphrodite.v1.attention.backend import MultipleOf
+        from aphrodite.v1.kv_cache_interface import (
+            FullAttentionSpec,
+            MambaSpec,
+            MLAAttentionSpec,
+            get_kv_quant_mode,
+        )
+
+        cache_config = aphrodite_config.cache_config
+        model_config = aphrodite_config.model_config
+        parallel_config = aphrodite_config.parallel_config
+
+        if cache_config.cache_dtype == "auto":
+            kv_cache_dtype = model_config.dtype
+        else:
+            kv_cache_dtype = STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
+
+        kv_quant_mode = get_kv_quant_mode(cache_config.cache_dtype)
+
+        # Compute attention page size for 1 token
+        if model_config.use_mla:
+            attn_page_size_1_token = MLAAttentionSpec(
+                block_size=1,
+                num_kv_heads=model_config.get_num_kv_heads(parallel_config),
+                head_size=model_config.get_head_size(),
+                dtype=kv_cache_dtype,
+                kv_quant_mode=kv_quant_mode,
+            ).page_size_bytes
+        else:
+            attn_page_size_1_token = FullAttentionSpec(
+                block_size=1,
+                num_kv_heads=model_config.get_num_kv_heads(parallel_config),
+                head_size=model_config.get_head_size(),
+                dtype=kv_cache_dtype,
+                kv_quant_mode=kv_quant_mode,
+            ).page_size_bytes
+
+        # Compute mamba page size
+        model_cls, _ = ModelRegistry.resolve_model_cls(
+            model_config.architecture,
+            model_config=model_config,
+        )
+        mamba_page_size = MambaSpec(
+            shapes=model_cls.get_mamba_state_shape_from_config(aphrodite_config),
+            dtypes=model_cls.get_mamba_state_dtype_from_config(aphrodite_config),
+            block_size=-1,
+        ).page_size_bytes
+
+        if mamba_page_size == 0:
+            return
+
+        # mamba_block_size here should either be user specified value or None
+        mamba_block_size = (
+            cache_config.mamba_block_size
+            if cache_config.user_specified_mamba_block_size
+            else None
+        )
+
+        # Get kernel block alignment from the backend's supported sizes
+        with set_current_aphrodite_config(aphrodite_config):
+            kernel_block_alignment_size = max(
+                min(
+                    s.base if isinstance(s, MultipleOf) else s
+                    for s in backend_cls.get_supported_kernel_block_sizes()
+                ),
+                cache_config.block_size,
+            )
+
+        if cache_config.mamba_cache_mode == "all":
+            # With prefix caching, align to mamba chunk size for kernel perf
+            # TODO(tdoublep): this constraint can be relaxed fairly
+            # easily by changing the way we layout chunks in the
+            # mamba2 kernels.
+            base_chunk_size = mamba_block_size or model_config.get_mamba_chunk_size()
+            assert base_chunk_size is not None
+            attn_tokens_per_mamba_state = cdiv(mamba_page_size, attn_page_size_1_token)
+            chunk_size = lcm(base_chunk_size, kernel_block_alignment_size)
+            attn_block_size = chunk_size * cdiv(attn_tokens_per_mamba_state, chunk_size)
+            cache_config.mamba_block_size = attn_block_size
+        else:
+            # Without prefix caching, use minimum block size that satisfies
+            # both backend alignment and mamba page size compatibility
+            attn_block_size = kernel_block_alignment_size * cdiv(
+                mamba_page_size,
+                kernel_block_alignment_size * attn_page_size_1_token,
+            )
+
+        if cache_config.block_size < attn_block_size:
+            cache_config.block_size = attn_block_size
+            logger.info(
+                "Setting attention block size to %d tokens "
+                "to ensure that attention page size is >= mamba page size.",
+                attn_block_size,
+            )
+
+        if cache_config.mamba_cache_mode == "align":
+            cache_config.mamba_block_size = cache_config.block_size
+
+        # Pad mamba page size to exactly match attention page size
+        attn_page_size = cache_config.block_size * attn_page_size_1_token
+        assert attn_page_size >= mamba_page_size
+
+        if attn_page_size == mamba_page_size:
+            return
+
+        if (
+            cache_config.mamba_page_size_padded is None
+            or cache_config.mamba_page_size_padded != attn_page_size
+        ):
+            cache_config.mamba_page_size_padded = attn_page_size
+            mamba_padding_pct = (
+                100 * (attn_page_size - mamba_page_size) / mamba_page_size
+            )
+            logger.info(
+                "Padding mamba page size by %.2f%% to ensure "
+                "that mamba page size and attention page size are "
+                "exactly equal.",
+                mamba_padding_pct,
+            )
 
     @classmethod
     def verify_model_arch(cls, model_arch: str) -> None:
@@ -336,7 +652,9 @@ class Platform:
         Verify whether the quantization is supported by the current platform.
         """
         if cls.supported_quantization and quant not in cls.supported_quantization:
-            raise ValueError(f"{quant} quantization is currently not supported in {cls.device_name}.")
+            raise ValueError(
+                f"{quant} quantization is currently not supported in {cls.device_name}."
+            )
 
     @classmethod
     def get_cpu_architecture(cls) -> CpuArchEnum:
@@ -365,12 +683,17 @@ class Platform:
         if in_wsl():
             # Pinning memory in WSL is not supported.
             # https://docs.nvidia.com/cuda/wsl-user-guide/index.html#known-limitations-for-linux-cuda-applications
-            logger.warning("Using 'pin_memory=False' as WSL is detected. This may slow down the performance.")
+            logger.warning(
+                "Using 'pin_memory=False' as WSL is detected. "
+                "This may slow down the performance."
+            )
             return False
         return True
 
     @classmethod
-    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
+    def get_current_memory_usage(
+        cls, device: torch.types.Device | None = None
+    ) -> float:
         """
         Return the memory usage in bytes.
         """
@@ -410,6 +733,18 @@ class Platform:
         Get device specific communicator class for distributed communication.
         """
         return "aphrodite.distributed.device_communicators.base_device_communicator.DeviceCommunicatorBase"  # noqa
+
+    @classmethod
+    def is_integrated_gpu(cls, device_id: int = 0) -> bool:
+        """
+        Returns whether the GPU is an integrated (UMA) device that shares
+        system memory with the CPU.
+
+        On UMA systems (e.g. NVIDIA GH200, DGX Spark, Jetson Orin),
+        cudaMemGetInfo may underreport free memory because it does not
+        account for reclaimable OS memory (page cache, buffers).
+        """
+        return False
 
     @classmethod
     def supports_mx(cls) -> bool:
@@ -473,18 +808,31 @@ class Platform:
     @classmethod
     def validate_request(
         cls,
-        prompt: "PromptType",
+        processed_inputs: "EngineInput",
         params: "SamplingParams | PoolingParams",
-        processed_inputs: "ProcessorInputs",
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
     def __getattr__(self, key: str):
+        # Pickle checks dunder methods like __getstate__. If we return None
+        # for them, pickle treats it like a real value and tries to call it.
+        if key.startswith("__") and key.endswith("__"):
+            raise AttributeError(key)
+
         device = getattr(torch, self.device_type, None)
         if device is not None and hasattr(device, key):
-            return getattr(device, key)
-        else:
-            return None
+            attr = getattr(device, key)
+            # NOTE: `hasattr(device, key)=True` can only avoid AttributeError,
+            # but the value of this attr could be `None`.
+            if attr is not None:
+                return attr
+
+        logger.warning(
+            "Current platform %s does not have '%s' attribute.",
+            self.device_type,
+            key,
+        )
+        return None
 
     def get_global_graph_pool(self) -> Any:
         """
@@ -494,13 +842,6 @@ class Platform:
         if cls._global_graph_pool is None:
             cls._global_graph_pool = self.graph_pool_handle()
         return cls._global_graph_pool
-
-    @classmethod
-    def get_cu_count(cls, device_id: int = 0) -> int:
-        """
-        Returns the total number of compute units (CU) on single GPU.
-        """
-        raise NotImplementedError
 
     @classmethod
     def get_static_graph_wrapper_cls(cls) -> str:
@@ -541,6 +882,22 @@ class Platform:
     def support_static_graph_mode(cls) -> bool:
         """
         Returns if the graph mode is supported by the current platform.
+        """
+        return False
+
+    @classmethod
+    def support_deep_gemm(cls) -> bool:
+        """
+        Returns if DeepGEMM is supported by the current platform.
+        """
+        return False
+
+    @classmethod
+    def use_custom_op_collectives(cls) -> bool:
+        """
+        Whether this platform should use torch.ops.aphrodite.* custom ops for collectives.
+
+        Returns False by default - platforms must explicitly opt-in.
         """
         return False
 
@@ -588,6 +945,33 @@ class Platform:
         Check max_model_len for the current platform.
         """
         return max_model_len
+
+    @classmethod
+    def set_additional_forward_context(cls, *args, **kwargs) -> dict[str, Any]:
+        """
+        Set some additional forward context for the current platform if needs.
+        """
+        return {}
+
+    @classmethod
+    def num_compute_units(cls, device_id: int = 0) -> int:
+        """
+        Get the number of compute units for the current platform.
+        (NVIDIA SM / AMD CU / Intel EU)
+        """
+        raise NotImplementedError(
+            "num_compute_units is not implemented for the current platform."
+        )
+
+    @classmethod
+    def get_default_ir_op_priority(
+        cls, aphrodite_config: "AphroditeConfig"
+    ) -> "IrOpPriorityConfig":
+        """Get the default IR op priority for the current platform."""
+        from aphrodite.config.kernel import IrOpPriorityConfig
+
+        # Native always used by default. Platforms can override this behavior.
+        return IrOpPriorityConfig.with_default(["native"])
 
 
 class UnspecifiedPlatform(Platform):

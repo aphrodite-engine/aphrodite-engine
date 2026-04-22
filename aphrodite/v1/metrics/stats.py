@@ -1,13 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import time
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import aphrodite.envs as envs
+from aphrodite.compilation.cuda_graph import CUDAGraphStat
+from aphrodite.v1.metrics.perf import PerfStats
 from aphrodite.v1.spec_decode.metrics import SpecDecodingStats
 
 if TYPE_CHECKING:
     from aphrodite.v1.engine import EngineCoreEvent, EngineCoreOutput, FinishReason
-    from aphrodite.v1.engine.output_processor import RequestState
 
 
 @dataclass
@@ -77,7 +82,10 @@ class CachingMetrics:
         # Remove the oldest stats until number of requests does not exceed
         # the limit.
         # NOTE: We preserve the latest added stats regardless.
-        while len(self.query_queue) > 1 and self.aggregated_requests > self.max_recent_requests:
+        while (
+            len(self.query_queue) > 1
+            and self.aggregated_requests > self.max_recent_requests
+        ):
             old_requests, old_queries, old_hits = self.query_queue.popleft()
             self.aggregated_requests -= old_requests
             self.aggregated_query_total -= old_queries
@@ -143,13 +151,30 @@ class MultiModalCacheStats(BaseCacheStats):
       that were queried.
     """
 
+    def record(self, num_queries: int, num_hits: int) -> None:
+        """Aggregate request information into the stats."""
+        self.requests += 1
+        self.queries += num_queries
+        self.hits += num_hits
+
+
+@dataclass
+class KVCacheEvictionEvent:
+    """Single KV cache block eviction sample."""
+
+    lifetime_seconds: float
+    idle_seconds: float
+    reuse_gaps_seconds: tuple[float, ...]
+
 
 @dataclass
 class SchedulerStats:
     """Stats associated with the scheduler."""
 
     num_running_reqs: int = 0
-    num_waiting_reqs: int = 0
+
+    num_waiting_reqs: int = 0  # length of the "waiting" request queue
+    num_skipped_waiting_reqs: int = 0  # length of the "skipped waiting" queue
 
     # These are used for internal DP load-balancing.
     step_counter: int = 0
@@ -160,16 +185,17 @@ class SchedulerStats:
     prefix_cache_stats: PrefixCacheStats = field(default_factory=PrefixCacheStats)
     connector_prefix_cache_stats: PrefixCacheStats | None = None
 
+    kv_cache_eviction_events: list[KVCacheEvictionEvent] = field(default_factory=list)
+
     spec_decoding_stats: SpecDecodingStats | None = None
     kv_connector_stats: dict[str, Any] | None = None
 
-    num_corrupted_reqs: int = 0
+    waiting_lora_adapters: dict[str, int] = field(default_factory=dict)
+    running_lora_adapters: dict[str, int] = field(default_factory=dict)
 
+    cudagraph_stats: CUDAGraphStat | None = None
 
-@dataclass
-class LoRAStats:
-    waiting_requests: set[str] = field(default_factory=set)
-    running_requests: set[str] = field(default_factory=set)
+    perf_stats: PerfStats | None = None
 
 
 @dataclass
@@ -190,12 +216,16 @@ class RequestStateStats:
     # first token latency
     first_token_latency: float = 0.0
 
+    # Track if this request is corrupted (NaNs in logits)
+    is_corrupted: bool = False
+
 
 @dataclass
 class FinishedRequestStats:
     """Stats associated with a finished request."""
 
     finish_reason: "FinishReason"
+    request_id: str | None = None
     e2e_latency: float = 0.0
     num_prompt_tokens: int = 0
     num_generation_tokens: int = 0
@@ -205,7 +235,91 @@ class FinishedRequestStats:
     inference_time: float = 0.0
     decode_time: float = 0.0
     mean_time_per_output_token: float = 0.0
+    is_corrupted: bool = False
     num_cached_tokens: int = 0
+
+
+@dataclass
+class PrefillStats:
+    """Breakdown of a scheduled prefill computation.
+
+    Fields:
+        num_prompt_tokens: Total number of tokens to be prefilled.
+        num_computed_tokens: Tokens to be prefilled locally (actual compute work).
+        num_cached_tokens: Tokens to be prefilled without actual compute work.
+        num_local_cached_tokens: Tokens to be prefilled from local prefix cache.
+        num_external_cached_tokens: Tokens to be prefilled from external KV transfer.
+    """
+
+    num_prompt_tokens: int = 0
+    num_computed_tokens: int = 0
+    num_cached_tokens: int = 0
+    num_local_cached_tokens: int = 0
+    num_external_cached_tokens: int = 0
+
+    def set(
+        self,
+        num_prompt_tokens: int,
+        num_local_cached_tokens: int,
+        num_external_cached_tokens: int,
+    ):
+        num_cached_tokens = num_local_cached_tokens + num_external_cached_tokens
+        assert num_cached_tokens <= num_prompt_tokens
+
+        self.num_prompt_tokens = num_prompt_tokens
+        self.num_computed_tokens = num_prompt_tokens - num_cached_tokens
+        self.num_cached_tokens = num_cached_tokens
+        self.num_local_cached_tokens = num_local_cached_tokens
+        self.num_external_cached_tokens = num_external_cached_tokens
+
+
+@dataclass
+class PromptTokenStats:
+    """Breakdown of prompt tokens by source.
+
+    Fields:
+        computed: Tokens prefilled locally (actual compute work).
+        local_cache_hit: Tokens from local prefix cache.
+        external_kv_transfer: Tokens from external KV transfer.
+        cached_tokens: Tokens skipped during prefill (from scheduler).
+        total: Total prompt tokens.
+
+    Invariants:
+        computed + local_cache_hit + external_kv_transfer = total
+        local_cache_hit + external_kv_transfer = cached_tokens
+    """
+
+    ALL_SOURCES: tuple[str, ...] = (
+        "local_compute",
+        "local_cache_hit",
+        "external_kv_transfer",
+    )
+
+    computed: int = 0
+    local_cache_hit: int = 0
+    external_kv_transfer: int = 0
+    cached_tokens: int = 0
+    total: int = 0
+
+    def update_from_output(self, prefill_stats: PrefillStats) -> None:
+        """Update stats from a prefill output."""
+        self.computed += prefill_stats.num_computed_tokens
+        self.cached_tokens += prefill_stats.num_cached_tokens
+        self.total += prefill_stats.num_prompt_tokens
+
+        self.local_cache_hit += prefill_stats.num_local_cached_tokens
+        self.external_kv_transfer += prefill_stats.num_external_cached_tokens
+
+    def get_by_source(self, source: str) -> int:
+        """Get token count by source label."""
+        source_map = {
+            "local_compute": self.computed,
+            "local_cache_hit": self.local_cache_hit,
+            "external_kv_transfer": self.external_kv_transfer,
+        }
+        if source not in source_map:
+            raise ValueError(f"Unknown source: {source}")
+        return source_map[source]
 
 
 class IterationStats:
@@ -214,19 +328,23 @@ class IterationStats:
     def __init__(self):
         self.iteration_timestamp = time.time()
         self.num_generation_tokens = 0
-        self.num_prompt_tokens = 0
+        self.prompt_token_stats = PromptTokenStats()
         self.num_preempted_reqs = 0
         self.finished_requests: list[FinishedRequestStats] = []
         self.max_num_generation_tokens_iter: list[int] = []
         self.n_params_iter: list[int] = []
         self.time_to_first_tokens_iter: list[float] = []
         self.inter_token_latencies_iter: list[float] = []
-        self.waiting_lora_adapters: dict[str, int] = {}
-        self.running_lora_adapters: dict[str, int] = {}
+        self.num_corrupted_reqs: int = 0
 
     def __repr__(self) -> str:
         field_to_value_str = ", ".join(f"{k}={v}" for k, v in vars(self).items())
         return f"{self.__class__.__name__}({field_to_value_str})"
+
+    @property
+    def num_prompt_tokens(self) -> int:
+        """Total prompt tokens (for backward compatibility)."""
+        return self.prompt_token_stats.total
 
     def _time_since(self, start: float) -> float:
         """Calculate an interval relative to this iteration's timestamp."""
@@ -237,15 +355,16 @@ class IterationStats:
         output: "EngineCoreOutput",
         engine_core_timestamp: float,
         is_prefilling: bool,
-        prompt_len: int,
         req_stats: RequestStateStats,
-        lora_stats: LoRAStats | None,
+        lora_states: "LoRARequestStates",
+        lora_name: str | None,
     ):
         num_new_generation_tokens = len(output.new_token_ids)
 
         self.num_generation_tokens += num_new_generation_tokens
         if is_prefilling:
-            self.num_prompt_tokens += prompt_len
+            if output.prefill_stats is not None:
+                self.prompt_token_stats.update_from_output(output.prefill_stats)
 
             first_token_latency = self._time_since(req_stats.arrival_time)
             self.time_to_first_tokens_iter.append(first_token_latency)
@@ -253,9 +372,25 @@ class IterationStats:
 
         req_stats.num_generation_tokens += num_new_generation_tokens
 
+        # Track if this request is corrupted (only check once per request)
+        # Early exit if already marked as corrupted to avoid redundant checks
+        if (
+            envs.APHRODITE_COMPUTE_NANS_IN_LOGITS
+            and not req_stats.is_corrupted
+            and output.num_nans_in_logits > 0
+        ):
+            req_stats.is_corrupted = True
+
         # Process request-level engine core events
         if output.events is not None:
-            self.update_from_events(output.request_id, output.events, is_prefilling, req_stats, lora_stats)
+            self.update_from_events(
+                output.request_id,
+                output.events,
+                is_prefilling,
+                req_stats,
+                lora_states,
+                lora_name,
+            )
 
         # Process the batch-level "new tokens" engine core event
         if is_prefilling:
@@ -272,7 +407,8 @@ class IterationStats:
         events: list["EngineCoreEvent"],
         is_prefilling: bool,
         req_stats: RequestStateStats,
-        lora_stats: LoRAStats | None,
+        lora_states: "LoRARequestStates",
+        lora_name: str | None,
     ):
         # Avoid circular dependency
         from aphrodite.v1.engine import EngineCoreEventType
@@ -280,19 +416,19 @@ class IterationStats:
         for event in events:
             if event.type == EngineCoreEventType.QUEUED:
                 req_stats.queued_ts = event.timestamp
-                if lora_stats is not None:
-                    lora_stats.waiting_requests.add(req_id)
+                lora_states.request_waiting(req_id, lora_name)
             elif event.type == EngineCoreEventType.SCHEDULED:
                 if req_stats.scheduled_ts == 0.0:  # ignore preemptions
                     req_stats.scheduled_ts = event.timestamp
-                LoRARequestStates.scheduled_request(lora_stats, req_id)
+                lora_states.request_running(req_id, lora_name)
             elif event.type == EngineCoreEventType.PREEMPTED:
                 self.num_preempted_reqs += 1
-                LoRARequestStates.preempted_request(lora_stats, req_id)
+                lora_states.request_waiting(req_id, lora_name)
 
     def update_from_finished_request(
         self,
         finish_reason: "FinishReason",
+        request_id: str,
         num_prompt_tokens: int,
         max_tokens_param: int | None,
         req_stats: RequestStateStats,
@@ -317,11 +453,14 @@ class IterationStats:
 
         # Do not count the token generated by the prefill phase
         mean_time_per_output_token = (
-            decode_time / (req_stats.num_generation_tokens - 1) if req_stats.num_generation_tokens - 1 > 0 else 0
+            decode_time / (req_stats.num_generation_tokens - 1)
+            if req_stats.num_generation_tokens - 1 > 0
+            else 0
         )
 
         finished_req = FinishedRequestStats(
             finish_reason=finish_reason,
+            request_id=request_id,
             e2e_latency=e2e_latency,
             num_prompt_tokens=num_prompt_tokens,
             num_generation_tokens=req_stats.num_generation_tokens,
@@ -331,62 +470,70 @@ class IterationStats:
             inference_time=inference_time,
             decode_time=decode_time,
             mean_time_per_output_token=mean_time_per_output_token,
+            is_corrupted=req_stats.is_corrupted,
             num_cached_tokens=num_cached_tokens,
         )
         self.finished_requests.append(finished_req)
 
+        # Count corrupted requests when they finish (only once per request)
+        if req_stats.is_corrupted:
+            self.num_corrupted_reqs += 1
 
-class LoRARequestStates:
-    """Per-LoRA request state stats."""
+
+class LoRAStats:
+    """Tracks waiting and running request IDs for a single LoRA."""
 
     def __init__(self):
-        self.lora_name_to_stats: dict[str, LoRAStats] = {}
+        self.waiting: set[str] = set()
+        self.running: set[str] = set()
 
-    def get_stats(self, req_state: "RequestState") -> LoRAStats | None:
-        if req_state.lora_name is None:
-            return None
-        if req_state.lora_name not in self.lora_name_to_stats:
-            self.lora_name_to_stats[req_state.lora_name] = LoRAStats()
-        return self.lora_name_to_stats[req_state.lora_name]
+    def update(self, req_id: str, waiting: bool, running: bool):
+        assert not (waiting and running)
+        if waiting:
+            self.waiting.add(req_id)
+        else:
+            self.waiting.discard(req_id)
 
-    def add_request(self, req_state: "RequestState"):
-        if (lora_stats := self.get_stats(req_state)) is not None:
-            lora_stats.waiting_requests.add(req_state.request_id)
+        if running:
+            self.running.add(req_id)
+        else:
+            self.running.discard(req_id)
 
-    def finish_request(self, req_state: "RequestState"):
-        if req_state.lora_name is None:
+    @property
+    def empty(self) -> bool:
+        return not (self.waiting or self.running)
+
+
+class LoRARequestStates:
+    """A per-LoRA count of running and waiting requests."""
+
+    def __init__(self, log_stats: bool = False):
+        self.log_stats = log_stats
+        self.requests: defaultdict[str, LoRAStats] = defaultdict(LoRAStats)
+
+    def _request_update(
+        self, req_id: str, lora_name: str | None, waiting: bool, running: bool
+    ):
+        if not self.log_stats or lora_name is None:
             return
-        lora_stats = self.lora_name_to_stats[req_state.lora_name]
-        lora_stats.running_requests.remove(req_state.request_id)
 
-    def abort_request(self, req_state: "RequestState"):
-        if req_state.lora_name is None:
-            return
-        lora_stats = self.lora_name_to_stats[req_state.lora_name]
-        lora_stats.waiting_requests.discard(req_state.request_id)
-        lora_stats.running_requests.discard(req_state.request_id)
+        lora_stats = self.requests[lora_name]
+        lora_stats.update(req_id, waiting, running)
+        if lora_stats.empty:
+            del self.requests[lora_name]
 
-    # Break the pattern for this lifecycle methods so we can
-    # call this from IterationStats.update_from_events()
-    @staticmethod
-    def scheduled_request(lora_stats: LoRAStats | None, request_id: str):
-        if lora_stats is None:
-            return
-        lora_stats.waiting_requests.remove(request_id)
-        lora_stats.running_requests.add(request_id)
+    def request_waiting(self, req_id: str, lora_name: str | None):
+        self._request_update(req_id, lora_name, waiting=True, running=False)
 
-    @staticmethod
-    def preempted_request(lora_stats: LoRAStats | None, request_id: str):
-        if lora_stats is None:
-            return
-        lora_stats.running_requests.remove(request_id)
-        lora_stats.waiting_requests.add(request_id)
+    def request_running(self, req_id: str, lora_name: str | None):
+        self._request_update(req_id, lora_name, waiting=False, running=True)
 
-    def update_iteration_stats(self, iteration_stats: IterationStats | None):
-        if iteration_stats is None:
+    def request_finished(self, req_id: str, lora_name: str | None):
+        self._request_update(req_id, lora_name, waiting=False, running=False)
+
+    def update_scheduler_stats(self, scheduler_stats: SchedulerStats | None):
+        if not self.log_stats or scheduler_stats is None:
             return
-        for lora_name, stats in self.lora_name_to_stats.items():
-            if stats.waiting_requests:
-                iteration_stats.waiting_lora_adapters[lora_name] = len(stats.waiting_requests)
-            if stats.running_requests:
-                iteration_stats.running_lora_adapters[lora_name] = len(stats.running_requests)
+        for lora_name, stats in self.requests.items():
+            scheduler_stats.waiting_lora_adapters[lora_name] = len(stats.waiting)
+            scheduler_stats.running_lora_adapters[lora_name] = len(stats.running)

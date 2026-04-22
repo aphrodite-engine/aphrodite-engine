@@ -1,18 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 
-from aphrodite.endpoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG
+from aphrodite.entrypoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG
 
 from .plot import SweepPlotArgs
 from .plot import main as plot_main
+from .plot_pareto import SweepPlotParetoArgs
+from .plot_pareto import main as plot_pareto_main
 from .serve import SweepServeArgs
 from .serve import main as serve_main
-from .serve_sla import SweepServeSLAArgs
-from .serve_sla import main as serve_sla_main
+from .serve_workload import SweepServeWorkloadArgs
+from .serve_workload import main as serve_workload_main
+from .startup import SweepStartupArgs
+from .startup import main as startup_main
 
 SUBCOMMANDS = (
     (SweepServeArgs, serve_main),
-    (SweepServeSLAArgs, serve_sla_main),
+    (SweepServeWorkloadArgs, serve_workload_main),
+    (SweepStartupArgs, startup_main),
     (SweepPlotArgs, plot_main),
+    (SweepPlotParetoArgs, plot_pareto_main),
 )
 
 
@@ -27,7 +35,9 @@ def add_cli_args(parser: argparse.ArgumentParser):
         )
         cmd_subparser.set_defaults(dispatch_function=entrypoint)
         cmd.add_cli_args(cmd_subparser)
-        cmd_subparser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd=f"sweep {cmd.parser_name}")
+        cmd_subparser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(
+            subcmd=f"sweep {cmd.parser_name}"
+        )
 
 
 def main(args: argparse.Namespace):

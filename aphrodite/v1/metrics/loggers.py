@@ -1,24 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import logging
 import queue
 import threading
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import TypeAlias
 
 from prometheus_client import Counter, Gauge, Histogram
 
 import aphrodite.envs as envs
-from aphrodite.config import AphroditeConfig, SupportsMetricsInfo
-from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorLogging, KVConnectorPrometheus
+from aphrodite.compilation.cuda_graph import CUDAGraphLogging
+from aphrodite.config import SupportsMetricsInfo, AphroditeConfig
+from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
+    KVConnectorLogging,
+    KVConnectorProm,
+)
 from aphrodite.logger import init_logger
-from aphrodite.plugins import load_plugins_by_group
+from aphrodite.plugins import STAT_LOGGER_PLUGINS_GROUP, load_plugins_by_group
 from aphrodite.v1.engine import FinishReason
+from aphrodite.v1.metrics.perf import PerfMetricsLogging, PerfMetricsProm
 from aphrodite.v1.metrics.prometheus import unregister_aphrodite_metrics
-from aphrodite.v1.metrics.stats import CachingMetrics, IterationStats, MultiModalCacheStats, SchedulerStats
+from aphrodite.v1.metrics.stats import (
+    CachingMetrics,
+    IterationStats,
+    MultiModalCacheStats,
+    PromptTokenStats,
+    SchedulerStats,
+)
+from aphrodite.v1.metrics.utils import create_metric_per_engine
 from aphrodite.v1.spec_decode.metrics import SpecDecodingLogging, SpecDecodingProm
 
 logger = init_logger(__name__)
+
+# User-facing reason labels for waiting request breakdown
+WAITING_REASON_CAPACITY = "capacity"
+WAITING_REASON_DEFERRED = "deferred"
 
 PerEngineStatLoggerFactory = Callable[[AphroditeConfig, int], "StatLoggerBase"]
 AggregateStatLoggerFactory = type["AggregateStatLoggerBase"]
@@ -58,9 +76,14 @@ class StatLoggerBase(ABC):
 def load_stat_logger_plugin_factories() -> list[StatLoggerFactory]:
     factories: list[StatLoggerFactory] = []
 
-    for name, plugin_class in load_plugins_by_group("aphrodite.stat_logger_plugins").items():
-        if not isinstance(plugin_class, type) or not issubclass(plugin_class, StatLoggerBase):
-            raise TypeError(f"Stat logger plugin {name!r} must be a subclass of StatLoggerBase (got {plugin_class!r}).")
+    for name, plugin_class in load_plugins_by_group(STAT_LOGGER_PLUGINS_GROUP).items():
+        if not isinstance(plugin_class, type) or not issubclass(
+            plugin_class, StatLoggerBase
+        ):
+            raise TypeError(
+                f"Stat logger plugin {name!r} must be a subclass of "
+                f"StatLoggerBase (got {plugin_class!r})."
+            )
 
         factories.append(plugin_class)
 
@@ -90,18 +113,27 @@ class LoggingStatLogger(StatLoggerBase):
         self.mm_caching_metrics = CachingMetrics()
 
         self.spec_decoding_logging = SpecDecodingLogging()
-        kv_tranfer_config = self.aphrodite_config.kv_transfer_config
-        self.kv_connector_logging = KVConnectorLogging(kv_tranfer_config)
+        kv_transfer_config = self.aphrodite_config.kv_transfer_config
+        self.kv_connector_logging = KVConnectorLogging(kv_transfer_config)
+        self.cudagraph_logging = None
+        if self.aphrodite_config.observability_config.cudagraph_metrics:
+            self.cudagraph_logging = CUDAGraphLogging(
+                self.aphrodite_config.compilation_config.cudagraph_mode,
+                self.aphrodite_config.compilation_config.cudagraph_capture_sizes,
+            )
         self.last_prompt_throughput: float = 0.0
         self.last_generation_throughput: float = 0.0
         self.engine_is_idle = False
         self.aggregated = False
-
         self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
+
         if self.request_level_metrics:
-            self.log_queue: queue.Queue = queue.Queue()
+            self.log_queue: queue.Queue[str | None] = queue.Queue()
             self.log_thread = threading.Thread(target=self._log_worker, daemon=True)
             self.log_thread.start()
+
+        if self._enable_perf_stats():
+            self.perf_metrics_logging = PerfMetricsLogging(aphrodite_config)
 
     def _reset(self, now):
         self.last_log_time = now
@@ -109,9 +141,21 @@ class LoggingStatLogger(StatLoggerBase):
         # Tracked stats over current local logging interval.
         self.num_prompt_tokens: int = 0
         self.num_generation_tokens: int = 0
+        self.num_corrupted_reqs: int = 0
+        self.num_preemptions: int = 0
 
-    def _log_worker(self):
-        """Worker thread that processes log messages from the queue."""
+    def _enable_perf_stats(self) -> bool:
+        return self.aphrodite_config.observability_config.enable_mfu_metrics
+
+    def _track_iteration_stats(self, iteration_stats: IterationStats):
+        # Save tracked stats for token counters.
+        # Use computed tokens for prompt throughput (excludes cached/transferred)
+        self.num_prompt_tokens += iteration_stats.prompt_token_stats.computed
+        self.num_generation_tokens += iteration_stats.num_generation_tokens
+        self.num_corrupted_reqs += iteration_stats.num_corrupted_reqs
+        self.num_preemptions += iteration_stats.num_preempted_reqs
+
+    def _log_worker(self) -> None:
         while True:
             try:
                 log_msg = self.log_queue.get()
@@ -123,20 +167,7 @@ class LoggingStatLogger(StatLoggerBase):
             finally:
                 self.log_queue.task_done()
 
-    def _track_iteration_stats(self, iteration_stats: IterationStats):
-        # Save tracked stats for token counters.
-        self.num_prompt_tokens += iteration_stats.num_prompt_tokens
-        self.num_generation_tokens += iteration_stats.num_generation_tokens
-
-    def _get_throughput(self, tracked_stats: int, now: float) -> float:
-        # Compute summary metrics for tracked stats
-        delta_time = now - self.last_log_time
-        if delta_time <= 0.0:
-            return 0.0
-        return float(tracked_stats / delta_time)
-
-    def _log_finished_requests(self, iteration_stats: IterationStats):
-        """Log individual finished requests for request-level metrics."""
+    def _log_finished_requests(self, iteration_stats: IterationStats) -> None:
         if not iteration_stats.finished_requests:
             return
 
@@ -144,26 +175,31 @@ class LoggingStatLogger(StatLoggerBase):
             prefill_throughput = (
                 finished_request.num_prompt_tokens / finished_request.prefill_time
                 if finished_request.prefill_time > 0
-                else 0
+                else 0.0
             )
-
             decode_throughput = (
                 finished_request.num_generation_tokens / finished_request.decode_time
-                if finished_request.decode_time > 0 and finished_request.num_generation_tokens > 0
-                else 0
+                if finished_request.decode_time > 0
+                and finished_request.num_generation_tokens > 0
+                else 0.0
             )
 
             cache_hit_info = ""
             if finished_request.num_cached_tokens > 0:
                 cache_hit_rate = (
-                    finished_request.num_cached_tokens / finished_request.num_prompt_tokens * 100
+                    finished_request.num_cached_tokens
+                    / finished_request.num_prompt_tokens
+                    * 100
                     if finished_request.num_prompt_tokens > 0
-                    else 0
+                    else 0.0
                 )
-                cache_hit_info = f", Cache hits: {finished_request.num_cached_tokens} tokens ({cache_hit_rate:.1f}%)"
+                cache_hit_info = (
+                    f", Cache hits: {finished_request.num_cached_tokens} "
+                    f"tokens ({cache_hit_rate:.1f}%)"
+                )
 
-            log_msg = (
-                f"Request completed - "
+            self.log_queue.put(
+                "Request completed - "
                 f"E2E time: {finished_request.e2e_latency:.2f}s, "
                 f"TTFT: {finished_request.prefill_time:.2f}s, "
                 f"Prefill: {finished_request.num_prompt_tokens} tokens "
@@ -172,7 +208,13 @@ class LoggingStatLogger(StatLoggerBase):
                 f"({decode_throughput:.1f} tokens/s)"
                 f"{cache_hit_info}"
             )
-            self.log_queue.put(log_msg)
+
+    def _get_throughput(self, tracked_stats: int, now: float) -> float:
+        # Compute summary metrics for tracked stats
+        delta_time = now - self.last_log_time
+        if delta_time <= 0.0:
+            return 0.0
+        return float(tracked_stats / delta_time)
 
     @property
     def log_prefix(self):
@@ -187,23 +229,32 @@ class LoggingStatLogger(StatLoggerBase):
     ):
         """Log Stats to standard output."""
         if iteration_stats:
-            if not self.request_level_metrics:
-                self._track_iteration_stats(iteration_stats)
-            else:
+            if self.request_level_metrics:
                 self._log_finished_requests(iteration_stats)
+            else:
+                self._track_iteration_stats(iteration_stats)
 
         if scheduler_stats is not None:
             self.prefix_caching_metrics.observe(scheduler_stats.prefix_cache_stats)
 
             if scheduler_stats.connector_prefix_cache_stats is not None:
-                self.connector_prefix_caching_metrics.observe(scheduler_stats.connector_prefix_cache_stats)
+                self.connector_prefix_caching_metrics.observe(
+                    scheduler_stats.connector_prefix_cache_stats
+                )
 
             if scheduler_stats.spec_decoding_stats is not None:
                 self.spec_decoding_logging.observe(scheduler_stats.spec_decoding_stats)
             if kv_connector_stats := scheduler_stats.kv_connector_stats:
                 self.kv_connector_logging.observe(kv_connector_stats)
+            if (
+                self.cudagraph_logging is not None
+                and scheduler_stats.cudagraph_stats is not None
+            ):
+                self.cudagraph_logging.observe(scheduler_stats.cudagraph_stats)
             if not self.aggregated:
                 self.last_scheduler_stats = scheduler_stats
+            if (perf_stats := scheduler_stats.perf_stats) and self._enable_perf_stats():
+                self.perf_metrics_logging.observe(perf_stats)
         if mm_cache_stats:
             self.mm_caching_metrics.observe(mm_cache_stats)
 
@@ -242,17 +293,42 @@ class LoggingStatLogger(StatLoggerBase):
             "Avg generation throughput: %.1f tokens/s",
             "Running: %d reqs",
             "Waiting: %d reqs",
-            "GPU KV cache usage: %.1f%%",
-            "Prefix cache hit rate: %.1f%%",
         ]
-        log_args = [
+        total_waiting = (
+            self.last_scheduler_stats.num_waiting_reqs
+            + self.last_scheduler_stats.num_skipped_waiting_reqs
+        )
+        log_args: list[int | float | str] = [
             self.last_prompt_throughput,
             self.last_generation_throughput,
             self.last_scheduler_stats.num_running_reqs,
-            self.last_scheduler_stats.num_waiting_reqs,
-            self.last_scheduler_stats.kv_cache_usage * 100,
-            self.prefix_caching_metrics.hit_rate * 100,
+            total_waiting,
         ]
+
+        if self.last_scheduler_stats.num_skipped_waiting_reqs > 0:
+            log_parts.append("Deferred: %d reqs")
+            log_args.append(self.last_scheduler_stats.num_skipped_waiting_reqs)
+
+        if self.num_preemptions > 0:
+            log_parts.append("Preemptions: %d")
+            log_args.append(self.num_preemptions)
+
+        log_parts.extend(
+            [
+                "GPU KV cache usage: %.1f%%",
+                "Prefix cache hit rate: %.1f%%",
+            ]
+        )
+        log_args.extend(
+            [
+                self.last_scheduler_stats.kv_cache_usage * 100,
+                self.prefix_caching_metrics.hit_rate * 100,
+            ]
+        )
+
+        if envs.APHRODITE_COMPUTE_NANS_IN_LOGITS:
+            log_parts.append("Corrupted: %d reqs")
+            log_args.append(self.num_corrupted_reqs)
         if not self.connector_prefix_caching_metrics.empty:
             log_parts.append("External prefix cache hit rate: %.1f%%")
             log_args.append(self.connector_prefix_caching_metrics.hit_rate * 100)
@@ -267,22 +343,19 @@ class LoggingStatLogger(StatLoggerBase):
 
         self.spec_decoding_logging.log(log_fn=log_fn)
         self.kv_connector_logging.log(log_fn=log_fn)
+        if self.cudagraph_logging is not None:
+            self.cudagraph_logging.log(log_fn=log_fn)
+        if self._enable_perf_stats():
+            self.perf_metrics_logging.log(log_fn=log_fn, log_prefix=self.log_prefix)
 
     def log_engine_initialized(self):
         if self.aphrodite_config.cache_config.num_gpu_blocks:
             logger.debug(
-                "Engine %03d: aphrodite cache_config_info with initialization after num_gpu_blocks is: %d",
+                "Engine %03d: aphrodite cache_config_info with initialization "
+                "after num_gpu_blocks is: %d",
                 self.engine_index,
                 self.aphrodite_config.cache_config.num_gpu_blocks,
             )
-
-    def __del__(self):
-        """Cleanup the logging thread when the logger is destroyed."""
-        if hasattr(self, "request_level_metrics") and self.request_level_metrics:
-            if hasattr(self, "log_queue"):
-                self.log_queue.put(None)
-            if hasattr(self, "log_thread"):
-                self.log_thread.join(timeout=1.0)
 
 
 class AggregatedLoggingStatLogger(LoggingStatLogger, AggregateStatLoggerBase):
@@ -301,6 +374,10 @@ class AggregatedLoggingStatLogger(LoggingStatLogger, AggregateStatLoggerBase):
     @property
     def log_prefix(self):
         return "{} Engines Aggregated: ".format(len(self.engine_indexes))
+
+    def _enable_perf_stats(self) -> bool:
+        # Adding per_gpu perf stats across engines can lead to misleading numbers.
+        return False
 
     def record(
         self,
@@ -325,10 +402,18 @@ class AggregatedLoggingStatLogger(LoggingStatLogger, AggregateStatLoggerBase):
     def aggregate_scheduler_stats(self):
         self.last_scheduler_stats = SchedulerStats()
         for last_scheduler_stats in self.last_scheduler_stats_dict.values():
-            self.last_scheduler_stats.num_waiting_reqs += last_scheduler_stats.num_waiting_reqs
-            self.last_scheduler_stats.num_running_reqs += last_scheduler_stats.num_running_reqs
-            self.last_scheduler_stats.num_corrupted_reqs += last_scheduler_stats.num_corrupted_reqs
-            self.last_scheduler_stats.kv_cache_usage += last_scheduler_stats.kv_cache_usage
+            self.last_scheduler_stats.num_waiting_reqs += (
+                last_scheduler_stats.num_waiting_reqs
+            )
+            self.last_scheduler_stats.num_running_reqs += (
+                last_scheduler_stats.num_running_reqs
+            )
+            self.last_scheduler_stats.num_skipped_waiting_reqs += (
+                last_scheduler_stats.num_skipped_waiting_reqs
+            )
+            self.last_scheduler_stats.kv_cache_usage += (
+                last_scheduler_stats.kv_cache_usage
+            )
         self.last_scheduler_stats.kv_cache_usage /= len(self.last_scheduler_stats_dict)
 
     def log(self):
@@ -337,7 +422,8 @@ class AggregatedLoggingStatLogger(LoggingStatLogger, AggregateStatLoggerBase):
     def log_engine_initialized(self):
         if self.aphrodite_config.cache_config.num_gpu_blocks:
             logger.info(
-                "%d Engines: aphrodite cache_config_info with initialization after num_gpu_blocks is: %d",
+                "%d Engines: aphrodite cache_config_info with initialization "
+                "after num_gpu_blocks is: %d",
                 len(self.engine_indexes),
                 self.aphrodite_config.cache_config.num_gpu_blocks,
             )
@@ -353,7 +439,9 @@ class PerEngineStatLoggerAdapter(AggregateStatLoggerBase):
         self.per_engine_stat_loggers = {}
         self.engine_indexes = engine_indexes
         for engine_index in engine_indexes:
-            self.per_engine_stat_loggers[engine_index] = per_engine_stat_logger_factory(aphrodite_config, engine_index)
+            self.per_engine_stat_loggers[engine_index] = per_engine_stat_logger_factory(
+                aphrodite_config, engine_index
+            )
 
     def record(
         self,
@@ -386,9 +474,12 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
     _counter_cls = Counter
     _histogram_cls = Histogram
     _spec_decoding_cls = SpecDecodingProm
-    _kv_connector_cls = KVConnectorPrometheus
+    _kv_connector_cls = KVConnectorProm
+    _perf_metrics_cls = PerfMetricsProm
 
-    def __init__(self, aphrodite_config: AphroditeConfig, engine_indexes: list[int] | None = None):
+    def __init__(
+        self, aphrodite_config: AphroditeConfig, engine_indexes: list[int] | None = None
+    ):
         if engine_indexes is None:
             engine_indexes = [0]
 
@@ -399,19 +490,28 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
         # Use this flag to hide metrics that were deprecated in
         # a previous release and which will be removed future
         self.show_hidden_metrics = aphrodite_config.observability_config.show_hidden_metrics
-
-        self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
+        self.kv_cache_metrics_enabled = (
+            aphrodite_config.observability_config.kv_cache_metrics
+        )
 
         labelnames = ["model_name", "engine"]
         model_name = aphrodite_config.model_config.served_model_name
         max_model_len = aphrodite_config.model_config.max_model_len
 
-        per_engine_labelvalues: dict[int, list[str]] = {idx: [model_name, str(idx)] for idx in engine_indexes}
+        self.per_engine_labelvalues: dict[int, list[object]] = {
+            idx: [model_name, str(idx)] for idx in engine_indexes
+        }
+        per_engine_labelvalues = self.per_engine_labelvalues
 
         self.spec_decoding_prom = self._spec_decoding_cls(
             aphrodite_config.speculative_config, labelnames, per_engine_labelvalues
         )
-        self.kv_connector_prom = self._kv_connector_cls(aphrodite_config, labelnames, per_engine_labelvalues)
+        self.kv_connector_prom = self._kv_connector_cls(
+            aphrodite_config, labelnames, per_engine_labelvalues
+        )
+        self.perf_metrics_prom = self._perf_metrics_cls(
+            aphrodite_config, labelnames, per_engine_labelvalues
+        )
 
         #
         # Scheduler state
@@ -422,7 +522,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             multiprocess_mode="mostrecent",
             labelnames=labelnames,
         )
-        self.gauge_scheduler_running = make_per_engine(gauge_scheduler_running, engine_indexes, model_name)
+        self.gauge_scheduler_running = create_metric_per_engine(
+            gauge_scheduler_running, per_engine_labelvalues
+        )
 
         gauge_scheduler_waiting = self._gauge_cls(
             name="aphrodite:num_requests_waiting",
@@ -430,7 +532,32 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             multiprocess_mode="mostrecent",
             labelnames=labelnames,
         )
-        self.gauge_scheduler_waiting = make_per_engine(gauge_scheduler_waiting, engine_indexes, model_name)
+        self.gauge_scheduler_waiting = create_metric_per_engine(
+            gauge_scheduler_waiting, per_engine_labelvalues
+        )
+
+        gauge_waiting_by_reason = self._gauge_cls(
+            name="aphrodite:num_requests_waiting_by_reason",
+            documentation=(
+                "Number of waiting requests by reason. "
+                "Reason labels: 'capacity' = waiting for scheduling capacity; "
+                "'deferred' = deferred by transient constraints "
+                "(LoRA budget, KV transfer, blocked status). "
+                "Sum of all reasons equals aphrodite:num_requests_waiting."
+            ),
+            multiprocess_mode="mostrecent",
+            labelnames=labelnames + ["reason"],
+        )
+        self.gauge_waiting_by_reason: dict[str, dict[int, Gauge]] = {}
+        for waiting_reason in [WAITING_REASON_CAPACITY, WAITING_REASON_DEFERRED]:
+            per_engine_labelvalues_with_reason = {
+                idx: labelvalues + [waiting_reason]
+                for idx, labelvalues in per_engine_labelvalues.items()
+            }
+            self.gauge_waiting_by_reason[waiting_reason] = create_metric_per_engine(
+                gauge_waiting_by_reason, per_engine_labelvalues_with_reason
+            )
+
         gauge_engine_sleep_state = self._gauge_cls(
             name="aphrodite:engine_sleep_state",
             documentation=(
@@ -448,82 +575,57 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
 
         for s in sleep_state:
             self.gauge_engine_sleep_state[s] = {
-                idx: gauge_engine_sleep_state.labels(engine=idx, model_name=model_name, sleep_state=s)
+                idx: gauge_engine_sleep_state.labels(
+                    engine=idx, model_name=model_name, sleep_state=s
+                )
                 for idx in engine_indexes
             }
 
         # Setting default values
         self.record_sleep_state()
 
-        # GPU cache
-        #
-        # Deprecated in 0.9.2 - Renamed as aphrodite:kv_cache_usage_perc
-        # With 0.11.x you can enable with --show-hidden-metrics-for-version=0.10
-        # TODO: remove in 0.12.0
-        if self.show_hidden_metrics:
-            gauge_gpu_cache_usage = self._gauge_cls(
-                name="aphrodite:gpu_cache_usage_perc",
-                documentation=(
-                    "GPU KV-cache usage. 1 means 100 percent usage."
-                    "DEPRECATED: Use aphrodite:kv_cache_usage_perc instead."
-                ),
-                multiprocess_mode="mostrecent",
-                labelnames=labelnames,
-            )
-            self.gauge_gpu_cache_usage = make_per_engine(gauge_gpu_cache_usage, engine_indexes, model_name)
-
-        # Deprecated in 0.9.2 - Renamed as aphrodite:prefix_cache_queries
-        # With 0.11.x you can enable with --show-hidden-metrics-for-version=0.10
-        # TODO: remove in 0.12.0
-        if self.show_hidden_metrics:
-            counter_gpu_prefix_cache_queries = self._counter_cls(
-                name="aphrodite:gpu_prefix_cache_queries",
-                documentation=(
-                    "GPU prefix cache queries, in terms of number of queried"
-                    "tokens. DEPRECATED: Use aphrodite:prefix_cache_queries instead."
-                ),
-                labelnames=labelnames,
-            )
-            self.counter_gpu_prefix_cache_queries = make_per_engine(
-                counter_gpu_prefix_cache_queries, engine_indexes, model_name
-            )
-
-        # Deprecated in 0.9.2 - Renamed as aphrodite:prefix_cache_hits
-        # With 0.11.x you can enable with --show-hidden-metrics-for-version=0.10
-        # TODO: remove in 0.12.0
-        if self.show_hidden_metrics:
-            counter_gpu_prefix_cache_hits = self._counter_cls(
-                name="aphrodite:gpu_prefix_cache_hits",
-                documentation=(
-                    "GPU prefix cache hits, in terms of number of cached "
-                    "tokens. DEPRECATED: Use aphrodite:prefix_cache_hits instead."
-                ),
-                labelnames=labelnames,
-            )
-            self.counter_gpu_prefix_cache_hits = make_per_engine(
-                counter_gpu_prefix_cache_hits, engine_indexes, model_name
-            )
-
         gauge_kv_cache_usage = self._gauge_cls(
             name="aphrodite:kv_cache_usage_perc",
             documentation="KV-cache usage. 1 means 100 percent usage.",
+            multiprocess_mode="mostrecent",
             labelnames=labelnames,
         )
-        self.gauge_kv_cache_usage = make_per_engine(gauge_kv_cache_usage, engine_indexes, model_name)
+        self.gauge_kv_cache_usage = create_metric_per_engine(
+            gauge_kv_cache_usage, per_engine_labelvalues
+        )
+
+        if envs.APHRODITE_COMPUTE_NANS_IN_LOGITS:
+            counter_corrupted_requests = self._counter_cls(
+                name="aphrodite:corrupted_requests",
+                documentation=(
+                    "Corrupted requests, in terms of total number of requests "
+                    "with NaNs in logits."
+                ),
+                labelnames=labelnames,
+            )
+            self.counter_corrupted_requests = create_metric_per_engine(
+                counter_corrupted_requests, per_engine_labelvalues
+            )
 
         counter_prefix_cache_queries = self._counter_cls(
             name="aphrodite:prefix_cache_queries",
-            documentation=("Prefix cache queries, in terms of number of queried tokens."),
+            documentation=(
+                "Prefix cache queries, in terms of number of queried tokens."
+            ),
             labelnames=labelnames,
         )
-        self.counter_prefix_cache_queries = make_per_engine(counter_prefix_cache_queries, engine_indexes, model_name)
+        self.counter_prefix_cache_queries = create_metric_per_engine(
+            counter_prefix_cache_queries, per_engine_labelvalues
+        )
 
         counter_prefix_cache_hits = self._counter_cls(
             name="aphrodite:prefix_cache_hits",
             documentation=("Prefix cache hits, in terms of number of cached tokens."),
             labelnames=labelnames,
         )
-        self.counter_prefix_cache_hits = make_per_engine(counter_prefix_cache_hits, engine_indexes, model_name)
+        self.counter_prefix_cache_hits = create_metric_per_engine(
+            counter_prefix_cache_hits, per_engine_labelvalues
+        )
 
         #
         # External - KV connector prefix cache
@@ -537,8 +639,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             ),
             labelnames=labelnames,
         )
-        self.counter_connector_prefix_cache_queries = make_per_engine(
-            counter_connector_prefix_cache_queries, engine_indexes, model_name
+        self.counter_connector_prefix_cache_queries = create_metric_per_engine(
+            counter_connector_prefix_cache_queries, per_engine_labelvalues
         )
 
         counter_connector_prefix_cache_hits = self._counter_cls(
@@ -549,8 +651,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             ),
             labelnames=labelnames,
         )
-        self.counter_connector_prefix_cache_hits = make_per_engine(
-            counter_connector_prefix_cache_hits, engine_indexes, model_name
+        self.counter_connector_prefix_cache_hits = create_metric_per_engine(
+            counter_connector_prefix_cache_hits, per_engine_labelvalues
         )
 
         #
@@ -559,17 +661,25 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
 
         counter_mm_cache_queries = self._counter_cls(
             name="aphrodite:mm_cache_queries",
-            documentation=("Multi-modal cache queries, in terms of number of queried items."),
+            documentation=(
+                "Multi-modal cache queries, in terms of number of queried items."
+            ),
             labelnames=labelnames,
         )
-        self.counter_mm_cache_queries = make_per_engine(counter_mm_cache_queries, engine_indexes, model_name)
+        self.counter_mm_cache_queries = create_metric_per_engine(
+            counter_mm_cache_queries, per_engine_labelvalues
+        )
 
         counter_mm_cache_hits = self._counter_cls(
             name="aphrodite:mm_cache_hits",
-            documentation=("Multi-modal cache hits, in terms of number of cached items."),
+            documentation=(
+                "Multi-modal cache hits, in terms of number of cached items."
+            ),
             labelnames=labelnames,
         )
-        self.counter_mm_cache_hits = make_per_engine(counter_mm_cache_hits, engine_indexes, model_name)
+        self.counter_mm_cache_hits = create_metric_per_engine(
+            counter_mm_cache_hits, per_engine_labelvalues
+        )
 
         #
         # Counters
@@ -579,21 +689,52 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             documentation="Cumulative number of preemption from the engine.",
             labelnames=labelnames,
         )
-        self.counter_num_preempted_reqs = make_per_engine(counter_num_preempted_reqs, engine_indexes, model_name)
+        self.counter_num_preempted_reqs = create_metric_per_engine(
+            counter_num_preempted_reqs, per_engine_labelvalues
+        )
 
         counter_prompt_tokens = self._counter_cls(
             name="aphrodite:prompt_tokens",
             documentation="Number of prefill tokens processed.",
             labelnames=labelnames,
         )
-        self.counter_prompt_tokens = make_per_engine(counter_prompt_tokens, engine_indexes, model_name)
+        self.counter_prompt_tokens = create_metric_per_engine(
+            counter_prompt_tokens, per_engine_labelvalues
+        )
+
+        # Labeled prompt token counters by source
+        counter_prompt_tokens_by_source = self._counter_cls(
+            name="aphrodite:prompt_tokens_by_source",
+            documentation="Number of prompt tokens by source.",
+            labelnames=labelnames + ["source"],
+        )
+        self.counter_prompt_tokens_by_source: dict[str, dict[int, Counter]] = {}
+        for source in PromptTokenStats.ALL_SOURCES:
+            self.counter_prompt_tokens_by_source[source] = {
+                idx: counter_prompt_tokens_by_source.labels(
+                    model_name, str(idx), source
+                )
+                for idx in engine_indexes
+            }
+
+        # Cached prompt tokens counter
+        counter_prompt_tokens_cached = self._counter_cls(
+            name="aphrodite:prompt_tokens_cached",
+            documentation="Number of cached prompt tokens (local + external).",
+            labelnames=labelnames,
+        )
+        self.counter_prompt_tokens_cached = create_metric_per_engine(
+            counter_prompt_tokens_cached, per_engine_labelvalues
+        )
 
         counter_generation_tokens = self._counter_cls(
             name="aphrodite:generation_tokens",
             documentation="Number of generation tokens processed.",
             labelnames=labelnames,
         )
-        self.counter_generation_tokens = make_per_engine(counter_generation_tokens, engine_indexes, model_name)
+        self.counter_generation_tokens = create_metric_per_engine(
+            counter_generation_tokens, per_engine_labelvalues
+        )
 
         self.counter_request_success: dict[FinishReason, dict[int, Counter]] = {}
         counter_request_success_base = self._counter_cls(
@@ -603,7 +744,10 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
         )
         for reason in FinishReason:
             self.counter_request_success[reason] = {
-                idx: counter_request_success_base.labels(model_name, str(idx), str(reason)) for idx in engine_indexes
+                idx: counter_request_success_base.labels(
+                    model_name, str(idx), str(reason)
+                )
+                for idx in engine_indexes
             }
 
         #
@@ -615,8 +759,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=build_1_2_5_buckets(max_model_len),
             labelnames=labelnames,
         )
-        self.histogram_num_prompt_tokens_request = make_per_engine(
-            histogram_num_prompt_tokens_request, engine_indexes, model_name
+        self.histogram_num_prompt_tokens_request = create_metric_per_engine(
+            histogram_num_prompt_tokens_request, per_engine_labelvalues
         )
 
         histogram_num_generation_tokens_request = self._histogram_cls(
@@ -625,20 +769,22 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=build_1_2_5_buckets(max_model_len),
             labelnames=labelnames,
         )
-        self.histogram_num_generation_tokens_request = make_per_engine(
-            histogram_num_generation_tokens_request, engine_indexes, model_name
+        self.histogram_num_generation_tokens_request = create_metric_per_engine(
+            histogram_num_generation_tokens_request, per_engine_labelvalues
         )
 
         # TODO: This metric might be incorrect in case of using multiple
         # api_server counts which uses prometheus mp.
-        # See: https://github.com/aphrodite-project/aphrodite/pull/18053
+        # See: https://github.com/vllm-project/vllm/pull/18053
         histogram_iteration_tokens = self._histogram_cls(
             name="aphrodite:iteration_tokens_total",
             documentation="Histogram of number of tokens per engine_step.",
             buckets=[1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384],
             labelnames=labelnames,
         )
-        self.histogram_iteration_tokens = make_per_engine(histogram_iteration_tokens, engine_indexes, model_name)
+        self.histogram_iteration_tokens = create_metric_per_engine(
+            histogram_iteration_tokens, per_engine_labelvalues
+        )
 
         histogram_max_num_generation_tokens_request = self._histogram_cls(
             name="aphrodite:request_max_num_generation_tokens",
@@ -646,8 +792,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=build_1_2_5_buckets(max_model_len),
             labelnames=labelnames,
         )
-        self.histogram_max_num_generation_tokens_request = make_per_engine(
-            histogram_max_num_generation_tokens_request, engine_indexes, model_name
+        self.histogram_max_num_generation_tokens_request = create_metric_per_engine(
+            histogram_max_num_generation_tokens_request, per_engine_labelvalues
         )
 
         histogram_n_request = self._histogram_cls(
@@ -656,7 +802,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=[1, 2, 5, 10, 20],
             labelnames=labelnames,
         )
-        self.histogram_n_request = make_per_engine(histogram_n_request, engine_indexes, model_name)
+        self.histogram_n_request = create_metric_per_engine(
+            histogram_n_request, per_engine_labelvalues
+        )
 
         histogram_max_tokens_request = self._histogram_cls(
             name="aphrodite:request_params_max_tokens",
@@ -664,7 +812,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=build_1_2_5_buckets(max_model_len),
             labelnames=labelnames,
         )
-        self.histogram_max_tokens_request = make_per_engine(histogram_max_tokens_request, engine_indexes, model_name)
+        self.histogram_max_tokens_request = create_metric_per_engine(
+            histogram_max_tokens_request, per_engine_labelvalues
+        )
 
         #
         # Histogram of timing intervals
@@ -698,41 +848,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             ],
             labelnames=labelnames,
         )
-        self.histogram_time_to_first_token = make_per_engine(histogram_time_to_first_token, engine_indexes, model_name)
-
-        # Deprecated in 0.11 - Renamed as aphrodite:inter_token_latency_seconds
-        # TODO: in 0.12, only enable if show_hidden_metrics=True
-        histogram_time_per_output_token = self._histogram_cls(
-            name="aphrodite:time_per_output_token_seconds",
-            documentation=(
-                "Histogram of time per output token in seconds."
-                "DEPRECATED: Use aphrodite:inter_token_latency_seconds instead."
-            ),
-            buckets=[
-                0.01,
-                0.025,
-                0.05,
-                0.075,
-                0.1,
-                0.15,
-                0.2,
-                0.3,
-                0.4,
-                0.5,
-                0.75,
-                1.0,
-                2.5,
-                5.0,
-                7.5,
-                10.0,
-                20.0,
-                40.0,
-                80.0,
-            ],
-            labelnames=labelnames,
-        )
-        self.histogram_time_per_output_token = make_per_engine(
-            histogram_time_per_output_token, engine_indexes, model_name
+        self.histogram_time_to_first_token = create_metric_per_engine(
+            histogram_time_to_first_token, per_engine_labelvalues
         )
 
         histogram_inter_token_latency = self._histogram_cls(
@@ -761,7 +878,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             ],
             labelnames=labelnames,
         )
-        self.histogram_inter_token_latency = make_per_engine(histogram_inter_token_latency, engine_indexes, model_name)
+        self.histogram_inter_token_latency = create_metric_per_engine(
+            histogram_inter_token_latency, per_engine_labelvalues
+        )
 
         histogram_request_time_per_output_token = self._histogram_cls(
             name="aphrodite:request_time_per_output_token_seconds",
@@ -789,8 +908,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             ],
             labelnames=labelnames,
         )
-        self.histogram_request_time_per_output_token = make_per_engine(
-            histogram_request_time_per_output_token, engine_indexes, model_name
+        self.histogram_request_time_per_output_token = create_metric_per_engine(
+            histogram_request_time_per_output_token, per_engine_labelvalues
         )
 
         request_latency_buckets = [
@@ -822,7 +941,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=request_latency_buckets,
             labelnames=labelnames,
         )
-        self.histogram_e2e_time_request = make_per_engine(histogram_e2e_time_request, engine_indexes, model_name)
+        self.histogram_e2e_time_request = create_metric_per_engine(
+            histogram_e2e_time_request, per_engine_labelvalues
+        )
 
         histogram_queue_time_request = self._histogram_cls(
             name="aphrodite:request_queue_time_seconds",
@@ -830,7 +951,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=request_latency_buckets,
             labelnames=labelnames,
         )
-        self.histogram_queue_time_request = make_per_engine(histogram_queue_time_request, engine_indexes, model_name)
+        self.histogram_queue_time_request = create_metric_per_engine(
+            histogram_queue_time_request, per_engine_labelvalues
+        )
 
         histogram_inference_time_request = self._histogram_cls(
             name="aphrodite:request_inference_time_seconds",
@@ -838,8 +961,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=request_latency_buckets,
             labelnames=labelnames,
         )
-        self.histogram_inference_time_request = make_per_engine(
-            histogram_inference_time_request, engine_indexes, model_name
+        self.histogram_inference_time_request = create_metric_per_engine(
+            histogram_inference_time_request, per_engine_labelvalues
         )
 
         histogram_prefill_time_request = self._histogram_cls(
@@ -848,8 +971,8 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=request_latency_buckets,
             labelnames=labelnames,
         )
-        self.histogram_prefill_time_request = make_per_engine(
-            histogram_prefill_time_request, engine_indexes, model_name
+        self.histogram_prefill_time_request = create_metric_per_engine(
+            histogram_prefill_time_request, per_engine_labelvalues
         )
 
         histogram_decode_time_request = self._histogram_cls(
@@ -858,7 +981,95 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             buckets=request_latency_buckets,
             labelnames=labelnames,
         )
-        self.histogram_decode_time_request = make_per_engine(histogram_decode_time_request, engine_indexes, model_name)
+        self.histogram_decode_time_request = create_metric_per_engine(
+            histogram_decode_time_request, per_engine_labelvalues
+        )
+
+        histogram_prefill_kv_computed_request = self._histogram_cls(
+            name="aphrodite:request_prefill_kv_computed_tokens",
+            documentation=(
+                "Histogram of new KV tokens computed during prefill "
+                "(excluding cached tokens)."
+            ),
+            buckets=build_1_2_5_buckets(max_model_len),
+            labelnames=labelnames,
+        )
+        self.histogram_prefill_kv_computed_request = create_metric_per_engine(
+            histogram_prefill_kv_computed_request, per_engine_labelvalues
+        )
+
+        #
+        # KV Cache residency metrics
+        #
+        if self.kv_cache_metrics_enabled:
+            kv_cache_residency_buckets = [
+                0.001,
+                0.002,
+                0.005,
+                0.01,
+                0.02,
+                0.05,
+                0.1,
+                0.2,
+                0.5,
+                1,
+                2,
+                5,
+                10,
+                20,
+                30,
+                60,
+                120,
+                300,
+                600,
+                1200,
+                1800,
+            ]
+
+            histogram_kv_block_lifetime = self._histogram_cls(
+                name="aphrodite:kv_block_lifetime_seconds",
+                documentation=(
+                    "Histogram of KV cache block lifetime from allocation to eviction. "
+                    "Sampled metrics (controlled by --kv-cache-metrics-sample)."
+                ),
+                buckets=kv_cache_residency_buckets,
+                labelnames=labelnames,
+            )
+            self.histogram_kv_block_lifetime = create_metric_per_engine(
+                histogram_kv_block_lifetime, per_engine_labelvalues
+            )
+
+            histogram_kv_block_idle_before_evict = self._histogram_cls(
+                name="aphrodite:kv_block_idle_before_evict_seconds",
+                documentation=(
+                    "Histogram of idle time before KV cache block eviction. "
+                    "Sampled metrics (controlled by --kv-cache-metrics-sample)."
+                ),
+                buckets=kv_cache_residency_buckets,
+                labelnames=labelnames,
+            )
+            self.histogram_kv_block_idle_before_evict = create_metric_per_engine(
+                histogram_kv_block_idle_before_evict, per_engine_labelvalues
+            )
+
+            histogram_kv_block_reuse_gap = self._histogram_cls(
+                name="aphrodite:kv_block_reuse_gap_seconds",
+                documentation=(
+                    "Histogram of time gaps between consecutive KV cache block "
+                    "accesses. Only the most recent accesses are recorded "
+                    "(ring buffer). Sampled metrics (controlled by "
+                    "--kv-cache-metrics-sample)."
+                ),
+                buckets=kv_cache_residency_buckets,
+                labelnames=labelnames,
+            )
+            self.histogram_kv_block_reuse_gap = create_metric_per_engine(
+                histogram_kv_block_reuse_gap, per_engine_labelvalues
+            )
+        else:
+            self.histogram_kv_block_lifetime = {}
+            self.histogram_kv_block_idle_before_evict = {}
+            self.histogram_kv_block_reuse_gap = {}
 
         #
         # LoRA metrics
@@ -869,7 +1080,10 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
         self.gauge_lora_info: Gauge | None = None
         if aphrodite_config.lora_config is not None:
             if len(self.engine_indexes) > 1:
-                raise NotImplementedError("LoRA in DP mode is not supported yet.")
+                logger.warning(
+                    "aphrodite:lora_requests_info prometheus metrics may be "
+                    "incorrect/misleading with data parallel deployments."
+                )
             self.labelname_max_lora = "max_lora"
             self.labelname_waiting_lora_adapters = "waiting_lora_adapters"
             self.labelname_running_lora_adapters = "running_lora_adapters"
@@ -918,19 +1132,28 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
     ):
         """Log to prometheus."""
         if scheduler_stats is not None:
-            self.gauge_scheduler_running[engine_idx].set(scheduler_stats.num_running_reqs)
-            self.gauge_scheduler_waiting[engine_idx].set(scheduler_stats.num_waiting_reqs)
-
-            if self.show_hidden_metrics:
-                self.gauge_gpu_cache_usage[engine_idx].set(scheduler_stats.kv_cache_usage)
+            self.gauge_scheduler_running[engine_idx].set(
+                scheduler_stats.num_running_reqs
+            )
+            total_waiting = (
+                scheduler_stats.num_waiting_reqs
+                + scheduler_stats.num_skipped_waiting_reqs
+            )
+            self.gauge_scheduler_waiting[engine_idx].set(total_waiting)
+            self.gauge_waiting_by_reason[WAITING_REASON_CAPACITY][engine_idx].set(
+                scheduler_stats.num_waiting_reqs
+            )
+            self.gauge_waiting_by_reason[WAITING_REASON_DEFERRED][engine_idx].set(
+                scheduler_stats.num_skipped_waiting_reqs
+            )
             self.gauge_kv_cache_usage[engine_idx].set(scheduler_stats.kv_cache_usage)
 
-            if self.show_hidden_metrics:
-                self.counter_gpu_prefix_cache_queries[engine_idx].inc(scheduler_stats.prefix_cache_stats.queries)
-                self.counter_gpu_prefix_cache_hits[engine_idx].inc(scheduler_stats.prefix_cache_stats.hits)
-
-            self.counter_prefix_cache_queries[engine_idx].inc(scheduler_stats.prefix_cache_stats.queries)
-            self.counter_prefix_cache_hits[engine_idx].inc(scheduler_stats.prefix_cache_stats.hits)
+            self.counter_prefix_cache_queries[engine_idx].inc(
+                scheduler_stats.prefix_cache_stats.queries
+            )
+            self.counter_prefix_cache_hits[engine_idx].inc(
+                scheduler_stats.prefix_cache_stats.hits
+            )
 
             if scheduler_stats.connector_prefix_cache_stats is not None:
                 self.counter_connector_prefix_cache_queries[engine_idx].inc(
@@ -941,10 +1164,45 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
                 )
 
             if scheduler_stats.spec_decoding_stats is not None:
-                self.spec_decoding_prom.observe(scheduler_stats.spec_decoding_stats, engine_idx)
+                self.spec_decoding_prom.observe(
+                    scheduler_stats.spec_decoding_stats, engine_idx
+                )
 
             if scheduler_stats.kv_connector_stats is not None:
-                self.kv_connector_prom.observe(scheduler_stats.kv_connector_stats, engine_idx)
+                self.kv_connector_prom.observe(
+                    scheduler_stats.kv_connector_stats, engine_idx
+                )
+
+            if scheduler_stats.perf_stats is not None:
+                self.perf_metrics_prom.observe(scheduler_stats.perf_stats, engine_idx)
+
+            if (
+                self.kv_cache_metrics_enabled
+                and scheduler_stats.kv_cache_eviction_events
+            ):
+                lifetime_hist = self.histogram_kv_block_lifetime[engine_idx]
+                idle_hist = self.histogram_kv_block_idle_before_evict[engine_idx]
+                reuse_hist = self.histogram_kv_block_reuse_gap[engine_idx]
+
+                for event in scheduler_stats.kv_cache_eviction_events:
+                    lifetime_hist.observe(event.lifetime_seconds)
+                    idle_hist.observe(event.idle_seconds)
+                    for gap in event.reuse_gaps_seconds:
+                        reuse_hist.observe(gap)
+
+            if self.gauge_lora_info is not None:
+                running_lora_adapters = ",".join(
+                    scheduler_stats.running_lora_adapters.keys()
+                )
+                waiting_lora_adapters = ",".join(
+                    scheduler_stats.waiting_lora_adapters.keys()
+                )
+                lora_info_labels = {
+                    self.labelname_running_lora_adapters: running_lora_adapters,
+                    self.labelname_waiting_lora_adapters: waiting_lora_adapters,
+                    self.labelname_max_lora: self.max_lora,
+                }
+                self.gauge_lora_info.labels(**lora_info_labels).set_to_current_time()
 
         if mm_cache_stats is not None:
             self.counter_mm_cache_queries[engine_idx].inc(mm_cache_stats.queries)
@@ -952,66 +1210,78 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
 
         if iteration_stats is None:
             return
-
-        if self.request_level_metrics:
-            self._log_finished_requests_prometheus(iteration_stats, engine_idx)
-        else:
-            self.counter_num_preempted_reqs[engine_idx].inc(iteration_stats.num_preempted_reqs)
-            self.counter_prompt_tokens[engine_idx].inc(iteration_stats.num_prompt_tokens)
-            self.counter_generation_tokens[engine_idx].inc(iteration_stats.num_generation_tokens)
-            self.histogram_iteration_tokens[engine_idx].observe(
-                iteration_stats.num_prompt_tokens + iteration_stats.num_generation_tokens
+        if envs.APHRODITE_COMPUTE_NANS_IN_LOGITS:
+            self.counter_corrupted_requests[engine_idx].inc(
+                iteration_stats.num_corrupted_reqs
             )
+        self.counter_num_preempted_reqs[engine_idx].inc(
+            iteration_stats.num_preempted_reqs
+        )
+        self.counter_prompt_tokens[engine_idx].inc(iteration_stats.num_prompt_tokens)
+        # Labeled prompt token counters by source
+        pts = iteration_stats.prompt_token_stats
+        for source in PromptTokenStats.ALL_SOURCES:
+            self.counter_prompt_tokens_by_source[source][engine_idx].inc(
+                pts.get_by_source(source)
+            )
+        self.counter_prompt_tokens_cached[engine_idx].inc(pts.cached_tokens)
+        self.counter_generation_tokens[engine_idx].inc(
+            iteration_stats.num_generation_tokens
+        )
+        self.histogram_iteration_tokens[engine_idx].observe(
+            iteration_stats.num_prompt_tokens + iteration_stats.num_generation_tokens
+        )
 
-            for max_gen_tokens in iteration_stats.max_num_generation_tokens_iter:
-                self.histogram_max_num_generation_tokens_request[engine_idx].observe(max_gen_tokens)
-            for n_param in iteration_stats.n_params_iter:
-                self.histogram_n_request[engine_idx].observe(n_param)
-            for ttft in iteration_stats.time_to_first_tokens_iter:
-                self.histogram_time_to_first_token[engine_idx].observe(ttft)
-            for itl in iteration_stats.inter_token_latencies_iter:
-                self.histogram_inter_token_latency[engine_idx].observe(itl)
-                self.histogram_time_per_output_token[engine_idx].observe(itl)
+        for max_gen_tokens in iteration_stats.max_num_generation_tokens_iter:
+            self.histogram_max_num_generation_tokens_request[engine_idx].observe(
+                max_gen_tokens
+            )
+        for n_param in iteration_stats.n_params_iter:
+            self.histogram_n_request[engine_idx].observe(n_param)
+        for ttft in iteration_stats.time_to_first_tokens_iter:
+            self.histogram_time_to_first_token[engine_idx].observe(ttft)
+        for itl in iteration_stats.inter_token_latencies_iter:
+            self.histogram_inter_token_latency[engine_idx].observe(itl)
 
         for finished_request in iteration_stats.finished_requests:
-            self.counter_request_success[finished_request.finish_reason][engine_idx].inc()
-            self.histogram_e2e_time_request[engine_idx].observe(finished_request.e2e_latency)
-            self.histogram_queue_time_request[engine_idx].observe(finished_request.queued_time)
-            self.histogram_prefill_time_request[engine_idx].observe(finished_request.prefill_time)
-            self.histogram_inference_time_request[engine_idx].observe(finished_request.inference_time)
-            self.histogram_decode_time_request[engine_idx].observe(finished_request.decode_time)
-            self.histogram_num_prompt_tokens_request[engine_idx].observe(finished_request.num_prompt_tokens)
-            self.histogram_num_generation_tokens_request[engine_idx].observe(finished_request.num_generation_tokens)
+            self.counter_request_success[finished_request.finish_reason][
+                engine_idx
+            ].inc()
+            self.histogram_e2e_time_request[engine_idx].observe(
+                finished_request.e2e_latency
+            )
+            self.histogram_queue_time_request[engine_idx].observe(
+                finished_request.queued_time
+            )
+            self.histogram_prefill_time_request[engine_idx].observe(
+                finished_request.prefill_time
+            )
+            self.histogram_inference_time_request[engine_idx].observe(
+                finished_request.inference_time
+            )
+            self.histogram_decode_time_request[engine_idx].observe(
+                finished_request.decode_time
+            )
+            # Calculate prefill KV compute (excludes cached tokens)
+            prefill_kv_computed = finished_request.num_prompt_tokens - max(
+                finished_request.num_cached_tokens, 0
+            )
+            self.histogram_prefill_kv_computed_request[engine_idx].observe(
+                prefill_kv_computed
+            )
+            self.histogram_num_prompt_tokens_request[engine_idx].observe(
+                finished_request.num_prompt_tokens
+            )
+            self.histogram_num_generation_tokens_request[engine_idx].observe(
+                finished_request.num_generation_tokens
+            )
             self.histogram_request_time_per_output_token[engine_idx].observe(
                 finished_request.mean_time_per_output_token
             )
             if finished_request.max_tokens_param:
-                self.histogram_max_tokens_request[engine_idx].observe(finished_request.max_tokens_param)
-
-        if self.gauge_lora_info is not None:
-            running_lora_adapters = ",".join(iteration_stats.running_lora_adapters.keys())
-            waiting_lora_adapters = ",".join(iteration_stats.waiting_lora_adapters.keys())
-            lora_info_labels = {
-                self.labelname_running_lora_adapters: running_lora_adapters,
-                self.labelname_waiting_lora_adapters: waiting_lora_adapters,
-                self.labelname_max_lora: self.max_lora,
-            }
-            self.gauge_lora_info.labels(**lora_info_labels).set_to_current_time()
-
-    def _log_finished_requests_prometheus(
-        self,
-        iteration_stats: IterationStats,
-        engine_idx: int,
-    ):
-        """Log individual finished requests for request-level Prometheus metrics."""
-        if not iteration_stats.finished_requests:
-            return
-
-        self.counter_num_preempted_reqs[engine_idx].inc(iteration_stats.num_preempted_reqs)
-
-        for finished_request in iteration_stats.finished_requests:
-            self.counter_prompt_tokens[engine_idx].inc(finished_request.num_prompt_tokens)
-            self.counter_generation_tokens[engine_idx].inc(finished_request.num_generation_tokens)
+                self.histogram_max_tokens_request[engine_idx].observe(
+                    finished_request.max_tokens_param
+                )
 
     def record_sleep_state(self, sleep: int = 0, level: int = 0):
         awake = 1
@@ -1027,18 +1297,13 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
 
         for engine_idx in self.engine_indexes:
             self.gauge_engine_sleep_state["discard_all"][engine_idx].set(discard_all)
-            self.gauge_engine_sleep_state["weights_offloaded"][engine_idx].set(weights_offloaded)
+            self.gauge_engine_sleep_state["weights_offloaded"][engine_idx].set(
+                weights_offloaded
+            )
             self.gauge_engine_sleep_state["awake"][engine_idx].set(awake)
 
     def log_engine_initialized(self):
         self.log_metrics_info("cache_config", self.aphrodite_config.cache_config)
-
-
-PromMetric: TypeAlias = Gauge | Counter | Histogram
-
-
-def make_per_engine(metric: PromMetric, engine_idxs: list[int], model_name: str) -> dict[int, PromMetric]:
-    return {idx: metric.labels(model_name, str(idx)) for idx in engine_idxs}
 
 
 def build_buckets(mantissa_lst: list[int], max_value: int) -> list[int]:
@@ -1102,11 +1367,17 @@ class StatLoggerManager:
                     "disabling stats logging to avoid incomplete stats."
                 )
             else:
-                default_logger_factory = AggregatedLoggingStatLogger if aggregate_engine_logging else LoggingStatLogger
+                default_logger_factory = (
+                    AggregatedLoggingStatLogger
+                    if aggregate_engine_logging
+                    else LoggingStatLogger
+                )
                 stat_logger_factories.append(default_logger_factory)
         custom_prometheus_logger: bool = False
         for stat_logger_factory in stat_logger_factories:
-            if isinstance(stat_logger_factory, type) and issubclass(stat_logger_factory, AggregateStatLoggerBase):
+            if isinstance(stat_logger_factory, type) and issubclass(
+                stat_logger_factory, AggregateStatLoggerBase
+            ):
                 global_stat_logger = stat_logger_factory(
                     aphrodite_config=aphrodite_config,
                     engine_indexes=self.engine_indexes,
@@ -1122,7 +1393,9 @@ class StatLoggerManager:
                 )
             self.stat_loggers.append(global_stat_logger)
         if not custom_prometheus_logger:
-            self.stat_loggers.append(PrometheusStatLogger(aphrodite_config, self.engine_indexes))
+            self.stat_loggers.append(
+                PrometheusStatLogger(aphrodite_config, self.engine_indexes)
+            )
 
     def record(
         self,
@@ -1133,8 +1406,8 @@ class StatLoggerManager:
     ):
         if engine_idx is None:
             engine_idx = 0
-        for logger in self.stat_loggers:
-            logger.record(
+        for stat_logger in self.stat_loggers:
+            stat_logger.record(
                 scheduler_stats,
                 iteration_stats,
                 mm_cache_stats=mm_cache_stats,

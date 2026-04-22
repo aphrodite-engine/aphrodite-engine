@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2025-present the Outlines developers
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from __future__ import annotations
 
 import ast
@@ -13,14 +13,19 @@ from typing import TYPE_CHECKING
 import torch
 from regex import escape as regex_escape
 
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.import_utils import LazyLoader
+from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend,
     StructuredOutputGrammar,
     StructuredOutputOptions,
 )
-from aphrodite.v1.structured_output.utils import OutlinesVocabulary, get_outlines_cache, get_outlines_vocabulary
+from aphrodite.v1.structured_output.utils import (
+    OutlinesVocabulary,
+    get_outlines_cache,
+    get_outlines_vocabulary,
+)
 
 if TYPE_CHECKING:
     import outlines_core as oc
@@ -49,7 +54,9 @@ class OutlinesBackend(StructuredOutputBackend):
         self.vocabulary = get_outlines_vocabulary(self.tokenizer)
         self.cache = get_outlines_cache()
 
-    def _compile_index(self, regex_string: str, vocabulary: OutlinesVocabulary) -> oc.Index:
+    def _compile_index(
+        self, regex_string: str, vocabulary: OutlinesVocabulary
+    ) -> oc.Index:
         cache_key = f"{vocabulary._hash}_{regex_string}"
         if cache_key in self.cache:
             return self.cache[cache_key]
@@ -59,7 +66,9 @@ class OutlinesBackend(StructuredOutputBackend):
 
         return index
 
-    def compile_grammar(self, request_type: StructuredOutputOptions, grammar_spec: str) -> StructuredOutputGrammar:
+    def compile_grammar(
+        self, request_type: StructuredOutputOptions, grammar_spec: str
+    ) -> StructuredOutputGrammar:
         if request_type == StructuredOutputOptions.JSON:
             regex = json_schema.build_regex_from_schema(grammar_spec)
         elif request_type == StructuredOutputOptions.REGEX:
@@ -69,7 +78,9 @@ class OutlinesBackend(StructuredOutputBackend):
             choices = [regex_escape(c) for c in choices]
             regex = "(" + "|".join(choices) + ")"
         else:
-            raise ValueError(f"Invalid request type for Outlines backend ({request_type!s})")
+            raise ValueError(
+                f"Invalid request type for Outlines backend ({request_type!s})"
+            )
         index = self._compile_index(regex, self.vocabulary)
         max_rollback_tokens = (
             self.aphrodite_config.speculative_config.num_speculative_tokens
@@ -86,7 +97,7 @@ class OutlinesBackend(StructuredOutputBackend):
             (max_num_seqs, (self.vocab_size + 31) // 32),
             -1,
             dtype=torch.int32,
-            pin_memory=torch.cuda.is_available(),
+            pin_memory=is_pin_memory_available(),
         )
 
     def destroy(self):
@@ -97,7 +108,9 @@ class OutlinesBackend(StructuredOutputBackend):
 class OutlinesGrammar(StructuredOutputGrammar):
     vocab_size: int
     guide: oc.Guide = field(hash=False)
-    num_processed_tokens: int = field(default_factory=lambda: 0, repr=False, hash=False, init=False)
+    num_processed_tokens: int = field(
+        default_factory=lambda: 0, repr=False, hash=False, init=False
+    )
 
     # outlines_core signals done on DFA accept; Aphrodite expects done after EOS.
     # We delay the finished flag by one step so EOS can still be emitted.
@@ -110,7 +123,12 @@ class OutlinesGrammar(StructuredOutputGrammar):
         Returns False if the FSM failed to advance.
         """
         if self.guide.accepts_tokens(tokens):
-            # Advance cannot fail because we checked Guide.accepts_tokens()
+            # Advance can fail when the next state reached after advancing with
+            # the current tokens is a dead state. This is because Guide.accepts_tokens()
+            # only checks whether the current tokens can be accepted,
+            # whereas guide.advance() additionally checks the next state
+            # after all tokens are accepted.
+            # We need to be aware that the FSM must be prepared without dead states.
             for t in tokens:
                 self.guide.advance(t)
                 self.num_processed_tokens += 1
@@ -166,7 +184,9 @@ def validate_structured_output_request_outlines(params: SamplingParams):
             try:
                 schema = json.dumps(so_params.json)
             except Exception as e:
-                raise ValueError(f"Error serializing structured outputs jsonschema: {e}") from e
+                raise ValueError(
+                    f"Error serializing structured outputs jsonschema: {e}"
+                ) from e
         pattern = json_schema.build_regex_from_schema(schema)
         validate_regex_is_buildable(pattern)
     elif so_params.choice:
@@ -174,7 +194,10 @@ def validate_structured_output_request_outlines(params: SamplingParams):
         regex = "(" + "|".join(choices) + ")"
         validate_regex_is_buildable(regex)
     elif so_params.grammar:
-        raise ValueError("Outlines structured outputs backend does not support grammar specifications")
+        raise ValueError(
+            "Outlines structured outputs backend "
+            "does not support grammar specifications"
+        )
 
 
 def _prefix_needs_context(parsed) -> bool:

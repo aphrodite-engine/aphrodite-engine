@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from aphrodite.lora.punica_wrapper.punica_base import PunicaWrapperBase
 from aphrodite.lora.punica_wrapper.punica_selector import get_punica_wrapper
 

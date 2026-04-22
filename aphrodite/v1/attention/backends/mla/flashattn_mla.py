@@ -1,16 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from dataclasses import dataclass
 from typing import ClassVar
 
 import torch
-from aphrodite_kernels.aphrodite_flash_attn import flash_attn_varlen_func, get_scheduler_metadata
 
-from aphrodite import envs
-from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, is_quantized_kv_cache
-from aphrodite.attention.utils.fa_utils import flash_attn_supports_mla, get_flash_attn_version
+import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
+from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
-from aphrodite.v1.attention.backends.mla.common import (
+from aphrodite.model_executor.layers.attention.mla_attention import (
     MLACommonBackend,
     MLACommonDecodeMetadata,
     MLACommonImpl,
@@ -18,20 +18,43 @@ from aphrodite.v1.attention.backends.mla.common import (
     MLACommonMetadataBuilder,
     QueryLenSupport,
 )
-from aphrodite.v1.attention.backends.utils import AttentionCGSupport
+from aphrodite.platforms.interface import DeviceCapability
+from aphrodite.utils.math_utils import round_up
+from aphrodite.utils.torch_utils import is_quantized_kv_cache
+from aphrodite.v1.attention.backend import (
+    AttentionCGSupport,
+    AttentionLayer,
+    AttentionType,
+    MultipleOf,
+)
+from aphrodite.v1.attention.backends.fa_utils import (
+    flash_attn_supports_mla,
+    get_flash_attn_version,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
+from aphrodite.aphrodite_flash_attn import (  # type: ignore[attr-defined]
+    flash_attn_varlen_func,
+    get_scheduler_metadata,
+)
 
 logger = init_logger(__name__)
 
 
 class FlashAttnMLABackend(MLACommonBackend):
+    supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
+        "float16",
+        "bfloat16",
+    ]
+
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [MultipleOf(16)]
+
     @staticmethod
     def get_name() -> str:
         return "FLASH_ATTN_MLA"
-
-    @staticmethod
-    def get_metadata_cls() -> type["FlashAttnMLAMetadata"]:
-        return FlashAttnMLAMetadata
 
     @staticmethod
     def get_builder_cls() -> type["FlashAttnMLAMetadataBuilder"]:
@@ -40,6 +63,26 @@ class FlashAttnMLABackend(MLACommonBackend):
     @staticmethod
     def get_impl_cls() -> type["FlashAttnMLAImpl"]:
         return FlashAttnMLAImpl
+
+    @classmethod
+    def supports_compute_capability(cls, capability: DeviceCapability) -> bool:
+        return capability.major == 9
+
+    @classmethod
+    def supports_combination(
+        cls,
+        head_size: int,
+        dtype: torch.dtype,
+        kv_cache_dtype: CacheDType | None,
+        block_size: int | None,
+        use_mla: bool,
+        has_sink: bool,
+        use_sparse: bool,
+        device_capability: DeviceCapability,
+    ) -> str | None:
+        if not flash_attn_supports_mla():
+            return "FlashAttention MLA not supported on this device"
+        return None
 
 
 @dataclass
@@ -57,7 +100,7 @@ class FlashAttnMLAMetadata(MLACommonMetadata[FlashAttnMLADecodeMetadata]):
 
 
 class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]):
-    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
+    _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
     query_len_support: ClassVar[QueryLenSupport] = QueryLenSupport.VARLEN
     reorder_batch_threshold: int = 512  # process small prefills with decode pathway
 
@@ -68,30 +111,46 @@ class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device, FlashAttnMLAMetadata)
+        interleave_size = aphrodite_config.parallel_config.cp_kv_cache_interleave_size
+        super().__init__(
+            kv_cache_spec,
+            layer_names,
+            aphrodite_config,
+            device,
+            FlashAttnMLAMetadata,
+            supports_dcp_with_varlen=(interleave_size == 1),
+        )
         self.max_num_splits = 0  # No upper bound on the number of splits.
         self.fa_aot_schedule = get_flash_attn_version() == 3
 
-        self.use_full_cuda_graph = self.compilation_config.cudagraph_mode.has_full_cudagraphs()
+        self.use_full_cuda_graph = (
+            self.compilation_config.cudagraph_mode.has_full_cudagraphs()
+        )
         self.max_cudagraph_size = self.compilation_config.max_cudagraph_capture_size
 
         if self.use_full_cuda_graph and self.fa_aot_schedule:
-            if self.max_cudagraph_size > 992:
-                # This condition derives from FA3's internal heuristic.
-                # TODO(woosuk): Support larger cudagraph sizes.
-                raise ValueError("Capture size larger than 992 is not supported for full cuda graph.")
-
+            # FA3 scheduler_metadata size: 1 + round_up(batch_size, 4) * 4
+            # The +1 is for the tile_count_semaphore (synchronization).
+            # The 4 slots per batch element (num_prepare_batch_vectors) are:
+            #   prepare_varlen + dynamic_split + sort_batches + head_swizzle
+            # See: https://github.com/vllm-project/flash-attention/blob/5824e6e/hopper/flash_api.cpp#L664-L671  # noqa: E501
+            max_batch_size = max(
+                aphrodite_config.scheduler_config.max_num_seqs,
+                self.max_cudagraph_size or 0,
+            )
             self.scheduler_metadata = torch.zeros(
-                aphrodite_config.scheduler_config.max_num_seqs + 1,
+                1 + round_up(max_batch_size, 4) * 4,
                 dtype=torch.int32,
                 device=self.device,
             )
             # When using cuda graph, we need to set the upper bound of the
             # number of splits so that large enough intermediate buffers are
             # pre-allocated during capture.
-            self.max_num_splits = envs.APHRODITE_FLASH_ATTN_MAX_NUM_SPLITS_FOR_CUDA_GRAPH
+            self.max_num_splits = (
+                aphrodite_config.attention_config.flash_attn_max_num_splits_for_cuda_graph
+            )
 
-        if aphrodite_is_batch_invariant():
+        if envs.APHRODITE_BATCH_INVARIANT:
             self.max_num_splits = 1
 
     def _schedule_decode(
@@ -125,8 +184,8 @@ class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]
     def _build_decode(
         self,
         block_table_tensor: torch.Tensor,
-        seq_lens_cpu: torch.Tensor,
         seq_lens_device: torch.Tensor,
+        max_seq_len: int,
         query_start_loc_cpu: torch.Tensor,
         query_start_loc_device: torch.Tensor,
         num_decode_tokens: int,
@@ -134,22 +193,25 @@ class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]
     ) -> FlashAttnMLADecodeMetadata:
         query_lens_cpu = query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]
         max_query_len = query_lens_cpu.max().item()
-        max_seq_len = seq_lens_device.max().item()
 
         # For Flash Attention MLA + full cudagraph
         max_num_splits = 0
-        if self.use_full_cuda_graph and num_decode_tokens <= self.max_cudagraph_size:
+        if (
+            self.use_full_cuda_graph
+            and self.max_cudagraph_size is not None
+            and num_decode_tokens <= self.max_cudagraph_size
+        ):
             # NOTE(woosuk): Setting num_splits > 1 may increase the memory
             # usage, because the intermediate buffers of size [num_splits,
             # num_heads, num_tokens, head_size] are allocated. Therefore,
             # we only set num_splits when using cuda graphs.
             max_num_splits = self.max_num_splits
 
-        if aphrodite_is_batch_invariant():
+        if envs.APHRODITE_BATCH_INVARIANT:
             max_num_splits = 1
 
         scheduler_metadata = self._schedule_decode(
-            num_reqs=seq_lens_cpu.numel(),
+            num_reqs=seq_lens_device.shape[0],
             cu_query_lens=query_start_loc_device,
             max_query_len=max_query_len,
             seqlens=seq_lens_device,
@@ -162,7 +224,8 @@ class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]
             n = scheduler_metadata.shape[0]
             # Ensure the persistent buffer is large enough
             assert n <= self.scheduler_metadata.shape[0], (
-                f"Scheduler metadata size {n} exceeds buffer size " + f"{self.scheduler_metadata.shape[0]}"
+                f"Scheduler metadata size {n} exceeds buffer size "
+                f"{self.scheduler_metadata.shape[0]}"
             )
             self.scheduler_metadata[:n] = scheduler_metadata
             # NOTE(woosuk): We should zero out the rest of the scheduler
@@ -222,18 +285,24 @@ class FlashAttnMLAImpl(MLACommonImpl[FlashAttnMLAMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "FlashAttnMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
+                "FlashAttnMLAImpl does not support one of the following: "
+                "alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and encoder/decoder cross-attention are not implemented for FlashAttnMLAImpl"
+                "Encoder self-attention and "
+                "encoder/decoder cross-attention "
+                "are not implemented for "
+                "FlashAttnMLAImpl"
             )
 
         if is_quantized_kv_cache(self.kv_cache_dtype):
-            raise NotImplementedError("FlashAttnMLA V1 with FP8 KV cache not yet supported")
+            raise NotImplementedError(
+                "FlashAttnMLA V1 with FP8 KV cache not yet supported"
+            )
 
-    def _forward_decode(
+    def forward_mqa(
         self,
         q: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         kv_c_and_k_pe_cache: torch.Tensor,
@@ -246,9 +315,11 @@ class FlashAttnMLAImpl(MLACommonImpl[FlashAttnMLAMetadata]):
         if type(q) is tuple:
             q_nope, q_pe = q
         else:
-            q_nope, q_pe = torch.split(q, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
+            q_nope, q_pe = torch.split(
+                q, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1
+            )
 
-        if self.kv_cache_dtype.startswith("fp8"):
+        if is_quantized_kv_cache(self.kv_cache_dtype):
             raise NotImplementedError("FP8 FlashAttention MLA not yet supported")
 
         kv_c_cache = kv_c_and_k_pe_cache[..., : self.kv_lora_rank]

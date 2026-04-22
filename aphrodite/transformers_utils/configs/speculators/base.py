@@ -1,15 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
+from dataclasses import fields, is_dataclass
 from typing import Any
 
 from transformers import PretrainedConfig
 
-from aphrodite.transformers_utils.configs.speculators.algos import SUPPORTED_SPECULATORS_TYPES
-
-__all__ = ["SpeculatorsConfig"]
+from aphrodite.transformers_utils.configs.speculators.algos import (
+    SUPPORTED_SPECULATORS_TYPES,
+)
+from aphrodite.transformers_utils.utils import without_trust_remote_code
 
 
 class SpeculatorsConfig(PretrainedConfig):
     model_type = "speculators"
+
+    def __init__(self, **kwargs):
+        # Transformers v4 - super().__init__ which sets all kwargs as attributes
+        if not is_dataclass(PretrainedConfig):
+            return super().__init__(**kwargs)
+        # Transformers v5 - super().__init__ performs some validation before
+        # setting all kwargs as attributes, so we set them first to be safe
+        pre_trained_config_fields = {f.name for f in fields(PretrainedConfig)}
+        super_kwargs = dict()
+        for key, value in kwargs.items():
+            if key == "model_type":
+                continue  # model_type is set as a class variable, so skip it here
+            elif key in pre_trained_config_fields:
+                super_kwargs[key] = value
+            else:
+                setattr(self, key, value)
+        super().__init__(**super_kwargs)
 
     @classmethod
     def from_pretrained(
@@ -18,13 +39,20 @@ class SpeculatorsConfig(PretrainedConfig):
         **kwargs,
     ) -> "SpeculatorsConfig":
         """Load speculators Eagle config and convert to Aphrodite format."""
-        config_dict, _ = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        config_dict, _ = cls.get_config_dict(
+            pretrained_model_name_or_path, **without_trust_remote_code(kwargs)
+        )
 
-        aphrodite_config = cls.extract_aphrodite_speculative_config(config_dict)
+        aphrodite_config = cls.extract_transformers_pre_trained_config(config_dict)
         return cls(**aphrodite_config)
 
     @classmethod
-    def extract_aphrodite_speculative_config(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+    def extract_transformers_pre_trained_config(
+        cls, config_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Extract standard Transformers PreTrainedConfig config from speculators config.
+        """
         speculators_model_type = config_dict.get("speculators_model_type")
         if speculators_model_type not in SUPPORTED_SPECULATORS_TYPES:
             raise ValueError(
@@ -32,15 +60,23 @@ class SpeculatorsConfig(PretrainedConfig):
                 "Please ensure you're loading a speculators-format model."
             )
 
+        # Start with transformer layer configuration if present
+        pre_trained_config = config_dict.get("transformer_layer_config", {})
+        # Apply anything specific to the supported algorithm
+        algo_updater = SUPPORTED_SPECULATORS_TYPES[speculators_model_type]
+        algo_updater(config_dict=config_dict, pre_trained_config=pre_trained_config)
+        return pre_trained_config
+
+    @classmethod
+    def extract_aphrodite_speculative_config(
+        cls, config_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Extract Aphrodite speculative config from speculators config."""
         # validate fields
         # TODO: @dsikka - use speculators pydantic model to validate
         cls.validate_speculators_config(config_dict=config_dict)
         # Convert from speculators config -> format that can be ingested by Aphrodite
-        aphrodite_config = cls.build_aphrodite_speculative_config(config_dict=config_dict)
-        # Apply anything specific to the supported algorithm
-        algo_updater = SUPPORTED_SPECULATORS_TYPES[speculators_model_type]
-        algo_updater(config_dict=config_dict, aphrodite_config=aphrodite_config)
-        return aphrodite_config
+        return cls.build_aphrodite_speculative_config(config_dict=config_dict)
 
     @classmethod
     def validate_speculators_config(cls, config_dict: dict[str, Any]) -> None:
@@ -58,10 +94,14 @@ class SpeculatorsConfig(PretrainedConfig):
             raise ValueError("Must provide transformer_layer_config")
 
         if not isinstance(config_dict["transformer_layer_config"], dict):
-            raise TypeError("'transformer_layer_config' must be a dictionary if provided")
+            raise TypeError(
+                "'transformer_layer_config' must be a dictionary if provided"
+            )
 
     @classmethod
-    def build_aphrodite_speculative_config(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+    def build_aphrodite_speculative_config(
+        cls, config_dict: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Build Aphrodite-compatible speculative configuration from speculators format.
 
@@ -86,17 +126,12 @@ class SpeculatorsConfig(PretrainedConfig):
         num_speculative_tokens = first_method.get("speculative_tokens")
 
         if num_speculative_tokens is None:
-            raise ValueError(f"Missing 'speculative_tokens' in proposal method. Got: {first_method}")
+            raise ValueError(
+                f"Missing 'speculative_tokens' in proposal method. Got: {first_method}"
+            )
 
         # Build base Aphrodite speculative configuration
-        aphrodite_config = {
+        return {
             "method": config_dict.get("speculators_model_type"),
             "num_speculative_tokens": num_speculative_tokens,
-            "target_model": spec_config.get("verifier")["name_or_path"],
         }
-
-        # Merge transformer layer configuration if present
-        transformer_config = config_dict.get("transformer_layer_config", {})
-        aphrodite_config.update(transformer_config)
-
-        return aphrodite_config

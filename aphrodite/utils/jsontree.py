@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Helper functions to work with nested JSON structures."""
 
 from collections.abc import Callable, Iterable
 from functools import reduce
-from typing import TYPE_CHECKING, TypeAlias, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, overload
 
 if TYPE_CHECKING:
     import torch
@@ -12,7 +14,9 @@ if TYPE_CHECKING:
 _T = TypeVar("_T")
 _U = TypeVar("_U")
 
-JSONTree: TypeAlias = dict[str, "JSONTree[_T]"] | list["JSONTree[_T]"] | tuple["JSONTree[_T]", ...] | _T
+JSONTree: TypeAlias = (
+    dict[str, "JSONTree[_T]"] | list["JSONTree[_T]"] | tuple["JSONTree[_T]", ...] | _T
+)
 """A nested JSON structure where the leaves need not be JSON-serializable."""
 
 _JSONTree: TypeAlias = (
@@ -78,16 +82,13 @@ def json_map_leaves(
 
 def json_map_leaves(
     func: Callable[[_T], _U],
-    value: "BatchedTensorInputs" | _JSONTree[_T],
+    value: Any,
 ) -> "BatchedTensorInputs" | _JSONTree[_U]:
     """Apply a function to each leaf in a nested JSON structure."""
     if isinstance(value, dict):
-        return {
-            k: json_map_leaves(func, v)  # type: ignore[arg-type]
-            for k, v in value.items()
-        }
+        return {k: json_map_leaves(func, v) for k, v in value.items()}  # type: ignore
     elif isinstance(value, list):
-        return [json_map_leaves(func, v) for v in value]
+        return [json_map_leaves(func, v) for v in value]  # type: ignore
     elif isinstance(value, tuple):
         return tuple(json_map_leaves(func, v) for v in value)
     else:
@@ -136,9 +137,9 @@ def json_reduce_leaves(
 
 
 def json_reduce_leaves(
-    func: Callable[..., _T | _U],
+    func: Callable[[_T, _T], _T] | Callable[[_U, _T], _U],
     value: _JSONTree[_T],
-    initial: _U = cast(_U, ...),  # noqa: B008
+    initial: _U = ...,  # type: ignore[assignment]
     /,
 ) -> _T | _U:
     """
@@ -147,13 +148,9 @@ def json_reduce_leaves(
     sequence to a single value.
     """
     if initial is ...:
-        return reduce(func, json_iter_leaves(value))  # type: ignore[arg-type]
+        return reduce(func, json_iter_leaves(value))  # type: ignore
 
-    return reduce(
-        func,  # type: ignore[arg-type]
-        json_iter_leaves(value),
-        initial,
-    )
+    return reduce(func, json_iter_leaves(value), initial)  # type: ignore
 
 
 def json_count_leaves(value: JSONTree[_T]) -> int:

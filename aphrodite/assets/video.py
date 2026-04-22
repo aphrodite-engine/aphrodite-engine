@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, ClassVar, Literal
@@ -7,14 +10,9 @@ import numpy.typing as npt
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
-from aphrodite.utils.import_utils import PlaceholderModule
+from aphrodite.multimodal.media.audio import load_audio_pyav
 
 from .base import get_cache_dir
-
-try:
-    import librosa
-except ImportError:
-    librosa = PlaceholderModule("librosa")  # type: ignore[assignment]
 
 
 @lru_cache
@@ -64,7 +62,8 @@ def video_to_ndarrays(path: str, num_frames: int = -1) -> npt.NDArray:
     frames = np.stack(frames)
     if len(frames) < num_frames:
         raise ValueError(
-            f"Could not read enough frames from video file {path} (expected {num_frames} frames, got {len(frames)})"
+            f"Could not read enough frames from video file {path}"
+            f" (expected {num_frames} frames, got {len(frames)})"
         )
     return frames
 
@@ -142,4 +141,4 @@ class VideoAsset:
 
         See also: examples/offline_inference/qwen2_5_omni/only_thinker.py
         """
-        return librosa.load(self.video_path, sr=sampling_rate)[0]
+        return load_audio_pyav(self.video_path, sr=sampling_rate)[0]

@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from dataclasses import dataclass
 from typing import ClassVar
 
 import torch
 
-from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, MultipleOf
-from aphrodite.attention.ops.flashmla import flash_mla_with_kvcache, get_mla_metadata, is_flashmla_dense_supported
+import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
+from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
-from aphrodite.v1.attention.backends.mla.common import (
+from aphrodite.model_executor.layers.attention.mla_attention import (
     MLACommonBackend,
     MLACommonDecodeMetadata,
     MLACommonImpl,
@@ -16,10 +18,26 @@ from aphrodite.v1.attention.backends.mla.common import (
     MLACommonMetadataBuilder,
     QueryLenSupport,
 )
-from aphrodite.v1.attention.backends.utils import (
+from aphrodite.platforms.interface import DeviceCapability
+from aphrodite.utils.platform_utils import num_compute_units
+from aphrodite.utils.torch_utils import is_quantized_kv_cache
+from aphrodite.v1.attention.backend import (
     AttentionCGSupport,
+    AttentionLayer,
+    AttentionType,
+    MultipleOf,
+)
+from aphrodite.v1.attention.backends.utils import (
     reshape_attn_output_for_spec_decode,
     reshape_query_for_spec_decode,
+)
+from aphrodite.v1.attention.ops.flashmla import (
+    FlashMLASchedMeta,
+    flash_mla_with_kvcache,
+    flash_mla_with_kvcache_fp8,
+    get_mla_metadata,
+    get_mla_metadata_dense_fp8,
+    is_flashmla_dense_supported,
 )
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
@@ -27,13 +45,22 @@ logger = init_logger(__name__)
 
 
 class FlashMLABackend(MLACommonBackend):
+    supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
+        "float16",
+        "bfloat16",
+        "fp8",
+        "fp8_e4m3",
+    ]
+
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [64]
+
     @staticmethod
     def get_name() -> str:
         return "FLASHMLA"
-
-    @staticmethod
-    def get_metadata_cls() -> type["FlashMLAMetadata"]:
-        return FlashMLAMetadata
 
     @staticmethod
     def get_builder_cls() -> type["FlashMLAMetadataBuilder"]:
@@ -43,15 +70,35 @@ class FlashMLABackend(MLACommonBackend):
     def get_impl_cls() -> type["FlashMLAImpl"]:
         return FlashMLAImpl
 
-    @staticmethod
-    def get_supported_kernel_block_size() -> list[int | MultipleOf]:
-        return [64]
+    @classmethod
+    def supports_compute_capability(cls, capability: DeviceCapability) -> bool:
+        return capability.major in [9, 10]
+
+    @classmethod
+    def supports_combination(
+        cls,
+        head_size: int,
+        dtype: torch.dtype,
+        kv_cache_dtype: CacheDType | None,
+        block_size: int | None,
+        use_mla: bool,
+        has_sink: bool,
+        use_sparse: bool,
+        device_capability: DeviceCapability,
+    ) -> str | None:
+        if use_sparse:
+            from aphrodite.v1.attention.ops.flashmla import is_flashmla_sparse_supported
+
+            return is_flashmla_sparse_supported()[1]
+        else:
+            from aphrodite.v1.attention.ops.flashmla import is_flashmla_dense_supported
+
+            return is_flashmla_dense_supported()[1]
 
 
 @dataclass
 class FlashMLADecodeMetadata(MLACommonDecodeMetadata):
-    tile_scheduler_metadata: torch.Tensor
-    num_splits: torch.Tensor
+    scheduler_metadata: FlashMLASchedMeta
 
 
 @dataclass
@@ -60,7 +107,7 @@ class FlashMLAMetadata(MLACommonMetadata[FlashMLADecodeMetadata]):
 
 
 class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):
-    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
+    _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
     query_len_support: ClassVar[QueryLenSupport] = QueryLenSupport.UNIFORM
     reorder_batch_threshold: int = 128  # process small prefills with decode pathway
     # ^ TODO(matt): tune this
@@ -72,16 +119,21 @@ class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device, FlashMLAMetadata)
+        super().__init__(
+            kv_cache_spec, layer_names, aphrodite_config, device, FlashMLAMetadata
+        )
 
-        self.num_q_heads = aphrodite_config.model_config.get_num_attention_heads(aphrodite_config.parallel_config)
+        self.num_q_heads = aphrodite_config.model_config.get_num_attention_heads(
+            aphrodite_config.parallel_config
+        )
 
         self.cg_buf_tile_scheduler_metadata = None
         self.cg_buf_num_splits = None
-        self.is_fp8_kvcache = aphrodite_config.cache_config.cache_dtype.startswith("fp8")
+        self.is_fp8_kvcache = is_quantized_kv_cache(
+            aphrodite_config.cache_config.cache_dtype
+        )
 
-        device_properties = torch.cuda.get_device_properties(self.device)
-        num_sms = device_properties.multi_processor_count
+        num_sms = num_compute_units(self.device.index)
 
         if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
             self.cg_buf_tile_scheduler_metadata = torch.zeros(
@@ -100,8 +152,8 @@ class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):
     def _build_decode(
         self,
         block_table_tensor: torch.Tensor,
-        seq_lens_cpu: torch.Tensor,
         seq_lens_device: torch.Tensor,
+        max_seq_len: int,
         query_start_loc_cpu: torch.Tensor,
         query_start_loc_device: torch.Tensor,
         num_decode_tokens: int,
@@ -111,44 +163,40 @@ class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):
         # we use the max but all should be the same due to uniform length requirement
         max_query_len = query_lens_cpu.max().item()
         num_q_tokens_per_head_k = max_query_len * self.num_q_heads // 1
-        tile_scheduler_metadata, num_splits = get_mla_metadata(
+        scheduler_metadata, _ = get_mla_metadata(
             seq_lens_device,
             num_q_tokens_per_head_k,
             1,  # MQA for the decode path
             is_fp8_kvcache=self.is_fp8_kvcache,
         )
+        if self.is_fp8_kvcache:
+            tile_scheduler_metadata, num_splits = get_mla_metadata_dense_fp8(
+                seq_lens_device,
+                num_q_tokens_per_head_k,
+                1,  # MQA for the decode path
+            )
 
-        # TODO: we can disambiguate between decode and mixed-prefill decode here
-        # so we can only use the persistent buffer if a cudagraph is actually
-        # being used.
-        if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
-            assert self.cg_buf_tile_scheduler_metadata is not None
-            assert self.cg_buf_num_splits is not None
+            # Copy FP8 metadata into persistent CUDA graph buffers
+            if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
+                assert self.cg_buf_tile_scheduler_metadata is not None
+                assert self.cg_buf_num_splits is not None
+                n = tile_scheduler_metadata.size(0)
+                assert n <= self.cg_buf_tile_scheduler_metadata.size(0)
+                self.cg_buf_tile_scheduler_metadata[:n].copy_(tile_scheduler_metadata)
+                tile_scheduler_metadata = self.cg_buf_tile_scheduler_metadata[:n]
 
-            sm_parts = tile_scheduler_metadata.size(0)
-            # Metadata per-SM, upper bound on size (<= #SMs, TileMetadataSize)
-            assert sm_parts <= self.cg_buf_tile_scheduler_metadata.size(0)
-            tile_scheduler_metadata_view = self.cg_buf_tile_scheduler_metadata[:sm_parts]
-            tile_scheduler_metadata_view.copy_(tile_scheduler_metadata)
-            tile_scheduler_metadata = tile_scheduler_metadata_view
+                n = num_splits.size(0)
+                assert n <= self.cg_buf_num_splits.size(0)
+                self.cg_buf_num_splits[:n].copy_(num_splits)
+                num_splits = self.cg_buf_num_splits[:n]
 
-            # Num splits is per-batch, varying size (batch_size,)
-            n = num_splits.size(0)
-            # make sure static buffer is large enough
-            assert n <= self.cg_buf_num_splits.size(0)
-            num_splits_view = self.cg_buf_num_splits[:n]
-            num_splits_view.copy_(num_splits)
-            # Num splits needs to monotonically increasing
-            # (with: https://github.com/aphrodite-project/FlashMLA/pull/3, otherwise
-            #  it needs to monotonically increasing by 1)
-            self.cg_buf_num_splits[n:].fill_(num_splits[-1])
-            num_splits = num_splits_view
+            scheduler_metadata.tile_scheduler_metadata = tile_scheduler_metadata
+            scheduler_metadata.num_splits = num_splits
 
         return FlashMLADecodeMetadata(
             block_table=block_table_tensor,
             seq_lens=seq_lens_device,
-            tile_scheduler_metadata=tile_scheduler_metadata,
-            num_splits=num_splits,
+            scheduler_metadata=scheduler_metadata,
             dcp_tot_seq_lens=dcp_tot_seq_lens_device,
         )
 
@@ -191,15 +239,19 @@ class FlashMLAImpl(MLACommonImpl[FlashMLAMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "FlashMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
+                "FlashMLAImpl does not support one of the following: "
+                "alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and encoder/decoder cross-attention are not implemented for FlashMLAImpl"
+                "Encoder self-attention and "
+                "encoder/decoder cross-attention "
+                "are not implemented for "
+                "FlashMLAImpl"
             )
 
-    def _forward_decode(
+    def forward_mqa(
         self,
         q: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         kv_c_and_k_pe_cache: torch.Tensor,
@@ -219,9 +271,8 @@ class FlashMLAImpl(MLACommonImpl[FlashMLAMetadata]):
         num_decodes = attn_metadata.num_decodes
         q = reshape_query_for_spec_decode(q, num_decodes)
 
-        tile_scheduler_metadata = attn_metadata.decode.tile_scheduler_metadata
-        num_splits = attn_metadata.decode.num_splits
-        if aphrodite_is_batch_invariant():
+        scheduler_metadata = attn_metadata.decode.scheduler_metadata
+        if envs.APHRODITE_BATCH_INVARIANT and not is_quantized_kv_cache(self.kv_cache_dtype):
             device = q.device
             dtype = torch.int32
 
@@ -248,20 +299,35 @@ class FlashMLAImpl(MLACommonImpl[FlashMLAMetadata]):
             # Non-split path ignores num_splits, but the API requires it:
             # zeros of length B+1
             num_splits = torch.zeros((B + 1,), dtype=dtype, device=device)
+            scheduler_metadata.tile_scheduler_metadata = tile_scheduler_metadata
+            scheduler_metadata.num_splits = num_splits
 
-        o, lse = flash_mla_with_kvcache(
-            q=q,
-            k_cache=kv_c_and_k_pe_cache.unsqueeze(-2),  # Add head dim of 1
-            block_table=attn_metadata.decode.block_table,
-            cache_seqlens=attn_metadata.decode.seq_lens,
-            head_dim_v=self.kv_lora_rank,
-            tile_scheduler_metadata=tile_scheduler_metadata,
-            num_splits=num_splits,
-            softmax_scale=self.scale,
-            causal=True,
-            descale_q=layer._q_scale.reshape(1),
-            descale_k=layer._k_scale.reshape(1),
-        )
+        if is_quantized_kv_cache(self.kv_cache_dtype):
+            o, lse = flash_mla_with_kvcache_fp8(
+                q=q,
+                k_cache=kv_c_and_k_pe_cache.unsqueeze(-2),  # Add head dim of 1
+                block_table=attn_metadata.decode.block_table,
+                cache_seqlens=attn_metadata.decode.seq_lens,
+                head_dim_v=self.kv_lora_rank,
+                tile_scheduler_metadata=scheduler_metadata.tile_scheduler_metadata,
+                num_splits=scheduler_metadata.num_splits,
+                softmax_scale=self.scale,
+                causal=True,
+                descale_q=layer._q_scale.reshape(1),
+                descale_k=layer._k_scale.reshape(1),
+            )
+        else:
+            o, lse = flash_mla_with_kvcache(
+                q=q,
+                k_cache=kv_c_and_k_pe_cache.unsqueeze(-2),  # Add head dim of 1
+                block_table=attn_metadata.decode.block_table,
+                cache_seqlens=attn_metadata.decode.seq_lens,
+                head_dim_v=self.kv_lora_rank,
+                tile_scheduler_metadata=scheduler_metadata,
+                softmax_scale=self.scale,
+                causal=True,
+                is_fp8_kvcache=False,
+            )
 
         o = reshape_attn_output_for_spec_decode(o)
 

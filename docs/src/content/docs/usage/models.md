@@ -104,8 +104,8 @@ On ROCm platforms, Mistral and Mixtral are capped to 4096 max context length due
 ## Speculative Models
 | Architecture                   | Example Model                            |
 | ------------------------------ | ---------------------------------------- |
-| `EAGLEModel`                   | `abhigoyal/vllm-eagle-llama-68m-random`  |
-| `MedusaModel`                  | `abhigoyal/vllm-medusa-llama-68m-random` |
+| `EAGLEModel`                   | `abhigoyal/aphrodite-eagle-llama-68m-random`  |
+| `MedusaModel`                  | `abhigoyal/aphrodite-medusa-llama-68m-random` |
 | `MLPSpeculatorPreTrainedModel` | `ibm-fms/llama-160m-accelerator`         |
 
 

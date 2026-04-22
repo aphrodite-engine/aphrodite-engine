@@ -1,17 +1,25 @@
-from collections.abc import Sequence
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.logger import init_logger
-from aphrodite.reasoning import DeepSeekR1ReasoningParser, ReasoningParser, ReasoningParserManager
+from aphrodite.reasoning import ReasoningParser
+from aphrodite.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
 
 from .identity_reasoning_parser import IdentityReasoningParser
+
+if TYPE_CHECKING:
+    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+    from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 
 logger = init_logger(__name__)
 
 
-@ReasoningParserManager.register_module("deepseek_v3")
 class DeepSeekV3ReasoningParser(ReasoningParser):
     """
     V3 parser that delegates to either DeepSeekR1ReasoningParser or
@@ -21,9 +29,12 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
     def __init__(self, tokenizer: PreTrainedTokenizerBase, *args, **kwargs):
         super().__init__(tokenizer, *args, **kwargs)
 
-        chat_kwargs = kwargs.pop("chat_template_kwargs", {}) or {}
-        thinking = bool(chat_kwargs.pop("thinking", False))
+        chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
+        thinking = bool(chat_kwargs.get("thinking", False))
+        enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
+        thinking = thinking or enable_thinking
 
+        self._parser: ReasoningParser
         if thinking:
             self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
         else:
@@ -32,15 +43,20 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
     def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         return self._parser.is_reasoning_end(input_ids)
 
+    def is_reasoning_end_streaming(
+        self, input_ids: Sequence[int], delta_ids: Iterable[int]
+    ) -> bool:
+        return self._parser.is_reasoning_end_streaming(input_ids, delta_ids)
+
     def extract_content_ids(self, input_ids: list[int]) -> list[int]:
         return self._parser.extract_content_ids(input_ids)
 
-    def extract_reasoning_content(
-        self, model_output: str, request: ChatCompletionRequest
+    def extract_reasoning(
+        self, model_output: str, request: "ChatCompletionRequest | ResponsesRequest"
     ) -> tuple[str | None, str | None]:
-        return self._parser.extract_reasoning_content(model_output, request)
+        return self._parser.extract_reasoning(model_output, request)
 
-    def extract_reasoning_content_streaming(
+    def extract_reasoning_streaming(
         self,
         previous_text: str,
         current_text: str,
@@ -48,8 +64,8 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
         previous_token_ids: Sequence[int],
         current_token_ids: Sequence[int],
         delta_token_ids: Sequence[int],
-    ) -> DeltaMessage | None:
-        return self._parser.extract_reasoning_content_streaming(
+    ) -> "DeltaMessage | None":
+        return self._parser.extract_reasoning_streaming(
             previous_text,
             current_text,
             delta_text,
@@ -57,3 +73,19 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
             current_token_ids,
             delta_token_ids,
         )
+
+
+class DeepSeekV3ReasoningWithThinkingParser(DeepSeekV3ReasoningParser):
+    """
+    DeepSeekV3ReasoningParser that defaults to thinking mode.
+    """
+
+    def __init__(self, tokenizer: PreTrainedTokenizerBase, *args, **kwargs):
+        chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
+        thinking = chat_kwargs.get("thinking", None)
+        enable_thinking = chat_kwargs.get("enable_thinking", None)
+        if thinking is None and enable_thinking is None:
+            chat_kwargs["thinking"] = True
+            chat_kwargs["enable_thinking"] = True
+            kwargs["chat_template_kwargs"] = chat_kwargs
+        super().__init__(tokenizer, *args, **kwargs)

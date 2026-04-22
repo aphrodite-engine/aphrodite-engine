@@ -4,11 +4,12 @@ requires = [
     "cmake>=3.26.1",
     "ninja",
     "packaging>=24.2",
-    "setuptools>=77.0.3,<80.0.0",
+    "setuptools>=77.0.3,<81.0.0",
     "setuptools-scm>=8.0",
-    "torch == 2.9.0",
+    "torch == 2.11.0",
     "wheel",
-    "jinja2",
+    "jinja2>=3.1.6",
+    "protobuf >= 5.29.6, !=6.30.*, !=6.31.*, !=6.32.*, !=6.33.0.*, !=6.33.1.*, !=6.33.2.*, !=6.33.3.*, !=6.33.4.*",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -37,7 +38,7 @@ Homepage="https://github.com/aphrodite-engine/aphrodite-engine"
 Documentation="https://aphrodite.pygmalion.chat"
 
 [project.scripts]
-aphrodite = "aphrodite.endpoints.cli.main:main"
+aphrodite = "aphrodite.entrypoints.cli.main:main"
 
 [project.entry-points."aphrodite.io_processor_plugins"]
 terratorch_segmentation = "aphrodite.modeling.models.terratorch_plugin.plugins.segmentation:register_segmentation_plugin"

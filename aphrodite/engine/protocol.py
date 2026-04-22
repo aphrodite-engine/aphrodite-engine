@@ -1,27 +1,40 @@
-import enum
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterable, Mapping
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
-from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import AphroditeConfig, ModelConfig
-from aphrodite.inputs.data import PromptType
-from aphrodite.logger import init_logger
+from aphrodite.config import ModelConfig, AphroditeConfig
+from aphrodite.distributed.weight_transfer.base import (
+    WeightTransferInitRequest,
+    WeightTransferUpdateRequest,
+)
+from aphrodite.inputs import EngineInput, PromptType
 from aphrodite.lora.request import LoRARequest
 from aphrodite.outputs import PoolingRequestOutput, RequestOutput
-from aphrodite.plugins.io_processors import IOProcessor
+from aphrodite.pooling_params import PoolingParams
+from aphrodite.renderers import BaseRenderer
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.tasks import SupportedTask
-from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.v1.engine import EngineCoreRequest
-from aphrodite.v1.engine.processor import Processor
+from aphrodite.v1.engine.input_processor import InputProcessor
 
-logger = init_logger(__name__)
+if TYPE_CHECKING:
+    from aphrodite.v1.engine import PauseMode
 
 
-class Device(enum.Enum):
-    GPU = enum.auto()
-    CPU = enum.auto()
+@dataclass
+class StreamingInput:
+    """Input data for a streaming generation request.
+
+    This is used with generate() to support multi-turn streaming sessions
+    where inputs are provided via an async generator.
+    """
+
+    prompt: EngineInput
+    sampling_params: SamplingParams | None = None
 
 
 class EngineClient(ABC):
@@ -29,8 +42,8 @@ class EngineClient(ABC):
 
     aphrodite_config: AphroditeConfig
     model_config: ModelConfig
-    processor: Processor
-    io_processor: IOProcessor | None
+    renderer: BaseRenderer
+    input_processor: InputProcessor
 
     @property
     @abstractmethod
@@ -51,7 +64,10 @@ class EngineClient(ABC):
     @abstractmethod
     def generate(
         self,
-        prompt: EngineCoreRequest | PromptType,
+        prompt: EngineCoreRequest
+        | PromptType
+        | EngineInput
+        | AsyncGenerator[StreamingInput, None],
         sampling_params: SamplingParams,
         request_id: str,
         *,
@@ -61,6 +77,7 @@ class EngineClient(ABC):
         trace_headers: Mapping[str, str] | None = None,
         priority: int = 0,
         data_parallel_rank: int | None = None,
+        reasoning_ended: bool | None = None,
     ) -> AsyncGenerator[RequestOutput, None]:
         """Generate outputs for a request."""
         ...
@@ -68,14 +85,14 @@ class EngineClient(ABC):
     @abstractmethod
     def encode(
         self,
-        prompt: PromptType,
+        prompt: PromptType | EngineInput,
         pooling_params: PoolingParams,
         request_id: str,
         lora_request: LoRARequest | None = None,
         trace_headers: Mapping[str, str] | None = None,
         priority: int = 0,
-        truncate_prompt_tokens: int | None = None,
         tokenization_kwargs: dict[str, Any] | None = None,
+        reasoning_ended: bool | None = None,
     ) -> AsyncGenerator[PoolingRequestOutput, None]:
         """Generate outputs for a request from a pooling model."""
         ...
@@ -88,11 +105,6 @@ class EngineClient(ABC):
             request_id: The unique id of the request,
                         or an iterable of such ids.
         """
-        ...
-
-    @abstractmethod
-    async def get_tokenizer(self) -> AnyTokenizer:
-        """Get the tokenizer"""
         ...
 
     @abstractmethod
@@ -122,12 +134,19 @@ class EngineClient(ABC):
         ...
 
     @abstractmethod
-    async def reset_prefix_cache(self, device: Device | None = None) -> None:
-        """Reset the prefix cache"""
+    async def reset_encoder_cache(self) -> None:
+        """Reset the encoder cache"""
         ...
 
     @abstractmethod
-    async def sleep(self, level: int = 1) -> None:
+    async def reset_prefix_cache(
+        self, reset_running_requests: bool = False, reset_connector: bool = False
+    ) -> bool:
+        """Reset the prefix cache and optionally any configured connector cache"""
+        ...
+
+    @abstractmethod
+    async def sleep(self, level: int = 1, mode: "PauseMode" = "abort") -> None:
         """Sleep the engine"""
         ...
 
@@ -146,7 +165,47 @@ class EngineClient(ABC):
         """Load a new LoRA adapter into the engine for future requests."""
         ...
 
-    async def scale_elastic_ep(self, new_data_parallel_size: int, drain_timeout: int = 300) -> None:
+    @abstractmethod
+    async def pause_generation(
+        self,
+        *,
+        mode: "PauseMode" = "abort",
+        wait_for_inflight_requests: bool = False,
+        clear_cache: bool = True,
+    ) -> None:
+        """Pause new generation/encoding requests.
+
+        Args:
+            mode: How to handle in-flight requests:
+                - ``"abort"``: Abort all in-flight requests immediately
+                  and return partial results with "abort" reason (default).
+                - ``"wait"``: Wait for in-flight requests to complete.
+                - ``"keep"``: Freeze requests in queue; they resume on
+                  :meth:`resume_generation`.
+            wait_for_inflight_requests: DEPRECATED. Use ``mode="wait"`` instead.
+            clear_cache: DEPRECATED. Whether to clear KV and prefix caches
+                after draining.
+        """
+        ...
+
+    @abstractmethod
+    async def resume_generation(self) -> None:
+        """Resume accepting generation/encoding requests."""
+        ...
+
+    @abstractmethod
+    async def is_paused(self) -> bool:
+        """Return whether the engine is currently paused."""
+        ...
+
+    @abstractmethod
+    def shutdown(self, timeout: float | None = None) -> None:
+        """Shutdown the engine with optional timeout."""
+        ...
+
+    async def scale_elastic_ep(
+        self, new_data_parallel_size: int, drain_timeout: int = 300
+    ) -> None:
         """Scale the engine"""
         raise NotImplementedError
 
@@ -162,4 +221,14 @@ class EngineClient(ABC):
 
     async def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         """Get supported tasks"""
+        raise NotImplementedError
+
+    async def init_weight_transfer_engine(
+        self, init_request: WeightTransferInitRequest
+    ) -> None:
+        """Initialize weight transfer for RL training."""
+        raise NotImplementedError
+
+    async def update_weights(self, request: WeightTransferUpdateRequest) -> None:
+        """Batched weight update for RL training."""
         raise NotImplementedError

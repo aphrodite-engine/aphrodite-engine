@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Compatibility wrapper for DeepGEMM API changes.
 
 Users of Aphrodite should always import **only** these wrappers.
@@ -7,15 +9,78 @@ import functools
 import importlib
 import os
 from collections.abc import Callable
+from enum import Enum
 from typing import Any, NoReturn
 
 import torch
 
 import aphrodite.envs as envs
 from aphrodite.logger import logger
+from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+    get_fp8_min_max,
+)
 from aphrodite.platforms import current_platform
 from aphrodite.utils.import_utils import has_deep_gemm
 from aphrodite.utils.math_utils import cdiv
+
+_DEEPGEMM_BLACKWELL_EXCLUDED_MODEL_TYPES: set[str] = {
+    "qwen3_5_text",
+    "qwen3_5_moe_text",
+}
+
+
+def should_auto_disable_deep_gemm(model_type: str | None) -> bool:
+    """Check if DeepGemm should be auto-disabled for this model on Blackwell.
+
+    Returns True if the model is known to have accuracy degradation with
+    DeepGemm's E8M0 scale format on Blackwell GPUs (SM100+).
+    """
+    if model_type is None:
+        return False
+    if not current_platform.is_device_capability_family(100):
+        return False
+    return model_type in _DEEPGEMM_BLACKWELL_EXCLUDED_MODEL_TYPES
+
+
+class DeepGemmQuantScaleFMT(Enum):
+    # Float32 scales in Float32 tensor
+    FLOAT32 = 0
+    # Compute float32 scales and ceil the scales to UE8M0.
+    # Keep the scales in Float32 tensor.
+    FLOAT32_CEIL_UE8M0 = 1
+    # Compute float32 scales and ceil the scales to UE8M0.
+    # Pack the scales into a int32 tensor where each int32
+    # element contains 4 scale values.
+    UE8M0 = 2
+
+    @classmethod
+    def init_oracle_cache(cls) -> None:
+        """Initialize the oracle decision and store it in the class cache"""
+        cached = getattr(cls, "_oracle_cache", None)
+        if cached is not None:
+            return
+
+        use_e8m0 = (
+            envs.APHRODITE_USE_DEEP_GEMM_E8M0
+            and is_deep_gemm_supported()
+            and (_fp8_gemm_nt_impl is not None)
+        )
+        if not use_e8m0:
+            cls._oracle_cache = cls.FLOAT32  # type: ignore
+            return
+
+        cls._oracle_cache = (  # type: ignore
+            cls.UE8M0
+            if current_platform.is_device_capability_family(100)
+            else cls.FLOAT32_CEIL_UE8M0
+        )
+
+    @classmethod
+    def from_oracle(cls) -> "DeepGemmQuantScaleFMT":
+        """Return the pre-initialized oracle decision"""
+        cached = getattr(cls, "_oracle_cache", None)
+        assert cached is not None, "DeepGemmQuantScaleFMT oracle cache not initialized"
+        return cached
 
 
 @functools.cache
@@ -23,9 +88,7 @@ def is_deep_gemm_supported() -> bool:
     """Return `True` if DeepGEMM is supported on the current platform.
     Currently, only Hopper and Blackwell GPUs are supported.
     """
-    is_supported_arch = current_platform.is_cuda() and (
-        current_platform.is_device_capability(90) or current_platform.is_device_capability(100)
-    )
+    is_supported_arch = current_platform.support_deep_gemm()
     return envs.APHRODITE_USE_DEEP_GEMM and has_deep_gemm() and is_supported_arch
 
 
@@ -35,24 +98,24 @@ def is_deep_gemm_e8m0_used() -> bool:
     "E8M0 scale on a Hopper or Blackwell-class GPU.
     """
     if not is_deep_gemm_supported():
-        logger.debug_once("DeepGEMM E8M0 disabled: DeepGEMM not supported on this system.")
+        logger.debug_once(
+            "DeepGEMM E8M0 disabled: DeepGEMM not supported on this system."
+        )
         return False
 
     _lazy_init()
 
     if _fp8_gemm_nt_impl is None:
-        logger.info_once("DeepGEMM E8M0 disabled: _fp8_gemm_nt_impl not found")
-        return False
-
-    if envs.APHRODITE_USE_FLASHINFER_MOE_FP8:
-        logger.info_once("DeepGEMM E8M0 disabled: FlashInfer MOE is enabled.")
+        logger.info_once(
+            "DeepGEMM E8M0 disabled: _fp8_gemm_nt_impl not found", scope="local"
+        )
         return False
 
     if envs.APHRODITE_USE_DEEP_GEMM_E8M0:
-        logger.info_once("DeepGEMM E8M0 enabled on current platform.")
+        logger.info_once("DeepGEMM E8M0 enabled on current platform.", scope="local")
         return True
 
-    logger.info_once("DeepGEMM E8M0 disabled on current configuration.")
+    logger.info_once("DeepGEMM E8M0 disabled on current configuration.", scope="local")
     return False
 
 
@@ -72,6 +135,42 @@ _fp8_paged_mqa_logits_impl: Callable[..., Any] | None = None
 _get_paged_mqa_logits_metadata_impl: Callable[..., Any] | None = None
 _get_mn_major_tma_aligned_tensor_impl: Callable[..., Any] | None = None
 _get_mk_alignment_for_contiguous_layout_impl: Callable[..., Any] | None = None
+_transform_sf_into_required_layout_impl: Callable[..., Any] | None = None
+
+
+def _import_deep_gemm():
+    """Import the deep_gemm module.
+
+    Prefers an externally installed ``deep_gemm`` package (so users can
+    pin a specific version), then falls back to the vendored copy bundled
+    in the Aphrodite wheel.
+
+    Returns ``None`` when neither source is usable.
+    """
+    # 1. Try the external (pip-installed) package first.
+    try:
+        module = importlib.import_module("deep_gemm")
+        logger.debug_once("Imported deep_gemm module from site-packages")
+        return module
+    except ImportError:
+        logger.debug_once(
+            "deep_gemm not found in site-packages, "
+            "trying vendored aphrodite.third_party.deep_gemm"
+        )
+
+    # 2. Fall back to the vendored copy bundled in the Aphrodite wheel.
+    try:
+        module = importlib.import_module("aphrodite.third_party.deep_gemm")
+        logger.debug_once("Imported deep_gemm module from aphrodite.third_party.deep_gemm")
+        return module
+    except ImportError:
+        logger.debug_once("Vendored deep_gemm not found either")
+    except Exception as e:
+        # The vendored module may raise RuntimeError during _C.init()
+        # if JIT include files are missing (e.g. incomplete wheel).
+        logger.warning_once("Failed to import vendored deep_gemm: %s", e)
+
+    return None
 
 
 def _lazy_init() -> None:
@@ -81,6 +180,7 @@ def _lazy_init() -> None:
     global _get_paged_mqa_logits_metadata_impl
     global _get_mn_major_tma_aligned_tensor_impl
     global _get_mk_alignment_for_contiguous_layout_impl
+    global _transform_sf_into_required_layout_impl
     # fast path
     if (
         _fp8_gemm_nt_impl is not None
@@ -90,6 +190,7 @@ def _lazy_init() -> None:
         or _fp8_paged_mqa_logits_impl is not None
         or _get_paged_mqa_logits_metadata_impl is not None
         or _get_mk_alignment_for_contiguous_layout_impl is not None
+        or _transform_sf_into_required_layout_impl is not None
     ):
         return
 
@@ -99,24 +200,48 @@ def _lazy_init() -> None:
     # Set up deep_gemm cache path
     DEEP_GEMM_JIT_CACHE_ENV_NAME = "DG_JIT_CACHE_DIR"
     if not os.environ.get(DEEP_GEMM_JIT_CACHE_ENV_NAME, None):
-        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(envs.APHRODITE_CACHE_ROOT, "deep_gemm")
+        os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(
+            envs.APHRODITE_CACHE_ROOT, "deep_gemm"
+        )
 
-    _dg = importlib.import_module("deep_gemm")
+    _dg = _import_deep_gemm()
+    if _dg is None:
+        return
 
     _fp8_gemm_nt_impl = getattr(_dg, "fp8_gemm_nt", None)
     _grouped_impl = getattr(_dg, "m_grouped_fp8_gemm_nt_contiguous", None)
     _grouped_masked_impl = getattr(_dg, "fp8_m_grouped_gemm_nt_masked", None)
     _fp8_mqa_logits_impl = getattr(_dg, "fp8_mqa_logits", None)
     _fp8_paged_mqa_logits_impl = getattr(_dg, "fp8_paged_mqa_logits", None)
-    _get_paged_mqa_logits_metadata_impl = getattr(_dg, "get_paged_mqa_logits_metadata", None)
-    _get_mn_major_tma_aligned_tensor_impl = getattr(_dg, "get_mn_major_tma_aligned_tensor", None)
-    _get_mk_alignment_for_contiguous_layout_impl = getattr(_dg, "get_mk_alignment_for_contiguous_layout", None)
+    _get_paged_mqa_logits_metadata_impl = getattr(
+        _dg, "get_paged_mqa_logits_metadata", None
+    )
+    _get_mn_major_tma_aligned_tensor_impl = getattr(
+        _dg, "get_mn_major_tma_aligned_tensor", None
+    )
+    _get_mk_alignment_for_contiguous_layout_impl = getattr(
+        _dg, "get_mk_alignment_for_contiguous_layout", None
+    )
+    _transform_sf_into_required_layout_impl = getattr(
+        _dg, "transform_sf_into_required_layout", None
+    )
+    DeepGemmQuantScaleFMT.init_oracle_cache()
 
 
 def get_num_sms() -> int:
     _lazy_init()
-    _dg = importlib.import_module("deep_gemm")
-    return int(_dg.get_num_sms())
+    dg = _import_deep_gemm()
+    if dg is None:
+        raise RuntimeError("DeepGEMM is not available")
+    return int(dg.get_num_sms())
+
+
+def set_num_sms(num_sms: int) -> None:
+    _lazy_init()
+    dg = _import_deep_gemm()
+    if dg is None:
+        raise RuntimeError("DeepGEMM is not available")
+    dg.set_num_sms(num_sms)
 
 
 @functools.cache
@@ -152,14 +277,27 @@ def m_grouped_fp8_gemm_nt_contiguous(*args, **kwargs):
     _lazy_init()
     if _grouped_impl is None:
         return _missing(*args, **kwargs)
-    return _grouped_impl(*args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs)
+    return _grouped_impl(
+        *args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs
+    )
 
 
 def fp8_m_grouped_gemm_nt_masked(*args, **kwargs):
     _lazy_init()
     if _grouped_masked_impl is None:
         return _missing(*args, **kwargs)
-    return _grouped_masked_impl(*args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs)
+    return _grouped_masked_impl(
+        *args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs
+    )
+
+
+def transform_sf_into_required_layout(*args, **kwargs):
+    _lazy_init()
+    if _transform_sf_into_required_layout_impl is None:
+        return _missing(*args, **kwargs)
+    return _transform_sf_into_required_layout_impl(
+        *args, disable_ue8m0_cast=not is_deep_gemm_e8m0_used(), **kwargs
+    )
 
 
 def fp8_mqa_logits(
@@ -168,6 +306,7 @@ def fp8_mqa_logits(
     weights: torch.Tensor,
     cu_seqlen_ks: torch.Tensor,
     cu_seqlen_ke: torch.Tensor,
+    clean_logits: bool,
 ) -> torch.Tensor:
     """Compute FP8 MQA logits for a single sequence without KV paging.
 
@@ -175,13 +314,14 @@ def fp8_mqa_logits(
         q: Query tensor of shape [M, H, D]. Casted to
             `torch.float8_e4m3fn` by caller.
         kv: Tuple `(k_fp8, k_scales)` where `k_fp8` has shape [N, D] with
-            dtype `torch.float8_e4m3fn` and `k_scales` has shape [N] (or
-            [N, 1]) with dtype `torch.float32`.
+            dtype `torch.float8_e4m3fn` and `k_scales` has shape [N])
+            with dtype `torch.float32`.
         weights: weights of shape [M, H], dtype `torch.float32`.
         cu_seqlen_ks: Start indices (inclusive) for valid K per query position,
             shape [M], dtype int32.
         cu_seqlen_ke: End indices (exclusive) for valid K per query position,
             shape [M], dtype int32.
+        clean_logits: Whether to clean the unfilled logits into `-inf`.
 
     Returns:
         Logits tensor of shape [M, N], dtype `torch.float32`.
@@ -189,10 +329,14 @@ def fp8_mqa_logits(
     _lazy_init()
     if _fp8_mqa_logits_impl is None:
         return _missing()
-    return _fp8_mqa_logits_impl(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke)
+    return _fp8_mqa_logits_impl(
+        q, kv, weights, cu_seqlen_ks, cu_seqlen_ke, clean_logits=clean_logits
+    )
 
 
-def get_paged_mqa_logits_metadata(context_lens: torch.Tensor, block_size: int, num_sms: int) -> torch.Tensor:
+def get_paged_mqa_logits_metadata(
+    context_lens: torch.Tensor, block_size: int, num_sms: int
+) -> torch.Tensor:
     """Build scheduling metadata for paged MQA logits.
 
     Args:
@@ -219,6 +363,7 @@ def fp8_paged_mqa_logits(
     block_tables: torch.Tensor,
     schedule_metadata: torch.Tensor,
     max_model_len: int,
+    clean_logits: bool,
 ) -> torch.Tensor:
     """Compute FP8 MQA logits using paged KV-cache.
 
@@ -236,6 +381,7 @@ def fp8_paged_mqa_logits(
         schedule_metadata: Returned by `get_paged_mqa_logits_metadata`;
             used to distribute work across SMs.
         max_model_len: Maximum sequence length used to size the logits output.
+        clean_logits: Whether to clean the unfilled logits into `-inf`.
 
     Returns:
         Logits tensor of shape [B * next_n, max_model_len], dtype
@@ -252,7 +398,7 @@ def fp8_paged_mqa_logits(
         block_tables,
         schedule_metadata,
         max_model_len,
-        clean_logits=True,
+        clean_logits=clean_logits,
     )
 
 
@@ -264,6 +410,11 @@ def _align(x: int, y: int) -> int:
     return cdiv(x, y) * y
 
 
+# Taken from https://github.com/deepseek-ai/DeepGEMM/blob/v2.1.1/csrc/utils/math.hpp#L19
+def get_tma_aligned_size(x: int, element_size: int) -> int:
+    return _align(x, 16 // element_size)
+
+
 DEFAULT_BLOCK_SIZE = [128, 128]
 
 
@@ -272,17 +423,23 @@ DEFAULT_BLOCK_SIZE = [128, 128]
 def per_block_cast_to_fp8(
     x: torch.Tensor, block_size: list[int] = DEFAULT_BLOCK_SIZE, use_ue8m0: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    fp8_dtype = current_platform.fp8_dtype()
     assert x.dim() == 2
     m, n = x.shape
     block_m, block_n = block_size
-    x_padded = torch.zeros((_align(m, block_m), _align(n, block_n)), dtype=x.dtype, device=x.device)
+    x_padded = torch.zeros(
+        (_align(m, block_m), _align(n, block_n)), dtype=x.dtype, device=x.device
+    )
     x_padded[:m, :n] = x
     x_view = x_padded.view(-1, block_m, x_padded.size(1) // block_n, block_n)
     x_amax = x_view.abs().float().amax(dim=(1, 3), keepdim=True).clamp(1e-4)
-    sf = x_amax / 448.0
+    _, fp8_max = get_fp8_min_max()
+    sf = x_amax / fp8_max
     sf = _ceil_to_ue8m0(sf) if use_ue8m0 else sf
-    x_scaled = (x_view * (1.0 / sf)).to(torch.float8_e4m3fn)
-    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), sf.view(x_view.size(0), x_view.size(2))
+    x_scaled = (x_view * (1.0 / sf)).to(fp8_dtype)
+    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), sf.view(
+        x_view.size(0), x_view.size(2)
+    )
 
 
 def calc_diff(x: torch.Tensor, y: torch.Tensor):
@@ -303,21 +460,29 @@ def calc_diff(x: torch.Tensor, y: torch.Tensor):
 
 def should_use_deepgemm_for_fp8_linear(
     output_dtype: torch.dtype,
-    weight: torch.Tensor,
+    weight_shape: tuple[int, int],
     supports_deep_gemm: bool | None = None,
 ):
     if supports_deep_gemm is None:
         supports_deep_gemm = is_deep_gemm_supported()
+
+    # Verify DeepGEMM N/K dims requirements
+    # NOTE: Also synchronized with test_w8a8_block_fp8_deep_gemm_matmul
+    # test inside kernels/quantization/test_block_fp8.py
+    N_MULTIPLE = 64
+    K_MULTIPLE = 128
+
     return (
         supports_deep_gemm
         and output_dtype == torch.bfloat16
-        and weight.shape[0] % 128 == 0
-        and weight.shape[1] % 128 == 0
+        and weight_shape[0] % N_MULTIPLE == 0
+        and weight_shape[1] % K_MULTIPLE == 0
     )
 
 
 __all__ = [
     "calc_diff",
+    "DeepGemmQuantScaleFMT",
     "fp8_gemm_nt",
     "m_grouped_fp8_gemm_nt_contiguous",
     "fp8_m_grouped_gemm_nt_masked",
@@ -328,6 +493,7 @@ __all__ = [
     "is_deep_gemm_e8m0_used",
     "is_deep_gemm_supported",
     "get_num_sms",
+    "set_num_sms",
     "should_use_deepgemm_for_fp8_linear",
     "get_col_major_tma_aligned_tensor",
     "get_mk_alignment_for_contiguous_layout",

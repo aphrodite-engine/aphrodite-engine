@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 # ruff: noqa: E501
+# coding=utf-8
 # adapted from https://github.com/AIDC-AI/Ovis/blob/35ab51a1a1e3542fa6db260a1084cefbc8f164bb/ovis/aphrodite/processing_ovis.py
 # Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
@@ -22,7 +26,7 @@ from functools import cached_property
 
 import PIL
 import torch
-from transformers import AutoProcessor, BatchFeature
+from transformers import BatchFeature
 from transformers.image_utils import ImageInput
 from transformers.processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
@@ -39,9 +43,7 @@ class OvisProcessorKwargs(ProcessingKwargs, total=False):  # type: ignore[call-a
             "padding": False,
         },
         "images_kwargs": {
-            "max_partition": 9,
-            "covering_threshold": 0.9,
-            "convert_to_rgb": True,
+            "do_convert_rgb": True,
             "return_tensors": "pt",
         },
     }
@@ -99,7 +101,10 @@ class OvisProcessor(ProcessorMixin):
     def __call__(
         self,
         images: ImageInput = None,
-        text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] = None,
+        text: TextInput
+        | PreTokenizedInput
+        | list[TextInput]
+        | list[PreTokenizedInput] = None,
         **kwargs: Unpack[OvisProcessorKwargs],
     ) -> BatchFeature:
         """
@@ -136,6 +141,10 @@ class OvisProcessor(ProcessorMixin):
                 - **video_grid_thw** -- List of video 3D grid in LLM. Returned when `videos` is not `None`.
                 - **second_per_grid_ts** -- List of video seconds per time grid. Returned when `videos` is not `None`.
         """
+
+        max_partition = kwargs.pop("max_partition", 9)
+        covering_threshold = kwargs.pop("covering_threshold", 0.9)
+
         output_kwargs = self._merge_kwargs(
             OvisProcessorKwargs,
             tokenizer_init_kwargs=self.tokenizer.init_kwargs,
@@ -152,7 +161,10 @@ class OvisProcessor(ProcessorMixin):
             # Process each image
             for image in images if isinstance(images, list) else [images]:
                 pixel_values, image_placeholders, grid = self.preprocess_image(
-                    image=image, **output_kwargs["images_kwargs"]
+                    image=image,
+                    max_partition=max_partition,
+                    covering_threshold=covering_threshold,
+                    **output_kwargs["images_kwargs"],
                 )
                 processed_images.append(pixel_values)
                 image_placeholders_list.append(image_placeholders)
@@ -172,7 +184,10 @@ class OvisProcessor(ProcessorMixin):
             replaced_ids_list = []
             idx = 0
             for ids_tensor in tokenized_batched_text:
-                if image_token_id in ids_tensor and "image_placeholders" in image_features:
+                if (
+                    image_token_id in ids_tensor
+                    and "image_placeholders" in image_features
+                ):
                     if idx < len(image_features["image_placeholders"]):
                         # Converts in list for ease of use
                         ids_list = ids_tensor.tolist()
@@ -182,7 +197,9 @@ class OvisProcessor(ProcessorMixin):
                         # replace placeholders
                         for i, token_id in enumerate(ids_list):
                             if token_id == image_token_id:
-                                placeholder_ids = image_features["image_placeholders"][idx]
+                                placeholder_ids = image_features["image_placeholders"][
+                                    idx
+                                ]
                                 new_ids.extend(placeholder_ids)
                                 idx += 1
                             else:
@@ -223,7 +240,8 @@ class OvisProcessor(ProcessorMixin):
         batch_token_ids = []
         for text in text_list:
             text_chunks = [
-                self.tokenizer(chunk, add_special_tokens=False).input_ids for chunk in text.split(self.image_token)
+                self.tokenizer(chunk, add_special_tokens=False).input_ids
+                for chunk in text.split(self.image_token)
             ]
             token_ids = []
             num_chuck = len(text_chunks)
@@ -277,7 +295,9 @@ class OvisProcessor(ProcessorMixin):
         for token in image_placeholders:
             padded_placeholder_tokens.append(image_padding_token_id)
             if token == image_atom_token_id:
-                padded_placeholder_tokens.extend([image_padding_token_id] * self.image_segment_len)
+                padded_placeholder_tokens.extend(
+                    [image_padding_token_id] * self.image_segment_len
+                )
         return padded_placeholder_tokens
 
     def preprocess_image(
@@ -285,7 +305,7 @@ class OvisProcessor(ProcessorMixin):
         image: PIL.Image.Image,
         max_partition,
         covering_threshold,
-        convert_to_rgb,
+        do_convert_rgb,
         return_tensors,
     ):
         def _preprocess(img: PIL.Image.Image, side):
@@ -300,21 +320,27 @@ class OvisProcessor(ProcessorMixin):
                 new_height = side
                 new_width = int(w / h * new_height)
             new_size = dict(height=new_height, width=new_width)
-            pixel_values = self.image_processor.preprocess(img, size=new_size, return_tensors=return_tensors)[
-                "pixel_values"
-            ]
+            pixel_values = self.image_processor.preprocess(
+                img, size=new_size, return_tensors=return_tensors
+            )["pixel_values"]
 
             # then pad to square
-            square_values = torch.zeros([1, 3, side, side], dtype=pixel_values.dtype, device=pixel_values.device)
+            square_values = torch.zeros(
+                [1, 3, side, side], dtype=pixel_values.dtype, device=pixel_values.device
+            )
             new_height, new_width = pixel_values.shape[2:]
             if new_height == new_width:
                 square_values[:, :, :, :] = pixel_values
             elif new_height > new_width:
                 from_index = (side - new_width) // 2
-                square_values[:, :, :, from_index : from_index + new_width] = pixel_values
+                square_values[:, :, :, from_index : from_index + new_width] = (
+                    pixel_values
+                )
             else:
                 from_index = (side - new_height) // 2
-                square_values[:, :, from_index : from_index + new_height, :] = pixel_values
+                square_values[:, :, from_index : from_index + new_height, :] = (
+                    pixel_values
+                )
 
             return square_values
 
@@ -356,7 +382,9 @@ class OvisProcessor(ProcessorMixin):
             good_grids = []
             for grid in candidate_grids:
                 partition = _partition(img, grid)
-                covering_ratio = sum([_covering_area(*p, side) for p in partition]) / img_area
+                covering_ratio = (
+                    sum([_covering_area(*p, side) for p in partition]) / img_area
+                )
                 assert covering_ratio <= 1.0
                 all_grids.append((grid, covering_ratio))
                 if covering_ratio > covering_threshold:
@@ -364,12 +392,14 @@ class OvisProcessor(ProcessorMixin):
 
             if len(good_grids) > 0:
                 # pick the good partition with minimum #sub_images and break the tie using covering_ratio
-                return sorted(good_grids, key=lambda x: (x[0][0] * x[0][1], -x[1]))[0][0]
+                return sorted(good_grids, key=lambda x: (x[0][0] * x[0][1], -x[1]))[0][
+                    0
+                ]
             else:
                 # pick the partition with maximum covering_ratio and break the tie using #sub_images
                 return sorted(all_grids, key=lambda x: (-x[1], x[0][0] * x[0][1]))[0][0]
 
-        if convert_to_rgb:
+        if do_convert_rgb:
             image = convert_image_mode(image, "RGB")
 
         sides = self.get_image_size()
@@ -419,8 +449,7 @@ class OvisProcessor(ProcessorMixin):
     def model_input_names(self):
         tokenizer_input_names = self.tokenizer.model_input_names
         image_processor_input_names = self.image_processor.model_input_names
-        names_from_processor = list(dict.fromkeys(tokenizer_input_names + image_processor_input_names))
+        names_from_processor = list(
+            dict.fromkeys(tokenizer_input_names + image_processor_input_names)
+        )
         return names_from_processor + ["second_per_grid_ts"]
-
-
-AutoProcessor.register("OvisProcessor", OvisProcessor)

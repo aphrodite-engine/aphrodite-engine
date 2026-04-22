@@ -1,22 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
+import importlib
 import os
 from abc import abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
-from aphrodite.endpoints.tool_server import ToolServer
+from aphrodite.entrypoints.mcp.tool_server import ToolServer
 from aphrodite.logger import init_logger
 from aphrodite.utils.collection_utils import is_list_of
 from aphrodite.utils.import_utils import import_from_path
 
 if TYPE_CHECKING:
-    from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, ResponsesRequest
-    from aphrodite.transformers_utils.tokenizer import AnyTokenizer
-else:
-    ChatCompletionRequest = Any
-    DeltaMessage = Any
-    ResponsesRequest = Any
-    AnyTokenizer = Any
+    from aphrodite.config import ModelConfig
+    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+    from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
+    from aphrodite.tokenizers import TokenizerLike
 
 logger = init_logger(__name__)
 
@@ -29,8 +31,11 @@ class ReasoningParser:
     It is used to extract reasoning content from the model output.
     """
 
-    def __init__(self, tokenizer: AnyTokenizer, *args, **kwargs):
+    def __init__(self, tokenizer: "TokenizerLike", *args, **kwargs):
         self.model_tokenizer = tokenizer
+        # Optional Aphrodite ModelConfig from the server. Use get (not pop) so composite
+        # parsers can forward **kwargs to nested parsers.
+        self._model_config: ModelConfig | None = kwargs.get("model_config")
 
     @cached_property
     def vocab(self) -> dict[str, int]:
@@ -38,8 +43,22 @@ class ReasoningParser:
         # whereas all tokenizers have .get_vocab()
         return self.model_tokenizer.get_vocab()
 
+    @property
+    def reasoning_start_str(self) -> str | None:
+        """Set `reasoning_start_str` to the strings that delimit
+        the reasoning block (e.g. `""<seed:think>""` and `"<think>"`).
+        """
+        return None
+
+    @property
+    def reasoning_end_str(self) -> str | None:
+        """Set `reasoning_end_str` to the strings that delimit
+        the reasoning block (e.g. `""</seed:think>""` and `"</think>"`).
+        """
+        return None
+
     @abstractmethod
-    def is_reasoning_end(self, input_ids: list[int]) -> bool:
+    def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         """
         Check if the reasoning content ends in the input_ids.
 
@@ -55,6 +74,31 @@ class ReasoningParser:
             True if the reasoning content ends in the input_ids.
         """
 
+    def is_reasoning_end_streaming(
+        self, input_ids: Sequence[int], delta_ids: Iterable[int]
+    ) -> bool:
+        """
+        Check if the reasoning content ends in the input_ids on a
+        decode step.
+
+        It is used in structured engines like `xgrammar` to check if the
+        reasoning content ends in the model output during a decode step.
+        `input_ids` the entire model output and `delta_ids` are the last few
+        computed tokens of the model output (like during a decode step).
+
+        Parameters:
+        input_ids: list[int]
+            The entire model output.
+        delta_ids: list[int]
+            The last few computed tokens of the model output at the current decode step.
+
+        Returns:
+        bool
+            True if the reasoning content ends in the `delta_ids` on a
+            decode step.
+        """
+        return self.is_reasoning_end(input_ids)
+
     @abstractmethod
     def extract_content_ids(self, input_ids: list[int]) -> list[int]:
         """
@@ -67,11 +111,30 @@ class ReasoningParser:
             The extracted content from the input_ids.
         """
 
+    def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
+        """Count the number of reasoning tokens in a sequence.
+
+        Text-based reasoning models typically wrap their chain-of-thought
+        between special start/end tokens (e.g., ``<think> ... </think>``).
+        Implementations that support reasoning token counting should override
+        this method. The default implementation returns ``0`` so existing
+        parsers remain unchanged unless they explicitly opt in.
+
+        Args:
+            token_ids: Sequence of generated token ids (excluding prompt).
+
+        Returns:
+            int: Number of tokens that belong to reasoning content.
+        """
+
+        # By default, assume the parser cannot detect reasoning spans.
+        return 0
+
     @abstractmethod
-    def extract_reasoning_content(
+    def extract_reasoning(
         self,
         model_output: str,
-        request: ChatCompletionRequest | ResponsesRequest,
+        request: "ChatCompletionRequest | ResponsesRequest",
     ) -> tuple[str | None, str | None]:
         """
         Extract reasoning content from a complete model-generated string.
@@ -80,19 +143,15 @@ class ReasoningParser:
         available before sending to the client.
 
         Parameters:
-        model_output: str
-            The model-generated string to extract reasoning content from.
-
-        request: ChatCompletionRequest
-            The request object that was used to generate the model_output.
+            model_output: The model-generated string to extract reasoning content from.
+            request: The request object that was used to generate the model_output.
 
         Returns:
-        tuple[Optional[str], Optional[str]]
             A tuple containing the reasoning content and the content.
         """
 
     @abstractmethod
-    def extract_reasoning_content_streaming(
+    def extract_reasoning_streaming(
         self,
         previous_text: str,
         current_text: str,
@@ -100,7 +159,7 @@ class ReasoningParser:
         previous_token_ids: Sequence[int],
         current_token_ids: Sequence[int],
         delta_token_ids: Sequence[int],
-    ) -> DeltaMessage | None:
+    ) -> "DeltaMessage | None":
         """
         Instance method that should be implemented for extracting reasoning
         from an incomplete response; for use when handling reasoning calls and
@@ -109,11 +168,17 @@ class ReasoningParser:
         previously been parsed and extracted (see constructor)
         """
 
+    def adjust_request(
+        self, request: "ChatCompletionRequest | ResponsesRequest"
+    ) -> "ChatCompletionRequest | ResponsesRequest":
+        """Adjust request parameters; override in subclasses as needed."""
+        return request
+
     def prepare_structured_tag(
         self,
         original_tag: str | None,
         tool_server: ToolServer | None,
-    ) -> str:
+    ) -> str | None:
         """
         Instance method that is implemented for preparing the structured tag
         Otherwise, None is returned
@@ -122,46 +187,120 @@ class ReasoningParser:
 
 
 class ReasoningParserManager:
-    reasoning_parsers: dict[str, type] = {}
+    """
+    Central registry for ReasoningParser implementations.
+
+    Supports two registration modes:
+      - Eager registration via `register_module`
+      - Lazy registration via `register_lazy_module`
+
+    Each reasoning parser must inherit from `ReasoningParser`.
+    """
+
+    reasoning_parsers: dict[str, type[ReasoningParser]] = {}
+    lazy_parsers: dict[str, tuple[str, str]] = {}  # name -> (module_path, class_name)
 
     @classmethod
-    def get_reasoning_parser(cls, name: str | None) -> type[ReasoningParser]:
+    def get_reasoning_parser(cls, name: str) -> type[ReasoningParser]:
         """
-        Get reasoning parser by name which is registered by `register_module`.
+        Retrieve a registered or lazily registered ReasoningParser class.
 
-        Raise a KeyError exception if the name is not registered.
+        If the parser is lazily registered, it will be imported and cached
+        on first access.
+
+        Raises:
+            KeyError: if no parser is found under the given name.
         """
         if name in cls.reasoning_parsers:
             return cls.reasoning_parsers[name]
 
-        raise KeyError(f"reasoning helper: '{name}' not found in reasoning_parsers")
+        if name in cls.lazy_parsers:
+            return cls._load_lazy_parser(name)
+
+        registered = ", ".join(cls.list_registered())
+        raise KeyError(
+            f"Reasoning parser '{name}' not found. Available parsers: {registered}"
+        )
+
+    @classmethod
+    def list_registered(cls) -> list[str]:
+        """Return names of all eagerly and lazily registered reasoning parsers."""
+        return sorted(set(cls.reasoning_parsers.keys()) | set(cls.lazy_parsers.keys()))
+
+    @classmethod
+    def _load_lazy_parser(cls, name: str) -> type[ReasoningParser]:
+        """Import and register a lazily loaded reasoning parser."""
+        module_path, class_name = cls.lazy_parsers[name]
+        try:
+            mod = importlib.import_module(module_path)
+            parser_cls = getattr(mod, class_name)
+            if not issubclass(parser_cls, ReasoningParser):
+                raise TypeError(
+                    f"{class_name} in {module_path} is not a ReasoningParser subclass."
+                )
+
+            cls.reasoning_parsers[name] = parser_cls  # cache
+            return parser_cls
+        except Exception as e:
+            logger.exception(
+                "Failed to import lazy reasoning parser '%s' from %s: %s",
+                name,
+                module_path,
+                e,
+            )
+            raise
 
     @classmethod
     def _register_module(
         cls,
-        module: type,
+        module: type[ReasoningParser],
         module_name: str | list[str] | None = None,
         force: bool = True,
     ) -> None:
+        """Register a ReasoningParser class immediately."""
         if not issubclass(module, ReasoningParser):
-            raise TypeError(f"module must be subclass of ReasoningParser, but got {type(module)}")
+            raise TypeError(
+                f"module must be subclass of ReasoningParser, but got {type(module)}"
+            )
+
         if module_name is None:
-            module_name = module.__name__
-        if isinstance(module_name, str):
-            module_name = [module_name]
-        for name in module_name:
+            module_names = [module.__name__]
+        elif isinstance(module_name, str):
+            module_names = [module_name]
+        elif is_list_of(module_name, str):
+            module_names = module_name
+        else:
+            raise TypeError("module_name must be str, list[str], or None.")
+
+        for name in module_names:
             if not force and name in cls.reasoning_parsers:
-                existed_module = cls.reasoning_parsers[name]
-                raise KeyError(f"{name} is already registered at {existed_module.__module__}")
+                existed = cls.reasoning_parsers[name]
+                raise KeyError(f"{name} is already registered at {existed.__module__}")
             cls.reasoning_parsers[name] = module
+
+    @classmethod
+    def register_lazy_module(cls, name: str, module_path: str, class_name: str) -> None:
+        """
+        Register a lazy module mapping for delayed import.
+
+        Example:
+            ReasoningParserManager.register_lazy_module(
+                name="qwen3",
+                module_path="aphrodite.reasoning.parsers.qwen3_reasoning_parser",
+                class_name="Qwen3ReasoningParser",
+            )
+        """
+        cls.lazy_parsers[name] = (module_path, class_name)
 
     @classmethod
     def register_module(
         cls,
         name: str | list[str] | None = None,
         force: bool = True,
-        module: type | None = None,
-    ) -> type | Callable:
+        module: type[ReasoningParser] | None = None,
+    ) -> (
+        type[ReasoningParser] | Callable[[type[ReasoningParser]], type[ReasoningParser]]
+    ):
         """
         Register module with the given name or name list. it can be used as a
         decoder(with module as None) or normal function(with module as not
@@ -170,21 +309,29 @@ class ReasoningParserManager:
         if not isinstance(force, bool):
             raise TypeError(f"force must be a boolean, but got {type(force)}")
 
-        # raise the error ahead of time
-        if not (name is None or isinstance(name, str) or is_list_of(name, str)):
-            raise TypeError(f"name must be None, an instance of str, or a sequence of str, but got {type(name)}")
-
-        # use it as a normal method: x.register_module(module=SomeClass)
+        # Immediate registration (explicit call)
         if module is not None:
             cls._register_module(module=module, module_name=name, force=force)
             return module
 
-        # use it as a decorator: @x.register_module()
-        def _register(module):
-            cls._register_module(module=module, module_name=name, force=force)
-            return module
+        # Decorator usage
+        def _decorator(obj: type[ReasoningParser]) -> type[ReasoningParser]:
+            module_path = obj.__module__
+            class_name = obj.__name__
 
-        return _register
+            if isinstance(name, str):
+                names = [name]
+            elif is_list_of(name, str):
+                names = cast(list[str], name)
+            else:
+                names = [class_name]
+
+            for n in names:
+                cls.lazy_parsers[n] = (module_path, class_name)
+
+            return obj
+
+        return _decorator
 
     @classmethod
     def import_reasoning_parser(cls, plugin_path: str) -> None:
@@ -197,5 +344,7 @@ class ReasoningParserManager:
         try:
             import_from_path(module_name, plugin_path)
         except Exception:
-            logger.exception("Failed to load module '%s' from %s.", module_name, plugin_path)
+            logger.exception(
+                "Failed to load module '%s' from %s.", module_name, plugin_path
+            )
             return

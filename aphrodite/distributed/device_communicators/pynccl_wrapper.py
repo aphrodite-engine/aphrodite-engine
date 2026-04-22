@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 # This file is a pure Python wrapper for the NCCL library.
 # The main purpose is to use NCCL combined with CUDA graph.
 # Before writing this script, we tried the following approach:
@@ -20,6 +23,7 @@
 # variable in the code.
 
 import ctypes
+import functools
 import platform
 from dataclasses import dataclass
 from typing import Any
@@ -69,27 +73,42 @@ class ncclDataTypeEnum:
     ncclFloat64 = 8
     ncclDouble = 8
     ncclBfloat16 = 9
-    ncclNumTypes = 10
+    ncclFloat8e4m3 = 10
+    ncclNumTypes = 11
+
+    @classmethod
+    @functools.lru_cache(maxsize=1)
+    def _torch_to_nccl_map(cls) -> dict[torch.dtype, int]:
+        return {
+            torch.int8: cls.ncclInt8,
+            torch.uint8: cls.ncclUint8,
+            torch.int32: cls.ncclInt32,
+            torch.int64: cls.ncclInt64,
+            torch.float16: cls.ncclFloat16,
+            torch.float32: cls.ncclFloat32,
+            torch.float64: cls.ncclFloat64,
+            torch.bfloat16: cls.ncclBfloat16,
+            current_platform.fp8_dtype(): cls.ncclFloat8e4m3,
+        }
+
+    @classmethod
+    def supports_torch_dtype(cls, dtype: torch.dtype) -> bool:
+        return dtype in cls._torch_to_nccl_map()
+
+    @classmethod
+    def try_from_torch(cls, dtype: torch.dtype) -> int | None:
+        return cls._torch_to_nccl_map().get(dtype)
 
     @classmethod
     def from_torch(cls, dtype: torch.dtype) -> int:
-        if dtype == torch.int8:
-            return cls.ncclInt8
-        if dtype == torch.uint8:
-            return cls.ncclUint8
-        if dtype == torch.int32:
-            return cls.ncclInt32
-        if dtype == torch.int64:
-            return cls.ncclInt64
-        if dtype == torch.float16:
-            return cls.ncclFloat16
-        if dtype == torch.float32:
-            return cls.ncclFloat32
-        if dtype == torch.float64:
-            return cls.ncclFloat64
-        if dtype == torch.bfloat16:
-            return cls.ncclBfloat16
-        raise ValueError(f"Unsupported dtype: {dtype}")
+        nccl_dtype = cls.try_from_torch(dtype)
+        if nccl_dtype is not None:
+            return nccl_dtype
+        raise ValueError(
+            f"Unsupported dtype {dtype}: should be one of "
+            f"int8, uint8, int32, int64, float16, float32, float64, bfloat16,"
+            " float8e4m3."
+        )
 
 
 ncclRedOp_t = ctypes.c_int
@@ -383,14 +402,22 @@ class NCCLLibrary:
 
     def unique_id_from_bytes(self, data: bytes) -> ncclUniqueId:
         if len(data) != 128:
-            raise ValueError(f"Expected 128 bytes for ncclUniqueId, got {len(data)} bytes")
+            raise ValueError(
+                f"Expected 128 bytes for ncclUniqueId, got {len(data)} bytes"
+            )
         unique_id = ncclUniqueId()
         ctypes.memmove(ctypes.addressof(unique_id.internal), data, 128)
         return unique_id
 
-    def ncclCommInitRank(self, world_size: int, unique_id: ncclUniqueId, rank: int) -> ncclComm_t:
+    def ncclCommInitRank(
+        self, world_size: int, unique_id: ncclUniqueId, rank: int
+    ) -> ncclComm_t:
         comm = ncclComm_t()
-        self.NCCL_CHECK(self._funcs["ncclCommInitRank"](ctypes.byref(comm), world_size, unique_id, rank))
+        self.NCCL_CHECK(
+            self._funcs["ncclCommInitRank"](
+                ctypes.byref(comm), world_size, unique_id, rank
+            )
+        )
         return comm
 
     def ncclAllReduce(
@@ -408,7 +435,11 @@ class NCCLLibrary:
         # both are aliases of `ctypes.c_int`
         # when we pass int to a function, it will be converted to `ctypes.c_int`
         # by ctypes automatically
-        self.NCCL_CHECK(self._funcs["ncclAllReduce"](sendbuff, recvbuff, count, datatype, op, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclAllReduce"](
+                sendbuff, recvbuff, count, datatype, op, comm, stream
+            )
+        )
 
     def ncclReduce(
         self,
@@ -426,7 +457,11 @@ class NCCLLibrary:
         # both are aliases of `ctypes.c_int`
         # when we pass int to a function, it will be converted to `ctypes.c_int`
         # by ctypes automatically
-        self.NCCL_CHECK(self._funcs["ncclReduce"](sendbuff, recvbuff, count, datatype, op, root, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclReduce"](
+                sendbuff, recvbuff, count, datatype, op, root, comm, stream
+            )
+        )
 
     def ncclReduceScatter(
         self,
@@ -443,7 +478,11 @@ class NCCLLibrary:
         # both are aliases of `ctypes.c_int`
         # when we pass int to a function, it will be converted to `ctypes.c_int`
         # by ctypes automatically
-        self.NCCL_CHECK(self._funcs["ncclReduceScatter"](sendbuff, recvbuff, count, datatype, op, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclReduceScatter"](
+                sendbuff, recvbuff, count, datatype, op, comm, stream
+            )
+        )
 
     def ncclAllGather(
         self,
@@ -458,7 +497,11 @@ class NCCLLibrary:
         # which is an aliases of `ctypes.c_int`
         # when we pass int to a function, it will be converted to `ctypes.c_int`
         # by ctypes automatically
-        self.NCCL_CHECK(self._funcs["ncclAllGather"](sendbuff, recvbuff, count, datatype, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclAllGather"](
+                sendbuff, recvbuff, count, datatype, comm, stream
+            )
+        )
 
     def ncclSend(
         self,
@@ -469,7 +512,9 @@ class NCCLLibrary:
         comm: ncclComm_t,
         stream: cudaStream_t,
     ) -> None:
-        self.NCCL_CHECK(self._funcs["ncclSend"](sendbuff, count, datatype, dest, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclSend"](sendbuff, count, datatype, dest, comm, stream)
+        )
 
     def ncclRecv(
         self,
@@ -480,7 +525,9 @@ class NCCLLibrary:
         comm: ncclComm_t,
         stream: cudaStream_t,
     ) -> None:
-        self.NCCL_CHECK(self._funcs["ncclRecv"](recvbuff, count, datatype, src, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclRecv"](recvbuff, count, datatype, src, comm, stream)
+        )
 
     def ncclBroadcast(
         self,
@@ -492,7 +539,11 @@ class NCCLLibrary:
         comm: ncclComm_t,
         stream: cudaStream_t,
     ) -> None:
-        self.NCCL_CHECK(self._funcs["ncclBroadcast"](sendbuff, recvbuff, count, datatype, root, comm, stream))
+        self.NCCL_CHECK(
+            self._funcs["ncclBroadcast"](
+                sendbuff, recvbuff, count, datatype, root, comm, stream
+            )
+        )
 
     def ncclCommDestroy(self, comm: ncclComm_t) -> None:
         self.NCCL_CHECK(self._funcs["ncclCommDestroy"](comm))
@@ -503,9 +554,15 @@ class NCCLLibrary:
     def ncclGroupEnd(self) -> None:
         self.NCCL_CHECK(self._funcs["ncclGroupEnd"]())
 
-    def ncclCommWindowRegister(self, comm: ncclComm_t, buff: buffer_type, size: int, win_flags: int) -> ncclWindow_t:
+    def ncclCommWindowRegister(
+        self, comm: ncclComm_t, buff: buffer_type, size: int, win_flags: int
+    ) -> ncclWindow_t:
         window = ncclWindow_t()
-        self.NCCL_CHECK(self._funcs["ncclCommWindowRegister"](comm, buff, size, ctypes.byref(window), win_flags))
+        self.NCCL_CHECK(
+            self._funcs["ncclCommWindowRegister"](
+                comm, buff, size, ctypes.byref(window), win_flags
+            )
+        )
         return window
 
     def ncclCommWindowDeregister(self, comm: ncclComm_t, window: ncclWindow_t) -> None:

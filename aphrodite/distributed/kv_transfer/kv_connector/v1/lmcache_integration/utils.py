@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Standard
 import os
 import threading
 from typing import TYPE_CHECKING, Union
 
 import torch
-from lmcache.config import LMCacheEngineConfig as Config
 from lmcache.logging import init_logger
 from lmcache.v1.config import LMCacheEngineConfig as V1Config
 
@@ -15,10 +16,10 @@ if TYPE_CHECKING:
     from aphrodite.v1.request import Request
 
 logger = init_logger(__name__)
-ENGINE_NAME = "vllm-instance"
+ENGINE_NAME = "aphrodite-instance"
 
 # Thread-safe singleton storage
-_config_instance: Config | V1Config | None = None
+_config_instance: V1Config | None = None
 _config_lock = threading.Lock()
 
 
@@ -27,7 +28,7 @@ def is_false(value: str) -> bool:
     return value.lower() in ("false", "0", "no", "n", "off")
 
 
-def lmcache_get_or_create_config() -> Config | V1Config:
+def lmcache_get_or_create_config() -> V1Config:
     """Get the LMCache configuration from the environment variable
     `LMCACHE_CONFIG_FILE`. If the environment variable is not set, this
     function will return the default configuration.
@@ -41,16 +42,7 @@ def lmcache_get_or_create_config() -> Config | V1Config:
     if _config_instance is None:
         with _config_lock:
             if _config_instance is None:  # Check again within lock
-                if is_false(os.getenv("LMCACHE_USE_EXPERIMENTAL", "True")):
-                    logger.warning(
-                        "Detected LMCACHE_USE_EXPERIMENTAL is set to False. "
-                        "Using legacy configuration is deprecated and will "
-                        "be remove soon! Please set LMCACHE_USE_EXPERIMENTAL "
-                        "to True."
-                    )
-                    LMCacheEngineConfig = Config  # type: ignore[assignment]
-                else:
-                    LMCacheEngineConfig = V1Config  # type: ignore[assignment]
+                LMCacheEngineConfig = V1Config  # type: ignore[assignment]
 
                 if "LMCACHE_CONFIG_FILE" not in os.environ:
                     logger.warning(

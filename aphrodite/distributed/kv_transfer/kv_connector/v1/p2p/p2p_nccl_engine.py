@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import json
 import logging
 import os
@@ -14,9 +17,15 @@ import zmq
 
 from aphrodite.config.kv_transfer import KVTransferConfig
 from aphrodite.distributed.device_communicators.pynccl_wrapper import (
-    NCCLLibrary, buffer_type, cudaStream_t, ncclComm_t, ncclDataTypeEnum)
+    NCCLLibrary,
+    buffer_type,
+    cudaStream_t,
+    ncclComm_t,
+    ncclDataTypeEnum,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.p2p.tensor_memory_pool import (  # noqa: E501
-    TensorMemoryPool)
+    TensorMemoryPool,
+)
 from aphrodite.utils.network_utils import get_ip
 from aphrodite.utils.torch_utils import current_stream
 
@@ -209,7 +218,7 @@ class P2pNcclEngine:
             data = {"cmd": "NEW", "unique_id": bytes(unique_id.internal)}
             sock.send(msgpack.dumps(data))
 
-            with torch.cuda.device(self.device):
+            with torch.accelerator.device_index(self.device.index):
                 rank = 0
                 with set_p2p_nccl_context(self.nccl_num_channels):
                     comm: ncclComm_t = self.nccl.ncclCommInitRank(2, unique_id, rank)
@@ -368,7 +377,7 @@ class P2pNcclEngine:
             data = msgpack.loads(message)
             if data["cmd"] == "NEW":
                 unique_id = self.nccl.unique_id_from_bytes(bytes(data["unique_id"]))
-                with torch.cuda.device(self.device):
+                with torch.accelerator.device_index(self.device.index):
                     rank = 1
                     with set_p2p_nccl_context(self.nccl_num_channels):
                         comm: ncclComm_t = self.nccl.ncclCommInitRank(

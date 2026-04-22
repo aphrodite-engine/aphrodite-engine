@@ -1,6 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import torch
 
-from aphrodite.modeling.layers.utils import apply_penalties
+from aphrodite.model_executor.layers.utils import apply_penalties
 from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.utils.torch_utils import make_tensor_with_pad
 
@@ -22,7 +25,7 @@ def apply_all_penalties(
     # In the async scheduling case, rows that won't have penalties applied may contain
     # -1 placeholder token ids. We must replace these with valid token ids so that the
     # scatter done in apply_penalties is valid.
-    # NOTE: The penalties implementation is currently quite inefficient and
+    # NOTE(nick): The penalties implementation is currently quite inefficient and
     # will be reworked anyhow.
     output_tokens_t.masked_fill_(output_tokens_t == -1, vocab_size)
 
@@ -36,7 +39,9 @@ def apply_all_penalties(
     )
 
 
-def _convert_to_tensors(output_token_ids: list[list[int]], vocab_size: int, device: torch.device) -> torch.Tensor:
+def _convert_to_tensors(
+    output_token_ids: list[list[int]], vocab_size: int, device: torch.device
+) -> torch.Tensor:
     """
     Convert the different list data structures to tensors.
     """

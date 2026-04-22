@@ -1,28 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import os
 from typing import ClassVar
 
 import torch
 
 import aphrodite._custom_ops as ops
-from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, MultipleOf, is_quantized_kv_cache
+from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
-from aphrodite.v1.attention.backends.mla.common import (
+from aphrodite.model_executor.layers.attention.mla_attention import (
     MLACommonBackend,
     MLACommonImpl,
     MLACommonMetadata,
     MLACommonMetadataBuilder,
 )
-from aphrodite.v1.attention.backends.utils import AttentionCGSupport
+from aphrodite.platforms.interface import DeviceCapability
+from aphrodite.utils.platform_utils import num_compute_units
+from aphrodite.utils.torch_utils import is_quantized_kv_cache
+from aphrodite.v1.attention.backend import (
+    AttentionCGSupport,
+    AttentionLayer,
+    AttentionType,
+    MultipleOf,
+)
 
 logger = init_logger(__name__)
 
 
 class CutlassMLAMetadataBuilder(MLACommonMetadataBuilder[MLACommonMetadata]):
     # enable full CUDA Graph support for decode-only capture
-    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
+    _cudagraph_support: ClassVar[AttentionCGSupport] = (
+        AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
+    )
 
 
 class CutlassMLABackend(MLACommonBackend):
+    supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
+        "float16",
+        "bfloat16",
+        "fp8",
+        "fp8_e4m3",
+    ]
+
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [128]
+
     @staticmethod
     def get_name() -> str:
         return "CUTLASS_MLA"
@@ -35,21 +61,22 @@ class CutlassMLABackend(MLACommonBackend):
     def get_builder_cls() -> type["CutlassMLAMetadataBuilder"]:
         return CutlassMLAMetadataBuilder
 
-    @staticmethod
-    def get_supported_kernel_block_size() -> list[int | MultipleOf]:
-        return [128]
+    @classmethod
+    def supports_compute_capability(cls, capability: DeviceCapability) -> bool:
+        return capability.major == 10
 
 
 class SM100Workspace:
     def __init__(self, initial_workspace_size):
-        self._workspace_buf = torch.empty(initial_workspace_size, device="cuda", dtype=torch.uint8)
+        self._workspace_buf = torch.empty(
+            initial_workspace_size, device="cuda", dtype=torch.uint8
+        )
 
         self._block_size = 128  # Forced to 128
 
         # Pre-compute sm_count to avoid recomputing it. Use device 0 as a proxy
         # (assumes all devices are similar)
-        properties = torch.cuda.get_device_properties(torch.device("cuda:0"))
-        self._sm_count = properties.multi_processor_count
+        self._sm_count = num_compute_units(0)
 
     def get_buf(self):
         return self._workspace_buf
@@ -110,12 +137,16 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "CutlassMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
+                "CutlassMLAImpl does not support one of the following: "
+                "alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and encoder/decoder cross-attention are not implemented for CutlassMLAImpl"
+                "Encoder self-attention and "
+                "encoder/decoder cross-attention "
+                "are not implemented for "
+                "CutlassMLAImpl"
             )
 
         # TODO: Currently, num_kv_splits is limited to 16 to avoid hanging
@@ -144,8 +175,10 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         assert q_nope.ndim == 3, f"q_nope must be a 3D tensor, but got {q_nope.ndim}"
         assert q_pe.ndim == 3, f"q_pe must be a 3D tensor, but got {q_pe.ndim}"
-        assert kv_c_and_k_pe_cache.ndim == 3, "kv_c_and_k_pe_cache must be a 3D tensor, but got {}".format(
-            kv_c_and_k_pe_cache.ndim
+        assert kv_c_and_k_pe_cache.ndim == 3, (
+            "kv_c_and_k_pe_cache must be a 3D tensor, but got {}".format(
+                kv_c_and_k_pe_cache.ndim
+            )
         )
 
         B_q, H, D_q_nope = q_nope.shape
@@ -173,10 +206,18 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
             f"q_nope.dtype needs to be fp16 or bf16 or e4m3 but got {q_nope.dtype}."
         )
         assert q_nope.dtype == q_pe.dtype == kv_c_and_k_pe_cache.dtype
-        assert seq_lens.dtype == torch.int32, f"seq_lens.dtype needs to be int32 but got {seq_lens.dtype}."
-        assert page_table.dtype == torch.int32, f"page_table.dtype needs to be int32 but got {page_table.dtype}."
+        assert seq_lens.dtype == torch.int32, (
+            f"seq_lens.dtype needs to be int32 but got {seq_lens.dtype}."
+        )
+        assert page_table.dtype == torch.int32, (
+            f"page_table.dtype needs to be int32 but got {page_table.dtype}."
+        )
 
-        dtype = torch.bfloat16 if is_quantized_kv_cache(self.kv_cache_dtype) else q_nope.dtype
+        dtype = (
+            torch.bfloat16
+            if is_quantized_kv_cache(self.kv_cache_dtype)
+            else q_nope.dtype
+        )
         out = q_nope.new_empty((B_q, MAX_HEADS, D_latent), dtype=dtype)
         lse = (
             torch.empty((B_q, MAX_HEADS), dtype=torch.float32, device=q_nope.device)
@@ -204,7 +245,7 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
 
         return out, lse
 
-    def _forward_decode(
+    def forward_mqa(
         self,
         q: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         kv_c_and_k_pe_cache: torch.Tensor,
@@ -214,10 +255,17 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
         assert kv_c_and_k_pe_cache.numel() > 0
         assert attn_metadata.decode is not None
 
+        if layer._q_scale_float != 1.0 or layer._k_scale_float != 1.0:
+            raise NotImplementedError(
+                "CutlassMLAImpl does not support scaling for q and kv_latent yet"
+            )
+
         if type(q) is tuple:
             q_nope, q_pe = q
         else:
-            q_nope, q_pe = torch.split(q, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
+            q_nope, q_pe = torch.split(
+                q, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1
+            )
 
         # Adjust workspace size (if necessary)
         self._workspace.ensure_size(attn_metadata, self._num_kv_splits)

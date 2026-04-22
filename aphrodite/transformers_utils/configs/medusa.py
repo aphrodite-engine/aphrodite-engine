@@ -1,6 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 import os
 
 from transformers import PretrainedConfig
+
+from aphrodite.transformers_utils.utils import without_trust_remote_code
 
 
 class MedusaConfig(PretrainedConfig):
@@ -24,7 +29,9 @@ class MedusaConfig(PretrainedConfig):
         self.max_paths = max_paths
         self.topk = topk
         self.max_seq_len = int(2**20)
-        self.truncated_vocab_size = vocab_size if truncated_vocab_size is None else truncated_vocab_size
+        self.truncated_vocab_size = (
+            vocab_size if truncated_vocab_size is None else truncated_vocab_size
+        )
         if "architectures" not in kwargs:
             kwargs["architectures"] = ["MedusaModel"]
 
@@ -36,7 +43,9 @@ class MedusaConfig(PretrainedConfig):
         pretrained_model_name_or_path: str | os.PathLike,
         **kwargs,
     ) -> "MedusaConfig":
-        config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        config_dict, kwargs = cls.get_config_dict(
+            pretrained_model_name_or_path, **without_trust_remote_code(kwargs)
+        )
         for k in list(config_dict.keys()):
             if "num" in k:
                 if "heads" in k:

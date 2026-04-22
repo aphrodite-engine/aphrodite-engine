@@ -1,14 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+import itertools
 import multiprocessing
+from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParserManager
-from aphrodite.transformers_utils.tokenizer import init_tokenizer_from_configs
+from aphrodite.tokenizers import cached_tokenizer_from_config
 from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.v1.structured_output.backend_guidance import GuidanceBackend
-from aphrodite.v1.structured_output.backend_types import StructuredOutputBackend, StructuredOutputGrammar
+from aphrodite.v1.structured_output.backend_types import (
+    StructuredOutputBackend,
+    StructuredOutputGrammar,
+)
 from aphrodite.v1.structured_output.backend_xgrammar import XgrammarBackend
 
 if TYPE_CHECKING:
@@ -21,8 +28,6 @@ if TYPE_CHECKING:
 else:
     torch = LazyLoader("torch", globals(), "torch")
 
-    ReasoningParser = object
-    Request = object
 
 logger = init_logger(__name__)
 
@@ -34,6 +39,17 @@ class StructuredOutputManager:
         self.backend: StructuredOutputBackend | None = None
         self.reasoner: ReasoningParser | None = None
         self.aphrodite_config = aphrodite_config
+
+        # When in external_launcher mode, async grammar compilation causes deadlocks
+        # due to external_launcher mode having a scheduler for each TP rank.
+        # Async grammar compilation causes the
+        # WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR → WAITING transition to
+        # happen at different times on different TP ranks,
+        # breaking the determinism assumption that external_launcher relies on.
+        self._use_async_grammar_compilation = (
+            aphrodite_config.parallel_config.distributed_executor_backend
+            != "external_launcher"
+        )
 
         self._grammar_bitmask: torch.Tensor | None = None
         self._full_mask = torch.tensor(-1, dtype=torch.int32)
@@ -56,20 +72,37 @@ class StructuredOutputManager:
             # of CPUs.
             max_workers = max(1, (multiprocessing.cpu_count() + 1) // 2)
             self.executor = ThreadPoolExecutor(max_workers=max_workers)
-            self.tokenizer = init_tokenizer_from_configs(model_config=self.aphrodite_config.model_config)
-            reasoning_parser = self.aphrodite_config.structured_outputs_config.reasoning_parser
+            self.tokenizer = cached_tokenizer_from_config(
+                model_config=self.aphrodite_config.model_config
+            )
+            reasoning_parser_plugin = (
+                self.aphrodite_config.structured_outputs_config.reasoning_parser_plugin
+            )
+            if reasoning_parser_plugin and len(reasoning_parser_plugin) > 3:
+                ReasoningParserManager.import_reasoning_parser(reasoning_parser_plugin)
+
+            reasoning_parser = (
+                self.aphrodite_config.structured_outputs_config.reasoning_parser
+            )
             if reasoning_parser:
-                reasoner_cls = ReasoningParserManager.get_reasoning_parser(reasoning_parser)
+                reasoner_cls = ReasoningParserManager.get_reasoning_parser(
+                    reasoning_parser
+                )
                 self.reasoner = reasoner_cls(tokenizer=self.tokenizer)
 
-        self.enable_in_reasoning = self.aphrodite_config.structured_outputs_config.enable_in_reasoning
+        self.enable_in_reasoning = (
+            self.aphrodite_config.structured_outputs_config.enable_in_reasoning
+        )
 
-    def grammar_init(self, request: Request) -> None:
+    def grammar_init(self, request: "Request") -> None:
         if request.structured_output_request is None:
             return
 
         if TYPE_CHECKING:
-            assert request.sampling_params is not None and request.sampling_params.structured_outputs is not None
+            assert (
+                request.sampling_params is not None
+                and request.sampling_params.structured_outputs is not None
+            )
 
         # Initialize the backend the first time it is needed.
         #
@@ -113,13 +146,13 @@ class StructuredOutputManager:
             else:
                 raise ValueError(f"Unsupported structured output backend: {backend}")
 
-        grammar = self.executor.submit(self._async_create_grammar, request)
+        if self._use_async_grammar_compilation:
+            grammar = self.executor.submit(self._create_grammar, request)
+        else:
+            grammar = self._create_grammar(request)  # type: ignore[assignment]
         request.structured_output_request.grammar = grammar  # type: ignore[assignment]
 
-    def _async_create_grammar(
-        self,
-        request: Request,
-    ) -> StructuredOutputGrammar:
+    def _create_grammar(self, request: "Request") -> StructuredOutputGrammar:
         key = request.structured_output_request.structured_output_key  # type: ignore[union-attr]
 
         # Note that the request was validated in the engine core client,
@@ -133,8 +166,7 @@ class StructuredOutputManager:
         return self.backend.compile_grammar(request_type, grammar_spec)
 
     def _fill_bitmasks(
-        self,
-        batch: list[tuple[StructuredOutputGrammar, int, bool]],
+        self, batch: Iterable[tuple[StructuredOutputGrammar, int, bool]]
     ) -> None:
         assert self._grammar_bitmask is not None
         for grammar, index, apply_bitmask in batch:
@@ -147,14 +179,13 @@ class StructuredOutputManager:
                 self._grammar_bitmask[index].fill_(self._full_mask)
 
     def _async_submit_fill_bitmask(
-        self,
-        batch: list[tuple[StructuredOutputGrammar, int, bool]],
+        self, batch: list[tuple[StructuredOutputGrammar, int, bool]]
     ) -> Future:
         return self.executor_for_fillmask.submit(self._fill_bitmasks, batch)
 
     def grammar_bitmask(
         self,
-        requests: dict[str, Request],
+        requests: dict[str, "Request"],
         structured_output_request_ids: list[str],
         scheduled_spec_decode_tokens: dict[str, list[int]],
     ) -> "npt.NDArray[np.int32] | None":
@@ -164,7 +195,9 @@ class StructuredOutputManager:
 
         max_num_spec_tokens = 0
         if self.aphrodite_config.speculative_config is not None:
-            max_num_spec_tokens = self.aphrodite_config.speculative_config.num_speculative_tokens
+            max_num_spec_tokens = (
+                self.aphrodite_config.speculative_config.num_speculative_tokens
+            )
 
         if self._grammar_bitmask is None:
             assert self.backend is not None
@@ -173,7 +206,9 @@ class StructuredOutputManager:
             # Allocate a bitmask for each token needing to be checked:
             # one for each speculative position, and one more for the
             # bonus token / non-speculative token.
-            self._grammar_bitmask = self.backend.allocate_token_bitmask(max_batch_size * (1 + max_num_spec_tokens))
+            self._grammar_bitmask = self.backend.allocate_token_bitmask(
+                max_batch_size * (1 + max_num_spec_tokens)
+            )
 
         # Generate a batched bitmask for all structured output requests.
         # When speculative decoding is enabled, we need to include multiple
@@ -183,7 +218,10 @@ class StructuredOutputManager:
 
         # Optimized parallel filling of bitmasks for
         # non-spec, large-batch-size cases
-        if len(structured_output_request_ids) > self.fill_bitmask_parallel_threshold and max_num_spec_tokens == 0:
+        if (
+            len(structured_output_request_ids) > self.fill_bitmask_parallel_threshold
+            and max_num_spec_tokens == 0
+        ):
             promises = []
             batch = []
             for req_id in structured_output_request_ids:
@@ -192,9 +230,10 @@ class StructuredOutputManager:
                 if TYPE_CHECKING:
                     assert structured_output_request is not None
                     assert structured_output_request.grammar is not None
+                grammar = structured_output_request.grammar
 
                 apply_bitmask = self.should_fill_bitmask(request)
-                batch.append((structured_output_request.grammar, cumulative_index, apply_bitmask))
+                batch.append((grammar, cumulative_index, apply_bitmask))
                 if len(batch) == self.fill_bitmask_parallel_batch_size:
                     promises.append(self._async_submit_fill_bitmask(batch))
                     batch = []
@@ -215,27 +254,23 @@ class StructuredOutputManager:
                 if TYPE_CHECKING:
                     assert structured_output_request is not None
                     assert structured_output_request.grammar is not None
+                grammar = structured_output_request.grammar
                 apply_bitmask = self.should_fill_bitmask(request)
 
                 state_advancements = 0
-                req_tokens = scheduled_spec_decode_tokens.get(req_id, [])
-                for i, token in enumerate(req_tokens + [None]):
-                    self._fill_bitmasks(
-                        [
-                            (
-                                structured_output_request.grammar,
-                                cumulative_index,
-                                apply_bitmask,
-                            )
-                        ]
-                    )
-
-                    if apply_bitmask and token is not None and not structured_output_request.grammar.is_terminated():
-                        assert structured_output_request.grammar.accept_tokens(req_id, [token])
+                req_tokens = scheduled_spec_decode_tokens.get(req_id, ())
+                for token in itertools.chain(req_tokens, (-1,)):
+                    self._fill_bitmasks(((grammar, cumulative_index, apply_bitmask),))
+                    if token == -1:
+                        # Stop advancing the grammar once we hit a padding token.
+                        apply_bitmask = False
+                    if apply_bitmask and not grammar.is_terminated():
+                        accepted = grammar.accept_tokens(req_id, [token])
+                        assert accepted, (token, req_id, scheduled_spec_decode_tokens)
                         state_advancements += 1
                     cumulative_index += 1
                 if state_advancements > 0:
-                    structured_output_request.grammar.rollback(state_advancements)
+                    grammar.rollback(state_advancements)
 
         bitmask_tensor = self._grammar_bitmask
         if cumulative_index < bitmask_tensor.shape[0]:
@@ -246,23 +281,26 @@ class StructuredOutputManager:
         # and deserialization when sending this to the GPU workers.
         return bitmask_tensor.numpy()
 
-    def should_fill_bitmask(self, request: Request) -> bool:
+    def should_fill_bitmask(self, request: "Request") -> bool:
         # NOTE (Hanchen) if enable_in_reasoning is True, it means that
         # the model needs to be constrained in reasoning. So we should always
         # enable the bitmask filling.
-
         if self.reasoner is not None:
             if self.enable_in_reasoning:
                 return True
             assert request.structured_output_request is not None
             if request.structured_output_request.reasoning_ended is None:
-                request.structured_output_request.reasoning_ended = self.reasoner.is_reasoning_end(
-                    request.prompt_token_ids
+                # This should be removed here, but since `openai_gptoss`
+                # is an independent code path, it is kept for now.
+                # After unifying the `openai_gptoss` and non-`openai_gptoss` styles,
+                # it can be removed.
+                request.structured_output_request.reasoning_ended = (
+                    self.reasoner.is_reasoning_end(request.prompt_token_ids or [])
                 )
             return request.structured_output_request.reasoning_ended
         return True
 
-    def should_advance(self, request: Request) -> bool:
+    def should_advance(self, request: "Request") -> bool:
         if not request.use_structured_output:
             return False
 
@@ -285,7 +323,14 @@ class StructuredOutputManager:
             return True
 
         # Check if reasoning ends in *this* step
-        if self.reasoner.is_reasoning_end(request.all_token_ids):
+        delta_from = request.num_computed_tokens - request.num_output_placeholders
+        all_token_ids = request.all_token_ids
+        start = (
+            delta_from if delta_from >= 0 else max(len(all_token_ids) + delta_from, 0)
+        )
+        if self.reasoner.is_reasoning_end_streaming(
+            all_token_ids, itertools.islice(all_token_ids, start, None)
+        ):
             # Reasoning just ended, so we shouldn't advance til
             # next pass
             structured_req.reasoning_ended = True

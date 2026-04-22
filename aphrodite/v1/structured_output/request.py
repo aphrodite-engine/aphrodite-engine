@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import dataclasses
 import functools
 import json
@@ -5,7 +7,7 @@ from concurrent.futures import Future
 from concurrent.futures._base import TimeoutError
 from typing import cast
 
-from aphrodite.common.sampling_params import SamplingParams, StructuredOutputsParams
+from aphrodite.sampling_params import SamplingParams, StructuredOutputsParams
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputGrammar,
     StructuredOutputKey,
@@ -26,12 +28,9 @@ class StructuredOutputRequest:
         if sampling_params is None:
             return None
         params = sampling_params.structured_outputs
-        if params:
-            if params.all_constraints_none():
-                return None
-            else:
-                return StructuredOutputRequest(params=params)
-        return None
+        if not params or params.all_constraints_none():
+            return None
+        return StructuredOutputRequest(params=params)
 
     def _check_grammar_completion(self) -> bool:
         # NOTE: We have to lazy import to gate circular imports
@@ -53,10 +52,14 @@ class StructuredOutputRequest:
     @property
     def grammar(self) -> StructuredOutputGrammar | None:
         completed = self._check_grammar_completion()
-        return cast(StructuredOutputGrammar | None, self._grammar) if completed else None
+        return (
+            cast(StructuredOutputGrammar | None, self._grammar) if completed else None
+        )
 
     @grammar.setter
-    def grammar(self, grammar: StructuredOutputGrammar | Future[StructuredOutputGrammar]) -> None:
+    def grammar(
+        self, grammar: StructuredOutputGrammar | Future[StructuredOutputGrammar]
+    ) -> None:
         self._grammar = grammar
 
     @functools.cached_property
@@ -71,7 +74,7 @@ def get_structured_output_key(params: StructuredOutputsParams) -> StructuredOutp
         else:
             json_str = params.json
         return StructuredOutputOptions.JSON, json_str
-    if params.json_object is not None:
+    if params.json_object:
         return StructuredOutputOptions.JSON_OBJECT, ""
     if params.regex is not None:
         return StructuredOutputOptions.REGEX, params.regex

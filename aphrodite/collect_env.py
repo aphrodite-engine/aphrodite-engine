@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 # ruff: noqa
 # code borrowed from https://github.com/pytorch/pytorch/blob/main/torch/utils/collect_env.py
 
@@ -43,6 +46,17 @@ SystemEnv = namedtuple(
         "nvidia_driver_version",
         "nvidia_gpu_models",
         "cudnn_version",
+        "xpu_available",
+        "xpu_runtime_version",
+        "intel_graphics_compiler_version",
+        "intel_gpu_models",
+        "oneapi_compiler_version",
+        "level_zero_loader_version",
+        "level_zero_driver_version",
+        "oneccl_version",
+        "libigdgmm_version",
+        "aphrodite_xpu_kernels_version",
+        "sycl_version",
         "pip_version",  # 'pip' or 'pip3'
         "pip_packages",
         "conda_packages",
@@ -75,6 +89,7 @@ DEFAULT_CONDA_PATTERNS = {
     "nvidia",
     "pynvml",
     "flashinfer-python",
+    "helion",
 }
 
 DEFAULT_PIP_PATTERNS = {
@@ -91,6 +106,7 @@ DEFAULT_PIP_PATTERNS = {
     "nvidia",
     "pynvml",
     "flashinfer-python",
+    "helion",
 }
 
 
@@ -98,7 +114,9 @@ def run(command):
     """Return (return-code, stdout, stderr)."""
     shell = True if type(command) is str else False
     try:
-        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
+        p = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell
+        )
         raw_output, raw_err = p.communicate()
         rc = p.returncode
         if get_platform() == "win32":
@@ -139,14 +157,6 @@ def run_and_parse_first_match(run_lambda, command, regex):
     return match.group(1)
 
 
-def run_and_return_first_line(run_lambda, command):
-    """Run command using run_lambda and returns first line if output is not empty."""
-    rc, out, _ = run_lambda(command)
-    if rc != 0:
-        return None
-    return out.split("\n")[0]
-
-
 def get_conda_packages(run_lambda, patterns=None):
     if patterns is None:
         patterns = DEFAULT_CONDA_PATTERNS
@@ -156,7 +166,9 @@ def get_conda_packages(run_lambda, patterns=None):
         return out
 
     return "\n".join(
-        line for line in out.splitlines() if not line.startswith("#") and any(name in line for name in patterns)
+        line
+        for line in out.splitlines()
+        if not line.startswith("#") and any(name in line for name in patterns)
     )
 
 
@@ -165,7 +177,9 @@ def get_gcc_version(run_lambda):
 
 
 def get_clang_version(run_lambda):
-    return run_and_parse_first_match(run_lambda, "clang --version", r"clang version (.*)")
+    return run_and_parse_first_match(
+        run_lambda, "clang --version", r"clang version (.*)"
+    )
 
 
 def get_cmake_version(run_lambda):
@@ -175,14 +189,18 @@ def get_cmake_version(run_lambda):
 def get_nvidia_driver_version(run_lambda):
     if get_platform() == "darwin":
         cmd = "kextstat | grep -i cuda"
-        return run_and_parse_first_match(run_lambda, cmd, r"com[.]nvidia[.]CUDA [(](.*?)[)]")
+        return run_and_parse_first_match(
+            run_lambda, cmd, r"com[.]nvidia[.]CUDA [(](.*?)[)]"
+        )
     smi = get_nvidia_smi()
     return run_and_parse_first_match(run_lambda, smi, r"Driver Version: (.*?) ")
 
 
 def get_gpu_info(run_lambda):
     if get_platform() == "darwin" or (
-        TORCH_AVAILABLE and hasattr(torch.version, "hip") and torch.version.hip is not None
+        TORCH_AVAILABLE
+        and hasattr(torch.version, "hip")
+        and torch.version.hip is not None
     ):
         if TORCH_AVAILABLE and torch.cuda.is_available():
             if torch.version.hip is not None:
@@ -251,7 +269,9 @@ def get_nvidia_smi():
     if get_platform() == "win32":
         system_root = os.environ.get("SYSTEMROOT", "C:\\Windows")
         program_files_root = os.environ.get("PROGRAMFILES", "C:\\Program Files")
-        legacy_path = os.path.join(program_files_root, "NVIDIA Corporation", "NVSMI", smi)
+        legacy_path = os.path.join(
+            program_files_root, "NVIDIA Corporation", "NVSMI", smi
+        )
         new_path = os.path.join(system_root, "System32", smi)
         smis = [new_path, legacy_path]
         for candidate_smi in smis:
@@ -263,7 +283,137 @@ def get_nvidia_smi():
 
 def get_rocm_version(run_lambda):
     """Returns the ROCm version if available, otherwise 'N/A'."""
-    return run_and_parse_first_match(run_lambda, "hipcc --version", r"HIP version: (\S+)")
+    return run_and_parse_first_match(
+        run_lambda, "hipcc --version", r"HIP version: (\S+)"
+    )
+
+
+def get_xpu_available():
+    if TORCH_AVAILABLE and hasattr(torch, "xpu") and torch.xpu.is_available():
+        return True
+    return False
+
+
+def get_xpu_runtime_version():
+    if TORCH_AVAILABLE and hasattr(torch.version, "xpu"):
+        return torch.version.xpu
+    return None
+
+
+def get_pkg_version(run_lambda, pkg):
+    assert get_platform() == "linux"
+
+    if pkg == "aphrodite_xpu_kernels":
+        rc, out, _ = run_lambda("pip show aphrodite-xpu-kernels")
+        if rc == 0:
+            match = re.search(r"Version: (.*)", out)
+            return match.group(1).strip() if match else None
+        return None
+
+    pkg_map = {
+        "igc": ["intel-igc-core", "libigc2", "libigc1"],
+        "level_zero_loader": ["level-zero", "libze1"],
+        "level_zero_driver": ["libze-intel-gpu1", "intel-level-zero-gpu"],
+        "oneccl": ["intel-oneapi-ccl", "oneccl"],
+        "libigdgmm": ["libigdgmm12", "libigdgmm"],
+    }
+
+    pkg_candidates = pkg_map.get(pkg, [])
+    if not pkg_candidates:
+        return None
+
+    mgr_name = None
+    for mgr in ["dpkg", "dnf", "yum", "zypper"]:
+        rc, _, _ = run_lambda(f"which {mgr}")
+        if rc == 0:
+            mgr_name = mgr
+            break
+
+    if not mgr_name:
+        return None
+
+    ret = ""
+    index = -1
+
+    for pkg_name in pkg_candidates:
+        if not pkg_name:
+            continue
+
+        cmd = ""
+        if mgr_name in ["dnf", "yum"]:
+            index = 1
+            cmd = f"{mgr_name} list | grep -w {pkg_name}"
+        elif mgr_name == "zypper":
+            index = 2
+            cmd = f"{mgr_name} info {pkg_name} | grep Version"
+        elif mgr_name == "dpkg":
+            index = 2
+            cmd = f"{mgr_name} -l | grep -w {pkg_name}"
+
+        if cmd:
+            out = run_and_read_all(run_lambda, cmd)
+            if out:
+                ret = out.splitlines()[0]
+                break
+
+    if not ret or index == -1:
+        return None
+
+    lst = re.sub(" +", " ", ret).strip().split(" ")
+    if len(lst) > index:
+        return lst[index]
+
+    return None
+
+
+def get_intel_graphics_compiler_version(run_lambda):
+    """Return Intel Graphics Compiler (IGC) version."""
+    return get_pkg_version(run_lambda, "igc")
+
+
+def get_level_zero_loader_version(run_lambda):
+    """Return Level Zero loader runtime version."""
+    return get_pkg_version(run_lambda, "level_zero_loader")
+
+
+def get_level_zero_driver_version(run_lambda):
+    """Return Level Zero driver version."""
+    return get_pkg_version(run_lambda, "level_zero_driver")
+
+
+def get_oneapi_ccl_version(run_lambda):
+    """Return oneAPI Collective Communications Library (oneCCL) version."""
+    return get_pkg_version(run_lambda, "oneccl")
+
+
+def get_libigdgmm_version(run_lambda):
+    return get_pkg_version(run_lambda, "libigdgmm")
+
+
+def get_aphrodite_xpu_kernels_version(run_lambda):
+    return get_pkg_version(run_lambda, "aphrodite_xpu_kernels")
+
+
+def get_intel_gpu_models():
+    if TORCH_AVAILABLE and hasattr(torch, "xpu") and torch.xpu.is_available():
+        device_count = torch.xpu.device_count()
+        return "\n".join(
+            "GPU {}: {}".format(i, torch.xpu.get_device_name(i))
+            for i in range(device_count)
+        )
+    return None
+
+
+def get_oneapi_compiler_version(run_lambda):
+    """Return Intel oneAPI DPC++/C++ Compiler version via icpx."""
+    return run_and_parse_first_match(
+        run_lambda, "icpx --version", r"oneAPI DPC\+\+/C\+\+ Compiler (\S+)"
+    )
+
+
+def get_sycl_version(run_lambda):
+    """Return SYCL/DPC++ compiler build version."""
+    return run_and_parse_first_match(run_lambda, "icpx --version", r"\((\d[\d.]+)\)")
 
 
 def get_aphrodite_version():
@@ -287,11 +437,12 @@ def get_aphrodite_version():
 
 
 def summarize_aphrodite_build_flags():
-    # This could be a static method if the flags are constant, or dynamic if you need to check environment variables, etc.
-    return "CUDA Archs: {}; ROCm: {}".format(
+    flags = "CUDA Archs: {}; ROCm: {}; XPU: {}".format(
         os.environ.get("TORCH_CUDA_ARCH_LIST", "Not Set"),
         "Enabled" if os.environ.get("ROCM_HOME") else "Disabled",
+        "Enabled" if get_xpu_available() else "Disabled",
     )
+    return flags
 
 
 def get_gpu_topo(run_lambda):
@@ -421,15 +572,21 @@ def get_windows_version(run_lambda):
     system_root = os.environ.get("SYSTEMROOT", "C:\\Windows")
     wmic_cmd = os.path.join(system_root, "System32", "Wbem", "wmic")
     findstr_cmd = os.path.join(system_root, "System32", "findstr")
-    return run_and_read_all(run_lambda, "{} os get Caption | {} /v Caption".format(wmic_cmd, findstr_cmd))
+    return run_and_read_all(
+        run_lambda, "{} os get Caption | {} /v Caption".format(wmic_cmd, findstr_cmd)
+    )
 
 
 def get_lsb_version(run_lambda):
-    return run_and_parse_first_match(run_lambda, "lsb_release -a", r"Description:\t(.*)")
+    return run_and_parse_first_match(
+        run_lambda, "lsb_release -a", r"Description:\t(.*)"
+    )
 
 
 def check_release_file(run_lambda):
-    return run_and_parse_first_match(run_lambda, "cat /etc/*-release", r'PRETTY_NAME="(.*)"')
+    return run_and_parse_first_match(
+        run_lambda, "cat /etc/*-release", r'PRETTY_NAME="(.*)"'
+    )
 
 
 def get_os(run_lambda):
@@ -507,10 +664,14 @@ def get_pip_packages(run_lambda, patterns=None):
             print("uv is set")
             cmd = ["uv", "pip", "list", "--format=freeze"]
         else:
-            raise RuntimeError("Could not collect pip list output (pip or uv module not available)")
+            raise RuntimeError(
+                "Could not collect pip list output (pip or uv module not available)"
+            )
 
         out = run_and_read_all(run_lambda, cmd)
-        return "\n".join(line for line in out.splitlines() if any(name in line for name in patterns))
+        return "\n".join(
+            line for line in out.splitlines() if any(name in line for name in patterns)
+        )
 
     pip_version = "pip3" if sys.version[0] == "3" else "pip"
     out = run_with_pip()
@@ -553,6 +714,13 @@ def get_env_vars():
         "OMP_",
         "MKL_",
         "NVIDIA",
+        "ZE_",
+        "ONEAPI_",
+        "SYCL_",
+        "NEOReadDebugKeys",
+        "IGC_",
+        "CCL_",
+        "I_MPI_",
     )
     for k, v in os.environ.items():
         if any(term in k.lower() for term in secret_terms):
@@ -574,7 +742,9 @@ def get_env_info():
         debug_mode_str = str(torch.version.debug)
         cuda_available_str = str(torch.cuda.is_available())
         cuda_version_str = torch.version.cuda
-        if not hasattr(torch.version, "hip") or torch.version.hip is None:  # cuda version
+        if (
+            not hasattr(torch.version, "hip") or torch.version.hip is None
+        ):  # cuda version
             hip_compiled_version = hip_runtime_version = miopen_runtime_version = "N/A"
         else:  # HIP version
 
@@ -603,7 +773,9 @@ def get_env_info():
     return SystemEnv(
         torch_version=version_str,
         is_debug_build=debug_mode_str,
-        python_version="{} ({}-bit runtime)".format(sys_version, sys.maxsize.bit_length() + 1),
+        python_version="{} ({}-bit runtime)".format(
+            sys_version, sys.maxsize.bit_length() + 1
+        ),
         python_platform=get_python_platform(),
         is_cuda_available=cuda_available_str,
         cuda_compiled_version=cuda_version_str,
@@ -612,6 +784,17 @@ def get_env_info():
         nvidia_gpu_models=get_gpu_info(run_lambda),
         nvidia_driver_version=get_nvidia_driver_version(run_lambda),
         cudnn_version=get_cudnn_version(run_lambda),
+        xpu_available=str(get_xpu_available()),
+        xpu_runtime_version=get_xpu_runtime_version(),
+        intel_graphics_compiler_version=get_intel_graphics_compiler_version(run_lambda),
+        intel_gpu_models=get_intel_gpu_models(),
+        oneapi_compiler_version=get_oneapi_compiler_version(run_lambda),
+        level_zero_loader_version=get_level_zero_loader_version(run_lambda),
+        level_zero_driver_version=get_level_zero_driver_version(run_lambda),
+        oneccl_version=get_oneapi_ccl_version(run_lambda),
+        libigdgmm_version=get_libigdgmm_version(run_lambda),
+        aphrodite_xpu_kernels_version=get_aphrodite_xpu_kernels_version(run_lambda),
+        sycl_version=get_sycl_version(run_lambda),
         hip_compiled_version=hip_compiled_version,
         hip_runtime_version=hip_runtime_version,
         miopen_runtime_version=miopen_runtime_version,
@@ -651,26 +834,15 @@ PyTorch version              : {torch_version}
 Is debug build               : {is_debug_build}
 CUDA used to build PyTorch   : {cuda_compiled_version}
 ROCM used to build PyTorch   : {hip_compiled_version}
+XPU used to build PyTorch    : {xpu_runtime_version}
 
 ==============================
       Python Environment
 ==============================
 Python version               : {python_version}
 Python platform              : {python_platform}
-
-==============================
-       CUDA / GPU Info
-==============================
-Is CUDA available            : {is_cuda_available}
-CUDA runtime version         : {cuda_runtime_version}
-CUDA_MODULE_LOADING set to   : {cuda_module_loading}
-GPU models and configuration : {nvidia_gpu_models}
-Nvidia driver version        : {nvidia_driver_version}
-cuDNN version                : {cudnn_version}
-HIP runtime version          : {hip_runtime_version}
-MIOpen runtime version       : {miopen_runtime_version}
-Is XNNPACK available         : {is_xnnpack_available}
-
+    
+{gpu_info}
 ==============================
           CPU Info
 ==============================
@@ -741,7 +913,9 @@ def pretty_str(envinfo):
     mutable_dict = envinfo._asdict()
 
     # If nvidia_gpu_models is multiline, start on the next line
-    mutable_dict["nvidia_gpu_models"] = maybe_start_on_next_line(envinfo.nvidia_gpu_models)
+    mutable_dict["nvidia_gpu_models"] = maybe_start_on_next_line(
+        envinfo.nvidia_gpu_models
+    )
 
     # If the machine doesn't have CUDA, report some fields as 'No CUDA'
     dynamic_cuda_fields = [
@@ -750,12 +924,47 @@ def pretty_str(envinfo):
         "nvidia_driver_version",
     ]
     all_cuda_fields = dynamic_cuda_fields + ["cudnn_version"]
-    all_dynamic_cuda_fields_missing = all(mutable_dict[field] is None for field in dynamic_cuda_fields)
-    if TORCH_AVAILABLE and not torch.cuda.is_available() and all_dynamic_cuda_fields_missing:
+    all_dynamic_cuda_fields_missing = all(
+        mutable_dict[field] is None for field in dynamic_cuda_fields
+    )
+    if (
+        TORCH_AVAILABLE
+        and not torch.cuda.is_available()
+        and all_dynamic_cuda_fields_missing
+    ):
         for field in all_cuda_fields:
             mutable_dict[field] = "No CUDA"
         if envinfo.cuda_compiled_version is None:
             mutable_dict["cuda_compiled_version"] = "None"
+
+    # If the machine doesn't have XPU, report XPU fields as 'No XPU'
+    dynamic_xpu_fields = [
+        "intel_graphics_compiler_version",
+        "intel_gpu_models",
+        "level_zero_loader_version",
+        "level_zero_driver_version",
+        "oneccl_version",
+        "libigdgmm_version",
+        "aphrodite_xpu_kernels_version",
+    ]
+    all_xpu_fields = dynamic_xpu_fields + [
+        "oneapi_compiler_version",
+        "sycl_version",
+    ]
+    all_dynamic_xpu_fields_missing = all(
+        mutable_dict[field] is None for field in dynamic_xpu_fields
+    )
+    xpu_available = mutable_dict.get("xpu_available") == "True"
+    if not xpu_available and all_dynamic_xpu_fields_missing:
+        for field in all_xpu_fields:
+            mutable_dict[field] = "No XPU"
+    if envinfo.xpu_runtime_version is None or envinfo.xpu_runtime_version == "N/A":
+        mutable_dict["xpu_runtime_version"] = "N/A"
+
+    # If intel_gpu_models is multiline, start on the next line
+    mutable_dict["intel_gpu_models"] = maybe_start_on_next_line(
+        mutable_dict.get("intel_gpu_models")
+    )
 
     # Replace True with Yes, False with No
     mutable_dict = replace_bools(mutable_dict)
@@ -770,10 +979,70 @@ def pretty_str(envinfo):
     # Tag conda and pip packages with a prefix
     # If they were previously None, they'll show up as ie '[conda] Could not collect'
     if mutable_dict["pip_packages"]:
-        mutable_dict["pip_packages"] = prepend(mutable_dict["pip_packages"], "[{}] ".format(envinfo.pip_version))
+        mutable_dict["pip_packages"] = prepend(
+            mutable_dict["pip_packages"], "[{}] ".format(envinfo.pip_version)
+        )
     if mutable_dict["conda_packages"]:
-        mutable_dict["conda_packages"] = prepend(mutable_dict["conda_packages"], "[conda] ")
+        mutable_dict["conda_packages"] = prepend(
+            mutable_dict["conda_packages"], "[conda] "
+        )
     mutable_dict["cpu_info"] = envinfo.cpu_info
+
+    CUDA_FMT = """
+==============================
+       CUDA / GPU Info
+==============================
+Is CUDA available            : {is_cuda_available}
+CUDA runtime version         : {cuda_runtime_version}
+CUDA_MODULE_LOADING set to   : {cuda_module_loading}
+GPU models and configuration : {nvidia_gpu_models}
+Nvidia driver version        : {nvidia_driver_version}
+cuDNN version                : {cudnn_version}
+HIP runtime version          : {hip_runtime_version}
+MIOpen runtime version       : {miopen_runtime_version}
+Is XNNPACK available         : {is_xnnpack_available}
+""".strip()
+
+    XPU_FMT = """
+==============================
+      Intel XPU / GPU Info
+==============================
+Is XPU available             : {xpu_available}
+XPU runtime version          : {xpu_runtime_version}
+Intel GPU models             : {intel_gpu_models}
+
+--Compile time--
+oneAPI compiler version      : {oneapi_compiler_version}
+SYCL compiler build          : {sycl_version}
+oneCCL version               : {oneccl_version}
+
+--Runtime--
+Intel Graphics Compiler (IGC): {intel_graphics_compiler_version}
+Intel GMM (libigdgmm)        : {libigdgmm_version}
+Level Zero loader version    : {level_zero_loader_version}
+Level Zero driver version    : {level_zero_driver_version}
+Aphrodite XPU kernels version     : {aphrodite_xpu_kernels_version}
+""".strip()
+
+    invalid_vers = {"N/A", "Could not collect", "None"}
+    sections = []
+
+    if (
+        mutable_dict.get("is_cuda_available") in ("True", "Yes")
+        or mutable_dict.get("cuda_compiled_version") not in invalid_vers
+    ):
+        sections.append(CUDA_FMT)
+
+    if (
+        mutable_dict.get("xpu_available") in ("True", "Yes")
+        or mutable_dict.get("xpu_runtime_version") not in invalid_vers
+    ):
+        sections.append(XPU_FMT)
+
+    mutable_dict["gpu_info"] = (
+        ("\n\n".join(sections) + "\n").format(**mutable_dict) if sections else ""
+    )
+
     return env_info_fmt.format(**mutable_dict)
 
 
@@ -786,15 +1055,25 @@ def main():
     output = get_pretty_env_info()
     print(output)
 
-    if TORCH_AVAILABLE and hasattr(torch, "utils") and hasattr(torch.utils, "_crash_handler"):
+    if (
+        TORCH_AVAILABLE
+        and hasattr(torch, "utils")
+        and hasattr(torch.utils, "_crash_handler")
+    ):
         minidump_dir = torch.utils._crash_handler.DEFAULT_MINIDUMP_DIR
         if sys.platform == "linux" and os.path.exists(minidump_dir):
-            dumps = [os.path.join(minidump_dir, dump) for dump in os.listdir(minidump_dir)]
+            dumps = [
+                os.path.join(minidump_dir, dump) for dump in os.listdir(minidump_dir)
+            ]
             latest = max(dumps, key=os.path.getctime)
             ctime = os.path.getctime(latest)
-            creation_time = datetime.datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M:%S")
+            creation_time = datetime.datetime.fromtimestamp(ctime).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             msg = (
-                "\n*** Detected a minidump at {} created on {}, ".format(latest, creation_time)
+                "\n*** Detected a minidump at {} created on {}, ".format(
+                    latest, creation_time
+                )
                 + "if this is related to your bug please include it when you file a report ***"
             )
             print(msg, file=sys.stderr)

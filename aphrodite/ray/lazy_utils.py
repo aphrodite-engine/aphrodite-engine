@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
+
 def is_ray_initialized():
     """Check if Ray is initialized."""
     try:
@@ -5,6 +9,8 @@ def is_ray_initialized():
 
         return ray.is_initialized()
     except ImportError:
+        return False
+    except AttributeError:
         return False
 
 
@@ -14,6 +20,11 @@ def is_in_ray_actor():
     try:
         import ray
 
-        return ray.is_initialized() and ray.get_runtime_context().get_actor_id() is not None
+        return (
+            ray.is_initialized()
+            and ray.get_runtime_context().get_actor_id() is not None
+        )
     except ImportError:
+        return False
+    except AttributeError:
         return False

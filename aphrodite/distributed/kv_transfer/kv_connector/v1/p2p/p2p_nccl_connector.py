@@ -1,21 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import regex as re
 import torch
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
-    KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
+    KVConnectorBase_V1,
+    KVConnectorMetadata,
+    KVConnectorRole,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.p2p.p2p_nccl_engine import (
-    P2pNcclEngine)
+    P2pNcclEngine,
+)
 from aphrodite.distributed.parallel_state import get_world_group
 from aphrodite.logger import init_logger
-from aphrodite.v1.attention.backends.mla.common import MLACommonMetadata
+from aphrodite.model_executor.layers.attention.mla_attention import MLACommonMetadata
+from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.core.sched.output import SchedulerOutput
 
 if TYPE_CHECKING:
-    from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.forward_context import ForwardContext
     from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
     from aphrodite.v1.kv_cache_interface import KVCacheConfig
@@ -66,21 +73,22 @@ class P2pNcclConnectorMetadata(KVConnectorMetadata):
 
 class P2pNcclConnector(KVConnectorBase_V1):
     def __init__(
-        self, aphrodite_config: "AphroditeConfig", role: KVConnectorRole,
-        kv_cache_config: Optional["KVCacheConfig"] = None,
+        self,
+        aphrodite_config: "AphroditeConfig",
+        role: KVConnectorRole,
+        kv_cache_config: "KVCacheConfig | None" = None,
     ):
-        super().__init__(aphrodite_config=aphrodite_config, role=role, kv_cache_config=kv_cache_config)
+        super().__init__(
+            aphrodite_config=aphrodite_config,
+            role=role,
+            kv_cache_config=kv_cache_config,
+        )
         self._block_size = aphrodite_config.cache_config.block_size
         self._requests_need_load: dict[str, Any] = {}
         self.is_producer = self._kv_transfer_config.is_kv_producer
         self.chunked_prefill: dict[str, tuple[list[int], list[int] | None]] = {}
 
-        # Use kv_rank from config for disaggregated setups, fall back to world rank
-        # for distributed parallel setups within a single instance
-        if self._kv_transfer_config.kv_rank is not None:
-            self._rank = self._kv_transfer_config.kv_rank
-        else:
-            self._rank = get_world_group().rank if role == KVConnectorRole.WORKER else 0
+        self._rank = get_world_group().rank if role == KVConnectorRole.WORKER else 0
         self._local_rank = (
             get_world_group().local_rank if role == KVConnectorRole.WORKER else 0
         )
@@ -184,28 +192,18 @@ class P2pNcclConnector(KVConnectorBase_V1):
                         request_id,
                     )
 
-        if self._connector_metadata is None:
-            return
-
         # Get the metadata
         metadata: KVConnectorMetadata = self._get_connector_metadata()
         assert isinstance(metadata, P2pNcclConnectorMetadata)
 
+        if metadata is None:
+            return
+
         # Load the KV for each request each layer
         for request in metadata.requests:
             request_id = request.request_id
-            # Try to parse request ID for address, fall back to configured kv_ip/kv_port
-            try:
-                ip, port = self.parse_request_id(request_id, False)
-                remote_address = ip + ":" + str(port + self._rank)
-            except ValueError:
-                # Use configured address for disaggregated setups
-                # Consumer (rank=1) receives from producer (rank=0)
-                ip = self._kv_transfer_config.kv_ip
-                port = self._kv_transfer_config.kv_port
-                # For simple 2-instance setup: remote_rank = 1 - self._rank
-                remote_rank = self._kv_transfer_config.kv_parallel_size - 1 - self._rank
-                remote_address = ip + ":" + str(port + remote_rank)
+            ip, port = self.parse_request_id(request_id, False)
+            remote_address = ip + ":" + str(port + self._rank)
             for layer_name in forward_context.no_compile_layers:
                 layer = forward_context.no_compile_layers[layer_name]
 
@@ -216,7 +214,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
                 if kv_cache is None:
                     continue
 
-                layer = kv_cache[forward_context.virtual_engine]
+                layer = kv_cache
 
                 kv_cache = self.p2p_nccl_engine.recv_tensor(
                     request.request_id + "#" + layer_name, remote_address
@@ -245,7 +243,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
         self,
         layer_name: str,
         kv_layer: torch.Tensor,
-        attn_metadata: "AttentionMetadata",
+        attn_metadata: AttentionMetadata,
         **kwargs: Any,
     ) -> None:
         """Start saving the KV cache of the layer from Aphrodite's paged buffer
@@ -261,9 +259,6 @@ class P2pNcclConnector(KVConnectorBase_V1):
 
         # Only producer/prefill saves KV Cache
         if not self.is_producer:
-            return
-
-        if self._connector_metadata is None:
             return
 
         assert self.p2p_nccl_engine is not None
@@ -303,18 +298,8 @@ class P2pNcclConnector(KVConnectorBase_V1):
         assert isinstance(connector_metadata, P2pNcclConnectorMetadata)
         for request in connector_metadata.requests:
             request_id = request.request_id
-            # Try to parse request ID for address, fall back to configured kv_ip/kv_port
-            try:
-                ip, port = self.parse_request_id(request_id, True)
-                remote_address = ip + ":" + str(port + self._rank)
-            except ValueError:
-                # Use configured address for disaggregated setups
-                # Producer (rank=0) sends to consumer (rank=1)
-                ip = self._kv_transfer_config.kv_ip
-                port = self._kv_transfer_config.kv_port
-                # For simple 2-instance setup: remote_rank = 1 - self._rank
-                remote_rank = self._kv_transfer_config.kv_parallel_size - 1 - self._rank
-                remote_address = ip + ":" + str(port + remote_rank)
+            ip, port = self.parse_request_id(request_id, True)
+            remote_address = ip + ":" + str(port + self._rank)
 
             kv_cache = extract_kv_from_layer(kv_layer, request.block_ids)
             self.p2p_nccl_engine.send_tensor(

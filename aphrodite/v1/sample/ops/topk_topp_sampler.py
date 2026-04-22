@@ -1,18 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+
+
 import torch
 import torch.nn as nn
 from packaging import version
 
 from aphrodite import envs
+from aphrodite._aiter_ops import rocm_aiter_ops
 from aphrodite.config.model import LogprobsMode
 from aphrodite.logger import init_logger
 from aphrodite.platforms import CpuArchEnum, current_platform
+from aphrodite.triton_utils import HAS_TRITON
+
+if HAS_TRITON:
+    from aphrodite.v1.sample.ops.topk_topp_triton import apply_top_k_top_p_triton
 
 logger = init_logger(__name__)
-
-try:
-    from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
-except Exception:
-    get_tensor_model_parallel_rank = lambda: 0
 
 
 class TopKTopPSampler(nn.Module):
@@ -28,8 +32,21 @@ class TopKTopPSampler(nn.Module):
         self.logprobs_mode = logprobs_mode
         # flashinfer optimization does not apply if intermediate
         # logprobs/logits after top_k/top_p need to be returned
-        if logprobs_mode not in ("processed_logits", "processed_logprobs") and current_platform.is_cuda():
+        if (
+            logprobs_mode not in ("processed_logits", "processed_logprobs")
+            and current_platform.is_cuda()
+        ):
             if envs.APHRODITE_USE_FLASHINFER_SAMPLER:
+                from aphrodite.v1.attention.backends.flashinfer import FlashInferBackend
+
+                capability = current_platform.get_device_capability()
+                assert capability is not None
+                if not FlashInferBackend.supports_compute_capability(capability):
+                    capability_str = capability.as_version_str()
+                    raise RuntimeError(
+                        "FlashInfer does not support compute capability "
+                        f"{capability_str}, unset APHRODITE_USE_FLASHINFER_SAMPLER=1."
+                    )
                 # Users must opt in explicitly via APHRODITE_USE_FLASHINFER_SAMPLER=1.
                 logger.info_once(
                     "Using FlashInfer for top-p & top-k sampling.",
@@ -53,10 +70,26 @@ class TopKTopPSampler(nn.Module):
                 self.forward = self.forward_native
             else:
                 self.forward = self.forward_cpu
+        elif (
+            logprobs_mode not in ("processed_logits", "processed_logprobs")
+            and rocm_aiter_ops.is_enabled()
+        ):
+            try:
+                import aiter.ops.sampling  # noqa: F401
+
+                self.aiter_ops = torch.ops.aiter
+                logger.info_once(
+                    "Using aiter sampler on ROCm (lazy import, sampling-only)."
+                )
+                self.forward = self.forward_hip
+            except ImportError:
+                logger.warning_once(
+                    "aiter.ops.sampling is not available on ROCm. "
+                    "Falling back to forward_native implementation."
+                )
+                self.forward = self.forward_native
         else:
             self.forward = self.forward_native
-
-        self.apply_top_k_top_p = apply_top_k_top_p
 
     def forward_native(
         self,
@@ -70,7 +103,7 @@ class TopKTopPSampler(nn.Module):
 
         The logits tensor may be updated in-place.
         """
-        logits = self.apply_top_k_top_p(logits, k, p)
+        logits = apply_top_k_top_p(logits, k, p)
         logits_to_return = None
         if self.logprobs_mode == "processed_logits":
             logits_to_return = logits
@@ -116,41 +149,117 @@ class TopKTopPSampler(nn.Module):
         """
         PyTorch-native implementation of top-k and top-p sampling for CPU.
 
-
         The logits tensor may be updated in-place.
         """
-        logits = self.apply_top_k_top_p(logits, k, p)
+        logits = apply_top_k_top_p_pytorch(logits, k, p, allow_cpu_sync=True)
         logits_to_return = None
         if self.logprobs_mode == "processed_logits":
             logits_to_return = logits
         elif self.logprobs_mode == "processed_logprobs":
             logits_to_return = logits.log_softmax(dim=-1, dtype=torch.float32)
 
-        # Note: this is a workaround for
-        # https://github.com/pytorch/pytorch/pull/151218
-        @torch.compile(dynamic=True)
-        def compiled_random_sample(logits: torch.Tensor) -> torch.Tensor:
-            probs = logits.softmax(dim=-1, dtype=torch.float32)
-            q = torch.empty_like(probs)
-            q.exponential_()
-            return probs.div(q).argmax(dim=-1).view(-1)
-
         if len(generators) != logits.shape[0]:
             return compiled_random_sample(logits), logits_to_return
-        else:
-            probs = logits.softmax(dim=-1, dtype=torch.float32)
-            q = torch.empty_like(probs)
-            q.exponential_()
-            for i, generator in generators.items():
-                q[i].exponential_(generator=generator)
 
-            return probs.div_(q).argmax(dim=-1).view(-1), logits_to_return
+        probs = logits.softmax(dim=-1, dtype=torch.float32)
+        q = torch.empty_like(probs)
+        q.exponential_()
+        for i, generator in generators.items():
+            q[i].exponential_(generator=generator)
+
+        return probs.div_(q).argmax(dim=-1).view(-1), logits_to_return
+
+    def forward_hip(
+        self,
+        logits: torch.Tensor,
+        generators: dict[int, torch.Generator],
+        k: torch.Tensor | None,
+        p: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        # FIXME: Fix aiter_sampler's accuracy issue and remove this flag
+        DISABLE_AITER_SAMPLER = True
+        """Optimized ROCm/aiter path (same structure as forward_cuda)."""
+        if (k is None and p is None) or generators:
+            if generators:
+                logger.warning_once(
+                    "aiter sampler does not support per-request generators; "
+                    "falling back to PyTorch-native."
+                )
+            return self.forward_native(logits, generators, k, p)
+        assert self.logprobs_mode not in (
+            "processed_logits",
+            "processed_logprobs",
+        ), "aiter sampler does not support returning logits/logprobs."
+        if DISABLE_AITER_SAMPLER:
+            return self.forward_native(logits, generators, k, p)
+        return self.aiter_sample(logits, k, p, generators), None
+
+    def aiter_sample(
+        self,
+        logits: torch.Tensor,
+        k: torch.Tensor | None,
+        p: torch.Tensor | None,
+        generators: dict[int, torch.Generator],
+    ) -> torch.Tensor:
+        """Sample from logits using aiter ops."""
+        use_top_k = k is not None
+        use_top_p = p is not None
+        # Joint k+p path
+        if use_top_p and use_top_k:
+            probs = logits.softmax(dim=-1, dtype=torch.float32).contiguous()
+            next_token_ids = self.aiter_ops.top_k_top_p_sampling_from_probs(
+                probs,
+                None,
+                *_to_tensor_scalar_tuple(k),
+                *_to_tensor_scalar_tuple(p),
+                deterministic=True,
+            )
+            return next_token_ids.view(-1)
+        # Top-p only path
+        elif use_top_p:
+            probs = logits.softmax(dim=-1, dtype=torch.float32).contiguous()
+            next_token_ids = self.aiter_ops.top_p_sampling_from_probs(
+                probs, None, *_to_tensor_scalar_tuple(p), deterministic=True
+            )
+            return next_token_ids.view(-1)
+        # Top-k only path
+        elif use_top_k:
+            probs = logits.softmax(dim=-1, dtype=torch.float32).contiguous()
+            renorm_probs = self.aiter_ops.top_k_renorm_probs(
+                probs, *_to_tensor_scalar_tuple(k)
+            )
+            return torch.multinomial(renorm_probs, num_samples=1).view(-1)
+        raise RuntimeError("aiter_sample was called with no active top-k or top-p.")
+
+
+# Note: this is a workaround for
+# https://github.com/pytorch/pytorch/pull/151218
+@torch.compile(dynamic=True)
+def compiled_random_sample(logits: torch.Tensor) -> torch.Tensor:
+    probs = logits.softmax(dim=-1, dtype=torch.float32)
+    q = torch.empty_like(probs)
+    q.exponential_()
+    return probs.div(q).argmax(dim=-1).view(-1)
 
 
 def apply_top_k_top_p(
+    logits: torch.Tensor, k: torch.Tensor | None, p: torch.Tensor | None
+) -> torch.Tensor:
+    if p is None and k is None:
+        return logits
+
+    if HAS_TRITON and logits.shape[0] >= 8:
+        return apply_top_k_top_p_triton(logits, k, p)
+
+    # Use pytorch sort implementation for small batch sizes.
+    return apply_top_k_top_p_pytorch(logits, k, p)
+
+
+def apply_top_k_top_p_pytorch(
     logits: torch.Tensor,
     k: torch.Tensor | None,
     p: torch.Tensor | None,
+    allow_cpu_sync: bool = False,
 ) -> torch.Tensor:
     """Apply top-k and top-p masks to the logits.
 
@@ -163,8 +272,9 @@ def apply_top_k_top_p(
         if k is None:
             return logits
 
-        # Avoid sorting vocab for top-k only case.
-        return apply_top_k_only(logits, k)
+        if allow_cpu_sync:
+            # Avoid sorting vocab for top-k only case.
+            return apply_top_k_only(logits, k)
 
     logits_sort, logits_idx = logits.sort(dim=-1, descending=False)
 
@@ -186,18 +296,16 @@ def apply_top_k_top_p(
         logits_sort.masked_fill_(top_p_mask, -float("inf"))
 
     # Re-sort the probabilities.
-    logits = logits_sort.scatter(dim=-1, index=logits_idx, src=logits_sort)
-    return logits
+    return logits.scatter_(dim=-1, index=logits_idx, src=logits_sort)
 
 
-def apply_top_k_only(
-    logits: torch.Tensor,
-    k: torch.Tensor,
-) -> torch.Tensor:
+def apply_top_k_only(logits: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
     """
     Apply top-k mask to the logits.
 
     This implementation doesn't involve sorting the entire vocab.
+    Note however that it involves a GPU->CPU sync which can be detrimental for
+    async scheduling performance.
 
     The logits tensor may be updated in-place.
     """
@@ -211,8 +319,7 @@ def apply_top_k_only(
     top_k_mask = logits.topk(max_top_k, dim=1).values.gather(1, k_index.long())
     # Handle non-topk rows.
     top_k_mask.masked_fill_(no_top_k_mask.unsqueeze(1), -float("inf"))
-    logits.masked_fill_(logits < top_k_mask, -float("inf"))
-    return logits
+    return logits.masked_fill_(logits < top_k_mask, -float("inf"))
 
 
 def random_sample(
@@ -225,14 +332,14 @@ def random_sample(
     causes CPU-GPU synchronization.
     """
     q = torch.empty_like(probs)
-    # NOTE: To batch-process the requests without their own seeds,
+    # NOTE(woosuk): To batch-process the requests without their own seeds,
     # which is the common case, we first assume that every request does
     # not have its own seed. Then, we overwrite the values for the requests
     # that have their own seeds.
     if len(generators) != probs.shape[0]:
         q.exponential_()
     if generators:
-        # TODO: This can be slow because we handle each request
+        # TODO(woosuk): This can be slow because we handle each request
         # one by one. Optimize this.
         for i, generator in generators.items():
             q[i].exponential_(generator=generator)
@@ -245,7 +352,7 @@ def flashinfer_sample(
     p: torch.Tensor | None,
     generators: dict[int, torch.Generator],
 ) -> torch.Tensor:
-    """Sample from the probabilities using FlashInfer.
+    """Sample from the logits using FlashInfer.
 
     Statistically, this function is equivalent to the `random_sample` function.
     However, this function is faster because it avoids sorting the logits tensor
@@ -262,19 +369,34 @@ def flashinfer_sample(
     import flashinfer
 
     if version.parse(flashinfer.__version__) < version.parse("0.2.3"):
-        raise ImportError("FlashInfer version >= 0.2.3 required for top-k and top-p sampling. ")
+        raise ImportError(
+            "FlashInfer version >= 0.2.3 required for top-k and top-p sampling. "
+        )
 
     assert not (k is None and p is None)
-
     if k is None:
         # Top-p only.
         probs = logits.softmax(dim=-1, dtype=torch.float32)
-        next_token_ids = flashinfer.sampling.top_p_sampling_from_probs(probs, p, deterministic=True)
+        next_token_ids = flashinfer.sampling.top_p_sampling_from_probs(
+            probs, p, deterministic=True
+        )
     elif p is None:
         # Top-k only.
         probs = logits.softmax(dim=-1, dtype=torch.float32)
-        next_token_ids = flashinfer.sampling.top_k_sampling_from_probs(probs, k, deterministic=True)
+        next_token_ids = flashinfer.sampling.top_k_sampling_from_probs(
+            probs, k, deterministic=True
+        )
     else:
         # Both top-k and top-p.
-        next_token_ids = flashinfer.sampling.top_k_top_p_sampling_from_logits(logits, k, p, deterministic=True)
+        next_token_ids = flashinfer.sampling.top_k_top_p_sampling_from_logits(
+            logits, k, p, deterministic=True
+        )
+
     return next_token_ids.view(-1)
+
+
+def _to_tensor_scalar_tuple(x):
+    if isinstance(x, torch.Tensor):
+        return (x, 0)
+    else:
+        return (None, x)

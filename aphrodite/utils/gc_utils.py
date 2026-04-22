@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import gc
 import json
 import time
@@ -15,7 +17,7 @@ class GCDebugConfig:
     """
     Config for GC Debugger.
     - 0: disable GC debugger
-    - 1: enable GC debugger with gc.collect elpased times
+    - 1: enable GC debugger with gc.collect elapsed times
     - '{"top_objects":5}': enable GC debugger with top 5 collected objects
     """
 
@@ -51,6 +53,7 @@ class GCDebugger:
         self.config = config
         # Start time in micro second of this GC cycle
         self.start_time_ns: int = time.monotonic_ns()
+        self.num_objects: int = 0
         # If config.top_objects is positive,
         # compute top collected objects by object types
         self.gc_top_collected_objects: str = ""
@@ -66,20 +69,43 @@ class GCDebugger:
             # Before GC started, record GC start time
             # and top collected objects
             self.start_time_ns = time.monotonic_ns()
+            objects = gc.get_objects(generation)
+            self.num_objects = len(objects)
             self.gc_top_collected_objects = _compute_top_gc_collected_objects(
-                gc.get_objects(generation), self.config.top_objects
+                objects, self.config.top_objects
             )
         elif phase == "stop":
             # After GC finished, Record GC elapsed time and
             # optionally top collected objects
             elpased_ms = (time.monotonic_ns() - self.start_time_ns) / 1e6
             logger.info(
-                "GC took %.3fms to complete. Collected %s objects in GC generation %d.%s",
+                "GC took %.3fms to complete. "
+                "Collected %s objects (out of %d) in GC generation %d.%s",
                 elpased_ms,
                 str(info.get("collected", "?")),
+                self.num_objects,
                 generation,
-                (f" Top collected objects: \n{self.gc_top_collected_objects}" if self.gc_top_collected_objects else ""),
+                (
+                    f" Top collected objects: \n{self.gc_top_collected_objects}"
+                    if self.gc_top_collected_objects
+                    else ""
+                ),
             )
+
+
+def freeze_gc_heap() -> None:
+    """
+    Freeze all objects tracked by the garbage collector. It should be invoked
+    after server init / warmup, to reduce GC overhead from static objects
+    during serving time.
+    """
+    # Ensure all static objects are pushed down to the oldest generation for
+    # freeze
+    gc.collect(0)
+    gc.collect(1)
+    gc.collect(2)
+    # Freeze all GC tracked objects
+    gc.freeze()
 
 
 def maybe_attach_gc_debug_callback() -> None:
@@ -119,4 +145,7 @@ def _compute_top_gc_collected_objects(objects: list[Any], top: int) -> str:
     if top <= 0:
         return ""
     object_types = [_compute_detailed_type(o) for o in objects]
-    return "\n".join(f"{count:>5}:{object_type}" for object_type, count in Counter(object_types).most_common(top))
+    return "\n".join(
+        f"{count:>5}:{object_type}"
+        for object_type, count in Counter(object_types).most_common(top)
+    )

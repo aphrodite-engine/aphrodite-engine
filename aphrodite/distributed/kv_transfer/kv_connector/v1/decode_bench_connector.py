@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 DecodeBenchConnector: A KV Connector for decode instance performance testing.
 
@@ -30,24 +32,25 @@ Usage:
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
-    KVConnectorBase_V1, KVConnectorRole)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
-    KVConnectorMetadata)
+    KVConnectorBase_V1,
+    KVConnectorRole,
+)
+from aphrodite.distributed.kv_transfer.kv_connector.v1.base import KVConnectorMetadata
 from aphrodite.logger import init_logger
 from aphrodite.utils.math_utils import cdiv
+from aphrodite.v1.attention.backend import AttentionMetadata
 
 if TYPE_CHECKING:
-    from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.config import AphroditeConfig
     from aphrodite.forward_context import ForwardContext
     from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
-    from aphrodite.v1.kv_cache_interface import KVCacheConfig
     from aphrodite.v1.core.sched.output import SchedulerOutput
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
     from aphrodite.v1.request import Request
 
 logger = init_logger(__name__)
@@ -81,7 +84,7 @@ class DecodeBenchConnector(KVConnectorBase_V1):
         self,
         aphrodite_config: "AphroditeConfig",
         role: KVConnectorRole,
-        kv_cache_config: Optional["KVCacheConfig"] = None,
+        kv_cache_config: "KVCacheConfig | None" = None,
     ):
         super().__init__(aphrodite_config, role, kv_cache_config)
 
@@ -114,7 +117,7 @@ class DecodeBenchConnector(KVConnectorBase_V1):
         self,
         layer_name: str,
         kv_layer: torch.Tensor,
-        attn_metadata: "AttentionMetadata",
+        attn_metadata: AttentionMetadata,
         **kwargs: Any,
     ) -> None:
         # This connector doesn't save KV cache (benchmarking only)

@@ -2,7 +2,7 @@
 title: Paged Attention
 ---
 
-Aphrodite implements [vLLM](https://vllm.ai)'s Paged Attention mechanism. 
+Aphrodite implements [vLLM](https://aphrodite.ai)'s Paged Attention mechanism. 
 
 Currently, Aphrodite utilizes a custom implementation of multi-head query attention at `kernels/attention/attention_kernels.cu`. This kernel is designed to be compatible with Aphrodite's Paged KV caches, where the key and value caches are stored in separate blocks (note that this block concept differs from the GPU thread  block. So in a later document, we will refer to Aphrodite Paged Attention block as a "block", while referrign to the GPU thread block as "thread block").
 
