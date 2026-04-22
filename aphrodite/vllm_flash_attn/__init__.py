@@ -20,7 +20,7 @@ if os.path.islink(_cute_dir) and "flash_attn" not in sys.modules:
     _fa_mod.__spec__.submodule_search_locations = _fa_mod.__path__
     sys.modules["flash_attn"] = _fa_mod
 
-from aphrodite.aphrodite_flash_attn.flash_attn_interface import (  # noqa: E402
+from aphrodite.vllm_flash_attn.flash_attn_interface import (  # noqa: E402
     FA2_AVAILABLE,
     FA3_AVAILABLE,
     fa_version_unsupported_reason,
@@ -31,7 +31,7 @@ from aphrodite.aphrodite_flash_attn.flash_attn_interface import (  # noqa: E402
 
 if not (FA2_AVAILABLE or FA3_AVAILABLE):
     raise ImportError(
-        "aphrodite.aphrodite_flash_attn requires the CUDA flash attention extensions "
+        "aphrodite.vllm_flash_attn requires the CUDA flash attention extensions "
         "(_vllm_fa2_C or _vllm_fa3_C). On ROCm, use upstream flash_attn."
     )
 

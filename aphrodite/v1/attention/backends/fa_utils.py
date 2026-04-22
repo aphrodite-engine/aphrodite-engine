@@ -17,7 +17,7 @@ _ROCM_FLASH_ATTN_AVAILABLE = False
 
 if current_platform.is_cuda():
     from aphrodite._custom_ops import reshape_and_cache_flash
-    from aphrodite.aphrodite_flash_attn import (  # type: ignore[attr-defined]
+    from aphrodite.vllm_flash_attn import (  # type: ignore[attr-defined]
         flash_attn_varlen_func,
         get_scheduler_metadata,
     )
@@ -62,7 +62,7 @@ def get_flash_attn_version(
         # ROCm doesn't use aphrodite_flash_attn; return None to skip fa_version arg
         return None
     try:
-        from aphrodite.aphrodite_flash_attn.flash_attn_interface import (
+        from aphrodite.vllm_flash_attn.flash_attn_interface import (
             fa_version_unsupported_reason,
             is_fa_version_supported,
         )
@@ -156,7 +156,7 @@ def get_flash_attn_version(
 
 def is_fa_version_supported(fa_version: int) -> bool:
     try:
-        from aphrodite.aphrodite_flash_attn.flash_attn_interface import (
+        from aphrodite.vllm_flash_attn.flash_attn_interface import (
             is_fa_version_supported as _is_fa_version_supported,
         )
 
@@ -190,7 +190,7 @@ def flash_attn_supports_mla():
 
     if current_platform.is_cuda():
         try:
-            from aphrodite.aphrodite_flash_attn.flash_attn_interface import (
+            from aphrodite.vllm_flash_attn.flash_attn_interface import (
                 is_fa_version_supported,
             )
 
@@ -213,7 +213,7 @@ def is_flash_attn_varlen_func_available() -> bool:
     level is a working implementation or a stub.
 
     Platform-specific sources:
-    - CUDA: aphrodite.aphrodite_flash_attn.flash_attn_varlen_func
+    - CUDA: aphrodite.vllm_flash_attn.flash_attn_varlen_func
     - XPU: xpu_ops.flash_attn_varlen_func
     - ROCm: upstream flash_attn.flash_attn_varlen_func (if available)
 

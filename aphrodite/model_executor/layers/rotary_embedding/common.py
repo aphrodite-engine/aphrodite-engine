@@ -229,7 +229,7 @@ class ApplyRotaryEmb(CustomOp):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> torch.Tensor:
-        from aphrodite.aphrodite_flash_attn.layers.rotary import apply_rotary_emb
+        from aphrodite.vllm_flash_attn.layers.rotary import apply_rotary_emb
 
         x, cos, sin, origin_shape, origin_dtype = self._pre_process(x, cos, sin)
 

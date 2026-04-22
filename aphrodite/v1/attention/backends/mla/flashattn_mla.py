@@ -32,7 +32,7 @@ from aphrodite.v1.attention.backends.fa_utils import (
     get_flash_attn_version,
 )
 from aphrodite.v1.kv_cache_interface import AttentionSpec
-from aphrodite.aphrodite_flash_attn import (  # type: ignore[attr-defined]
+from aphrodite.vllm_flash_attn import (  # type: ignore[attr-defined]
     flash_attn_varlen_func,
     get_scheduler_metadata,
 )

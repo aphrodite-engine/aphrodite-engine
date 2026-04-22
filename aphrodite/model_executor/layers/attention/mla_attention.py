@@ -1032,7 +1032,7 @@ class QueryLenSupport(Enum):
 
 
 try:
-    from aphrodite.aphrodite_flash_attn import (  # type: ignore[attr-defined]
+    from aphrodite.vllm_flash_attn import (  # type: ignore[attr-defined]
         flash_attn_varlen_func,
     )
 
