@@ -215,4 +215,11 @@ shellcheck-stable/
 ep_kernels_workspace/
 CMakeUserPresets.json
 cmake-build*/
-aphrodite/aphrodite_flash_attn/*
+aphrodite/vllm_flash_attn/*
+!aphrodite/vllm_flash_attn/__init__.py
+!aphrodite/vllm_flash_attn/flash_attn_interface.py
+
+aphrodite/third_party/triton_kernels/*
+aphrodite/third_party/deep_gemm/
+
+.triton
