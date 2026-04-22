@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 Replace ``slice_scatter`` and ``split_with_sizes`` nodes with a single
 assignment if there are no users for the inplace tensor written to by

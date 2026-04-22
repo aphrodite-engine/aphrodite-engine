@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2023 The Aphrodite team.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.

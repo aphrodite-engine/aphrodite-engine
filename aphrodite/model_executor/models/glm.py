@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Inference-only HF format GLM-4 model compatible with THUDM weights."""
 
 from aphrodite.config import AphroditeConfig

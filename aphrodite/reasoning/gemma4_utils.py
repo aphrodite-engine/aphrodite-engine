@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright 2025 Google Inc. HuggingFace Inc. team. All rights reserved.
 
 """Gemma4 thinking/reasoning output parsing utilities for offline inference.

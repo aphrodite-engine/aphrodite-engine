@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright 2025 the LLAMA4, Meta Inc., Aphrodite, and HuggingFace Inc. team.
 # All rights reserved.
 #

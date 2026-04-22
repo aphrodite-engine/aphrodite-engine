@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from transformers import PretrainedConfig, SiglipVisionConfig
 from transformers.modeling_rope_utils import rope_config_validation
 

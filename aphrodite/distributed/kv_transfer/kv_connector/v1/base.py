@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 KVConnectorBase_V1 Class for Distributed KV Cache & Hidden State
 communication in Aphrodite v1

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from NVIDIA Eagle2.5-VL model
 # https://huggingface.co/nvidia/Eagle2.5-8B
 

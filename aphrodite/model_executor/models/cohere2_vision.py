@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from aphrodite/model_executor/models/aya_vision.py
 """Command-A-Vision (Cohere2Vision) multimodal model implementation for Aphrodite."""
 

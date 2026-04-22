@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Custom ops for prefetch offloader torch.compile + CUDA graph compatibility.
 
 These ops use mutates_args to create data dependencies that prevent

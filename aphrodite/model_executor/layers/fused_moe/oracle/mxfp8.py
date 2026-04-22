@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import aphrodite.model_executor.layers.fused_moe.modular_kernel as mk
 from aphrodite.logger import init_logger

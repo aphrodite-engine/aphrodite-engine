@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """NUMA binding utilities for Aphrodite worker processes.
 
 Adapted in part from SGLang's NUMA helper implementation:

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Lloyd-Max optimal scalar quantizer for TurboQuant.
 
 After rotating a d-dimensional unit vector by a random orthogonal matrix,

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 # Adapted from
 # https://github.com/inclusionAI/Ling/blob/master/models/modeling_bailing_moe.py

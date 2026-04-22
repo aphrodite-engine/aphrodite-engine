@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Aphrodite support for microsoft/Phi-4-reasoning-vision-15B.
 
 Architecture: Siglip2 vision tower + MLP projector + Phi3 language model.

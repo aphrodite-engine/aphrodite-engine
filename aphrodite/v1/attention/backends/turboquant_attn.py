@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """TurboQuant attention backend for Aphrodite.
 
 Prefill: Standard scaled dot-product attention on uncompressed K/V,

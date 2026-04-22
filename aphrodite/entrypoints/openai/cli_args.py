@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 This file contains the command line arguments for the Aphrodite's
 OpenAI-compatible server. It is kept in a separate file for documentation

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Configuration for ColModernVBERT visual document retrieval model.
 
 ColModernVBERT combines SigLIP vision encoder + ModernBERT text encoder

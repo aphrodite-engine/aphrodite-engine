@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from https://huggingface.co/jinaai/jina-reranker-v3/blob/main/modeling.py
 import json
 import logging

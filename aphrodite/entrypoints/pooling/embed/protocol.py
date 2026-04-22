@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Embedding API protocol models for OpenAI and Cohere formats.
 
 OpenAI: https://platform.openai.com/docs/api-reference/embeddings

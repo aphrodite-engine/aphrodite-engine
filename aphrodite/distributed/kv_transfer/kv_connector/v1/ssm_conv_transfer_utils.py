@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Mamba conv-state sub-projection decomposition for the 3-read transfer.
 
 With DS conv state layout (dim, state_len), x/B/C sub-projections are

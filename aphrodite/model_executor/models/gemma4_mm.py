@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Gemma 4 multimodal model (image + audio + video support).
 
 Adds vision tower, audio tower, and multimodal embedders on top of the

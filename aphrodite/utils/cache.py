@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from collections import UserDict
 from collections.abc import Callable, Hashable, Iterator, KeysView, Mapping
 from types import MappingProxyType

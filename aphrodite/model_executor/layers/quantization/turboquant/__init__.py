@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """TurboQuant: KV-cache quantization for Aphrodite.
 
 Hadamard rotation + per-coordinate Lloyd-Max scalar quantization for

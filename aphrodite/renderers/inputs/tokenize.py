@@ -3,7 +3,7 @@ Schemas and utilities for tokenization inputs.
 """
 
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from typing import TypeAlias, TypedDict
 
 from aphrodite.inputs import EmbedsPrompt, TokensPrompt

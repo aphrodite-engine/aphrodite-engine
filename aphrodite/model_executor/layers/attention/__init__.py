@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from aphrodite.model_executor.layers.attention.attention import Attention
 from aphrodite.model_executor.layers.attention.chunked_local_attention import (

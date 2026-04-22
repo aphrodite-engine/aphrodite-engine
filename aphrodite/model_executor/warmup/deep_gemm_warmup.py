@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 Warmup deep_gemm kernels.
 DeepGEMM JIT's the kernels. The warmup aims to JIT all the kernels that would

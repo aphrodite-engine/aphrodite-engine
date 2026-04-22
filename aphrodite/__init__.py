@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Aphrodite: a high-throughput and memory-efficient inference engine for LLMs"""
 
 # The version.py should be independent library, and we always import the

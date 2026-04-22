@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 # Copyright 2026 The Aphrodite team.
 # Copyright 2026 NVIDIA CORPORATION and the HuggingFace Inc. team. All rights

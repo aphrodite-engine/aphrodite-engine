@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Helion integration for Aphrodite."""
 
 import aphrodite.kernels.helion.ops  # noqa: F401  Auto-register all Helion ops

@@ -27,7 +27,7 @@ from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite.model_executor.layers.fused_moe import FusedMoE
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 
 from aphrodite.model_executor.layers.quantization.utils.ocp_mx_utils import OCP_MX_BLOCK_SIZE

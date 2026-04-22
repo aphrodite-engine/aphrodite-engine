@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """FlashInfer MLA Sparse Attention Backend.
 
 This backend uses the FlashInfer TRT-LLM MLA kernel with sparse_mla_top_k

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """NIXL KV-cache transfer connector (disaggregated prefill / decode)."""
 
 from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl.connector import (

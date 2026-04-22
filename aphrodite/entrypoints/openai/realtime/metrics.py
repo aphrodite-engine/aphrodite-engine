@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """ASGI middleware for WebSocket Prometheus metrics.
 
 Modeled after prometheus-fastapi-instrumentator, this middleware

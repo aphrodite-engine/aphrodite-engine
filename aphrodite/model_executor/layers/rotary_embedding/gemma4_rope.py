@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Gemma4-specific Rotary Positional Embeddings (proportional scaling).
 
 Gemma4 uses "proportional" RoPE which computes inv_freq frequencies scaled

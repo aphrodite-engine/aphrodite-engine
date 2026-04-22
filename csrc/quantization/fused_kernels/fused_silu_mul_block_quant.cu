@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+// SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>

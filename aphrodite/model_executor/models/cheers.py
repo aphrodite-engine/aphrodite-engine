@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Inference-only Cheers (UMM) model compatible with HuggingFace weights.
 
 Cheers is a unified multimodal model for image understanding and generation.

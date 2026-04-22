@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Triton fused TurboQuant decode attention.
 
 Decode path: Triton stage1 (split-KV tiled attention scoring + value

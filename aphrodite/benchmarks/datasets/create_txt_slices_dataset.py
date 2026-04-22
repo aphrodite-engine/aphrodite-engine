@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 Convert a plain-text file (local path or URL) into a JSONL dataset
 compatible with ``CustomDataset`` (``--dataset-name custom``), by 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 # Adapted from
 # https://github.com/vllm-project/vllm/blob/v0.7.3/aphrodite/model_executor/models/deepseek_mtp.py

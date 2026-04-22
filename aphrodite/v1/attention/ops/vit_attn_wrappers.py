@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 This file contains ops for ViT attention to be compatible with torch.compile
 as there are operations here not supported by torch.compile (for instance,

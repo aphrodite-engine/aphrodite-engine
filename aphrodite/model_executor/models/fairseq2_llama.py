@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 # Copyright 2024 The Aphrodite team.
 # Copyright 2024 Meta Platforms, Inc. and affiliates. All rights reserved.

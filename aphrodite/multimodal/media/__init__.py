@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
 from .connector import MEDIA_CONNECTOR_REGISTRY, MediaConnector

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from typing import TYPE_CHECKING
 
 from aphrodite.distributed.ec_transfer.ec_connector.base import (

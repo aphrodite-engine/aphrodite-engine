@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """OMP Aware Multiprocessing manager for running multiprocessing.Process()
 Copyright (c) 2026 Red Hat Inc
 Copyright (c) 2026 Cambridge Greys Ltd

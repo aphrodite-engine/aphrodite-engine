@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from .compressed_tensors_scheme import CompressedTensorsScheme
 from .compressed_tensors_w4a4_nvfp4 import CompressedTensorsW4A4Fp4

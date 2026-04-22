@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from transformers import BaseImageProcessor, BatchFeature, TensorType
 from transformers.processing_utils import ProcessorMixin
 

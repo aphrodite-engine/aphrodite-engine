@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 from mistral_common.protocol.instruct.chunk import ImageChunk
 from mistral_common.tokens.tokenizers.multimodal import ImageEncoder

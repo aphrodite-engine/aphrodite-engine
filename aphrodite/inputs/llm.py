@@ -1,7 +1,7 @@
 """Schema and utilities for input prompts to the LLM API."""
 
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, final
 

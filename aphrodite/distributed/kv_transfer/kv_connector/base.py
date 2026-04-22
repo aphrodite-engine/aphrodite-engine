@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Defines the base type for KV cache connectors."""
 
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorBase_V1

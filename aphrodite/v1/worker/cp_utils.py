@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from typing import TYPE_CHECKING, Any, cast
 
 from aphrodite.config import AphroditeConfig, get_layers_from_aphrodite_config

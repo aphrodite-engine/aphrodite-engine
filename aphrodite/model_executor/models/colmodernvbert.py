@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """ColModernVBERT: multimodal late-interaction retrieval model.
 
 Combines SigLIP vision encoder + ModernBERT text encoder with a pixel

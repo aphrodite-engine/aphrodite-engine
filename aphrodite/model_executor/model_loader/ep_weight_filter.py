@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Filter out non-local expert weights during loading to avoid redundant I/O.
 
 In DP+EP deployments each rank only needs its own expert shard.  Skipping
