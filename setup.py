@@ -315,7 +315,7 @@ class cmake_build_ext(build_ext):
         def target_name(s: str) -> str:
             return (
                 s.removeprefix("aphrodite.")
-                .removeprefix("aphrodite_flash_attn.")
+                .removeprefix("vllm_flash_attn.")
                 .removeprefix("aphrodite_flash_attn.")
             )
 
@@ -361,7 +361,7 @@ class cmake_build_ext(build_ext):
         # Run the standard build_ext command to compile the extensions
         super().run()
 
-        # Copy aphrodite/aphrodite_flash_attn/**/*.py from self.build_lib to the
+        # Copy aphrodite/vllm_flash_attn/**/*.py from self.build_lib to the
         # source tree so editable installs can import the packaged Python
         # wrappers alongside the built extension modules.
         import glob
@@ -369,14 +369,14 @@ class cmake_build_ext(build_ext):
 
         files = glob.glob(
             os.path.join(
-                self.build_lib, "aphrodite", "aphrodite_flash_attn", "**", "*.py"
+                self.build_lib, "aphrodite", "vllm_flash_attn", "**", "*.py"
             ),
             recursive=True,
         )
         for file in files:
             dst_file = os.path.join(
-                "aphrodite/aphrodite_flash_attn",
-                file.split("aphrodite/aphrodite_flash_attn/")[-1],
+                "aphrodite/vllm_flash_attn",
+                file.split("aphrodite/vllm_flash_attn/")[-1],
             )
             print(f"Copying {file} to {dst_file}")
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
@@ -629,13 +629,13 @@ if _build_custom_ops():
             "true",
         )
         if not disable_flash_attn:
-            ext_modules.append(CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa2_C", cmake_lists_dir="."))
+            ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa2_C", cmake_lists_dir="."))
             if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
                 ext_modules.append(
-                    CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa3_C", cmake_lists_dir=".")
+                    CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa3_C", cmake_lists_dir=".")
                 )
             ext_modules.append(
-                CMakeExtension(name="aphrodite.aphrodite_flash_attn._vllm_fa4_cutedsl_C",
+                CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa4_cutedsl_C",
                                cmake_lists_dir=".",
                                optional=True)
             )

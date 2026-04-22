@@ -75,7 +75,7 @@ exclude = [
     "examples/fp8/quantizer/quantize.py",
     "kernels/hadamard/generator.py",
     "kernels/flash_mla/**",
-    "aphrodite/aphrodite_flash_attn/**",
+    "aphrodite/vllm_flash_attn/**",
     "aphrodite/distributed/kv_transfer/**"
 ]
 
