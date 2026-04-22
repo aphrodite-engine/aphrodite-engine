@@ -35,6 +35,12 @@ def register_generate_api_routers(app: FastAPI):
 
     register_completion_api_router(app)
 
+    from aphrodite.entrypoints.openai.kobold.api_router import (
+        attach_router as register_kobold_api_router,
+    )
+
+    register_kobold_api_router(app)
+
     from aphrodite.entrypoints.anthropic.api_router import (
         attach_router as register_anthropic_api_router,
     )
@@ -61,6 +67,7 @@ async def init_generate_state(
     )
     from aphrodite.entrypoints.openai.chat_completion.serving import OpenAIServingChat
     from aphrodite.entrypoints.openai.completion.serving import OpenAIServingCompletion
+    from aphrodite.entrypoints.openai.kobold.serving import OpenAIServingKobold
     from aphrodite.entrypoints.openai.responses.serving import OpenAIServingResponses
     from aphrodite.entrypoints.serve.disagg.serving import ServingTokens
 
@@ -138,6 +145,15 @@ async def init_generate_state(
             return_tokens_as_token_ids=args.return_tokens_as_token_ids,
             enable_prompt_tokens_details=args.enable_prompt_tokens_details,
             enable_force_include_usage=args.enable_force_include_usage,
+        )
+        if "generate" in supported_tasks
+        else None
+    )
+    state.openai_serving_kobold = (
+        OpenAIServingKobold(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
         )
         if "generate" in supported_tasks
         else None
