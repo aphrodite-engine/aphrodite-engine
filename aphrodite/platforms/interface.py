@@ -603,7 +603,7 @@ class Platform:
 
         if cache_config.block_size < attn_block_size:
             cache_config.block_size = attn_block_size
-            logger.info(
+            logger.info_once(
                 "Setting attention block size to %d tokens "
                 "to ensure that attention page size is >= mamba page size.",
                 attn_block_size,
@@ -627,7 +627,7 @@ class Platform:
             mamba_padding_pct = (
                 100 * (attn_page_size - mamba_page_size) / mamba_page_size
             )
-            logger.info(
+            logger.info_once(
                 "Padding mamba page size by %.2f%% to ensure "
                 "that mamba page size and attention page size are "
                 "exactly equal.",
