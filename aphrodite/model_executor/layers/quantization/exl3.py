@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 import torch
+from huggingface_hub import hf_hub_download
 from transformers import PretrainedConfig
 
 from aphrodite import _custom_ops as ops
@@ -81,13 +82,29 @@ class Exl3Config(QuantizationConfig):
         hf_config: PretrainedConfig | None = None,
         revision: str | None = None,
     ):
-        del hf_config, revision
-        if self.tensor_storage or not os.path.isdir(model_name):
+        del hf_config
+        if self.tensor_storage:
             return
 
-        quant_config_path = os.path.join(model_name, "quantization_config.json")
-        if not os.path.exists(quant_config_path):
-            return
+        if os.path.isdir(model_name):
+            quant_config_path = os.path.join(model_name, "quantization_config.json")
+            if not os.path.exists(quant_config_path):
+                return
+        else:
+            try:
+                quant_config_path = hf_hub_download(
+                    repo_id=model_name,
+                    filename="quantization_config.json",
+                    revision=revision,
+                )
+            except Exception:
+                logger.debug(
+                    "Could not resolve EXL3 quantization_config.json for %s",
+                    model_name,
+                    exc_info=True,
+                )
+                return
+
         with open(quant_config_path) as f:
             config = json.load(f)
         self.tensor_storage = config.get("tensor_storage", {})
@@ -109,18 +126,37 @@ class Exl3Config(QuantizationConfig):
         return None
 
     def _storage_entry(self, prefix: str) -> dict[str, Any] | None:
-        entry = self.tensor_storage.get(prefix)
-        if entry is not None:
-            return entry
+        candidates = [prefix]
         if prefix.startswith("model."):
-            return self.tensor_storage.get(prefix.removeprefix("model."))
-        return self.tensor_storage.get(f"model.{prefix}")
+            candidates.append(prefix.removeprefix("model."))
+        else:
+            candidates.append(f"model.{prefix}")
+
+        parts = prefix.split(".")
+        for idx in range(1, len(parts) - 1):
+            if parts[idx] != "model":
+                continue
+            collapsed = ".".join(parts[:idx] + parts[idx + 1 :])
+            candidates.append(collapsed)
+            if collapsed.startswith("model."):
+                candidates.append(collapsed.removeprefix("model."))
+            else:
+                candidates.append(f"model.{collapsed}")
+
+        for candidate in candidates:
+            entry = self.tensor_storage.get(candidate)
+            if entry is not None:
+                return entry
+        return None
 
     def _is_exl3_prefix(self, prefix: str) -> bool:
         entry = self._storage_entry(prefix)
         return entry is not None and entry.get("quant_format") == "exl3"
 
     def _linear_prefix_is_exl3(self, prefix: str) -> bool:
+        if prefix.endswith("lm_head") and self.head_bits is not None:
+            return True
+
         if self._is_exl3_prefix(prefix):
             return True
 
@@ -136,6 +172,13 @@ class Exl3Config(QuantizationConfig):
             return all(
                 self._is_exl3_prefix(f"{base}.{proj}")
                 for proj in ("gate_proj", "up_proj")
+            )
+
+        if prefix.endswith(".in_proj_qkvz"):
+            base = prefix.removesuffix(".in_proj_qkvz")
+            return all(
+                self._is_exl3_prefix(f"{base}.{proj}")
+                for proj in ("in_proj_qkv", "in_proj_z")
             )
 
         return False
@@ -156,6 +199,9 @@ class Exl3Config(QuantizationConfig):
             for prefix, entry in self.tensor_storage.items()
             if entry.get("quant_format") == "exl3"
         )
+
+    def has_quantized_lm_head(self) -> bool:
+        return self._is_exl3_prefix("lm_head")
 
 
 class Exl3Parameter(BaseAphroditeParameter):
@@ -500,6 +546,8 @@ class Exl3LinearMethod(LinearMethodBase):
             return ["q", "k", "v"]
         if prefix.endswith("gate_up_proj"):
             return [0, 1]
+        if prefix.endswith("in_proj_qkvz"):
+            return [(0, 1, 2), 3]
 
         return list(range(len(output_partition_sizes)))
 

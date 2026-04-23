@@ -494,13 +494,26 @@ class Qwen3_5ForCausalLMBase(
             self.packed_modules_mapping["in_proj_qkv"] = ["in_proj_qkv"]
             self.packed_modules_mapping["in_proj_z"] = ["in_proj_z"]
 
+        use_tied_lm_head = config.tie_word_embeddings
+        if use_tied_lm_head and self.quant_config is not None:
+            has_quantized_lm_head = False
+            if hasattr(self.quant_config, "has_quantized_lm_head"):
+                has_quantized_lm_head = self.quant_config.has_quantized_lm_head()
+            # EXL3 checkpoints expose head quantization through `head_bits`
+            # early, even before tensor storage is fully populated.
+            if not has_quantized_lm_head and getattr(self.quant_config, "head_bits", None):
+                has_quantized_lm_head = True
+            if has_quantized_lm_head:
+                use_tied_lm_head = False
+
         if get_pp_group().is_last_rank:
-            if config.tie_word_embeddings:
+            if use_tied_lm_head:
                 self.lm_head = self.model.embed_tokens
             else:
                 self.lm_head = ParallelLMHead(
                     config.vocab_size,
                     config.hidden_size,
+                    quant_config=self.quant_config,
                     prefix=maybe_prefix(prefix, "lm_head"),
                 )
         else:
