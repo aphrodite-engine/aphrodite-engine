@@ -17,7 +17,6 @@ from aphrodite.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import FusedMoE
 from aphrodite.model_executor.layers.layernorm import RMSNorm
@@ -124,7 +123,6 @@ class AfmoeMoE(nn.Module):
                 reduce_results=False,
                 prefix=f"{prefix}.shared_experts",
             )
-            self.shared_experts.act_fn = SiluAndMul(enforce_enable=True)
 
         # Routed experts using FusedMoE
         self.experts = FusedMoE(
