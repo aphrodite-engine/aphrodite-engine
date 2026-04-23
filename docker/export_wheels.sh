@@ -24,22 +24,10 @@ MAX_JOBS="${MAX_JOBS:-2}"
 NVCC_THREADS="${NVCC_THREADS:-8}"
 
 echo "Building main wheel stage for caching (if not already cached)..."
-DOCKER_BUILDKIT=1 docker build \
-    --target build \
-    -t aphrodite-build:cache \
-    --build-arg CUDA_VERSION="${CUDA_VERSION}" \
-    --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
-    --build-arg TARGETPLATFORM="${TARGETPLATFORM}" \
-    --build-arg torch_cuda_arch_list="${TORCH_CUDA_ARCH_LIST}" \
-    --build-arg max_jobs="${MAX_JOBS}" \
-    --build-arg nvcc_threads="${NVCC_THREADS}" \
-    -f docker/Dockerfile . || true
-
 echo "Exporting main wheel..."
 mkdir -p ./wheels/main
 DOCKER_BUILDKIT=1 docker build \
     --target main-wheel-export \
-    --cache-from aphrodite-build:cache \
     --output ./wheels/main \
     --build-arg CUDA_VERSION="${CUDA_VERSION}" \
     --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
