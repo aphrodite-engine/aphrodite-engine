@@ -1,9 +1,8 @@
 #!/bin/bash
 set -e
 
-# Script to export wheels using BuildKit cache
-# This ensures that the build stages are cached and reused when exporting
-# 
+# Script to export the main wheel.
+#
 # Usage:
 #   ./docker/export_wheels.sh                   # Export the main wheel
 #   CUDA_VERSION=12.8.1 ./docker/export_wheels.sh
@@ -23,7 +22,6 @@ TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-7.0 7.5 8.0 8.9 9.0 10.0 12.0}"
 MAX_JOBS="${MAX_JOBS:-2}"
 NVCC_THREADS="${NVCC_THREADS:-8}"
 
-echo "Building main wheel stage for caching (if not already cached)..."
 echo "Exporting main wheel..."
 mkdir -p ./wheels/main
 DOCKER_BUILDKIT=1 docker build \

@@ -192,131 +192,8 @@ ARG torch_cuda_arch_list='7.0 7.5 8.0 8.9 9.0 10.0 12.0'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 #################### BUILD BASE IMAGE ####################
 
-#################### CSRC BUILD IMAGE ####################
-FROM base AS csrc-build
-ARG TARGETPLATFORM
-
-ARG PIP_INDEX_URL UV_INDEX_URL
-ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
-ARG PYTORCH_CUDA_INDEX_BASE_URL
-
-# We can specify the standard or nightly build of PyTorch
-ARG PYTORCH_NIGHTLY
-
-# Install build dependencies
-COPY requirements/build.txt requirements/build.txt
-COPY use_existing_torch.py use_existing_torch.py
-COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
-
-# This timeout (in seconds) is necessary when installing some dependencies via uv since it's likely to time out
-# Reference: https://github.com/astral-sh/uv/pull/1694
-ENV UV_HTTP_TIMEOUT=500
-ENV UV_INDEX_STRATEGY="unsafe-best-match"
-# Use copy mode to avoid hardlink failures with Docker cache mounts
-ENV UV_LINK_MODE=copy
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
-        echo "Installing build requirements without torch..." \
-        && python3 use_existing_torch.py --prefix \
-        && uv pip install --python /opt/venv/bin/python3 -r requirements/build.txt \
-        && echo "Installing torch nightly..." \
-        && uv pip install --python /opt/venv/bin/python3 $(cat torch_lib_versions.txt | grep -i "^torch=" | xargs) --pre \
-        --index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/nightly/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
-    else \
-        echo "Installing build requirements..." \
-        && uv pip install --python /opt/venv/bin/python3 -r requirements/build.txt \
-        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
-    fi
-
-WORKDIR /workspace
-
-COPY pyproject.toml setup.py CMakeLists.txt ./
-COPY cmake cmake/
-COPY csrc csrc/
-COPY aphrodite/envs.py aphrodite/envs.py
-COPY aphrodite/__init__.py aphrodite/__init__.py
-
-# max jobs used by Ninja to build extensions
-ARG max_jobs=2
-ENV MAX_JOBS=${max_jobs}
-# number of threads used by nvcc
-ARG nvcc_threads=8
-ENV NVCC_THREADS=$nvcc_threads
-
-ARG USE_SCCACHE
-ARG SCCACHE_DOWNLOAD_URL
-ARG SCCACHE_ENDPOINT
-ARG SCCACHE_BUCKET_NAME=aphrodite-build-sccache
-ARG SCCACHE_REGION_NAME=us-west-2
-ARG SCCACHE_S3_NO_CREDENTIALS=0
-
-# Flag to control whether to use pre-built Aphrodite wheels
-ARG APHRODITE_USE_PRECOMPILED=""
-ARG APHRODITE_MERGE_BASE_COMMIT=""
-ARG APHRODITE_MAIN_CUDA_VERSION=""
-
-# Use dummy version for csrc-build wheel (only .so files are extracted, version doesn't matter)
-ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0+csrc.build"
-
-# Use existing torch for nightly builds
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
-        python3 use_existing_torch.py --prefix; \
-    fi
-
-# Build the Aphrodite wheel
-# if USE_SCCACHE is set, use sccache to speed up compilation
-# AWS credentials mounted at ~/.aws/credentials for sccache S3 auth (optional)
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
-    if [ "$USE_SCCACHE" = "1" ]; then \
-        echo "Installing sccache..." \
-        && case "${TARGETPLATFORM}" in \
-          linux/arm64) SCCACHE_ARCH="aarch64" ;; \
-          linux/amd64) SCCACHE_ARCH="x86_64" ;; \
-          *) echo "Unsupported TARGETPLATFORM for sccache: ${TARGETPLATFORM}" >&2; exit 1 ;; \
-        esac \
-        && export SCCACHE_DOWNLOAD_URL="${SCCACHE_DOWNLOAD_URL:-https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl.tar.gz}" \
-        && curl -L -o sccache.tar.gz ${SCCACHE_DOWNLOAD_URL} \
-        && tar -xzf sccache.tar.gz \
-        && sudo mv sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl/sccache /usr/bin/sccache \
-        && rm -rf sccache.tar.gz sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl \
-        && if [ ! -z ${SCCACHE_ENDPOINT} ] ; then export SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT} ; fi \
-        && export SCCACHE_BUCKET=${SCCACHE_BUCKET_NAME} \
-        && export SCCACHE_REGION=${SCCACHE_REGION_NAME} \
-        && export SCCACHE_S3_NO_CREDENTIALS=${SCCACHE_S3_NO_CREDENTIALS} \
-        && export SCCACHE_IDLE_TIMEOUT=0 \
-        && export CMAKE_BUILD_TYPE=Release \
-        && export APHRODITE_USE_PRECOMPILED="${APHRODITE_USE_PRECOMPILED}" \
-        && export APHRODITE_PRECOMPILED_WHEEL_COMMIT="${APHRODITE_MERGE_BASE_COMMIT}" \
-        && export APHRODITE_MAIN_CUDA_VERSION="${APHRODITE_MAIN_CUDA_VERSION}" \
-        && export APHRODITE_DOCKER_BUILD_CONTEXT=1 \
-        && sccache --show-stats \
-        && python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 \
-        && sccache --show-stats; \
-    fi
-
-ARG aphrodite_target_device="cuda"
-ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
-ENV CCACHE_DIR=/root/.cache/ccache
-RUN --mount=type=cache,target=/root/.cache/ccache \
-    --mount=type=cache,target=/root/.cache/uv \
-    if [ "$USE_SCCACHE" != "1" ]; then \
-        # Clean any existing CMake artifacts
-        rm -rf .deps && \
-        mkdir -p .deps && \
-        export APHRODITE_USE_PRECOMPILED="${APHRODITE_USE_PRECOMPILED}" && \
-        export APHRODITE_PRECOMPILED_WHEEL_COMMIT="${APHRODITE_MERGE_BASE_COMMIT}" && \
-        export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
-        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38; \
-    fi
-
-#################### CSRC BUILD IMAGE ####################
-
 #################### EXTENSIONS BUILD IMAGE ####################
-# Build DeepEP - runs in PARALLEL with csrc-build
-# This stage is independent and doesn't affect csrc cache
+# Build DeepEP wheels
 FROM base AS extensions-build
 ARG CUDA_VERSION
 
@@ -382,8 +259,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 WORKDIR /workspace
 
-# Copy pre-built csrc wheel directly
-COPY --from=csrc-build /workspace/dist /precompiled-wheels
 COPY . .
 
 ARG GIT_REPO_CHECK=0
