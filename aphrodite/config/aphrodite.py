@@ -1094,6 +1094,22 @@ class AphroditeConfig:
                 # override related settings when enforce eager
                 self.compilation_config.max_cudagraph_capture_size = 0
                 self.compilation_config.cudagraph_capture_sizes = []
+            elif (
+                self.quant_config is not None
+                and getattr(self.quant_config, "has_moe_tensors", lambda: False)()
+                and self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
+            ):
+                # EXL3 MoE currently needs the Python overflow fallback for
+                # large routed batches, which is not compatible with mixed
+                # prefill/decode CUDA graph capture. Decode-only graphs remain
+                # useful and align with the small-batch fast path.
+                logger.warning_once(
+                    "Switching EXL3 MoE to FULL_DECODE_ONLY CUDA graphs. "
+                    "Mixed prefill/decode graphs remain disabled."
+                )
+                self.compilation_config.cudagraph_mode = (
+                    CUDAGraphMode.FULL_DECODE_ONLY
+                )
             else:
                 self.compilation_config.cudagraph_num_of_warmups = 1
 

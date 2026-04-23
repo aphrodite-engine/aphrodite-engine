@@ -285,6 +285,70 @@ def exl3_hgemm(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor) -> None:
     torch.ops._C.exl3_hgemm(a, b, c)
 
 
+def exl3_moe(
+    hidden_state: torch.Tensor,
+    output_state: torch.Tensor,
+    expert_count: torch.Tensor,
+    token_sorted: torch.Tensor,
+    weight_sorted: torch.Tensor,
+    temp_state_g: torch.Tensor,
+    temp_state_u: torch.Tensor,
+    temp_intermediate_g: torch.Tensor,
+    temp_intermediate_u: torch.Tensor,
+    act_function: int,
+    k_gate: int,
+    k_up: int,
+    k_down: int,
+    gate_ptrs_trellis: torch.Tensor,
+    gate_ptrs_suh: torch.Tensor,
+    gate_ptrs_svh: torch.Tensor,
+    up_ptrs_trellis: torch.Tensor,
+    up_ptrs_suh: torch.Tensor,
+    up_ptrs_svh: torch.Tensor,
+    down_ptrs_trellis: torch.Tensor,
+    down_ptrs_suh: torch.Tensor,
+    down_ptrs_svh: torch.Tensor,
+    gate_mcg: bool,
+    gate_mul1: bool,
+    up_mcg: bool,
+    up_mul1: bool,
+    down_mcg: bool,
+    down_mul1: bool,
+    act_limit: float = 0.0,
+) -> None:
+    torch.ops._C.exl3_moe(
+        hidden_state,
+        output_state,
+        expert_count,
+        token_sorted,
+        weight_sorted,
+        temp_state_g,
+        temp_state_u,
+        temp_intermediate_g,
+        temp_intermediate_u,
+        act_function,
+        k_gate,
+        k_up,
+        k_down,
+        gate_ptrs_trellis,
+        gate_ptrs_suh,
+        gate_ptrs_svh,
+        up_ptrs_trellis,
+        up_ptrs_suh,
+        up_ptrs_svh,
+        down_ptrs_trellis,
+        down_ptrs_suh,
+        down_ptrs_svh,
+        gate_mcg,
+        gate_mul1,
+        up_mcg,
+        up_mul1,
+        down_mcg,
+        down_mul1,
+        act_limit,
+    )
+
+
 if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
 
     @register_fake("_C::exl3_gemm")
@@ -349,6 +413,42 @@ if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
         c: torch.Tensor,
     ) -> None:
         return None
+
+    if hasattr(torch.ops._C, "exl3_moe"):
+
+        @register_fake("_C::exl3_moe")
+        def _exl3_moe_fake(
+            hidden_state: torch.Tensor,
+            output_state: torch.Tensor,
+            expert_count: torch.Tensor,
+            token_sorted: torch.Tensor,
+            weight_sorted: torch.Tensor,
+            temp_state_g: torch.Tensor,
+            temp_state_u: torch.Tensor,
+            temp_intermediate_g: torch.Tensor,
+            temp_intermediate_u: torch.Tensor,
+            act_function: int,
+            k_gate: int,
+            k_up: int,
+            k_down: int,
+            gate_ptrs_trellis: torch.Tensor,
+            gate_ptrs_suh: torch.Tensor,
+            gate_ptrs_svh: torch.Tensor,
+            up_ptrs_trellis: torch.Tensor,
+            up_ptrs_suh: torch.Tensor,
+            up_ptrs_svh: torch.Tensor,
+            down_ptrs_trellis: torch.Tensor,
+            down_ptrs_suh: torch.Tensor,
+            down_ptrs_svh: torch.Tensor,
+            gate_mcg: bool,
+            gate_mul1: bool,
+            up_mcg: bool,
+            up_mul1: bool,
+            down_mcg: bool,
+            down_mul1: bool,
+            act_limit: float,
+        ) -> None:
+            return None
 
 
 def paged_attention_rocm(

@@ -95,7 +95,15 @@ class SharedExperts:
         self,
         hidden_states: torch.Tensor,
     ) -> SharedExpertsOrder:
-        if self._disable_shared_experts_overlap:
+        is_capturing = (
+            current_platform.is_cuda() and torch.cuda.is_current_stream_capturing()
+        )
+        if (
+            self._disable_shared_experts_overlap
+            or not self._quant_method.supports_shared_expert_overlap
+            or torch.compiler.is_compiling()
+            or is_capturing
+        ):
             return SharedExpertsOrder.NO_OVERLAP
 
         if self._quant_method.mk_owns_shared_expert:

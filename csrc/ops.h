@@ -12,6 +12,7 @@
 #ifndef USE_ROCM
 #include "quantization/exl3/exllamav3_ext/hgemm.cuh"
 #include "quantization/exl3/exllamav3_ext/quant/exl3_gemm.cuh"
+#include "quantization/exl3/exllamav3_ext/quant/exl3_moe.cuh"
 #include "quantization/exl3/exllamav3_ext/quant/hadamard.cuh"
 #include "quantization/exl3/exllamav3_ext/quant/reconstruct.cuh"
 #endif
@@ -70,6 +71,33 @@ inline void aphrodite_exl3_had_r_128(
 inline void aphrodite_exl3_hgemm(at::Tensor a, at::Tensor b, at::Tensor c) {
 #ifndef USE_ROCM
   hgemm(a, b, c);
+#else
+  TORCH_CHECK(false, "EXL3 is not supported on ROCm");
+#endif
+}
+
+inline void aphrodite_exl3_moe(
+    const at::Tensor& hidden_state, const at::Tensor& output_state,
+    const at::Tensor& expert_count, const at::Tensor& token_sorted,
+    const at::Tensor& weight_sorted, const at::Tensor& temp_state_g,
+    const at::Tensor& temp_state_u, const at::Tensor& temp_intermediate_g,
+    const at::Tensor& temp_intermediate_u, int64_t act_function, int64_t K_gate,
+    int64_t K_up, int64_t K_down, const at::Tensor& gate_ptrs_trellis,
+    const at::Tensor& gate_ptrs_suh, const at::Tensor& gate_ptrs_svh,
+    const at::Tensor& up_ptrs_trellis, const at::Tensor& up_ptrs_suh,
+    const at::Tensor& up_ptrs_svh, const at::Tensor& down_ptrs_trellis,
+    const at::Tensor& down_ptrs_suh, const at::Tensor& down_ptrs_svh,
+    bool gate_mcg, bool gate_mul1, bool up_mcg, bool up_mul1, bool down_mcg,
+    bool down_mul1, double act_limit) {
+#ifndef USE_ROCM
+  exl3_moe(hidden_state, output_state, expert_count, token_sorted, weight_sorted,
+           temp_state_g, temp_state_u, temp_intermediate_g, temp_intermediate_u,
+           static_cast<int>(act_function), static_cast<int>(K_gate),
+           static_cast<int>(K_up), static_cast<int>(K_down), gate_ptrs_trellis,
+           gate_ptrs_suh, gate_ptrs_svh, up_ptrs_trellis, up_ptrs_suh,
+           up_ptrs_svh, down_ptrs_trellis, down_ptrs_suh, down_ptrs_svh,
+           gate_mcg, gate_mul1, up_mcg, up_mul1, down_mcg, down_mul1,
+           static_cast<float>(act_limit));
 #else
   TORCH_CHECK(false, "EXL3 is not supported on ROCm");
 #endif

@@ -96,6 +96,18 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 
   ops.def("exl3_hgemm(Tensor a, Tensor b, Tensor! c) -> ()");
   ops.impl("exl3_hgemm", torch::kCUDA, &aphrodite_exl3_hgemm);
+
+  ops.def(
+      "exl3_moe(Tensor hidden_state, Tensor! output_state, Tensor "
+      "expert_count, Tensor token_sorted, Tensor weight_sorted, Tensor "
+      "temp_state_g, Tensor temp_state_u, Tensor temp_intermediate_g, Tensor "
+      "temp_intermediate_u, int act_function, int K_gate, int K_up, int "
+      "K_down, Tensor gate_ptrs_trellis, Tensor gate_ptrs_suh, Tensor "
+      "gate_ptrs_svh, Tensor up_ptrs_trellis, Tensor up_ptrs_suh, Tensor "
+      "up_ptrs_svh, Tensor down_ptrs_trellis, Tensor down_ptrs_suh, Tensor "
+      "down_ptrs_svh, bool gate_mcg, bool gate_mul1, bool up_mcg, bool "
+      "up_mul1, bool down_mcg, bool down_mul1, float act_limit) -> ()");
+  ops.impl("exl3_moe", torch::kCUDA, &aphrodite_exl3_moe);
 #endif
 
   ops.def("get_cuda_view_from_cpu_tensor(Tensor cpu_tensor) -> Tensor");

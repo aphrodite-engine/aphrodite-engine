@@ -334,6 +334,7 @@ set(APHRODITE_EXT_SRC
     "csrc/quantization/exl3/exllamav3_ext/quant/exl3_gemm.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/exl3_gemv.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/exl3_kernel_map.cu"
+    "csrc/quantization/exl3/exllamav3_ext/quant/exl3_moe.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/hadamard.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/reconstruct.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/util.cu"

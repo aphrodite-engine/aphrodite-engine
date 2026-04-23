@@ -142,6 +142,10 @@ class FusedMoEMethodBase(QuantizeMethodBase):
         return False
 
     @property
+    def supports_shared_expert_overlap(self) -> bool:
+        return True
+
+    @property
     def method_name(self) -> str:
         return self.__class__.__name__
 
