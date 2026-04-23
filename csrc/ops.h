@@ -286,8 +286,6 @@ void cutlass_mla_decode(torch::Tensor const& out, torch::Tensor const& q_nope,
 
 torch::Tensor get_cuda_view_from_cpu_tensor(torch::Tensor& cpu_tensor);
 
-torch::Tensor permute_cols(torch::Tensor const& A, torch::Tensor const& perm);
-
 void squeezellm_gemm(torch::Tensor vec, torch::Tensor mat, torch::Tensor mul,
                      torch::Tensor lookup_table);
 

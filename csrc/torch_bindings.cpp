@@ -451,9 +451,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.impl("marlin_int4_fp8_preprocess", torch::kCUDA,
            &marlin_int4_fp8_preprocess);
 
-  ops.def("permute_cols(Tensor A, Tensor perm) -> Tensor");
-  ops.impl("permute_cols", torch::kCUDA, &permute_cols);
-
 #endif
 
   // Dequantization for GGML.
