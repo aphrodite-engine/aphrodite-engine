@@ -103,6 +103,14 @@ class TopKTopPSampler(nn.Module):
 
         The logits tensor may be updated in-place.
         """
+        if (
+            k is not None
+            and self.logprobs_mode not in ("processed_logits", "processed_logprobs")
+        ):
+            sampled = self.forward_top_k_first(logits, generators, k, p)
+            if sampled is not None:
+                return sampled, None
+
         logits = apply_top_k_top_p(logits, k, p)
         logits_to_return = None
         if self.logprobs_mode == "processed_logits":
@@ -111,6 +119,51 @@ class TopKTopPSampler(nn.Module):
             logits_to_return = logits.log_softmax(dim=-1, dtype=torch.float32)
         probs = logits.softmax(dim=-1, dtype=torch.float32)
         return random_sample(probs, generators), logits_to_return
+
+    @staticmethod
+    def forward_top_k_first(
+        logits: torch.Tensor,
+        generators: dict[int, torch.Generator],
+        k: torch.Tensor,
+        p: torch.Tensor | None,
+    ) -> torch.Tensor | None:
+        """Sample from a small top-k slice instead of the full vocabulary.
+
+        This preserves the normal Aphrodite/vLLM order for the common case:
+        temperature/logit processors first, then top-k, then top-p, then random
+        sampling. It avoids full-vocab softmax and Gumbel argmax when k is
+        small, which matters for single-request decode throughput.
+        """
+        no_top_k_mask = k == logits.shape[1]
+        if no_top_k_mask.any():
+            return None
+
+        max_top_k = int(k.max().item())
+        if max_top_k <= 0 or max_top_k > 1024:
+            return None
+
+        topk_logits, topk_indices = logits.topk(max_top_k, dim=-1)
+        if (k != max_top_k).any():
+            arange = torch.arange(max_top_k, device=logits.device)
+            keep = arange.unsqueeze(0) < k.to(device=logits.device).unsqueeze(1)
+            topk_logits = topk_logits.masked_fill(~keep, -float("inf"))
+
+        if p is not None:
+            probs = topk_logits.softmax(dim=-1, dtype=torch.float32)
+            cumulative_probs = probs.cumsum(dim=-1)
+            sorted_indices_to_remove = cumulative_probs > p.unsqueeze(dim=1)
+            sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[
+                :, :-1
+            ].clone()
+            sorted_indices_to_remove[:, 0] = False
+            topk_logits = topk_logits.masked_fill(
+                sorted_indices_to_remove,
+                -float("inf"),
+            )
+
+        probs = topk_logits.softmax(dim=-1, dtype=torch.float32)
+        sampled_in_topk = random_sample(probs, generators)
+        return topk_indices.gather(1, sampled_in_topk.unsqueeze(1)).view(-1)
 
     def forward_cuda(
         self,

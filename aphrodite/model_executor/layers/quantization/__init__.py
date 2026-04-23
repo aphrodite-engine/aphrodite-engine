@@ -25,6 +25,7 @@ QuantizationMethods = Literal[
     "compressed-tensors",
     "bitsandbytes",
     "experts_int8",
+    "exl3",
     "quark",
     "moe_wna16",
     "torchao",
@@ -120,6 +121,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     )
     from .cpu_wna16 import CPUAWQConfig
     from .experts_int8 import ExpertsInt8Config
+    from .exl3 import Exl3Config
     from .fbgemm_fp8 import FBGEMMFp8Config
     from .fp8 import Fp8Config
     from .fp_quant import FPQuantConfig
@@ -154,6 +156,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         "compressed-tensors": CompressedTensorsConfig,
         "bitsandbytes": BitsAndBytesConfig,
         "experts_int8": ExpertsInt8Config,
+        "exl3": Exl3Config,
         "quark": QuarkConfig,
         "moe_wna16": MoeWNA16Config,
         "torchao": TorchAOConfig,

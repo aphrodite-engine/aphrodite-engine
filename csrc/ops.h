@@ -9,6 +9,72 @@
 
 #include <vector>
 
+#ifndef USE_ROCM
+#include "quantization/exl3/exllamav3_ext/hgemm.cuh"
+#include "quantization/exl3/exllamav3_ext/quant/exl3_gemm.cuh"
+#include "quantization/exl3/exllamav3_ext/quant/hadamard.cuh"
+#include "quantization/exl3/exllamav3_ext/quant/reconstruct.cuh"
+#endif
+
+inline void aphrodite_exl3_gemm(
+    const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
+    const std::optional<at::Tensor>& suh,
+    const std::optional<at::Tensor>& A_had,
+    const std::optional<at::Tensor>& svh, int64_t force_shape_idx, bool mcg,
+    bool mul1, int64_t force_num_sms) {
+#ifndef USE_ROCM
+  exl3_gemm(A, B, C, suh, A_had, svh, static_cast<int>(force_shape_idx), mcg,
+            mul1, static_cast<int>(force_num_sms));
+#else
+  TORCH_CHECK(false, "EXL3 is not supported on ROCm");
+#endif
+}
+
+inline void aphrodite_exl3_mgemm(
+    const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
+    const at::Tensor& suh, const at::Tensor& A_had, const at::Tensor& svh,
+    const std::optional<at::Tensor>& indices,
+    const std::optional<at::Tensor>& weights, int64_t k,
+    int64_t force_shape_idx, bool mcg, bool mul1, int64_t min_index,
+    int64_t max_index, int64_t force_num_sms) {
+#ifndef USE_ROCM
+  exl3_mgemm(A, B, C, suh, A_had, svh, indices, weights, static_cast<int>(k),
+             static_cast<int>(force_shape_idx), static_cast<uint32_t>(mcg),
+             static_cast<uint32_t>(mul1), static_cast<int>(min_index),
+             static_cast<int>(max_index), static_cast<int>(force_num_sms));
+#else
+  TORCH_CHECK(false, "EXL3 is not supported on ROCm");
+#endif
+}
+
+inline void aphrodite_exl3_reconstruct(at::Tensor unpacked, at::Tensor packed,
+                                       int64_t k, bool mcg, bool mul1) {
+#ifndef USE_ROCM
+  reconstruct(unpacked, packed, static_cast<int>(k), mcg, mul1);
+#else
+  TORCH_CHECK(false, "EXL3 is not supported on ROCm");
+#endif
+}
+
+inline void aphrodite_exl3_had_r_128(
+    const at::Tensor& input, const at::Tensor& output,
+    const std::optional<at::Tensor>& pre_scale,
+    const std::optional<at::Tensor>& post_scale, double scale) {
+#ifndef USE_ROCM
+  had_r_128(input, output, pre_scale, post_scale, static_cast<float>(scale));
+#else
+  TORCH_CHECK(false, "EXL3 is not supported on ROCm");
+#endif
+}
+
+inline void aphrodite_exl3_hgemm(at::Tensor a, at::Tensor b, at::Tensor c) {
+#ifndef USE_ROCM
+  hgemm(a, b, c);
+#else
+  TORCH_CHECK(false, "EXL3 is not supported on ROCm");
+#endif
+}
+
 torch::Tensor weak_ref_tensor(torch::Tensor& tensor) {
   // Ensure tensor is on CUDA
   if (!tensor.is_cuda()) {

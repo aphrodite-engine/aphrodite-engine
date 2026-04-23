@@ -253,34 +253,9 @@ class Sampler(nn.Module):
                 logits = self.sampling_ops.apply_top_nsigma(logits, sampling_metadata)
 
             elif sampler_id == SamplerID.TOP_P_TOP_K:
-                # Apply top-k and top-p filtering to logits
-                if sampling_metadata.top_k is not None:
-                    logger.debug("Applying Top-k with top_k: %s", sampling_metadata.top_k)
-                    # Apply top-k filtering to logits
-                    for i, top_k_val in enumerate(sampling_metadata.top_k):
-                        if top_k_val < logits.size(-1):
-                            top_k_values, _ = torch.topk(logits[i], int(top_k_val.item()), dim=-1)
-                            top_k_threshold = top_k_values[-1] if top_k_values.numel() > 0 else -float("inf")
-                            logits[i] = torch.where(
-                                logits[i] >= top_k_threshold,
-                                logits[i],
-                                torch.tensor(-float("inf"), device=logits.device, dtype=logits.dtype),
-                            )
-
-                if sampling_metadata.top_p is not None:
-                    logger.debug("Applying Top-p with top_p: %s", sampling_metadata.top_p)
-                    # Apply top-p filtering to logits
-                    for i, top_p_val in enumerate(sampling_metadata.top_p):
-                        if top_p_val < 1.0:
-                            sorted_logits, sorted_indices = torch.sort(logits[i], descending=True, dim=-1)
-                            cumulative_probs = torch.softmax(sorted_logits, dim=-1).cumsum(dim=-1)
-                            sorted_indices_to_remove = cumulative_probs > top_p_val
-                            sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
-                            sorted_indices_to_remove[0] = 0
-                            indices_to_remove = sorted_indices_to_remove.scatter(
-                                0, sorted_indices, sorted_indices_to_remove
-                            )
-                            logits[i][indices_to_remove] = -float("inf")
+                # Defer top-k/top-p to TopKTopPSampler so CUDA/FlashInfer/native
+                # fast paths can sample without materializing full-vocab masks.
+                pass
 
             elif sampler_id == SamplerID.TOP_A and sampling_metadata.top_a is not None:
                 logger.debug("Applying Top-a with top_a: %s", sampling_metadata.top_a)
@@ -462,8 +437,8 @@ class Sampler(nn.Module):
         random_sampled, processed_logprobs = self.topk_topp_sampler(
             logits,
             sampling_metadata.generators,
-            None,  # top_k already applied in priority system
-            None,  # top_p already applied in priority system
+            sampling_metadata.top_k,
+            sampling_metadata.top_p,
         )
 
         if greedy_sampled is None:

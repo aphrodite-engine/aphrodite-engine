@@ -199,6 +199,158 @@ def paged_attention_v2(
     )
 
 
+def exl3_gemm(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    c: torch.Tensor,
+    suh: torch.Tensor | None,
+    a_had: torch.Tensor | None,
+    svh: torch.Tensor | None,
+    force_shape_idx: int = -1,
+    mcg: bool = False,
+    mul1: bool = False,
+    force_num_sms: int = 0,
+) -> None:
+    torch.ops._C.exl3_gemm(
+        a,
+        b,
+        c,
+        suh,
+        a_had,
+        svh,
+        force_shape_idx,
+        mcg,
+        mul1,
+        force_num_sms,
+    )
+
+
+def exl3_mgemm(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    c: torch.Tensor,
+    suh: torch.Tensor,
+    a_had: torch.Tensor,
+    svh: torch.Tensor,
+    indices: torch.Tensor | None,
+    weights: torch.Tensor | None,
+    k: int,
+    force_shape_idx: int = -1,
+    mcg: bool = False,
+    mul1: bool = False,
+    min_index: int = -1,
+    max_index: int = -1,
+    force_num_sms: int = 0,
+) -> None:
+    torch.ops._C.exl3_mgemm(
+        a,
+        b,
+        c,
+        suh,
+        a_had,
+        svh,
+        indices,
+        weights,
+        k,
+        force_shape_idx,
+        mcg,
+        mul1,
+        min_index,
+        max_index,
+        force_num_sms,
+    )
+
+
+def exl3_reconstruct(
+    unpacked: torch.Tensor,
+    packed: torch.Tensor,
+    k: int,
+    mcg: bool = False,
+    mul1: bool = False,
+) -> None:
+    torch.ops._C.exl3_reconstruct(unpacked, packed, k, mcg, mul1)
+
+
+def exl3_had_r_128(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    pre_scale: torch.Tensor | None,
+    post_scale: torch.Tensor | None,
+    scale: float = 1.0,
+) -> None:
+    torch.ops._C.exl3_had_r_128(input, output, pre_scale, post_scale, scale)
+
+
+def exl3_hgemm(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor) -> None:
+    torch.ops._C.exl3_hgemm(a, b, c)
+
+
+if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
+
+    @register_fake("_C::exl3_gemm")
+    def _exl3_gemm_fake(
+        a: torch.Tensor,
+        b: torch.Tensor,
+        c: torch.Tensor,
+        suh: torch.Tensor | None,
+        a_had: torch.Tensor | None,
+        svh: torch.Tensor | None,
+        force_shape_idx: int,
+        mcg: bool,
+        mul1: bool,
+        force_num_sms: int,
+    ) -> None:
+        return None
+
+    @register_fake("_C::exl3_mgemm")
+    def _exl3_mgemm_fake(
+        a: torch.Tensor,
+        b: torch.Tensor,
+        c: torch.Tensor,
+        suh: torch.Tensor,
+        a_had: torch.Tensor,
+        svh: torch.Tensor,
+        indices: torch.Tensor | None,
+        weights: torch.Tensor | None,
+        k: int,
+        force_shape_idx: int,
+        mcg: bool,
+        mul1: bool,
+        min_index: int,
+        max_index: int,
+        force_num_sms: int,
+    ) -> None:
+        return None
+
+    @register_fake("_C::exl3_reconstruct")
+    def _exl3_reconstruct_fake(
+        unpacked: torch.Tensor,
+        packed: torch.Tensor,
+        k: int,
+        mcg: bool,
+        mul1: bool,
+    ) -> None:
+        return None
+
+    @register_fake("_C::exl3_had_r_128")
+    def _exl3_had_r_128_fake(
+        input: torch.Tensor,
+        output: torch.Tensor,
+        pre_scale: torch.Tensor | None,
+        post_scale: torch.Tensor | None,
+        scale: float,
+    ) -> None:
+        return None
+
+    @register_fake("_C::exl3_hgemm")
+    def _exl3_hgemm_fake(
+        a: torch.Tensor,
+        b: torch.Tensor,
+        c: torch.Tensor,
+    ) -> None:
+        return None
+
+
 def paged_attention_rocm(
     out: torch.Tensor,
     exp_sum: torch.Tensor,

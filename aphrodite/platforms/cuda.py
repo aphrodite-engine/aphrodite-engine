@@ -7,6 +7,8 @@ pynvml. However, it should not initialize cuda context.
 from __future__ import annotations
 
 import os
+import ctypes
+import ctypes.util
 from collections.abc import Callable
 from datetime import timedelta
 from functools import cache, lru_cache, wraps
@@ -16,6 +18,22 @@ import torch
 from torch.distributed import PrefixStore, ProcessGroup
 from torch.distributed.distributed_c10d import is_nccl_available
 from typing_extensions import ParamSpec
+
+
+def _preload_cuda_driver() -> None:
+    driver = ctypes.util.find_library("cuda")
+    candidates = [driver, "libcuda.so.1"]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            ctypes.CDLL(candidate, mode=ctypes.RTLD_GLOBAL)
+            return
+        except OSError:
+            continue
+
+
+_preload_cuda_driver()
 
 # import custom ops, trigger op registration
 import aphrodite._C  # noqa

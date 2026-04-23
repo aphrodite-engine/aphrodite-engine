@@ -70,6 +70,34 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def("weak_ref_tensor(Tensor input) -> Tensor");
   ops.impl("weak_ref_tensor", torch::kCUDA, &weak_ref_tensor);
 
+#ifndef USE_ROCM
+  ops.def(
+      "exl3_gemm(Tensor a, Tensor b, Tensor! c, Tensor? suh, Tensor? a_had, "
+      "Tensor? svh, int force_shape_idx, bool mcg, bool mul1, "
+      "int force_num_sms) -> ()");
+  ops.impl("exl3_gemm", torch::kCUDA, &aphrodite_exl3_gemm);
+
+  ops.def(
+      "exl3_mgemm(Tensor a, Tensor b, Tensor! c, Tensor suh, Tensor! a_had, "
+      "Tensor svh, Tensor? indices, Tensor? weights, int k, "
+      "int force_shape_idx, bool mcg, bool mul1, int min_index, "
+      "int max_index, int force_num_sms) -> ()");
+  ops.impl("exl3_mgemm", torch::kCUDA, &aphrodite_exl3_mgemm);
+
+  ops.def(
+      "exl3_reconstruct(Tensor! unpacked, Tensor packed, int k, bool mcg, "
+      "bool mul1) -> ()");
+  ops.impl("exl3_reconstruct", torch::kCUDA, &aphrodite_exl3_reconstruct);
+
+  ops.def(
+      "exl3_had_r_128(Tensor input, Tensor! output, Tensor? pre_scale, "
+      "Tensor? post_scale, float scale) -> ()");
+  ops.impl("exl3_had_r_128", torch::kCUDA, &aphrodite_exl3_had_r_128);
+
+  ops.def("exl3_hgemm(Tensor a, Tensor b, Tensor! c) -> ()");
+  ops.impl("exl3_hgemm", torch::kCUDA, &aphrodite_exl3_hgemm);
+#endif
+
   ops.def("get_cuda_view_from_cpu_tensor(Tensor cpu_tensor) -> Tensor");
   ops.impl("get_cuda_view_from_cpu_tensor", torch::kCPU,
            &get_cuda_view_from_cpu_tensor);
