@@ -405,9 +405,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Build the Aphrodite wheel
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=.git,target=.git \
-    if [ "${aphrodite_target_device}" = "cuda" ]; then \
-        export APHRODITE_PRECOMPILED_WHEEL_LOCATION=$(ls /precompiled-wheels/*.whl); \
-    fi && \
     python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
 
 # Copy extension wheels from extensions-build stage for later use
