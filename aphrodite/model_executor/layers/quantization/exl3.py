@@ -10,7 +10,10 @@ from huggingface_hub import hf_hub_download
 from transformers import PretrainedConfig
 
 from aphrodite import _custom_ops as ops
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed import (
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+)
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_moe import FusedMoE, FusedMoEMethodBase
 from aphrodite.model_executor.layers.fused_moe.activation import MoEActivation
@@ -271,14 +274,17 @@ class Exl3LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ) -> None:
-        if get_tensor_model_parallel_world_size() != 1:
-            raise NotImplementedError("EXL3 currently supports tensor_parallel_size=1")
         if not current_platform.is_cuda():
             raise NotImplementedError("EXL3 is only supported on CUDA")
 
+        layer.exl3_tp_rank = get_tensor_model_parallel_rank()
+        layer.exl3_tp_size = get_tensor_model_parallel_world_size()
+        layer.exl3_input_size = input_size
         layer.input_size_per_partition = input_size_per_partition
+        layer.exl3_output_size = output_size
         layer.exl3_output_partition_sizes = output_partition_sizes
         layer.exl3_shard_ids = self._shard_ids_for_layer(layer, output_partition_sizes)
+        layer.exl3_parallel_mode = "row" if input_size_per_partition != input_size else "column"
 
         for name in ("suh", "svh", "trellis", "mcg", "mul1"):
             layer.register_parameter(
@@ -301,6 +307,8 @@ class Exl3LinearMethod(LinearMethodBase):
             if shard_id in layer.mcg.exl3_tensors and shard_id in layer.mul1.exl3_tensors:
                 prefix = getattr(layer, "prefix", layer.__class__.__name__)
                 raise ValueError(f"EXL3 tensor {prefix}[{shard_id!r}] specifies both mcg and mul1")
+
+        self._shard_tensors_for_tensor_parallel(layer)
 
         device = torch.device("cuda", torch.cuda.current_device())
         for attr in ("suh", "svh", "trellis", "mcg", "mul1"):
@@ -335,6 +343,138 @@ class Exl3LinearMethod(LinearMethodBase):
         if output.dtype != original_dtype:
             output = output.to(original_dtype)
         return output
+
+    @staticmethod
+    def _slice_exl3_tensor(
+        tensor: torch.Tensor,
+        *,
+        dim: int,
+        start: int,
+        size: int,
+    ) -> torch.Tensor:
+        if size % 16 != 0 or start % 16 != 0:
+            prefix = "output" if dim == 1 else "input"
+            raise ValueError(f"EXL3 TP {prefix} shard must be 16-aligned, got start={start}, size={size}.")
+        return tensor.narrow(dim, start // 16, size // 16).contiguous()
+
+    @staticmethod
+    def _output_shard_size(
+        layer: torch.nn.Module,
+        shard_id: str | int | tuple[int, ...] | None,
+    ) -> int:
+        if shard_id in (None, "q", "k", "v"):
+            if shard_id is None:
+                shard_idx = 0
+            else:
+                shard_idx = {"q": 0, "k": 1, "v": 2}[shard_id]
+            return layer.exl3_output_partition_sizes[shard_idx]
+
+        if isinstance(shard_id, tuple):
+            return sum(layer.exl3_output_partition_sizes[idx] for idx in shard_id)
+
+        if isinstance(shard_id, int):
+            return layer.exl3_output_partition_sizes[shard_id]
+
+        shard_idx = layer.exl3_shard_ids.index(shard_id)
+        return layer.exl3_output_partition_sizes[shard_idx]
+
+    @staticmethod
+    def _qkv_output_start(
+        layer: torch.nn.Module,
+        shard_id: str | int | tuple[int, ...] | None,
+        shard_size: int,
+    ) -> int:
+        if shard_id == "q":
+            shard_rank = layer.exl3_tp_rank
+        elif shard_id in ("k", "v"):
+            shard_rank = layer.exl3_tp_rank // layer.num_kv_head_replicas
+        else:
+            shard_rank = layer.exl3_tp_rank
+        return shard_rank * shard_size
+
+    @classmethod
+    def _shard_tensors_for_tensor_parallel(cls, layer: torch.nn.Module) -> None:
+        if layer.exl3_tp_size == 1:
+            return
+
+        if layer.exl3_parallel_mode == "row":
+            start = layer.exl3_tp_rank * layer.input_size_per_partition
+            size = layer.input_size_per_partition
+            for shard_id in layer.exl3_shard_ids:
+                layer.suh.exl3_tensors[shard_id] = layer.suh.exl3_tensors[shard_id].narrow(0, start, size).contiguous()
+                layer.trellis.exl3_tensors[shard_id] = cls._slice_exl3_tensor(
+                    layer.trellis.exl3_tensors[shard_id],
+                    dim=0,
+                    start=start,
+                    size=size,
+                )
+            return
+
+        already_sharded = cls._expand_tuple_output_shards_for_tensor_parallel(layer)
+
+        for shard_id in layer.exl3_shard_ids:
+            if shard_id in already_sharded:
+                continue
+            shard_size = cls._output_shard_size(layer, shard_id)
+            start = cls._qkv_output_start(layer, shard_id, shard_size)
+            layer.svh.exl3_tensors[shard_id] = (
+                layer.svh.exl3_tensors[shard_id].narrow(0, start, shard_size).contiguous()
+            )
+            layer.trellis.exl3_tensors[shard_id] = cls._slice_exl3_tensor(
+                layer.trellis.exl3_tensors[shard_id],
+                dim=1,
+                start=start,
+                size=shard_size,
+            )
+
+    @classmethod
+    def _expand_tuple_output_shards_for_tensor_parallel(
+        cls,
+        layer: torch.nn.Module,
+    ) -> set[int]:
+        tuple_shard_ids = [shard_id for shard_id in layer.exl3_shard_ids if isinstance(shard_id, tuple)]
+        if not tuple_shard_ids:
+            return set()
+
+        expanded_shard_ids: list[str | int | None] = []
+        expanded_component_ids: set[int] = set()
+        for shard_id in layer.exl3_shard_ids:
+            if isinstance(shard_id, tuple):
+                expanded_shard_ids.extend(shard_id)
+                expanded_component_ids.update(shard_id)
+            else:
+                expanded_shard_ids.append(shard_id)
+
+        for tuple_shard_id in tuple_shard_ids:
+            component_full_offsets: dict[int, int] = {}
+            offset = 0
+            for idx in tuple_shard_id:
+                component_full_offsets[idx] = offset
+                offset += layer.exl3_output_partition_sizes[idx] * layer.exl3_tp_size
+
+            for idx in tuple_shard_id:
+                local_size = layer.exl3_output_partition_sizes[idx]
+                start = component_full_offsets[idx] + layer.exl3_tp_rank * local_size
+                layer.suh.exl3_tensors[idx] = layer.suh.exl3_tensors[tuple_shard_id]
+                layer.svh.exl3_tensors[idx] = (
+                    layer.svh.exl3_tensors[tuple_shard_id].narrow(0, start, local_size).contiguous()
+                )
+                layer.trellis.exl3_tensors[idx] = cls._slice_exl3_tensor(
+                    layer.trellis.exl3_tensors[tuple_shard_id],
+                    dim=1,
+                    start=start,
+                    size=local_size,
+                )
+                if tuple_shard_id in layer.mcg.exl3_tensors:
+                    layer.mcg.exl3_tensors[idx] = layer.mcg.exl3_tensors[tuple_shard_id]
+                if tuple_shard_id in layer.mul1.exl3_tensors:
+                    layer.mul1.exl3_tensors[idx] = layer.mul1.exl3_tensors[tuple_shard_id]
+
+            for attr in ("suh", "svh", "trellis", "mcg", "mul1"):
+                getattr(layer, attr).exl3_tensors.pop(tuple_shard_id, None)
+
+        layer.exl3_shard_ids = expanded_shard_ids
+        return expanded_component_ids
 
     def _apply_one(
         self,
@@ -542,15 +682,17 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ) -> None:
-        del num_experts, hidden_size, intermediate_size_per_partition, params_dtype
-        if get_tensor_model_parallel_world_size() != 1:
-            raise NotImplementedError("EXL3 MoE currently supports tensor_parallel_size=1")
+        del num_experts, params_dtype
         if not current_platform.is_cuda():
             raise NotImplementedError("EXL3 MoE is only supported on CUDA")
         if self.moe.moe_parallel_config.use_ep:
             raise NotImplementedError("EXL3 MoE currently does not support expert parallelism")
 
         layer.quant_config = self.quant_config
+        layer.exl3_tp_rank = get_tensor_model_parallel_rank()
+        layer.exl3_tp_size = get_tensor_model_parallel_world_size()
+        layer.exl3_hidden_size = hidden_size
+        layer.exl3_intermediate_size_per_partition = intermediate_size_per_partition
         extra_weight_attrs = dict(extra_weight_attrs)
         extra_weight_attrs.pop("weight_loader", None)
 
@@ -581,6 +723,8 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 + (" ..." if len(missing) > 32 else "")
             )
 
+        self._shard_tensors_for_tensor_parallel(layer)
+
         device = torch.device("cuda", torch.cuda.current_device())
         for prefix in ("w13", "w2"):
             for attr in ("suh", "svh", "trellis", "mcg", "mul1"):
@@ -589,6 +733,33 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                     param.exl3_tensors[key] = tensor.to(device=device, non_blocking=True)
 
         self._setup_fused_moe_kernel(layer, device)
+
+    @classmethod
+    def _shard_tensors_for_tensor_parallel(cls, layer: FusedMoE) -> None:
+        if layer.exl3_tp_size == 1:
+            return
+
+        start = layer.exl3_tp_rank * layer.exl3_intermediate_size_per_partition
+        size = layer.exl3_intermediate_size_per_partition
+        for expert_id in range(layer.local_num_experts):
+            for shard_id in ("w1", "w3"):
+                key = (expert_id, shard_id)
+                layer.w13_svh.exl3_tensors[key] = layer.w13_svh.exl3_tensors[key].narrow(0, start, size).contiguous()
+                layer.w13_trellis.exl3_tensors[key] = Exl3LinearMethod._slice_exl3_tensor(
+                    layer.w13_trellis.exl3_tensors[key],
+                    dim=1,
+                    start=start,
+                    size=size,
+                )
+
+            key = (expert_id, "w2")
+            layer.w2_suh.exl3_tensors[key] = layer.w2_suh.exl3_tensors[key].narrow(0, start, size).contiguous()
+            layer.w2_trellis.exl3_tensors[key] = Exl3LinearMethod._slice_exl3_tensor(
+                layer.w2_trellis.exl3_tensors[key],
+                dim=0,
+                start=start,
+                size=size,
+            )
 
     def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         del layer
