@@ -135,6 +135,11 @@ plugins = ['pydantic.mypy']
 ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"
+exclude = [
+    '^aphrodite/vllm_flash_attn/',
+    '^aphrodite/third_party/',
+    '^aphrodite/model_executor/layers/fla/ops/',
+]
 
 [tool.pytest.ini_options]
 markers = [

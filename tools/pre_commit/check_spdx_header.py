@@ -18,9 +18,7 @@ COPYRIGHT_LINES = {
     "# SPDX-FileCopyrightText: Copyright contributors to the vLLM project",
     "# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project",
 }
-DEFAULT_COPYRIGHT_LINE = (
-    "# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project"
-)
+DEFAULT_COPYRIGHT_LINE = "# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project"
 
 
 def check_spdx_header_status(file_path: str) -> SPDXStatus:

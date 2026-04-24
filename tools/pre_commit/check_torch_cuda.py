@@ -31,15 +31,9 @@ def scan_file(path: str) -> int:
             line_num = content[: match.start() + 1].count("\n") + 1
             matched_text = match.group(0)
             if "manual_seed" in matched_text:
-                print(
-                    f"{path}:{line_num}: "
-                    f"Found {matched_text} API call. Use set_random_seed instead."
-                )
+                print(f"{path}:{line_num}: Found {matched_text} API call. Use set_random_seed instead.")
                 return 1
-            print(
-                f"{path}:{line_num}: Found torch.cuda API call. "
-                "Use torch.accelerator where possible instead."
-            )
+            print(f"{path}:{line_num}: Found torch.cuda API call. Use torch.accelerator where possible instead.")
             return 1
     return 0
 
