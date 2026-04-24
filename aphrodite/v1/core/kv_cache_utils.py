@@ -592,8 +592,6 @@ def _check_enough_kv_cache_memory(
         raise ValueError(
             "No available memory for the cache blocks. "
             "Try increasing `gpu_memory_utilization` when initializing the engine. "
-            "See https://docs.aphrodite.ai/en/latest/configuration/conserving_memory/ "
-            "for more details."
         )
 
     needed_memory = get_needed_memory()
@@ -613,8 +611,6 @@ def _check_enough_kv_cache_memory(
             f"memory ({format_gib(available_memory)} GiB). {estimated_msg}"
             f"Try increasing `gpu_memory_utilization` or decreasing `max_model_len` "
             f"when initializing the engine. "
-            f"See https://docs.aphrodite.ai/en/latest/configuration/conserving_memory/ "
-            f"for more details."
         )
 
 

@@ -98,11 +98,7 @@ class CPUWorker(Worker):
             ld_preload_list = os.environ.get("LD_PRELOAD", "")
             if name not in ld_preload_list:
                 logger.warning(
-                    "%s is not found in LD_PRELOAD. "
-                    "For best performance, please follow the section "
-                    "`set LD_PRELOAD` in "
-                    "https://docs.aphrodite.ai/en/latest/getting_started/installation/cpu/ "
-                    "to setup required pre-loaded libraries.",
+                    "%s is not found in LD_PRELOAD.",
                     name,
                 )
 

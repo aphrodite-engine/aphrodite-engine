@@ -157,9 +157,7 @@ def _maybe_force_spawn():
         logger.warning(
             "We must use the `spawn` multiprocessing start method. "
             "Overriding APHRODITE_WORKER_MULTIPROC_METHOD to 'spawn'. "
-            "See https://docs.aphrodite.ai/en/latest/usage/"
-            "troubleshooting.html#python-multiprocessing "
-            "for more information. Reasons: %s",
+            "Reasons: %s",
             "; ".join(reasons),
         )
         os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"

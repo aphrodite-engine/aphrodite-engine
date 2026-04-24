@@ -383,8 +383,6 @@ class NemotronNasModelArchConfigConvertor(ModelArchConfigConvertorBase):
             f"Architecture: {self.get_architectures()}. "
             "This usually indicates an unsupported model architecture or "
             "missing configuration. "
-            "Please check if your model is supported at: "
-            "https://docs.aphrodite.ai/en/latest/models/supported_models.html"
         )
 
 

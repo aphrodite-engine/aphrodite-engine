@@ -233,8 +233,7 @@ class ParallelConfig:
     distributed_executor_backend to "ray".
 
     Note:
-        [TPU](https://docs.aphrodite.ai/projects/tpu/en/latest/) platform only supports Ray
-        for distributed inference.
+        TPU platform only supports Ray for distributed inference.
     """
 
     worker_cls: str = "auto"

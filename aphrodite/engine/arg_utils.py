@@ -111,7 +111,6 @@ from aphrodite.utils.network_utils import get_ip
 from aphrodite.utils.torch_utils import resolve_kv_cache_dtype_string
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 from aphrodite.v1.sample.logits_processor import LogitsProcessor
-from aphrodite.version import __version__ as APHRODITE_VERSION
 
 if TYPE_CHECKING:
     from aphrodite.config.quantization import OnlineQuantizationConfigArgs
@@ -246,8 +245,8 @@ def _maybe_add_docs_url(cls: Any) -> str:
     """Generate API docs URL for a aphrodite config class."""
     if not cls.__module__.startswith("aphrodite.config"):
         return ""
-    version = f"v{APHRODITE_VERSION}" if "dev" not in APHRODITE_VERSION else "latest"
-    return f"\n\nAPI docs: https://docs.aphrodite.ai/en/{version}/api/aphrodite/config/#aphrodite.config.{cls.__name__}"
+    # version = f"v{APHRODITE_VERSION}" if "dev" not in APHRODITE_VERSION else "latest"
+    return "\n\nAPI docs: TBD"
 
 
 @functools.lru_cache(maxsize=30)

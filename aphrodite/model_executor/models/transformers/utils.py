@@ -236,7 +236,7 @@ def get_feature_request_tip(
     prefix = f"Please open {url} to request support for this feature. "
     if Path(model).exists():
         prefix = ""
-    doc_url = "https://docs.aphrodite.ai/en/latest/models/supported_models.html#writing-custom-models"
+    doc_url = "https://docs.vllm.ai/en/latest/models/supported_models.html#writing-custom-models"
     tip = f"See {doc_url} for instructions on how to add support yourself."
     return f"{prefix}{tip}"
 

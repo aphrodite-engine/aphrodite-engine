@@ -334,9 +334,7 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
     )
     parser.add_argument(
         "--config",
-        help="Read CLI options from a config file. "
-        "Must be a YAML with the following options: "
-        "https://docs.aphrodite.ai/en/latest/configuration/serve_args.html",
+        help="Read CLI options from a config file. Must be a YAML.",
     )
     parser.add_argument(
         "--grpc",

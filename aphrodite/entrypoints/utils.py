@@ -33,7 +33,7 @@ APHRODITE_SUBCMD_PARSER_EPILOG = (
     "For full list:            aphrodite {subcmd} --help=all\n"
     "For a section:            aphrodite {subcmd} --help=ModelConfig    (case-insensitive)\n"  # noqa: E501
     "For a flag:               aphrodite {subcmd} --help=max-model-len  (_ or - accepted)\n"  # noqa: E501
-    "Documentation:            https://docs.aphrodite.ai\n"
+    "Documentation:            https://aphrodite.pygmalion.chat\n"
 )
 
 

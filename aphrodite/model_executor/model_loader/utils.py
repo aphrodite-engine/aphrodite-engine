@@ -62,8 +62,6 @@ def initialize_model(
         "Aphrodite model class should accept `aphrodite_config` and `prefix` as "
         "input arguments. Possibly you have an old-style model class"
         " registered from out of tree and it is used for new Aphrodite version. "
-        "Check https://docs.aphrodite.ai/en/latest/design/arch_overview.html "
-        "for the design and update the model class accordingly."
     )
     warnings.warn(msg, DeprecationWarning, stacklevel=2)
 

@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     APHRODITE_MODEL_REDIRECT_PATH: str | None = None
     APHRODITE_CACHE_ROOT: str = os.path.expanduser("~/.cache/aphrodite")
     APHRODITE_CONFIG_ROOT: str = os.path.expanduser("~/.config/aphrodite")
-    APHRODITE_USAGE_STATS_SERVER: str = "https://stats.aphrodite.ai"
+    APHRODITE_USAGE_STATS_SERVER: str = ""
     APHRODITE_NO_USAGE_STATS: bool = False
     APHRODITE_DO_NOT_TRACK: bool = False
     APHRODITE_USAGE_SOURCE: str = "production"
@@ -441,9 +441,7 @@ def get_aphrodite_port() -> int | None:
         parsed = parse_url(port)
         if parsed.scheme:
             raise ValueError(
-                f"{port_name} '{port}' appears to be a URI. "
-                "This may be caused by a Kubernetes service discovery issue,"
-                "check the warning in: https://docs.aphrodite.ai/en/stable/serving/env_vars.html"
+                f"{port_name} '{port}' appears to be a URI. This may be caused by a Kubernetes service discovery issue."
             ) from None
         raise ValueError(f"{port_name} '{port}' must be a valid integer") from err
 
@@ -625,9 +623,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "S3_SECRET_ACCESS_KEY": lambda: os.environ.get("S3_SECRET_ACCESS_KEY", None),
     "S3_ENDPOINT_URL": lambda: os.environ.get("S3_ENDPOINT_URL", None),
     # Usage stats collection
-    "APHRODITE_USAGE_STATS_SERVER": lambda: os.environ.get(
-        "APHRODITE_USAGE_STATS_SERVER", "https://stats.aphrodite.ai"
-    ),
+    "APHRODITE_USAGE_STATS_SERVER": lambda: os.environ.get("APHRODITE_USAGE_STATS_SERVER", ""),
     "APHRODITE_NO_USAGE_STATS": lambda: os.environ.get("APHRODITE_NO_USAGE_STATS", "0") == "1",
     "APHRODITE_DO_NOT_TRACK": lambda: (
         (os.environ.get("APHRODITE_DO_NOT_TRACK", None) or os.environ.get("DO_NOT_TRACK", None) or "0") == "1"

@@ -4460,8 +4460,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 "Failed to load model - not enough GPU memory. "
                 "Try lowering --gpu-memory-utilization to free memory for weights, "
                 "increasing --tensor-parallel-size, or using --quantization. "
-                "See https://docs.aphrodite.ai/en/latest/configuration/conserving_memory/ "
-                "for more tips."
             )
             combined_msg = f"{msg} (original error: {e})"
             logger.error(combined_msg)
@@ -5322,12 +5320,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         supported_pooling_tasks = self.get_supported_pooling_tasks()
 
         if not supported_pooling_tasks:
-            raise RuntimeError(
-                f"Model {self.model_config.model} does not support "
-                "any pooling tasks. See "
-                "https://docs.aphrodite.ai/en/latest/models/pooling_models.html "
-                "to learn more."
-            )
+            raise RuntimeError(f"Model {self.model_config.model} does not support any pooling tasks.")
 
         output_size = dict[PoolingTask, float]()
         for task in supported_pooling_tasks:
