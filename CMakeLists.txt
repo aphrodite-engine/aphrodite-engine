@@ -279,7 +279,6 @@ set(APHRODITE_EXT_SRC
   "csrc/cuda_view.cu"
   "csrc/dsv3_fused_a_gemm.cu"
   "csrc/minimax_reduce_rms_kernel.cu"
-  "csrc/quantization/squeezellm/quant_cuda_kernel.cu"
   "csrc/quantization/gptq/q_gemm.cu"
   "csrc/quantization/w8a8/int8/scaled_quant.cu"
   "csrc/quantization/w8a8/fp8/common.cu"
@@ -288,9 +287,6 @@ set(APHRODITE_EXT_SRC
   "csrc/quantization/activation_kernels.cu"
   "csrc/cuda_utils_kernels.cu"
   "csrc/all_reduce/custom_all_reduce.cu"
-  "csrc/vmm/page.cpp"
-  "csrc/vmm/ftensor.cpp"
-  "csrc/vmm/allocator.cpp"
   "csrc/torch_bindings.cpp")
 
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")
@@ -327,7 +323,6 @@ set(APHRODITE_EXT_SRC
   FetchContent_MakeAvailable(cutlass)
 
   list(APPEND APHRODITE_EXT_SRC
-    "csrc/quantization/fp6/fp6_linear.cu"
     "csrc/quantization/exl3/exllamav3_ext/graph.cu"
     "csrc/quantization/exl3/exllamav3_ext/hgemm.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/exl3_devctx.cu"
@@ -346,8 +341,6 @@ set(APHRODITE_EXT_SRC
     "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_6.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_7.cu"
     "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_8.cu"
-    "csrc/quantization/aqlm/gemm_kernels.cu"
-    "csrc/quantization/vptq/gemm_kernels.cu"
     "csrc/quantization/awq/gemm_kernels.cu"
     "csrc/quantization/fused_kernels/fused_silu_mul_block_quant.cu"
     "csrc/quantization/quip/origin_order.cu"
@@ -466,7 +459,6 @@ set(APHRODITE_EXT_SRC
        "csrc/quantization/marlin/marlin.cu"
        "csrc/quantization/marlin/marlin_int4_fp8_preprocess.cu"
        "csrc/quantization/marlin/sparse/marlin_24_cuda_kernel.cu"
-       "csrc/quantization/marlin/qqq/marlin_qqq_gemm_kernel.cu"
        "csrc/quantization/marlin/gptq_marlin_repack.cu"
        "csrc/quantization/marlin/awq_marlin_repack.cu")
     set_gencode_flags_for_srcs(

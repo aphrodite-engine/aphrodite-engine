@@ -2,49 +2,8 @@
 #include "cuda_utils.h"
 #include "ops.h"
 #include "core/registration.h"
-#include "vmm/allocator.hpp"
-#include "vmm/constants.hpp"
-#include "vmm/torch_utils.hpp"
 #include <torch/library.h>
 #include <torch/version.h>
-
-namespace {
-
-void vmm_init_kvcached(const std::string& dev_str, int64_t page_size,
-                       bool contiguous_layout) {
-  aphrodite::vmm::FTensorAllocator::init(
-      dev_str, static_cast<size_t>(page_size), contiguous_layout);
-}
-
-void vmm_shutdown_kvcached() { aphrodite::vmm::FTensorAllocator::shutdown(); }
-
-std::vector<torch::Tensor> vmm_create_kv_tensors(int64_t size,
-                                                 int64_t dtype_size,
-                                                 const std::string& dev_str,
-                                                 int64_t num_layers) {
-  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
-  auto dtype =
-      aphrodite::vmm::torch_dtype_from_size(static_cast<size_t>(dtype_size));
-  return allocator->create_kv_tensors(static_cast<size_t>(size), dtype, dev_str,
-                                      num_layers);
-}
-
-bool vmm_kv_tensors_created() {
-  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
-  return allocator->kv_tensors_created();
-}
-
-void vmm_map_to_kv_tensors(const std::vector<int64_t>& offsets) {
-  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
-  allocator->map_to_kv_tensors(offsets);
-}
-
-void vmm_unmap_from_kv_tensors(const std::vector<int64_t>& offsets) {
-  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
-  allocator->unmap_from_kv_tensors(offsets);
-}
-
-}  // namespace
 
 // Note on op signatures:
 // The X_meta signatures are for the meta functions corresponding to op X.
@@ -331,17 +290,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "dsv3_fused_a_gemm(Tensor! output, Tensor mat_a, Tensor mat_b) -> ()");
   // conditionally compiled so impl registration is in source file
 
-  ops.def(
-      "aqlm_gemm(Tensor input, Tensor codes, Tensor codebooks, "
-      "Tensor scales, int[] codebook_partition_sizes, Tensor? bias) -> "
-      "Tensor");
-  ops.impl("aqlm_gemm", torch::kCUDA, &aqlm_gemm);
-
-  ops.def(
-      "aqlm_dequant(Tensor codes, Tensor codebooks, "
-      "int[] codebook_partition_sizes) -> Tensor");
-  ops.impl("aqlm_dequant", torch::kCUDA, &aqlm_dequant);
-
   // Quantized GEMM for AWQ.
   ops.def(
       "awq_gemm(Tensor _in_feats, Tensor _kernel, Tensor _scaling_factors, "
@@ -353,21 +301,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "awq_dequantize(Tensor _kernel, Tensor _scaling_factors, "
       "Tensor _zeros, SymInt split_k_iters, int thx, int thy) -> Tensor");
   ops.impl("awq_dequantize", torch::kCUDA, &awq_dequantize);
-
-  ops.def(
-      "vptq_gemm(Tensor input, Tensor q_indice, Tensor centroids, "
-      "Tensor weight_scale, Tensor weight_bias, int[] g_i_o, "
-      "Tensor? q_indice_residual, Tensor? residual_centroids, "
-      "Tensor? q_indice_outliers, Tensor? outliers_centroids, "
-      "Tensor? invperm, Tensor? bias) -> Tensor");
-  ops.impl("vptq_gemm", torch::kCUDA, &vptq_gemm);
-
-  ops.def(
-      "vptq_dequant(Tensor q_indice, Tensor centroids, Tensor weight_scale, "
-      "Tensor weight_bias, int[] g_i_o, Tensor? q_indice_residual, "
-      "Tensor? residual_centroids, Tensor? q_indice_outliers, "
-      "Tensor? outliers_centroids, Tensor? invperm) -> Tensor");
-  ops.impl("vptq_dequant", torch::kCUDA, &vptq_dequant);
 
   // Note about marlin kernel 'workspace' arguments:
   // Technically these should be mutable since they are modified by the kernel.
@@ -519,18 +452,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "-> int");
   // conditionally compiled so impl in source file
 
-  ops.def(
-      "marlin_qqq_gemm(Tensor a, Tensor b_q_weight, Tensor s_tok, Tensor s_ch,"
-      " Tensor s_group, Tensor! workspace, SymInt size_m, SymInt size_n, "
-      "SymInt size_k) -> Tensor");
-  // conditionally compiled so impl registration is in source file
-
-  ops.def(
-      "fp_eXmY_linear_forward_cuda(int EXPONENT, int MANTISSA, "
-      "Tensor _in_feats, Tensor _weights, Tensor _scales, int splitK=1) -> "
-      "Tensor");
-  // conditionally compiled so impl registration is in source file
-
 #endif
 
   // Quantized GEMM for GPTQ.
@@ -606,11 +527,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   // Hadamard transforms
   ops.def("hadacore_transform(Tensor! x, bool inplace) -> Tensor");
 
-  ops.def(
-      "squeezellm_gemm(Tensor vec, Tensor mat, Tensor! mul, Tensor "
-      "lookup_table) -> ()");
-  ops.impl("squeezellm_gemm", torch::kCUDA, &squeezellm_gemm);
-
 #ifndef USE_ROCM
   // reorder weight for AllSpark Ampere W8A16 Fused Gemm kernel
   ops.def(
@@ -652,20 +568,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 
   //  conditionally compiled so impl in source file
 #endif
-
-  ops.def(
-      "init_kvcached(str dev_str, int page_size, bool contiguous_layout) "
-      "-> ()",
-      &vmm_init_kvcached);
-  ops.def("shutdown_kvcached() -> ()", &vmm_shutdown_kvcached);
-  ops.def(
-      "create_kv_tensors(int size, int dtype_size, str dev_str, int "
-      "num_layers) -> Tensor[]",
-      &vmm_create_kv_tensors);
-  ops.def("kv_tensors_created() -> bool", &vmm_kv_tensors_created);
-  ops.def("map_to_kv_tensors(int[] offsets) -> ()", &vmm_map_to_kv_tensors);
-  ops.def("unmap_from_kv_tensors(int[] offsets) -> ()",
-          &vmm_unmap_from_kv_tensors);
 }
 
 TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _cache_ops), cache_ops) {

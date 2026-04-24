@@ -288,20 +288,7 @@ void cutlass_mla_decode(torch::Tensor const& out, torch::Tensor const& q_nope,
 
 torch::Tensor get_cuda_view_from_cpu_tensor(torch::Tensor& cpu_tensor);
 
-void squeezellm_gemm(torch::Tensor vec, torch::Tensor mat, torch::Tensor mul,
-                     torch::Tensor lookup_table);
-
 #ifndef USE_ROCM
-torch::Tensor aqlm_gemm(const torch::Tensor& input, const torch::Tensor& codes,
-                        const torch::Tensor& codebooks,
-                        const torch::Tensor& scales,
-                        const std::vector<int64_t>& codebook_partition_sizes,
-                        const std::optional<torch::Tensor>& bias);
-
-torch::Tensor aqlm_dequant(
-    const torch::Tensor& codes, const torch::Tensor& codebooks,
-    const std::vector<int64_t>& codebook_partition_sizes);
-
 torch::Tensor awq_gemm(torch::Tensor _in_feats, torch::Tensor _kernel,
                        torch::Tensor _scaling_factors, torch::Tensor _zeros,
                        int64_t split_k_iters);
@@ -386,31 +373,6 @@ void dynamic_per_token_scaled_fp8_quant(
     torch::Tensor& out, torch::Tensor const& input, torch::Tensor& scale,
     std::optional<torch::Tensor> const& scale_ub);
 
-#ifndef USE_ROCM
-torch::Tensor vptq_gemm(const torch::Tensor& input,
-                        const torch::Tensor& q_indice,
-                        const torch::Tensor& centroids,
-                        const torch::Tensor& weight_scale,
-                        const torch::Tensor& weight_bias,
-                        const std::vector<int64_t>& g_i_o,
-                        const c10::optional<torch::Tensor>& q_indice_residual,
-                        const c10::optional<torch::Tensor>& residual_centroids,
-                        const c10::optional<torch::Tensor>& q_indice_outliers,
-                        const c10::optional<torch::Tensor>& outliers_centroids,
-                        const c10::optional<torch::Tensor>& invperm,
-                        const c10::optional<torch::Tensor>& bias);
-
-torch::Tensor vptq_dequant(
-    const torch::Tensor& q_indice, const torch::Tensor& centroids,
-    const torch::Tensor& weight_scale, const torch::Tensor& weight_bias,
-    const std::vector<int64_t>& g_i_o,
-    const c10::optional<torch::Tensor>& q_indice_residual,
-    const c10::optional<torch::Tensor>& residual_centroids,
-    const c10::optional<torch::Tensor>& q_indice_outliers,
-    const c10::optional<torch::Tensor>& outliers_centroids,
-    const c10::optional<torch::Tensor>& invperm);
-#endif
-
 void selective_scan_fwd(
     const torch::Tensor& u, const torch::Tensor& delta, const torch::Tensor& A,
     const torch::Tensor& B, const torch::Tensor& C,
@@ -453,27 +415,6 @@ int64_t open_mem_handle(torch::Tensor& mem_handle);
 void free_shared_buffer(int64_t buffer);
 
 torch::Tensor hadacore_transform(torch::Tensor& x, bool inplace);
-
-torch::Tensor marlin_qqq_gemm(torch::Tensor a, torch::Tensor b_q_weight,
-                              torch::Tensor s_tok, torch::Tensor s_ch,
-                              torch::Tensor s_group, torch::Tensor workspace,
-                              int64_t size_m, int64_t size_n, int64_t size_k);
-
-torch::Tensor fp_eXmY_linear_forward_cuda(int64_t EXPONENT, int64_t MANTISSA,
-                                          torch::Tensor _in_feats,
-                                          torch::Tensor _weights,
-                                          torch::Tensor _scales,
-                                          int64_t splitK = 1);
-
-void init_kvcached(const std::string& dev_str, int64_t page_size,
-                   bool contiguous_layout);
-void shutdown_kvcached();
-std::vector<torch::Tensor> create_kv_tensors(int64_t size, int64_t dtype_size,
-                                             const std::string& dev_str,
-                                             int64_t num_layers);
-bool kv_tensors_created();
-void map_to_kv_tensors(const std::vector<int64_t>& offsets);
-void unmap_from_kv_tensors(const std::vector<int64_t>& offsets);
 
 #ifdef USE_ROCM
 fptr_t init_custom_qr(int64_t rank, int64_t world_size,

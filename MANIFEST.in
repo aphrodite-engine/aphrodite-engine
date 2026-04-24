@@ -9,3 +9,4 @@ include aphrodite/endpoints/kobold/klite.embd
 
 recursive-include kernels *
 recursive-include cmake *
+prune csrc/xqa/cubin
