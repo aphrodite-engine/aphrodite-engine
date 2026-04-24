@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 from transformers import AutoTokenizer
 
-from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 from tests.reasoning.utils import run_reasoning_extraction
 

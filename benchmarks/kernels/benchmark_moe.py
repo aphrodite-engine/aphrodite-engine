@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import json
 import os
@@ -9,13 +11,13 @@ from typing import Any, TypedDict
 
 import ray
 import torch
-from ray.experimental.tqdm_ray import tqdm
-
 from aphrodite.modeling.layers.fused_moe.config import (
     FusedMoEQuantConfig,
     _get_config_dtype_str,
 )
 from aphrodite.modeling.layers.fused_moe.fused_moe import *
+from ray.experimental.tqdm_ray import tqdm
+
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.config import get_config
 from aphrodite.triton_utils import triton

@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import logging
 
 import pytest
 import regex as re
+from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
 
 from aphrodite import LLM
-from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
 from aphrodite.v1.metrics import loggers as stat_loggers
 from aphrodite.v1.metrics.reader import Counter, Metric
 

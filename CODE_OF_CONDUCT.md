@@ -3,16 +3,19 @@
 Inspired by the [SQLite CoE](https://sqlite.org/codeofethics.html).
 
 ### Purpose
+
 The maintainer of Aphrodite Engine, at the time of writing this document, has pledged to govern his actions with other contributors, with his clients, and with the larger Aphrodite Engine community in accordance with the "instruments of good works" from chapter 4 of [The Rule of St. Benedict](https://en.wikipedia.org/wiki/Rule_of_Saint_Benedict) (hereafter referred to as "The Rule"). This code of ethics has proven its mettle in thousands of diverse communities for over 1,500 years, and has served as a baseline for many civil law codes since the time of Charlemagne.
 
 #### Scope of Application
+
 No one is required to follow The Rule, to know The Rule, or even to think that The Rule is a good idea. The maintainer of Aphrodite Engine believes that anyone who follows The Rule will live a happier and more productive life, but individuals are free to dispute or ignore the advice if they wish.
 
 The maintainer of Aphrodite Engine has pledged to follow the spirit of The Rule to the best of his ability. He views The Rule as his promise to all Aphrodite Engine users of how developers are expected to behave. This is a one-way promise, or covenant. In other words, he is saying: "I will treat you this way regardless of how you treat me."
 
 ### The Rule
+
 0. First of all, love the Lord God with your whole heart, your whole soul, and your whole strength.
-1.  Then, love your neighbor as yourself.
+1. Then, love your neighbor as yourself.
 2. Do not murder.
 3. Do not commit adultery.
 4. Do not steal.
@@ -82,4 +85,4 @@ The maintainer of Aphrodite Engine has pledged to follow the spirit of The Rule 
 68. Love your juniors.
 69. Pray for your enemies in the love of Christ.
 70. Make peace with your adversary before the sun sets.
-71. Never despair of God's mercy. 
+71. Never despair of God's mercy.

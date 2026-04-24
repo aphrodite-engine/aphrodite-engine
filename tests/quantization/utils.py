@@ -1,5 +1,8 @@
-from aphrodite.platforms import current_platform
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from aphrodite.quantization import get_quantization_config
+
+from aphrodite.platforms import current_platform
 
 
 def is_quant_method_supported(quant_method: str) -> bool:

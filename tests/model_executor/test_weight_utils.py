@@ -1,11 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
 import tempfile
 
 import huggingface_hub.constants
 import pytest
-from huggingface_hub.utils import LocalEntryNotFoundError
-
 from aphrodite.modeling.model_loader.weight_utils import download_weights_from_hf, enable_hf_transfer
+from huggingface_hub.utils import LocalEntryNotFoundError
 
 
 def test_hf_transfer_auto_activation():

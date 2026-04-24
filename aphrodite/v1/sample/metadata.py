@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from dataclasses import dataclass, field
 from typing import Any
 
 import torch
 
-from aphrodite.common.sampling_params import SamplerID
 from aphrodite.v1.sample.logits_processor import LogitsProcessors
 
 
@@ -94,9 +95,10 @@ class SamplingMetadata:
     # Loaded logits processors
     logitsprocs: LogitsProcessors
 
-    # Sampler priority and temperature_last for priority-based execution
-    sampler_priority: list[SamplerID] | None = None
-    temperature_last: bool = False
+    logprob_token_ids: dict[int, list[int]] | None = None
+
+    # Request-level temperature-last execution flag.
+    temperature_last: list[bool] | None = None
 
     # Persistent metadata for mirostat
     persistent_data: dict[int, dict[str, Any]] = field(default_factory=dict)

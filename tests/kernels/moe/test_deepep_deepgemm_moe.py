@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test DeepEP + DeepGEMM integration
 DeepGEMM are gemm kernels specialized for the
@@ -8,13 +10,13 @@ import dataclasses
 
 import pytest
 import torch.distributed
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig, fp8_w8a8_moe_quant_config
+from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from torch.distributed import ProcessGroup
 from typing_extensions import ParamSpec
 
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig, fp8_w8a8_moe_quant_config
-from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
-from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from aphrodite.platforms import current_platform
 from aphrodite.utils.deep_gemm import is_deep_gemm_e8m0_used, is_deep_gemm_supported
 from aphrodite.utils.import_utils import has_deep_ep, has_deep_gemm

@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 # ruff: noqa: E501
+# coding=utf-8
 # adapted from https://github.com/AIDC-AI/Ovis/blob/35ab51a1a1e3542fa6db260a1084cefbc8f164bb/ovis/aphrodite/processing_ovis.py
 # Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
@@ -22,7 +26,7 @@ from functools import cached_property
 
 import PIL
 import torch
-from transformers import AutoProcessor, BatchFeature
+from transformers import BatchFeature
 from transformers.image_utils import ImageInput
 from transformers.processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
@@ -39,9 +43,7 @@ class OvisProcessorKwargs(ProcessingKwargs, total=False):  # type: ignore[call-a
             "padding": False,
         },
         "images_kwargs": {
-            "max_partition": 9,
-            "covering_threshold": 0.9,
-            "convert_to_rgb": True,
+            "do_convert_rgb": True,
             "return_tensors": "pt",
         },
     }
@@ -136,6 +138,10 @@ class OvisProcessor(ProcessorMixin):
                 - **video_grid_thw** -- List of video 3D grid in LLM. Returned when `videos` is not `None`.
                 - **second_per_grid_ts** -- List of video seconds per time grid. Returned when `videos` is not `None`.
         """
+
+        max_partition = kwargs.pop("max_partition", 9)
+        covering_threshold = kwargs.pop("covering_threshold", 0.9)
+
         output_kwargs = self._merge_kwargs(
             OvisProcessorKwargs,
             tokenizer_init_kwargs=self.tokenizer.init_kwargs,
@@ -152,7 +158,10 @@ class OvisProcessor(ProcessorMixin):
             # Process each image
             for image in images if isinstance(images, list) else [images]:
                 pixel_values, image_placeholders, grid = self.preprocess_image(
-                    image=image, **output_kwargs["images_kwargs"]
+                    image=image,
+                    max_partition=max_partition,
+                    covering_threshold=covering_threshold,
+                    **output_kwargs["images_kwargs"],
                 )
                 processed_images.append(pixel_values)
                 image_placeholders_list.append(image_placeholders)
@@ -285,7 +294,7 @@ class OvisProcessor(ProcessorMixin):
         image: PIL.Image.Image,
         max_partition,
         covering_threshold,
-        convert_to_rgb,
+        do_convert_rgb,
         return_tensors,
     ):
         def _preprocess(img: PIL.Image.Image, side):
@@ -369,7 +378,7 @@ class OvisProcessor(ProcessorMixin):
                 # pick the partition with maximum covering_ratio and break the tie using #sub_images
                 return sorted(all_grids, key=lambda x: (-x[1], x[0][0] * x[0][1]))[0][0]
 
-        if convert_to_rgb:
+        if do_convert_rgb:
             image = convert_image_mode(image, "RGB")
 
         sides = self.get_image_size()
@@ -421,6 +430,3 @@ class OvisProcessor(ProcessorMixin):
         image_processor_input_names = self.image_processor.model_input_names
         names_from_processor = list(dict.fromkeys(tokenizer_input_names + image_processor_input_names))
         return names_from_processor + ["second_per_grid_ts"]
-
-
-AutoProcessor.register("OvisProcessor", OvisProcessor)

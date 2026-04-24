@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import ctypes
 import json
 import os
@@ -16,12 +19,12 @@ import torch.multiprocessing as mp
 import aphrodite.envs as envs
 from aphrodite.distributed.device_communicators.cuda_wrapper import CudaRTLibrary
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
+from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import update_environment_variables
-from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
 logger = init_logger(__name__)
 
+KiB = 1024
 MiB = 1024 * 1024
 # Max size for each world size in case symmetric memory is available
 # For different SM architectures
@@ -38,6 +41,12 @@ CUSTOM_ALL_REDUCE_MAX_SIZES = {
         6: 1 * MiB,  # 1 MB
         8: 1 * MiB,  # 1 MB
     },
+    "10.3": {
+        2: 4 * MiB,  # 4 MB
+        4: 4 * MiB,  # 4 MB
+        6: 8 * MiB,  # 8 MB
+        8: 4 * MiB,  # 4 MB
+    },
 }
 
 SYMM_MEM_ALL_REDUCE_MAX_SIZES = {
@@ -53,31 +62,73 @@ SYMM_MEM_ALL_REDUCE_MAX_SIZES = {
         6: 128 * MiB,  # 128 MB
         8: 128 * MiB,  # 128 MB
     },
+    "10.3": {
+        2: 4 * MiB,  # 4 MB
+        4: 32 * MiB,  # 32 MB
+        6: 32 * MiB,  # 32 MB
+        8: 64 * MiB,  # 64 MB
+    },
 }
 
+# NCCL symmetric memory allreduce configuration based on H100 and GB200 benchmarks.
+# PyNCCL-symm outperforms custom_AR for small and large tensor sizes,
+# while custom_AR wins for mid-range sizes.
+#
+# Benchmark results (8 GPUs):
+#   2K - 16K:   PyNCCL-symm wins (1.35x - 1.48x faster)
+#   32K - 64K:  custom_AR wins
+#   128K - 1G:  PyNCCL-symm wins (1.12x - 6.14x faster)
+#
+# Benchmark results (4 GPUs):
+#   2K - 16K:   PyNCCL-symm wins (1.21x - 1.30x faster)
+#   32K - 256K: custom_AR wins (1.07x - 1.35x faster)
+#   512K - 1G:  PyNCCL-symm wins (1.10x - 2.32x faster)
+#
+# The config defines ranges where custom_AR is preferred (symm_mem disabled).
 NCCL_SYMM_MEM_ALL_REDUCE_CONFIG: dict[str, Any] = {
     "min_world_size": 4,
-    "thresholds": {
-        4: 2 * MiB,  # 2 MB
-        8: 1 * MiB,  # 1 MB
+    # Ranges where custom_AR outperforms NCCL symm_mem: (lower_bound, upper_bound)
+    # NCCL symm_mem will NOT be used for sizes in range: lower < size < upper
+    "custom_ar_preferred_ranges": {
+        4: (16 * KiB, 512 * KiB),  # custom_AR wins for 32K-256K
+        8: (16 * KiB, 128 * KiB),  # custom_AR wins for 32K-64K
     },
     "always_use_above_world_size": 8,  # Always use symm mem for world_size > 8
 }
 
 
 def should_nccl_symm_mem_allreduce(world_size: int, input_tensor: torch.Tensor) -> bool:
-    from aphrodite.distributed.device_communicators.pynccl_allocator import is_symmetric_memory_enabled
+    """
+    Determine if NCCL symmetric memory allreduce should be used.
 
-    if aphrodite_is_batch_invariant():
+    Based on H100 and GB200 benchmarks, NCCL symm_mem is preferred for:
+    - Small tensors (≤16K): Lower latency than custom_AR
+    - Large tensors (≥128K for 8 GPUs, ≥512K for 4 GPUs): Better bandwidth
+
+    Custom_AR is preferred for mid-range sizes where its P2P approach
+    has lower overhead than the symm_mem copy-in/copy-out pattern.
+    """
+    from aphrodite.distributed.device_communicators.pynccl_allocator import (
+        is_symmetric_memory_enabled,
+    )
+
+    if envs.APHRODITE_BATCH_INVARIANT:
         return False
 
     if not is_symmetric_memory_enabled():
         return False
+
     if world_size < NCCL_SYMM_MEM_ALL_REDUCE_CONFIG["min_world_size"]:
         return False
-    threshold = NCCL_SYMM_MEM_ALL_REDUCE_CONFIG["thresholds"].get(world_size)
-    if threshold is not None and input_tensor.nbytes >= threshold:
-        return True
+
+    tensor_size = input_tensor.nbytes
+    custom_ar_range = NCCL_SYMM_MEM_ALL_REDUCE_CONFIG["custom_ar_preferred_ranges"].get(world_size)
+
+    if custom_ar_range is not None:
+        lower_bound, upper_bound = custom_ar_range
+        # Use symm_mem for small sizes (≤ lower_bound) and large sizes (≥ upper_bound)
+        # Use custom_AR (not symm_mem) for mid-range sizes
+        return tensor_size <= lower_bound or tensor_size >= upper_bound
     return world_size > NCCL_SYMM_MEM_ALL_REDUCE_CONFIG["always_use_above_world_size"]
 
 
@@ -165,7 +216,7 @@ def can_actually_p2p(
     `torch.cuda.can_device_access_peer(src, tgt)`. However, sometimes
     the driver might be broken, and `torch.cuda.can_device_access_peer(src, tgt)`
     returns `True` even if P2P access is not actually possible.
-    See https://github.com/aphrodite-project/aphrodite/issues/2728 and
+    See https://github.com/vllm-project/vllm/issues/2728 and
     https://forums.developer.nvidia.com/t/direct-gpu-gpu-communication-does-not-seem-to-work-properly/283264/10
     Therefore, we have to perform a real P2P access to check if it is actually
     possible.
@@ -266,7 +317,7 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
 
     is_distributed = dist.is_initialized()
 
-    num_dev = cuda_device_count_stateless()
+    num_dev = current_platform.device_count()
     cuda_visible_devices = envs.CUDA_VISIBLE_DEVICES
     if cuda_visible_devices is None:
         cuda_visible_devices = ",".join(str(i) for i in range(num_dev))

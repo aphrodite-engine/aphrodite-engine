@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from enum import Enum
 
 import torch
@@ -6,11 +9,10 @@ from torch.distributed import ProcessGroup
 
 import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
-from aphrodite.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config_or_none
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
 logger = init_logger(__name__)
 
@@ -124,7 +126,7 @@ class QuickAllReduce:
         if cuda_visible_devices:
             device_ids = list(map(int, cuda_visible_devices.split(",")))
         else:
-            device_ids = list(range(cuda_device_count_stateless()))
+            device_ids = list(range(current_platform.device_count()))
         physical_device_id = device_ids[device.index]
         tensor = torch.tensor([physical_device_id], dtype=torch.int, device="cpu")
         gather_list = [torch.tensor([0], dtype=torch.int, device="cpu") for _ in range(self.world_size)]
@@ -167,7 +169,7 @@ class QuickAllReduce:
             )
             return
         self.qr_quant_level = QuickReduceRegime[regime_str]
-        aphrodite_config = get_current_aphrodite_config()
+        aphrodite_config = get_current_aphrodite_config_or_none()
         if (
             aphrodite_config is not None
             and hasattr(aphrodite_config, "model_config")

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for cutlass kernels
 
 Run `pytest tests/kernels/quantization/test_cutlass_scaled_mm.py`.

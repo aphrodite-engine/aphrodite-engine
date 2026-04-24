@@ -35,5 +35,3 @@ CLI example:
 ```sh
 aphrodite run facebook/opt-6.7b --speculative-model facebook/opt-125m --num-speculative-tokens 5 --use-v2-block-manager
 ```
-
-

@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 # ruff: noqa: E501
+# coding=utf-8
 # adapted from https://github.com/deepseek-ai/DeepSeek-VL2/blob/ff23960c5cf9e6874b44be38af930cfb0ccbb620/deepseek_vl2/models/processing_deepseek_vl_v2.py
 # Copyright (c) 2023-2024 DeepSeek.
 #
@@ -25,7 +29,7 @@ from typing import Any
 import torch
 import torchvision.transforms as T
 from PIL import Image, ImageOps
-from transformers import AutoProcessor, BatchFeature, LlamaTokenizerFast
+from transformers import BatchFeature, LlamaTokenizerFast
 from transformers.processing_utils import ProcessorMixin
 
 
@@ -374,6 +378,3 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images_spatial_crop,
             num_image_tokens,
         )
-
-
-AutoProcessor.register("DeepseekVLV2Processor", DeepseekVLV2Processor)

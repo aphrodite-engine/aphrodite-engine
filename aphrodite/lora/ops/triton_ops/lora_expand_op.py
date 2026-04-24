@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 Based on:
 Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023).
@@ -7,8 +9,13 @@ https://arxiv.org/abs/2310.18547
 
 import torch
 
+from aphrodite import envs
 from aphrodite.lora.ops.triton_ops.kernel_utils import do_expand_kernel
-from aphrodite.lora.ops.triton_ops.utils import _get_lora_b_ptr, get_lora_op_configs
+from aphrodite.lora.ops.triton_ops.utils import (
+    _get_lora_b_ptr,
+    get_lora_op_configs,
+    supports_pdl,
+)
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
@@ -43,6 +50,8 @@ def _lora_expand_kernel(
     CAST_TYPE: tl.constexpr,
     SLICE_NUM: tl.constexpr,
     SAME_STRIDE: tl.constexpr,
+    USE_GDC: tl.constexpr,
+    launch_pdl: tl.constexpr,
 ):
     cta_n_num = tl.cdiv(N, BLOCK_N)
     cta_m_num = tl.cdiv(M, BLOCK_M)
@@ -117,6 +126,7 @@ def _lora_expand_kernel(
         EVEN_K,
         CAST_TYPE,
         ADD_INPUTS,
+        USE_GDC,
     )
 
 
@@ -131,6 +141,7 @@ def _lora_expand(
     lora_token_start_loc: torch.Tensor,  # shape [max-loras + 2]
     lora_ids: torch.Tensor,  # shape [max-loras + 1]
     no_lora_flag_cpu: torch.Tensor,  # shape [1]
+    num_active_loras: torch.Tensor,  # CPU tensor [1], number of active LoRAs
     offset_start: int = 0,
     add_inputs: bool = False,
 ) -> None:
@@ -227,12 +238,11 @@ def _lora_expand(
     grid = (
         triton.cdiv(M, BLOCK_M) * triton.cdiv(MAX_N, BLOCK_N),
         NUM_SLICES,
-        # Each LoRA receives its own set of thread blocks for output
-        # computation. If some LoRA doesn't have any tokens to process, its
-        # thread blocks simply exit.
-        MAX_LORAS,
+        num_active_loras.item(),
     )
 
+    # PDL only works when dual-stream is being used.
+    use_gdc = supports_pdl(inputs.device) and envs.APHRODITE_LORA_ENABLE_DUAL_STREAM
     _lora_expand_kernel[grid](
         inputs,
         lora_ptr_tensor,
@@ -262,9 +272,11 @@ def _lora_expand(
         CAST_TYPE,
         NUM_SLICES,
         same_stride,
+        use_gdc,
         num_warps=NUM_WARPS,
         num_ctas=NUM_CTAS,
         num_stages=NUM_STAGES,
+        launch_pdl=use_gdc,
     )
 
     return
@@ -280,6 +292,7 @@ def _lora_expand_fake(
     lora_token_start_loc: torch.Tensor,
     lora_ids: torch.Tensor,
     no_lora_flag_cpu: torch.Tensor,
+    num_active_loras: torch.Tensor,  # CPU tensor [1], number of active LoRAs
     offset_start: int = 0,
     add_inputs: bool = False,
 ) -> None:

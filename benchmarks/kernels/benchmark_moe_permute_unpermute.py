@@ -1,10 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 from typing import Any, TypedDict
 
 import ray
 import torch
-from transformers import AutoConfig
-
 from aphrodite.modeling.layers.fused_moe.fused_moe import *
 from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
     _moe_permute,
@@ -13,6 +13,8 @@ from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
     moe_unpermute,
 )
 from aphrodite.modeling.layers.fused_moe.utils import _fp8_quantize
+from transformers import AutoConfig
+
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from https://github.com/sgl-project/sglang/pull/2575
 import itertools
 
 import pytest
 import torch
-
-from aphrodite.config import AphroditeConfig
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.fp8_utils import (
     cutlass_scaled_mm,
     per_token_group_quant_fp8,
     w8a8_triton_block_scaled_mm,
 )
+
+from aphrodite.config import AphroditeConfig
+from aphrodite.platforms import current_platform
 from aphrodite.utils.deep_gemm import fp8_gemm_nt, get_col_major_tma_aligned_tensor, per_block_cast_to_fp8
 from aphrodite.utils.import_utils import has_deep_gemm
 from tests.kernels.quant_utils import native_per_token_group_quant_fp8, native_w8a8_block_matmul

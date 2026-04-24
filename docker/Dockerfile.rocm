@@ -1,6 +1,6 @@
 ARG REMOTE_APHRODITE="0"
 ARG COMMON_WORKDIR=/app
-ARG BASE_IMAGE=rocm/vllm-dev:base
+ARG BASE_IMAGE=rocm/aphrodite-dev:base
 
 FROM ${BASE_IMAGE} AS base
 
@@ -25,8 +25,8 @@ ONBUILD COPY ./ aphrodite/
 FROM base AS fetch_aphrodite_1
 ARG APHRODITE_REPO="https://github.com/aphrodite-engine/aphrodite-engine.git"
 ARG APHRODITE_BRANCH="main"
-ONBUILD RUN git clone ${APHRODITE_REPO} \
-	    && cd aphrodite-engine \
+ONBUILD RUN git clone ${APHRODITE_REPO} aphrodite \
+	    && cd aphrodite \
 	    && git fetch -v --prune -- origin ${APHRODITE_BRANCH} \
 	    && git checkout FETCH_HEAD
 FROM fetch_aphrodite_${REMOTE_APHRODITE} AS fetch_aphrodite
@@ -41,9 +41,9 @@ RUN cd aphrodite \
     && python3 setup.py bdist_wheel --dist-dir=dist
 FROM scratch AS export_aphrodite
 ARG COMMON_WORKDIR
-COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite-engine/dist/*.whl /
-COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite-engine/requirements /requirements
-COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite-engine/examples /examples
+COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/dist/*.whl /
+COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/requirements /requirements
+COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/examples /examples
 
 # -----------------------
 # Final aphrodite image

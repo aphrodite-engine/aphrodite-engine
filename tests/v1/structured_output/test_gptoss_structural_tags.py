@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Unit tests for GPT-OSS structural tag support in reasoning (PR #25515)."""
 
 import json
 from unittest.mock import Mock
 
 import pytest
-
 from aphrodite.endpoints.tool_server import ToolServer
+
 from aphrodite.reasoning.gptoss_reasoning_parser import (
     GptOssReasoningParser,
     from_builtin_tool_to_tag,

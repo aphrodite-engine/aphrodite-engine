@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 
-import torch
-
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
+import torch
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
 
 from .common import Config

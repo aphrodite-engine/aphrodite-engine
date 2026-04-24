@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import unittest
 
 import pytest
 import torch
+from aphrodite.modeling.layers.mamba.mamba_mixer2 import Mixer2RMSNormGated
 
 from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
-from aphrodite.modeling.layers.mamba.mamba_mixer2 import Mixer2RMSNormGated
 from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import update_environment_variables
 from tests.utils import multi_gpu_test

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from ...utils import APHRODITE_PATH, RemoteOpenAIServer
 
 chatml_jinja_path = APHRODITE_PATH / "examples/template_chatml.jinja"

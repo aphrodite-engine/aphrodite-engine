@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests whether bitsandbytes computation is enabled correctly.
 
 Run `pytest tests/quantization/test_bitsandbytes.py`.

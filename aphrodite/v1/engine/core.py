@@ -1,21 +1,25 @@
-import gc
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import os
 import queue
 import signal
 import threading
 import time
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
+from enum import IntEnum
+from functools import partial
 from inspect import isclass, signature
 from logging import DEBUG
+from multiprocessing.queues import Queue
 from typing import Any, TypeVar, cast
 
 import msgspec
 import zmq
 
-from aphrodite import envs
+import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig, ParallelConfig
 from aphrodite.distributed import stateless_destroy_torch_distributed_process_group
 from aphrodite.envs import enable_envs_cache
@@ -23,36 +27,48 @@ from aphrodite.logger import init_logger
 from aphrodite.logging_utils.dump_input import dump_engine_exception
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.cache import engine_receiver_cache_from_config
 from aphrodite.tasks import POOLING_TASKS, SupportedTask
+from aphrodite.tracing import instrument, maybe_init_worker_tracer
 from aphrodite.transformers_utils.config import maybe_register_config_serialize_by_value
-from aphrodite.utils.gc_utils import maybe_attach_gc_debug_callback
+from aphrodite.utils import numa_utils
+from aphrodite.utils.gc_utils import (
+    freeze_gc_heap,
+    maybe_attach_gc_debug_callback,
+)
 from aphrodite.utils.hashing import get_hash_fn_by_name
-from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.utils.network_utils import make_zmq_socket
 from aphrodite.utils.system_utils import decorate_logs, set_process_title
 from aphrodite.v1.core.kv_cache_utils import (
     BlockHash,
     generate_scheduler_kv_cache_config,
     get_kv_cache_configs,
-    get_kv_cache_size_tokens,
-    get_max_concurrency_for_kv_cache_configs,
     get_request_block_hasher,
     init_none_hash,
 )
-from aphrodite.v1.core.sched.interface import SchedulerInterface
+from aphrodite.v1.core.sched.interface import PauseState, SchedulerInterface
 from aphrodite.v1.core.sched.output import SchedulerOutput
-from aphrodite.v1.core.sched.scheduler import Scheduler as V1Scheduler
 from aphrodite.v1.engine import (
+    EEP_NOTIFICATION_CALL_ID,
+    EEPNotificationType,
+    EngineCoreOutput,
     EngineCoreOutputs,
+    EngineCoreReadyResponse,
     EngineCoreRequest,
     EngineCoreRequestType,
+    FinishReason,
+    PauseMode,
     ReconfigureDistributedRequest,
     ReconfigureRankType,
     UtilityOutput,
     UtilityResult,
 )
-from aphrodite.v1.engine.utils import EngineHandshakeMetadata, EngineZmqAddresses, get_device_indices
+from aphrodite.v1.engine.tensor_ipc import TensorIpcReceiver
+from aphrodite.v1.engine.utils import (
+    EngineHandshakeMetadata,
+    EngineZmqAddresses,
+    SignalCallback,
+    get_device_indices,
+)
 from aphrodite.v1.executor import Executor
 from aphrodite.v1.kv_cache_interface import KVCacheConfig
 from aphrodite.v1.metrics.stats import SchedulerStats
@@ -60,11 +76,11 @@ from aphrodite.v1.outputs import ModelRunnerOutput
 from aphrodite.v1.request import Request, RequestStatus
 from aphrodite.v1.serial_utils import MsgpackDecoder, MsgpackEncoder
 from aphrodite.v1.structured_output import StructuredOutputManager
+from aphrodite.v1.utils import compute_iteration_details
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
 logger = init_logger(__name__)
 
-POLLING_TIMEOUT_S = 2.5
 HANDSHAKE_TIMEOUT_MINS = 5
 
 _R = TypeVar("_R")  # Return type for collective_rpc
@@ -79,6 +95,7 @@ class EngineCore:
         executor_class: type[Executor],
         log_stats: bool,
         executor_fail_callback: Callable | None = None,
+        include_finished_set: bool = False,
     ):
         # plugins need to be loaded at the engine/scheduler level too
         from aphrodite.plugins import load_general_plugins
@@ -86,9 +103,9 @@ class EngineCore:
         load_general_plugins()
 
         self.aphrodite_config = aphrodite_config
-        if aphrodite_config.parallel_config.data_parallel_rank == 0:
+        if not aphrodite_config.parallel_config.data_parallel_rank_local:
             logger.debug(
-                "Initializing a V1 LLM engine (v%s) with config: %s",
+                "Initializing the Aphrodite V1 engine (v%s) with config: %s",
                 APHRODITE_VERSION,
                 aphrodite_config,
             )
@@ -96,77 +113,49 @@ class EngineCore:
         self.log_stats = log_stats
 
         # Setup Model.
-        self.modeling = executor_class(aphrodite_config)
+        self.model_executor = executor_class(aphrodite_config)
         if executor_fail_callback is not None:
-            self.modeling.register_failure_callback(executor_fail_callback)
+            self.model_executor.register_failure_callback(executor_fail_callback)
 
         self.available_gpu_memory_for_kv_cache = -1
 
+        if envs.APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH:
+            self._eep_scale_up_before_kv_init()
+
         # Setup KV Caches and update CacheConfig after profiling.
-        num_gpu_blocks, num_cpu_blocks, kv_cache_config, max_concurrency = self._initialize_kv_caches(aphrodite_config)
-        self.kv_cache_config = kv_cache_config
-
-        # Cache KV cache properties for synchronous access
-        self._max_concurrency = max_concurrency
-        self._kv_cache_size_tokens = get_kv_cache_size_tokens(aphrodite_config, kv_cache_config)
-
-        aphrodite_config.cache_config.num_gpu_blocks = num_gpu_blocks
-        aphrodite_config.cache_config.num_cpu_blocks = num_cpu_blocks
-        self.collective_rpc("initialize_cache", args=(num_gpu_blocks, num_cpu_blocks))
-
+        kv_cache_config = self._initialize_kv_caches(aphrodite_config)
         self.structured_output_manager = StructuredOutputManager(aphrodite_config)
 
-        is_elastic = envs.APHRODITE_ENABLE_DYNAMIC_KV_CACHE
-        if is_elastic:
-            from aphrodite.v1.core.dynamic_kv.interfaces import init_kvcached
-
-            init_kvcached(
-                tp_rank=0,
-                tp_size=aphrodite_config.parallel_config.tensor_parallel_size,
-                is_worker=False,
-            )
-
         # Setup scheduler.
-        if isinstance(aphrodite_config.scheduler_config.scheduler_cls, str):
-            Scheduler = resolve_obj_by_qualname(aphrodite_config.scheduler_config.scheduler_cls)
-        else:
-            Scheduler = aphrodite_config.scheduler_config.scheduler_cls
+        Scheduler = aphrodite_config.scheduler_config.get_scheduler_cls()
 
-        # This warning can be removed once the V1 Scheduler interface is
-        # finalized and we can maintain support for scheduler classes that
-        # implement it
-        if Scheduler is not V1Scheduler:
-            logger.warning(
-                "Using configured V1 scheduler class %s. "
-                "This scheduler interface is not public and "
-                "compatibility may not be maintained.",
-                aphrodite_config.scheduler_config.scheduler_cls,
-            )
-
-        if len(kv_cache_config.kv_cache_groups) == 0:
+        if len(kv_cache_config.kv_cache_groups) == 0:  # noqa: SIM102
             # Encoder models without KV cache don't support
             # chunked prefill. But do SSM models?
-            logger.info("Disabling chunked prefill for model without KVCache")
-            aphrodite_config.scheduler_config.chunked_prefill_enabled = False
+            if aphrodite_config.scheduler_config.enable_chunked_prefill:
+                logger.warning("Disabling chunked prefill for model without KVCache")
+                aphrodite_config.scheduler_config.enable_chunked_prefill = False
 
         scheduler_block_size = (
-            aphrodite_config.cache_config.block_size * aphrodite_config.parallel_config.decode_context_parallel_size
+            aphrodite_config.cache_config.block_size
+            * aphrodite_config.parallel_config.decode_context_parallel_size
+            * aphrodite_config.parallel_config.prefill_context_parallel_size
         )
 
         self.scheduler: SchedulerInterface = Scheduler(
             aphrodite_config=aphrodite_config,
             kv_cache_config=kv_cache_config,
             structured_output_manager=self.structured_output_manager,
-            include_finished_set=aphrodite_config.parallel_config.data_parallel_size > 1,
+            include_finished_set=include_finished_set,
             log_stats=self.log_stats,
             block_size=scheduler_block_size,
         )
         self.use_spec_decode = aphrodite_config.speculative_config is not None
         if self.scheduler.connector is not None:  # type: ignore
-            self.modeling.init_kv_output_aggregator(self.scheduler.connector)  # type: ignore
+            self.model_executor.init_kv_output_aggregator(self.scheduler.connector)  # type: ignore
 
-        self.mm_registry = mm_registry = MULTIMODAL_REGISTRY
-        self.mm_receiver_cache = engine_receiver_cache_from_config(aphrodite_config, mm_registry)
+        mm_registry = MULTIMODAL_REGISTRY
+        self.mm_receiver_cache = mm_registry.engine_receiver_cache_from_config(aphrodite_config)
 
         # If a KV connector is initialized for scheduler, we want to collect
         # handshake metadata from all workers so the connector in the scheduler
@@ -175,7 +164,7 @@ class EngineCore:
         if kv_connector is not None:
             # Collect and store KV connector xfer metadata from workers
             # (after KV cache registration)
-            xfer_handshake_metadata = self.modeling.get_kv_connector_handshake_metadata()
+            xfer_handshake_metadata = self.model_executor.get_kv_connector_handshake_metadata()
 
             if xfer_handshake_metadata:
                 # xfer_handshake_metadata is list of dicts from workers
@@ -191,38 +180,58 @@ class EngineCore:
         # Batch queue for scheduled batches. This enables us to asynchronously
         # schedule and execute batches, and is required by pipeline parallelism
         # to eliminate pipeline bubbles.
-        self.batch_queue_size = self.modeling.max_concurrent_batches
-        self.batch_queue: deque[tuple[Future[ModelRunnerOutput], SchedulerOutput]] | None = None
+        self.batch_queue_size = self.model_executor.max_concurrent_batches
+        self.batch_queue: deque[tuple[Future[ModelRunnerOutput], SchedulerOutput, Future[Any]]] | None = None
         if self.batch_queue_size > 1:
-            logger.info_once("Batch queue is enabled with size %d", self.batch_queue_size, scope="global")
+            logger.debug("Batch queue is enabled with size %d", self.batch_queue_size)
             self.batch_queue = deque(maxlen=self.batch_queue_size)
 
+        self.is_ec_consumer = (
+            aphrodite_config.ec_transfer_config is None or aphrodite_config.ec_transfer_config.is_ec_consumer
+        )
+        self.is_pooling_model = aphrodite_config.model_config.runner_type == "pooling"
+
         self.request_block_hasher: Callable[[Request], list[BlockHash]] | None = None
-        if self.aphrodite_config.cache_config.enable_prefix_caching or kv_connector is not None:
+        if aphrodite_config.cache_config.enable_prefix_caching or kv_connector is not None:
             caching_hash_fn = get_hash_fn_by_name(aphrodite_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
 
             self.request_block_hasher = get_request_block_hasher(scheduler_block_size, caching_hash_fn)
 
         self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
+        self.async_scheduling = aphrodite_config.scheduler_config.async_scheduling
 
-    def _initialize_kv_caches(self, aphrodite_config: AphroditeConfig) -> tuple[int, int, KVCacheConfig, float]:
+        self.aborts_queue = queue.Queue[list[str]]()
+
+        self._idle_state_callbacks: list[Callable] = []
+
+        # Mark the startup heap as static so that it's ignored by GC.
+        # Reduces pause times of oldest generation collections.
+        freeze_gc_heap()
+        # If enable, attach GC debugger after static variable freeze.
+        maybe_attach_gc_debug_callback()
+        # Enable environment variable cache (e.g. assume no more
+        # environment variable overrides after this point)
+        enable_envs_cache()
+
+    @instrument(span_name="Prepare model")
+    def _initialize_kv_caches(self, aphrodite_config: AphroditeConfig) -> KVCacheConfig:
         start = time.time()
 
         # Get all kv cache needed by the model
-        kv_cache_specs = self.modeling.get_kv_cache_specs()
+        kv_cache_specs = self.model_executor.get_kv_cache_specs()
 
         has_kv_cache = any(kv_cache_spec for kv_cache_spec in kv_cache_specs)
         if has_kv_cache:
-            if os.environ.get("APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH") == "1":
-                dp_group = getattr(self, "dp_group", None)
-                assert dp_group is not None
-                self.available_gpu_memory_for_kv_cache = ParallelConfig.sync_kv_cache_memory_size(dp_group, -1)
+            if envs.APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH:
+                # NOTE(yongji): should already be set
+                # during _eep_scale_up_before_kv_init
+                assert self.available_gpu_memory_for_kv_cache > 0
                 available_gpu_memory = [self.available_gpu_memory_for_kv_cache] * len(kv_cache_specs)
             else:
                 # Profiles the peak memory usage of the model to determine how
                 # much memory can be allocated for kv cache.
-                available_gpu_memory = self.modeling.determine_available_memory()
+                available_gpu_memory = self.model_executor.determine_available_memory()
                 self.available_gpu_memory_for_kv_cache = available_gpu_memory[0]
         else:
             # Attention free models don't need memory for kv cache
@@ -230,83 +239,60 @@ class EngineCore:
 
         assert len(kv_cache_specs) == len(available_gpu_memory)
 
+        # Track max_model_len before KV cache config to detect auto-fit changes
+        max_model_len_before = aphrodite_config.model_config.max_model_len
+
         kv_cache_configs = get_kv_cache_configs(aphrodite_config, kv_cache_specs, available_gpu_memory)
-        max_concurrency = get_max_concurrency_for_kv_cache_configs(aphrodite_config, kv_cache_configs)
+
+        # If auto-fit reduced max_model_len, sync the new value to workers.
+        # This is needed because workers were spawned before memory profiling
+        # and have the original (larger) max_model_len cached.
+        max_model_len_after = aphrodite_config.model_config.max_model_len
+        if max_model_len_after != max_model_len_before:
+            self.collective_rpc("update_max_model_len", args=(max_model_len_after,))
+
         scheduler_kv_cache_config = generate_scheduler_kv_cache_config(kv_cache_configs)
-        num_gpu_blocks = scheduler_kv_cache_config.num_blocks
-        num_cpu_blocks = 0
+        aphrodite_config.cache_config.num_gpu_blocks = scheduler_kv_cache_config.num_blocks
+        kv_cache_groups = scheduler_kv_cache_config.kv_cache_groups
+        if kv_cache_groups:
+            aphrodite_config.cache_config.block_size = min(g.kv_cache_spec.block_size for g in kv_cache_groups)
+
+        aphrodite_config.validate_block_size()
 
         # Initialize kv cache and warmup the execution
-        self.modeling.initialize_from_config(kv_cache_configs)
-
-        aphrodite_config.cache_config.kv_bytes_per_block = scheduler_kv_cache_config.kv_bytes_per_block
+        self.model_executor.initialize_from_config(kv_cache_configs)
 
         elapsed = time.time() - start
-        logger.info_once(
-            ("init engine (profile, create kv cache, warmup model) took %.2f seconds"),
-            elapsed,
-            scope="local",
-        )
-        if envs.APHRODITE_REQUEST_LEVEL_METRICS:
-            logger.warning_once(
-                "Throughput metrics are set to request-level. If you want to get aggregate "
-                "metrics, set APHRODITE_REQUEST_LEVEL_METRICS=0.",
-                scope="global",
+        compile_time = aphrodite_config.compilation_config.compilation_time
+        encoder_compile_time = aphrodite_config.compilation_config.encoder_compilation_time
+        if encoder_compile_time > 0:
+            logger.info_once(
+                "init engine (profile, create kv cache, warmup model) took "
+                "%.2f s (compilation: %.2f s — language_model: %.2f s, "
+                "encoder: %.2f s)",
+                elapsed,
+                compile_time + encoder_compile_time,
+                compile_time,
+                encoder_compile_time,
+                scope="local",
             )
-        return num_gpu_blocks, num_cpu_blocks, scheduler_kv_cache_config, max_concurrency
+        elif compile_time > 0:
+            logger.info_once(
+                "init engine (profile, create kv cache, warmup model) took %.2f s (compilation: %.2f s)",
+                elapsed,
+                compile_time,
+                scope="local",
+            )
+        else:
+            logger.info_once(
+                "init engine (profile, create kv cache, warmup model) took %.2f s",
+                elapsed,
+                scope="local",
+            )
+        return scheduler_kv_cache_config
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
-        return self.modeling.supported_tasks
-
-    @property
-    def max_concurrency(self) -> float:
-        """Get the maximum concurrency supported by the KV cache configuration.
-
-        Returns:
-            The maximum number of concurrent requests that can be processed
-            based on the available KV cache blocks and memory requirements.
-        """
-        return self._max_concurrency
-
-    def get_max_concurrency(self) -> float:
-        """Get the maximum concurrency supported by the KV cache configuration.
-
-        This method is provided for RPC access in multiprocess mode.
-
-        Returns:
-            The maximum number of concurrent requests that can be processed
-            based on the available KV cache blocks and memory requirements.
-        """
-        return self.max_concurrency
-
-    @property
-    def kv_cache_size_tokens(self) -> int:
-        """Get the total number of tokens that can be stored in the KV cache.
-
-        Returns:
-            The total number of tokens that can be cached.
-        """
-        return self._kv_cache_size_tokens
-
-    @property
-    def kv_cache_size_tokens_str(self) -> str:
-        """Get a formatted string representation of the KV cache size in tokens.
-
-        Returns:
-            A comma-formatted string representing the total number of tokens
-            that can be cached (e.g., "1,048,576").
-        """
-        return f"{self.kv_cache_size_tokens:,}"
-
-    def get_kv_cache_size_tokens(self) -> int:
-        """Get the total number of tokens that can be stored in the KV cache.
-
-        This method is provided for RPC access in multiprocess mode.
-
-        Returns:
-            The total number of tokens that can be cached.
-        """
-        return self.kv_cache_size_tokens
+        return self.model_executor.supported_tasks
 
     def add_request(self, request: Request, request_wave: int = 0):
         """Add request to the scheduler.
@@ -353,6 +339,36 @@ class EngineCore:
             dump_engine_exception(self.aphrodite_config, scheduler_output, self.scheduler.make_stats())
             raise err
 
+    @contextmanager
+    def log_iteration_details(self, scheduler_output: SchedulerOutput):
+        if not self.aphrodite_config.observability_config.enable_logging_iteration_details:
+            yield
+            return
+        self._iteration_index = getattr(self, "_iteration_index", 0)
+        iteration_details = compute_iteration_details(scheduler_output)
+        before = time.monotonic()
+        yield
+        logger.info(
+            "".join(
+                [
+                    "Iteration(",
+                    str(self._iteration_index),
+                    "): ",
+                    str(iteration_details.num_ctx_requests),
+                    " context requests, ",
+                    str(iteration_details.num_ctx_tokens),
+                    " context tokens, ",
+                    str(iteration_details.num_generation_requests),
+                    " generation requests, ",
+                    str(iteration_details.num_generation_tokens),
+                    " generation tokens, iteration elapsed time: ",
+                    format((time.monotonic() - before) * 1000, ".2f"),
+                    " ms",
+                ]
+            )
+        )
+        self._iteration_index += 1
+
     def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
         """Schedule, execute, and make output.
 
@@ -365,22 +381,30 @@ class EngineCore:
         if not self.scheduler.has_requests():
             return {}, False
         scheduler_output = self.scheduler.schedule()
-        future = self.modeling.execute_model(scheduler_output, non_block=True)
+        future = self.model_executor.execute_model(scheduler_output, non_block=True)
         grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
-
-        with self.log_error_detail(scheduler_output):
+        with (
+            self.log_error_detail(scheduler_output),
+            self.log_iteration_details(scheduler_output),
+        ):
             model_output = future.result()
             if model_output is None:
-                model_output = self.modeling.sample_tokens(grammar_output)
+                model_output = self.model_executor.sample_tokens(grammar_output)
 
+        # Before processing the model output, process any aborts that happened
+        # during the model execution.
+        self._process_aborts_queue()
         engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 
         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 
     def post_step(self, model_executed: bool) -> None:
-        if self.use_spec_decode and model_executed:
+        # When using async scheduling we can't get draft token ids in advance,
+        # so we update draft token ids in the worker process and don't
+        # need to update draft token ids here.
+        if not self.async_scheduling and self.use_spec_decode and model_executed:
             # Take the draft token ids.
-            draft_token_ids = self.modeling.take_draft_token_ids()
+            draft_token_ids = self.model_executor.take_draft_token_ids()
             if draft_token_ids is not None:
                 self.scheduler.update_draft_token_ids(draft_token_ids)
 
@@ -400,6 +424,7 @@ class EngineCore:
         batch in the job queue is finished.
         3. Update the scheduler from the output.
         """
+
         batch_queue = self.batch_queue
         assert batch_queue is not None
 
@@ -412,32 +437,28 @@ class EngineCore:
         deferred_scheduler_output = None
         if self.scheduler.has_requests():
             scheduler_output = self.scheduler.schedule()
-            exec_future = self.modeling.execute_model(scheduler_output, non_block=True)
+            with self.log_error_detail(scheduler_output):
+                exec_future = self.model_executor.execute_model(scheduler_output, non_block=True)
+            if self.is_ec_consumer:
+                model_executed = scheduler_output.total_num_scheduled_tokens > 0
 
-            model_executed = scheduler_output.total_num_scheduled_tokens > 0
-            if scheduler_output.pending_structured_output_tokens:
-                # We need to defer sampling until we have processed the model output
-                # from the prior step.
-                deferred_scheduler_output = scheduler_output
-                # Block-wait for execute to return (continues running async on the GPU).
-                with self.log_error_detail(scheduler_output):
-                    exec_result = exec_future.result()
-                    assert exec_result is None
+            if self.is_pooling_model or not model_executed:
+                # No sampling required (no requests scheduled).
+                future = cast(Future[ModelRunnerOutput], exec_future)
             else:
-                # We aren't waiting for any tokens, get any grammar output immediately.
-                grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
-                # Block-wait for execute to return (continues running async on the GPU).
-                with self.log_error_detail(scheduler_output):
-                    exec_result = exec_future.result()
-
-                if exec_result is None:
-                    # Call sample tokens.
-                    future = self.modeling.sample_tokens(grammar_output, non_block=True)
+                if not scheduler_output.pending_structured_output_tokens:
+                    # We aren't waiting for any tokens, get any grammar output
+                    # and sample immediately.
+                    grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+                    future = self.model_executor.sample_tokens(grammar_output, non_block=True)
                 else:
-                    # No sampling required (e.g. all requests finished).
-                    future = cast(Future[ModelRunnerOutput], exec_future)
+                    # We need to defer sampling until we have processed the model output
+                    # from the prior step.
+                    deferred_scheduler_output = scheduler_output
+
+            if not deferred_scheduler_output:
                 # Add this step's future to the queue.
-                batch_queue.appendleft((future, scheduler_output))
+                batch_queue.appendleft((future, scheduler_output, exec_future))
                 if model_executed and len(batch_queue) < self.batch_queue_size and not batch_queue[-1][0].done():
                     # Don't block on next worker response unless the queue is full
                     # or there are no more requests to schedule.
@@ -450,33 +471,64 @@ class EngineCore:
             return None, False
 
         # Block until the next result is available.
-        future, scheduler_output = batch_queue.pop()
-        with self.log_error_detail(scheduler_output):
+        future, scheduler_output, exec_model_fut = batch_queue.pop()
+        with (
+            self.log_error_detail(scheduler_output),
+            self.log_iteration_details(scheduler_output),
+        ):
             model_output = future.result()
+            if model_output is None:
+                # None from sample_tokens() implies that the original execute_model()
+                # call failed - raise that exception.
+                exec_model_fut.result()
+                raise RuntimeError("unexpected error")
 
+        # Before processing the model output, process any aborts that happened
+        # during the model execution.
+        self._process_aborts_queue()
         engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 
-        # NOTE: We can either handle the deferred tasks here or save
+        # NOTE(nick): We can either handle the deferred tasks here or save
         # in a field and do it immediately once step_with_batch_queue is
         # re-called. The latter slightly favors TTFT over TPOT/throughput.
         if deferred_scheduler_output:
+            # If we are doing speculative decoding with structured output,
+            # we need to get the draft token ids from the prior step before
+            # we can compute the grammar bitmask for the deferred request.
+            if self.use_spec_decode:
+                draft_token_ids = self.model_executor.take_draft_token_ids()
+                assert draft_token_ids is not None
+                # Update the draft token ids in the scheduler output to
+                # filter out the invalid spec tokens, which will be padded
+                # with -1 and skipped by the grammar bitmask computation.
+                self.scheduler.update_draft_token_ids_in_output(draft_token_ids, deferred_scheduler_output)
             # We now have the tokens needed to compute the bitmask for the
             # deferred request. Get the bitmask and call sample tokens.
             grammar_output = self.scheduler.get_grammar_bitmask(deferred_scheduler_output)
-            future = self.modeling.sample_tokens(grammar_output, non_block=True)
-            batch_queue.appendleft((future, deferred_scheduler_output))
+            future = self.model_executor.sample_tokens(grammar_output, non_block=True)
+            batch_queue.appendleft((future, deferred_scheduler_output, exec_future))
 
         return engine_core_outputs, model_executed
 
+    def _process_aborts_queue(self):
+        if not self.aborts_queue.empty():
+            request_ids = []
+            while not self.aborts_queue.empty():
+                ids = self.aborts_queue.get_nowait()
+                # Should be a list here, but also handle string just in case.
+                request_ids.extend((ids,) if isinstance(ids, str) else ids)
+            # More efficient to abort all as a single batch.
+            self.abort_requests(request_ids)
+
     def shutdown(self):
         self.structured_output_manager.clear_backend()
-        if self.modeling:
-            self.modeling.shutdown()
+        if self.model_executor:
+            self.model_executor.shutdown()
         if self.scheduler:
             self.scheduler.shutdown()
 
-    def profile(self, is_start: bool = True):
-        self.modeling.profile(is_start)
+    def profile(self, is_start: bool = True, profile_prefix: str | None = None):
+        self.model_executor.profile(is_start, profile_prefix)
 
     def reset_mm_cache(self):
         # NOTE: Since this is mainly for debugging, we don't attempt to
@@ -490,34 +542,144 @@ class EngineCore:
         if self.mm_receiver_cache is not None:
             self.mm_receiver_cache.clear_cache()
 
-        self.modeling.reset_mm_cache()
+        self.model_executor.reset_mm_cache()
 
-    def reset_prefix_cache(self):
-        self.scheduler.reset_prefix_cache()
+    def reset_prefix_cache(self, reset_running_requests: bool = False, reset_connector: bool = False) -> bool:
+        return self.scheduler.reset_prefix_cache(reset_running_requests, reset_connector)
 
-    def sleep(self, level: int = 1):
-        self.modeling.sleep(level)
+    def reset_encoder_cache(self) -> None:
+        """Reset the encoder cache to invalidate all cached encoder outputs.
+
+        This should be called when model weights are updated to ensure
+        stale vision embeddings computed with old weights are not reused.
+        Clears both the scheduler's cache manager and the GPU model runner's cache.
+        """
+        # NOTE: Since this is mainly for debugging, we don't attempt to
+        # re-sync the internal caches (P0 sender, P1 receiver)
+        if self.scheduler.has_unfinished_requests():
+            logger.warning(
+                "Resetting the encoder cache when requests are in progress may lead to desynced internal caches."
+            )
+
+        # Reset the scheduler's encoder cache manager (logical state)
+        self.scheduler.reset_encoder_cache()
+        # Reset the GPU model runner's encoder cache (physical storage)
+        self.model_executor.reset_encoder_cache()
+
+    def _reset_caches(self, reset_running_requests=True) -> None:
+        self.reset_prefix_cache(reset_running_requests=reset_running_requests)
+        self.reset_mm_cache()
+        self.reset_encoder_cache()
+
+    def pause_scheduler(self, mode: PauseMode = "abort", clear_cache: bool = True) -> Future | None:
+        """Pause generation; behavior depends on mode.
+
+        All pause modes queue new adds -- "abort" and "keep" skip step();
+        "wait" allows step() so in-flight requests can drain.
+
+        - ``abort``: Set PAUSED_NEW, abort all requests, wait for abort
+          outputs to be sent (when running with output_queue), optionally
+          clear caches, then complete the returned Future.
+        - ``wait``: Set PAUSED_NEW (queue adds, keep stepping); when drained,
+          optionally clear caches, then complete the returned Future.
+        - ``keep``: Set PAUSED_ALL; return a Future that completes when the
+          output queue is empty.
+        """
+        if mode not in ("keep", "abort", "wait"):
+            raise ValueError(f"Invalid pause mode: {mode}")
+        if mode == "wait":
+            raise ValueError("'wait' mode can't be used in inproc-engine mode")
+
+        if mode == "abort":
+            self.scheduler.finish_requests(None, RequestStatus.FINISHED_ABORTED)
+
+        pause_state = PauseState.PAUSED_ALL if mode == "keep" else PauseState.PAUSED_NEW
+        self.scheduler.set_pause_state(pause_state)
+        if clear_cache:
+            self._reset_caches()
+
+        return None
+
+    def resume_scheduler(self) -> None:
+        """Resume the scheduler and flush any requests queued while paused."""
+        self.scheduler.set_pause_state(PauseState.UNPAUSED)
+
+    def is_scheduler_paused(self) -> bool:
+        """Return whether the scheduler is in any pause state."""
+        return self.scheduler.pause_state != PauseState.UNPAUSED
+
+    def sleep(self, level: int = 1, mode: PauseMode = "abort") -> None | Future:
+        """Put the engine to sleep at the specified level.
+
+        Args:
+            level: Sleep level.
+                - Level 0: Pause scheduling only. Requests are still accepted
+                           but not processed. No GPU memory changes.
+                - Level 1: Offload model weights to CPU, discard KV cache.
+                - Level 2: Discard all GPU memory.
+            mode: Pause mode - how to deal with any existing requests, see
+                documentation of pause_scheduler method.
+        """
+
+        # Pause scheduler before sleeping.
+        clear_prefix_cache = level >= 1
+        pause_future = self.pause_scheduler(mode=mode, clear_cache=clear_prefix_cache)
+        if level < 1:
+            return pause_future
+
+        # Level 1+: Delegate to executor for GPU memory management
+        model_executor = self.model_executor
+        if pause_future is None:
+            model_executor.sleep(level)
+            return None
+
+        future = Future[Any]()
+
+        def pause_complete(f: Future):
+            try:
+                f.result()  # propagate any exception
+                future.set_result(model_executor.sleep(level))
+            except Exception as e:
+                future.set_exception(e)
+
+        logger.info("Waiting for in-flight requests to complete before sleeping...")
+        pause_future.add_done_callback(pause_complete)
+        return future
 
     def wake_up(self, tags: list[str] | None = None):
-        self.modeling.wake_up(tags)
+        """Wake up the engine from sleep.
+
+        Args:
+            tags: Tags to wake up. Use ["scheduling"] for level 0 wake up.
+        """
+        if tags is not None and "scheduling" in tags:
+            # Remove "scheduling" from tags if there are other tags to process.
+            tags = [t for t in tags if t != "scheduling"]
+
+        if tags is None or tags:
+            self.model_executor.wake_up(tags)
+
+        # Resume scheduling (applies to all levels)
+        self.resume_scheduler()
 
     def is_sleeping(self) -> bool:
-        return self.modeling.is_sleeping
+        """Check if engine is sleeping at any level."""
+        return self.is_scheduler_paused() or self.model_executor.is_sleeping
 
     def execute_dummy_batch(self):
-        self.modeling.execute_dummy_batch()
+        self.model_executor.execute_dummy_batch()
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
-        return self.modeling.add_lora(lora_request)
+        return self.model_executor.add_lora(lora_request)
 
     def remove_lora(self, lora_id: int) -> bool:
-        return self.modeling.remove_lora(lora_id)
+        return self.model_executor.remove_lora(lora_id)
 
     def list_loras(self) -> set[int]:
-        return self.modeling.list_loras()
+        return self.model_executor.list_loras()
 
     def pin_lora(self, lora_id: int) -> bool:
-        return self.modeling.pin_lora(lora_id)
+        return self.model_executor.pin_lora(lora_id)
 
     def save_sharded_state(
         self,
@@ -525,7 +687,7 @@ class EngineCore:
         pattern: str | None = None,
         max_size: int | None = None,
     ) -> None:
-        self.modeling.save_sharded_state(path=path, pattern=pattern, max_size=max_size)
+        self.model_executor.save_sharded_state(path=path, pattern=pattern, max_size=max_size)
 
     def collective_rpc(
         self,
@@ -534,7 +696,7 @@ class EngineCore:
         args: tuple = (),
         kwargs: dict[str, Any] | None = None,
     ) -> list[_R]:
-        return self.modeling.collective_rpc(method, timeout, args, kwargs)
+        return self.model_executor.collective_rpc(method, timeout, args, kwargs)
 
     def preprocess_add_request(self, request: EngineCoreRequest) -> tuple[Request, int]:
         """Preprocess the request.
@@ -558,12 +720,30 @@ class EngineCore:
             self.structured_output_manager.grammar_init(req)
         return req, request.current_wave
 
+    def _eep_scale_up_before_kv_init(self):
+        raise NotImplementedError
+
+    def _eep_send_engine_core_notification(
+        self,
+        notification_type: EEPNotificationType,
+        aphrodite_config: AphroditeConfig | None = None,
+    ):
+        raise NotImplementedError
+
+
+class EngineShutdownState(IntEnum):
+    RUNNING = 0
+    REQUESTED = 1
+    SHUTTING_DOWN = 2
+
 
 class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 
     ENGINE_CORE_DEAD = b"ENGINE_CORE_DEAD"
+    addresses: EngineZmqAddresses
 
+    @instrument(span_name="EngineCoreProc init")
     def __init__(
         self,
         aphrodite_config: AphroditeConfig,
@@ -572,6 +752,8 @@ class EngineCoreProc(EngineCore):
         executor_class: type[Executor],
         log_stats: bool,
         client_handshake_address: str | None = None,
+        tensor_queue: Queue | None = None,
+        *,
         engine_index: int = 0,
     ):
         self.input_queue = queue.Queue[tuple[EngineCoreRequestType, Any]]()
@@ -581,6 +763,13 @@ class EngineCoreProc(EngineCore):
         self.engine_index = engine_index
         identity = self.engine_index.to_bytes(length=2, byteorder="little")
         self.engines_running = False
+        self.shutdown_state = EngineShutdownState.RUNNING
+
+        # Receiver for tensor IPC
+        self.tensor_ipc_receiver: TensorIpcReceiver | None = None
+        if tensor_queue is not None:
+            self.tensor_ipc_receiver = TensorIpcReceiver(tensor_queue)
+            logger.info("Using tensor IPC queue for multimodal tensor sharing")
 
         with self._perform_handshakes(
             handshake_address,
@@ -589,8 +778,6 @@ class EngineCoreProc(EngineCore):
             aphrodite_config,
             client_handshake_address,
         ) as addresses:
-            self.client_count = len(addresses.outputs)
-
             # Set up data parallel environment.
             self.has_coordinator = addresses.coordinator_output is not None
             self.frontend_stats_publish_address = addresses.frontend_stats_publish_address
@@ -599,15 +786,29 @@ class EngineCoreProc(EngineCore):
                 self.has_coordinator,
                 self.frontend_stats_publish_address,
             )
-            # Only publish request queue stats to coordinator for "internal"
-            # and "hybrid" LB modes .
-            self.publish_dp_lb_stats = (
+            internal_dp_balancing = (
                 self.has_coordinator and not aphrodite_config.parallel_config.data_parallel_external_lb
             )
+            # Only publish request queue stats to coordinator for "internal"
+            # and "hybrid" LB modes.
+            self.publish_dp_lb_stats = internal_dp_balancing
 
+            self.addresses = addresses
+            self.process_input_queue_block = True
+            if envs.APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH:
+                self._eep_send_engine_core_notification(
+                    EEPNotificationType.NEW_CORE_ENGINES_INIT_READY,
+                    aphrodite_config=aphrodite_config,
+                )
             self._init_data_parallel(aphrodite_config)
 
-            super().__init__(aphrodite_config, executor_class, log_stats, executor_fail_callback)
+            super().__init__(
+                aphrodite_config,
+                executor_class,
+                log_stats,
+                executor_fail_callback,
+                internal_dp_balancing,
+            )
 
             # Background Threads and Queues for IO. These enable us to
             # overlap ZMQ socket IO with GPU since they release the GIL,
@@ -645,18 +846,6 @@ class EngineCoreProc(EngineCore):
                     raise RuntimeError("Input socket thread died during startup")
                 assert addresses.coordinator_input is not None
                 logger.info("Waiting for READY message from DP Coordinator...")
-
-        # Mark the startup heap as static so that it's ignored by GC.
-        # Reduces pause times of oldest generation collections.
-        gc.collect()
-        gc.freeze()
-
-        # If enable, attach GC debugger after static variable freeze.
-        maybe_attach_gc_debug_callback()
-
-        # Enable environment variable cache (e.g. assume no more
-        # environment variable overrides after this point)
-        enable_envs_cache()
 
     @contextmanager
     def _perform_handshakes(
@@ -702,14 +891,20 @@ class EngineCoreProc(EngineCore):
             aphrodite_config.parallel_config,
         )
         if client_handshake_address is None:
+            # We only need to handshake with one party.
             with handshake as addresses:
                 yield addresses
         else:
+            # We need to handshake with rank 0 front-end and our colocated frontend.
             assert local_client
             local_handshake = self._perform_handshake(
                 input_ctx, client_handshake_address, identity, True, False, aphrodite_config
             )
             with handshake as addresses, local_handshake as client_addresses:
+                # 1. Obtain DP Coordinator zmq address and DP process group address
+                #    (addresses).
+                # 2. Add front-end input/output addresses from colocated front-end
+                #    (client_addresses).
                 addresses.inputs = client_addresses.inputs
                 addresses.outputs = client_addresses.outputs
                 yield addresses
@@ -741,20 +936,12 @@ class EngineCoreProc(EngineCore):
             yield addresses
 
             # Send ready message.
-            num_gpu_blocks = aphrodite_config.cache_config.num_gpu_blocks
-            # We pass back the coordinator stats update address here for the
-            # external LB case for our colocated front-end to use (coordinator
-            # only runs with rank 0).
-            dp_stats_address = self.frontend_stats_publish_address
-
-            # Include config hash for DP configuration validation
             ready_msg = {
                 "status": "READY",
                 "local": local_client,
                 "headless": headless,
-                "num_gpu_blocks": num_gpu_blocks,
-                "dp_stats_address": dp_stats_address,
             }
+            # Include config hash for DP configuration validation
             if aphrodite_config.parallel_config.data_parallel_size > 1:
                 ready_msg["parallel_config_hash"] = aphrodite_config.parallel_config.compute_hash()
 
@@ -798,38 +985,67 @@ class EngineCoreProc(EngineCore):
     def run_engine_core(*args, dp_rank: int = 0, local_dp_rank: int = 0, **kwargs):
         """Launch EngineCore busy loop in background process."""
 
-        # Signal handler used for graceful termination.
-        # SystemExit exception is only raised once to allow this and worker
-        # processes to terminate without error
-        shutdown_requested = False
-
         # Ensure we can serialize transformer config after spawning
         maybe_register_config_serialize_by_value()
 
-        def signal_handler(signum, frame):
-            nonlocal shutdown_requested
-            if not shutdown_requested:
-                shutdown_requested = True
-                raise SystemExit()
-
-        # Either SIGTERM or SIGINT will terminate the engine_core
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-
         engine_core: EngineCoreProc | None = None
+        signal_callback: SignalCallback | None = None
         try:
-            parallel_config: ParallelConfig = kwargs["aphrodite_config"].parallel_config
-            if parallel_config.data_parallel_size > 1 or dp_rank > 0:
-                set_process_title("EngineCore", f"DP{dp_rank}")
-                decorate_logs()
+            aphrodite_config: AphroditeConfig = kwargs["aphrodite_config"]
+            parallel_config: ParallelConfig = aphrodite_config.parallel_config
+            data_parallel = parallel_config.data_parallel_size > 1 or dp_rank > 0
+            if data_parallel:
+                parallel_config.data_parallel_rank_local = local_dp_rank
+                process_title = f"EngineCore_DP{dp_rank}"
+            else:
+                process_title = "EngineCore"
+            set_process_title(process_title)
+            maybe_init_worker_tracer("aphrodite.engine_core", "engine_core", process_title)
+            decorate_logs()
+            if parallel_config.numa_bind:
+                numa_utils.log_current_affinity_state(process_title)
+
+            if data_parallel and aphrodite_config.kv_transfer_config is not None:
+                # modify the engine_id and append the local_dp_rank to it to ensure
+                # that the kv_transfer_config is unique for each DP rank.
+                aphrodite_config.kv_transfer_config.engine_id = (
+                    f"{aphrodite_config.kv_transfer_config.engine_id}_dp{local_dp_rank}"
+                )
+                logger.debug(
+                    "Setting kv_transfer_config.engine_id to %s",
+                    aphrodite_config.kv_transfer_config.engine_id,
+                )
+
+            parallel_config.data_parallel_index = dp_rank
+            if data_parallel and aphrodite_config.model_config.is_moe:
                 # Set data parallel rank for this engine process.
                 parallel_config.data_parallel_rank = dp_rank
-                parallel_config.data_parallel_rank_local = local_dp_rank
                 engine_core = DPEngineCoreProc(*args, **kwargs)
             else:
-                set_process_title("EngineCore")
-                decorate_logs()
-                engine_core = EngineCoreProc(*args, **kwargs)
+                # Non-MoE DP ranks are completely independent, so treat like DP=1.
+                # Note that parallel_config.data_parallel_index will still reflect
+                # the original DP rank.
+                parallel_config.data_parallel_size = 1
+                parallel_config.data_parallel_size_local = 1
+                parallel_config.data_parallel_rank = 0
+                engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+
+            assert engine_core is not None
+
+            def wakeup_engine():
+                # Wakes up idle engine via input_queue when shutdown is requested
+                # Not safe in a signal handler - we may interrupt the main thread
+                # while it is holding the non-reentrant input_queue.mutex
+                engine_core.input_queue.put_nowait((EngineCoreRequestType.WAKEUP, None))
+
+            signal_callback = SignalCallback(wakeup_engine)
+
+            def signal_handler(signum, frame):
+                engine_core.shutdown_state = EngineShutdownState.REQUESTED
+                signal_callback.trigger()
+
+            signal.signal(signal.SIGTERM, signal_handler)
+            signal.signal(signal.SIGINT, signal_handler)
 
             engine_core.run_busy_loop()
 
@@ -844,32 +1060,56 @@ class EngineCoreProc(EngineCore):
                 engine_core._send_engine_dead()
             raise e
         finally:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            if signal_callback is not None:
+                signal_callback.stop()
             if engine_core is not None:
                 engine_core.shutdown()
 
     def _init_data_parallel(self, aphrodite_config: AphroditeConfig):
         pass
 
+    def has_work(self) -> bool:
+        """Returns true if the engine should be stepped."""
+        return self.engines_running or self.scheduler.has_requests() or bool(self.batch_queue)
+
+    def is_running(self) -> bool:
+        """Returns true if shutdown has not been requested."""
+        return self.shutdown_state == EngineShutdownState.RUNNING
+
     def run_busy_loop(self):
         """Core busy loop of the EngineCore."""
-
-        # Loop until process is sent a SIGINT or SIGTERM
-        while True:
+        while self._handle_shutdown():
             # 1) Poll the input queue until there is work to do.
             self._process_input_queue()
             # 2) Step the engine core and return the outputs.
             self._process_engine_step()
 
+        raise SystemExit
+
     def _process_input_queue(self):
         """Exits when an engine step needs to be performed."""
 
         waited = False
-        while not self.engines_running and not self.scheduler.has_requests() and not self.batch_queue:
-            if logger.isEnabledFor(DEBUG) and self.input_queue.empty():
-                logger.debug("EngineCore waiting for work.")
-                waited = True
-            req = self.input_queue.get()
-            self._handle_client_request(*req)
+        while not self.has_work() and self.is_running():
+            # Notify callbacks waiting for engine to become idle.
+            self._notify_idle_state_callbacks()
+            if self.input_queue.empty():
+                # Drain aborts queue; all aborts are also processed via input_queue.
+                with self.aborts_queue.mutex:
+                    self.aborts_queue.queue.clear()
+                if logger.isEnabledFor(DEBUG):
+                    logger.debug("EngineCore waiting for work.")
+                    waited = True
+            block = self.process_input_queue_block
+            try:
+                req = self.input_queue.get(block=block)
+                self._handle_client_request(*req)
+            except queue.Empty:
+                break
+            if not block:
+                break
 
         if waited:
             logger.debug("EngineCore loop active.")
@@ -890,31 +1130,117 @@ class EngineCoreProc(EngineCore):
         # Post-step hook.
         self.post_step(model_executed)
 
+        # If no model execution happened but there are waiting requests
+        # (e.g., WAITING_FOR_REMOTE_KVS), yield the GIL briefly to allow
+        # background threads (like NIXL handshake) to make progress.
+        # Without this, the tight polling loop can starve background threads.
+        if not model_executed and self.scheduler.has_unfinished_requests():
+            time.sleep(0.001)
+
         return model_executed
+
+    def _notify_idle_state_callbacks(self) -> None:
+        while self._idle_state_callbacks:
+            callback = self._idle_state_callbacks.pop()
+            callback(self)
+
+    def _handle_shutdown(self) -> bool:
+        # Check if shutdown was requested and handle it
+        if self.shutdown_state == EngineShutdownState.RUNNING:
+            return True
+
+        if self.shutdown_state == EngineShutdownState.REQUESTED:
+            shutdown_timeout = self.aphrodite_config.shutdown_timeout
+
+            logger.info("Shutdown initiated (timeout=%d)", shutdown_timeout)
+
+            if shutdown_timeout == 0:
+                num_requests = self.scheduler.get_num_unfinished_requests()
+                if num_requests > 0:
+                    logger.info("Aborting %d requests", num_requests)
+                aborted_reqs = self.scheduler.finish_requests(None, RequestStatus.FINISHED_ABORTED)
+                self._send_abort_outputs(aborted_reqs)
+            else:
+                num_requests = self.scheduler.get_num_unfinished_requests()
+                if num_requests > 0:
+                    logger.info(
+                        "Draining %d in-flight requests (timeout=%ds)",
+                        num_requests,
+                        shutdown_timeout,
+                    )
+
+            self.shutdown_state = EngineShutdownState.SHUTTING_DOWN
+
+        # Exit when no work remaining
+        if not self.has_work():
+            logger.info("Shutdown complete")
+            return False
+
+        return True
 
     def _handle_client_request(self, request_type: EngineCoreRequestType, request: Any) -> None:
         """Dispatch request from client."""
 
-        if request_type == EngineCoreRequestType.ADD:
+        if request_type == EngineCoreRequestType.WAKEUP:
+            return
+        elif request_type == EngineCoreRequestType.ADD:
             req, request_wave = request
+            if self._reject_add_in_shutdown(req):
+                return
             self.add_request(req, request_wave)
         elif request_type == EngineCoreRequestType.ABORT:
             self.abort_requests(request)
         elif request_type == EngineCoreRequestType.UTILITY:
             client_idx, call_id, method_name, args = request
+            if self._reject_utility_in_shutdown(client_idx, call_id, method_name):
+                return
             output = UtilityOutput(call_id)
-            try:
-                method = getattr(self, method_name)
-                result = method(*self._convert_msgspec_args(method, args))
-                output.result = UtilityResult(result)
-            except BaseException as e:
-                logger.exception("Invocation of %s method failed", method_name)
-                output.failure_message = f"Call to {method_name} method failed: {str(e)}"
-            self.output_queue.put_nowait((client_idx, EngineCoreOutputs(utility_output=output)))
+            # Lazily look-up utility method so that failure will be handled/returned.
+            get_result = lambda: (
+                (method := getattr(self, method_name)) and method(*self._convert_msgspec_args(method, args))
+            )
+            enqueue_output = lambda out: self.output_queue.put_nowait(
+                (client_idx, EngineCoreOutputs(utility_output=out))
+            )
+            self._invoke_utility_method(method_name, get_result, output, enqueue_output)
         elif request_type == EngineCoreRequestType.EXECUTOR_FAILED:
             raise RuntimeError("Executor failed.")
         else:
             logger.error("Unrecognized input request type encountered: %s", request_type)
+
+    def _reject_add_in_shutdown(self, request: Request) -> bool:
+        if self.shutdown_state == EngineShutdownState.RUNNING:
+            return False
+
+        logger.info("Rejecting request %s (server shutting down)", request.request_id)
+        self._send_abort_outputs_to_client([request.request_id], request.client_index)
+        return True
+
+    def _reject_utility_in_shutdown(self, client_idx: int, call_id: int, method_name: str) -> bool:
+        if self.shutdown_state == EngineShutdownState.RUNNING:
+            return False
+
+        logger.warning("Rejecting utility call %s (server shutting down)", method_name)
+        output = UtilityOutput(call_id, failure_message="Server shutting down")
+        self.output_queue.put_nowait((client_idx, EngineCoreOutputs(utility_output=output)))
+        return True
+
+    @staticmethod
+    def _invoke_utility_method(name: str, get_result: Callable, output: UtilityOutput, enqueue_output: Callable):
+        try:
+            result = get_result()
+            if isinstance(result, Future):
+                # Defer utility output handling until future completion.
+                callback = lambda future: EngineCoreProc._invoke_utility_method(
+                    name, future.result, output, enqueue_output
+                )
+                result.add_done_callback(callback)
+                return
+            output.result = UtilityResult(result)
+        except Exception as e:
+            logger.exception("Invocation of %s method failed", name)
+            output.failure_message = f"Call to {name} method failed: {str(e)}"
+        enqueue_output(output)
 
     @staticmethod
     def _convert_msgspec_args(method, args):
@@ -951,9 +1277,9 @@ class EngineCoreProc(EngineCore):
     ):
         """Input socket IO thread."""
 
-        # Msgpack serialization decoding.
-        add_request_decoder = MsgpackDecoder(EngineCoreRequest)
-        generic_decoder = MsgpackDecoder()
+        # Msgpack serialization decoding with optional tensor IPC receiver.
+        add_request_decoder = MsgpackDecoder(EngineCoreRequest, oob_tensor_provider=self.tensor_ipc_receiver)
+        generic_decoder = MsgpackDecoder(oob_tensor_provider=self.tensor_ipc_receiver)
 
         with ExitStack() as stack, zmq.Context() as ctx:
             input_sockets = [
@@ -977,11 +1303,17 @@ class EngineCoreProc(EngineCore):
 
             # Register sockets with poller.
             poller = zmq.Poller()
+            ready_response = EngineCoreReadyResponse(
+                max_model_len=self.aphrodite_config.model_config.max_model_len,
+                num_gpu_blocks=self.aphrodite_config.cache_config.num_gpu_blocks or 0,
+                dp_stats_address=self.frontend_stats_publish_address,
+            )
+            ready_payload = msgspec.msgpack.encode(ready_response)
             for input_socket in input_sockets:
                 # Send initial message to each input socket - this is required
                 # before the front-end ROUTER socket can send input messages
                 # back to us.
-                input_socket.send(b"")
+                input_socket.send(ready_payload)
                 poller.register(input_socket, zmq.POLLIN)
 
             if coord_socket is not None:
@@ -995,24 +1327,36 @@ class EngineCoreProc(EngineCore):
                 for input_socket, _ in poller.poll():
                     # (RequestType, RequestData)
                     type_frame, *data_frames = input_socket.recv_multipart(copy=False)
+                    # NOTE(yongji): ignore READY message sent by DP coordinator
+                    # that is used to notify newly started engines
+                    if type_frame.buffer == b"READY":
+                        assert input_socket == coord_socket
+                        continue
                     request_type = EngineCoreRequestType(bytes(type_frame.buffer))
 
                     # Deserialize the request data.
+                    request: Any
                     if request_type == EngineCoreRequestType.ADD:
-                        request = add_request_decoder.decode(data_frames)
-                        request = self.preprocess_add_request(request)
+                        req: EngineCoreRequest = add_request_decoder.decode(data_frames)
+                        try:
+                            request = self.preprocess_add_request(req)
+                        except Exception:
+                            self._handle_request_preproc_error(req)
+                            continue
                     else:
                         request = generic_decoder.decode(data_frames)
+
+                        if request_type == EngineCoreRequestType.ABORT:
+                            # Aborts are added to *both* queues, allows us to eagerly
+                            # process aborts while also ensuring ordering in the input
+                            # queue to avoid leaking requests. This is ok because
+                            # aborting in the scheduler is idempotent.
+                            self.aborts_queue.put_nowait(request)
 
                     # Push to input queue for core busy loop.
                     self.input_queue.put_nowait((request_type, request))
 
-    def process_output_sockets(
-        self,
-        output_paths: list[str],
-        coord_output_path: str | None,
-        engine_index: int,
-    ):
+    def process_output_sockets(self, output_paths: list[str], coord_output_path: str | None, engine_index: int):
         """Output socket IO thread."""
 
         # Msgpack serialization encoding.
@@ -1069,6 +1413,73 @@ class EngineCoreProc(EngineCore):
                     # Limit the number of buffers to reuse.
                     reuse_buffers.append(buffer)
 
+    def _handle_request_preproc_error(self, request: EngineCoreRequest) -> None:
+        """Log and return a request-scoped error response for exceptions raised
+        from the add request preprocessing in the input socket processing thread.
+        """
+        logger.exception("Unexpected error pre-processing request %s", request.request_id)
+        self._send_error_outputs_to_client([request.request_id], request.client_index)
+
+    def pause_scheduler(self, mode: PauseMode = "abort", clear_cache: bool = True) -> Future | None:
+        """Pause generation; behavior depends on mode.
+
+        All pause modes queue new adds -- "abort" and "keep" skip step();
+        "wait" allows step() so in-flight requests can drain.
+
+        - ``abort``: Set PAUSED_NEW, abort all requests, wait for abort
+          outputs to be sent (when running with output_queue), optionally
+          clear caches, then complete the returned Future.
+        - ``wait``: Set PAUSED_NEW (queue adds, keep stepping); when drained,
+          optionally clear caches, then complete the returned Future.
+        - ``keep``: Set PAUSED_ALL; return a Future that completes when the
+          output queue is empty.
+        """
+        if mode not in ("keep", "abort", "wait"):
+            raise ValueError(f"Invalid pause mode: {mode}")
+
+        def engine_idle_callback(engine: "EngineCoreProc", future: Future[Any]) -> None:
+            if clear_cache:
+                engine._reset_caches()
+            future.set_result(None)
+
+        if mode == "abort":
+            aborted_reqs = self.scheduler.finish_requests(None, RequestStatus.FINISHED_ABORTED)
+            self._send_abort_outputs(aborted_reqs)
+
+        pause_state = PauseState.PAUSED_ALL if mode == "keep" else PauseState.PAUSED_NEW
+        self.scheduler.set_pause_state(pause_state)
+        if not self.has_work():
+            if clear_cache:
+                self._reset_caches()
+            return None
+
+        future = Future[Any]()
+        self._idle_state_callbacks.append(partial(engine_idle_callback, future=future))
+        return future
+
+    def _send_finish_outputs_to_client(
+        self, req_ids: list[str], client_index: int, finish_reason: FinishReason
+    ) -> None:
+        outputs = [EngineCoreOutput(req_id, [], finish_reason=finish_reason) for req_id in req_ids]
+        eco = EngineCoreOutputs(finished_requests=req_ids, outputs=outputs)
+        self.output_queue.put_nowait((client_index, eco))
+
+    def _send_abort_outputs_to_client(self, req_ids: list[str], client_index: int) -> None:
+        self._send_finish_outputs_to_client(req_ids, client_index, FinishReason.ABORT)
+
+    def _send_error_outputs_to_client(self, req_ids: list[str], client_index: int) -> None:
+        self._send_finish_outputs_to_client(req_ids, client_index, FinishReason.ERROR)
+
+    def _send_abort_outputs(self, aborted_reqs: list[tuple[str, int]]) -> None:
+        # TODO(nick) this will be moved inside the scheduler
+        if aborted_reqs:
+            # Map client_index to list of request_ids that belong to that client.
+            by_client = defaultdict[int, set[str]](set)
+            for req_id, client_index in aborted_reqs:
+                by_client[client_index].add(req_id)
+            for client_index, req_ids in by_client.items():
+                self._send_abort_outputs_to_client(list(req_ids), client_index)
+
 
 class DPEngineCoreProc(EngineCoreProc):
     """ZMQ-wrapper for running EngineCore in background process
@@ -1082,12 +1493,19 @@ class DPEngineCoreProc(EngineCoreProc):
         executor_class: type[Executor],
         log_stats: bool,
         client_handshake_address: str | None = None,
+        tensor_queue: Queue | None = None,
     ):
+        assert aphrodite_config.model_config.is_moe, "DPEngineCoreProc should only be used for MoE models"
+
         # Counts forward-passes of the model so that we can synchronize
         # finished with DP peers every N steps.
         self.step_counter = 0
         self.current_wave = 0
         self.last_counts = (0, 0)
+
+        from aphrodite.distributed.elastic_ep.elastic_state import ElasticEPScalingState
+
+        self.eep_scaling_state: ElasticEPScalingState | None = None
 
         # Initialize the engine.
         dp_rank = aphrodite_config.parallel_config.data_parallel_rank
@@ -1098,32 +1516,24 @@ class DPEngineCoreProc(EngineCoreProc):
             executor_class,
             log_stats,
             client_handshake_address,
-            dp_rank,
+            engine_index=dp_rank,
+            tensor_queue=tensor_queue,
         )
 
     def _init_data_parallel(self, aphrodite_config: AphroditeConfig):
         # Configure GPUs and stateless process group for data parallel.
-        dp_rank = aphrodite_config.parallel_config.data_parallel_rank
-        dp_size = aphrodite_config.parallel_config.data_parallel_size
-        local_dp_rank = aphrodite_config.parallel_config.data_parallel_rank_local
+        parallel_config = aphrodite_config.parallel_config
+        dp_rank = parallel_config.data_parallel_rank
+        dp_size = parallel_config.data_parallel_size
+        local_dp_rank = parallel_config.data_parallel_rank_local
 
         assert dp_size > 1
         assert local_dp_rank is not None
         assert 0 <= local_dp_rank <= dp_rank < dp_size
 
-        if aphrodite_config.kv_transfer_config is not None:
-            # modify the engine_id and append the local_dp_rank to it to ensure
-            # that the kv_transfer_config is unique for each DP rank.
-            aphrodite_config.kv_transfer_config.engine_id = (
-                f"{aphrodite_config.kv_transfer_config.engine_id}_dp{local_dp_rank}"
-            )
-            logger.debug(
-                "Setting kv_transfer_config.engine_id to %s",
-                aphrodite_config.kv_transfer_config.engine_id,
-            )
-
         self.dp_rank = dp_rank
-        self.dp_group = aphrodite_config.parallel_config.stateless_init_dp_group()
+        dp_group, dp_store = parallel_config.stateless_init_dp_group(return_store=True)
+        self.dp_group, self.dp_store = dp_group, dp_store
 
     def shutdown(self):
         super().shutdown()
@@ -1131,15 +1541,21 @@ class DPEngineCoreProc(EngineCoreProc):
             stateless_destroy_torch_distributed_process_group(dp_group)
 
     def add_request(self, request: Request, request_wave: int = 0):
+        super().add_request(request, request_wave)
         if self.has_coordinator and request_wave != self.current_wave:
             if request_wave > self.current_wave:
                 self.current_wave = request_wave
-            elif not self.engines_running:
+            elif not self.engines_running and self.scheduler.pause_state == PauseState.UNPAUSED:
+                self.engines_running = True
                 # Request received for an already-completed wave, notify
                 # front-end that we need to start the next one.
                 self.output_queue.put_nowait((-1, EngineCoreOutputs(start_wave=self.current_wave)))
 
-        super().add_request(request, request_wave)
+    def resume_scheduler(self):
+        super().resume_scheduler()
+        if self.has_coordinator and not self.engines_running and self.scheduler.has_unfinished_requests():
+            # Wake up other DP engines.
+            self.output_queue.put_nowait((-1, EngineCoreOutputs(start_wave=self.current_wave)))
 
     def _handle_client_request(self, request_type: EngineCoreRequestType, request: Any) -> None:
         if request_type == EngineCoreRequestType.START_DP_WAVE:
@@ -1167,11 +1583,18 @@ class DPEngineCoreProc(EngineCoreProc):
         """Core busy loop of the EngineCore for data parallel case."""
 
         # Loop until process is sent a SIGINT or SIGTERM
-        while True:
+        while self._handle_shutdown():
             # 1) Poll the input queue until there is work to do.
             self._process_input_queue()
 
-            # 2) Step the engine core.
+            if self.eep_scaling_state is not None:
+                _ = self.eep_scaling_state.progress()
+                if self.eep_scaling_state.is_complete():
+                    if self.eep_scaling_state.worker_type == "removing":
+                        raise SystemExit
+                    self.process_input_queue_block = True
+                    self.eep_scaling_state = None
+
             executed = self._process_engine_step()
             self._maybe_publish_request_counts()
 
@@ -1206,6 +1629,8 @@ class DPEngineCoreProc(EngineCoreProc):
                 self.current_wave += 1
                 self.step_counter = 0
 
+        raise SystemExit
+
     def _has_global_unfinished_reqs(self, local_unfinished: bool) -> bool:
         # Optimization - only perform finish-sync all-reduce every 32 steps.
         self.step_counter += 1
@@ -1215,41 +1640,100 @@ class DPEngineCoreProc(EngineCoreProc):
         return ParallelConfig.has_unfinished_dp(self.dp_group, local_unfinished)
 
     def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> None:
-        stateless_destroy_torch_distributed_process_group(self.dp_group)
-        self.shutdown()
+        from copy import deepcopy
 
-        parallel_config = self.aphrodite_config.parallel_config
-        old_dp_size = parallel_config.data_parallel_size
-        parallel_config.data_parallel_size = reconfig_request.new_data_parallel_size
-        if reconfig_request.new_data_parallel_rank != -1:
-            parallel_config.data_parallel_rank = reconfig_request.new_data_parallel_rank
-        # local rank specifies device visibility, it should not be changed
-        assert reconfig_request.new_data_parallel_rank_local == ReconfigureRankType.KEEP_CURRENT_RANK
-        parallel_config.data_parallel_master_ip = reconfig_request.new_data_parallel_master_ip
-        parallel_config.data_parallel_master_port = reconfig_request.new_data_parallel_master_port
-        if reconfig_request.new_data_parallel_rank != -2:
-            self.dp_rank = parallel_config.data_parallel_rank
-            self.dp_group = parallel_config.stateless_init_dp_group()
-        reconfig_request.new_data_parallel_master_port = parallel_config.data_parallel_master_port
+        from aphrodite.distributed.elastic_ep.elastic_state import ElasticEPScalingState
 
-        self.modeling.reinitialize_distributed(reconfig_request)
-        if reconfig_request.new_data_parallel_size > old_dp_size:
-            assert self.available_gpu_memory_for_kv_cache > 0
-            # pass available_gpu_memory_for_kv_cache from existing
-            # engine-cores to new engine-cores so they can directly
-            # use it in _initialize_kv_caches() rather than profiling.
-            ParallelConfig.sync_kv_cache_memory_size(self.dp_group, self.available_gpu_memory_for_kv_cache)
-            # NOTE(yongji): newly joined workers require dummy_run even
-            # CUDA graph is not used
-            self.modeling.collective_rpc("compile_or_warm_up_model")
-        if reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
-            self.shutdown()
-            logger.info("DPEngineCoreProc %s shutdown", self.dp_rank)
+        new_parallel_config = deepcopy(self.aphrodite_config.parallel_config)
+        old_dp_size = new_parallel_config.data_parallel_size
+        new_parallel_config.data_parallel_size = reconfig_request.new_data_parallel_size
+        if reconfig_request.new_data_parallel_rank != ReconfigureRankType.KEEP_CURRENT_RANK:
+            new_parallel_config.data_parallel_rank = reconfig_request.new_data_parallel_rank
+        new_parallel_config.data_parallel_master_ip = reconfig_request.new_data_parallel_master_ip
+        new_parallel_config.data_parallel_master_port = reconfig_request.new_data_parallel_master_port
+        new_parallel_config._data_parallel_master_port_list = reconfig_request.new_data_parallel_master_port_list
+        new_parallel_config._coord_store_port = reconfig_request.coord_store_port
+
+        is_scale_down = reconfig_request.new_data_parallel_size < old_dp_size
+        is_shutdown = reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK
+
+        self.eep_scaling_state = ElasticEPScalingState(
+            model_executor=self.model_executor,
+            engine_core=self,
+            aphrodite_config=self.aphrodite_config,
+            new_parallel_config=new_parallel_config,
+            worker_type="removing" if is_shutdown else "existing",
+            scale_type="scale_down" if is_scale_down else "scale_up",
+            reconfig_request=reconfig_request,
+        )
+        self.process_input_queue_block = False
+        logger.info("[Elastic EP] Received reconfiguration request and starting scaling up/down")
+
+    def _eep_send_engine_core_notification(
+        self,
+        notification_type: EEPNotificationType,
+        aphrodite_config: AphroditeConfig | None = None,
+    ):
+        """
+        Send notifications to EngineCoreClient, which can then forward
+        the notifications to other engine core processes. It is used for:
+        1) In scale up: new core engines to notify existing core engines
+           that they are ready;
+        2) In scale down: removing core engines to notify EngineCoreClient
+           so EngineCoreClient can release their ray placement groups;
+        3) Both scale up/down: to notify EngineCoreClient that existing
+           core engines have already switched to the new parallel setup.
+        """
+        if aphrodite_config is None:
+            dp_rank = self.aphrodite_config.parallel_config.data_parallel_rank
         else:
-            logger.info("Distributed environment reinitialized for DP rank %s", self.dp_rank)
+            dp_rank = aphrodite_config.parallel_config.data_parallel_rank
+        notification_data = (notification_type.value, dp_rank)
+        outputs = EngineCoreOutputs(
+            utility_output=UtilityOutput(
+                call_id=EEP_NOTIFICATION_CALL_ID,
+                result=UtilityResult(notification_data),
+            )
+        )
+        outputs.engine_index = self.engine_index
+
+        if hasattr(self, "output_thread") and self.output_thread.is_alive():
+            self.output_queue.put_nowait((0, outputs))
+        else:
+            encoder = MsgpackEncoder()
+            with (
+                zmq.Context() as ctx,
+                make_zmq_socket(ctx, self.addresses.outputs[0], zmq.PUSH, linger=4000) as socket,
+            ):
+                socket.send_multipart(encoder.encode(outputs))
+
+    def eep_handle_engine_core_notification(self, notification_type: str | EEPNotificationType):
+        """
+        Handle notification received from EngineCoreClient
+        (forwarded from new core engines).
+        """
+        assert self.eep_scaling_state is not None
+        if isinstance(notification_type, str):
+            notification_type = EEPNotificationType(notification_type)
+        self.eep_scaling_state.handle_notification(notification_type)
+
+    def _eep_scale_up_before_kv_init(self):
+        from aphrodite.distributed.elastic_ep.elastic_state import ElasticEPScalingState
+
+        self.eep_scaling_state = ElasticEPScalingState(
+            model_executor=self.model_executor,
+            engine_core=self,
+            aphrodite_config=self.aphrodite_config,
+            new_parallel_config=self.aphrodite_config.parallel_config,
+            worker_type="new",
+            scale_type="scale_up",
+            reconfig_request=None,
+        )
+        self.eep_scaling_state.run_pre_kv_init_states()
+        self.process_input_queue_block = False
 
 
-class DPEngineCoreActor(DPEngineCoreProc):
+class EngineCoreActorMixin:
     """
     Ray actor for running EngineCore in a data parallel context
     """
@@ -1257,15 +1741,19 @@ class DPEngineCoreActor(DPEngineCoreProc):
     def __init__(
         self,
         aphrodite_config: AphroditeConfig,
-        local_client: bool,
         addresses: EngineZmqAddresses,
-        executor_class: type[Executor],
-        log_stats: bool,
         dp_rank: int = 0,
         local_dp_rank: int = 0,
     ):
+        # Initialize tracer for distributed tracing if configured.
+        maybe_init_worker_tracer(
+            instrumenting_module_name="aphrodite.engine_core",
+            process_kind="engine_core",
+            process_name=f"DPEngineCoreActor_DP{dp_rank}",
+        )
+
         self.addresses = addresses
-        aphrodite_config.parallel_config.data_parallel_rank = dp_rank
+        aphrodite_config.parallel_config.data_parallel_index = dp_rank
         aphrodite_config.parallel_config.data_parallel_rank_local = local_dp_rank
 
         # Set CUDA_VISIBLE_DEVICES as early as possible in actor life cycle
@@ -1286,8 +1774,6 @@ class DPEngineCoreActor(DPEngineCoreProc):
         # and get_accelerator_ids_for_accelerator_resource() in worker.py
         # of ray.
         self._set_visible_devices(aphrodite_config, local_dp_rank)
-
-        super().__init__(aphrodite_config, local_client, "", executor_class, log_stats)
 
     def _set_visible_devices(self, aphrodite_config: AphroditeConfig, local_dp_rank: int):
         from aphrodite.platforms import current_platform
@@ -1345,7 +1831,7 @@ class DPEngineCoreActor(DPEngineCoreProc):
         Run the engine core busy loop.
         """
         try:
-            self.run_busy_loop()
+            self.run_busy_loop()  # type: ignore[attr-defined]
         except SystemExit:
             logger.debug("EngineCore exiting.")
             raise
@@ -1353,4 +1839,52 @@ class DPEngineCoreActor(DPEngineCoreProc):
             logger.exception("EngineCore encountered a fatal error.")
             raise
         finally:
-            self.shutdown()
+            self.shutdown()  # type: ignore[attr-defined]
+
+
+class DPMoEEngineCoreActor(EngineCoreActorMixin, DPEngineCoreProc):
+    """Used for MoE model data parallel cases."""
+
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        local_client: bool,
+        addresses: EngineZmqAddresses,
+        executor_class: type[Executor],
+        log_stats: bool,
+        dp_rank: int = 0,
+        local_dp_rank: int = 0,
+    ):
+        aphrodite_config.parallel_config.data_parallel_rank = dp_rank
+
+        EngineCoreActorMixin.__init__(self, aphrodite_config, addresses, dp_rank, local_dp_rank)
+        DPEngineCoreProc.__init__(self, aphrodite_config, local_client, "", executor_class, log_stats)
+
+
+class EngineCoreActor(EngineCoreActorMixin, EngineCoreProc):
+    """Used for non-MoE and/or non-DP cases."""
+
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        local_client: bool,
+        addresses: EngineZmqAddresses,
+        executor_class: type[Executor],
+        log_stats: bool,
+        dp_rank: int = 0,
+        local_dp_rank: int = 0,
+    ):
+        aphrodite_config.parallel_config.data_parallel_size = 1
+        aphrodite_config.parallel_config.data_parallel_size_local = 1
+        aphrodite_config.parallel_config.data_parallel_rank = 0
+
+        EngineCoreActorMixin.__init__(self, aphrodite_config, addresses, dp_rank, local_dp_rank)
+        EngineCoreProc.__init__(
+            self,
+            aphrodite_config,
+            local_client,
+            "",
+            executor_class,
+            log_stats,
+            engine_index=dp_rank,
+        )

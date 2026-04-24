@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.modeling.model_loader import get_model_loader, register_model_loader
+from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from torch import nn
 
 from aphrodite.config import ModelConfig
 from aphrodite.config.load import LoadConfig
-from aphrodite.modeling.model_loader import get_model_loader, register_model_loader
-from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 
 
 @register_model_loader("custom_load_format")

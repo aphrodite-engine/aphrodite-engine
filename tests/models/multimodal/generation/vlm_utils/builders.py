@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Helpers for building inputs that can be leveraged for different test types."""
 
 from collections.abc import Callable, Iterable

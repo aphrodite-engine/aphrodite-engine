@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import multiprocessing
 from collections.abc import Sequence
 from concurrent.futures.process import ProcessPoolExecutor
@@ -47,3 +50,11 @@ def is_uva_available() -> bool:
     # UVA requires pinned memory.
     # TODO: Add more requirements for UVA if needed.
     return is_pin_memory_available()
+
+
+@cache
+def num_compute_units(device_id: int = 0) -> int:
+    """Get the number of compute units of the current device."""
+    from aphrodite.platforms import current_platform
+
+    return current_platform.num_compute_units(device_id)

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 
 from tests.models.language.pooling.embed_utils import correctness_test_embed_models

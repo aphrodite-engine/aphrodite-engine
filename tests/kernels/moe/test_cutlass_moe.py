@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 import dataclasses
 from math import prod
 
 import pytest
 import torch
-
-from aphrodite import _custom_ops as ops
-from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.config import FUSED_MOE_UNQUANTIZED_CONFIG, fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp8, run_cutlass_moe_fp8
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts, fused_topk
 from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input
+
+from aphrodite import _custom_ops as ops
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 
 NUM_EXPERTS = [40, 64]

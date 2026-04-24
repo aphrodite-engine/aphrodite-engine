@@ -1,47 +1,63 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Standard
 import os
 import uuid
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import torch
 from lmcache import utils
 from lmcache.config import LMCacheEngineMetadata
+from lmcache.logging import init_logger
 from lmcache.observability import LMCStatsMonitor
 from lmcache.utils import _lmcache_nvtx_annotate
 from lmcache.v1.cache_engine import LMCacheEngine, LMCacheEngineBuilder
 from lmcache.v1.compute.blend import LMCBlenderBuilder
-from lmcache.v1.config import (LMCacheEngineConfig,
-                               _validate_and_set_config_value)
-from lmcache.v1.gpu_connector import (VLLMBufferLayerwiseGPUConnector,
-                                      VLLMPagedMemGPUConnectorV2,
-                                      VLLMPagedMemLayerwiseGPUConnector)
+from lmcache.v1.config import LMCacheEngineConfig, _validate_and_set_config_value
+from lmcache.v1.gpu_connector import (
+    APHRODITEBufferLayerwiseGPUConnector,
+    APHRODITEPagedMemGPUConnectorV2,
+    APHRODITEPagedMemLayerwiseGPUConnector,
+)
 from lmcache.v1.internal_api_server.api_server import InternalAPIServer
-from lmcache.v1.plugin.plugin_launcher import PluginLauncher
+from lmcache.v1.lookup_client import LookupClientFactory
+from lmcache.v1.lookup_client.lmcache_async_lookup_client import (
+    LMCacheAsyncLookupServer,
+)
+from lmcache.v1.offload_server.zmq_server import ZMQOffloadServer
 
-from aphrodite.common.sampling_params import SamplingParams
+try:
+    from lmcache.v1.plugin.runtime_plugin_launcher import RuntimePluginLauncher
+except ImportError:
+    # Backwards compatibility for lmcache <= 0.3.10-post1
+    from lmcache.v1.plugin.plugin_launcher import (
+        PluginLauncher as RuntimePluginLauncher,
+    )
+
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
-    KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
+    KVConnectorBase_V1,
+    KVConnectorMetadata,
+    KVConnectorRole,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.lmcache_integration.utils import (
-    ENGINE_NAME, apply_mm_hashes_to_token_ids, extract_mm_features,
-    lmcache_get_or_create_config, mla_enabled)
-from aphrodite.distributed.parallel_state import (
-    get_tensor_model_parallel_rank, get_tp_group)
-from aphrodite.logger import init_logger
+    ENGINE_NAME,
+    apply_mm_hashes_to_token_ids,
+    extract_mm_features,
+    lmcache_get_or_create_config,
+    mla_enabled,
+)
+from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank, get_tp_group
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.torch_utils import get_kv_cache_torch_dtype
+from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
-from .lookup_client import LookupClientFactory
-from .lookup_client.lmcache_async_lookup_client import LMCacheAsyncLookupServer
-from .offload_server.zmq_server import ZMQOffloadServer
-
 if TYPE_CHECKING:
-    from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.forward_context import ForwardContext
     from aphrodite.multimodal.inputs import PlaceholderRange
     from aphrodite.v1.core.kv_cache_manager import KVCacheManager
@@ -166,7 +182,7 @@ class RequestTracker:
             unfolded_block_ids = new_request.block_ids.copy()
         else:
             # According to the Aphrodite code
-            # (https://github.com/aphrodite-project/aphrodite/blob/main/aphrodite/v1/core/
+            # (https://github.com/vllm-project/vllm/blob/main/aphrodite/v1/core/
             # sched/scheduler.py#L943),
             # only one KVCacheGroup is supported in connector for now.
             unfolded_block_ids = new_request.block_ids[0].copy()
@@ -207,7 +223,7 @@ class RequestTracker:
         self.token_ids.extend(new_token_ids)
 
         if new_block_ids is None:
-            # https://github.com/aphrodite-project/aphrodite/commit/
+            # https://github.com/vllm-project/vllm/commit/
             # b029de9902aa3ac58806c8c17776c7074175b6db
             new_block_ids = []
         elif len(new_block_ids) == 0:
@@ -217,7 +233,10 @@ class RequestTracker:
         elif isinstance(new_block_ids, list):
             pass
         else:
-            raise ValueError(f"Unsupported new_block_ids type {type(new_block_ids)}")
+            raise ValueError(
+                f"Unsupported new_block_ids type {type(new_block_ids)}: "
+                f"should be None[list[int], ...], tuple or list[int]."
+            )
         self.allocated_block_ids.extend(new_block_ids)
 
         # When a request is scheduled again, and the number of new tokens
@@ -255,7 +274,7 @@ class ReqMeta:
         load_spec: LoadSpec | None = None,
         discard_partial_chunks: bool = True,
         save_decode_cache: bool = False,
-    ) -> Optional["ReqMeta"]:
+    ) -> "ReqMeta | None":
         """Create the request metadata from a request tracker.
 
         Args:
@@ -379,7 +398,7 @@ class ReqMeta:
         )
 
 
-def need_gpu_interm_buffer(lmcache_config: LMCacheEngineConfig):
+def need_gpu_interim_buffer(lmcache_config: LMCacheEngineConfig):
     return not lmcache_config.enable_pd
 
 
@@ -464,9 +483,9 @@ def _init_lmcache_engine(
     )
 
     # Change current device.
-    num_gpus = torch.cuda.device_count()
+    num_gpus = torch.accelerator.device_count()
     local_rank = parallel_config.rank % num_gpus
-    torch.cuda.set_device(local_rank)
+    torch.accelerator.set_device_index(local_rank)
     device = torch.device(f"cuda:{local_rank}")
     metadata = LMCacheEngineMetadata(
         model_config.model,
@@ -478,11 +497,11 @@ def _init_lmcache_engine(
         use_mla,
     )
 
-    use_gpu = need_gpu_interm_buffer(lmcache_config)
+    use_gpu = need_gpu_interim_buffer(lmcache_config)
     aphrodite_gpu_connector: (
-        VLLMBufferLayerwiseGPUConnector
-        | VLLMPagedMemGPUConnectorV2
-        | VLLMPagedMemLayerwiseGPUConnector
+        APHRODITEBufferLayerwiseGPUConnector
+        | APHRODITEPagedMemGPUConnectorV2
+        | APHRODITEPagedMemLayerwiseGPUConnector
     )
 
     if use_mla and lmcache_config.use_layerwise:
@@ -493,7 +512,7 @@ def _init_lmcache_engine(
     if lmcache_config.use_layerwise:
         if lmcache_config.enable_blending:
             # Use layerwise connector for blending
-            aphrodite_gpu_connector = VLLMBufferLayerwiseGPUConnector(
+            aphrodite_gpu_connector = APHRODITEBufferLayerwiseGPUConnector(
                 hidden_dim_size,
                 num_layer,
                 use_gpu=use_gpu,
@@ -502,7 +521,7 @@ def _init_lmcache_engine(
                 device=device,
             )
         else:
-            aphrodite_gpu_connector = VLLMPagedMemLayerwiseGPUConnector(
+            aphrodite_gpu_connector = APHRODITEPagedMemLayerwiseGPUConnector(
                 hidden_dim_size,
                 num_layer,
                 use_gpu=use_gpu,
@@ -511,7 +530,7 @@ def _init_lmcache_engine(
                 device=device,
             )
     else:
-        aphrodite_gpu_connector = VLLMPagedMemGPUConnectorV2(
+        aphrodite_gpu_connector = APHRODITEPagedMemGPUConnectorV2(
             hidden_dim_size,
             num_layer,
             use_gpu=use_gpu,
@@ -674,7 +693,7 @@ class LMCacheConnectorV1Impl:
             self.api_server = InternalAPIServer(self)
             self.api_server.start()
             # Launch plugins
-            self.plugin_launcher = PluginLauncher(
+            self.plugin_launcher = RuntimePluginLauncher(
                 self.config,
                 role,
                 self.worker_count,
@@ -715,7 +734,7 @@ class LMCacheConnectorV1Impl:
                 "max_model_len": getattr(
                     aphrodite_config.model_config, "max_model_len", None
                 ),
-                "vocab_size": getattr(aphrodite_config.model_config, "vocab_size", None),
+                "vocab_size": aphrodite_config.model_config.get_vocab_size(),
                 "num_layers": getattr(
                     aphrodite_config.model_config, "get_num_layers", lambda _: None
                 )(aphrodite_config.parallel_config),
@@ -736,10 +755,6 @@ class LMCacheConnectorV1Impl:
                 ),
                 "gpu_memory_utilization": getattr(
                     aphrodite_config.cache_config, "gpu_memory_utilization", None
-                ),
-                "swap_space": getattr(aphrodite_config.cache_config, "swap_space", None),
-                "enable_prefix_caching": getattr(
-                    aphrodite_config.cache_config, "enable_prefix_caching", None
                 ),
             },
         }
@@ -763,13 +778,21 @@ class LMCacheConnectorV1Impl:
                 continue
 
             if layer_name not in self.kv_caches:
-                self.kv_caches[layer_name] = attn_layer.kv_cache[
-                    forward_context.virtual_engine
-                ]
+                self.kv_caches[layer_name] = attn_layer.kv_cache
 
     ####################
     # Worker side APIs
     ####################
+    @_lmcache_nvtx_annotate
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        logger.info("Registering KV caches")
+        # TODO(chunxiaozheng): `_init_kv_caches_from_forward_context` is
+        #  not called, we should consider removing it.
+        assert len(self.kv_caches) == 0 and len(kv_caches) > 0
+        self.kv_caches = kv_caches
+        if self.lmcache_engine is not None:
+            kvcaches = list(self.kv_caches.values())
+            self.lmcache_engine.post_init(kvcaches=kvcaches)
 
     @_lmcache_nvtx_annotate
     def start_load_kv(self, forward_context: "ForwardContext", **kwargs) -> None:
@@ -819,7 +842,7 @@ class LMCacheConnectorV1Impl:
             slot_mapping = request.slot_mapping.cuda()
             assert len(tokens) == len(slot_mapping)
 
-            self._stats_monitor.update_interval_vllm_hit_tokens(
+            self._stats_monitor.update_interval_aphrodite_hit_tokens(
                 request.load_spec.aphrodite_cached_tokens
             )
             token_mask = torch.ones(len(tokens), dtype=torch.bool)
@@ -910,7 +933,7 @@ class LMCacheConnectorV1Impl:
         self,
         layer_name: str,
         kv_layer: torch.Tensor,
-        attn_metadata: "AttentionMetadata",
+        attn_metadata: AttentionMetadata,
         **kwargs,
     ) -> None:
         """Start saving the a layer of KV cache from Aphrodite's paged buffer

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 # ruff: noqa: E501
 # adapted from https://huggingface.co/AIDC-AI/Ovis2-1B/blob/main/configuration_aimv2.py
 # and https://huggingface.co/AIDC-AI/Ovis2-1B/blob/main/configuration_ovis.py

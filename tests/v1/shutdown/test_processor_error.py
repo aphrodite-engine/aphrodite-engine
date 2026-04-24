@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test error handling in Processor. Should not impact other reqs."""
 
 import asyncio
 
 import pytest
+from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.inputs.data import TokensPrompt
 
 from aphrodite import SamplingParams
 from aphrodite.common.sampling_params import RequestOutputKind
-from aphrodite.engine.args_tools import AsyncEngineArgs
-from aphrodite.inputs.data import TokensPrompt
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.exceptions import EngineGenerateError
 from tests.v1.shutdown.utils import SHUTDOWN_TEST_TIMEOUT_SEC

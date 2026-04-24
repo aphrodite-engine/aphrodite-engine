@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import contextlib
 import os
 import signal
 import subprocess
+import time
 from types import TracebackType
 
 import requests
@@ -9,6 +12,12 @@ from typing_extensions import Self
 
 
 class ServerProcess:
+    APHRODITE_RESET_CACHE_ENDPOINTS = [
+        "/reset_prefix_cache",
+        "/reset_mm_cache",
+        "/reset_encoder_cache",
+    ]
+
     def __init__(
         self,
         server_cmd: list[str],
@@ -82,9 +91,28 @@ class ServerProcess:
                 port = int(server_cmd[server_cmd.index(port_key) + 1])
                 break
         else:
-            port = 8000  # The default value in aphrodite run
+            port = 8000  # The default value in aphrodite serve
 
         return f"http://{host}:{port}"
+
+    def is_server_ready(self) -> bool:
+        server_address = self._get_aphrodite_server_address()
+        try:
+            response = requests.get(f"{server_address}/health")
+            return response.status_code == 200
+        except requests.RequestException:
+            return False
+
+    def wait_until_ready(self, timeout: int) -> None:
+        start_time = time.monotonic()
+        while not self.is_server_ready():
+            # Check if server process has crashed
+            if self._server_process.poll() is not None:
+                returncode = self._server_process.returncode
+                raise RuntimeError(f"Server process crashed with return code {returncode}")
+            if time.monotonic() - start_time > timeout:
+                raise TimeoutError(f"Server failed to become ready within {timeout} seconds.")
+            time.sleep(1)
 
     def reset_caches(self) -> None:
         server_cmd = self.server_cmd
@@ -94,11 +122,9 @@ class ServerProcess:
             server_address = self._get_aphrodite_server_address()
             print(f"Resetting caches at {server_address}")
 
-            res = requests.post(f"{server_address}/reset_prefix_cache")
-            res.raise_for_status()
-
-            res = requests.post(f"{server_address}/reset_mm_cache")
-            res.raise_for_status()
+            for endpoint in self.APHRODITE_RESET_CACHE_ENDPOINTS:
+                res = requests.post(server_address + endpoint)
+                res.raise_for_status()
         elif server_cmd[0].endswith("infinity_emb"):
             if "--vector-disk-cache" in server_cmd:
                 raise NotImplementedError(

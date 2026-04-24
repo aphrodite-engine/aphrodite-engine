@@ -2,7 +2,7 @@
 
  **NOTE:** This is a guide to performing batch inference using the OpenAI batch file format, **NOT** the complete Batch (REST) API.
 
- ## File Format
+## File Format
 
  The OpenAI batch file format consists of a series of json objects on new lines.
 
@@ -12,15 +12,14 @@
 
  **NOTE:** We currently only support to `/v1/chat/completions` endpoint (embeddings and completions coming soon).
 
- ## Pre-requisites
+## Pre-requisites
 
 * Ensure you are using `aphrodite-engine > 0.6.0`. You can check by running `python -c "import aphrodite; print(aphrodite.__version__)"`.
 * The examples in this document use `NousResearch/Meta-Llama-3.1-8B-Instruct`.
 
+## Example: Running with a local file
 
- ## Example: Running with a local file
-
- ### Step 1: Create your batch file
+### Step 1: Create your batch file
 
  To follow along with this example, you can download the example batch, or create your own batch file in your working directory.
 
@@ -36,7 +35,7 @@
 {"custom_id": "request-2", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "NousResearch/Meta-Llama-3.1-8B-Instruct", "messages": [{"role": "system", "content": "You are an unhelpful assistant."},{"role": "user", "content": "Hello world!"}],"max_tokens": 1000}}
  ```
 
- ### Step 2: Run the batch
+### Step 2: Run the batch
 
 The batch running tool is designed to be used from the command line.
 
@@ -74,9 +73,9 @@ To integrate with cloud blob storage, we recommend using presigned urls.
 
 ### Additional prerequisites
 
-* [Create an S3 bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/creating-bucket.html). 
+* [Create an S3 bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/creating-bucket.html).
 * The `awscli` package (Run `pip install awscli`) to configure your credentials and interactively use s3.
-  - [Configure your credentials](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-quickstart.html).
+    * [Configure your credentials](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-quickstart.html).
 * The `boto3` python package (Run `pip install boto3`) to generate presigned urls.
 
 ### Step 1: Upload your input script
@@ -101,12 +100,11 @@ Now upload your batch file to your S3 bucket.
 aws s3 cp batched_example.jsonl s3://MY_BUCKET/MY_INPUT_FILE.jsonl
 ```
 
-
 ### Step 2: Generate your presigned urls
 
 Presigned put urls can only be generated via the SDK. You can run the following python script to generate your presigned urls. Be sure to replace the `MY_BUCKET`, `MY_INPUT_FILE.jsonl`, and `MY_OUTPUT_FILE.jsonl` placeholders with your bucket and file names.
 
-(The script is adapted from https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/s3/s3_basics/presigned_url.py)
+(The script is adapted from <https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/s3/s3_basics/presigned_url.py>)
 
 ```
 import boto3
@@ -181,11 +179,9 @@ aws s3 cp s3://MY_BUCKET/MY_OUTPUT_FILE.jsonl -
 
  You can even mix chat completion and embedding requests in the batch file, as long as the model you are using supports both chat completion and embeddings (note that all requests must use the same model).
 
-
- ### Step 2: Run the batch
+### Step 2: Run the batch
 
 You can run the batch using the same command as in earlier examples.
-
 
 ### Step 3: Check your results
 

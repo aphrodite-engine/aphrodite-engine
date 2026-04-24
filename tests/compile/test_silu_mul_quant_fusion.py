@@ -1,14 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import itertools
 
 import pytest
 import torch
-
-import aphrodite.envs as envs
-from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.compilation.activation_quant_fusion import FUSED_OPS, SILU_MUL_OP, ActivationQuantFusionPass
 from aphrodite.compilation.fusion import QUANT_OPS
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
+from aphrodite.modeling.layers.activation import SiluAndMul
+from aphrodite.quantization.utils.quant_utils import GroupShape, kFp8StaticTensorSym, kNvfp4Quant
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, maybe_create_device_identity
+
+import aphrodite.envs as envs
+from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.config import (
     AphroditeConfig,
     CompilationConfig,
@@ -16,10 +21,7 @@ from aphrodite.config import (
     PassConfig,
     set_current_aphrodite_config,
 )
-from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import GroupShape, kFp8StaticTensorSym, kNvfp4Quant
-from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, maybe_create_device_identity
 from tests.kernels.quantization.nvfp4_utils import quant_nvfp4_tensor
 
 from ..utils import override_cutlass_fp8_supported

@@ -1,9 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import numpy as np
 import pytest
 import torch
-
 from aphrodite.attention import Attention
 from aphrodite.attention.backends.abstract import MultipleOf
+from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
+
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import (
     AphroditeConfig,
@@ -14,7 +17,6 @@ from aphrodite.config import (
     set_current_aphrodite_config,
 )
 from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
-from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.platforms import current_platform
 from aphrodite.utils.mem_constants import GiB_bytes
 from aphrodite.utils.system_utils import update_environment_variables

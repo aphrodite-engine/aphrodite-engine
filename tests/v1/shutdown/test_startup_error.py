@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test that we handle a startup Error and shutdown."""
 
 import pytest
+from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 from aphrodite import LLM
 from aphrodite.distributed import get_tensor_model_parallel_rank
-from aphrodite.engine.args_tools import AsyncEngineArgs
-from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from tests.utils import wait_for_gpu_memory_to_clear

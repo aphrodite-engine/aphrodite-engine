@@ -2,7 +2,7 @@
 title: Paged Attention
 ---
 
-Aphrodite implements [vLLM](https://vllm.ai)'s Paged Attention mechanism. 
+Aphrodite implements [vLLM](https://aphrodite.ai)'s Paged Attention mechanism.
 
 Currently, Aphrodite utilizes a custom implementation of multi-head query attention at `kernels/attention/attention_kernels.cu`. This kernel is designed to be compatible with Aphrodite's Paged KV caches, where the key and value caches are stored in separate blocks (note that this block concept differs from the GPU thread  block. So in a later document, we will refer to Aphrodite Paged Attention block as a "block", while referrign to the GPU thread block as "thread block").
 
@@ -11,6 +11,7 @@ To achieve high performance, this kernel relies on a specially designed memory l
 Please note that this document may not cover all details, such as how to calculate the correct index for the corresponding data or the dot multiplication implementation. However, after reading this and becoming familiar with the high-level logic flow, it should be easier for you to read the actual code and understand the details.
 
 ## Inputs
+
 The kernel takes a list of arguments for the current thread to perform its assigned work. The three most important arguments are the input pointers `q`, `k_cache`, and `v_cache`, which point to query, key, and value data on global memory that need to be read and processed. The output pointer `out` points to global memory where the result should be written. These four pointers actually refer to multi-dimensional arrays, but each thread only accesses the portion of the data assigned to it. We'll omit all other runtime parameters here for the sake of simplicity.
 
 ```cpp
@@ -55,11 +56,13 @@ Just before we dive into the calculation flow, let's describe a few concepts tha
 - **Grid**: A grid is a collection of thread blocks and defines the shape of the collection. In this kernel the shape is `(num_heads, num_seqs, max_num_partitions)`. Therefore each thread block only handles the calculation for one head, one sequence, and one partition.
 
 ## Query
+
 This section will introduce how query data is stored in memory and fetched by each thread. As mentioned above, each thread group fetches one query token data, while each thread itself only handles a part of one query token data. Within each warp, every thread group will fetch the same query token data, but will multiply it with different key token data.
 
 ```cpp
 const scalar_t* q_ptr = q + seq_idx * q_stride + head_idx * HEAD_SIZE;
 ```
+
 ![Query data of one token at one head](/attention/q_1_tok_1_head.png)
 <p align="center"><small>Query data of one token at one head</small></p>
 
@@ -75,6 +78,7 @@ __shared__ Q_vec q_vecs[THREAD_GROUP_SIZE][NUM_VECS_PER_THREAD];
 Next, we need to read the global memory data pointed to by `q_ptr` into shared memory as `q_vecs`. It's crucial to remember that each vecs is assigned to a different row. For example, if the `THREAD_GROUP_SIZE` is 2, thread 0 will handle the 0th row vecs, while thread 1 handles the 1st row vecs. By reading the query data in this way, neighbouring threads like threads 0 and thread 1 can read neighbour memory, achieving the memory coalescing to improve performance.
 
 ## Key
+
 Similar to the "Query" section, this section introduces the memory layout and assignment for keys. While each thread group only handles one query token per kernel run, it may handle multiple key tokens across multiple iterations. Meanwhile, each warp will process multiple blocks of key tokens in multiple iterations, ensuring that all context tokens are processed by the entire thread group after the kernel run. In this context, "handle" refers to performing the dot multplication between query data and key data.
 
 ```cpp
@@ -102,7 +106,9 @@ Next, we need to read the key token data from `k_ptr` and store them on registry
 You may still be a little confused about the overall flow. Don't worry, please keep reading the next "QK" section. It'll illustrate the query/key calculation flow in a clearer and higher-level manner.
 
 ## QK
+
 As shown in the pseudocode below, before the entire for loop block, we fetch the query data for one token and store it in `q_vecs`, then in the outer loop we iterate through different `k_ptrs` that point to different tokens and prepare the `k_vecs` in the inner for loop. Finally, we perform the dot multiplication between the `q_vecs` and each `k_vecs`.
+
 ```cpp
 q_vecs = ...
 for ... {
@@ -121,6 +127,7 @@ As mentioned before, for each thread, it only fetches part of the query and key 
 For example, if the value of `HEAD_SIZE` is 128 and `THREAD_GROUP_SIZE` is 2, each thread's `k_vecs` will contain 64 total elements. However, the returned `qk` is actually the result dot multiplication between 128 query elements and 128 key elements. If you want to learn more about the details of the dot product and reduction, you may refer to the implementation of `Qk_dot<>::dot` in `kernels/attention/attention_utils.cuh`. However, for the sake of simplicity, we won't cover it in this document.
 
 ## Softmax
+
 Next we need to calculate the normalized softmax for all `qk`s, as shown above, where each $x$ represents a `qk`. To do this, we must obtain the reduced value of `qk_max` $m(x)$ and the `exp_sum` $l(x)$ of all `qk`s. The reduction should be performed across the entire thread block, encompassing results between the query token and all context key tokens.
 
 $$m(x) := \max_{i} \quad x_i$$
@@ -129,6 +136,7 @@ $$l(x) := \sum_{i}f(x)_i$$
 $$\text{softmax}(x) := \frac{f(x)}{l(x)}$$
 
 ## `qk_max` and `logits`
+
 Just right after we get the `qk` result, we can set the temporary `logits` result with `qk` (in the end, the `logits` should store the normalized softmax result). Also we can compare and collect the `qk_max` for all `qk`s that are calculated by current thread group.
 
 ```cpp
@@ -167,8 +175,8 @@ qk_max = APHRODITE_SHFL_SYNC(qk_max, 0); // [!code focus]
 
 Finally, we can get the reduced `qk_max` from the whole thread block by comparing the `qk_max` from each warp in this thread block. Then we need to broadcast the final result to each thread.
 
-
 ## `exp_sum`
+
 Similar to `qk_max`, we need to get the reduced sum value from the entire thread block too.
 
 ```cpp
@@ -193,6 +201,7 @@ for (int i = thread_idx; i < num_tokens; i += NUM_THREADS) {
 Finally, with the reduced `qk_max` and `exp_sum`, we can obtain the final normalized softmax result as `logits`. This `logits` variable will be used for dot multiplication with the value data in later steps. Now, it should store the normalized softmax result `qk` for all assigned context tokens.
 
 ## Value
+
 ![value](/attention/value.jpg)
 <p align="center"><small>Value data of all context tokens at one head.</small></p>
 
@@ -222,8 +231,8 @@ As shown in the pseudocode above, in the outer loop, similar to `k_ptr`, `logits
 
 For example, if `BLOCK_SIZE` is 16, `V_VEC_SIZE` is 8, each thread fetches 8 value elements for 8 tokens at a time. Each element is from different tokens at the same head position. If `HEAD_SIZE` is 128 and `WARP_SIZE` is 32, for each inner loop, a warp needs to fetch `WARP_SIZE * V_VEC_SIZE = 256` elements. This means there are a total of `128 * 16 / 256 = 8` inner iterations for a warp to handle a whole block of value tokens. And each `accs` in each thread contains 8 elements that accumulated at 8 different head positions. For the thread 0, the `accs` variable will contain 8 elements, which are 0th, 32th ... 224th elements of a value head that are accumulated from all assigned 8 tokens.
 
-
 ## LV
+
 Now, we need to perform reduction for `accs` within each warp. This process allows each thread to accumulate the `accs` for the assigned head position of all tokens in one block.
 
 ```cpp
@@ -273,8 +282,8 @@ Next, we perform reduction for `accs` across all warps, allowing each thread to 
   }
 ```
 
-
 ## Output
+
 Now we can write all of calculated results from local register memory to final output global memory.
 
 ```cpp

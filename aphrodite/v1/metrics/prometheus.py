@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import os
 import tempfile
 
@@ -25,9 +28,9 @@ def setup_multiprocess_prometheus():
     else:
         logger.warning(
             "Found PROMETHEUS_MULTIPROC_DIR was set by user. "
-            "This directory must be wiped between aphrodite runs or "
+            "This directory must be wiped between Aphrodite runs or "
             "you will find inaccurate metrics. Unset the variable "
-            "and aphrodite will properly handle cleanup."
+            "and Aphrodite will properly handle cleanup."
         )
 
 
@@ -48,7 +51,7 @@ def get_prometheus_registry() -> CollectorRegistry:
 
 
 def unregister_aphrodite_metrics():
-    """Unregister any existing aphrodite collectors from the prometheus registry.
+    """Unregister any existing Aphrodite collectors from the prometheus registry.
 
     This is useful for testing and CI/CD where metrics may be registered
     multiple times across test runs.
@@ -57,7 +60,7 @@ def unregister_aphrodite_metrics():
     global registry.
     """
     registry = REGISTRY
-    # Unregister any existing aphrodite collectors
+    # Unregister any existing Aphrodite collectors
     for collector in list(registry._collector_to_names):
         if hasattr(collector, "_name") and "aphrodite" in collector._name:
             registry.unregister(collector)

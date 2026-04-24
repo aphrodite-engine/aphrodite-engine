@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """An example showing how to use aphrodite to serve VLMs.
 Launch the aphrodite server with the following command:
 aphrodite run fixie-ai/ultravox-v0_3

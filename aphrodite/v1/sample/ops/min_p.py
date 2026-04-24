@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
 
 from aphrodite.v1.sample.metadata import SamplingMetadata
@@ -10,7 +12,7 @@ def min_p(
     """
     Filters logits using adaptive probability thresholding.
     """
-    min_p = sampling_metadata.min_p
+    min_p = getattr(sampling_metadata, "min_p", None)
     if min_p is None:
         return logits
 

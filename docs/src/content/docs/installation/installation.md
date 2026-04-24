@@ -4,7 +4,6 @@ title: Installation with NVIDIA
 
 The installation process for Aphrodite is different depending on your hardware. The primary hardware for Aphrodite is NVIDIA GPUs, with x86_64 CPU architecture; we provide pre-built binaries for that combination. If you're using other types of hardware, you may need to build from source. We have provided Docker files to ease the process. You can also find detailed instructions for building manually if you cannot use Docker.
 
-
 ## Requirements
 
 - Linux (or WSL on Windows)
@@ -21,7 +20,6 @@ To find out what compute capability your GPU has, you can run this in a python i
 
 The (8, 6) indicates the GPU has a compute capability of 8.6, for example.
 
-
 ## Installation with uv
 
 Please install uv for your operating system [here](https://docs.astral.sh/uv/).
@@ -34,6 +32,7 @@ source ~/venv/aphrodite/bin/activate
 ```
 
 Then install Aphrodite Engine:
+
 ```sh
 pip install -U aphrodite-engine
 ```
@@ -65,7 +64,6 @@ uv pip install -e .
 :::warning
 If you don't have enough RAM when building the kernels, you may need to run `export MAX_JOBS=n`, where `n` is the number of jobs.
 :::
-
 
 ## Linux arm64/aarch64/GH200 tips
 
@@ -101,12 +99,13 @@ pip install --no-clean --no-deps --no-build-isolation -v .
 A few places to look for aarch64 binaries if you're having trouble:
 
 - [conda aarch64 defaults channel](https://repo.anaconda.com/pkgs/main/linux-aarch64/)
-- pytorch.org hosts wheels at https://download.pytorch.org/whl and https://download.pytorch.org/whl/cuXXX (eg https://download.pytorch.org/whl/cu124). Note that `/whl/cu124` is a separate index, not a folder in `/whl`. There is also https://download.pytorch.org/whl/nightly/.
+- pytorch.org hosts wheels at <https://download.pytorch.org/whl> and <https://download.pytorch.org/whl/cuXXX> (eg <https://download.pytorch.org/whl/cu124>). Note that `/whl/cu124` is a separate index, not a folder in `/whl`. There is also <https://download.pytorch.org/whl/nightly/>.
 - [nvidia's NGC docker containers](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch/tags) come with many tools and python packages bundled
 - Sometimes a project will have ARM binaries in their github build artifacts before the official releases. [example](https://github.com/pytorch/pytorch/actions/workflows/generated-linux-aarch64-binary-manywheel-nightly.yml)
 - The spack package manager may be helpful for building especially tricky sources, like pytorch.
 
 ## Installation with Docker
+
 We provide both a pre-built docker image, and a Dockerfile.
 
 ### Using the pre-built Docker image

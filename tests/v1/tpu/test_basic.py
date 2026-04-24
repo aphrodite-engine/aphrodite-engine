@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """A basic correctness check for TPUs
 
 Run `pytest tests/v1/tpu/test_basic.py`.

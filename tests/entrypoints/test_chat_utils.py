@@ -1,14 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import warnings
 from collections.abc import Mapping
 from typing import Literal
 
 import pytest
-from mistral_common.tokens.tokenizers.base import SpecialTokenPolicy
-
-from aphrodite.assets.audio import AudioAsset
-from aphrodite.assets.image import ImageAsset
-from aphrodite.assets.video import VideoAsset
-from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (
     _try_extract_ast,
     apply_mistral_chat_template,
@@ -19,10 +15,16 @@ from aphrodite.endpoints.chat_utils import (
     resolve_chat_template_kwargs,
     resolve_hf_chat_template,
 )
+from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
+from mistral_common.tokens.tokenizers.base import SpecialTokenPolicy
+
+from aphrodite.assets.audio import AudioAsset
+from aphrodite.assets.image import ImageAsset
+from aphrodite.assets.video import VideoAsset
+from aphrodite.config import ModelConfig
 from aphrodite.multimodal import MultiModalDataDict, MultiModalUUIDDict
 from aphrodite.multimodal.utils import encode_audio_base64, encode_image_base64, encode_video_base64
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
-from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 
 from ..models.registry import HF_EXAMPLE_MODELS
 from ..utils import APHRODITE_PATH

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import operator
 import sys
 from abc import ABC, abstractmethod
@@ -18,12 +20,12 @@ from aphrodite.logger import init_logger
 from aphrodite.utils.cache import CacheInfo, LRUCache
 from aphrodite.utils.jsontree import json_count_leaves, json_map_leaves, json_reduce_leaves
 from aphrodite.utils.mem_constants import GiB_bytes, MiB_bytes
+from aphrodite.utils.mem_utils import format_gib
 
 from .inputs import (
     MultiModalBatchedField,
     MultiModalFeatureSpec,
     MultiModalFieldElem,
-    MultiModalKwargs,
     MultiModalKwargsItem,
     MultiModalKwargsItems,
     NestedTensors,
@@ -32,8 +34,7 @@ from .inputs import (
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig, ModelConfig
 
-    from .processing import ResolvedPromptUpdate
-    from .registry import MultiModalRegistry
+    from .processing.processor import ResolvedPromptUpdate
 
 logger = init_logger(__name__)
 
@@ -88,7 +89,6 @@ MultiModalCacheValue: TypeAlias = (
     | MultiModalProcessorCacheItemMetadata
     | MultiModalKwargsItems
     | MultiModalKwargsItem
-    | MultiModalKwargs
     | Mapping[str, NestedTensors]
 )
 
@@ -106,12 +106,7 @@ class MultiModalCache:
         # These are not subclasses of dict
         if isinstance(
             leaf,
-            (
-                MultiModalKwargs,
-                MultiModalKwargsItems,
-                MultiModalKwargsItem,
-                MultiModalFieldElem,
-            ),
+            (MultiModalKwargsItems, MultiModalKwargsItem, MultiModalFieldElem),
         ):
             return cls.get_item_size(leaf.data)  # type: ignore
 
@@ -133,9 +128,9 @@ class MultiModalCache:
         if debug:
             leaf_count = json_count_leaves(value)
             logger.debug(
-                "Calculated size of %s to be %.2f GiB (%d leaves)",
+                "Calculated size of %s to be %s GiB (%d leaves)",
                 type(value),
-                size / GiB_bytes,
+                format_gib(size),
                 leaf_count,
             )
 
@@ -291,6 +286,23 @@ class BaseMultiModalProcessorCache(
         """
         return [self.is_cached_item(mm_hash) for mm_hash in mm_hashes]
 
+    def close(self) -> None:
+        """Close the underlying cache, if needed."""
+        pass
+
+    @abstractmethod
+    def touch_sender_cache_item(self, mm_hash: str) -> None:
+        """
+        Update the cache eviction order for a multi-modal item.
+
+        This is used to touch the item in the cache without changing
+        its value.
+
+        Args:
+            mm_hash: The hash of the multi-modal item.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     def make_stats(self, *, delta: bool = False) -> CacheInfo:
         """
@@ -341,6 +353,10 @@ class MultiModalProcessorOnlyCache(BaseMultiModalProcessorCache):
         self._cache[mm_hash] = MultiModalProcessorCacheItem(*mm_item)
 
         return mm_item
+
+    @override
+    def touch_sender_cache_item(self, mm_hash: str) -> None:
+        self._cache.touch(mm_hash)
 
     @override
     def clear_cache(self) -> None:
@@ -397,6 +413,10 @@ class MultiModalProcessorSenderCache(BaseMultiModalProcessorCache):
         return mm_item
 
     @override
+    def touch_sender_cache_item(self, mm_hash: str) -> None:
+        self._cache.touch(mm_hash)
+
+    @override
     def clear_cache(self) -> None:
         self._cache.clear()
 
@@ -434,8 +454,8 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
             ring_buffer=ring_buffer,
             serde_class=MsgpackSerde,
         )
-        # cache (prompt_updates, modality) for P0 only
-        self._p0_cache: dict[str, tuple[Sequence[ResolvedPromptUpdate], str]] = {}
+        # cache prompt_updates for P0 only
+        self._p0_cache: dict[str, Sequence[ResolvedPromptUpdate]] = {}
 
         self._hits = 0
         self._total = 0
@@ -466,27 +486,34 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
             self._total += 1
 
             address, monotonic_id = self._shm_cache.get_cached(mm_hash)
-            prompt_updates, modality = self._p0_cache[mm_hash]
-            return self.address_as_item(address, monotonic_id, modality), prompt_updates
+            prompt_updates = self._p0_cache[mm_hash]
+            return self.address_as_item(address, monotonic_id), prompt_updates
 
         assert mm_item is not None, f"Expected a cached item for {mm_hash=}"
+        item, prompt_updates = mm_item
 
         self._total += 1
 
         try:
-            address, monotonic_id = self._shm_cache.put(mm_hash, mm_item[0])
+            address, monotonic_id = self._shm_cache.put(mm_hash, item)
             # Try to remove dangling items if p0 cache is too large.
             if len(self._p0_cache) >= 2 * len(self._shm_cache.key_index):
                 self.remove_dangling_items()
-            self._p0_cache[mm_hash] = mm_item[1], mm_item[0].modality
-            address_item = self.address_as_item(address, monotonic_id, mm_item[0].modality)
-            return address_item, mm_item[1]
+
+            self._p0_cache[mm_hash] = prompt_updates
+            return self.address_as_item(address, monotonic_id), prompt_updates
         except (ValueError, MemoryError) as e:
             # put may fail if the object is too large or
             # the cache is full.
             # In this case we log the error and keep the original mm_input.
             logger.debug("Failed to cache mm_input with hash %s: %s", mm_hash, e)
             return mm_item
+
+    @override
+    def touch_sender_cache_item(self, mm_hash: str) -> None:
+        """Touch the item in shared memory cache to prevent eviction.
+        Increments writer_flag on sender side."""
+        self._shm_cache.touch(mm_hash)
 
     @override
     def clear_cache(self) -> None:
@@ -501,6 +528,10 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
     def make_stats(self, *, delta: bool = False) -> CacheInfo:
         return self._stat(delta=delta)
 
+    @override
+    def close(self) -> None:
+        self._shm_cache.close()
+
     def remove_dangling_items(self) -> None:
         """Remove items that are no longer in the shared memory cache."""
         cached_hashes = self._shm_cache.key_index.keys()
@@ -508,81 +539,21 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
         for mm_hash in dangling_hashes:
             del self._p0_cache[mm_hash]
 
-    def address_as_item(self, address: int, monotonic_id: int, modality: str) -> MultiModalKwargsItem:
+    def address_as_item(
+        self,
+        address: int,
+        monotonic_id: int,
+    ) -> MultiModalKwargsItem:
         addr_elem = MultiModalFieldElem(
-            modality=modality,
-            key="address",
             data=address,
             field=MultiModalBatchedField(),
         )
         id_elem = MultiModalFieldElem(
-            modality=modality,
-            key="monotonic_id",
             data=monotonic_id,
             field=MultiModalBatchedField(),
         )
-        mm_item = MultiModalKwargsItem.from_elems([addr_elem, id_elem])
-        return mm_item
 
-
-def _enable_processor_cache(
-    model_config: "ModelConfig",
-    mm_registry: "MultiModalRegistry",
-) -> bool:
-    if not mm_registry.supports_multimodal_inputs(model_config):
-        return False
-
-    mm_config = model_config.get_multimodal_config()
-    return mm_config.mm_processor_cache_gb > 0
-
-
-def _enable_ipc_cache(aphrodite_config: "AphroditeConfig") -> bool:
-    parallel_config = aphrodite_config.parallel_config
-    supports_ipc_cache = (
-        parallel_config._api_process_count == 1 and parallel_config.data_parallel_size == 1
-    ) or parallel_config.data_parallel_external_lb
-
-    return supports_ipc_cache
-
-
-def _enable_mm_input_shm_cache(aphrodite_config: "AphroditeConfig") -> bool:
-    """Whether the shared memory based cache should be enabled."""
-
-    if not _enable_ipc_cache(aphrodite_config):
-        return False
-
-    mm_config = aphrodite_config.model_config.get_multimodal_config()
-
-    return mm_config.mm_processor_cache_type == "shm"
-
-
-def processor_cache_from_config(
-    aphrodite_config: "AphroditeConfig",
-    mm_registry: "MultiModalRegistry",
-) -> BaseMultiModalProcessorCache | None:
-    """Return a `BaseMultiModalProcessorCache`, if enabled."""
-    model_config = aphrodite_config.model_config
-
-    if not _enable_processor_cache(model_config, mm_registry):
-        return None
-
-    if not _enable_ipc_cache(aphrodite_config):
-        return MultiModalProcessorOnlyCache(model_config)
-
-    if not _enable_mm_input_shm_cache(aphrodite_config):
-        return MultiModalProcessorSenderCache(model_config)
-    return ShmObjectStoreSenderCache(aphrodite_config)
-
-
-def processor_only_cache_from_config(
-    model_config: "ModelConfig",
-    mm_registry: "MultiModalRegistry",
-):
-    """Return a `MultiModalProcessorOnlyCache`, if enabled."""
-    if not _enable_processor_cache(model_config, mm_registry):
-        return None
-
-    return MultiModalProcessorOnlyCache(model_config)
+        return MultiModalKwargsItem({"address": addr_elem, "monotonic_id": id_elem})
 
 
 class BaseMultiModalReceiverCache(BaseMultiModalCache[MultiModalKwargsItem | None, MultiModalKwargsItem]):
@@ -592,10 +563,41 @@ class BaseMultiModalReceiverCache(BaseMultiModalCache[MultiModalKwargsItem | Non
         self,
         mm_features: list["MultiModalFeatureSpec"],
     ) -> list["MultiModalFeatureSpec"]:
-        """Update multimodal features with cached encoder outputs."""
+        """
+        Update multimodal features with cached encoder outputs.
+        Touch all identifier at first before update to avoid
+        item in updated list evict during update.
+
+        Uses mm_hash for cache key to share across LoRAs (falls back to
+        identifier for backward compatibility).
+        """
         for feature in mm_features:
-            feature.data = self.get_and_update_item(feature.data, feature.identifier)
+            cache_key = feature.mm_hash or feature.identifier
+            self.touch_receiver_cache_item(cache_key, feature.data)
+
+        for feature in mm_features:
+            cache_key = feature.mm_hash or feature.identifier
+            feature.data = self.get_and_update_item(feature.data, cache_key)
         return mm_features
+
+    @abstractmethod
+    def touch_receiver_cache_item(
+        self,
+        mm_hash: str,
+        mm_item: MultiModalKwargsItem | None = None,
+    ) -> None:
+        """
+        Update the cache eviction order for a multi-modal item.
+
+        This is used to touch the item in the cache without changing
+        its value.
+
+        Args:
+            mm_hash: The hash of the multi-modal item.
+            mm_item: The multi-modal item itself. This is optional and
+                may not be needed by some cache implementations.
+        """
+        raise NotImplementedError
 
 
 class MultiModalReceiverCache(BaseMultiModalReceiverCache):
@@ -632,6 +634,14 @@ class MultiModalReceiverCache(BaseMultiModalReceiverCache):
 
         self._cache[mm_hash] = mm_item
         return mm_item
+
+    @override
+    def touch_receiver_cache_item(
+        self,
+        mm_hash: str,
+        mm_item: MultiModalKwargsItem | None = None,
+    ) -> None:
+        self._cache.touch(mm_hash)
 
     @override
     def clear_cache(self) -> None:
@@ -686,52 +696,19 @@ class ShmObjectStoreReceiverCache(BaseMultiModalReceiverCache):
         return mm_item
 
     @override
+    def touch_receiver_cache_item(
+        self,
+        mm_hash: str,
+        mm_item: MultiModalKwargsItem | None = None,
+    ) -> None:
+        """Touch the item in shared memory cache to prevent eviction.
+        Increments reader_count on receiver side."""
+        assert mm_item is not None
+        if "address" in mm_item:
+            address = cast(int, mm_item["address"].data)
+            monotonic_id = cast(int, mm_item["monotonic_id"].data)
+            self._shm_cache.touch(mm_hash, address=address, monotonic_id=monotonic_id)
+
+    @override
     def clear_cache(self) -> None:
         self._shm_cache.clear()
-
-
-def engine_receiver_cache_from_config(
-    aphrodite_config: "AphroditeConfig",
-    mm_registry: "MultiModalRegistry",
-) -> BaseMultiModalReceiverCache | None:
-    """
-    This is used in the engine process.
-    Return a `BaseMultiModalReceiverCache` only when IPC caching is enabled and
-    mm_processor_cache_type=="lru".
-    """
-    model_config = aphrodite_config.model_config
-
-    if not _enable_processor_cache(model_config, mm_registry):
-        return None
-
-    if not _enable_ipc_cache(aphrodite_config):
-        return None
-
-    if not _enable_mm_input_shm_cache(aphrodite_config):
-        return MultiModalReceiverCache(model_config)
-
-    return None
-
-
-def worker_receiver_cache_from_config(
-    aphrodite_config: "AphroditeConfig",
-    mm_registry: "MultiModalRegistry",
-    shared_worker_lock: LockType,
-) -> BaseMultiModalReceiverCache | None:
-    """
-    This is used in the worker process.
-    Return a `BaseMultiModalReceiverCache` only when IPC caching is enabled and
-    mm_processor_cache_type=="shm".
-    """
-    model_config = aphrodite_config.model_config
-
-    if not _enable_processor_cache(model_config, mm_registry):
-        return None
-
-    if not _enable_ipc_cache(aphrodite_config):
-        return None
-
-    if not _enable_mm_input_shm_cache(aphrodite_config):
-        return None
-
-    return ShmObjectStoreReceiverCache(aphrodite_config, shared_worker_lock)

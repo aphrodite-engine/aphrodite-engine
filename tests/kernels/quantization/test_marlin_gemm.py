@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the marlin kernel.
 
 Run `pytest tests/kernels/quantization/test_marlin_gemm.py`.
@@ -5,8 +7,6 @@ Run `pytest tests/kernels/quantization/test_marlin_gemm.py`.
 
 import pytest
 import torch
-
-from aphrodite import _custom_ops as ops
 from aphrodite.quantization.gptq_marlin_24 import (
     GPTQ_MARLIN_24_MAX_PARALLEL,
     GPTQ_MARLIN_24_MIN_THREAD_N,
@@ -42,6 +42,8 @@ from aphrodite.quantization.utils.quant_utils import (
     quantize_weights,
     sort_weights,
 )
+
+from aphrodite import _custom_ops as ops
 from aphrodite.scalar_type import scalar_types
 from tests.kernels.utils import DEFAULT_OPCHECK_TEST_UTILS, opcheck
 from tests.quantization.utils import is_quant_method_supported

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Datastructures defining a TPU input batch
 
 from typing import cast
@@ -5,8 +7,8 @@ from typing import cast
 import numpy as np
 import torch
 
-from aphrodite.common.sampling_params import SamplingType
 from aphrodite.lora.request import LoRARequest
+from aphrodite.sampling_params import SamplingType
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
 from aphrodite.utils.collection_utils import swap_dict_values
 from aphrodite.v1.outputs import LogprobsTensors
@@ -49,7 +51,6 @@ class InputBatch:
             pin_memory=False,
         )
         self.token_ids_cpu = self.token_ids_cpu_tensor.numpy()
-        self.num_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_tokens_no_spec = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_computed_tokens_cpu_tensor = torch.zeros(
@@ -133,9 +134,6 @@ class InputBatch:
         self.generators: dict[int, torch.Generator] = {}
 
         self.num_logprobs: dict[str, int] = {}
-        # NOTE(rob): num_prompt_logprobs only includes reqs
-        # that are currently in the prefill phase.
-        self.num_prompt_logprobs: dict[str, int] = {}
 
         # To accumulate prompt logprobs tensor chunks across prefill steps.
         self.in_progress_prompt_logprobs_cpu: dict[str, LogprobsTensors] = {}
@@ -185,9 +183,6 @@ class InputBatch:
         start_idx = num_prompt_tokens
         end_idx = start_idx + len(request.output_token_ids)
         self.token_ids_cpu[req_index, start_idx:end_idx] = request.output_token_ids
-        # Number of token ids in token_ids_cpu.
-        # NOTE(woosuk): This may include spec decode tokens.
-        self.num_tokens[req_index] = request.num_tokens
         # Number of tokens without spec decode tokens.
         self.num_tokens_no_spec[req_index] = request.num_tokens
 
@@ -238,8 +233,6 @@ class InputBatch:
 
         if sampling_params.logprobs is not None:
             self.num_logprobs[req_id] = sampling_params.logprobs
-        if sampling_params.prompt_logprobs is not None:
-            self.num_prompt_logprobs[req_id] = sampling_params.prompt_logprobs
         if sampling_params.logit_bias is not None:
             self.logit_bias[req_index] = sampling_params.logit_bias
 
@@ -297,7 +290,6 @@ class InputBatch:
         self.repetition_penalties_reqs.discard(req_id)
         self.generators.pop(req_index, None)
         self.num_logprobs.pop(req_id, None)
-        self.num_prompt_logprobs.pop(req_id, None)
         self.in_progress_prompt_logprobs_cpu.pop(req_id, None)
 
         # LoRA
@@ -329,10 +321,6 @@ class InputBatch:
         self.req_id_to_index[old_id_i1], self.req_id_to_index[old_id_i2] = (
             self.req_id_to_index[old_id_i2],
             self.req_id_to_index[old_id_i1],
-        )
-        self.num_tokens[i1], self.num_tokens[i2] = (
-            self.num_tokens[i2],
-            self.num_tokens[i1],
         )
         self.num_tokens_no_spec[i1], self.num_tokens_no_spec[i2] = (
             self.num_tokens_no_spec[i2],
@@ -434,9 +422,8 @@ class InputBatch:
             self.req_output_token_ids[last_req_index] = None
             self.req_id_to_index[req_id] = empty_index
 
-            num_tokens = self.num_tokens[last_req_index]
+            num_tokens = self.num_tokens_no_spec[last_req_index]
             self.token_ids_cpu[empty_index, :num_tokens] = self.token_ids_cpu[last_req_index, :num_tokens]
-            self.num_tokens[empty_index] = num_tokens
             self.num_tokens_no_spec[empty_index] = self.num_tokens_no_spec[last_req_index]
             self.num_prompt_tokens[empty_index] = self.num_prompt_tokens[last_req_index]
             self.num_computed_tokens_cpu[empty_index] = self.num_computed_tokens_cpu[last_req_index]
@@ -492,7 +479,7 @@ class InputBatch:
         return prompt_token_ids_cpu_tensor.to(device=self.device, non_blocking=True)
 
     def make_lora_inputs(
-        self, num_scheduled_tokens: np.ndarray
+        self, num_scheduled_tokens: np.ndarray, num_sampled_tokens: np.ndarray
     ) -> tuple[tuple[int, ...], tuple[int, ...], set[LoRARequest]]:
         """
         Given the num_scheduled_tokens for each request in the batch, return
@@ -547,10 +534,6 @@ class InputBatch:
     @property
     def max_num_logprobs(self) -> int | None:
         return max(self.num_logprobs.values()) if self.num_logprobs else None
-
-    @property
-    def no_prompt_logprob(self) -> bool:
-        return not self.num_prompt_logprobs
 
     @property
     def no_allowed_token_ids(self) -> bool:

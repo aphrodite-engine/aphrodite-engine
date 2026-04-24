@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 Based on:
 Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023).
@@ -7,8 +9,13 @@ https://arxiv.org/abs/2310.18547
 
 import torch
 
+from aphrodite import envs
 from aphrodite.lora.ops.triton_ops.kernel_utils import do_shrink_kernel
-from aphrodite.lora.ops.triton_ops.utils import _get_lora_a_ptr, get_lora_op_configs
+from aphrodite.lora.ops.triton_ops.utils import (
+    _get_lora_a_ptr,
+    get_lora_op_configs,
+    supports_pdl,
+)
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
@@ -41,6 +48,8 @@ def _lora_shrink_kernel(
     SPLIT_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr,
     SLICE_NUM: tl.constexpr,
+    USE_GDC: tl.constexpr,
+    launch_pdl: tl.constexpr,
 ):
     cta_n_num = tl.cdiv(N, BLOCK_N)
     cta_m_num = tl.cdiv(M, BLOCK_M)
@@ -79,7 +88,6 @@ def _lora_shrink_kernel(
     # Identify all rows that this CTA should process.
     lora_m_indices_start = tl.load(lora_token_start_loc + lora_idx)
     cta_lora_seq_indices = token_indices_sorted_by_lora_ids + lora_m_indices_start + cta_m_offset
-
     # Load all relevant row indices.
     offset_m = tl.arange(0, BLOCK_M) % cta_m_len
     ram = tl.load(cta_lora_seq_indices + offset_m)
@@ -114,6 +122,7 @@ def _lora_shrink_kernel(
         EVEN_K,
         SPLIT_K,
         SLICE_NUM,
+        USE_GDC,
     )
 
 
@@ -128,6 +137,7 @@ def _lora_shrink(
     lora_token_start_loc: torch.Tensor,  # shape [max-loras + 2]
     lora_ids: torch.Tensor,  # shape [max-loras + 1]
     no_lora_flag_cpu: torch.Tensor,  # shape [1]
+    num_active_loras: torch.Tensor,  # CPU tensor [1], number of active LoRAs
     scaling: float,
 ) -> None:
     """
@@ -150,6 +160,9 @@ def _lora_shrink(
         lora_ids (torch.Tensor): LoRA ids to process.
         no_lora_flag_cpu (torch.Tensor): A CPU tensor of size 1, that indicates
             if there are any requests that require LoRA.
+        num_active_loras (torch.Tensor): A CPU tensor of size 1, containing the
+            number of active LoRAs. Stored as a tensor (not int) so
+            torch.compile treats it as dynamic rather than a constant.
         scaling (float): Scaling factor.
     """
 
@@ -208,12 +221,11 @@ def _lora_shrink(
     grid = (
         SPLIT_K * triton.cdiv(M, BLOCK_M) * triton.cdiv(N, BLOCK_N),
         NUM_SLICES,
-        # Each LoRA receives its own set of thread blocks for output
-        # computation. If some LoRA doesn't have any tokens to process, its
-        # thread blocks exit early.
-        MAX_LORAS,
+        num_active_loras.item(),
     )
 
+    # PDL only works when dual-stream is being used.
+    use_gdc = supports_pdl(inputs.device) and envs.APHRODITE_LORA_ENABLE_DUAL_STREAM
     _lora_shrink_kernel[grid](
         inputs,
         lora_ptr_tensor,
@@ -241,9 +253,11 @@ def _lora_shrink(
         SPLIT_K,
         GROUP_SIZE_M,
         NUM_SLICES,
+        use_gdc,
         num_warps=NUM_WARPS,
         num_ctas=NUM_CTAS,
         num_stages=NUM_STAGES,
+        launch_pdl=use_gdc,
     )
 
     return
@@ -259,6 +273,7 @@ def _lora_shrink_fake(
     lora_token_start_loc: torch.Tensor,
     lora_ids: torch.Tensor,
     no_lora_flag_cpu: torch.Tensor,
+    num_active_loras: torch.Tensor,  # CPU tensor [1], number of active LoRAs
     scaling: float,
 ) -> None:
     return

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the MOE align block size function.
 
 Run `pytest tests/kernels/moe/test_moe_align_block_size.py`.
@@ -5,8 +7,8 @@ Run `pytest tests/kernels/moe/test_moe_align_block_size.py`.
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.moe_align_block_size import batched_moe_align_block_size, moe_align_block_size
+
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import round_up
 

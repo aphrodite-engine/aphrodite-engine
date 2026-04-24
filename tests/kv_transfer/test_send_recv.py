@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
 import time
 
 import torch
+from aphrodite.distributed.kv_transfer.kv_pipe.pynccl_pipe import PyNcclPipe
 from tqdm import tqdm
 
 from aphrodite.config import KVTransferConfig
-from aphrodite.distributed.kv_transfer.kv_pipe.pynccl_pipe import PyNcclPipe
 
 
 def test_run(my_rank, pipe):

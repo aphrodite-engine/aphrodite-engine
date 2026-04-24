@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 
 import pytest
 import torch
+from aphrodite.compilation.collective_fusion import AsyncTPPass
 
 import aphrodite.envs as envs
-from aphrodite.compilation.collective_fusion import AsyncTPPass
 from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, DeviceConfig, ModelConfig, PassConfig
 from aphrodite.distributed import tensor_model_parallel_all_gather, tensor_model_parallel_reduce_scatter
 from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel

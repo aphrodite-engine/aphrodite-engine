@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Mapping, Set
 from dataclasses import dataclass, field
 from typing import Any, Literal

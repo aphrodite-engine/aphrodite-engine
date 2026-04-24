@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import ctypes
 import importlib.util
 import logging
@@ -313,7 +315,7 @@ class cmake_build_ext(build_ext):
         targets = []
 
         def target_name(s: str) -> str:
-            return s.removeprefix("aphrodite.").removeprefix("aphrodite_flash_attn.")
+            return s.removeprefix("aphrodite.").removeprefix("vllm_flash_attn.").removeprefix("aphrodite_flash_attn.")
 
         # Build all the extensions
         for ext in self.extensions:
@@ -356,6 +358,45 @@ class cmake_build_ext(build_ext):
     def run(self):
         # Run the standard build_ext command to compile the extensions
         super().run()
+
+        # Copy aphrodite/vllm_flash_attn/**/*.py from self.build_lib to the
+        # source tree so editable installs can import the packaged Python
+        # wrappers alongside the built extension modules.
+        import glob
+        import shutil
+
+        files = glob.glob(
+            os.path.join(self.build_lib, "aphrodite", "vllm_flash_attn", "**", "*.py"),
+            recursive=True,
+        )
+        for file in files:
+            dst_file = os.path.join(
+                "aphrodite/vllm_flash_attn",
+                file.split("aphrodite/vllm_flash_attn/")[-1],
+            )
+            print(f"Copying {file} to {dst_file}")
+            os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+            self.copy_file(file, dst_file)
+
+        if _is_cuda() or _is_hip():
+            triton_kernels_build = os.path.join(self.build_lib, "aphrodite", "third_party", "triton_kernels")
+            if os.path.exists(triton_kernels_build):
+                print(f"Copying {triton_kernels_build} to aphrodite/third_party/triton_kernels")
+                shutil.copytree(
+                    triton_kernels_build,
+                    "aphrodite/third_party/triton_kernels",
+                    dirs_exist_ok=True,
+                )
+
+        if _is_cuda():
+            deep_gemm_build = os.path.join(self.build_lib, "aphrodite", "third_party", "deep_gemm")
+            if os.path.exists(deep_gemm_build):
+                print(f"Copying {deep_gemm_build} to aphrodite/third_party/deep_gemm")
+                shutil.copytree(
+                    deep_gemm_build,
+                    "aphrodite/third_party/deep_gemm",
+                    dirs_exist_ok=True,
+                )
 
 
 def _is_hpu() -> bool:
@@ -554,14 +595,46 @@ def get_requirements() -> list[str]:
     else:
         raise ValueError("Unsupported platform, please use CUDA, ROCm, or CPU.")
 
-    # Filter out aphrodite-kernels from install_requires
-    # Users will get a helpful error message when they try to import it
-    requirements = [req for req in requirements if "aphrodite-kernels" not in req.lower()]
-
     return requirements
 
 
 ext_modules = []
+if _build_custom_ops():
+    if _is_cuda() or _is_hip():
+        ext_modules.append(CMakeExtension(name="aphrodite._moe_C", cmake_lists_dir="."))
+        # Optional: this target vendors the triton_kernels Python package.
+        ext_modules.append(CMakeExtension(name="aphrodite.triton_kernels", cmake_lists_dir=".", optional=True))
+
+    if _is_hip():
+        ext_modules.append(CMakeExtension(name="aphrodite._rocm_C", cmake_lists_dir="."))
+
+    if _is_cuda():
+        ext_modules.append(CMakeExtension(name="aphrodite._C_stable_libtorch", cmake_lists_dir="."))
+
+        disable_flash_attn = os.environ.get("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0").strip().lower() in (
+            "1",
+            "true",
+        )
+        if not disable_flash_attn:
+            ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa2_C", cmake_lists_dir="."))
+            if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
+                ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa3_C", cmake_lists_dir="."))
+            ext_modules.append(
+                CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa4_cutedsl_C", cmake_lists_dir=".", optional=True)
+            )
+
+        if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
+            ext_modules.append(CMakeExtension(name="aphrodite._flashmla_C", cmake_lists_dir=".", optional=True))
+            ext_modules.append(
+                CMakeExtension(name="aphrodite._flashmla_extension_C", cmake_lists_dir=".", optional=True)
+            )
+            ext_modules.append(CMakeExtension(name="aphrodite._deep_gemm_C", cmake_lists_dir=".", optional=True))
+        ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator", cmake_lists_dir="."))
+
+    ext_modules.append(CMakeExtension(name="aphrodite._C", cmake_lists_dir="."))
+
+if _no_device():
+    ext_modules = []
 
 package_data = {
     "aphrodite": [
@@ -569,6 +642,9 @@ package_data = {
         "quantization/hadamard.safetensors",
         "py.typed",
         "modeling/layers/fused_moe/configs/*.json",
+        "third_party/deep_gemm/include/**/*.cuh",
+        "third_party/deep_gemm/include/**/*.h",
+        "third_party/deep_gemm/include/**/*.hpp",
     ]
 }
 
@@ -594,6 +670,6 @@ setup(
         "petit-kernel": ["petit-kernel"],
     },
     ext_modules=ext_modules,
-    cmdclass={},
+    cmdclass={"build_ext": cmake_build_ext} if ext_modules else {},
     package_data=package_data,
 )

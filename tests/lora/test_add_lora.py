@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import time
 
 import pytest
-
-from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.endpoints.openai.api_server import build_async_engine_client_from_engine_args
 from aphrodite.engine.args_tools import AsyncEngineArgs
+
+from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.inputs import TextPrompt
 from aphrodite.lora.request import LoRARequest
 from aphrodite.utils.async_utils import merge_async_iterators

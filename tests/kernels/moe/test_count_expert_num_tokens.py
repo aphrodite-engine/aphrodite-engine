@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Tests compute_expert_num_tokens kernels
 """
@@ -6,7 +8,6 @@ import dataclasses
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.utils import count_expert_num_tokens
 
 

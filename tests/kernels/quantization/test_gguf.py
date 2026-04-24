@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from pathlib import Path
 
 import pytest
 import torch
+from aphrodite.modeling.layers.fused_moe import fused_experts
+from aphrodite.quantization.gguf import _fused_moe_gguf
 from gguf import GGMLQuantizationType, GGUFReader, ReaderTensor, dequantize
 from huggingface_hub import snapshot_download
 
 import aphrodite._custom_ops as ops
-from aphrodite.modeling.layers.fused_moe import fused_experts
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.gguf import _fused_moe_gguf
 
 GGUF_SAMPLE = snapshot_download("Isotr0py/test-gguf-sample")
 GGUF_SAMPLE_MOE = snapshot_download("SzymonOzog/test-gguf-moe-sample")

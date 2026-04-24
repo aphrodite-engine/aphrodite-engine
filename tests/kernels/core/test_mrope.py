@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from typing import NamedTuple
 
 import pytest
 import torch
+from aphrodite.modeling.layers.rotary_embedding import get_rope
 from packaging.version import Version
 from transformers import AutoConfig
 from transformers import __version__ as TRANSFORMERS_VERSION
 
-from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.platforms import current_platform
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

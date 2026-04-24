@@ -42,7 +42,7 @@ outputs = llm.generate(  # [!code highlight]
 
 ## Serving with OpenAI API server
 
-LoRA adapters can be served with our OpenAI-compatible API server. To do so, specify `--lora-modules {name}={path} {name}={path} ...` in the CLI. 
+LoRA adapters can be served with our OpenAI-compatible API server. To do so, specify `--lora-modules {name}={path} {name}={path} ...` in the CLI.
 
 ```sh
 aphrodite run meta-llama/Llama-2-7b-hf \

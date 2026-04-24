@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.modeling.layers.layernorm import RMSNorm
+
 from aphrodite.platforms import current_platform
 from tests.kernels.quant_utils import FP8_DTYPE
 from tests.kernels.utils import opcheck

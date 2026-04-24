@@ -1,17 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import weakref
 from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from copy import deepcopy
 
 import depyf
-from torch import fx
-from torch._ops import OpOverload
-from torch.fx._utils import lazy_format_graph_code
-
 from aphrodite.compilation.aphrodite_inductor_pass import AphroditeInductorPass
 from aphrodite.compilation.fx_utils import find_op_nodes
 from aphrodite.compilation.inductor_pass import InductorPass
 from aphrodite.compilation.pass_manager import with_pattern_match_debug
+from torch import fx
+from torch._ops import OpOverload
+from torch.fx._utils import lazy_format_graph_code
+
 from aphrodite.config import AphroditeConfig, get_current_aphrodite_config
 from aphrodite.logger import init_logger
 

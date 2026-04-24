@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests whether gptq models with dynamic quantized can be loaded.
 
 Run `pytest tests/quantization/test_gptq_dynamic.py --forked`.
@@ -5,7 +7,6 @@ Run `pytest tests/quantization/test_gptq_dynamic.py --forked`.
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.linear import UnquantizedLinearMethod
 from aphrodite.quantization.gptq import GPTQLinearMethod
 from aphrodite.quantization.gptq_marlin import GPTQMarlinLinearMethod

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from dataclasses import dataclass
 
 from prometheus_client import REGISTRY
@@ -10,7 +13,7 @@ class Metric:
     """A base class for prometheus metrics.
 
     Each metric may be associated with key=value labels, and
-    in some cases a single aphrodite instance may have multiple
+    in some cases a single Aphrodite instance may have multiple
     metrics with the same name but different sets of labels.
     """
 

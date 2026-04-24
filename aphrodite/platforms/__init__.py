@@ -1,4 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import logging
+import os
 import traceback
 from itertools import chain
 from typing import TYPE_CHECKING
@@ -36,7 +39,7 @@ def tpu_platform_plugin() -> str | None:
     # Check for Pathways TPU proxy
     if envs.APHRODITE_TPU_USING_PATHWAYS:
         logger.debug("Confirmed TPU platform is available via Pathways proxy.")
-        return "tpu_inference.platforms.tpu_jax.TpuPlatform"
+        return "tpu_inference.platforms.tpu_platform.TpuPlatform"
 
     # Check for libtpu installation
     try:
@@ -123,27 +126,31 @@ def xpu_platform_plugin() -> str | None:
     is_xpu = False
     logger.debug("Checking if XPU platform is available.")
     try:
-        # installed IPEX if the machine has XPUs.
-        import intel_extension_for_pytorch  # noqa: F401
         import torch
 
         if supports_xccl():
             dist_backend = "xccl"
-        else:
-            dist_backend = "ccl"
-            import oneccl_bindings_for_pytorch  # noqa: F401
-
-        if hasattr(torch, "xpu") and torch.xpu.is_available():
-            is_xpu = True
             from aphrodite.platforms.xpu import XPUPlatform
 
             XPUPlatform.dist_backend = dist_backend
             logger.debug("Confirmed %s backend is available.", XPUPlatform.dist_backend)
+
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            is_xpu = True
             logger.debug("Confirmed XPU platform is available.")
     except Exception as e:
         logger.debug("XPU platform is not available because: %s", str(e))
 
     return "aphrodite.platforms.xpu.XPUPlatform" if is_xpu else None
+
+
+def _is_amd_zen_cpu() -> bool:
+    """Detect AMD CPU with AVX-512 via /proc/cpuinfo."""
+    if not os.path.exists("/proc/cpuinfo"):
+        return False
+    with open("/proc/cpuinfo") as f:
+        cpuinfo = f.read()
+    return "AuthenticAMD" in cpuinfo and "avx512" in cpuinfo
 
 
 def cpu_platform_plugin() -> str | None:
@@ -163,7 +170,19 @@ def cpu_platform_plugin() -> str | None:
     except Exception as e:
         logger.debug("CPU platform is not available because: %s", str(e))
 
-    return "aphrodite.platforms.cpu.CpuPlatform" if is_cpu else None
+    if not is_cpu:
+        return None
+
+    if _is_amd_zen_cpu():
+        try:
+            import zentorch  # noqa: F401
+
+            logger.debug("AMD Zen CPU detected with zentorch installed, using ZenCpuPlatform.")
+            return "aphrodite.platforms.zen_cpu.ZenCpuPlatform"
+        except ImportError:
+            logger.debug("AMD Zen CPU detected but zentorch not installed, falling back to CpuPlatform.")
+
+    return "aphrodite.platforms.cpu.CpuPlatform"
 
 
 builtin_platform_plugins = {
@@ -251,4 +270,11 @@ def __setattr__(name: str, value):
         raise AttributeError(f"No attribute named '{name}' exists in {__name__}.")
 
 
-__all__ = ["Platform", "PlatformEnum", "current_platform", "CpuArchEnum", "_init_trace"]
+__all__ = [
+    "Platform",
+    "PlatformEnum",
+    "current_platform",
+    "CpuArchEnum",
+    "_init_trace",
+    "_is_amd_zen_cpu",
+]

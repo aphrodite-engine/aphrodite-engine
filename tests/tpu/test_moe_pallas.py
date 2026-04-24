@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the Pallas MOE implementation.
 
 Run `pytest tests/kernels/moe/test_moe_pallas.py`.
@@ -6,9 +8,9 @@ Run `pytest tests/kernels/moe/test_moe_pallas.py`.
 import pytest
 import torch
 import torch_xla
-
 from aphrodite.modeling.layers.fused_moe.moe_pallas import fused_moe as pallas_moe
 from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import fused_moe as torch_moe
+
 from aphrodite.platforms import current_platform
 
 if not current_platform.is_tpu():

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 GPQA evaluation using Aphrodite server and GPT-OSS evaluation package.
 

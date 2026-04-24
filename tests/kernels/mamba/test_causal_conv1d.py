@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 import torch.nn.functional as F
-from einops import rearrange
-
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
 from aphrodite.modeling.layers.mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
+from einops import rearrange
+
 from aphrodite.platforms import current_platform
 
 

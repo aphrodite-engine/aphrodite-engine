@@ -1,41 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import contextlib
 import hashlib
 import inspect
 import os
 import sys
-from collections.abc import Callable
-from typing import TypeVar, overload
+from collections.abc import Callable, Generator
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 from unittest.mock import patch
 
 import torch
 import torch.nn as nn
-from packaging import version
 from torch._dynamo.symbolic_convert import InliningInstructionTranslator
 
 import aphrodite.envs as envs
-from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.counter import compilation_counter
-from aphrodite.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
+from aphrodite.compilation.wrapper import TorchCompileWithNoGuardsWrapper
 from aphrodite.config import (
     AphroditeConfig,
     CompilationMode,
     get_current_aphrodite_config,
     set_current_aphrodite_config,
 )
+from aphrodite.config.compilation import DynamicShapesType
+from aphrodite.forward_context import get_forward_context, is_forward_context_available
 from aphrodite.logger import init_logger
+from aphrodite.sequence import IntermediateTensors
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
-from aphrodite.utils.torch_utils import supports_dynamo
+from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 
-from .monitor import start_monitoring_torch_compile
+from .monitor import monitor_profiling_run, monitor_torch_compile
+
+if TYPE_CHECKING:
+    # Only added on nightly/2.10 so wrap
+    try:
+        from torch._dynamo.package import SourceInfo
+    except ImportError:
+        # Fallback for old versions not supporting
+        SourceInfo = Any
 
 logger = init_logger(__name__)
 
 IGNORE_COMPILE_KEY = "_ignore_compile_aphrodite"
 
-_T = TypeVar("_T", bound=type[nn.Module])
+_T = TypeVar("_T", bound=nn.Module)
 
 
-def ignore_torch_compile(cls: _T) -> _T:
+def should_torch_compile_mm_encoder(aphrodite_config: AphroditeConfig) -> bool:
+    """Callable to be passed to `@support_torch_compile`'s `enable_if` argument."""
+    return aphrodite_config.compilation_config.compile_mm_encoder
+
+
+def ignore_torch_compile(cls: type[_T]) -> type[_T]:
     """
     A decorator to ignore support_torch_compile decorator
     on the class. This is useful when a parent class has
@@ -55,7 +72,7 @@ def ignore_torch_compile(cls: _T) -> _T:
     return cls
 
 
-def _should_ignore_torch_compile(cls) -> bool:
+def _should_ignore_torch_compile(cls: type[_T]) -> bool:
     """
     Check if the class should be ignored for torch.compile.
     """
@@ -66,21 +83,21 @@ def _should_ignore_torch_compile(cls) -> bool:
 def support_torch_compile(
     *,
     enable_if: Callable[[AphroditeConfig], bool] | None = None,
-) -> Callable[[_T], _T]: ...
+) -> Callable[[type[_T]], type[_T]]: ...
 
 
 @overload
 def support_torch_compile(
     *,
     dynamic_arg_dims: dict[str, int | list[int]] | None,
-) -> Callable[[_T], _T]: ...
+) -> Callable[[type[_T]], type[_T]]: ...
 
 
 @overload
 def support_torch_compile(
     *,
     mark_unbacked_dims: dict[str, int | list[int]] | None,
-) -> Callable[[_T], _T]: ...
+) -> Callable[[type[_T]], type[_T]]: ...
 
 
 @overload
@@ -88,20 +105,22 @@ def support_torch_compile(
     *,
     dynamic_arg_dims: dict[str, int | list[int]] | None,
     mark_unbacked_dims: dict[str, int | list[int]] | None,
-) -> Callable[[_T], _T]: ...
+) -> Callable[[type[_T]], type[_T]]: ...
 
 
 @overload
-def support_torch_compile(cls: _T) -> _T: ...
+def support_torch_compile(cls: type[_T]) -> type[_T]: ...
 
 
 def support_torch_compile(
-    cls: _T | None = None,
+    cls: type[_T] | None = None,
     *,
     dynamic_arg_dims: dict[str, int | list[int]] | None = None,
     mark_unbacked_dims: dict[str, int | list[int]] | None = None,
     enable_if: Callable[[AphroditeConfig], bool] | None = None,
-) -> Callable[[_T], _T] | _T:
+    is_encoder: bool = False,
+    shape_invariants: Callable[..., None] = lambda *args, **kwargs: None,
+) -> Callable[[type[_T]], type[_T]] | type[_T]:
     """
     A decorator to add support for compiling the forward method of a class.
 
@@ -156,11 +175,24 @@ def support_torch_compile(
 
     `mark_unbacked_dims` is a dictionary that maps argument names with a dynamic
     dim to be decorated with `mark_unbacked`.  This is useful if we would like to
-    enforce that dynamo do not specialize on 0/1 values in the case of dummy input
+    enforce that dynamo does not specialize on 0/1 values in the case of dummy input
     such as for vision model compilation
+
+    `is_encoder` marks this module as a portion of an multimodal encoder.
+    When True, the compile range upper bound is set to MAX_INT32 instead of
+    max_num_batched_tokens, since encoder input shapes are unpredictable.
+    This is typically used for vision encoder sub-modules in multimodal models.
+
+    `shape_invariants` is a function that gets compiled right before forward.
+    The function should have the torch._check calls that are needed to set
+    the relationships between different input sizes. For example:
+            torch._check(input_ids.size()[0] == inputs_embeds.size()[0])
+    This enforces constraints on the symbolic shapes without hardcoding
+    specific values. It is needed for some models to avoid data dependent
+    errors.
     """
 
-    def cls_decorator_helper(cls: _T) -> _T:
+    def cls_decorator_helper(cls: type[_T]) -> type[_T]:
         # helper to pass `dynamic_arg_dims` to `_support_torch_compile`
         # to avoid too much indentation for `_support_torch_compile`
         if not hasattr(cls, "forward"):
@@ -173,6 +205,8 @@ def support_torch_compile(
                 if v.annotation in [
                     torch.Tensor,
                     torch.Tensor | None,
+                    torch.FloatTensor,
+                    torch.FloatTensor | None,
                     IntermediateTensors,
                     IntermediateTensors | None,
                 ]:
@@ -193,7 +227,14 @@ def support_torch_compile(
         for k in inferred_dynamic_arg_dims:
             if k not in sig.parameters:
                 raise ValueError(f"Argument {k} not found in the forward method of {cls}")
-        return _support_torch_compile(cls, inferred_dynamic_arg_dims, mark_unbacked_dims, enable_if)
+        return _support_torch_compile(
+            cls,
+            inferred_dynamic_arg_dims,
+            mark_unbacked_dims,
+            enable_if,
+            is_encoder,
+            shape_invariants,
+        )
 
     if cls is not None:
         # use `support_torch_compile` as a decorator without arguments
@@ -203,7 +244,7 @@ def support_torch_compile(
     return cls_decorator_helper
 
 
-def _model_hash_key(fn) -> str:
+def _model_hash_key(fn: Callable[..., Any]) -> str:
     import aphrodite
 
     sha256_hash = hashlib.sha256()
@@ -213,7 +254,7 @@ def _model_hash_key(fn) -> str:
     return sha256_hash.hexdigest()
 
 
-def _verify_source_unchanged(source_info, aphrodite_config) -> None:
+def _verify_source_unchanged(source_info: "SourceInfo", aphrodite_config: AphroditeConfig) -> None:
     from .caching import _compute_code_hash, _compute_code_hash_with_content
 
     file_contents = {}
@@ -228,243 +269,397 @@ def _verify_source_unchanged(source_info, aphrodite_config) -> None:
         raise RuntimeError("Source code has changed since the last compilation. Recompiling the model.")
 
 
+def _try_load_aot_compiled_fn(
+    model: Any,
+    aot_compilation_path: str,
+) -> Any | None:
+    """Try to load an AOT-compiled function from disk.
+
+    Returns the loaded callable on success, or None on failure.
+    Re-raises on failure when ``APHRODITE_FORCE_AOT_LOAD`` is set.
+    """
+    try:
+        with monitor_torch_compile(model.aphrodite_config):
+            with (
+                set_current_aphrodite_config(model.aphrodite_config),
+                open(aot_compilation_path, "rb") as f,
+            ):
+                loaded_fn = torch.compiler.load_compiled_function(f, f_globals=model.forward.__globals__)
+            _verify_source_unchanged(loaded_fn.source_info(), model.aphrodite_config)
+            ds_config = model.compilation_config.dynamic_shapes_config
+            if not ds_config.evaluate_guards:
+                loaded_fn.disable_guard_check()
+            # Eagerly load compiled artifacts now that traced_files
+            # is populated by _verify_source_unchanged.
+            with maybe_use_cudagraph_partition_wrapper(model.aphrodite_config):
+                loaded_fn._artifacts.compiled_fn.finalize_loading(model.aphrodite_config)
+            compilation_counter.num_aot_artifacts_loaded += 1
+            logger.debug("Directly load AOT compilation from path %s", aot_compilation_path)
+        return loaded_fn
+    except Exception as e:
+        if os.path.exists(aot_compilation_path):
+            if isinstance(e, EOFError):
+                message = "Compile cache file corrupted."
+            else:
+                message = str(e)
+            logger.warning(
+                "Compiling model again due to a load failure from %s, reason: %s",
+                aot_compilation_path,
+                message,
+            )
+        if envs.APHRODITE_FORCE_AOT_LOAD:
+            raise e
+        return None
+
+
 def _support_torch_compile(
-    cls: _T,
+    cls: type[_T],
     dynamic_arg_dims: dict[str, int | list[int]],
     mark_unbacked_dims: dict[str, int | list[int]] | None = None,
     enable_if: Callable[[AphroditeConfig], bool] | None = None,
-) -> _T:
+    is_encoder: bool = False,
+    shape_invariants: Callable[..., None] = lambda *args, **kwargs: None,
+) -> type[_T]:
     """
     A decorator to add support for compiling the forward method of a class.
     """
-    if TorchCompileWrapperWithCustomDispatcher in cls.__bases__:
+    if TorchCompileWithNoGuardsWrapper in cls.__bases__:
         # support decorating multiple times
         return cls
 
     # take care of method resolution order
     # make sure super().__init__ is called on the base class
-    #  other than TorchCompileWrapperWithCustomDispatcher
-    cls.__bases__ = cls.__bases__ + (TorchCompileWrapperWithCustomDispatcher,)
+    #  other than TorchCompileWithNoGuardsWrapper
+    cls.__bases__ = cls.__bases__ + (TorchCompileWithNoGuardsWrapper,)
 
     old_init = cls.__init__
 
     setattr(cls, IGNORE_COMPILE_KEY, False)
 
-    def __init__(self, *, aphrodite_config: AphroditeConfig | None = None, prefix: str = "", **kwargs):
+    def __init__(
+        self: _T,
+        *args,
+        aphrodite_config: AphroditeConfig | None = None,
+        prefix: str = "",
+        **kwargs: Any,
+    ) -> None:
         if aphrodite_config is None:
             aphrodite_config = get_current_aphrodite_config()
 
         # NOTE: to support multimodal models (such as encoder),
-        # we may not have aphrodite_config so we may need to patch
-        # it
+        # we may not have aphrodite_config so we may need to patch it
         sig = inspect.signature(old_init)
+        # Check that any positional arguments match the old_init method signature
+        annotations = [p.annotation for p in sig.parameters.values()]
+        for arg, annotation in zip(args, annotations):
+            if annotation is inspect._empty:
+                continue
+            if not isinstance(arg, annotation):
+                init = f"'{type(self).__name__}.__init__'"
+                arg_type = f"'{type(arg).__name__}'"
+                raise TypeError(
+                    f"{init} received a positional argument of type {arg_type}, "
+                    "but no parameter of that type was found in the method signature. "
+                    f"Please either annotate {init} or pass it as a keyword argument."
+                )
         if "aphrodite_config" in sig.parameters:
             kwargs["aphrodite_config"] = aphrodite_config
         if "prefix" in sig.parameters:
             kwargs["prefix"] = prefix
-        old_init(self, **kwargs)
+        old_init(self, *args, **kwargs)
 
         self.aphrodite_config = aphrodite_config
+        self.compilation_config = self.aphrodite_config.compilation_config
         enable_compile = enable_if is None or enable_if(aphrodite_config)
         # for CompilationMode.STOCK_TORCH_COMPILE , the upper level model runner
         # will handle the compilation, so we don't need to do anything here.
         self.do_not_compile = (
-            aphrodite_config.compilation_config.mode in [CompilationMode.NONE, CompilationMode.STOCK_TORCH_COMPILE]
-            or not supports_dynamo()
+            self.compilation_config.mode in [CompilationMode.NONE, CompilationMode.STOCK_TORCH_COMPILE]
             or _should_ignore_torch_compile(self.__class__)
             or not enable_compile
         )
         if self.do_not_compile:
             return
 
+        self._check_shape_invariants = shape_invariants
+        self.was_aot_compile_fn_loaded_from_disk = False
         compilation_counter.num_models_seen += 1
-        TorchCompileWrapperWithCustomDispatcher.__init__(
-            self, compilation_mode=aphrodite_config.compilation_config.mode
+        self.compiled = False
+
+        # Handled by monkeypatching `TorchCompileWithNoGuardsWrapper` into base class
+        TorchCompileWithNoGuardsWrapper.__init__(
+            self,
+            compile_prefix=cls.__name__ if is_encoder else "",
+            is_encoder=is_encoder,
         )
 
     cls.__init__ = __init__
 
-    def __call__(self, *args, **kwargs):
-        # torch.compiler.is_compiling() means we are inside the compilation
-        # e.g. TPU has the compilation logic in model runner, so we don't
-        # need to compile the model inside.
-        if self.do_not_compile or torch.compiler.is_compiling():
-            return self.forward(*args, **kwargs)
+    def _mark_dynamic_inputs(mod: type[_T], ds_type: DynamicShapesType, *args: Any, **kwargs: Any) -> None:
+        def mark_dynamic(arg: torch.Tensor, dims: list[int]) -> None:
+            if ds_type == DynamicShapesType.UNBACKED:
+                if is_torch_equal_or_newer("2.10.0"):
+                    for dim in dims:
+                        torch._dynamo.decorators.mark_unbacked(arg, dim, hint_override=arg.size()[dim])
+                else:
+                    torch._dynamo.decorators.mark_unbacked(arg, dims)
+            else:
+                torch._dynamo.mark_dynamic(arg, dims)
 
-        if getattr(self, "aot_compiled_fn", None) is not None:
-            return self.aot_compiled_fn(self, *args, **kwargs)
+        sig = inspect.signature(mod.__class__.forward)  # type: ignore[attr-defined]
+        bound_args = sig.bind(mod, *args, **kwargs)
+        bound_args.apply_defaults()
+        for k, dims in dynamic_arg_dims.items():
+            arg = bound_args.arguments.get(k)
 
-        cache_dir = None
-        aot_compilation_path = None
-        if envs.APHRODITE_USE_AOT_COMPILE:
-            """
-            When using torch.compile in AOT mode, we store the cache artifacts
-            under APHRODITE_CACHE_ROOT/torch_aot_compile/{hash}/rank_i_j. The {hash}
-            contains all of the factors except for the source files being
-            traced through, because we don't actually know which source files
-            to check at this point (before dynamo runs).
-            On loading we will actually look at the source files being traced
-            through. If any source file have changed (compared with the
-            serialized backend artifacts), then we need to generate a new AOT
-            compile artifact from scratch.
-            """
-            from .caching import compilation_config_hash_factors
-
-            factors: list[str] = compilation_config_hash_factors(self.aphrodite_config)
-
-            factors.append(_model_hash_key(self.forward))
-            hash_key = hashlib.sha256(str(factors).encode()).hexdigest()
-
-            cache_dir = os.path.join(
-                envs.APHRODITE_CACHE_ROOT,
-                "torch_aot_compile",
-                hash_key,
-            )
-
-            rank = self.aphrodite_config.parallel_config.rank
-            dp_rank = self.aphrodite_config.parallel_config.data_parallel_rank
-            cache_dir = os.path.join(cache_dir, f"rank_{rank}_{dp_rank}")
-            aot_compilation_path = os.path.join(cache_dir, "model")
-            try:
-                with (
-                    set_current_aphrodite_config(self.aphrodite_config),
-                    open(aot_compilation_path, "rb") as f,
-                ):
-                    start_monitoring_torch_compile(self.aphrodite_config)
-                    loaded_fn = torch.compiler.load_compiled_function(f)
-                _verify_source_unchanged(loaded_fn.source_info(), self.aphrodite_config)
-                loaded_fn.disable_guard_check()
-                self.aot_compiled_fn = loaded_fn
-            except Exception as e:
-                if os.path.exists(aot_compilation_path):
-                    logger.warning(
-                        "Cannot load aot compilation from path %s, error: %s",
-                        aot_compilation_path,
-                        str(e),
-                    )
-                if envs.APHRODITE_FORCE_AOT_LOAD:
-                    raise e
-            if getattr(self, "aot_compiled_fn", None) is not None:
-                logger.info("Directly load AOT compilation from path %s", aot_compilation_path)
-                return self.aot_compiled_fn(self, *args, **kwargs)
-
-        # the first compilation needs to have dynamic shapes marked
-        if len(self.compiled_codes) < 1:
-            sig = inspect.signature(self.__class__.forward)
-            bound_args = sig.bind(self, *args, **kwargs)
-            bound_args.apply_defaults()
-            for k, dims in dynamic_arg_dims.items():
+            if arg is not None:
+                dims = [dims] if isinstance(dims, int) else dims
+                if isinstance(arg, torch.Tensor):
+                    # In case dims is specified with negative indexing
+                    dims = [arg.ndim + dim if dim < 0 else dim for dim in dims]
+                    mark_dynamic(arg, dims)
+                elif isinstance(arg, IntermediateTensors):
+                    for tensor in arg.tensors.values():
+                        # In case dims is specified with negative indexing
+                        dims = [tensor.ndim + dim if dim < 0 else dim for dim in dims]
+                        mark_dynamic(tensor, dims)
+                else:
+                    raise ValueError(f"Unsupported dynamic dimensions {dims} for argument {k} with type {type(arg)}.")
+        if mark_unbacked_dims:
+            for k, dims in mark_unbacked_dims.items():
                 arg = bound_args.arguments.get(k)
                 if arg is not None:
                     dims = [dims] if isinstance(dims, int) else dims
                     if isinstance(arg, torch.Tensor):
                         # In case dims is specified with negative indexing
                         dims = [arg.ndim + dim if dim < 0 else dim for dim in dims]
-                        torch._dynamo.mark_dynamic(arg, dims)
-                    elif isinstance(arg, IntermediateTensors):
-                        for tensor in arg.tensors.values():
-                            # In case dims is specified with negative indexing
-                            dims = [tensor.ndim + dim if dim < 0 else dim for dim in dims]
-                            torch._dynamo.mark_dynamic(tensor, dims)
-                    else:
-                        raise ValueError(
-                            f"Unsupported dynamic dimensions {dims} for argument {k} with type {type(arg)}."
-                        )
-            if mark_unbacked_dims:
-                for k, dims in mark_unbacked_dims.items():
-                    arg = bound_args.arguments.get(k)
-                    if arg is not None:
-                        dims = [dims] if isinstance(dims, int) else dims
-                        if isinstance(arg, torch.Tensor):
-                            # In case dims is specified with negative indexing
-                            dims = [arg.ndim + dim if dim < 0 else dim for dim in dims]
+                        if is_torch_equal_or_newer("2.10.0"):
+                            for dim in dims:
+                                torch._dynamo.decorators.mark_unbacked(arg, dim, hint_override=arg.size()[dim])
+                        else:
                             torch._dynamo.decorators.mark_unbacked(arg, dims)
-            # here, it is the starting point of the `torch.compile` process
-            start_monitoring_torch_compile(self.aphrodite_config)
-            logger.debug("Start compiling function %s", self.original_code_object)
 
-        # if we don't use custom dispatcher, we can directly call the
-        # compiled function and let torch.compile handle the dispatching,
-        # with the overhead of guard evaluation and recompilation.
-        if len(self.compiled_codes) < 1 or not self.use_custom_dispatcher:
-            # it seems Dynamo reuse the compilation across instances,
-            # while we need to make sure the compiled code is not reused.
-            # we need to control all the compilation of the model.
-            torch._dynamo.eval_frame.remove_from_cache(self.original_code_object)
+    def __call__(self: type[_T], *args: Any, **kwargs: Any) -> Any:
+        # torch.compiler.is_compiling() means we are inside the compilation
+        # e.g. TPU has the compilation logic in model runner, so we don't
+        # need to compile the model inside.
+        if self.do_not_compile or torch.compiler.is_compiling():
+            return self.forward(*args, **kwargs)
 
-            # collect all relevant files traced by Dynamo,
-            # so that the compilation cache can trigger re-compilation
-            # properly when any of these files change.
+        # If skip_compiled is set, bypass compiled model call. This is used e.g. for
+        # enc-dec models where tensor shapes/types vary across invocations, preventing
+        # the capture of a single computational graph.
+        if is_forward_context_available() and get_forward_context().skip_compiled:
+            return self.forward(*args, **kwargs)
 
-            # 1. the file containing the top-level forward function
-            self.aphrodite_config.compilation_config.traced_files.add(self.original_code_object.co_filename)
+        # if aot_compiled_fn is set, call it with partition wrapper context.
+        # The partition wrapper must be active at runtime for CUDA graph
+        # capture to work correctly with inductor graph partitioning.
+        if getattr(self, "aot_compiled_fn", None) is not None:
+            with maybe_use_cudagraph_partition_wrapper(self.aphrodite_config):
+                return self.aot_compiled_fn(self, *args, **kwargs)
 
-            # 2. every time Dynamo sees a function call, it will inline
-            # the function by calling InliningInstructionTranslator.inline_call_
-            # we hijack this function to know all the functions called
-            # during Dynamo tracing, and their corresponding files
-            inline_call = InliningInstructionTranslator.inline_call_
+        ds_type = self.compilation_config.dynamic_shapes_config.type
+        cache_dir = None
+        aot_compilation_path = None
+        if envs.APHRODITE_USE_AOT_COMPILE:
+            """
+            When using torch.compile in AOT mode, we store the cache artifacts
+            under APHRODITE_CACHE_ROOT/torch_compile_cache/torch_aot_compile/{hash}
+            The {hash} contains all of the factors except for the source files
+            being traced through, because we don't actually know which source
+            files to check at this point (before dynamo runs).
+            On loading we will actually look at the source files being traced
+            through. If any source file have changed (compared with the
+            serialized backend artifacts), then we need to generate a new AOT
+            compile artifact from scratch.
+            """
+            from .caching import aot_compile_hash_factors
 
-            def patched_inline_call(self_):
-                code = self_.f_code
-                self.aphrodite_config.compilation_config.traced_files.add(code.co_filename)
-                return inline_call(self_)
+            factors: list[str] = aot_compile_hash_factors(self.aphrodite_config)
 
-            # Disable the C++ compilation of symbolic shape guards. C++-fication
-            # of symbolic shape guards can improve guard overhead. But, since
-            # aphrodite skip guards anyways, setting this flag to False can improve
-            # compile time.
-            dynamo_config_patches = {}
-            try:
-                _ = torch._dynamo.config.enable_cpp_symbolic_shape_guards
-                dynamo_config_patches["enable_cpp_symbolic_shape_guards"] = False
-            except AttributeError:
-                # Note: this config is not available in torch 2.6, we can skip
-                # if the config doesn't exist
-                logger.debug("enable_cpp_symbolic_shape_guards config not available")
+            factors.append(_model_hash_key(self.forward))
+            hash_key = hashlib.sha256(str(factors).encode()).hexdigest()
+            cache_dir = os.path.join(
+                envs.APHRODITE_CACHE_ROOT,
+                "torch_compile_cache",
+                "torch_aot_compile",
+                hash_key,
+            )
 
-            with (
-                patch.object(InliningInstructionTranslator, "inline_call_", patched_inline_call),
-                torch._dynamo.config.patch(**dynamo_config_patches),
-                maybe_use_cudagraph_partition_wrapper(self.aphrodite_config),
-                _torch27_patch_tensor_subclasses(),
-            ):
-                if envs.APHRODITE_USE_AOT_COMPILE:
+            # Hash-level dir; shared across ranks on the same node.
+            self.compilation_config.local_cache_dir = cache_dir
+            inductor_cache = os.path.join(cache_dir, "inductor_cache")
+            os.makedirs(inductor_cache, exist_ok=True)
+            # Process-wide: post-load execution, CUDA-graph capture, and later
+            # autotune/recompile all need to write under {hash}/inductor_cache/.
+            # Unconditional because torch's cache_dir() may have pre-filled the
+            # /tmp default during import, making setdefault a no-op.
+            os.environ["TORCHINDUCTOR_CACHE_DIR"] = inductor_cache
+
+            rank = self.aphrodite_config.parallel_config.rank
+            dp_rank = self.aphrodite_config.parallel_config.data_parallel_index
+            cache_dir = os.path.join(cache_dir, f"rank_{rank}_{dp_rank}")
+            aot_compilation_path = os.path.join(cache_dir, "model")
+            if not envs.APHRODITE_DISABLE_COMPILE_CACHE:
+                loaded_fn = _try_load_aot_compiled_fn(self, aot_compilation_path)
+                if loaded_fn is not None:
+                    self.aot_compiled_fn = loaded_fn
+                    self.was_aot_compile_fn_loaded_from_disk = True
+                    with (
+                        monitor_profiling_run(),
+                        maybe_use_cudagraph_partition_wrapper(self.aphrodite_config),
+                    ):
+                        output = self.aot_compiled_fn(self, *args, **kwargs)
+                    return output
+
+        if self.compiled:
+            assert not envs.APHRODITE_USE_AOT_COMPILE or self.aphrodite_config.compilation_config.backend == "eager"
+            return TorchCompileWithNoGuardsWrapper.__call__(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        # This is the path for the first compilation.
+        # the first compilation needs to have dynamic shapes marked
+        _mark_dynamic_inputs(
+            self,
+            ds_type,
+            *args,
+            **kwargs,
+        )
+
+        original_code_object = self.original_code_object()
+        logger.debug("Start compiling function %s", original_code_object)
+
+        # we do not want tp delete the original code object entries since
+        # we depend on them now to look up cached compiled functions.
+        # torch._dynamo.eval_frame.remove_from_cache(original_code_object)
+
+        # collect all relevant files traced by Dynamo,
+        # so that the compilation cache can trigger re-compilation
+        # properly when any of these files change.
+
+        # 1. the file containing the top-level forward function
+        self.compilation_config.traced_files.add(original_code_object.co_filename)
+
+        # 2. every time Dynamo sees a function call, it will inline
+        # the function by calling InliningInstructionTranslator.inline_call_
+        # we hijack this function to know all the functions called
+        # during Dynamo tracing, and their corresponding files
+        inline_call = InliningInstructionTranslator.inline_call_
+
+        def patched_inline_call(self_: Any) -> Any:
+            code = self_.f_code
+            self.compilation_config.traced_files.add(code.co_filename)
+            return inline_call(self_)
+
+        # Disable the C++ compilation of symbolic shape guards. C++-fication
+        # of symbolic shape guards can improve guard overhead. But, since
+        # aphrodite skip guards anyways, setting this flag to False can improve
+        # compile time.
+        dynamo_config_patches = {}
+        try:
+            _ = torch._dynamo.config.enable_cpp_symbolic_shape_guards
+            dynamo_config_patches["enable_cpp_symbolic_shape_guards"] = False
+        except AttributeError:
+            # Note: this config is not available in torch 2.6, we can skip
+            # if the config doesn't exist
+            logger.debug("enable_cpp_symbolic_shape_guards config not available")
+
+        # Prepare backed_size_oblivious config patch if needed
+        fx_config_patches = {}
+        if ds_type == DynamicShapesType.BACKED_SIZE_OBLIVIOUS:
+            fx_config_patches["backed_size_oblivious"] = True
+
+        # Prepare inductor config patches
+        # assume_32bit_indexing is only available in torch 2.10.0+
+        inductor_config_patches = {}
+        if is_torch_equal_or_newer("2.10.0"):
+            inductor_config_patches["assume_32bit_indexing"] = (
+                self.compilation_config.dynamic_shapes_config.assume_32_bit_indexing
+            )
+
+        with (
+            patch.object(InliningInstructionTranslator, "inline_call_", patched_inline_call),
+            torch._dynamo.config.patch(**dynamo_config_patches),
+            maybe_use_cudagraph_partition_wrapper(self.aphrodite_config),
+            torch.fx.experimental._config.patch(**fx_config_patches),
+            torch._inductor.config.patch(**inductor_config_patches),
+        ):
+            use_aot_compile = envs.APHRODITE_USE_AOT_COMPILE
+            if self.aphrodite_config.compilation_config.backend == "eager":
+                logger.warning("Detected eager backend, disabling AOT compile.")
+                use_aot_compile = False
+            if use_aot_compile:
+                # store the path for saving after warmup
+                self._aot_compilation_path = aot_compilation_path
+                self._aot_cache_dir = cache_dir
+                with monitor_torch_compile(self.aphrodite_config):
                     self.aot_compiled_fn = self.aot_compile(*args, **kwargs)
-                    output = self.aot_compiled_fn(self, *args, **kwargs)
-                    assert aot_compilation_path is not None
-                    assert cache_dir is not None
-                    try:
-                        os.makedirs(cache_dir, exist_ok=True)
-                        self.aot_compiled_fn.save_compiled_function(aot_compilation_path)
-                    except Exception as e:
-                        logger.warning(
-                            "Cannot save aot compilation to path %s, error: %s",
-                            aot_compilation_path,
-                            str(e),
-                        )
-                else:
-                    output = self.compiled_callable(*args, **kwargs)
-            return output
+                    compilation_counter.num_aot_compiles += 1
+                    # All compilation is done at this point, save the
+                    # AOT artifact.
+                    self.save_aot_compiled_function()
 
-        # usually, capturing the model once is enough, and then we can
-        # dispatch to the compiled code directly, without going through
-        # the Dynamo guard mechanism.
-        with self.dispatch_to_code(0):
-            model_output = self.forward(*args, **kwargs)
-            return model_output
+                with monitor_profiling_run():
+                    output = self.aot_compiled_fn(self, *args, **kwargs)
+            else:
+                with monitor_torch_compile(
+                    self.aphrodite_config,
+                    "torch.compile and initial profiling/warmup run together took %.2f s in total",
+                ):
+                    output = TorchCompileWithNoGuardsWrapper.__call__(
+                        self,  # type: ignore[arg-type]
+                        *args,
+                        **kwargs,
+                    )
+
+        self.compiled = True
+        return output
+
+    # triggers AphroditeSerializableFunction.serialize()
+    def save_aot_compiled_function(self: type[_T]) -> None:
+        if envs.APHRODITE_DISABLE_COMPILE_CACHE:
+            return
+
+        if self.was_aot_compile_fn_loaded_from_disk:
+            logger.debug("AOT compiled function was loaded from cache, skipping save")
+            return
+
+        assert self.aot_compiled_fn and self._aot_compilation_path and self._aot_cache_dir
+
+        try:
+            os.makedirs(self._aot_cache_dir, exist_ok=True)
+            # File saving should be atomic, so we will save to a temporary location
+            # first. Should be upstreamed to PyTorch 2.12 as well.
+            tmp_file = f"{self._aot_compilation_path}.{os.getpid()}.tmp"
+            self.aot_compiled_fn.save_compiled_function(tmp_file)
+            os.replace(tmp_file, self._aot_compilation_path)
+            compilation_counter.num_aot_artifacts_saved += 1
+            logger.debug_once(
+                "saved AOT compiled function to %s",
+                self._aot_compilation_path,
+                scope="local",
+            )
+        except Exception as e:
+            logger.warning(
+                "unable to save AOT compiled function to %s: %s",
+                self._aot_compilation_path,
+                e,
+            )
 
     cls.__call__ = __call__
+    cls.save_aot_compiled_function = save_aot_compiled_function
     return cls
 
 
 @contextlib.contextmanager
-def maybe_use_cudagraph_partition_wrapper(aphrodite_config: AphroditeConfig):
+def maybe_use_cudagraph_partition_wrapper(
+    aphrodite_config: AphroditeConfig,
+) -> Generator[None, None, None]:
     """
     Context manager to set/unset customized cudagraph partition wrappers.
 
     If we're using Inductor-based graph partitioning, we currently have the
-    whole `fx.Graph` before Inductor lowering and and the piecewise
+    whole `fx.Graph` before Inductor lowering and the piecewise
     splitting happens after all graph passes and fusions. Here, we add
     a custom hook for Inductor to wrap each partition with our static
     graph wrapper class to maintain more control over static graph
@@ -481,7 +676,7 @@ def maybe_use_cudagraph_partition_wrapper(aphrodite_config: AphroditeConfig):
 
         static_graph_wrapper_class = resolve_obj_by_qualname(current_platform.get_static_graph_wrapper_cls())
 
-        def customized_cudagraph_wrapper(f, metadata: CUDAGraphWrapperMetadata):
+        def customized_cudagraph_wrapper(f: Callable[..., Any], metadata: CUDAGraphWrapperMetadata) -> Any:
             partition_id = metadata.partition_index
             num_partitions = metadata.num_partitions
             return static_graph_wrapper_class(
@@ -501,40 +696,3 @@ def maybe_use_cudagraph_partition_wrapper(aphrodite_config: AphroditeConfig):
 
     if compilation_config.cudagraph_mode.has_piecewise_cudagraphs() and compilation_config.use_inductor_graph_partition:
         torch._inductor.utils.set_customized_partition_wrappers(None)
-
-
-@contextlib.contextmanager
-def _torch27_patch_tensor_subclasses():
-    """
-    Add support for using tensor subclasses (ie `BaseAphroditeParameter`, ect) when
-    using torch 2.7.0. This enables using weight_loader_v2 and the use of
-    `BaseAphroditeParameters` without having to replace them with regular tensors
-    before `torch.compile`-time.
-    """
-    from aphrodite.modeling.parameter import (
-        BaseAphroditeParameter,
-        ModelWeightParameter,
-        RowAphroditeParameter,
-        _ColumnAphroditeParameter,
-    )
-
-    def return_false(*args, **kwargs):
-        return False
-
-    if version.parse("2.7") <= version.parse(torch.__version__) < version.parse("2.8"):
-        yield
-        return
-
-    with (
-        torch._dynamo.config.patch(
-            "traceable_tensor_subclasses",
-            [
-                BaseAphroditeParameter,
-                ModelWeightParameter,
-                _ColumnAphroditeParameter,
-                RowAphroditeParameter,
-            ],
-        ),
-        patch("torch._dynamo.variables.torch.can_dispatch_torch_function", return_false),
-    ):
-        yield

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import fnmatch
 import multiprocessing as mp
 import os
@@ -6,10 +8,10 @@ from tempfile import TemporaryDirectory
 
 import pytest
 import torch
+from aphrodite.modeling.model_loader import ShardedStateLoader
 from huggingface_hub import snapshot_download
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.modeling.model_loader import ShardedStateLoader
 
 prompts = [
     "Hello, my name is",

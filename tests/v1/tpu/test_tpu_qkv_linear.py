@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import tempfile
 
 import numpy as np
@@ -5,12 +7,12 @@ import pytest
 import torch
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
-
-from aphrodite.config import set_current_aphrodite_config
-from aphrodite.distributed.parallel_state import ensure_model_parallel_initialized, init_distributed_environment
 from aphrodite.distributed.tpu_distributed_utils import XlaQKVParallelLinear
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.layers.linear import QKVParallelLinear
+
+from aphrodite.config import set_current_aphrodite_config
+from aphrodite.distributed.parallel_state import ensure_model_parallel_initialized, init_distributed_environment
 
 
 @pytest.fixture(autouse=True)

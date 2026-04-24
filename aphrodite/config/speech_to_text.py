@@ -1,10 +1,11 @@
-from pydantic.dataclasses import dataclass
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 
 from aphrodite.config.utils import config
 
 
 @config
-@dataclass
 class SpeechToTextConfig:
     """Configuration for speech-to-text models."""
 
@@ -13,10 +14,11 @@ class SpeechToTextConfig:
     16kHz audio input. The input audio will be automatically resampled to this
     rate before processing."""
 
-    max_audio_clip_s: int = 30
+    max_audio_clip_s: int | None = 30
     """Maximum duration in seconds for a single audio clip without chunking.
     Audio longer than this will be split into smaller chunks if
-    `allow_audio_chunking` evaluates to True, otherwise it will be rejected."""
+    `allow_audio_chunking` evaluates to True, otherwise it will be rejected. 
+    `None` means audio duration can be unlimited and won't be chunked."""
 
     overlap_chunk_second: int = 1
     """Overlap duration in seconds between consecutive audio chunks when
@@ -31,4 +33,4 @@ class SpeechToTextConfig:
 
     @property
     def allow_audio_chunking(self) -> bool:
-        return self.min_energy_split_window_size is not None
+        return self.min_energy_split_window_size is not None and self.max_audio_clip_s is not None

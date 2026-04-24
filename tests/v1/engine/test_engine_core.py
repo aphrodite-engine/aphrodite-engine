@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import pytest
+from aphrodite.engine.args_tools import EngineArgs
 from transformers import AutoTokenizer
 
 from aphrodite import SamplingParams
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import set_default_torch_num_threads
 from aphrodite.v1.engine import EngineCoreRequest

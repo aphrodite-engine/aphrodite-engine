@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from abc import ABC, abstractmethod
 from statistics import mean
 from typing import Any, NamedTuple

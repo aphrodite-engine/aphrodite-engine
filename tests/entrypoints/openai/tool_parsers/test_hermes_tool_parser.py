@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 from aphrodite.endpoints.openai.tool_parsers.hermes_tool_parser import Hermes2ProToolParser
+
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 from ....utils import RemoteOpenAIServer

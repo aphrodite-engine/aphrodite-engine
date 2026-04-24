@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for sparse cutlass kernels
 
 Run `pytest tests/kernels/quantization/test_cutlass_2of4_sparse.py`.
@@ -5,10 +7,10 @@ Run `pytest tests/kernels/quantization/test_cutlass_2of4_sparse.py`.
 
 import pytest
 import torch
+from aphrodite.quantization.utils.w8a8_utils import sparse_cutlass_supported
 
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.w8a8_utils import sparse_cutlass_supported
 from tests.kernels.utils import baseline_scaled_mm, to_fp8, to_int8
 
 CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)]

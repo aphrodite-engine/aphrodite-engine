@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
 from dataclasses import MISSING, Field, asdict, dataclass, field
 from unittest.mock import patch
 
 import pytest
+from aphrodite.modeling.layers.pooler import PoolingType
 
 from aphrodite.compilation.backends import AphroditeBackend
 from aphrodite.config import AphroditeConfig, ModelConfig, PoolerConfig, update_config
 from aphrodite.config.load import LoadConfig
 from aphrodite.config.utils import get_field
-from aphrodite.modeling.layers.pooler import PoolingType
 from aphrodite.platforms import current_platform
 
 

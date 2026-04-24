@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for v1 attention backends without GPUModelRunner dependency."""
 
 from functools import partial
 
 import pytest
 import torch
+from aphrodite.attention.backends.registry import _Backend
 from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 
-from aphrodite.attention.backends.registry import _Backend
 from aphrodite.config import ModelConfig
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import cdiv

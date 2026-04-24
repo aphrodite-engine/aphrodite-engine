@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import numpy as np
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeculativeConfig

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test batch-invariant RMS normalization against standard implementations.
 
@@ -7,9 +9,9 @@ with the standard CUDA-based implementation to ensure numerical accuracy.
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.batch_invariant import rms_norm as triton_rms_norm
 from aphrodite.modeling.layers.layernorm import RMSNorm
+
 from aphrodite.platforms import current_platform
 
 skip_unsupported = pytest.mark.skipif(

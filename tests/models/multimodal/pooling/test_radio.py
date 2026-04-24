@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 import torch.nn as nn
+from aphrodite.modeling.models.radio import RadioModel
 from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoModel, CLIPImageProcessor
 
 from aphrodite.distributed import cleanup_dist_env_and_memory
-from aphrodite.modeling.models.radio import RadioModel
 from aphrodite.transformers_utils.configs.radio import RadioConfig
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 

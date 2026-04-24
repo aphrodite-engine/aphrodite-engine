@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import logging
 import os
 import sys
@@ -7,42 +10,34 @@ from aphrodite import envs
 
 
 class Colors:
-    """ANSI color codes for terminal output"""
+    """ANSI color codes for terminal output."""
 
     RESET = "\033[0m"
     BOLD = "\033[1m"
     DIM = "\033[2m"
 
-    DEBUG = "\033[36m"  # Cyan
-    INFO = "\033[1m\033[36m"  # Bold Cyan
-    WARNING = "\033[1m\033[33m"  # Bold Yellow
-    ERROR = "\033[1m\033[31m"  # Bold Red
-    CRITICAL = "\033[1m\033[41m\033[37m"  # Bold White on Red
+    DEBUG = "\033[36m"
+    INFO = "\033[1m\033[36m"
+    WARNING = "\033[1m\033[33m"
+    ERROR = "\033[1m\033[31m"
+    CRITICAL = "\033[1m\033[41m\033[37m"
 
-    TIME = "\033[2m"  # Dim
-    PATH = "\033[2m\033[34m"  # Dim Blue
+    TIME = "\033[2m"
+    PATH = "\033[2m\033[34m"
 
 
 def _supports_color() -> bool:
-    """Check if the terminal supports color output"""
     if os.environ.get("NO_COLOR"):
         return False
-
     if os.environ.get("FORCE_COLOR"):
         return True
-
-    if not hasattr(sys.stdout, "isatty"):
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return False
-
-    if not sys.stdout.isatty():
-        return False
-
-    term = os.environ.get("TERM", "")
-    return term != "dumb"
+    return os.environ.get("TERM", "") != "dumb"
 
 
 class NewLineFormatter(logging.Formatter):
-    """Adds logging prefix to newlines to align multi-line messages with optional colors."""
+    """Adds logging prefix to newlines to align multiline log messages."""
 
     def __init__(self, fmt, datefmt=None, style="%"):
         super().__init__(fmt, datefmt, style)
@@ -52,9 +47,7 @@ class NewLineFormatter(logging.Formatter):
             self.root_dir = Path(__file__).resolve().parent.parent.parent
 
         self.use_color = _supports_color() and os.environ.get("APHRODITE_LOGGING_COLOR", "1") in ("1", "true", "True")
-
         self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
-
         self.level_colors = {
             "DEBUG": Colors.DEBUG,
             "INFO": Colors.INFO,
@@ -64,9 +57,6 @@ class NewLineFormatter(logging.Formatter):
         }
 
     def format(self, record):
-        # Adjust format based on APHRODITE_LOGGING_VERBOSE
-        # True = detailed (with brackets, date+time)
-        # False = simplified (no brackets, time only)
         if self.verbose_logging:
             original_datefmt = self.datefmt
             self.datefmt = "%m-%d %H:%M:%S"
@@ -75,28 +65,6 @@ class NewLineFormatter(logging.Formatter):
             self.datefmt = "%H:%M:%S"
 
         def shrink_path(relpath: Path) -> str:
-            """
-            Shortens a file path for logging display:
-            - Removes leading 'aphrodite' folder if present.
-            - If path starts with 'v1',
-            keeps the first two and last two levels,
-            collapsing the middle as '...'.
-            - Otherwise, keeps the first and last two levels,
-            collapsing the middle as '...'.
-            - If the path is short, returns it as-is.
-            - Examples:
-            aphrodite/quantization/utils/fp8_utils.py ->
-            aphrodite/.../fp8_utils.py
-            aphrodite/quantization/awq.py ->
-            quantization/awq.py
-            aphrodite/v1/attention/backends/mla/common.py ->
-            v1/attention/backends/mla/common.py
-
-            Args:
-                relpath (Path): The relative path to be shortened.
-            Returns:
-                str: The shortened path string for display.
-            """
             parts = list(relpath.parts)
             new_parts = []
             if parts and parts[0] == "aphrodite":
@@ -126,7 +94,6 @@ class NewLineFormatter(logging.Formatter):
         else:
             record.fileinfo = record.filename
 
-        # it's a given that the fileinfo ends with .py
         if record.fileinfo.endswith(".py"):
             record.fileinfo = record.fileinfo[:-3]
 
@@ -144,34 +111,100 @@ class NewLineFormatter(logging.Formatter):
             msg = super().format(record)
             self._style._fmt = original_fmt
 
-        # for brevity
         if "WARNING" in msg:
             msg = msg.replace("WARNING", "WARN", 1)
 
         if self.use_color:
             level_color = self.level_colors.get(record.levelname, "")
-
-            # Format: PREFIX + LEVEL + TIME + [PATH:LINE] + MESSAGE
             level_str = "WARN" if record.levelname == "WARNING" else record.levelname
 
             if level_str in msg:
-                # Color the level
                 msg = msg.replace(level_str, f"{level_color}{level_str}{Colors.RESET}", 1)
 
             asctime = self.formatTime(record, self.datefmt)
             if asctime in msg:
                 msg = msg.replace(asctime, f"{Colors.TIME}{asctime}{Colors.RESET}", 1)
 
-            # Match the formatted fileinfo with padding (left-aligned 15 chars + : + 4 digit lineno)
-            # Only apply when in verbose_logging mode (i.e., when brackets are shown)
             if self.verbose_logging:
                 fileinfo_str = f"[{record.fileinfo:<15}:{record.lineno:>4}]"
                 if fileinfo_str in msg:
-                    msg = msg.replace(fileinfo_str, f"{Colors.PATH}{fileinfo_str}{Colors.RESET}", 1)
+                    msg = msg.replace(
+                        fileinfo_str,
+                        f"{Colors.PATH}{fileinfo_str}{Colors.RESET}",
+                        1,
+                    )
 
         self.datefmt = original_datefmt
 
         if record.message != "":
             parts = msg.split(record.message)
             msg = msg.replace("\n", "\r\n" + parts[0])
+        return msg
+
+
+class ColoredFormatter(NewLineFormatter):
+    """Compatibility alias for older logger configuration."""
+
+
+class UvicornFormatter(logging.Formatter):
+    """Uvicorn formatter that matches Aphrodite's console logging style."""
+
+    def __init__(self, fmt, datefmt=None, style="%"):
+        super().__init__(fmt, datefmt, style)
+
+        self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
+        self.use_color = _supports_color() and os.environ.get("APHRODITE_LOGGING_COLOR", "1") in ("1", "true", "True")
+        self.level_colors = {
+            "DEBUG": Colors.DEBUG,
+            "INFO": Colors.INFO,
+            "WARNING": Colors.WARNING,
+            "ERROR": Colors.ERROR,
+            "CRITICAL": Colors.CRITICAL,
+        }
+        self.path_color = Colors.PATH
+        self.time_color = Colors.TIME
+        self.reset_color = Colors.RESET
+
+    def format(self, record):
+        if not self.verbose_logging:
+            original_datefmt = self.datefmt
+            self.datefmt = "%H:%M:%S"
+        else:
+            original_datefmt = self.datefmt
+
+        msg = super().format(record)
+
+        if not self.verbose_logging:
+            self.datefmt = original_datefmt
+
+        if "WARNING" in msg:
+            msg = msg.replace("WARNING", "WARN", 1)
+
+        if self.use_color:
+            level_color = self.level_colors.get(record.levelname, "")
+            level_str = "WARN" if record.levelname == "WARNING" else record.levelname
+
+            if level_str in msg:
+                msg = msg.replace(level_str, f"{level_color}{level_str}{self.reset_color}", 1)
+
+            asctime = self.formatTime(
+                record,
+                self.datefmt if not self.verbose_logging else "%m-%d %H:%M:%S",
+            )
+            if asctime in msg:
+                msg = msg.replace(asctime, f"{self.time_color}{asctime}{self.reset_color}", 1)
+
+            if self.verbose_logging:
+                name_with_lineno = f"[{record.name:<15}:{record.lineno:>4}]"
+                if name_with_lineno in msg:
+                    msg = msg.replace(
+                        name_with_lineno,
+                        f"{self.path_color}{name_with_lineno}{self.reset_color}",
+                        1,
+                    )
+
+        if record.message != "":
+            parts = msg.split(record.message)
+            msg = msg.replace("\n", "\r\n" + parts[0])
+
         return msg

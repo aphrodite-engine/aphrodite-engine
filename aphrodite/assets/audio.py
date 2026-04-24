@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -5,14 +8,9 @@ from urllib.parse import urljoin
 
 import numpy.typing as npt
 
-from aphrodite.utils.import_utils import PlaceholderModule
+from aphrodite.multimodal.media.audio import load_audio
 
-from .base import VLLM_S3_BUCKET_URL, get_vllm_public_assets
-
-try:
-    import librosa
-except ImportError:
-    librosa = PlaceholderModule("librosa")  # type: ignore[assignment]
+from .base import APHRODITE_S3_BUCKET_URL, get_aphrodite_public_assets
 
 ASSET_DIR = "multimodal_asset"
 
@@ -29,12 +27,12 @@ class AudioAsset:
 
     @property
     def audio_and_sample_rate(self) -> tuple[npt.NDArray, float]:
-        audio_path = get_vllm_public_assets(filename=self.filename, s3_prefix=ASSET_DIR)
-        return librosa.load(audio_path, sr=None)
+        audio_path = get_aphrodite_public_assets(filename=self.filename, s3_prefix=ASSET_DIR)
+        return load_audio(audio_path, sr=None)
 
     def get_local_path(self) -> Path:
-        return get_vllm_public_assets(filename=self.filename, s3_prefix=ASSET_DIR)
+        return get_aphrodite_public_assets(filename=self.filename, s3_prefix=ASSET_DIR)
 
     @property
     def url(self) -> str:
-        return urljoin(VLLM_S3_BUCKET_URL, f"{ASSET_DIR}/{self.name}.ogg")
+        return urljoin(APHRODITE_S3_BUCKET_URL, f"{ASSET_DIR}/{self.name}.ogg")

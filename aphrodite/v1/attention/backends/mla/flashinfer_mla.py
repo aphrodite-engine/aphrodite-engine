@@ -1,18 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from typing import ClassVar
 
 import torch
 from flashinfer.decode import trtllm_batch_decode_with_kv_cache_mla
 
-from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, MultipleOf
+from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
-from aphrodite.v1.attention.backends.mla.common import (
+from aphrodite.model_executor.layers.attention.mla_attention import (
     MLACommonBackend,
     MLACommonImpl,
     MLACommonMetadata,
     MLACommonMetadataBuilder,
     QueryLenSupport,
 )
-from aphrodite.v1.attention.backends.utils import AttentionCGSupport
+from aphrodite.platforms.interface import DeviceCapability
+from aphrodite.utils.torch_utils import is_quantized_kv_cache
+from aphrodite.v1.attention.backend import (
+    AttentionCGSupport,
+    AttentionLayer,
+    AttentionType,
+    MultipleOf,
+)
+from aphrodite.v1.attention.backends.utils import KVCacheLayoutType
 
 logger = init_logger(__name__)
 
@@ -20,11 +31,24 @@ FLASHINFER_MLA_WORKSPACE_BUFFER_SIZE = 128 * 1024 * 1024
 
 
 class FlashInferMLAMetadataBuilder(MLACommonMetadataBuilder[MLACommonMetadata]):
-    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
+    _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
     query_len_support: ClassVar[QueryLenSupport] = QueryLenSupport.UNIFORM
 
 
 class FlashInferMLABackend(MLACommonBackend):
+    supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
+        "float16",
+        "bfloat16",
+        "fp8",
+        "fp8_e4m3",
+    ]
+
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [32, 64]
+
     @staticmethod
     def get_name() -> str:
         return "FLASHINFER_MLA"
@@ -37,9 +61,36 @@ class FlashInferMLABackend(MLACommonBackend):
     def get_builder_cls() -> type["FlashInferMLAMetadataBuilder"]:
         return FlashInferMLAMetadataBuilder
 
-    @staticmethod
-    def get_supported_kernel_block_size() -> list[int | MultipleOf]:
-        return [32, 64]
+    @classmethod
+    def supports_compute_capability(cls, capability: DeviceCapability) -> bool:
+        return capability.major == 10
+
+    @classmethod
+    def supports_combination(
+        cls,
+        head_size: int,
+        dtype: torch.dtype,
+        kv_cache_dtype: CacheDType | None,
+        block_size: int | None,
+        use_mla: bool,
+        has_sink: bool,
+        use_sparse: bool,
+        device_capability: DeviceCapability,
+    ) -> str | None:
+        # FlashInfer MLA kernel requires qk_nope_head_dim in [64, 128, 192]
+        from aphrodite.config import get_current_aphrodite_config
+
+        aphrodite_config = get_current_aphrodite_config()
+        if aphrodite_config.model_config is not None:
+            hf_text_config = aphrodite_config.model_config.hf_text_config
+            qk_nope_head_dim = getattr(hf_text_config, "qk_nope_head_dim", 1)
+            if qk_nope_head_dim not in [64, 128, 192]:
+                return f"FlashInfer MLA kernel requires qk_nope_head_dim in [64, 128, 192], but got {qk_nope_head_dim}"
+        return None
+
+    @classmethod
+    def get_required_kv_cache_layout(cls) -> "KVCacheLayoutType | None":
+        return "HND"
 
 
 g_fi_workspace = torch.zeros(
@@ -94,7 +145,7 @@ class FlashInferMLAImpl(MLACommonImpl[MLACommonMetadata]):
         self.bmm1_scale: float | None = None
         self.bmm2_scale: float | None = None
 
-    def _forward_decode(
+    def forward_mqa(
         self,
         q: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         kv_c_and_k_pe_cache: torch.Tensor,
@@ -120,9 +171,14 @@ class FlashInferMLAImpl(MLACommonImpl[MLACommonMetadata]):
             q = q.view(attn_metadata.num_decodes, -1, q.shape[-2], q.shape[-1])
 
         if self.bmm1_scale is None:
-            self.bmm1_scale = layer._q_scale_float * layer._k_scale_float * self.scale
+            self.bmm1_scale = self.scale
+            if is_quantized_kv_cache(self.kv_cache_dtype):
+                self.bmm1_scale *= layer._q_scale_float * layer._k_scale_float
+
         if self.bmm2_scale is None:
-            self.bmm2_scale = layer._v_scale_float
+            self.bmm2_scale = 1.0
+            if is_quantized_kv_cache(self.kv_cache_dtype):
+                self.bmm2_scale *= layer._k_scale_float
 
         o = trtllm_batch_decode_with_kv_cache_mla(
             query=q,

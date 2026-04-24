@@ -1,13 +1,13 @@
-from typing import Literal
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from pydantic import Field
-from pydantic.dataclasses import dataclass
+
+from typing import Literal
 
 from aphrodite.config.utils import config
 
 
 @config
-@dataclass
 class KVEventsConfig:
     """Configuration for KV event publishing."""
 
@@ -16,7 +16,7 @@ class KVEventsConfig:
     Events can be published externally by zmq using the event publisher config.
     """
 
-    publisher: Literal["null", "zmq"] = Field(default=None)
+    publisher: Literal["null", "zmq"] = None  # type: ignore[assignment]
     """The publisher to use for publishing kv events. Can be "null", "zmq".
     """
 

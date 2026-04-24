@@ -1,6 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import os
 
-from transformers.dynamic_module_utils import get_class_from_dynamic_module
+from transformers.dynamic_module_utils import (
+    get_class_from_dynamic_module,
+    resolve_trust_remote_code,
+)
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
@@ -11,6 +16,7 @@ logger = init_logger(__name__)
 def try_get_class_from_dynamic_module(
     class_reference: str,
     pretrained_model_name_or_path: str,
+    trust_remote_code: bool,
     cache_dir: str | os.PathLike | None = None,
     force_download: bool = False,
     resume_download: bool | None = None,
@@ -28,6 +34,13 @@ def try_get_class_from_dynamic_module(
     but ignoring any errors.
     """
     try:
+        resolve_trust_remote_code(
+            trust_remote_code,
+            pretrained_model_name_or_path,
+            has_local_code=False,
+            has_remote_code=True,
+        )
+
         return get_class_from_dynamic_module(
             class_reference,
             pretrained_model_name_or_path,

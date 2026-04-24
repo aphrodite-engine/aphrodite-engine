@@ -1,5 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import functools
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -7,8 +11,11 @@ import torch
 
 from aphrodite import envs
 from aphrodite.logger import init_logger
+from aphrodite.platforms import current_platform
+from aphrodite.utils.math_utils import next_power_of_2
 
 logger = init_logger(__name__)
+is_batch_invariant = envs.APHRODITE_BATCH_INVARIANT
 
 _LORA_A_PTR_DICT: dict[tuple[int, ...], tuple[torch.tensor, ...]] = {}
 _LORA_B_PTR_DICT: dict[tuple[int, ...], tuple[torch.tensor, ...]] = {}
@@ -135,7 +142,8 @@ def _get_lora_b_ptr(lora_weights: list[torch.Tensor], offset_start: int, device:
 @functools.lru_cache
 def load_lora_op_config(op_type: str, add_inputs: bool | None) -> dict | None:
     user_defined_config_folder = envs.APHRODITE_TUNED_CONFIG_FOLDER
-    if user_defined_config_folder is not None:
+    # Avoid optimizing for the batch invariant case. Use default config
+    if user_defined_config_folder is not None and not is_batch_invariant:
         gpu_name = torch.cuda.get_device_name()
         gpu_name = gpu_name.replace(" ", "_")
         gpu_name = gpu_name.replace("-", "_")
@@ -149,7 +157,7 @@ def load_lora_op_config(op_type: str, add_inputs: bool | None) -> dict | None:
 
         config_path = Path(f"{user_defined_config_folder}/{config_fname}")
         if not config_path.exists():
-            logger.warning_once(f"No LoRA kernel configs founded in {config_path}")
+            logger.warning_once(f"No LoRA kernel configs found in {config_path}")
             return None
 
         # Load json
@@ -186,11 +194,14 @@ def get_lora_op_configs(
     # default config
     default = {}
     if op_type == "shrink":
+        split_k = 64 if batch < 128 else 8
+        if is_batch_invariant:
+            split_k = 1
         default = {
             "block_m": 32,
             "block_n": 16,
             "block_k": 256 if batch < 128 else 32,
-            "split_k": 64 if batch < 128 else 8,
+            "split_k": split_k,
             "num_warps": 4,
             "num_ctas": 1,
             "group_size_m": 8,
@@ -200,14 +211,25 @@ def get_lora_op_configs(
     # The default config for fused_moe_lora ops
     elif op_type in [
         "fused_moe_lora_w13_shrink",
-        "fused_moe_lora_w13_expand",
         "fused_moe_lora_w2_shrink",
+    ]:
+        default = {
+            "block_m": 64,
+            "block_n": min(64, next_power_of_2(rank)),
+            "block_k": 32,
+            "num_warps": 4,
+            "num_stages": 3,
+            "group_size_m": 8,
+            "split_k": 1,
+        }
+    elif op_type in [
+        "fused_moe_lora_w13_expand",
         "fused_moe_lora_w2_expand",
     ]:
         default = {
             "block_m": 64,
             "block_n": 64,
-            "block_k": 32,
+            "block_k": max(16, min(32, next_power_of_2(rank))),
             "num_warps": 4,
             "num_stages": 3,
             "group_size_m": 8,
@@ -216,8 +238,8 @@ def get_lora_op_configs(
     else:
         default = {
             "block_m": 64,
-            "block_n": 128,
-            "block_k": 16,
+            "block_n": 64 if num_slices > 1 else 128,
+            "block_k": 32,
             "num_warps": 4,
             "num_ctas": 1,
             "num_stages": 2,
@@ -254,3 +276,23 @@ def get_lora_op_configs(
 
     assert config_data is not None
     return config_data
+
+
+@lru_cache
+def supports_pdl(device: torch.device | None = None) -> bool:
+    """
+    Refer to: https://github.com/triton-lang/triton/blob/v3.5.0/python/tutorials/11-programmatic-dependent-launch.py
+    """
+    # PDL requires compute capability SM90 or above
+
+    return (
+        current_platform.is_cuda()
+        and current_platform.has_device_capability(90)
+        and not envs.APHRODITE_LORA_DISABLE_PDL
+    )
+
+
+@lru_cache
+def supports_tma(device: torch.device | None = None) -> bool:
+    # TMA requires compute capability SM90 or above
+    return current_platform.is_cuda() and current_platform.has_device_capability(90)

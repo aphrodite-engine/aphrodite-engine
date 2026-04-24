@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
 
 from aphrodite.utils.platform_utils import is_pin_memory_available
@@ -223,7 +225,7 @@ class SamplingOps:
         # Get vocabulary size from logits
         vocab_size = logits.shape[-1]
 
-        for i, logit_bias in enumerate(sampling_metadata.logit_bias):
+        for i, logit_bias in sampling_metadata.logit_bias.items():
             if logit_bias:
                 for token_id, bias in logit_bias.items():
                     # Check token_id bounds to ensure within vocabulary

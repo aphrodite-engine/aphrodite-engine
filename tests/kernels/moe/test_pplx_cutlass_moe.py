@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-from aphrodite import _custom_ops as ops
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.cutlass_moe import CutlassBatchedExpertsFp8
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
+
+from aphrodite import _custom_ops as ops
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import cdiv
 from tests.kernels.utils import torch_experts

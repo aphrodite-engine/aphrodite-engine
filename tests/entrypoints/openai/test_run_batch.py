@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 import subprocess
 import tempfile
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import BatchRequestOutput
 
 MODEL_NAME = "hmellor/tiny-random-LlamaForCausalLM"

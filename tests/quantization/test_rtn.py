@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Copyright © 2025, Oracle and/or its affiliates.
 """Tests RTN quantization startup and generation,
 doesn't test correctness

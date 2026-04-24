@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from transformers import AutoTokenizer
 
-from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.reasoning import DeepSeekR1ReasoningParser, DeepSeekV3ReasoningParser, IdentityReasoningParser
 
 REASONING_MODEL_NAME = "deepseek-ai/DeepSeek-V3.1"

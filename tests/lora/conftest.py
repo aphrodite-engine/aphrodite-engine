@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import tempfile
 from collections import OrderedDict
 from unittest.mock import MagicMock
@@ -5,13 +7,13 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 import torch.nn as nn
-from huggingface_hub import snapshot_download
-
-from aphrodite.distributed import cleanup_dist_env_and_memory, init_distributed_environment, initialize_model_parallel
 from aphrodite.modeling.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.models.interfaces import SupportsLoRA
+from huggingface_hub import snapshot_download
+
+from aphrodite.distributed import cleanup_dist_env_and_memory, init_distributed_environment, initialize_model_parallel
 from aphrodite.platforms import current_platform
 
 

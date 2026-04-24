@@ -1,14 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
 import regex as re
-from pydantic import TypeAdapter
-
 from aphrodite.endpoints.openai.protocol import ChatCompletionToolsParam
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
 from aphrodite.endpoints.openai.tool_parsers.utils import get_json_schema_from_tools
+from pydantic import TypeAdapter
 
 pytestmark = pytest.mark.cpu_test
 

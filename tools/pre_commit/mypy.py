@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Run mypy on changed files.
 
@@ -69,9 +71,13 @@ EXCLUDE = [
     "aphrodite/modeling/parallel_utils",
     "aphrodite/modeling/models",
     "aphrodite/modeling/layers/fla/ops",
+    "aphrodite/model_executor/layers/fla/ops",
+    "aphrodite/vllm_flash_attn",
+    "aphrodite/third_party",
     # Ignore triton kernels in ops.
     "aphrodite/attention/ops",
 ]
+EXCLUDE_PATTERN = f"^({'|'.join(EXCLUDE)}).*"
 
 
 def group_files(changed_files: list[str]) -> dict[str, list[str]]:
@@ -84,7 +90,7 @@ def group_files(changed_files: list[str]) -> dict[str, list[str]]:
     Returns:
         A dictionary mapping file group names to lists of changed files.
     """
-    exclude_pattern = re.compile(f"^{'|'.join(EXCLUDE)}.*")
+    exclude_pattern = re.compile(EXCLUDE_PATTERN)
     files_pattern = re.compile(f"^({'|'.join(FILES)}).*")
     file_groups = {"": []}
     file_groups.update({k: [] for k in SEPARATE_GROUPS})
@@ -129,12 +135,12 @@ def mypy(
         args += ["--python-version", python_version]
     if follow_imports is not None:
         args += ["--follow-imports", follow_imports]
+    args += ["--exclude", EXCLUDE_PATTERN]
     print(f"$ {' '.join(args)} {file_group}")
     return subprocess.run(args + targets, check=False).returncode
 
 
 def main():
-    ci = sys.argv[1] == "1"
     python_version = sys.argv[2]
     file_groups = group_files(sys.argv[3:])
 
@@ -143,7 +149,7 @@ def main():
 
     returncode = 0
     for file_group, changed_files in file_groups.items():
-        follow_imports = None if ci and file_group == "" else "skip"
+        follow_imports = "skip"
         if changed_files:
             returncode |= mypy(changed_files, python_version, follow_imports, file_group)
     return returncode

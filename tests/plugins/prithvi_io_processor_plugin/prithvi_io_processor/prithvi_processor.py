@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import base64
 import datetime
 import os
@@ -11,12 +13,12 @@ import numpy as np
 import rasterio
 import regex as re
 import torch
+from aphrodite.endpoints.openai.protocol import IOProcessorRequest, IOProcessorResponse
+from aphrodite.inputs.data import PromptType
 from einops import rearrange
 from terratorch.datamodules import Sen1Floods11NonGeoDataModule
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.endpoints.openai.protocol import IOProcessorRequest, IOProcessorResponse
-from aphrodite.inputs.data import PromptType
 from aphrodite.logger import init_logger
 from aphrodite.outputs import PoolingRequestOutput
 from aphrodite.plugins.io_processors.interface import IOProcessor, IOProcessorInput, IOProcessorOutput

@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for QuantFP8 Group Quantization implementation."""
 
 import pytest
 import torch
-
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.utils.quant_utils import GroupShape
+
+from aphrodite.platforms import current_platform
 
 
 @pytest.mark.parametrize(

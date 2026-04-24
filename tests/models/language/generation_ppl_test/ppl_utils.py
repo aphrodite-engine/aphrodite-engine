@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from https://huggingface.co/docs/transformers/perplexity
 from typing import cast
 

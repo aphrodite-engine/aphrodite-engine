@@ -7,6 +7,7 @@ Aphrodite supports many different quantization methods. Here we provide an overv
 ## AQLM
 
 Reference:
+
 - Paper: [Extreme Compression of Large Language Models via Additive Quantization](https://arxiv.org/pdf/2401.06118.pdf)
 - Code: [GitHub](https://github.com/Vahe1994/AQLM)
 
@@ -17,6 +18,7 @@ Producing an AQLM quant is prohibitively expensive, as you need to train and qua
 To quantize a model to AQLM, follow these teps:
 
 1. Clone the AQLM repo:
+
 ```sh
 git clone --recursive https://github.com/Vahe1994/AQLM && cd AQLM
 pip install -r requirements.txt
@@ -52,10 +54,10 @@ You can then load the quantized model for inference using Aphrodite:
 aphrodite run $SAVE_PATH
 ```
 
-
 ## AWQ
 
 Reference:
+
 - Paper: [AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration](https://arxiv.org/abs/2306.00978)
 - Code: [GitHub](https://github.com/mit-han-lab/llm-awq) & [AutoAWQ](https://github.com/casper-hansen/AutoAWQ)
 
@@ -64,6 +66,7 @@ AWQ is a quantization method to store the model weights in 4-bit. It achieves th
 To quantize a model to AWQ, follow these steps:
 
 1. Install Transformers (already installed with Aphrodite):
+
 ```sh
 pip install transformers
 ```
@@ -101,7 +104,8 @@ By default, Aphrodite will load AWQ models using the Marlin kernels for high thr
 
 ## BitsAndBytes
 
-Reference: 
+Reference:
+
 - [GitHub](https://github.com/bitsandbytes-foundation/bitsandbytes)
 
 BitsAndBytes is a method for runtime quantization of FP16 models.
@@ -119,25 +123,27 @@ Currently, Tensor Parallel does not work with BitsAndBytes quantization.
 ## DeepspeedFP
 
 Reference:
+
 - [GitHub](https://github.com/microsoft/DeepSpeed/tree/master/blogs/deepspeed-fp6/03-05-2024)
 
 Aphrodite supports weights quantization at runtime using DeepspeedFP. Deepspeed supports Floating-Point quantization to FP4, FP6, FP8, and FP12. To quantize a model using DeepspeedFP, follow these steps:
 
 1. Install Deepspeed:
+
 ```sh
 pip install deepspeed>=0.14.2
 ```
 
-2. Load an FP16 model with Aphrodite:
+1. Load an FP16 model with Aphrodite:
 
 ```sh
 aphrodite run <model> -q deepspeedfp --deepspeed-fp-bits 6  # or 4, 8, 12
 ```
 
-
 ## EETQ
 
 Reference:
+
 - [GitHub](https://github.com/NetEase-FuXi/EETQ)
 
 EETQ is an "Easy and Efficient" Quantization method for Transformers. It supports INT8 weight-only quantization.
@@ -169,10 +175,12 @@ aphrodite run /path/to/quantized/model
 ```
 
 ## FBGEMM_FP8
+
 Reference:
+
 - [GitHub](https://github.com/pytorch/FBGEMM)
 
-Aphrodite supports the FB (Facebook) GEMM (General Matrix Multiply) quantization method for FP8 quantization. 
+Aphrodite supports the FB (Facebook) GEMM (General Matrix Multiply) quantization method for FP8 quantization.
 
 You can use this method to run the official Meta-Llama FP8 models, such as [meta-llama/Meta-Llama-3.1-405B-Instruct-FP8](https://huggingface.co/meta-llama/Meta-Llama-3.1-405B-Instruct-FP8).
 
@@ -183,7 +191,9 @@ aphrodite run <model>
 ```
 
 ## FP8
+
 Reference:
+
 - [CUDA Math API](https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__INTRINSIC__FP8.html)
 - [Marlin](https://github.com/IST-DASLab/marlin)
 Aphrodite supports runtime quantization of LLMs from FP16 to FP8. This method will either use the hardware support present in NVIDIA GPUs (if Ada Lovelace or higher), or will use Marlin kernels for older GPUs (Ampere).
@@ -207,7 +217,9 @@ aphrodite run /path/to/model.gguf
 Please refer to the [llama.cpp](https://github.com/ggerganov/llama.cpp) documentation for more information on how to generate GGUF models.
 
 ## GPTQ
+
 Reference:
+
 - [GitHub](https://github.com/IST-DASLab/gptq)
 - [Paper](https://arxiv.org/abs/2210.17323)
 
@@ -239,26 +251,30 @@ You can then load the quantized model for inference using Aphrodite:
 ```sh
 aphrodite run /path/to/model-GPTQ
 ```
+
 :::tip
 By default, Aphrodite will load GPTQ models using the Marlin kernels for high throughput. If this is undesirable, you can use the `-q gptq` flag to load the model using the GPTQ library instead.
 :::
 
-
 ## INT8 W8A8 (LLM-Compressor)
 
 Reference:
+
 - [GitHub](https://github.com/vllm-project/llm-compressor/)
 
 Aphrodite supports LLM Compressor-produced quants. Please refer to their repo on how to generate these quants.
 
 ## Quant-LLM
+
 Reference:
+
 - [GitHub](https://github.com/usyd-fsalab/fp6_llm)
 - [Paper](https://arxiv.org/abs/2401.14112)
 
-Aphrodite supports loading FP16 models quantized to FP2, FP3, FP4, FP5, FP6, and FP7 using the Quant-LLM method at runtime, to achieve extremely high throughput. 
+Aphrodite supports loading FP16 models quantized to FP2, FP3, FP4, FP5, FP6, and FP7 using the Quant-LLM method at runtime, to achieve extremely high throughput.
 
 To load a model with Quant-LLM quantization, you can simply run:
+
 ```sh
 aphrodite run <fp16 model> -q fpX
 ```

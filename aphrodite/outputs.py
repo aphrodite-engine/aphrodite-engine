@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from collections.abc import MutableSequence
 from collections.abc import Sequence as GenericSequence
 from dataclasses import dataclass
 from typing import Any, Generic
 
+import numpy as np
 import torch
 from typing_extensions import TypeVar
 
-from aphrodite.common.sequence import RequestMetrics
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import PromptLogprobs, SampleLogprobs
 from aphrodite.lora.request import LoRARequest
-from aphrodite.multimodal.inputs import MultiModalPlaceholderDict
 from aphrodite.v1.metrics.stats import RequestStateStats
 
 logger = init_logger(__name__)
@@ -40,6 +42,7 @@ class CompletionOutput:
     token_ids: GenericSequence[int]
     cumulative_logprob: float | None
     logprobs: SampleLogprobs | None
+    routed_experts: np.ndarray | None = None  # [seq_len,layer_num,topk]
     finish_reason: str | None = None
     stop_reason: int | str | None = None
     lora_request: LoRARequest | None = None
@@ -52,6 +55,7 @@ class CompletionOutput:
             f"CompletionOutput(index={self.index}, "
             f"text={self.text!r}, "
             f"token_ids={self.token_ids}, "
+            f"routed_experts={self.routed_experts}, "
             f"cumulative_logprob={self.cumulative_logprob}, "
             f"logprobs={self.logprobs}, "
             f"finish_reason={self.finish_reason}, "
@@ -108,13 +112,12 @@ class RequestOutput:
         prompt_logprobs: PromptLogprobs | None,
         outputs: list[CompletionOutput],
         finished: bool,
-        metrics: RequestMetrics | RequestStateStats | None = None,
+        metrics: RequestStateStats | None = None,
         lora_request: LoRARequest | None = None,
         encoder_prompt: str | None = None,
         encoder_prompt_token_ids: list[int] | None = None,
         num_cached_tokens: int | None = None,
         *,
-        multi_modal_placeholders: MultiModalPlaceholderDict | None = None,
         kv_transfer_params: dict[str, Any] | None = None,
         # Forward compatibility, code that uses args added in new release can
         # still run with older versions of Aphrodite without breaking.
@@ -125,7 +128,6 @@ class RequestOutput:
         self.request_id = request_id
         self.prompt = prompt
         self.prompt_token_ids = prompt_token_ids
-        self.multi_modal_placeholders = multi_modal_placeholders or {}
         self.prompt_logprobs = prompt_logprobs
         self.outputs = outputs
         self.finished = finished
@@ -153,7 +155,7 @@ class RequestOutput:
                         completion.token_ids.extend(next_completion.token_ids)
                         if next_completion.logprobs:
                             assert completion.logprobs is not None
-                            completion.logprobs.extend(next_completion.logprobs)
+                            completion.logprobs.extend(next_completion.logprobs)  # type: ignore[arg-type]
                         completion.cumulative_logprob = next_completion.cumulative_logprob
                         completion.finish_reason = next_completion.finish_reason
                         completion.stop_reason = next_completion.stop_reason
@@ -176,10 +178,19 @@ class RequestOutput:
             f"finished={self.finished}, "
             f"metrics={self.metrics}, "
             f"lora_request={self.lora_request}, "
-            f"num_cached_tokens={self.num_cached_tokens}, "
-            f"multi_modal_placeholders={self.multi_modal_placeholders})"
+            f"num_cached_tokens={self.num_cached_tokens})"
         )
 
+
+# Sentinel to indicate request is finished, used with streaming inputs.
+STREAM_FINISHED = RequestOutput(
+    request_id="",
+    prompt=None,
+    prompt_token_ids=None,
+    prompt_logprobs=None,
+    outputs=[],
+    finished=True,
+)
 
 _O = TypeVar("_O", default=PoolingOutput)
 

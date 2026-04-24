@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 from aphrodite_kernels.aphrodite_flash_attn import (
@@ -161,7 +163,9 @@ def test_flash_attn_with_paged_kv(
         k_descale=k_descale,
         v_descale=v_descale,
     )
-    output = output if not use_out else out
+    if use_out:
+        assert out is not None
+        output = out
     output = output.squeeze(1)
 
     atol, rtol = 1.5e-2, 1e-2

@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 import torch.nn.functional as F
-
 from aphrodite.modeling.layers.fla.ops.layernorm_guard import layer_norm_fwd, layernorm_fn, rms_norm_ref
+
 from aphrodite.platforms import current_platform
 
 

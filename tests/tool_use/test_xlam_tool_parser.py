@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 from collections.abc import Generator
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, FunctionCall, ToolCall
 from aphrodite.endpoints.openai.tool_parsers import xLAMToolParser
 from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
+
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 pytestmark = pytest.mark.cpu_test

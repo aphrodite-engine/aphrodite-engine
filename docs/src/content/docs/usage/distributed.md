@@ -14,7 +14,7 @@ Before going into the details, let's make it clear when to use distributed infer
 
 In short, you should increase the number of GPUs and the number of nodes until you have enough GPU memory to hold the model. You can also opt to use quantization if needed.
 
-After adding enough GPUs and nodes to hold the model, you can run Aphrodite. It will print logs such as ` # GPU blocks: 2048`. Multiply the number by `16` (the default block size) and you can get a rough estimate of the maximum number of tokens that can be served concurrently on the current configuration. If the number is not satisfying and you need higher throughput, you can further increase the number of GPUs or nodes.
+After adding enough GPUs and nodes to hold the model, you can run Aphrodite. It will print logs such as `# GPU blocks: 2048`. Multiply the number by `16` (the default block size) and you can get a rough estimate of the maximum number of tokens that can be served concurrently on the current configuration. If the number is not satisfying and you need higher throughput, you can further increase the number of GPUs or nodes.
 
 ## Details for Distributed Inference
 
@@ -41,12 +41,12 @@ To use pipeline parallelism, you can run:
 ```sh
 aphrodite run facebook/opt-13b -tp 4 -pp 2
 ```
+
 This will run the model on a single node, but across 8 GPUs. A useful heuristic for the number of GPUs used is `tensor_parallel_size * pipeline_parallel_size`.
 
 :::tip
 Pipeline Parallelism is currently in beta, and only supports Llama, Mixtral, Qwen, Qwen2, and Nemotron model architectures.
 :::
-
 
 ## Multi-Node inference
 

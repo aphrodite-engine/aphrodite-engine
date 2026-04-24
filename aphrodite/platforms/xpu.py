@@ -1,22 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import contextlib
 import os
 from typing import TYPE_CHECKING
 
+# import custom ops, trigger op registration
+import aphrodite_xpu_kernels._C  # noqa
+import aphrodite_xpu_kernels._moe_C  # noqa
+import aphrodite_xpu_kernels._xpu_C  # noqa
 import torch
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
-from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
+from aphrodite.utils.torch_utils import supports_xpu_graph
+from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 
 from .interface import DeviceCapability, Platform, PlatformEnum
 
 if TYPE_CHECKING:
-    from aphrodite.attention.backends.registry import _Backend
-    from aphrodite.config import AphroditeConfig, ModelConfig
+    from aphrodite.config import AphroditeConfig
+    from aphrodite.config.kernel import IrOpPriorityConfig
+    from aphrodite.v1.attention.selector import AttentionSelectorConfig
 else:
-    ModelConfig = None
     AphroditeConfig = None
-    _Backend = None
 
 logger = init_logger(__name__)
 
@@ -29,27 +36,21 @@ class XPUPlatform(Platform):
     # Intel XPU's device key is "GPU" for Ray.
     # see https://github.com/ray-project/ray/blob/6a5eb5865eeb9ccf058a79b44f107e327e360673/python/ray/_private/accelerators/intel_gpu.py#L20 # noqa: E501
     ray_device_key: str = "GPU"
-    dist_backend: str = "ccl"  # ccl | xccl
+    dist_backend: str = "xccl"  # xccl only
     device_control_env_var: str = "ZE_AFFINITY_MASK"
 
     @classmethod
     def import_kernels(cls) -> None:
-        # Do not import aphrodite_kernels._C
+        # Do not import aphrodite._C
         with contextlib.suppress(ImportError):
-            import aphrodite_kernels._moe_C  # noqa: F401
+            import aphrodite._moe_C  # noqa: F401
 
     @classmethod
     def get_attn_backend_cls(
         cls,
-        selected_backend: "_Backend",
-        head_size: int,
-        dtype: torch.dtype,
-        kv_cache_dtype: str | None,
-        block_size: int,
-        use_v1: bool,
-        use_mla: bool,
-        has_sink: bool,
-        use_sparse,
+        selected_backend: "AttentionBackendEnum",
+        attn_selector_config: "AttentionSelectorConfig",
+        num_heads: int | None = None,
     ) -> str:
         from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
 
@@ -58,23 +59,64 @@ class XPUPlatform(Platform):
             "Setting APHRODITE_KV_CACHE_LAYOUT to 'NHD' for XPU; only NHD layout is supported by XPU attention kernels."
         )
 
-        from aphrodite.attention.backends.registry import _Backend
+        # TurboQuant KV cache: route directly to TQ backend
+        kv_cache_dtype = attn_selector_config.kv_cache_dtype
+        if kv_cache_dtype is not None and kv_cache_dtype.startswith("turboquant_"):
+            logger.info_once("Using TurboQuant attention backend.")
+            return AttentionBackendEnum.TURBOQUANT.get_path()
 
-        if use_sparse:
-            raise NotImplementedError("Sparse Attention is not supported on XPU.")
-        TRITON_ATTN = "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"  # noqa: E501
-        FLASH_ATTN = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
-        if selected_backend == _Backend.TRITON_ATTN:
-            logger.info_once("Using Triton backend.", scope="global")
-            return TRITON_ATTN
-        elif selected_backend == _Backend.FLASH_ATTN:
-            logger.info_once("Using Flash Attention backend.", scope="global")
-            return FLASH_ATTN
+        dtype = attn_selector_config.dtype
+        if attn_selector_config.use_sparse:
+            logger.info_once("Using XPU MLA Sparse backend.")
+            return AttentionBackendEnum.XPU_MLA_SPARSE.get_path()
+        if attn_selector_config.use_mla:
+            logger.info_once("Using Triton MLA backend on V1 engine.")
+            return AttentionBackendEnum.TRITON_MLA.get_path()
+        if selected_backend == AttentionBackendEnum.TRITON_ATTN:
+            logger.info_once("Using Triton backend.")
+            return AttentionBackendEnum.TRITON_ATTN.get_path()
+        elif dtype == torch.float32:
+            logger.warning_once(
+                "Flash Attention on XPU does not support float32 dtype. Falling back to Triton Attention backend."
+            )
+            return AttentionBackendEnum.TRITON_ATTN.get_path()
+        elif selected_backend == AttentionBackendEnum.FLASH_ATTN:
+            logger.info_once("Using Flash Attention backend.")
+            return AttentionBackendEnum.FLASH_ATTN.get_path()
         elif selected_backend:
-            raise ValueError(f"Invalid attention backend for {cls.device_name}, with use_mla: {use_mla}")
+            raise ValueError(
+                f"Invalid attention backend for {cls.device_name}, with use_mla: {attn_selector_config.use_mla}"
+            )
 
-        logger.info_once("Using Flash Attention backend.", scope="global")
-        return "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"
+        logger.info("Using Flash Attention backend.")
+        return AttentionBackendEnum.FLASH_ATTN.get_path()
+
+    @classmethod
+    def get_supported_vit_attn_backends(cls) -> list["AttentionBackendEnum"]:
+        return [
+            AttentionBackendEnum.FLASH_ATTN,
+            AttentionBackendEnum.TRITON_ATTN,
+            AttentionBackendEnum.TORCH_SDPA,
+        ]
+
+    @classmethod
+    def get_vit_attn_backend(
+        cls,
+        head_size: int,
+        dtype: torch.dtype,
+        backend: "AttentionBackendEnum | None" = None,
+    ) -> "AttentionBackendEnum":
+        if backend is not None:
+            assert backend in cls.get_supported_vit_attn_backends(), (
+                f"Backend {backend} is not supported for vit attention. "
+                f"Supported backends are: "
+                f"{cls.get_supported_vit_attn_backends()}."
+            )
+            logger.info_once(f"Using backend {backend} for vit attention")
+            return backend
+
+        logger.info_once(f"Using backend {AttentionBackendEnum.FLASH_ATTN} for vit attention")
+        return AttentionBackendEnum.FLASH_ATTN
 
     @classmethod
     def set_device(cls, device: torch.device) -> None:
@@ -82,6 +124,10 @@ class XPUPlatform(Platform):
         Set the device for the current platform.
         """
         torch.xpu.set_device(device)
+
+    @classmethod
+    def manual_seed_all(cls, seed: int) -> None:
+        torch.xpu.manual_seed_all(seed)
 
     @classmethod
     def get_device_capability(
@@ -98,7 +144,11 @@ class XPUPlatform(Platform):
 
     @classmethod
     def get_punica_wrapper(cls) -> str:
-        return "aphrodite.lora.punica_wrapper.punica_xpu.PunicaWrapperXPU"
+        xpu_use_triton_kernel = os.getenv("XPU_USE_TRITON_KERNEL", "0") == "1"
+        if not xpu_use_triton_kernel:
+            return "aphrodite.lora.punica_wrapper.punica_xpu.PunicaWrapperXPU"
+        else:
+            return "aphrodite.lora.punica_wrapper.punica_gpu.PunicaWrapperGPU"
 
     @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:
@@ -106,74 +156,113 @@ class XPUPlatform(Platform):
         return device_props.total_memory
 
     @classmethod
-    def get_vit_attn_backend(cls, head_size: int, dtype: torch.dtype) -> _Backend:
-        from aphrodite.attention.backends.registry import _Backend
-
-        return _Backend.FLASH_ATTN
-
-    @classmethod
     def inference_mode(cls):
         return torch.no_grad()
 
     @classmethod
+    def get_static_graph_wrapper_cls(cls) -> str:
+        return "aphrodite.compilation.cuda_graph.CUDAGraphWrapper"
+
+    @classmethod
     def check_and_update_config(cls, aphrodite_config: AphroditeConfig) -> None:
-        cache_config = aphrodite_config.cache_config
-        model_config = aphrodite_config.model_config
-        # in V1(or with ipex chunked prefill) block_size is 64
-        if cache_config and cache_config.block_size is None:
-            cache_config.block_size = 64
+        parallel_config = aphrodite_config.parallel_config
 
         # lazy import to avoid circular import
-        from aphrodite.config import CompilationMode, CUDAGraphMode
+        from aphrodite.config import CUDAGraphMode
 
         compilation_config = aphrodite_config.compilation_config
         if compilation_config.compile_sizes is None:
             compilation_config.compile_sizes = []
 
-        assert compilation_config.cudagraph_mode == CUDAGraphMode.NONE, "CUDA graph mode should be NONE on XPU"
-
-        if aphrodite_config.lora_config is not None:
-            compilation_config.mode = CompilationMode.NONE
+        attention_config = aphrodite_config.attention_config
+        if attention_config.backend is None:
+            attention_config.backend = AttentionBackendEnum.FLASH_ATTN
+        if not supports_xpu_graph():
+            compilation_config.cudagraph_mode = CUDAGraphMode.NONE
+            logger.warning("XPU Graph is not supported in the current PyTorch version, disabling cudagraph_mode.")
+        elif not envs.APHRODITE_XPU_ENABLE_XPU_GRAPH:
+            compilation_config.cudagraph_mode = CUDAGraphMode.NONE
+            logger.warning(
+                "XPU Graph is disabled by environment variable, "
+                "please set APHRODITE_XPU_ENABLE_XPU_GRAPH=1 to enable it."
+            )
+        elif parallel_config.world_size_across_dp > 1:
+            compilation_config.cudagraph_mode = CUDAGraphMode.NONE
+            logger.warning("XPU Graph doesn't support capture communication ops, disabling cudagraph_mode.")
+        else:
+            if (
+                attention_config.backend == AttentionBackendEnum.FLASH_ATTN
+                and compilation_config.cudagraph_mode not in {CUDAGraphMode.NONE, CUDAGraphMode.PIECEWISE}
+            ):
+                compilation_config.cudagraph_mode = CUDAGraphMode.PIECEWISE
+                logger.warning(
+                    "FMHA sycl-tla kernels cannot be captured with XPU graphs, "
+                    "falling back to PIECEWISE graph mode on XPU platform."
+                )
 
         # check and update parallel config
         parallel_config = aphrodite_config.parallel_config
-        parallel_config.worker_cls = "aphrodite.v1.worker.xpu_worker.XPUWorker"
+        # Only override worker_cls if it's still the default "auto"
+        # This allows custom workers (like aphrodite-omni workers) to be used on XPU
+        if parallel_config.worker_cls == "auto":
+            parallel_config.worker_cls = "aphrodite.v1.worker.xpu_worker.XPUWorker"
         if aphrodite_config.kv_transfer_config is not None:
             aphrodite_config.kv_transfer_config.enable_permute_local_kv = True
 
-        if parallel_config.distributed_executor_backend is None:
-            if parallel_config.world_size > 1:
-                parallel_config.distributed_executor_backend = "ray"
-            else:
-                parallel_config.distributed_executor_backend = "uni"
-        elif parallel_config.distributed_executor_backend == "mp":
-            # FIXME(kunshang):
-            # spawn needs calling `if __name__ == '__main__':`
-            # fork is not supported for xpu start new process.
-            if envs.APHRODITE_WORKER_MULTIPROC_METHOD != "spawn":
-                os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"
-                logger.warning("Please use spawn as start method if you want to use mp.")
-        elif (
-            parallel_config.distributed_executor_backend != "ray"
-            and parallel_config.distributed_executor_backend != "uni"
-            and parallel_config.distributed_executor_backend != "external_launcher"
-        ):
-            logger.warning(
-                "%s is not supported on XPU, fallback to ray distributed executor backend.",
-                parallel_config.distributed_executor_backend,
-            )
-            parallel_config.distributed_executor_backend = "ray"
+        # In some cases, the internal memory type cache can misdetect GPU
+        # memory as host memory, also leading to invalid memory access.
+        # This cache can be disabled by setting UCX_MEMTYPE_CACHE=n.
+        # ref. https://openucx.readthedocs.io/en/master/faq.html
+        os.environ["UCX_MEMTYPE_CACHE"] = "n"
 
-        if model_config and model_config.use_mla:
-            logger.info(
-                "MLA is enabled on a non-GPU platform; forcing chunked prefill and prefix caching to be disabled."
-            )
-            aphrodite_config.scheduler_config.enable_chunked_prefill = False
-            aphrodite_config.scheduler_config.chunked_prefill_enabled = False
-            aphrodite_config.scheduler_config.max_num_batched_tokens = max(
-                aphrodite_config.scheduler_config.max_model_len,
-                DEFAULT_MAX_NUM_BATCHED_TOKENS,
-            )
+        # spawn is the only supported multiprocessing method on XPU
+        if "APHRODITE_WORKER_MULTIPROC_METHOD" not in os.environ:
+            os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+    @classmethod
+    def update_block_size_for_backend(cls, aphrodite_config: "AphroditeConfig") -> None:
+        super().update_block_size_for_backend(aphrodite_config)
+        from aphrodite.config.aphrodite import get_layers_from_aphrodite_config
+        from aphrodite.model_executor.layers.attention_layer_base import (
+            AttentionLayerBase,
+        )
+        from aphrodite.utils.math_utils import cdiv
+
+        cache_config = aphrodite_config.cache_config
+        # special fix for GDN since kernel only supports block size dividable by 64
+        attn_layers = get_layers_from_aphrodite_config(
+            aphrodite_config,
+            AttentionLayerBase,  # type: ignore[type-abstract]
+        )
+
+        kernel_block_size = None
+        for layer in attn_layers.values():
+            b = layer.get_attn_backend()
+            if b.get_name() == "GDN_ATTN":
+                kernel_block_size = 64
+                break
+
+        if kernel_block_size is None:
+            return
+        new_block_size = cdiv(cache_config.block_size, kernel_block_size) * kernel_block_size
+        if new_block_size == cache_config.block_size:
+            return
+
+        if cache_config.mamba_cache_mode == "align":
+            cache_config.mamba_block_size = new_block_size
+        original_mamba_page_size_padded = cache_config.mamba_page_size_padded
+        if cache_config.mamba_page_size_padded is not None:
+            attn_page_size_1_token = cache_config.mamba_page_size_padded // cache_config.block_size
+            cache_config.mamba_page_size_padded = new_block_size * attn_page_size_1_token
+        cache_config.block_size = new_block_size
+        logger.info(
+            "[XPU]Setting attention block size to %d tokens to ensure multiple of %d, "
+            "set mamba_page_size_padded to %d bytes accordingly, before was %d bytes.",
+            new_block_size,
+            kernel_block_size,
+            cache_config.mamba_page_size_padded,
+            original_mamba_page_size_padded,
+        )
 
     @classmethod
     def support_hybrid_kv_cache(cls) -> bool:
@@ -181,7 +270,7 @@ class XPUPlatform(Platform):
 
     @classmethod
     def support_static_graph_mode(cls) -> bool:
-        return False
+        return True
 
     @classmethod
     def is_pin_memory_available(cls):
@@ -189,12 +278,13 @@ class XPUPlatform(Platform):
 
     @classmethod
     def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
+        torch.xpu.empty_cache()
         torch.xpu.reset_peak_memory_stats(device)
         return torch.xpu.max_memory_allocated(device)
 
     @classmethod
     def fp8_dtype(cls) -> torch.dtype:
-        return torch.float8_e5m2
+        return torch.float8_e4m3fn
 
     @classmethod
     def is_data_center_gpu(cls) -> bool:
@@ -203,7 +293,24 @@ class XPUPlatform(Platform):
 
     @classmethod
     def get_device_communicator_cls(cls) -> str:
+        from aphrodite.utils.torch_utils import supports_xccl
+
+        if not supports_xccl():
+            logger.warning("xccl is not enabled in this torch build, communication is not available.")
         return "aphrodite.distributed.device_communicators.xpu_communicator.XpuCommunicator"  # noqa
+
+    @classmethod
+    def get_default_ir_op_priority(cls, aphrodite_config: "AphroditeConfig") -> "IrOpPriorityConfig":
+        from aphrodite.config.compilation import CompilationMode
+        from aphrodite.config.kernel import IrOpPriorityConfig
+
+        # Native used by default when compiling,
+        # use fused kernels where available when no codegen
+        cc = aphrodite_config.compilation_config
+        using_inductor = cc.backend == "inductor" and cc.mode != CompilationMode.NONE
+        default = ["native"] if using_inductor else ["xpu_kernels", "native"]
+
+        return IrOpPriorityConfig.with_default(default)
 
     @classmethod
     def device_count(cls) -> int:
@@ -235,10 +342,6 @@ class XPUPlatform(Platform):
     ) -> None:
         """Copy blocks from src_cache to dst_cache on XPU."""
         _src_cache = src_cache[:, src_block_indices]
-        if _src_cache.shape[2:] != dst_cache.shape[2:]:
-            # To support TP_ratio, HOST KV might be initiated with HND
-            # while XPU device KV is with NHD
-            _src_cache = _src_cache.permute(0, 1, 3, 2, 4)
         dst_cache[:, dst_block_indices] = _src_cache.to(dst_cache.device)
 
     @classmethod
@@ -251,8 +354,8 @@ class XPUPlatform(Platform):
     ) -> None:
         """Copy blocks from XPU to host (CPU)."""
         _src_cache = src_cache[:, src_block_indices]
-        if _src_cache.shape[2:] != dst_cache.shape[2:]:
-            # XPU device KV is with NHD while HOST KV
-            # might be initiated with HND for TP_ratio support
-            _src_cache = _src_cache.permute(0, 1, 3, 2, 4)
         dst_cache[:, dst_block_indices] = _src_cache.cpu()
+
+    @classmethod
+    def num_compute_units(cls, device_id: int = 0) -> int:
+        return torch.xpu.get_device_properties(device_id).max_compute_units

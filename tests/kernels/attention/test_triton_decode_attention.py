@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.attention.ops.triton_decode_attention import decode_attention_fwd
+
 from aphrodite.utils.math_utils import cdiv
 
 

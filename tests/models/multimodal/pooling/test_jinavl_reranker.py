@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-from transformers import AutoModel
-
 from aphrodite.endpoints.chat_utils import ChatCompletionContentPartImageParam
 from aphrodite.endpoints.score_utils import ScoreMultiModalParam
+from transformers import AutoModel
 
 from ....conftest import AphroditeRunner, HfRunner
 

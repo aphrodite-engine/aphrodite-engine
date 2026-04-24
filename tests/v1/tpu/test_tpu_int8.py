@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests whether TPU Int8 computation is enabled correctly.
 
 Run `pytest tests/quantization/test_tpu_int8.py`.
 """
 
 import pytest
-
 from aphrodite.modeling.layers.linear import LinearBase
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.tpu_int8 import TPUInt8LinearMethod
+
+from aphrodite.platforms import current_platform
 
 from ...models.registry import HF_EXAMPLE_MODELS
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import ast
 import json
 from dataclasses import dataclass, field
@@ -7,8 +9,9 @@ from typing import TYPE_CHECKING
 import torch
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.import_utils import LazyLoader
+from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend,
     StructuredOutputGrammar,
@@ -123,7 +126,7 @@ class LMFormatEnforcerBackend(StructuredOutputBackend):
             (max_num_seqs, (self.vocab_size + 31) // 32),
             -1,
             dtype=torch.int32,
-            pin_memory=torch.cuda.is_available(),
+            pin_memory=is_pin_memory_available(),
         )
 
     def destroy(self):

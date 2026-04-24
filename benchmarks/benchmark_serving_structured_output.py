@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 r"""Benchmark online serving throughput with structured outputs.
 
 On the server side, run one of the following commands:

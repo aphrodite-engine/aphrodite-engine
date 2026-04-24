@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
 import tempfile
 
 import pytest
-
 from aphrodite.modeling.model_loader.weight_utils import download_weights_from_hf
+
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 from ...utils import RemoteOpenAIServer

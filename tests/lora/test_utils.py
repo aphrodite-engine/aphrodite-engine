@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections import OrderedDict
 from typing import NamedTuple
 from unittest.mock import patch
 
 import pytest
+from aphrodite.modeling.models.utils import WeightsMapper
 from huggingface_hub.utils import HfHubHTTPError
 from torch import nn
 
 from aphrodite.lora.utils import get_adapter_absolute_path, parse_fine_tuned_lora_name, replace_submodule
-from aphrodite.modeling.models.utils import WeightsMapper
 
 
 class LoRANameParserTestConfig(NamedTuple):

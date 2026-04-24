@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from typing import Any
 
 import pytest
 import requests
 import torch
 import torch.nn.functional as F
+from aphrodite.endpoints.openai.protocol import ScoreResponse
 from torch import tensor
 
-from aphrodite.endpoints.openai.protocol import ScoreResponse
 from tests.utils import RemoteOpenAIServer
 
 MODELS = [

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -5,7 +8,7 @@ from typing import Literal
 import torch
 from PIL import Image
 
-from .base import get_vllm_public_assets
+from .base import get_aphrodite_public_assets
 
 VLM_IMAGES_DIR = "vision_model_images"
 
@@ -34,11 +37,14 @@ class ImageAsset:
         """
         Return s3 path for given image.
         """
-        return get_vllm_public_assets(filename=f"{self.name}.{ext}", s3_prefix=VLM_IMAGES_DIR)
+        return get_aphrodite_public_assets(filename=f"{self.name}.{ext}", s3_prefix=VLM_IMAGES_DIR)
 
     @property
-    def pil_image(self, ext="jpg") -> Image.Image:
-        image_path = self.get_path(ext)
+    def pil_image(self) -> Image.Image:
+        return self.pil_image_ext(ext="jpg")
+
+    def pil_image_ext(self, ext: str) -> Image.Image:
+        image_path = self.get_path(ext=ext)
         return Image.open(image_path)
 
     @property

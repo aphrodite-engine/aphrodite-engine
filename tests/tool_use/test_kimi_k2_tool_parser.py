@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # ruff: noqa: E501
 
 import json
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import FunctionCall, ToolCall
 from aphrodite.endpoints.openai.tool_parsers import KimiK2ToolParser
+
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 pytestmark = pytest.mark.cpu_test

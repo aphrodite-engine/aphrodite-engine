@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for v1 MLA backends without GPUModelRunner dependency.
 
 Known Issues:
@@ -8,10 +10,10 @@ Known Issues:
 
 import pytest
 import torch
-
-from aphrodite import _custom_ops as ops
 from aphrodite.attention.backends.registry import _Backend
 from aphrodite.attention.ops.flashmla import is_flashmla_dense_supported
+
+from aphrodite import _custom_ops as ops
 from aphrodite.config.aphrodite import set_current_aphrodite_config
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE

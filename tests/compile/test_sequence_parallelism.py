@@ -1,7 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-import aphrodite.envs as envs
 from aphrodite.compilation.aphrodite_inductor_pass import AphroditeInductorPass
 from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.compilation.fusion import RMSNormQuantFusionPass
@@ -9,6 +9,10 @@ from aphrodite.compilation.fx_utils import find_auto_fn, find_auto_fn_maybe, is_
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
 from aphrodite.compilation.sequence_parallelism import SequenceParallelismPass
+from aphrodite.modeling.layers.layernorm import RMSNorm
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
+
+import aphrodite.envs as envs
 from aphrodite.config import (
     AphroditeConfig,
     CompilationConfig,
@@ -20,9 +24,7 @@ from aphrodite.config import (
 )
 from aphrodite.distributed import tensor_model_parallel_all_reduce
 from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
-from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
 from aphrodite.utils.system_utils import update_environment_variables
 
 from ..utils import multi_gpu_test

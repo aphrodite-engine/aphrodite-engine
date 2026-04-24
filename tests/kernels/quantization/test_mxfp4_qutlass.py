@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 #
 # Copyright (C) 2025 Roberto L. Castro (Roberto.LopezCastro@ist.ac.at).
 # All Rights Reserved.
@@ -17,11 +19,11 @@
 import numpy as np
 import pytest
 import torch
+from aphrodite.quantization.qutlass_utils import to_blocked
 from compressed_tensors.transform.utils.hadamard import deterministic_hadamard_matrix
 
 from aphrodite._custom_ops import fusedQuantizeMx, matmul_mxf4_bf16_tn
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.qutlass_utils import to_blocked
 
 if not torch.cuda.is_available():
     pytest.skip("CUDA required for these tests.", allow_module_level=True)

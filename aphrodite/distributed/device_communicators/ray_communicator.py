@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import uuid
 from typing import Any
 
@@ -7,7 +9,9 @@ from ray.exceptions import RayChannelError
 from ray.experimental.channel.communicator import Communicator, TorchTensorAllocator
 from torch.distributed import ReduceOp
 
-from aphrodite.distributed.device_communicators.base_device_communicator import DeviceCommunicatorBase
+from aphrodite.distributed.device_communicators.base_device_communicator import (
+    DeviceCommunicatorBase,
+)
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.logger import init_logger
 from aphrodite.utils.torch_utils import current_stream

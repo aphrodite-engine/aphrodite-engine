@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.attention.ops.triton_unified_attention import unified_attention
+
 from aphrodite.platforms import current_platform
 
 NUM_HEADS = [(4, 4), (8, 2)]

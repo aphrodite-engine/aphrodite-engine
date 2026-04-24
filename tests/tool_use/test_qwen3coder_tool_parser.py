@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 from collections.abc import Generator
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import (
     ChatCompletionRequest,
     ChatCompletionToolsParam,
@@ -13,6 +14,7 @@ from aphrodite.endpoints.openai.protocol import (
 from aphrodite.endpoints.openai.tool_parsers.qwen3coder_tool_parser import Qwen3CoderToolParser
 from aphrodite.endpoints.openai.tool_parsers.qwen3xml_tool_parser import Qwen3XMLToolParser
 from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
+
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 pytestmark = pytest.mark.cpu_test

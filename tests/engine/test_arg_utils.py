@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 from argparse import ArgumentError
 from contextlib import nullcontext
@@ -5,8 +7,6 @@ from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
 import pytest
-
-from aphrodite.config import CompilationConfig, config
 from aphrodite.engine.args_tools import (
     EngineArgs,
     contains_type,
@@ -19,6 +19,8 @@ from aphrodite.engine.args_tools import (
     optional_type,
     parse_type,
 )
+
+from aphrodite.config import CompilationConfig, config
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 

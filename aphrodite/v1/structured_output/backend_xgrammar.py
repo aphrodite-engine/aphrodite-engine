@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -5,16 +8,20 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 import aphrodite.envs
-from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.logger import init_logger
-from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.import_utils import LazyLoader
+from aphrodite.utils.mistral import is_mistral_tokenizer
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend,
     StructuredOutputGrammar,
     StructuredOutputOptions,
 )
-from aphrodite.v1.structured_output.utils import choice_as_grammar, convert_lark_to_ebnf, grammar_is_likely_lark
+from aphrodite.v1.structured_output.utils import (
+    choice_as_grammar,
+    convert_lark_to_ebnf,
+    grammar_is_likely_lark,
+)
 
 if TYPE_CHECKING:
     import xgrammar as xgr
@@ -29,7 +36,7 @@ class XgrammarBackend(StructuredOutputBackend):
     def __post_init__(self):
         self.disable_any_whitespace = self.aphrodite_config.structured_outputs_config.disable_any_whitespace
 
-        if isinstance(self.tokenizer, MistralTokenizer):
+        if is_mistral_tokenizer(self.tokenizer):
             # NOTE: ideally, xgrammar should handle this accordingly.
             # refer to https://github.com/mlc-ai/xgrammar/blob/d77c0a0173ef14779c918e3be7966ba852f7910f/python/xgrammar/tokenizer_info.py#L98
             stop_token_ids = [self.tokenizer.eos_token_id]
@@ -216,15 +223,7 @@ def has_xgrammar_unsupported_json_features(schema: dict[str, Any]) -> bool:
             return True
 
         # Unsupported keywords for objects
-        if obj.get("type") == "object" and any(
-            key in obj
-            for key in (
-                "minProperties",
-                "maxProperties",
-                "propertyNames",
-                "patternProperties",
-            )
-        ):
+        if obj.get("type") == "object" and any(key in obj for key in ("patternProperties", "propertyNames")):
             return True
 
         # Recursively check all nested objects and arrays
@@ -252,23 +251,23 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
 
     so_params = sampling_params.structured_outputs
 
-    if so_params.regex is not None:
+    if so_params.regex:
         try:
             xgr.Grammar.from_regex(so_params.regex)
         except Exception as err:
             raise ValueError(f"Failed to transform regex into a grammar: {err}") from err
 
-    if so_params.choice is not None:
+    if so_params.choice:
         choice_grammar = choice_as_grammar(so_params.choice)
         try:
             xgr.Grammar.from_ebnf(choice_grammar)
         except Exception as err:
-            raise ValueError("Failed to transform choices into a grammar: {err}") from err
+            raise ValueError(f"Failed to transform choices into a grammar: {err}") from err
         so_params.choice = None
         so_params.grammar = choice_grammar
         return
 
-    if so_params.json is not None:
+    if so_params.json:
         if isinstance(so_params.json, str):
             try:
                 schema = json.loads(so_params.json)
@@ -277,16 +276,16 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
         else:
             schema = so_params.json
 
+        if has_xgrammar_unsupported_json_features(schema):
+            raise ValueError("The provided JSON schema contains features not supported by xgrammar.")
+
         try:
             xgr.Grammar.from_json_schema(schema)
         except Exception as err:
             raise ValueError(f"Failed to transform json schema into a grammar: {err}") from err
-
-        if has_xgrammar_unsupported_json_features(schema):
-            raise ValueError("The provided JSON schema contains features not supported by xgrammar.")
         return
 
-    if so_params.grammar is not None:
+    if so_params.grammar:
         if grammar_is_likely_lark(so_params.grammar):
             # xgrammar supports EBNF grammars only
             try:
@@ -302,7 +301,7 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
             raise ValueError("Invalid grammar specification.") from e
         return
 
-    if so_params.structural_tag is not None:
+    if so_params.structural_tag:
         try:
             s_tag = json.loads(so_params.structural_tag)
 

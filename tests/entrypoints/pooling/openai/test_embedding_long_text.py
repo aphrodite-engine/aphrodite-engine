@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test cases for long text embedding with automatic chunking mechanism.
 
@@ -11,8 +13,8 @@ import random
 import openai
 import pytest
 import pytest_asyncio
-
 from aphrodite.endpoints.openai.protocol import EmbeddingResponse
+
 from tests.utils import RemoteOpenAIServer
 
 

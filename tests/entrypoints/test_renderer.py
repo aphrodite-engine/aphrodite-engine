@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import io
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
@@ -5,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pybase64
 import pytest
 import torch
-
 from aphrodite.endpoints.renderer import CompletionRenderer, RenderConfig
 from aphrodite.inputs.data import is_embeds_prompt
 

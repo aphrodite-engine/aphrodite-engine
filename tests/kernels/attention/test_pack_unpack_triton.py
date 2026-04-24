@@ -1,7 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
-from torch.testing import assert_close
-
 from aphrodite.attention.ops.common import pack_seq_triton, unpack_seq_triton
+from torch.testing import assert_close
 
 
 def test_pack_seq_basic_fp8():

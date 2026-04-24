@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import random
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.activation import (
     FastGELU,
     FatreluAndMul,
@@ -13,6 +14,7 @@ from aphrodite.modeling.layers.activation import (
     SiluAndMul,
     SwigluOAIAndMul,
 )
+
 from aphrodite.platforms import current_platform
 from tests.kernels.allclose_default import get_default_atol, get_default_rtol
 from tests.kernels.utils import opcheck

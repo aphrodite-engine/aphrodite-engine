@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from __future__ import annotations
 
 import contextlib
@@ -5,7 +8,13 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+from typing_extensions import deprecated
 
+
+@deprecated(
+    "aphrodite.utils.profiling.cprofile_context() is deprecated and will be removed "
+    "in v0.21. Use Python's cProfile module directly instead."
+)
 @contextlib.contextmanager
 def cprofile_context(save_file: str | None = None):
     """Run a cprofile
@@ -29,6 +38,10 @@ def cprofile_context(save_file: str | None = None):
             prof.print_stats(sort="cumtime")
 
 
+@deprecated(
+    "aphrodite.utils.profiling.cprofile() is deprecated and will be removed in "
+    "v0.21. Use Python's cProfile module directly instead."
+)
 def cprofile(save_file: str | None = None, enabled: bool = True):
     """Decorator to profile a Python method using cProfile.
 

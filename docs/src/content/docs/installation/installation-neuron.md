@@ -5,6 +5,7 @@ title: Installation with Neuron
 Aphrodite supports inference with AWS Trainium/Inferentia chips. At the moment Paged Attention is not supported in Neuron SDK, but naive continuous batching is supported in transformers-neuronx. Data types currently supported in Neuron SDK are FP16 and BF16.
 
 ## Requirements
+
 - Linux
 - Python 3.9 - 3.11
 - Accelerator: NeuronCore_v2 (in trn1/inf2 instances)
@@ -12,9 +13,11 @@ Aphrodite supports inference with AWS Trainium/Inferentia chips. At the moment P
 - AWS Neuron SDK 2.16/2.17
 
 ## Building from Source
+
 The following instructions are for Neuron SDK 2.16 and above.
 
 ### Launch Trn1/Inf2 instances
+
 Here are the steps to launch trn1/inf2 instances, in order to install [PyTorch Neuron (“torch-neuronx”) Setup on Ubuntu 22.04 LTS](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/general/setup/neuron-setup/pytorch/neuronx/ubuntu/torch-neuronx-ubuntu22.html).
 
 - Follow the instructions at [launch an Amazon EC2 Instance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html#ec2-launch-instance).
@@ -24,6 +27,7 @@ Here are the steps to launch trn1/inf2 instances, in order to install [PyTorch N
 - After launching, follow the instructions in [Connect to your instance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AccessingInstancesLinux.html).
 
 ### Install drivers and tools
+
 If [Deep Learning AMI Neuron](https://docs.aws.amazon.com/dlami/latest/devguide/appendix-ami-release-notes.html) is installed, this step is unnecessary. Otherwise, follow this:
 
 ```sh
@@ -58,6 +62,7 @@ export PATH=/opt/aws/neuron/bin:$PATH
 ```
 
 ### Install transformers-neuronx
+
 The backend we use for inference is [transformers-neuronx](https://github.com/aws-neuron/transformers-neuronx). Follow the instructions below to install it:
 
 ```sh
@@ -88,6 +93,7 @@ python -m pip install --upgrade neuronx-cc==2.* --pre torch-neuronx==2.1.* torch
 ```
 
 ### Install Aphrodite from Source
+
 ```sh
 git clone https://github.com/PygmalionAI/aphrodite-engine.git
 cd aphrodite-engine

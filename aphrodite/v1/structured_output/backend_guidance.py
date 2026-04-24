@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import copy
 import json
 import os
@@ -6,9 +9,10 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.logger import init_logger
+from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.import_utils import LazyLoader
+from aphrodite.utils.mistral import is_mistral_tokenizer
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend,
     StructuredOutputGrammar,
@@ -39,6 +43,32 @@ def _walk_json_for_additional_properties(data: object):
             _walk_json_for_additional_properties(item)
 
 
+def has_guidance_unsupported_json_features(schema: dict[str, Any]) -> bool:
+    """Check if JSON schema contains features unsupported by guidance/llguidance."""
+
+    def check_object(obj: dict[str, Any]) -> bool:
+        if not isinstance(obj, dict):
+            return False
+
+        # patternProperties is not supported by llguidance
+        if "patternProperties" in obj:
+            return True
+
+        # Recursively check all nested objects and arrays
+        for value in obj.values():
+            if isinstance(value, dict):
+                if check_object(value):
+                    return True
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict) and check_object(item):
+                        return True
+
+        return False
+
+    return check_object(schema)
+
+
 def process_for_additional_properties(
     guide_json: str | dict[str, Any],
 ) -> dict[str, Any]:
@@ -59,7 +89,10 @@ class GuidanceBackend(StructuredOutputBackend):
             self.aphrodite_config.structured_outputs_config.disable_additional_properties
         )
 
-        self.ll_tokenizer = llguidance_hf.from_tokenizer(self.tokenizer, self.vocab_size)
+        if is_mistral_tokenizer(self.tokenizer):
+            self.ll_tokenizer = self.tokenizer.llg_tokenizer
+        else:
+            self.ll_tokenizer = llguidance_hf.from_tokenizer(self.tokenizer, max(self.vocab_size, len(self.tokenizer)))
 
     def compile_grammar(self, request_type: StructuredOutputOptions, grammar_spec: str) -> StructuredOutputGrammar:
         self.serialized_grammar = serialize_guidance_grammar(
@@ -98,6 +131,7 @@ class GuidanceGrammar(StructuredOutputGrammar):
     vocab_size: int
     printed_error: bool = False
     terminated: bool = False
+    rollback_lag: int = 0
 
     def check_error(self):
         if not self.printed_error:
@@ -114,6 +148,8 @@ class GuidanceGrammar(StructuredOutputGrammar):
         """
 
         if self.ll_tokenizer.eos_token in tokens:
+            if self.ll_matcher.is_stopped() and not self.terminated:
+                self.rollback_lag = 1
             self.terminated = True
 
         if self.ll_matcher.is_stopped():
@@ -150,8 +186,11 @@ class GuidanceGrammar(StructuredOutputGrammar):
         return tokens[:num_tokens]
 
     def rollback(self, num_tokens: int) -> None:
-        self.ll_matcher.rollback(num_tokens)
-        self.check_error()
+        if num_tokens > 0:
+            self.ll_matcher.rollback(num_tokens - self.rollback_lag)
+            self.terminated = False
+            self.rollback_lag = 0
+            self.check_error()
 
     def fill_bitmask(self, bitmask: torch.Tensor, idx: int) -> None:
         # this will automatically return [EOS] mask if the matcher is stopped
@@ -231,6 +270,9 @@ def serialize_guidance_grammar(
 
 
 def validate_guidance_grammar(sampling_params: SamplingParams, tokenizer: llguidance.LLTokenizer | None = None) -> None:
+    # if structured output is not enabled, there is nothing to validate
+    if sampling_params.structured_outputs is None:
+        return
     tp, grm = get_structured_output_key(sampling_params.structured_outputs)
     guidance_grm = serialize_guidance_grammar(tp, grm)
     err = llguidance.LLMatcher.validate_grammar(guidance_grm, tokenizer)

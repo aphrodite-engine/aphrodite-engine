@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.attention.ops.triton_merge_attn_states import merge_attn_states as merge_attn_states_triton
 
 from aphrodite._custom_ops import merge_attn_states as merge_attn_states_cuda
-from aphrodite.attention.ops.triton_merge_attn_states import merge_attn_states as merge_attn_states_triton
 from aphrodite.platforms import current_platform
 
 

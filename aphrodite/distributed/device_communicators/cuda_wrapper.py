@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """This file is a pure Python wrapper for the cudart library.
 It avoids the need to compile a separate shared library, and is
 convenient for use when we just need to call a few functions.
@@ -12,6 +14,8 @@ import torch  # noqa
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
+from aphrodite.platforms import current_platform
+from aphrodite.utils.system_utils import find_loaded_library
 
 logger = init_logger(__name__)
 
@@ -32,31 +36,6 @@ class Function:
     name: str
     restype: Any
     argtypes: list[Any]
-
-
-def find_loaded_library(lib_name) -> str | None:
-    """
-    According to according to https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html,
-    the file `/proc/self/maps` contains the memory maps of the process, which includes the
-    shared libraries loaded by the process. We can use this file to find the path of the
-    a loaded library.
-    """  # noqa
-    found = False
-    with open("/proc/self/maps") as f:
-        for line in f:
-            if lib_name in line:
-                found = True
-                break
-    if not found:
-        # the library is not loaded in the current process
-        return None
-    # if lib_name is libcudart, we need to match a line with:
-    # address /path/to/libcudart-hash.so.11.0
-    start = line.index("/")
-    path = line[start:].strip()
-    filename = path.split("/")[-1]
-    assert filename.rpartition(".so")[0].startswith(lib_name), f"Unexpected filename: {filename} for library {lib_name}"
-    return path
 
 
 class CudaRTLibrary:
@@ -99,6 +78,20 @@ class CudaRTLibrary:
         ),
     ]
 
+    # https://rocm.docs.amd.com/projects/HIPIFY/en/latest/tables/CUDA_Runtime_API_functions_supported_by_HIP.html # noqa
+    cuda_to_hip_mapping = {
+        "cudaSetDevice": "hipSetDevice",
+        "cudaDeviceSynchronize": "hipDeviceSynchronize",
+        "cudaDeviceReset": "hipDeviceReset",
+        "cudaGetErrorString": "hipGetErrorString",
+        "cudaMalloc": "hipMalloc",
+        "cudaFree": "hipFree",
+        "cudaMemset": "hipMemset",
+        "cudaMemcpy": "hipMemcpy",
+        "cudaIpcGetMemHandle": "hipIpcGetMemHandle",
+        "cudaIpcOpenMemHandle": "hipIpcOpenMemHandle",
+    }
+
     # class attribute to store the mapping from the path to the library
     # to avoid loading the same library multiple times
     path_to_library_cache: dict[str, Any] = {}
@@ -111,7 +104,13 @@ class CudaRTLibrary:
         if so_file is None:
             so_file = find_loaded_library("libcudart")
             if so_file is None:
-                so_file = envs.APHRODITE_CUDART_SO_PATH  # fallback to env var
+                # libcudart is not loaded in the current process, try hip
+                so_file = find_loaded_library("libamdhip64")
+                # should be safe to assume now that we are using ROCm
+                # as the following assertion should error out if the
+                # libhiprtc library is also not loaded
+                if so_file is None:
+                    so_file = envs.APHRODITE_CUDART_SO_PATH  # fallback to env var
             assert so_file is not None, (
                 "libcudart is not loaded in the current process, try setting APHRODITE_CUDART_SO_PATH"
             )
@@ -123,7 +122,10 @@ class CudaRTLibrary:
         if so_file not in CudaRTLibrary.path_to_dict_mapping:
             _funcs = {}
             for func in CudaRTLibrary.exported_functions:
-                f = getattr(self.lib, func.name)
+                f = getattr(
+                    self.lib,
+                    CudaRTLibrary.cuda_to_hip_mapping[func.name] if current_platform.is_rocm() else func.name,
+                )
                 f.restype = func.restype
                 f.argtypes = func.argtypes
                 _funcs[func.name] = f

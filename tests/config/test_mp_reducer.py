@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import sys
 from unittest.mock import patch
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.engine.args_tools import AsyncEngineArgs
+
+from aphrodite.config import AphroditeConfig
 from aphrodite.v1.engine.async_llm import AsyncLLM
 
 

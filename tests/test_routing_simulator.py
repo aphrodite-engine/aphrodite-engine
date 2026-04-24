@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test script for the token-to-expert routing simulator.
 
@@ -9,7 +11,6 @@ integration tests with FusedMoE layer.
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.routing_simulator import DistributionBasedRouting, RoutingSimulator
 
 
@@ -66,8 +67,9 @@ def test_routing_strategy_integration(monkeypatch, device):
     FusedMoE."""
     pytest.importorskip("aphrodite.modeling.layers.fused_moe.layer")
 
-    import aphrodite.envs as envs
     from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
+
+    import aphrodite.envs as envs
 
     # Test parameters
     num_tokens = 32

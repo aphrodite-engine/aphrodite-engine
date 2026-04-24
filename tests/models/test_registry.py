@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import warnings
 
 import pytest
 import torch.cuda
-
 from aphrodite.modeling.models import is_pooling_model, is_text_generation_model, supports_multimodal
 from aphrodite.modeling.models.adapters import as_embedding_model, as_reward_model, as_seq_cls_model
 from aphrodite.modeling.models.registry import (
@@ -11,6 +12,7 @@ from aphrodite.modeling.models.registry import (
     _TEXT_GENERATION_MODELS,
     ModelRegistry,
 )
+
 from aphrodite.platforms import current_platform
 
 from ..utils import create_new_process_for_each_test

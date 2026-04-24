@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Copyright 2025 The Qwen Team and The HuggingFace Inc. team.
 # All rights reserved.
 #
@@ -12,9 +14,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Qwen3.5-MoE model configuration."""
+"""Qwen3.5-MoE model configuration"""
 
-from transformers.configuration_utils import PretrainedConfig, layer_type_validation
+from transformers.configuration_utils import PretrainedConfig
 
 
 class Qwen3_5MoeTextConfig(PretrainedConfig):
@@ -67,17 +69,12 @@ class Qwen3_5MoeTextConfig(PretrainedConfig):
         num_experts=256,
         output_router_logits=False,
         router_aux_loss_coef=0.001,
-        norm_topk_prob=False,
         layer_types=None,
         pad_token_id=None,
         bos_token_id=None,
         eos_token_id=None,
         **kwargs,
     ):
-        kwargs["ignore_keys_at_rope_validation"] = [
-            "mrope_section",
-            "mrope_interleaved",
-        ]
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size
@@ -92,21 +89,29 @@ class Qwen3_5MoeTextConfig(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.head_dim = head_dim
         self.rope_parameters = rope_parameters
-        self.rope_theta = (rope_parameters or {}).get("rope_theta", 1000000.0)
-        self.rope_scaling = (rope_parameters or {}).get("rope_scaling")
         kwargs.setdefault("partial_rotary_factor", 0.25)
 
         self.layer_types = layer_types
         if self.layer_types is None:
             interval_pattern = kwargs.get("full_attention_interval", 4)
             self.layer_types = [
-                "linear_attention"
-                if bool((i + 1) % interval_pattern)
-                else "full_attention"
+                "linear_attention" if bool((i + 1) % interval_pattern) else "full_attention"
                 for i in range(self.num_hidden_layers)
             ]
-        layer_type_validation(self.layer_types, self.num_hidden_layers)
+        if hasattr(self, "validate_layer_type"):
+            # Transformers v5
+            kwargs["ignore_keys_at_rope_validation"] = {
+                "mrope_section",
+                "mrope_interleaved",
+            }
+            self.validate_layer_type()
+        else:
+            # Transformers v4
+            from transformers.configuration_utils import layer_type_validation
 
+            layer_type_validation(self.layer_types, self.num_hidden_layers)
+
+        # linear attention part
         self.linear_conv_kernel_dim = linear_conv_kernel_dim
         self.linear_key_head_dim = linear_key_head_dim
         self.linear_value_head_dim = linear_value_head_dim
@@ -118,8 +123,10 @@ class Qwen3_5MoeTextConfig(PretrainedConfig):
         self.num_experts = num_experts
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
-        self.norm_topk_prob = norm_topk_prob
         super().__init__(**kwargs)
+        # Set these AFTER super().__init__() because transformers v4's
+        # PretrainedConfig.__init__ has these as explicit params with different
+        # defaults (e.g. tie_word_embeddings=True) that would overwrite our values.
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
@@ -195,14 +202,8 @@ class Qwen3_5MoeConfig(PretrainedConfig):
         self.video_token_id = video_token_id
         self.vision_start_token_id = vision_start_token_id
         self.vision_end_token_id = vision_end_token_id
-        self.hidden_size = self.text_config.hidden_size
-        self.hidden_act = self.text_config.hidden_act
-        self.num_experts = self.text_config.num_experts
-        self.num_experts_per_tok = self.text_config.num_experts_per_tok
-        self.moe_intermediate_size = self.text_config.moe_intermediate_size
-        self.shared_expert_intermediate_size = self.text_config.shared_expert_intermediate_size
-        self.norm_topk_prob = getattr(self.text_config, "norm_topk_prob", False)
         super().__init__(**kwargs)
+        # Set after super().__init__() to avoid v4 PretrainedConfig overwrite
         self.tie_word_embeddings = tie_word_embeddings
 
 

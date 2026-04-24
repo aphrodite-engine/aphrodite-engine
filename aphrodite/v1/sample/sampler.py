@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """A layer that samples the next tokens from the model's outputs."""
+
+from dataclasses import replace
 
 import torch
 import torch.nn as nn
@@ -182,28 +186,44 @@ class Sampler(nn.Module):
             logits = self.sampling_ops.apply_mirostat(logits, sampling_metadata)
             return logits
 
-        # Determine the sampler execution order
-        sampler_order = sampling_metadata.sampler_priority
-        do_temp_last = sampling_metadata.temperature_last
+        temperature_last_flags = sampling_metadata.temperature_last
+        if not temperature_last_flags:
+            return self._apply_sampler_order(logits, sampling_metadata, do_temperature_last=False)
 
-        if sampler_order is None:
-            # Use default order with temperature_last handling
-            sampler_order = []
-            for sampler_id in DEFAULT_SAMPLER_ORDER:
-                if sampler_id == SamplerID.TEMPERATURE and do_temp_last:
-                    continue
-                sampler_order.append(sampler_id)
+        if all(temperature_last_flags):
+            return self._apply_sampler_order(logits, sampling_metadata, do_temperature_last=True)
 
-                if sampler_id == SamplerID.XTC and do_temp_last:
-                    sampler_order.append(SamplerID.TEMPERATURE)
-        else:
-            # Warn if both custom order and temp_last are specified
-            if do_temp_last:
-                logger.warning_once(
-                    "Both sampler_priority and temperature_last=True "
-                    "were specified. Using custom sampler_priority order "
-                    "and ignoring temperature_last."
-                )
+        if not any(temperature_last_flags):
+            return self._apply_sampler_order(logits, sampling_metadata, do_temperature_last=False)
+
+        temp_last_indices = [i for i, enabled in enumerate(temperature_last_flags) if enabled]
+        default_indices = [i for i, enabled in enumerate(temperature_last_flags) if not enabled]
+
+        if default_indices:
+            default_metadata = self._subset_sampling_metadata(sampling_metadata, default_indices)
+            default_logits = self._apply_sampler_order(logits[default_indices], default_metadata, False)
+            logits[default_indices] = default_logits
+
+        if temp_last_indices:
+            temp_last_metadata = self._subset_sampling_metadata(sampling_metadata, temp_last_indices)
+            temp_last_logits = self._apply_sampler_order(logits[temp_last_indices], temp_last_metadata, True)
+            logits[temp_last_indices] = temp_last_logits
+
+        return logits
+
+    def _apply_sampler_order(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+        do_temperature_last: bool,
+    ) -> torch.Tensor:
+        sampler_order = []
+        for sampler_id in DEFAULT_SAMPLER_ORDER:
+            if sampler_id == SamplerID.TEMPERATURE and do_temperature_last:
+                continue
+            sampler_order.append(sampler_id)
+            if sampler_id == SamplerID.XTC and do_temperature_last:
+                sampler_order.append(SamplerID.TEMPERATURE)
 
         # Log the execution order for debugging
         logger.debug("Sampler execution order: ")
@@ -235,34 +255,9 @@ class Sampler(nn.Module):
                 logits = self.sampling_ops.apply_top_nsigma(logits, sampling_metadata)
 
             elif sampler_id == SamplerID.TOP_P_TOP_K:
-                # Apply top-k and top-p filtering to logits
-                if sampling_metadata.top_k is not None:
-                    logger.debug("Applying Top-k with top_k: %s", sampling_metadata.top_k)
-                    # Apply top-k filtering to logits
-                    for i, top_k_val in enumerate(sampling_metadata.top_k):
-                        if top_k_val < logits.size(-1):
-                            top_k_values, _ = torch.topk(logits[i], int(top_k_val.item()), dim=-1)
-                            top_k_threshold = top_k_values[-1] if top_k_values.numel() > 0 else -float("inf")
-                            logits[i] = torch.where(
-                                logits[i] >= top_k_threshold,
-                                logits[i],
-                                torch.tensor(-float("inf"), device=logits.device, dtype=logits.dtype),
-                            )
-
-                if sampling_metadata.top_p is not None:
-                    logger.debug("Applying Top-p with top_p: %s", sampling_metadata.top_p)
-                    # Apply top-p filtering to logits
-                    for i, top_p_val in enumerate(sampling_metadata.top_p):
-                        if top_p_val < 1.0:
-                            sorted_logits, sorted_indices = torch.sort(logits[i], descending=True, dim=-1)
-                            cumulative_probs = torch.softmax(sorted_logits, dim=-1).cumsum(dim=-1)
-                            sorted_indices_to_remove = cumulative_probs > top_p_val
-                            sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
-                            sorted_indices_to_remove[0] = 0
-                            indices_to_remove = sorted_indices_to_remove.scatter(
-                                0, sorted_indices, sorted_indices_to_remove
-                            )
-                            logits[i][indices_to_remove] = -float("inf")
+                # Defer top-k/top-p to TopKTopPSampler so CUDA/FlashInfer/native
+                # fast paths can sample without materializing full-vocab masks.
+                pass
 
             elif sampler_id == SamplerID.TOP_A and sampling_metadata.top_a is not None:
                 logger.debug("Applying Top-a with top_a: %s", sampling_metadata.top_a)
@@ -286,7 +281,8 @@ class Sampler(nn.Module):
 
             elif sampler_id == SamplerID.QUADRATIC and sampling_metadata.quadratic_smoothing_factor is not None:
                 logger.debug(
-                    "Applying Quadratic with smoothing_factor: %s", sampling_metadata.quadratic_smoothing_factor
+                    "Applying Quadratic with smoothing_factor: %s",
+                    sampling_metadata.quadratic_smoothing_factor,
                 )
                 logits = self.sampling_ops.apply_quadratic(logits, sampling_metadata)
 
@@ -295,6 +291,98 @@ class Sampler(nn.Module):
                 logits = self.sampling_ops.apply_xtc(logits, sampling_metadata)
 
         return logits
+
+    @staticmethod
+    def _subset_sampling_metadata(
+        sampling_metadata: SamplingMetadata,
+        indices: list[int],
+    ) -> SamplingMetadata:
+        index_tensor = torch.tensor(
+            indices, device=sampling_metadata.temperature.device if sampling_metadata.temperature is not None else None
+        )
+
+        def maybe_index_tensor(tensor: torch.Tensor | None) -> torch.Tensor | None:
+            if tensor is None:
+                return None
+            return tensor.index_select(0, index_tensor.to(tensor.device))
+
+        def reindex_dict_list(
+            mapping: dict[int, list[int]] | None,
+        ) -> dict[int, list[int]] | None:
+            if mapping is None:
+                return None
+            return {new_i: mapping[old_i] for new_i, old_i in enumerate(indices) if old_i in mapping}
+
+        def reindex_dict_nested_list(
+            mapping: dict[int, list[list[int]]],
+        ) -> dict[int, list[list[int]]]:
+            return {new_i: mapping[old_i] for new_i, old_i in enumerate(indices) if old_i in mapping}
+
+        def reindex_dict_float_map(
+            mapping: dict[int, dict[int, float]],
+        ) -> dict[int, dict[int, float]]:
+            return {new_i: mapping[old_i] for new_i, old_i in enumerate(indices) if old_i in mapping}
+
+        return replace(
+            sampling_metadata,
+            temperature=maybe_index_tensor(sampling_metadata.temperature),
+            dynatemp_min=maybe_index_tensor(sampling_metadata.dynatemp_min),
+            dynatemp_max=maybe_index_tensor(sampling_metadata.dynatemp_max),
+            dynatemp_exp=maybe_index_tensor(sampling_metadata.dynatemp_exp),
+            top_p=maybe_index_tensor(sampling_metadata.top_p),
+            top_k=maybe_index_tensor(sampling_metadata.top_k),
+            top_a=maybe_index_tensor(sampling_metadata.top_a),
+            dry_multiplier=maybe_index_tensor(sampling_metadata.dry_multiplier),
+            dry_base=maybe_index_tensor(sampling_metadata.dry_base),
+            dry_allowed_length=maybe_index_tensor(sampling_metadata.dry_allowed_length),
+            dry_sequence_breaker_ids=maybe_index_tensor(sampling_metadata.dry_sequence_breaker_ids),
+            dry_ranges=maybe_index_tensor(sampling_metadata.dry_ranges),
+            dry_max_ngram=maybe_index_tensor(sampling_metadata.dry_max_ngram),
+            dry_max_occurrences=maybe_index_tensor(sampling_metadata.dry_max_occurrences),
+            dry_early_exit_match_len=maybe_index_tensor(sampling_metadata.dry_early_exit_match_len),
+            no_repeat_ngram_size=maybe_index_tensor(sampling_metadata.no_repeat_ngram_size),
+            tfs=maybe_index_tensor(sampling_metadata.tfs),
+            eta_cutoff=maybe_index_tensor(sampling_metadata.eta_cutoff),
+            epsilon_cutoff=maybe_index_tensor(sampling_metadata.epsilon_cutoff),
+            typical_p=maybe_index_tensor(sampling_metadata.typical_p),
+            quadratic_smoothing_factor=maybe_index_tensor(sampling_metadata.quadratic_smoothing_factor),
+            quadratic_smoothing_curve=maybe_index_tensor(sampling_metadata.quadratic_smoothing_curve),
+            xtc_threshold=maybe_index_tensor(sampling_metadata.xtc_threshold),
+            xtc_probability=maybe_index_tensor(sampling_metadata.xtc_probability),
+            top_nsigma=maybe_index_tensor(sampling_metadata.top_nsigma),
+            mirostat_mode=maybe_index_tensor(sampling_metadata.mirostat_mode),
+            mirostat_tau=maybe_index_tensor(sampling_metadata.mirostat_tau),
+            mirostat_eta=maybe_index_tensor(sampling_metadata.mirostat_eta),
+            skew=maybe_index_tensor(sampling_metadata.skew),
+            prompt_token_ids=maybe_index_tensor(sampling_metadata.prompt_token_ids),
+            frequency_penalties=maybe_index_tensor(sampling_metadata.frequency_penalties),
+            presence_penalties=maybe_index_tensor(sampling_metadata.presence_penalties),
+            repetition_penalties=maybe_index_tensor(sampling_metadata.repetition_penalties),
+            output_token_ids=[sampling_metadata.output_token_ids[i] for i in indices],
+            allowed_token_ids_mask=maybe_index_tensor(sampling_metadata.allowed_token_ids_mask),
+            bad_words_token_ids=reindex_dict_nested_list(sampling_metadata.bad_words_token_ids),
+            logit_bias=reindex_dict_float_map(sampling_metadata.logit_bias),
+            logprob_token_ids=reindex_dict_list(sampling_metadata.logprob_token_ids),
+            temperature_last=[sampling_metadata.temperature_last[i] for i in indices]
+            if sampling_metadata.temperature_last is not None
+            else None,
+            persistent_data={
+                new_i: sampling_metadata.persistent_data.get(old_i, {}).copy() for new_i, old_i in enumerate(indices)
+            },
+            spec_token_ids=(
+                [
+                    sampling_metadata.spec_token_ids[i] if i < len(sampling_metadata.spec_token_ids) else []
+                    for i in indices
+                ]
+                if sampling_metadata.spec_token_ids is not None
+                else None
+            ),
+            generators={
+                new_i: sampling_metadata.generators[old_i]
+                for new_i, old_i in enumerate(indices)
+                if old_i in sampling_metadata.generators
+            },
+        )
 
     @staticmethod
     def greedy_sample(logits: torch.Tensor) -> torch.Tensor:
@@ -329,21 +417,19 @@ class Sampler(nn.Module):
 
         assert sampling_metadata.temperature is not None
 
+        # Apply skew
+        if sampling_metadata.skew is not None:
+            probs = logits.softmax(dim=-1, dtype=torch.float32)
+            probs = self.sampling_ops.apply_skew(probs, sampling_metadata)
+            logits = torch.log(probs.clamp_min(torch.finfo(probs.dtype).tiny))
+
         # Apply sampling (multinomial sampling from the processed logits)
         random_sampled, processed_logprobs = self.topk_topp_sampler(
             logits,
             sampling_metadata.generators,
-            None,  # top_k already applied in priority system
-            None,  # top_p already applied in priority system
+            sampling_metadata.top_k,
+            sampling_metadata.top_p,
         )
-
-        # Apply skew (after softmax, same as before)
-        if sampling_metadata.skew is not None:
-            # Convert logits back to probabilities for skew
-            probs = logits.softmax(dim=-1, dtype=torch.float32)
-            probs = self.sampling_ops.apply_skew(probs, sampling_metadata)
-            # Convert back to logits
-            logits = torch.log(probs)
 
         if greedy_sampled is None:
             return random_sampled, processed_logprobs

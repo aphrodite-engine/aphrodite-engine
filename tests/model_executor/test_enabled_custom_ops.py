@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 from aphrodite.modeling.custom_op import CustomOp
-
-from aphrodite.config import AphroditeConfig, CompilationConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import GeluAndMul, ReLUSquaredActivation, SiluAndMul
 from aphrodite.modeling.layers.fused_moe.fused_moe import aphrodite_topk_softmax, dispatch_topk_func
 from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import is_rocm_aiter_moe_enabled
 from aphrodite.modeling.layers.layernorm import RMSNorm, dispatch_rocm_rmsnorm_func, fused_add_rms_norm, rms_norm
+
+from aphrodite.config import AphroditeConfig, CompilationConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 
 RMS_NORM_SUPPORTED_DTYPES = [torch.float16, torch.bfloat16]

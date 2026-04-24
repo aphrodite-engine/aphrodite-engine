@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts
 from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import _valid_deep_gemm_shape, deep_gemm_moe_fp8
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk, modular_triton_fused_moe
+
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 from aphrodite.utils.deep_gemm import get_mk_alignment_for_contiguous_layout, is_deep_gemm_e8m0_used
 from aphrodite.utils.import_utils import has_deep_gemm

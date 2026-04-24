@@ -8,7 +8,7 @@ This method was proposed by IBM recently, to accelerate LLM decoding.
 
 Speculative decoding is based on the premise that the model is powerful enough to predict multiple tokens in a single forward pass. However, the current inference servers are optimized to predict only a single token at a time. In this approach, we attach multiple speculative heads (in addition to the usual one) to the LLM to predict $N+1$-th, $N+2$-th, $N+3$-th … token. For example, 3 heads will predict 3 additional tokens. Details of the speculator architecture are explained in a later part of this blog. There are two challenges to achieve efficiency and correctness during inference - one is to predict without replicating KV-cache and the other is to verify that the predictions match the original model’s outcomes.
 
-In a typical generation loop, after the prompt is processed in a single forward step, a sequence length of 1 (next token predicted) is fed into the forward pass of the model along with the kv-cache. In a naive speculative decoding implementation, each speculative head would have its own kv-cache, but instead we use paged attention kernels developed in the [vLLM project](https://vllm.ai) to enable efficient kv-cache maintenance. This ensures that throughput does not reduce at larger batch sizes. Further, we modify the attention masks to enable verification of the N+1’th token and thus enable speculative decoding without deviating from the original model’s output.
+In a typical generation loop, after the prompt is processed in a single forward step, a sequence length of 1 (next token predicted) is fed into the forward pass of the model along with the kv-cache. In a naive speculative decoding implementation, each speculative head would have its own kv-cache, but instead we use paged attention kernels developed in the [vLLM project](https://aphrodite.ai) to enable efficient kv-cache maintenance. This ensures that throughput does not reduce at larger batch sizes. Further, we modify the attention masks to enable verification of the N+1’th token and thus enable speculative decoding without deviating from the original model’s output.
 
 You can find the code to train your own MLP speculators [here](https://github.com/foundation-model-stack/fms-fsdp/pull/35).
 
@@ -51,4 +51,3 @@ aphrodite run meta-llama/Meta-Llama-3.1-70B-Instruct \
     --speculative-draft-tensor-parallel-size 1 \  # [!code highlight]
     --use-v2-block-manager  # [!code highlight]
 ```
-

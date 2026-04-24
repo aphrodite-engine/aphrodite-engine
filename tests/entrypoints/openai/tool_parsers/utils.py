@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Iterable
 
 from aphrodite.endpoints.openai.protocol import (
@@ -8,6 +10,7 @@ from aphrodite.endpoints.openai.protocol import (
     ToolCall,
 )
 from aphrodite.endpoints.openai.tool_parsers import ToolParser
+
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 

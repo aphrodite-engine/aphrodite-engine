@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.engine.args_tools import EngineArgs
 from transformers import AutoTokenizer
 
-from aphrodite.engine.args_tools import EngineArgs
 from tests.v1.engine.utils import (
     FULL_STRINGS,
     NUM_PROMPT_LOGPROBS_UNDER_TEST,

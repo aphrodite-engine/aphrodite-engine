@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import importlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -7,6 +9,7 @@ from aphrodite.v1.kv_offload.spec import OffloadingSpec
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
 
 logger = init_logger(__name__)
 
@@ -30,6 +33,7 @@ class OffloadingSpecFactory:
     def create_spec(
         cls,
         config: "AphroditeConfig",
+        kv_cache_config: "KVCacheConfig",
     ) -> OffloadingSpec:
         kv_transfer_config = config.kv_transfer_config
         assert kv_transfer_config is not None
@@ -45,8 +49,8 @@ class OffloadingSpecFactory:
             spec_cls = getattr(spec_module, spec_name)
         assert issubclass(spec_cls, OffloadingSpec)
         logger.info("Creating offloading spec with name: %s", spec_name)
-        return spec_cls(config)
+        return spec_cls(config, kv_cache_config)
 
 
 # Register various specs here.
-OffloadingSpecFactory.register_spec("CPUOffloadingSpec", "aphrodite.v1.kv_offload.cpu", "CPUOffloadingSpec")
+OffloadingSpecFactory.register_spec("CPUOffloadingSpec", "aphrodite.v1.kv_offload.cpu.spec", "CPUOffloadingSpec")

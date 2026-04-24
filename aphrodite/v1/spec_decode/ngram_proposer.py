@@ -1,6 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import os
 
 import numpy as np
+import torch
 from numba import get_num_threads, jit, njit, prange, set_num_threads
 
 from aphrodite.config import AphroditeConfig
@@ -53,10 +56,8 @@ class NgramProposer:
         # This usually takes less than 1 second.
         self.propose(
             [[]] * 1024,
-            [""] * 1024,
             np.zeros(1024, dtype=np.int32),
             np.zeros((1024, self.max_model_len), dtype=np.int32),
-            set(),
         )
 
     def batch_propose(
@@ -126,10 +127,9 @@ class NgramProposer:
     def propose(
         self,
         sampled_token_ids: list[list[int]],
-        req_ids: list[str],
         num_tokens_no_spec: np.ndarray,
         token_ids_cpu: np.ndarray,
-        spec_decode_unsupported_reqs: set,
+        slot_mappings: dict[str, torch.Tensor] | list[dict[str, torch.Tensor]] | None = None,  # unused
     ) -> list[list[int]]:
         # find which requests need ngram proposals
         valid_ngram_requests = []
@@ -137,12 +137,6 @@ class NgramProposer:
             num_sampled_ids = len(sampled_ids)
             if not num_sampled_ids:
                 # Skip speculative decoding.
-                continue
-
-            # Skip requests that require sampling parameters that are not
-            # supported with speculative decoding.
-            req_id = req_ids[i]
-            if req_id in spec_decode_unsupported_reqs:
                 continue
 
             num_tokens = num_tokens_no_spec[i]
@@ -190,9 +184,9 @@ def batch_propose_numba(
             k=k,
         )
 
-        valid_ngram_num_drafts[i] = drafter_output.shape[0]
+        valid_ngram_num_drafts[idx] = drafter_output.shape[0]
         if len(drafter_output):
-            valid_ngram_draft[i, : drafter_output.shape[0]] = drafter_output
+            valid_ngram_draft[idx, : drafter_output.shape[0]] = drafter_output
 
 
 @jit(nopython=True)
@@ -263,7 +257,7 @@ def _find_longest_matched_ngram_and_propose_tokens(
                 prev_lps = lps[max_ngram - 1]
             i += 1
         elif prev_lps != 0:
-            # Token mismatch: try the second longest prefix
+            # Token mismatch: try the second-longest prefix
             # among all suffix of tokens[:i],
             # which is the longest prefix of tokens[:prev_lps]
             prev_lps = lps[prev_lps - 1]

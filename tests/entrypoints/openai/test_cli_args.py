@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 
 import pytest
-
 from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
 from aphrodite.endpoints.openai.serving_models import LoRAModulePath
+
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 from ...utils import APHRODITE_PATH

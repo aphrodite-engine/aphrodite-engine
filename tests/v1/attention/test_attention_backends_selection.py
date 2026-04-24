@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for mamba attention backend selectors."""
 
 from types import SimpleNamespace
 
 import pytest
-
 from aphrodite.modeling.layers.mamba.mamba_mixer import MambaMixer
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.modeling.layers.mamba.short_conv import ShortConv
 from aphrodite.modeling.models.minimax_text_01 import MiniMaxText01LinearAttention
+
 from aphrodite.v1.attention.backends.linear_attn import LinearAttentionBackend
 from aphrodite.v1.attention.backends.mamba1_attn import Mamba1AttentionBackend
 from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionBackend

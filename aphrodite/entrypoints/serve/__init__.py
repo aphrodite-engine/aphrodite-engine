@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+from fastapi import FastAPI
+
+import aphrodite.envs as envs
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
+
+
+def register_aphrodite_serve_api_routers(app: FastAPI):
+    if envs.APHRODITE_SERVER_DEV_MODE:
+        logger.warning("SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!")
+
+    from aphrodite.entrypoints.serve.lora.api_router import (
+        attach_router as attach_lora_router,
+    )
+
+    attach_lora_router(app)
+
+    from aphrodite.entrypoints.serve.profile.api_router import (
+        attach_router as attach_profile_router,
+    )
+
+    attach_profile_router(app)
+
+    from aphrodite.entrypoints.serve.sleep.api_router import (
+        attach_router as attach_sleep_router,
+    )
+
+    attach_sleep_router(app)
+
+    from aphrodite.entrypoints.serve.rpc.api_router import (
+        attach_router as attach_rpc_router,
+    )
+
+    attach_rpc_router(app)
+
+    from aphrodite.entrypoints.serve.cache.api_router import (
+        attach_router as attach_cache_router,
+    )
+
+    attach_cache_router(app)
+
+    from aphrodite.entrypoints.serve.tokenize.api_router import (
+        attach_router as attach_tokenize_router,
+    )
+
+    attach_tokenize_router(app)
+
+    from .instrumentator import register_instrumentator_api_routers
+
+    register_instrumentator_api_routers(app)

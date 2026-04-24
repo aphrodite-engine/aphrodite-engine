@@ -1,49 +1,105 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """A GPU worker class."""
 
-import copy
 import gc
 import os
+from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
+from datetime import timedelta
 from types import NoneType
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
-import torch.distributed
 import torch.nn as nn
 
 import aphrodite.envs as envs
-from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import ensure_model_parallel_initialized, init_distributed_environment, set_custom_all_reduce
+from aphrodite.config import AphroditeConfig, CUDAGraphMode, set_current_aphrodite_config
+from aphrodite.config.compilation import CompilationMode
+from aphrodite.distributed import (
+    ensure_model_parallel_initialized,
+    init_distributed_environment,
+    set_custom_all_reduce,
+)
+from aphrodite.distributed.ec_transfer import ensure_ec_transfer_initialized
+from aphrodite.distributed.eplb.eplb_utils import override_envs_for_eplb
 from aphrodite.distributed.kv_transfer import (
     ensure_kv_transfer_initialized,
+    ensure_kv_transfer_shutdown,
     get_kv_transfer_group,
     has_kv_transfer_group,
 )
-from aphrodite.distributed.parallel_state import get_pp_group, get_tp_group
+from aphrodite.distributed.parallel_state import (
+    Handle,
+    get_pp_group,
+    get_tp_group,
+)
+from aphrodite.distributed.weight_transfer import WeightTransferEngineFactory
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
-from aphrodite.modeling import set_random_seed
-from aphrodite.modeling.warmup.kernel_warmup import kernel_warmup
+from aphrodite.model_executor.warmup.kernel_warmup import kernel_warmup
 from aphrodite.platforms import current_platform
+from aphrodite.profiler.wrapper import CudaProfilerWrapper, TorchProfilerWrapper
+from aphrodite.sequence import IntermediateTensors
 from aphrodite.tasks import SupportedTask
+from aphrodite.tracing import instrument
 from aphrodite.utils.mem_constants import GiB_bytes
-from aphrodite.utils.mem_utils import MemorySnapshot, memory_profiling
-from aphrodite.v1.core.sched.output import GrammarOutput
-from aphrodite.v1.engine import ReconfigureDistributedRequest, ReconfigureRankType
+from aphrodite.utils.mem_utils import MemorySnapshot, format_gib, memory_profiling
+from aphrodite.utils.torch_utils import is_quantized_kv_cache, set_random_seed
+from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
 from aphrodite.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
-from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, AsyncModelRunnerOutput, DraftTokenIds, ModelRunnerOutput
-from aphrodite.v1.utils import report_usage_stats
-from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
+from aphrodite.v1.outputs import (
+    AsyncModelRunnerOutput,
+    DraftTokenIds,
+    ModelRunnerOutput,
+)
+from aphrodite.v1.utils import compute_iteration_details, report_usage_stats
 from aphrodite.v1.worker.utils import is_residual_scattered_for_sp
-from aphrodite.v1.worker.worker_base import WorkerBase
+from aphrodite.v1.worker.worker_base import CompilationTimes, WorkerBase
+from aphrodite.v1.worker.workspace import init_workspace_manager
 
-if TYPE_CHECKING:
-    from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
-    from aphrodite.v1.core.sched.output import SchedulerOutput
-
+from ...model_executor.model_loader import TensorizerLoader
+from .gpu.warmup import warmup_kernels
+from .utils import request_memory
 
 logger = init_logger(__name__)
+
+if TYPE_CHECKING:
+    from aphrodite.model_executor.model_loader.tensorizer import TensorizerConfig
+    from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
+
+
+class AsyncIntermediateTensors(IntermediateTensors):
+    """IntermediateTensors with lazy comm synchronization"""
+
+    def __init__(
+        self,
+        tensors: dict[str, torch.Tensor],
+        comm_handles: list[Handle] | None = None,
+        comm_postprocess: list[Callable[[], None]] | None = None,
+    ) -> None:
+        super().__init__(tensors)
+        self._comm_handles = comm_handles
+        self._comm_postprocess = comm_postprocess
+        self._comm_waited = False
+
+    def wait_for_comm(self) -> None:
+        if self._comm_waited:
+            return
+        if self._comm_handles:
+            for handle in self._comm_handles:
+                handle.wait()
+        if self._comm_postprocess:
+            for fn in self._comm_postprocess:
+                fn()
+        self._comm_waited = True
+
+    def __getattribute__(self, name: str):
+        # ensure `.tensors` is ready before use
+        if name == "tensors" and not object.__getattribute__(self, "_comm_waited"):
+            object.__getattribute__(self, "wait_for_comm")()
+        return object.__getattribute__(self, name)
 
 
 class Worker(WorkerBase):
@@ -63,46 +119,40 @@ class Worker(WorkerBase):
             is_driver_worker=is_driver_worker,
         )
 
-        if self.model_config.trust_remote_code:
-            # note: lazy import to avoid importing torch before initializing
-            from aphrodite.utils.import_utils import init_cached_hf_modules
+        # configure float32 matmul precision according to Aphrodite env.
+        precision = envs.APHRODITE_FLOAT32_MATMUL_PRECISION
+        torch.set_float32_matmul_precision(precision)
 
-            init_cached_hf_modules()
+        from aphrodite.distributed.elastic_ep.elastic_execute import ElasticEPScalingExecutor
+
+        self.elastic_ep_executor = ElasticEPScalingExecutor(self)
 
         # Buffers saved before sleep
         self._sleep_saved_buffers: dict[str, torch.Tensor] = {}
 
-        # Torch profiler. Enabled and configured through env vars:
-        # APHRODITE_TORCH_PROFILER_DIR=/path/to/save/trace
-        if envs.APHRODITE_TORCH_PROFILER_DIR:
-            torch_profiler_trace_dir = envs.APHRODITE_TORCH_PROFILER_DIR
-            worker_name = f"{aphrodite_config.instance_id}-rank-{self.rank}"
-            logger.info(
-                "Profiling enabled. Traces will be saved to: %s",
-                torch_profiler_trace_dir,
+        # Weight transfer engine (initialized on-demand)
+        self.weight_transfer_engine = (
+            WeightTransferEngineFactory.create_engine(
+                self.aphrodite_config.weight_transfer_config,
+                self.aphrodite_config.parallel_config,
             )
-            logger.debug(
-                "Profiler config: record_shapes={},profile_memory={},with_stack={},with_flops={}",
-                envs.APHRODITE_TORCH_PROFILER_RECORD_SHAPES,
-                envs.APHRODITE_TORCH_PROFILER_WITH_PROFILE_MEMORY,
-                envs.APHRODITE_TORCH_PROFILER_WITH_STACK,
-                envs.APHRODITE_TORCH_PROFILER_WITH_FLOPS,
-            )
-            self.profiler = torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                ],
-                record_shapes=envs.APHRODITE_TORCH_PROFILER_RECORD_SHAPES,
-                profile_memory=envs.APHRODITE_TORCH_PROFILER_WITH_PROFILE_MEMORY,
-                with_stack=envs.APHRODITE_TORCH_PROFILER_WITH_STACK,
-                with_flops=envs.APHRODITE_TORCH_PROFILER_WITH_FLOPS,
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                    torch_profiler_trace_dir, worker_name=worker_name, use_gzip=True
-                ),
-            )
-        else:
-            self.profiler = None
+            if self.aphrodite_config.weight_transfer_config is not None
+            else None
+        )
+
+        # Torch/CUDA profiler. Enabled and configured through profiler_config.
+        # Profiler wrapper is created lazily in profile() when start is called,
+        # so we have all the information needed for proper trace naming.
+        self.profiler: Any | None = None
+        self.profiler_config = aphrodite_config.profiler_config
+
+        # Only validate profiler config is valid, don't instantiate yet
+        if self.profiler_config.profiler not in ("torch", "cuda", None):
+            raise ValueError(f"Unknown profiler type: {self.profiler_config.profiler}")
+
+        self.use_v2_model_runner = envs.APHRODITE_USE_V2_MODEL_RUNNER
+        # pending non-blocking PP send work from the previous iteration
+        self._pp_send_work: list[Handle] = []
 
     def sleep(self, level: int = 1) -> None:
         from aphrodite.device_allocator.cumem import CuMemAllocator
@@ -121,9 +171,9 @@ class Worker(WorkerBase):
         used_bytes = total - free_bytes_after_sleep
         assert freed_bytes >= 0, "Memory usage increased after sleeping."
         logger.info(
-            "Sleep mode freed %.2f GiB memory, %.2f GiB memory is still in use.",
-            freed_bytes / GiB_bytes,
-            used_bytes / GiB_bytes,
+            "Sleep mode freed %s GiB memory, %s GiB memory is still in use.",
+            format_gib(freed_bytes),
+            format_gib(used_bytes),
         )
 
     def wake_up(self, tags: list[str] | None = None) -> None:
@@ -140,36 +190,42 @@ class Worker(WorkerBase):
                     buffer.data.copy_(self._sleep_saved_buffers[name].data)
             self._sleep_saved_buffers = {}
 
+        # If the KV cache has just been woken up,
+        # the internal state of cache_engine must be reset,
+        # especially the FP8 scaling factor.
+        if (
+            (tags is None or "kv_cache" in tags)
+            and is_quantized_kv_cache(self.cache_config.cache_dtype)
+            and hasattr(self.model_runner, "init_fp8_kv_scales")
+        ):
+            self.model_runner.init_fp8_kv_scales()
+
     def _maybe_get_memory_pool_context(self, tag: str) -> AbstractContextManager:
-        if self.aphrodite_config.model_config.enable_sleep_mode:
-            from aphrodite.device_allocator.cumem import CuMemAllocator
+        if not self.aphrodite_config.model_config.enable_sleep_mode:
+            return nullcontext()
 
-            allocator = CuMemAllocator.get_instance()
-            if tag == "weights":
-                assert allocator.get_current_usage() == 0, "Sleep mode can only be used for one instance per process."
-            context = allocator.use_memory_pool(tag=tag)
-        else:
-            context = nullcontext()
-        return context
+        from aphrodite.device_allocator.cumem import CuMemAllocator
 
-    def initialize_cache(self, num_gpu_blocks: int, num_cpu_blocks: int) -> None:
-        self.cache_config.num_gpu_blocks = num_gpu_blocks
-        self.cache_config.num_cpu_blocks = num_cpu_blocks
+        allocator = CuMemAllocator.get_instance()
+        if tag == "weights":
+            assert allocator.get_current_usage() == 0, "Sleep mode can only be used for one instance per process."
+        return allocator.use_memory_pool(tag=tag)
 
+    @instrument(span_name="Init device")
     def init_device(self):
-        if self.device_config.device.type == "cuda":
+        if self.device_config.device_type == "cuda":
             # This env var set by Ray causes exceptions with graph building.
             os.environ.pop("NCCL_ASYNC_ERROR_HANDLING", None)
+            parallel_config = self.parallel_config
             if (
-                self.parallel_config.data_parallel_size > 1
-                and self.parallel_config.data_parallel_size_local > 0
-                and self.parallel_config.distributed_executor_backend not in ["ray", "external_launcher"]
-                and self.aphrodite_config.parallel_config.data_parallel_backend != "ray"
+                parallel_config.distributed_executor_backend not in ("ray", "external_launcher")
+                and parallel_config.data_parallel_backend != "ray"
+                and parallel_config.nnodes_within_dp == 1
             ):
                 # Use local DP rank if available, otherwise use global DP rank.
                 dp_local_rank = self.parallel_config.data_parallel_rank_local
                 if dp_local_rank is None:
-                    dp_local_rank = self.parallel_config.data_parallel_rank
+                    dp_local_rank = self.parallel_config.data_parallel_index
 
                 tp_pp_world_size = (
                     self.parallel_config.pipeline_parallel_size * self.parallel_config.tensor_parallel_size
@@ -177,12 +233,18 @@ class Worker(WorkerBase):
 
                 # DP_LOCAL_RANK * TP_PP_WORLD_SIZE + TP_LOCAL_RANK
                 self.local_rank += dp_local_rank * tp_pp_world_size
-                assert self.local_rank < torch.cuda.device_count(), (
+                assert self.local_rank < torch.accelerator.device_count(), (
                     f"DP adjusted local rank {self.local_rank} is out of bounds. "
+                )
+                visible_device_count = torch.accelerator.device_count() if torch.cuda.is_available() else 0
+                assert self.parallel_config.local_world_size <= visible_device_count, (
+                    f"local_world_size ({self.parallel_config.local_world_size}) must "
+                    f"be less than or equal to the number of visible devices "
+                    f"({visible_device_count})."
                 )
 
             self.device = torch.device(f"cuda:{self.local_rank}")
-            current_platform.set_device(self.device)
+            torch.accelerator.set_device_index(self.device)
 
             current_platform.check_if_supports_dtype(self.model_config.dtype)
 
@@ -198,32 +260,44 @@ class Worker(WorkerBase):
                 current_platform.dist_backend,
             )
 
+            if self.use_v2_model_runner:
+                logger.info_once("Using V2 Model Runner", scope="local")
+
             # Set random seed.
             set_random_seed(self.model_config.seed)
 
             # Now take memory snapshot after NCCL is initialized
             gc.collect()
-            torch.cuda.empty_cache()
+            torch.accelerator.empty_cache()
 
             # take current memory snapshot
-            self.init_snapshot = MemorySnapshot()
-            self.requested_memory = self.init_snapshot.total_memory * self.cache_config.gpu_memory_utilization
-            if self.init_snapshot.free_memory < self.requested_memory:
-                GiB = lambda b: round(b / GiB_bytes, 2)
-                raise ValueError(
-                    f"Free memory on device "
-                    f"({GiB(self.init_snapshot.free_memory)}/"
-                    f"{GiB(self.init_snapshot.total_memory)} GiB) on startup "
-                    f"is less than desired GPU memory utilization "
-                    f"({self.cache_config.gpu_memory_utilization}, "
-                    f"{GiB(self.requested_memory)} GiB). Decrease GPU memory "
-                    f"utilization or reduce GPU memory used by other processes."
-                )
+            self.init_snapshot = init_snapshot = MemorySnapshot(device=self.device)
+            self.requested_memory = request_memory(init_snapshot, self.cache_config)
+            logger.debug("worker init memory snapshot: %r", self.init_snapshot)
+            logger.debug("worker requested memory: %sGiB", format_gib(self.requested_memory))
         else:
             raise RuntimeError(f"Not support device type: {self.device_config.device}")
 
+        # Initialize workspace manager
+        num_ubatches = 2 if self.aphrodite_config.parallel_config.enable_dbo else 1
+        init_workspace_manager(self.device, num_ubatches)
+
         # Construct the model runner
-        self.model_runner: GPUModelRunner = GPUModelRunner(self.aphrodite_config, self.device)
+        if self.use_v2_model_runner:
+            from aphrodite.v1.worker.gpu.model_runner import (
+                GPUModelRunner as GPUModelRunnerV2,
+            )
+
+            # HACK(woosuk): This is a temporary fix to avoid type errors.
+            self.model_runner: GPUModelRunner = GPUModelRunnerV2(  # type: ignore
+                self.aphrodite_config, self.device
+            )
+        else:
+            from aphrodite.v1.worker.gpu_model_runner import (
+                GPUModelRunner as GPUModelRunnerV1,
+            )
+
+            self.model_runner = GPUModelRunnerV1(self.aphrodite_config, self.device)
 
         if self.rank == 0:
             # If usage stat is enabled, collect relevant info.
@@ -231,16 +305,18 @@ class Worker(WorkerBase):
 
     # FIXME(youkaichao & ywang96): Use TorchDispatchMode instead of memory pool
     # to hijack tensor allocation.
-    def load_model(self) -> None:
-        eep_scale_up = os.environ.get("APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH") == "1"
-        with self._maybe_get_memory_pool_context(tag="weights"):
-            self.model_runner.load_model(eep_scale_up=eep_scale_up)
+    def load_model(self, *, load_dummy_weights: bool = False) -> None:
+        with (
+            self._maybe_get_memory_pool_context(tag="weights"),
+            set_current_aphrodite_config(self.aphrodite_config),
+        ):
+            self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
 
     def update_config(self, overrides: dict[str, Any]) -> None:
         self.model_runner.update_config(overrides)
 
-    def reload_weights(self) -> None:
-        self.model_runner.reload_weights()
+    def reload_weights(self, *args, **kwargs) -> None:
+        self.model_runner.reload_weights(*args, **kwargs)
 
     @torch.inference_mode()
     def determine_available_memory(self) -> int:
@@ -248,22 +324,21 @@ class Worker(WorkerBase):
         memory can be used for KV cache without OOMs.
 
         The engine will first conduct a profiling of the existing memory usage.
-        Then, it calculate the free memory that can be used for KV cache in
+        Then, it calculates the free memory that can be used for KV cache in
         bytes.
 
         Tip:
             You may limit the usage of GPU memory
             by adjusting the `gpu_memory_utilization` parameter.
         """
-        GiB = lambda b: b / GiB_bytes
         if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
             # still need a profile run which compiles the model for
             # max_num_batched_tokens
             self.model_runner.profile_run()
 
             msg = (
-                f"Initial free memory {GiB(self.init_snapshot.free_memory):.2f} "
-                f"GiB, reserved {GiB(kv_cache_memory_bytes):.2f} GiB memory for "
+                f"Initial free memory {format_gib(self.init_snapshot.free_memory)} "
+                f"GiB, reserved {format_gib(kv_cache_memory_bytes)} GiB memory for "
                 "KV Cache as specified by kv_cache_memory_bytes config and "
                 "skipped memory profiling. This does not respect the "
                 "gpu_memory_utilization config. Only use kv_cache_memory_bytes "
@@ -275,20 +350,6 @@ class Worker(WorkerBase):
             )
             logger.info(msg)
             return kv_cache_memory_bytes
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
-
-        # In single user mode, profile with only one sequence worth of tokens
-        # by temporarily shrinking the model runner's max_num_tokens.
-        if getattr(self.scheduler_config, "single_user_mode", False):
-            original_max_num_tokens = self.model_runner.max_num_tokens
-            profiling_tokens = min(
-                self.model_config.max_model_len,
-                self.scheduler_config.max_num_batched_tokens,
-            )
-            self.model_runner.max_num_tokens = profiling_tokens
-        else:
-            original_max_num_tokens = None
 
         # Execute a forward pass with dummy inputs to profile the memory usage
         # of the model.
@@ -298,58 +359,107 @@ class Worker(WorkerBase):
         ) as profile_result:
             self.model_runner.profile_run()
 
+            profile_torch_peak = torch.accelerator.memory_stats(self.device).get("allocated_bytes.all.peak", 0)
+
+            # Profile CUDA graph memory if graphs will be captured.
+            # Skip on ROCm/HIP/XPU as graph pool handles and mem_get_info behave
+            # differently and can produce incorrect/negative estimates.
+            cudagraph_memory_estimate = 0
+            if (
+                not current_platform.is_rocm()
+                and self.aphrodite_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
+            ):
+                cudagraph_memory_estimate = self.model_runner.profile_cudagraph_memory()
+
+        # Use the pre-cudagraph torch peak to avoid double-counting.
+        profile_result.torch_peak_increase = profile_torch_peak - profile_result.before_profile.torch_peak
+        profile_result.non_kv_cache_memory = (
+            profile_result.non_torch_increase + profile_result.torch_peak_increase + profile_result.weights_memory
+        )
+
+        # On ROCm, cudagraph_memory_estimate is always 0 so this is a no-op.
+        # On CUDA, respect the opt-in flag as originally designed.
+        cudagraph_memory_estimate_applied = (
+            cudagraph_memory_estimate if envs.APHRODITE_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS else 0
+        )
+
         self.non_torch_memory = profile_result.non_torch_increase
         self.peak_activation_memory = profile_result.torch_peak_increase
-
-        # Restore original max_num_tokens if modified for single user mode
-        if original_max_num_tokens is not None:
-            self.model_runner.max_num_tokens = original_max_num_tokens
+        self.cudagraph_memory_estimate = cudagraph_memory_estimate
 
         free_gpu_memory = profile_result.after_profile.free_memory
         # NOTE(woosuk): Here we assume that the other processes using the same
         # GPU did not change their memory usage during the profiling.
-        assert self.init_snapshot.free_memory > free_gpu_memory, (
+        assert self.init_snapshot.free_memory >= free_gpu_memory, (
             "Error in memory profiling. "
-            f"Initial free memory {GiB(self.init_snapshot.free_memory)} GiB, "
-            f"current free memory {GiB(free_gpu_memory)} GiB. "
+            f"Initial free memory {format_gib(self.init_snapshot.free_memory)} GiB, "
+            f"current free memory {format_gib(free_gpu_memory)} GiB. "
             "This happens when other processes sharing the same container "
             "release GPU memory while Aphrodite is profiling during initialization. "
             "To fix this, ensure consistent GPU memory allocation or "
             "isolate Aphrodite in its own container."
         )
-
-        # Determine available KV cache memory. In single user mode, only one
-        # sequence worth of KV cache is needed; compute that directly.
-        if getattr(self.scheduler_config, "single_user_mode", False):
-            tokens_per_block = self.cache_config.block_size
-            blocks_per_seq = (self.model_config.max_model_len + tokens_per_block - 1) // tokens_per_block
-            kv_cache_spec = self.model_runner.get_kv_cache_spec()
-            memory_per_seq = 0
-            for layer_spec in kv_cache_spec.values():
-                memory_per_seq += layer_spec.page_size_bytes * blocks_per_seq
-            self.available_kv_cache_memory_bytes = memory_per_seq
-        else:
-            self.available_kv_cache_memory_bytes = self.requested_memory - profile_result.non_kv_cache_memory
+        self.available_kv_cache_memory_bytes = (
+            self.requested_memory - profile_result.non_kv_cache_memory - cudagraph_memory_estimate_applied
+        )
 
         unrequested_memory = self.init_snapshot.free_memory - self.requested_memory
         logger.debug(
-            "Initial free memory: %.2f GiB; Requested memory: %.2f (util), %.2f GiB",
-            GiB(self.init_snapshot.free_memory),
+            "Initial free memory: %s GiB; Requested memory: %f (util), %s GiB",
+            format_gib(self.init_snapshot.free_memory),
             self.cache_config.gpu_memory_utilization,
-            GiB(self.requested_memory),
+            format_gib(self.requested_memory),
         )
         logger.debug(
-            "Free memory after profiling: %.2f GiB (total), %.2f GiB (within requested)",
-            GiB(free_gpu_memory),
-            GiB(free_gpu_memory - unrequested_memory),
+            "Free memory after profiling: %s GiB (total), %s GiB (within requested)",
+            format_gib(free_gpu_memory),
+            format_gib(free_gpu_memory - unrequested_memory),
         )
         logger.debug(profile_result)
         logger.info_once(
-            "Available KV cache memory per GPU: %.2f GiB",
-            GiB(self.available_kv_cache_memory_bytes),
+            "Available KV cache memory: %s GiB",
+            format_gib(self.available_kv_cache_memory_bytes),
             scope="local",
         )
-        gc.collect()
+
+        if cudagraph_memory_estimate > 0:
+            total_mem = self.init_snapshot.total_memory
+            current_util = self.cache_config.gpu_memory_utilization
+            cg_util_delta = cudagraph_memory_estimate / total_mem
+            if envs.APHRODITE_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS:
+                equiv_util = round(current_util - cg_util_delta, 4)
+                suggested_util = min(
+                    round(current_util + cg_util_delta, 4),
+                    1.0,
+                )
+                logger.info_once(
+                    "CUDA graph memory profiling is enabled. "
+                    "The current --gpu-memory-utilization=%.4f is "
+                    "equivalent to --gpu-memory-utilization=%.4f without "
+                    "CUDA graph memory profiling. To maintain the same "
+                    "effective KV cache size as before, increase "
+                    "--gpu-memory-utilization to %.4f. To disable, set "
+                    "APHRODITE_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.",
+                    current_util,
+                    equiv_util,
+                    suggested_util,
+                )
+            else:
+                suggested_util = min(
+                    round(current_util + cg_util_delta, 4),
+                    1.0,
+                )
+                logger.warning_once(
+                    "CUDA graph memory profiling is disabled "
+                    "(APHRODITE_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0). "
+                    "Without it, CUDA graph memory is not accounted for "
+                    "during KV cache allocation, which may require lowering "
+                    "--gpu-memory-utilization to avoid OOM. Consider "
+                    "re-enabling it and increasing "
+                    "--gpu-memory-utilization from %.4f to %.4f.",
+                    current_util,
+                    suggested_util,
+                )
 
         return int(self.available_kv_cache_memory_bytes)
 
@@ -371,12 +481,29 @@ class Worker(WorkerBase):
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         return self.model_runner.get_kv_cache_spec()
 
+    def update_max_model_len(self, max_model_len: int) -> None:
+        """Update max_model_len after auto-fit to GPU memory.
+        This is called when max_model_len=-1 is used and the engine
+        automatically determines the maximum context length that fits
+        in GPU memory. Workers need to update their cached max_model_len
+        to match the engine's decision.
+        """
+        self.model_config.max_model_len = max_model_len
+        if self.model_runner is not None:
+            self.model_runner.update_max_model_len(max_model_len)
+        logger.debug("Updated max_model_len to %d", max_model_len)
+
+    @instrument(span_name="Allocate KV cache")
     def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
         """Allocate GPU KV cache with the specified kv_cache_config."""
 
+        # Update local config with adjusted num blocks after profiling,
+        # so that it's available to the warmup stage.
+        self.cache_config.num_gpu_blocks = kv_cache_config.num_blocks
+
         # Init kv cache connector here, because it requires
         # `kv_cache_config`.
-        # NOTE: This need to be done before `initialize_kv_cache`,
+        # NOTE(Kuntai): This need to be done before `initialize_kv_cache`,
         # because `initialize_kv_cache` will inject kv cache groups not
         # related to kv cache connector (e.g. kv cache sharing layers).
         ensure_kv_transfer_initialized(self.aphrodite_config, kv_cache_config)
@@ -385,26 +512,53 @@ class Worker(WorkerBase):
             from aphrodite.device_allocator.cumem import CuMemAllocator
 
             allocator = CuMemAllocator.get_instance()
-            context = allocator.use_memory_pool(tag="kv_cache")
+            with allocator.use_memory_pool(tag="kv_cache"):
+                self.model_runner.initialize_kv_cache(kv_cache_config)
         else:
-            context = nullcontext()
-        with context:
             self.model_runner.initialize_kv_cache(kv_cache_config)
 
-    def compile_or_warm_up_model(self) -> None:
-        # warm up sizes that are not in cudagraph capture sizes,
-        # but users still want to compile for better performance,
-        # e.g. for the max-num-batched token size in chunked prefill.
-        warmup_sizes = self.aphrodite_config.compilation_config.compile_sizes.copy()
-        if not self.model_config.enforce_eager:
-            warmup_sizes = [
-                x for x in warmup_sizes if x not in self.aphrodite_config.compilation_config.cudagraph_capture_sizes
-            ]
+        if self.model_config.enable_return_routed_experts:
+            self.model_runner.init_routed_experts_capturer()
+
+        # Build KV-zero metadata outside the CuMem pool so the bookkeeping
+        # GPU tensors (seg_addrs, block-id buffers) use the standard PyTorch
+        # allocator and are not discarded during sleep/wake cycles.
+        if kv_cache_config.needs_kv_cache_zeroing and hasattr(self.model_runner, "_init_kv_zero_meta"):
+            self.model_runner._init_kv_zero_meta()
+
+    @instrument(span_name="Warmup (GPU)")
+    def compile_or_warm_up_model(self) -> CompilationTimes:
+        warmup_sizes: list[int] = []
+
+        if self.aphrodite_config.compilation_config.mode == CompilationMode.APHRODITE_COMPILE:
+            # warm up sizes that are not in cudagraph capture sizes,
+            # but users still want to compile for better performance,
+            # e.g. for the max-num-batched token size in chunked prefill.
+            compile_sizes = self.aphrodite_config.compilation_config.compile_sizes
+            warmup_sizes = compile_sizes.copy() if compile_sizes is not None else []  # type: ignore[assignment]
+            cg_capture_sizes: list[int] = []
+
+            if self.aphrodite_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE:
+                cg_sizes = self.aphrodite_config.compilation_config.cudagraph_capture_sizes
+                cg_capture_sizes = [] if cg_sizes is None else cg_sizes
+                warmup_sizes = [x for x in warmup_sizes if x not in cg_capture_sizes]
+
+            compile_ranges = self.aphrodite_config.compilation_config.get_compile_ranges()
+            # For each compile_range, if none of the batch sizes
+            # in warmup_sizes or cudagraph_capture_sizes are in the range,
+            # add the end of the range to ensure compilation/warmup.
+            all_sizes = set(cg_capture_sizes)
+            all_sizes.update([x for x in warmup_sizes if isinstance(x, int)])
+            for compile_range in compile_ranges:
+                if not any(x in compile_range for x in all_sizes):
+                    warmup_sizes.append(compile_range.end)
+
         # We skip EPLB here since we don't want to record dummy metrics
         for size in sorted(warmup_sizes, reverse=True):
-            logger.info("Compile and warming up model for size %s", size)
+            logger.info("Compile and warming up model for size %d", size)
             self.model_runner._dummy_run(size, skip_eplb=True, remove_lora=False)
         self.model_runner.maybe_remove_all_loras(self.model_runner.lora_config)
+
         # Warmup and tune the kernels used during model execution before
         # cuda graph capture.
         kernel_warmup(self)
@@ -412,6 +566,18 @@ class Worker(WorkerBase):
         cuda_graph_memory_bytes = 0
         if not self.model_config.enforce_eager:
             cuda_graph_memory_bytes = self.model_runner.capture_model()
+
+        # Compare actual vs estimated CUDA graph memory (if we did profiling)
+        if hasattr(self, "cudagraph_memory_estimate") and self.cudagraph_memory_estimate > 0:
+            GiB = lambda b: round(b / GiB_bytes, 2)
+            diff = abs(cuda_graph_memory_bytes - self.cudagraph_memory_estimate)
+            logger.info(
+                "CUDA graph pool memory: %s GiB (actual), %s GiB (estimated), difference: %s GiB (%.1f%%).",
+                GiB(cuda_graph_memory_bytes),
+                GiB(self.cudagraph_memory_estimate),
+                GiB(diff),
+                100 * diff / max(cuda_graph_memory_bytes, 1),
+            )
 
         if self.cache_config.kv_cache_memory_bytes is None and hasattr(self, "peak_activation_memory"):
             # Suggests optimal kv cache memory size if we rely on
@@ -421,12 +587,12 @@ class Worker(WorkerBase):
             # CUDAGraph memory size and may not utilize all gpu memory.
             # Users may want fine-grained control to specify kv cache
             # memory size.
-            GiB = lambda b: round(b / GiB_bytes, 2)
 
             # empirically observed that the memory profiling may
             # slightly underestimate the memory consumption.
             # So leave a small buffer (=150MiB) to avoid OOM.
             redundancy_buffer_memory = 150 * (1 << 20)
+
             non_kv_cache_memory = (
                 self.model_runner.model_memory_usage
                 + self.peak_activation_memory
@@ -442,34 +608,37 @@ class Worker(WorkerBase):
 
             msg = (
                 f"Free memory on device "
-                f"({GiB(self.init_snapshot.free_memory)}/"
-                f"{GiB(self.init_snapshot.total_memory)} GiB) on startup. "
+                f"({format_gib(self.init_snapshot.free_memory)}/"
+                f"{format_gib(self.init_snapshot.total_memory)} GiB) on startup. "
                 f"Desired GPU memory utilization is "
                 f"({self.cache_config.gpu_memory_utilization}, "
-                f"{GiB(self.requested_memory)} GiB). "
-                f"Actual usage is {GiB(self.model_runner.model_memory_usage)} "
-                f"GiB for weight, {GiB(self.peak_activation_memory)} GiB "
-                f"for peak activation, {GiB(self.non_torch_memory)} GiB "
-                f"for non-torch memory, and {GiB(cuda_graph_memory_bytes)} "
+                f"{format_gib(self.requested_memory)} GiB). "
+                f"Actual usage is {format_gib(self.model_runner.model_memory_usage)} "
+                f"GiB for weight, {format_gib(self.peak_activation_memory)} GiB "
+                f"for peak activation, {format_gib(self.non_torch_memory)} GiB "
+                f"for non-torch memory, and {format_gib(cuda_graph_memory_bytes)} "
                 f"GiB for CUDAGraph memory. Replace gpu_memory_utilization "
                 f"config with `--kv-cache-memory="
                 f"{kv_cache_memory_bytes_to_requested_limit}` "
-                f"({GiB(kv_cache_memory_bytes_to_requested_limit)} GiB) to fit "
+                f"({format_gib(kv_cache_memory_bytes_to_requested_limit)} GiB) to fit "
                 f"into requested memory, or `--kv-cache-memory="
                 f"{kv_cache_memory_bytes_to_gpu_limit}` "
-                f"({GiB(kv_cache_memory_bytes_to_gpu_limit)} GiB) to fully "
+                f"({format_gib(kv_cache_memory_bytes_to_gpu_limit)} GiB) to fully "
                 f"utilize gpu memory. Current kv cache memory in use is "
-                f"{GiB(self.available_kv_cache_memory_bytes)} GiB."
+                f"{format_gib(self.available_kv_cache_memory_bytes)} GiB."
             )
 
             logger.debug(msg)
 
-        # Warm up sampler and preallocate memory buffer for logits and other
-        # sampling related tensors of max possible shape to avoid memory
-        # fragmentation issue.
-        # NOTE: This is called after `capture_model` on purpose to prevent
-        # memory buffers from being cleared by `torch.cuda.empty_cache`.
-        if get_pp_group().is_last_rank:
+        if self.use_v2_model_runner:
+            # V2: Run full execute_model + sample_tokens to JIT compile triton kernels.
+            warmup_kernels(self.model_runner, self.execute_model, self.sample_tokens)
+        elif get_pp_group().is_last_rank:
+            # V1: Warm up sampler and preallocate memory buffer for logits and other
+            # sampling related tensors of max possible shape to avoid memory
+            # fragmentation issue.
+            # NOTE: This is called after `capture_model` on purpose to prevent
+            # memory buffers from being cleared by `torch.accelerator.empty_cache`.
             max_num_reqs = min(
                 self.scheduler_config.max_num_seqs,
                 self.scheduler_config.max_num_batched_tokens,
@@ -479,6 +648,7 @@ class Worker(WorkerBase):
             hidden_states, last_hidden_states = self.model_runner._dummy_run(
                 num_tokens=max_num_reqs,
                 skip_eplb=True,
+                cudagraph_runtime_mode=CUDAGraphMode.NONE,
             )
             if self.model_runner.is_pooling_model:
                 self.model_runner._dummy_pooler_run(hidden_states)
@@ -489,8 +659,16 @@ class Worker(WorkerBase):
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
 
+        return CompilationTimes(
+            language_model=self.compilation_config.compilation_time,
+            encoder=self.compilation_config.encoder_compilation_time,
+        )
+
     def reset_mm_cache(self) -> None:
         self.model_runner.reset_mm_cache()
+
+    def reset_encoder_cache(self) -> None:
+        self.model_runner.reset_encoder_cache()
 
     def get_model(self) -> nn.Module:
         return self.model_runner.get_model()
@@ -498,68 +676,168 @@ class Worker(WorkerBase):
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.model_runner.get_supported_tasks()
 
+    def get_compilation_match_table(self) -> dict[str, int]:
+        from aphrodite.compilation.passes.aphrodite_inductor_pass import get_match_table
+
+        return get_match_table()
+
+    def get_encoder_timing_stats(self) -> dict[str, dict[str, float | int]]:
+        """Get encoder timing stats from model runner."""
+        return self.model_runner.get_encoder_timing_stats()
+
+    def annotate_profile(self, scheduler_output):
+        # add trace annotation so that we can easily distinguish
+        # context/generation request numbers in each iteration.
+        # A context request is a request that has not yet generated any tokens
+        if not self.profiler:
+            return nullcontext()
+
+        self.profiler.step()
+
+        iteration_details = compute_iteration_details(scheduler_output)
+
+        annotation = "".join(
+            [
+                "execute_context_",
+                str(iteration_details.num_ctx_requests),
+                "(",
+                str(iteration_details.num_ctx_tokens),
+                ")_generation_",
+                str(iteration_details.num_generation_requests),
+                "(",
+                str(iteration_details.num_generation_tokens),
+                ")",
+            ]
+        )
+        return self.profiler.annotate_context_manager(annotation)
+
     @torch.inference_mode()
-    def sample_tokens(self, grammar_output: "GrammarOutput") -> ModelRunnerOutput | AsyncModelRunnerOutput:
+    def sample_tokens(self, grammar_output: "GrammarOutput | None") -> ModelRunnerOutput | AsyncModelRunnerOutput:
         return self.model_runner.sample_tokens(grammar_output)
 
     @torch.inference_mode()
-    def execute_model(self, scheduler_output: "SchedulerOutput") -> ModelRunnerOutput | None:
+    def execute_model(self, scheduler_output: "SchedulerOutput") -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
+        # ensure any previous non-blocking PP sends are complete
+        if self._pp_send_work:
+            for handle in self._pp_send_work:
+                handle.wait()
+            self._pp_send_work = []
+
         intermediate_tensors = None
         forward_pass = scheduler_output.total_num_scheduled_tokens > 0
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
-        num_input_tokens = self.model_runner._get_num_input_tokens(num_scheduled_tokens)
-        all_gather_tensors = {"residual": not is_residual_scattered_for_sp(self.aphrodite_config, num_input_tokens)}
+        all_gather_tensors = {}
+        compilation_config = self.aphrodite_config.compilation_config
+        parallel_config = self.aphrodite_config.parallel_config
+
+        if parallel_config.pipeline_parallel_size > 1 and compilation_config.pass_config.enable_sp and forward_pass:
+            # currently only supported by V1 GPUModelRunner
+            assert not self.use_v2_model_runner
+            num_scheduled_tokens_np = np.array(
+                list(scheduler_output.num_scheduled_tokens.values()),
+                dtype=np.int32,
+            )
+            # TODO(lucas): This is pretty gross; ideally we should only ever call
+            # `_determine_batch_execution_and_padding` once (will get called again
+            # in `execute_model`) but this requires a larger refactor of PP.
+            _, batch_desc, _, _, _ = self.model_runner._determine_batch_execution_and_padding(
+                num_tokens=num_scheduled_tokens,
+                num_reqs=len(num_scheduled_tokens_np),
+                num_scheduled_tokens_np=num_scheduled_tokens_np,
+                max_num_scheduled_tokens=num_scheduled_tokens_np.max(),
+                use_cascade_attn=False,  # TODO(lucas): Handle cascade attention
+            )
+            all_gather_tensors = {
+                "residual": not is_residual_scattered_for_sp(self.aphrodite_config, batch_desc.num_tokens)
+            }
+
         if forward_pass and not get_pp_group().is_first_rank:
-            intermediate_tensors = IntermediateTensors(
-                get_pp_group().recv_tensor_dict(
-                    all_gather_group=get_tp_group(),
-                    all_gather_tensors=all_gather_tensors,
-                )
+            tensor_dict, comm_handles, comm_postprocess = get_pp_group().irecv_tensor_dict(
+                all_gather_group=get_tp_group(),
+                all_gather_tensors=all_gather_tensors,
+            )
+            assert tensor_dict is not None
+            intermediate_tensors = AsyncIntermediateTensors(
+                tensor_dict,
+                comm_handles=comm_handles,
+                comm_postprocess=comm_postprocess,
             )
 
-        output = self.model_runner.execute_model(scheduler_output, intermediate_tensors)
-        if isinstance(output, (ModelRunnerOutput, NoneType)):
-            return output
+        with self.annotate_profile(scheduler_output):
+            output = self.model_runner.execute_model(scheduler_output, intermediate_tensors)
+            if self.use_v2_model_runner and self.model_runner.is_pooling_model and output is None:
+                output = self.model_runner.pool()  # type: ignore
+            if isinstance(output, ModelRunnerOutput | AsyncModelRunnerOutput | NoneType):
+                return output
 
         assert isinstance(output, IntermediateTensors)
         parallel_config = self.aphrodite_config.parallel_config
         assert parallel_config.distributed_executor_backend != "external_launcher" and not get_pp_group().is_last_rank
 
-        get_pp_group().send_tensor_dict(
+        # launch non-blocking send of intermediate tensors
+        self._pp_send_work = get_pp_group().isend_tensor_dict(
             output.tensors,
             all_gather_group=get_tp_group(),
             all_gather_tensors=all_gather_tensors,
         )
 
-        kv_connector_output = output.kv_connector_output
-        if not kv_connector_output:
-            return None
-
-        # In case of PP with kv transfer, we need to pass through the
-        # kv_connector_output
-        if kv_connector_output.is_empty():
-            return EMPTY_MODEL_RUNNER_OUTPUT
-
-        output = copy.copy(EMPTY_MODEL_RUNNER_OUTPUT)
-        output.kv_connector_output = kv_connector_output
-        return output
+        return None
 
     def take_draft_token_ids(self) -> DraftTokenIds | None:
         return self.model_runner.take_draft_token_ids()
 
-    def profile(self, is_start: bool = True):
-        if self.profiler is None:
-            raise RuntimeError("Profiler is not enabled.")
+    def profile(self, is_start: bool = True, profile_prefix: str | None = None):
+        # Check if profiling is enabled
+        if self.profiler_config is None or self.profiler_config.profiler is None:
+            raise RuntimeError(
+                "Profiling is not enabled. Please set --profiler-config to enable "
+                "profiling. Example: "
+                "'--profiler-config.profiler=torch --profiler-config.torch_profiler_dir"
+                "=YOUR_DIR_PATH_TO_DUMP_TRACE'"
+            )
+
         if is_start:
+            # Generate the trace name by combining prefix with comprehensive rank suffix
+            from aphrodite.distributed.utils import get_worker_rank_suffix
+
+            rank_suffix = get_worker_rank_suffix(global_rank=self.rank)
+
+            # Build the full trace name
+            if profile_prefix:
+                trace_name = f"{profile_prefix}_{rank_suffix}"
+            else:
+                trace_name = rank_suffix
+
+            # Create the profiler wrapper only on the first start call
+            if self.profiler is None:
+                profiler_type = self.profiler_config.profiler
+                if profiler_type == "torch":
+                    self.profiler = TorchProfilerWrapper(
+                        self.profiler_config,
+                        worker_name=trace_name,
+                        local_rank=self.local_rank,
+                        activities=["CPU", "CUDA"],
+                    )
+                    logger.debug("Starting torch profiler with trace name: %s", trace_name)
+                elif profiler_type == "cuda":
+                    self.profiler = CudaProfilerWrapper(self.profiler_config)
+                    logger.debug("Starting CUDA profiler")
+                else:
+                    # Config validation should prevent this code being reached
+                    raise ValueError(f"Invalid profiler value of {self.profiler_config.profiler}")
+
+            # If profiler already initialized, restart profiling but keep
+            # the original trace name from the first initialization.
             self.profiler.start()
         else:
+            if self.profiler is None:
+                logger.warning("Profiler was not started, nothing to stop.")
+                return
             self.profiler.stop()
-            # only print profiler results on rank 0
-            if self.local_rank == 0:
-                print(self.profiler.key_averages().table(sort_by="self_cuda_time_total"))
 
     def execute_dummy_batch(self) -> None:
-        self.model_runner._dummy_run(1, uniform_decode=True)
+        num_tokens = getattr(self.model_runner, "uniform_decode_query_len", 1)
+        self.model_runner._dummy_run(num_tokens, uniform_decode=True)
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
         return self.model_runner.add_lora(lora_request)
@@ -577,154 +855,13 @@ class Worker(WorkerBase):
         # worker will always be healthy as long as it's running.
         return
 
-    def _eplb_before_scale_down(self, old_ep_size: int, new_ep_size: int) -> None:
-        from aphrodite.distributed.parallel_state import get_ep_group
-
-        if get_ep_group().rank == 0:
-            logger.info("[Elastic EP] Starting expert resharding before scaling down...")
-        rank_mapping = {
-            old_ep_rank: old_ep_rank if old_ep_rank < new_ep_size else -1 for old_ep_rank in range(old_ep_size)
-        }
-        assert self.model_runner.eplb_state is not None
-        self.model_runner.eplb_state.rearrange(
-            self.model_runner.model,
-            execute_shuffle=True,
-            global_expert_load=None,
-            rank_mapping=rank_mapping,
-        )
-        torch.cuda.synchronize()
-        if get_ep_group().rank == 0:
-            logger.info("[Elastic EP] Expert resharding completed!")
-
-    def _eplb_after_scale_up(
-        self,
-        old_ep_size: int,
-        new_ep_size: int,
-        global_expert_load: torch.Tensor | None,
-    ) -> None:
-        from aphrodite.distributed.parallel_state import get_ep_group
-
-        if get_ep_group().rank == 0:
-            logger.info("[Elastic EP] Starting expert resharding after scaling up...")
-        rank_mapping = {old_ep_rank: old_ep_rank for old_ep_rank in range(old_ep_size)}
-        assert self.model_runner.eplb_state is not None
-        self.model_runner.eplb_state.rearrange(
-            self.model_runner.model,
-            execute_shuffle=True,
-            global_expert_load=global_expert_load,
-            rank_mapping=rank_mapping,
-        )
-        if get_ep_group().rank == 0:
-            logger.info("[Elastic EP] Expert resharding completed!")
-
-    def _reconfigure_parallel_config(self, reconfig_request: ReconfigureDistributedRequest) -> None:
-        """
-        Update parallel config with provided reconfig_request
-        """
-        parallel_config = self.aphrodite_config.parallel_config
-        parallel_config.data_parallel_size = reconfig_request.new_data_parallel_size
-        if reconfig_request.new_data_parallel_rank != ReconfigureRankType.KEEP_CURRENT_RANK:
-            parallel_config.data_parallel_rank = reconfig_request.new_data_parallel_rank
-        if reconfig_request.new_data_parallel_rank_local != ReconfigureRankType.KEEP_CURRENT_RANK:
-            parallel_config.data_parallel_rank_local = reconfig_request.new_data_parallel_rank_local
-        parallel_config.data_parallel_master_ip = reconfig_request.new_data_parallel_master_ip
-        parallel_config.data_parallel_master_port = reconfig_request.new_data_parallel_master_port
-
-    def _reconfigure_moe(self, old_ep_size: int, new_ep_size: int) -> torch.Tensor | None:
-        """
-        Reconfigure MoE modules with provided reconfig_request
-
-        Return the global expert load if new_ep_size > old_ep_size,
-        otherwise None
-        """
-        from aphrodite.distributed.parallel_state import (
-            get_dp_group,
-            get_ep_group,
-            prepare_communication_buffer_for_model,
-        )
-        from aphrodite.modeling.layers.fused_moe.layer import FusedMoEParallelConfig
-
-        parallel_config = self.aphrodite_config.parallel_config
-        moe_modules = [
-            module
-            for module in self.model_runner.model.modules()
-            if (module.__class__.__name__ == "FusedMoE" or module.__class__.__name__ == "SharedFusedMoE")
-        ]
-        num_local_experts = moe_modules[0].moe_config.num_local_experts
-        assert all(module.moe_config.num_local_experts == num_local_experts for module in moe_modules), (
-            "All MoE modules must have the same number of experts"
-        )
-        for module in moe_modules:
-            module.moe_config.num_experts = num_local_experts * new_ep_size
-            module.global_num_experts = module.moe_config.num_experts
-            module.moe_parallel_config = FusedMoEParallelConfig.make(
-                tp_size_=get_tp_group().world_size,
-                dp_size_=get_dp_group().world_size,
-                aphrodite_parallel_config=parallel_config,
-            )
-            module.moe_config.moe_parallel_config = module.moe_parallel_config
-        if new_ep_size < old_ep_size:
-            num_local_physical_experts = num_local_experts
-            assert self.model_runner.eplb_state is not None
-            new_physical_experts = self.model_runner.eplb_state.physical_to_logical_map.shape[1]
-            parallel_config.eplb_config.num_redundant_experts = (
-                new_physical_experts - self.model_runner.eplb_state.logical_replica_count.shape[1]
-            )
-            global_expert_load = None
-        else:
-            num_local_physical_experts = torch.tensor([num_local_experts], dtype=torch.int32, device="cpu")
-            torch.distributed.broadcast(num_local_physical_experts, group=get_ep_group().cpu_group, group_src=0)
-            num_local_physical_experts = num_local_physical_experts.item()
-            new_physical_experts = num_local_physical_experts * new_ep_size
-            assert self.model_runner.eplb_state is not None
-            global_expert_load = self.model_runner.eplb_state.rearrange(self.model_runner.model, execute_shuffle=False)
-            parallel_config.eplb_config.num_redundant_experts = new_physical_experts - global_expert_load.shape[1]
-        prepare_communication_buffer_for_model(self.model_runner.model)
-        self.model_runner.model.update_physical_experts_metadata(
-            num_physical_experts=new_physical_experts, num_local_physical_experts=num_local_physical_experts
-        )
-        return global_expert_load
-
-    def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> None:
-        from aphrodite.config import set_current_aphrodite_config
-        from aphrodite.distributed.parallel_state import cleanup_dist_env_and_memory, get_ep_group
-
-        old_ep_size = get_ep_group().world_size
-        old_ep_rank = get_ep_group().rank
-        new_ep_size = reconfig_request.new_data_parallel_size * get_tp_group().world_size * get_pp_group().world_size
-        if new_ep_size < old_ep_size:
-            self._eplb_before_scale_down(old_ep_size, new_ep_size)
-
-        cleanup_dist_env_and_memory()
-
-        if reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
-            assert old_ep_rank >= new_ep_size
-            # shutdown
-            return
-
-        self._reconfigure_parallel_config(reconfig_request)
-
-        with set_current_aphrodite_config(self.aphrodite_config):
-            init_worker_distributed_environment(
-                self.aphrodite_config,
-                self.rank,
-                self.distributed_init_method,
-                self.local_rank,
-            )
-
-        global_expert_load = self._reconfigure_moe(old_ep_size, new_ep_size)
-
-        if new_ep_size > old_ep_size:
-            assert global_expert_load is not None
-            self._eplb_after_scale_up(old_ep_size, new_ep_size, global_expert_load)
-
     def save_sharded_state(
         self,
         path: str,
         pattern: str | None = None,
         max_size: int | None = None,
     ) -> None:
-        from aphrodite.modeling.model_loader import ShardedStateLoader
+        from aphrodite.model_executor.model_loader import ShardedStateLoader
 
         ShardedStateLoader.save_model(
             self.model_runner.model,
@@ -733,17 +870,90 @@ class Worker(WorkerBase):
             max_size=max_size,
         )
 
-    def save_tensorized_model(
-        self,
-        tensorizer_config: "TensorizerConfig",
-    ) -> None:
-        self.model_runner.save_tensorized_model(
+    def save_tensorized_model(self, tensorizer_config: "TensorizerConfig") -> None:
+        TensorizerLoader.save_model(
+            self.get_model(),
             tensorizer_config=tensorizer_config,
+            model_config=self.model_config,
         )
 
+    def init_weight_transfer_engine(self, init_info: dict) -> None:
+        """
+        Initialize weight transfer mechanism.
+        For NCCL backend, this creates a process group with the trainer.
+
+        Args:
+            init_info: Dictionary containing backend-specific initialization info
+        """
+        if self.weight_transfer_engine is None:
+            raise RuntimeError(
+                "Weight transfer not configured. Please set weight_transfer_config to enable weight transfer."
+            )
+        # Parse dict into backend-specific typed dataclass
+        typed_init_info = self.weight_transfer_engine.parse_init_info(init_info)
+        self.weight_transfer_engine.init_transfer_engine(typed_init_info)
+
+    def update_weights(self, update_info: dict) -> None:
+        """
+        Batched weight update from the trainer.
+
+        Args:
+            update_info: Dictionary containing backend-specific update info
+        """
+        if self.weight_transfer_engine is None:
+            raise RuntimeError(
+                "Weight transfer not configured. Please set weight_transfer_config to enable weight transfer."
+            )
+
+        # Parse dict into backend-specific typed dataclass
+        typed_update_info = self.weight_transfer_engine.parse_update_info(update_info)
+
+        model = self.model_runner.model
+
+        if typed_update_info.is_checkpoint_format:
+            from aphrodite.model_executor.model_loader.reload import (
+                finalize_layerwise_reload,
+                initialize_layerwise_reload,
+            )
+
+            # Use layerwise reload pattern for checkpoint format weights
+            with torch.device(self.device):
+                initialize_layerwise_reload(model)
+                self.weight_transfer_engine.receive_weights(
+                    typed_update_info,
+                    load_weights=model.load_weights,
+                )
+                finalize_layerwise_reload(model, self.model_config)
+        else:
+            # Weights are already in kernel format, copy directly
+            def load_weights_direct(
+                weights: list[tuple[str, torch.Tensor]],
+            ) -> None:
+                for name, weight in weights:
+                    param = model.get_parameter(name)
+                    param.copy_(weight)
+
+            self.weight_transfer_engine.receive_weights(
+                typed_update_info,
+                load_weights=load_weights_direct,
+            )
+
+        # NCCL broadcast/packed path are asynchronous.
+        # Sync here so the next step uses the new weights.
+        torch.accelerator.synchronize()
+
     def shutdown(self) -> None:
-        if runner := getattr(self, "model_runner", None):
-            runner.ensure_kv_transfer_shutdown()
+        # has_kv_transfer_group can be None during interpreter shutdown.
+        if ensure_kv_transfer_shutdown is not None:
+            ensure_kv_transfer_shutdown()
+        if self.profiler is not None:
+            self.profiler.shutdown()
+
+        if weight_transfer_engine := getattr(self, "weight_transfer_engine", None):
+            weight_transfer_engine.shutdown()
+
+    def elastic_ep_execute(self, execute_method: str, *args, **kwargs):
+        return self.elastic_ep_executor.execute(execute_method, *args, **kwargs)
 
 
 def init_worker_distributed_environment(
@@ -754,17 +964,36 @@ def init_worker_distributed_environment(
     backend: str = "nccl",
 ) -> None:
     """Initialize the distributed environment."""
-
+    attention_config = aphrodite_config.attention_config
     parallel_config = aphrodite_config.parallel_config
-    from aphrodite.modeling.layers.batch_invariant import init_batch_invariance
+    from aphrodite.model_executor.layers.batch_invariant import init_batch_invariance
 
-    init_batch_invariance()
+    init_batch_invariance(attention_config.backend)
+    override_envs_for_eplb(parallel_config)
     set_custom_all_reduce(not parallel_config.disable_custom_all_reduce)
 
-    init_distributed_environment(parallel_config.world_size, rank, distributed_init_method, local_rank, backend)
+    init_method = distributed_init_method or "env://"
+
+    timeout = None
+    if parallel_config.distributed_timeout_seconds is not None:
+        timeout = timedelta(seconds=parallel_config.distributed_timeout_seconds)
+
+    init_distributed_environment(
+        parallel_config.world_size,
+        rank,
+        init_method,
+        local_rank,
+        backend,
+        timeout,
+    )
 
     ensure_model_parallel_initialized(
         parallel_config.tensor_parallel_size,
         parallel_config.pipeline_parallel_size,
+        parallel_config.prefill_context_parallel_size,
         parallel_config.decode_context_parallel_size,
     )
+
+    # Init ec connector here before KV caches init
+    # NOTE: We do not init KV caches for Encoder-only instance in EPD disagg mode
+    ensure_ec_transfer_initialized(aphrodite_config)

@@ -1,11 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test function call parsing in ResponsesRequest."""
 
 import json
 
 import pytest
-from openai.types.responses import ResponseFunctionToolCall
-
 from aphrodite.endpoints.openai.protocol import ResponsesRequest
+from openai.types.responses import ResponseFunctionToolCall
 
 
 def test_function_call_dict_converted_to_object():

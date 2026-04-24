@@ -1,5 +1,8 @@
-from aphrodite import LLM, SamplingParams
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
+
+from aphrodite import LLM, SamplingParams
 
 # Define the model and prompt adapter paths
 MODEL_PATH = "bigscience/bloomz-560m"

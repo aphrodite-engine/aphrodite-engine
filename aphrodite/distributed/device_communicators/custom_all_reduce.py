@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from contextlib import contextmanager
 from typing import cast
 
@@ -14,7 +17,6 @@ from aphrodite.distributed.device_communicators.all_reduce_utils import (
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
 try:
     ops.meta_size()
@@ -71,7 +73,7 @@ class CustomAllreduce:
         if not custom_ar:
             # disable because of missing custom allreduce library
             # e.g. in a non-GPU environment
-            logger.info_once("Custom allreduce is disabled because of missing custom allreduce library", scope="global")
+            logger.info_once("Custom allreduce is disabled because of missing custom allreduce library")
             return
 
         self.group = group
@@ -80,11 +82,7 @@ class CustomAllreduce:
 
         if not all(in_the_same_node_as(group, source_rank=0)):
             # No need to initialize custom allreduce for multi-node case.
-            (
-                logger.warning_once(
-                    "Custom allreduce is disabled because this process group spans across nodes.", scope="global"
-                ),
-            )
+            logger.warning_once("Custom allreduce is disabled because this process group spans across nodes.")
             return
 
         rank = dist.get_rank(group=self.group)
@@ -101,7 +99,6 @@ class CustomAllreduce:
                 "warning, specify disable_custom_all_reduce=True explicitly.",
                 world_size,
                 str(CustomAllreduce._SUPPORTED_WORLD_SIZES),
-                scope="global",
             )
             return
 
@@ -124,7 +121,7 @@ class CustomAllreduce:
         if cuda_visible_devices:
             device_ids = list(map(int, cuda_visible_devices.split(",")))
         else:
-            device_ids = list(range(cuda_device_count_stateless()))
+            device_ids = list(range(current_platform.device_count()))
 
         physical_device_id = device_ids[device.index]
         tensor = torch.tensor([physical_device_id], dtype=torch.int, device="cpu")
@@ -141,8 +138,7 @@ class CustomAllreduce:
             logger.warning_once(
                 "Custom allreduce is disabled because it's not supported on"
                 " more than two PCIe-only GPUs. To silence this warning, "
-                "specify disable_custom_all_reduce=True explicitly.",
-                scope="global",
+                "specify disable_custom_all_reduce=True explicitly."
             )
             return
         # test P2P capability, this checks software/cudaruntime support
@@ -153,8 +149,7 @@ class CustomAllreduce:
             logger.warning_once(
                 "Custom allreduce is disabled because your platform lacks "
                 "GPU P2P capability or P2P test failed. To silence this "
-                "warning, specify disable_custom_all_reduce=True explicitly.",
-                scope="global",
+                "warning, specify disable_custom_all_reduce=True explicitly."
             )
             return
 
@@ -196,7 +191,7 @@ class CustomAllreduce:
 
     def register_graph_buffers(self):
         handle, offset = ops.get_graph_buffer_ipc_meta(self._ptr)
-        logger.debug_once("Registering %d cuda graph addresses", len(offset), scope="global")
+        logger.info("Registering %d cuda graph addresses", len(offset))
         # We cannot directly use `dist.all_gather_object` here
         # because it is incompatible with `gloo` backend under inference mode.
         # see https://github.com/pytorch/pytorch/issues/126032 for details.

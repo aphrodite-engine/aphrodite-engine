@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import glob
 import hashlib
 import os
 import tempfile
 
 import huggingface_hub.constants
-
 from aphrodite.modeling.model_loader.weight_utils import download_weights_from_hf
+
 from aphrodite.transformers_utils.runai_utils import ObjectStorageModel, is_runai_obj_uri, list_safetensors
 
 

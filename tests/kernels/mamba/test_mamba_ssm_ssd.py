@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 import torch.nn.functional as F
+from aphrodite.modeling.layers.mamba.ops.ssd_combined import mamba_chunk_scan_combined_varlen
 from einops import rearrange, repeat
 
-from aphrodite.modeling.layers.mamba.ops.ssd_combined import mamba_chunk_scan_combined_varlen
 from aphrodite.platforms import current_platform
 from aphrodite.v1.attention.backends.mamba2_attn import compute_varlen_chunk_metadata
 

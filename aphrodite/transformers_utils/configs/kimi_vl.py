@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from https://huggingface.co/moonshotai/Kimi-VL-A3B-Instruct/blob/main/configuration_kimi_vl.py
 
+from transformers import DeepseekV2Config
 from transformers.configuration_utils import PretrainedConfig
 
-from aphrodite.transformers_utils.configs.deepseek_vl2 import DeepseekV2Config
 from aphrodite.transformers_utils.configs.moonvit import MoonViTConfig
 
 

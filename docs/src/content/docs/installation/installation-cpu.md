@@ -10,11 +10,13 @@ The only CPU backend that supports quantization is OpenVINO, which can load FP16
 ## OpenVINO Backend
 
 ### Requirements
+
 - Linux
 - Python 3.9 - 3.11
 - Instruction set architecture: at least AVX2
 
 ### Dockerfile
+
 ```sh
 docker build -f Dockerfile.openvino -t aphrodite-openvino .
 docker run -it --rm aphrodite-openvino
@@ -23,18 +25,21 @@ docker run -it --rm aphrodite-openvino
 ### Building from Source
 
 First, install Python. On Ubuntu 22.04 machines, you can run:
+
 ```sh
 sudo apt-get update
 sudo apt-get install python3
 ```
 
 Then, install the requirements for Aphrodite:
+
 ```sh
 python3 -m pip install -U pip
 python3 -m pip install -r requirements/build.txt --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
 Finally, install Aphrodite:
+
 ```sh
 PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" APHRODITE_TARGET_DEVICE=openvino python3 -m pip install -e .
 ```
@@ -55,16 +60,18 @@ To enable further performance improvements, use `--enable-chunked-prefill`. The 
 - Only decoder-only LLMs are supported. Vision and Embedding models are not.
 - Tensor and Pipeline Parallelism is not supported.
 
-
 ## CPU Backend
+
 We also support basic CPU inference for x86_64 platforms. The only supported data types are FP32 and BF16.
 
 ### Requirements
+
 - Linux (or WSL on Windows)
 - Compiler: gcc/g++ >= 12.3.0
 - Instruct set: AVX2 or AVX512 (recommended)
 
 ### Dockerfile
+
 ```sh
 docker build -f Dockerfile.cpu -t aphrodite-cpu --shm-size=4g .
 docker run -it \
@@ -102,6 +109,7 @@ APHRODITE_TARGET_DEVICE=cpu python setup.py install
 ```
 
 ### Intel Extension for PyTorch
+
 You can massively boost the performance of the CPU backend by installing IPEX. Installation instructions are provided in the `Dockerfile.cpu`.
 
 ### Performance tips
@@ -114,6 +122,7 @@ sudo apt-get install libtcmalloc-minimal4
 sudo find / -name *libtcmalloc*
 export LD_PRELOAD=/usr/lib/x86_64-linux-gpu/libtcmalloc_minimal.so.4:$LD_PRELOAD
 ```
+
 - The CPU backend uses OpenMP for thread-parallel computation. If you want the best performance on CPU, it'll be very critical to isolate CPU cores for OpenMP threads with other thread pools (like web-service event-loop), to avoid CPU oversubscription.
 - If using Aphrodite CPU backend on bare-metal, it's recommended to disable hyper-threading.
 - If using Aphrodite CPU backend on a multi-socket machine with NUMA, make sure to set CPU cores and memory nodes, to avoid remote memory node access. `numactl` is a useful tool for this.

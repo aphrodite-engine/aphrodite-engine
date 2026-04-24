@@ -1,23 +1,32 @@
-import hashlib
-import json
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import warnings
 from collections.abc import Callable
 from dataclasses import InitVar, field
-from importlib.util import find_spec
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import torch
-from pydantic import ConfigDict, SkipValidation, field_validator, model_validator
-from pydantic.dataclasses import dataclass
-from safetensors.torch import _TYPES as _SAFETENSORS_TO_TORCH_DTYPE
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 import aphrodite.envs as envs
-from aphrodite.config.multimodal import MMCacheType, MMEncoderTPMode, MultiModalConfig
+from aphrodite.config.model_arch import (
+    ModelArchitectureConfig,
+)
+from aphrodite.config.multimodal import (
+    MMCacheType,
+    MMEncoderTPMode,
+    MMTensorIPC,
+    MultiModalConfig,
+)
 from aphrodite.config.pooler import PoolerConfig
+from aphrodite.config.quantization import OnlineQuantizationConfigArgs
 from aphrodite.config.scheduler import RunnerType
-from aphrodite.config.utils import assert_hashable, config, getattr_iter
+from aphrodite.config.utils import config, getattr_iter
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
+from aphrodite.tasks import PoolingTask, ScoreType, SupportedTask
 from aphrodite.transformers_utils.config import (
     ConfigFormat,
     get_config,
@@ -26,33 +35,42 @@ from aphrodite.transformers_utils.config import (
     get_pooling_config,
     get_sentence_transformer_tokenizer_config,
     is_encoder_decoder,
+    is_rope_parameters_nested,
     try_get_dense_modules,
     try_get_generation_config,
-    try_get_safetensors_metadata,
     try_get_tokenizer_config,
     uses_mrope,
+    uses_xdrope_dim,
+)
+from aphrodite.transformers_utils.gguf_utils import (
+    is_gguf,
+    is_remote_gguf,
+    maybe_patch_hf_config_from_gguf,
+    split_remote_gguf,
+)
+from aphrodite.transformers_utils.model_arch_config_convertor import (
+    MODEL_ARCH_CONFIG_CONVERTORS,
+    ModelArchConfigConvertorBase,
 )
 from aphrodite.transformers_utils.runai_utils import ObjectStorageModel, is_runai_obj_uri
 from aphrodite.transformers_utils.utils import maybe_model_redirect
 from aphrodite.utils.import_utils import LazyLoader
-from aphrodite.utils.torch_utils import common_broadcastable_dtype
+from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 
 if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
-    import aphrodite.modeling.models as me_models
-    import aphrodite.quantization as me_quant
-    from aphrodite.attention.backends.registry import _Backend
+    import aphrodite.model_executor.layers.quantization as me_quant
+    import aphrodite.model_executor.models as me_models
     from aphrodite.config.load import LoadConfig
     from aphrodite.config.parallel import ParallelConfig
-    from aphrodite.quantization import QuantizationMethods
+    from aphrodite.model_executor.layers.quantization import QuantizationMethods
     from aphrodite.v1.sample.logits_processor import LogitsProcessor
 else:
     PretrainedConfig = Any
 
-    _Backend = Any
-    me_quant = LazyLoader("modeling", globals(), "aphrodite.quantization")
-    me_models = LazyLoader("modeling", globals(), "aphrodite.modeling.models")
+    me_quant = LazyLoader("model_executor", globals(), "aphrodite.model_executor.layers.quantization")
+    me_models = LazyLoader("model_executor", globals(), "aphrodite.model_executor.models")
     LoadConfig = Any
     ParallelConfig = Any
     QuantizationMethods = Any
@@ -61,41 +79,25 @@ else:
 logger = init_logger(__name__)
 
 RunnerOption = Literal["auto", RunnerType]
-ConvertType = Literal["none", "embed", "classify", "reward"]
+ConvertType = Literal["none", "embed", "classify"]
 ConvertOption = Literal["auto", ConvertType]
-TaskOption = Literal[
-    "auto",
-    "generate",
-    "embedding",
-    "embed",
-    "classify",
-    "score",
-    "reward",
-    "transcription",
-    "draft",
-]
-TokenizerMode = Literal["auto", "slow", "mistral", "custom"]
+TokenizerMode = Literal["auto", "hf", "slow", "mistral", "deepseek_v32"]
 ModelDType = Literal["auto", "half", "float16", "bfloat16", "float", "float32"]
 LogprobsMode = Literal["raw_logits", "raw_logprobs", "processed_logits", "processed_logprobs"]
 HfOverrides = dict[str, Any] | Callable[[PretrainedConfig], PretrainedConfig]
 ModelImpl = Literal["auto", "aphrodite", "transformers", "terratorch"]
 LayerBlockType = Literal["attention", "linear_attention", "mamba"]
 
-_RUNNER_TASKS: dict[RunnerType, list[TaskOption]] = {
-    "generate": ["generate", "transcription"],
-    "pooling": ["embedding", "embed", "classify", "score", "reward"],
-    "draft": ["draft"],
-}
-
 _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
     "generate": [],
-    "pooling": ["embed", "classify", "reward"],
+    "pooling": ["embed", "classify"],
     "draft": [],
 }
 
+AttnTypeStr = Literal["decoder", "encoder", "encoder_only", "encoder_decoder", "attention_free", "hybrid"]
 
-@config
-@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+
+@config(config=ConfigDict(arbitrary_types_allowed=True))
 class ModelConfig:
     """Configuration for the model."""
 
@@ -103,43 +105,50 @@ class ModelConfig:
     """Name or path of the Hugging Face model to use. It is also used as the
     content for `model_name` tag in metrics output when `served_model_name` is
     not specified."""
+    model_weights: str = ""
+    """Original model weights path. Used when the model is pulled from object
+    storage (e.g., RunAI) to preserve the original URI while `model` points to
+    the local directory."""
     runner: RunnerOption = "auto"
     """The type of model runner to use. Each Aphrodite instance only supports one
     model runner, even if the same model can be used for multiple types."""
     convert: ConvertOption = "auto"
     """Convert the model using adapters defined in
-    [aphrodite.modeling.models.adapters][]. The most common use case is to
+    [aphrodite.model_executor.models.adapters][]. The most common use case is to
     adapt a text generation model to be used for pooling tasks."""
-    task: TaskOption | None = None
-    """[DEPRECATED] The task to use the model for. If the model supports more
-    than one model runner, this is used to select which model runner to run.
-
-    Note that the model may support other tasks using the same model runner.
-    """
-    tokenizer: SkipValidation[str] = None  # type: ignore
+    tokenizer: str = None  # type: ignore[assignment]
     """Name or path of the Hugging Face tokenizer to use. If unspecified, model
     name or path will be used."""
-    tokenizer_mode: TokenizerMode = "auto"
-    """Tokenizer mode:\n
-    - "auto" will use the fast tokenizer if available.\n
-    - "slow" will always use the slow tokenizer.\n
-    - "mistral" will always use the tokenizer from `mistral_common`.\n
-    - "custom" will use --tokenizer to select the preregistered tokenizer."""
+    tokenizer_mode: TokenizerMode | str = "auto"
+    """Tokenizer mode:
+
+    - "auto" will use the tokenizer from `mistral_common` for Mistral models
+      if available, otherwise it will use the "hf" tokenizer.
+    - "hf" will use the fast tokenizer if available.
+    - "slow" will always use the slow tokenizer.
+    - "mistral" will always use the tokenizer from `mistral_common`.
+    - "deepseek_v32" will always use the tokenizer from `deepseek_v32`.
+    - "qwen_vl" will always use the tokenizer from `qwen_vl`.
+    - Other custom values can be supported via plugins."""
     trust_remote_code: bool = False
     """Trust remote code (e.g., from HuggingFace) when downloading the model
     and tokenizer."""
     dtype: ModelDType | torch.dtype = "auto"
-    """Data type for model weights and activations:\n
+    """Data type for model weights and activations:
+
     - "auto" will use FP16 precision for FP32 and FP16 models, and BF16
-    precision for BF16 models.\n
-    - "half" for FP16. Recommended for AWQ quantization.\n
-    - "float16" is the same as "half".\n
-    - "bfloat16" for a balance between precision and range.\n
-    - "float" is shorthand for FP32 precision.\n
+      precision for BF16 models.
+    - "half" for FP16. Recommended for AWQ quantization.
+    - "float16" is the same as "half".
+    - "bfloat16" for a balance between precision and range.
+    - "float" is shorthand for FP32 precision.
     - "float32" for FP32 precision."""
-    seed: int | None = None
-    """Random seed for reproducibility. Initialized to None in V0, but
-    initialized to 0 in V1."""
+    seed: int = 0
+    """Random seed for reproducibility.
+
+    We must set the global seed because otherwise,
+    different tensor parallel workers would sample different tokens,
+    leading to inconsistent results."""
     hf_config: PretrainedConfig = field(init=False)
     """The Hugging Face config of the model."""
     hf_text_config: PretrainedConfig = field(init=False)
@@ -161,37 +170,43 @@ class ModelConfig:
     """The specific revision to use for the model code on the Hugging Face Hub.
     It can be a branch name, a tag name, or a commit id. If unspecified, will
     use the default version."""
-    rope_scaling: dict[str, Any] = field(default_factory=dict)
-    """RoPE scaling configuration. For example,
-    `{"rope_type":"dynamic","factor":2.0}`."""
-    rope_theta: float | None = None
-    """RoPE theta. Use with `rope_scaling`. In some cases, changing the RoPE
-    theta improves the performance of the scaled model."""
     tokenizer_revision: str | None = None
     """The specific revision to use for the tokenizer on the Hugging Face Hub.
     It can be a branch name, a tag name, or a commit id. If unspecified, will
     use the default version."""
-    max_model_len: SkipValidation[int] = None  # type: ignore
+    max_model_len: int = Field(default=None, ge=-1)  # type: ignore[assignment]
     """Model context length (prompt and output). If unspecified, will be
     automatically derived from the model config.
 
     When passing via `--max-model-len`, supports k/m/g/K/M/G in human-readable
-    format. Examples:\n
-    - 1k -> 1000\n
-    - 1K -> 1024\n
-    - 25.6k -> 25,600"""
+    format. Examples:
+
+    - 1k -> 1000
+    - 1K -> 1024
+    - 25.6k -> 25,600
+    - -1 or 'auto' -> Automatically choose the maximum model length that fits in
+      GPU memory. This will use the model's maximum context length if it fits,
+      otherwise it will find the largest length that can be accommodated."""
     spec_target_max_model_len: int | None = None
     """Specify the maximum length for spec decoding draft models."""
-    quantization: SkipValidation[QuantizationMethods | None] = None
+    quantization: QuantizationMethods | str | None = None
     """Method used to quantize the weights. If `None`, we first check the
     `quantization_config` attribute in the model config file. If that is
     `None`, we assume the model weights are not quantized and use `dtype` to
     determine the data type of the weights."""
+    quantization_config: dict[str, Any] | OnlineQuantizationConfigArgs | None = None
+    """Arguments for online quantization.
+    Auto-created when `quantization` equals to one of the string values of
+    the `OnlineQuantScheme` enum."""
+    allow_deprecated_quantization: bool = False
+    """Whether to allow deprecated quantization methods."""
     enforce_eager: bool = False
     """Whether to always use eager-mode PyTorch. If True, we will disable CUDA
     graph and always execute the model in eager mode. If False, we will use
     CUDA graph and eager execution in hybrid for maximal performance and
     flexibility."""
+    enable_return_routed_experts: bool = False
+    """Whether to return routed experts."""
     max_logprobs: int = 20
     """Maximum number of log probabilities to return when `logprobs` is
     specified in `SamplingParams`. The default value comes the default for the
@@ -209,12 +224,13 @@ class ModelConfig:
     """Whether to disable sliding window. If True, we will disable the sliding
     window functionality of the model, capping to sliding window size. If the
     model does not support sliding window, this argument is ignored."""
-    disable_cascade_attn: bool = False
+    disable_cascade_attn: bool = True
     """Disable cascade attention for V1. While cascade attention does not
     change the mathematical correctness, disabling it could be useful for
-    preventing potential numerical issues. Note that even if this is set to
-    False, cascade attention will be only used when the heuristic tells that
-    it's beneficial."""
+    preventing potential numerical issues. This defaults to True, so users
+    must opt in to cascade attention by setting this to False. Even when this
+    is set to False, cascade attention will only be used when the heuristic
+    tells that it's beneficial."""
     skip_tokenizer_init: bool = False
     """Skip initialization of tokenizer and detokenizer. Expects valid
     `prompt_token_ids` and `None` for prompt from the input. The generated
@@ -234,22 +250,19 @@ class ModelConfig:
     prometheus metrics, if multiple names provided, metrics tag will take the
     first one."""
     config_format: str | ConfigFormat = "auto"
-    """The format of the model config to load:\n
-    - "auto" will try to load the config in hf format if available else it
-    will try to load in mistral format.\n
-    - "hf" will load the config in hf format.\n
+    """The format of the model config to load:
+
+    - "auto" will try to load the config in hf format if available after trying
+      to load in mistral format.
+    - "hf" will load the config in hf format.
     - "mistral" will load the config in mistral format."""
     hf_token: bool | str | None = None
     """The token to use as HTTP bearer authorization for remote files . If
-    `True`, will use the token generated when running `huggingface-cli login`
-    (stored in `~/.huggingface`)."""
+    `True`, will use the token generated when running `hf auth login`
+    (stored in `~/.cache/huggingface/token`)."""
     hf_overrides: HfOverrides = field(default_factory=dict)
     """If a dictionary, contains arguments to be forwarded to the Hugging Face
     config. If a callable, it is called to update the HuggingFace config."""
-    logits_processor_pattern: str | None = None
-    """Optional regex pattern specifying valid logits processor qualified names
-    that can be passed with the `logits_processors` extra completion argument.
-    Defaults to `None`, which allows no processors."""
     generation_config: str = "auto"
     """The folder path to the generation config. Defaults to `"auto"`, the
     generation config will be loaded from model path. If set to `"aphrodite"`, no
@@ -263,39 +276,39 @@ class ModelConfig:
     merged with the default config from the model. If used with
     `--generation-config aphrodite`, only the override parameters are used."""
     enable_sleep_mode: bool = False
-    """Enable sleep mode for the engine (only cuda platform is supported)."""
+    """Enable sleep mode for the engine (only cuda and
+    hip platforms are supported)."""
     model_impl: str | ModelImpl = "auto"
-    """Which implementation of the model to use:\n
-    - "auto" will try to use the Aphrodite implementation, if it exists, and fall
-    back to the Transformers implementation if no Aphrodite implementation is
-    available.\n
-    - "aphrodite" will use the Aphrodite model implementation.\n
-    - "transformers" will use the Transformers model implementation.\n
+    """Which implementation of the model to use:
+
+    - "auto" will try to use the Aphrodite implementation, if it exists, and fall back to the
+      Transformers implementation if no Aphrodite implementation is available.
+    - "aphrodite" will use the Aphrodite model implementation.
+    - "transformers" will use the Transformers model implementation.
     - "terratorch" will use the TerraTorch model implementation.
     """
     override_attention_dtype: str | None = None
     """Override dtype for attention"""
-    attention_backend: str | None = None
-    """Attention backend to use. If not set, uses the value from
-    APHRODITE_ATTENTION_BACKEND environment variable."""
     logits_processors: list[str | type[LogitsProcessor]] | None = None
     """One or more logits processors' fully-qualified class names or class
     definitions"""
     io_processor_plugin: str | None = None
     """IOProcessor plugin name to load at model startup"""
+    renderer_num_workers: int = 1
+    """Number of worker threads in the renderer thread pool. This pool
+    handles async tokenization, chat template rendering, and multimodal
+    preprocessing."""
 
     # Pooler config
     pooler_config: PoolerConfig | None = None
     """Pooler config which controls the behaviour of output pooling in pooling
     models."""
-    override_pooler_config: dict | PoolerConfig | None = None
-    """[DEPRECATED] Use `pooler_config` instead. This field will be removed in
-    v0.12.0 or v1.0.0, whichever is sooner."""
 
     # Multimodal config and init vars
     multimodal_config: MultiModalConfig | None = None
     """Configuration for multimodal model. If `None`, this will be inferred
     from the architecture of `self.model`."""
+    language_model_only: InitVar[bool] = False
     limit_mm_per_prompt: InitVar[dict[str, int | dict[str, int]] | None] = None
     enable_mm_embeds: InitVar[bool | None] = None
     media_io_kwargs: InitVar[dict[str, dict[str, Any]] | None] = None
@@ -303,11 +316,13 @@ class ModelConfig:
     mm_processor_cache_gb: InitVar[float | None] = None
     mm_processor_cache_type: InitVar[MMCacheType | None] = None
     mm_shm_cache_max_object_size_mb: InitVar[int | None] = None
+    mm_encoder_only: InitVar[bool | None] = None
     mm_encoder_tp_mode: InitVar[MMEncoderTPMode | None] = None
-    mm_encoder_attn_backend: InitVar[_Backend | str | None] = None
+    mm_encoder_attn_backend: InitVar[AttentionBackendEnum | str | None] = None
     interleave_mm_strings: InitVar[bool | None] = None
     skip_mm_profiling: InitVar[bool | None] = None
     video_pruning_rate: InitVar[float | None] = None
+    mm_tensor_ipc: InitVar[MMTensorIPC] = None
 
     def compute_hash(self) -> str:
         """
@@ -321,50 +336,50 @@ class ModelConfig:
         excluding anything before input ids/embeddings and after
         the final hidden states.
         """
-        factors: list[Any] = []
-        factors.append(self.model)
-        factors.append(self.dtype)
-        factors.append(self.quantization)
-        factors.append(self.revision)
-        factors.append(self.code_revision)
-        factors.append(self.max_model_len)
-        factors.append(self.max_logprobs)
-        factors.append(self.disable_sliding_window)
-        factors.append(self.trust_remote_code)
-        factors.append(self.generation_config)
-        factors.append(self.model_impl)
-        factors.append(self.override_generation_config)
-        factors.append(self.rope_scaling)
-        factors.append(self.rope_theta)
-        factors.append(self.video_pruning_rate)
-        factors.append(self.enable_prompt_embeds)
+        ignored_factors = {
+            "convert",
+            "tokenizer",
+            "tokenizer_mode",
+            "seed",
+            "hf_config_path",
+            "allowed_local_media_path",
+            "allowed_media_domains",
+            "tokenizer_revision",
+            "spec_target_max_model_len",
+            "enforce_eager",
+            "logprobs_mode",
+            "disable_cascade_attn",
+            "skip_tokenizer_init",
+            "served_model_name",
+            "config_format",
+            "hf_token",
+            "hf_overrides",
+            "override_attention_dtype",
+            "logits_processors",
+            "io_processor_plugin",
+            "pooler_config",
+            "multimodal_config",
+            "limit_mm_per_prompt",
+            "media_io_kwargs",
+            "mm_processor_kwargs",
+            "mm_processor_cache_gb",
+            "mm_processor_cache_type",
+            "mm_shm_cache_max_object_size_mb",
+            "mm_encoder_tp_mode",
+            "interleave_mm_strings",
+            "skip_mm_profiling",
+        }
 
-        # hf_config can control how the model looks!
-        try:
-            hf_config_json = self.hf_config.to_json_string(use_diff=False)
-        except TypeError:
-            from transformers import PretrainedConfig
+        from aphrodite.config.utils import get_hash_factors, hash_factors
 
-            from aphrodite.utils.jsontree import json_map_leaves
+        factors = get_hash_factors(self, ignored_factors)
 
-            # Handle nested HF configs with unserializable values gracefully
-            hf_config_json = (
-                json.dumps(
-                    json_map_leaves(
-                        lambda v: v.to_dict() if isinstance(v, PretrainedConfig) else str(v),
-                        self.hf_config.to_dict(),
-                    ),
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n"
-            )
-
-        factors.append(hf_config_json)
-
-        str_factors = str(factors)
-        assert_hashable(str_factors)
-        return hashlib.sha256(str(factors).encode()).hexdigest()
+        # NOTE: For some models (e.g, Qwen3-VL), whether the MM code path is enabled
+        # affects the computation graph of the language model, therefore we add it
+        # here early.
+        if self.multimodal_config:
+            factors["language_model_only"] = self.multimodal_config.language_model_only
+        return hash_factors(factors)
 
     def _update_nested(
         self,
@@ -413,36 +428,22 @@ class ModelConfig:
     def __post_init__(
         self,
         # Multimodal config init vars
-        limit_mm_per_prompt: dict[str, int] | None,
+        language_model_only: bool,
+        limit_mm_per_prompt: dict[str, int | dict[str, int]] | None,
         enable_mm_embeds: bool | None,
         media_io_kwargs: dict[str, dict[str, Any]] | None,
         mm_processor_kwargs: dict[str, Any] | None,
         mm_processor_cache_gb: float | None,
         mm_processor_cache_type: MMCacheType | None,
         mm_shm_cache_max_object_size_mb: int | None,
+        mm_encoder_only: bool | None,
         mm_encoder_tp_mode: MMEncoderTPMode | None,
-        mm_encoder_attn_backend: _Backend | str | None,
+        mm_encoder_attn_backend: AttentionBackendEnum | str | None,
         interleave_mm_strings: bool | None,
         skip_mm_profiling: bool | None,
         video_pruning_rate: float | None,
+        mm_tensor_ipc: MMTensorIPC,
     ) -> None:
-        # Set the default seed to 0 in V1.
-        # NOTE(woosuk): In V1, we use separate processes for workers (unless
-        # APHRODITE_ENABLE_V1_MULTIPROCESSING=0), so setting a seed here
-        # doesn't affect the user process. However, without a consistent seed,
-        # different tensor parallel workers would sample different tokens,
-        # leading to inconsistent results.
-        if self.seed is None:
-            self.seed = 0
-            if not envs.APHRODITE_ENABLE_V1_MULTIPROCESSING:
-                logger.warning(
-                    "The global random seed is set to %d. Since "
-                    "APHRODITE_ENABLE_V1_MULTIPROCESSING is set to False, this may "
-                    "affect the random state of the Python process that "
-                    "launched Aphrodite.",
-                    self.seed,
-                )
-
         # Keep set served_model_name before maybe_model_redirect(self.model)
         self.served_model_name = get_served_model_name(self.model, self.served_model_name)
         self.model = maybe_model_redirect(self.model)
@@ -457,7 +458,7 @@ class ModelConfig:
             self.hf_config_path = maybe_model_redirect(self.hf_config_path)
 
         if callable(self.hf_overrides):
-            hf_overrides_kw = {}
+            hf_overrides_kw: dict[str, Any] = {}
             hf_overrides_fn = self.hf_overrides
             dict_overrides: dict[str, Any] = {}
         else:
@@ -472,53 +473,7 @@ class ModelConfig:
                     hf_overrides_kw[key] = value
             hf_overrides_fn = None
 
-        if self.rope_scaling:
-            hf_override: dict[str, Any] = {"rope_scaling": self.rope_scaling}
-            hf_overrides_kw.update(hf_override)
-            hf_overrides_str = json.dumps(hf_overrides_kw)
-            msg = (
-                "`--rope-scaling` will be removed in a future release. "
-                f"'Please instead use `--hf-overrides '{hf_overrides_str}'`"
-            )
-            warnings.warn(DeprecationWarning(msg), stacklevel=2)
-        if self.rope_theta is not None:
-            hf_override = {"rope_theta": self.rope_theta}
-            hf_overrides_kw.update(hf_override)
-            hf_overrides_str = json.dumps(hf_overrides_kw)
-            msg = (
-                "`--rope-theta` will be removed in a future release. "
-                f"'Please instead use `--hf-overrides '{hf_overrides_str}'`"
-            )
-            warnings.warn(DeprecationWarning(msg), stacklevel=2)
-
         self.maybe_pull_model_tokenizer_for_runai(self.model, self.tokenizer)
-
-        # Set attention_backend from env var if not specified, with deprecation warning
-        if self.attention_backend is None:
-            self.attention_backend = envs.APHRODITE_ATTENTION_BACKEND
-            if envs.is_set("APHRODITE_ATTENTION_BACKEND"):
-                logger.warning_once(
-                    "APHRODITE_ATTENTION_BACKEND environment variable is deprecated and "
-                    "will be removed in a future release. Please use the "
-                    "--attention-backend command-line argument instead."
-                )
-        else:
-            # If attention_backend was set via CLI arg, update the env var
-            # so that internal components that read from envs still work
-            import os
-
-            os.environ["APHRODITE_ATTENTION_BACKEND"] = self.attention_backend
-            envs.APHRODITE_ATTENTION_BACKEND = self.attention_backend
-
-        if self.attention_backend and self.attention_backend == "FLASHINFER" and find_spec("flashinfer") is None:
-            raise ValueError(
-                "attention_backend is set to FLASHINFER, but flashinfer "
-                "module was not found. See "
-                "https://github.com/aphrodite-engine/aphrodite-engine/blob/main/docker/Dockerfile "  # noqa: E501
-                "for instructions on how to install it."
-            )
-
-        from aphrodite.platforms import current_platform
 
         if self.override_attention_dtype is not None and not current_platform.is_rocm():
             warnings.warn(
@@ -537,6 +492,11 @@ class ModelConfig:
             self.config_format,
             hf_overrides_kw=hf_overrides_kw,
             hf_overrides_fn=hf_overrides_fn,
+            token=self.hf_token,
+        )
+        hf_config = maybe_patch_hf_config_from_gguf(
+            self.model,
+            hf_config,
         )
 
         self.hf_config = hf_config
@@ -548,87 +508,12 @@ class ModelConfig:
         self.hf_image_processor_config = get_hf_image_processor_config(
             self.model, hf_token=self.hf_token, revision=self.revision
         )
+        self.model_arch_config = self.get_model_arch_config()
 
         architectures = self.architectures
         registry = self.registry
         is_generative_model = registry.is_text_generation_model(architectures, self)
         is_pooling_model = registry.is_pooling_model(architectures, self)
-
-        def _task_to_convert(task: TaskOption) -> ConvertType:
-            if task == "embedding" or task == "embed":
-                return "embed"
-            if task == "classify":
-                return "classify"
-            if task == "reward":
-                return "reward"
-            if task == "score":
-                new_task = self._get_default_pooling_task(architectures)
-                return "classify" if new_task == "classify" else "embed"
-
-            return "none"
-
-        if self.task is not None:
-            runner: RunnerOption = "auto"
-            convert: ConvertOption = "auto"
-            msg_prefix = (
-                "The 'task' option has been deprecated and will be removed in v0.13.0 or v1.0, whichever comes first."
-            )
-            msg_hint = "Please remove this option."
-
-            is_generative_task = self.task in _RUNNER_TASKS["generate"]
-            is_pooling_task = self.task in _RUNNER_TASKS["pooling"]
-
-            if is_generative_model and is_pooling_model:
-                if is_generative_task:
-                    runner = "generate"
-                    convert = "auto"
-                    msg_hint = (
-                        "Please replace this option with `--runner "
-                        "generate` to continue using this model "
-                        "as a generative model."
-                    )
-                elif is_pooling_task:
-                    runner = "pooling"
-                    convert = "auto"
-                    msg_hint = (
-                        "Please replace this option with `--runner "
-                        "pooling` to continue using this model "
-                        "as a pooling model."
-                    )
-                else:  # task == "auto"
-                    pass
-            elif is_generative_model or is_pooling_model:
-                if is_generative_task:
-                    runner = "generate"
-                    convert = "auto"
-                    msg_hint = "Please remove this option"
-                elif is_pooling_task:
-                    runner = "pooling"
-                    convert = _task_to_convert(self.task)
-                    msg_hint = (
-                        "Please replace this option with `--convert "
-                        f"{convert}` to continue using this model "
-                        "as a pooling model."
-                    )
-                else:  # task == "auto"
-                    pass
-            else:
-                debug_info = {
-                    "architectures": architectures,
-                    "is_generative_model": is_generative_model,
-                    "is_pooling_model": is_pooling_model,
-                }
-                raise AssertionError(
-                    "The model should be a generative or "
-                    "pooling model when task is set to "
-                    f"{self.task!r}. Found: {debug_info}"
-                )
-
-            self.runner = runner
-            self.convert = convert
-
-            msg = f"{msg_prefix} {msg_hint}"
-            warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
         self.runner_type = self._get_runner_type(architectures, self.runner)
         self.convert_type = self._get_convert_type(architectures, self.runner_type, self.convert)
@@ -655,20 +540,28 @@ class ModelConfig:
         self._architecture = arch
         logger.info("Resolved architecture: %s", arch)
 
-        # Init pooler config if needed
-        if self.runner_type == "pooling":
-            if self.override_pooler_config is not None:
-                logger.warning_once(
-                    "`override_pooler_config` is deprecated and will be "
-                    "removed in v0.12.0 or v1.0.0, whichever is sooner. "
-                    "Please use `pooler_config` instead."
+        # Set default tokenizer modes based on model architecture
+        if self.tokenizer_mode == "auto":
+            if self.model_impl == "terratorch":
+                self.tokenizer_mode = "terratorch"
+            elif arch == "Grok1ForCausalLM":
+                self.tokenizer_mode = "grok2"
+            elif arch == "MoonshotKimiaForCausalLM":
+                self.tokenizer_mode = "kimi_audio"
+            elif arch == "QwenVLForConditionalGeneration":
+                self.tokenizer_mode = "qwen_vl"
+            elif arch == "DeepseekV32ForCausalLM":
+                self.tokenizer_mode = "deepseek_v32"
+
+            if self.tokenizer_mode != "auto":
+                logger.info(
+                    "Defaulting to tokenizer_mode=%r for %s",
+                    self.tokenizer_mode,
+                    arch,
                 )
 
-                if isinstance(self.override_pooler_config, dict):
-                    self.pooler_config = PoolerConfig(**self.override_pooler_config)
-                else:
-                    self.pooler_config = self.override_pooler_config
-
+        # Init pooler config if needed
+        if self.runner_type == "pooling":
             if self.pooler_config is None:
                 self.pooler_config = PoolerConfig()
 
@@ -679,9 +572,12 @@ class ModelConfig:
                     if getattr(self.pooler_config, k) is None:
                         setattr(self.pooler_config, k, v)
 
-            default_pooling_type = self._model_info.default_pooling_type
-            if self.pooler_config.pooling_type is None:
-                self.pooler_config.pooling_type = default_pooling_type
+            default_seq_pooling_type = self._model_info.default_seq_pooling_type
+            if self.pooler_config.seq_pooling_type is None:
+                self.pooler_config.seq_pooling_type = default_seq_pooling_type
+            default_tok_pooling_type = self._model_info.default_tok_pooling_type
+            if self.pooler_config.tok_pooling_type is None:
+                self.pooler_config.tok_pooling_type = default_tok_pooling_type
 
         self.dtype: torch.dtype = _get_and_verify_dtype(
             self.model,
@@ -689,10 +585,24 @@ class ModelConfig:
             self.dtype,
             is_pooling_model=self.runner_type == "pooling",
             revision=self.revision,
+            config_format=self.config_format,
         )
+
+        # Some checkpoints set sliding_window to 0 to indicate that sliding window is
+        # disabled, but Aphrodite uses None for that. Convert 0 to None to avoid errors.
+        # Set before get_and_verify_max_len to ensure that max_model_len does not get
+        # capped to 0.
+        if self.get_sliding_window() == 0:
+            self.disable_sliding_window = True
+            self.hf_text_config.sliding_window = None
 
         self.original_max_model_len = self.max_model_len
         self.max_model_len = self.get_and_verify_max_len(self.max_model_len)
+
+        if self.is_encoder_decoder:
+            mm_processor_cache_gb = 0
+            logger.info("Encoder-decoder model detected, disabling mm processor cache.")
+
         # Init multimodal config if needed
         if self._model_info.supports_multimodal:
             if mm_encoder_tp_mode == "data" and not self._model_info.supports_multimodal_encoder_tp_data:
@@ -703,6 +613,7 @@ class ModelConfig:
                 mm_encoder_tp_mode = "weights"
 
             mm_config_kwargs = dict(
+                language_model_only=language_model_only,
                 limit_per_prompt=limit_mm_per_prompt,
                 enable_mm_embeds=enable_mm_embeds,
                 media_io_kwargs=media_io_kwargs,
@@ -710,31 +621,67 @@ class ModelConfig:
                 mm_processor_cache_gb=mm_processor_cache_gb,
                 mm_processor_cache_type=mm_processor_cache_type,
                 mm_shm_cache_max_object_size_mb=mm_shm_cache_max_object_size_mb,
+                mm_encoder_only=mm_encoder_only,
                 mm_encoder_tp_mode=mm_encoder_tp_mode,
                 mm_encoder_attn_backend=mm_encoder_attn_backend,
                 interleave_mm_strings=interleave_mm_strings,
                 skip_mm_profiling=skip_mm_profiling,
                 video_pruning_rate=video_pruning_rate,
+                mm_tensor_ipc=mm_tensor_ipc,
             )
 
             mm_config_kwargs = {k: v for k, v in mm_config_kwargs.items() if v is not None}
 
-            self.multimodal_config = MultiModalConfig(**mm_config_kwargs)
+            self.multimodal_config = MultiModalConfig(**mm_config_kwargs)  # type: ignore[arg-type]
+
+            if self.renderer_num_workers > 1 and self.multimodal_config.mm_processor_cache_gb > 0:
+                raise ValueError(
+                    "Cannot use --renderer-num-workers > 1 with the "
+                    "multimodal processor cache enabled. The cache is "
+                    "not thread-safe and does not support concurrent "
+                    "renderer workers. Please set "
+                    "--renderer-num-workers 1 (the default), or "
+                    "disable the cache with --mm-processor-cache-gb 0."
+                )
+
+        # Multimodal GGUF models must use original repo for mm processing
+        if is_gguf(self.tokenizer) and self.is_multimodal_model:
+            raise ValueError(
+                "Loading a multimodal GGUF model needs to use original "
+                "tokenizer. Please specify the unquantized hf model's "
+                "repo name or path using the --tokenizer argument."
+            )
 
         if self.disable_sliding_window:
             # Set after get_and_verify_max_len to ensure that max_model_len
             # can be correctly capped to sliding window size
             self.hf_text_config.sliding_window = None
 
-        if not self.skip_tokenizer_init:
-            self._verify_tokenizer_mode()
-
         # Avoid running try_verify_and_update_config multiple times
         self.config_updated = False
-
+        self._try_verify_and_update_model_config()
         self._verify_quantization()
         self._verify_cuda_graph()
         self._verify_bnb_config()
+
+    def get_model_arch_config(
+        self,
+    ) -> ModelArchitectureConfig:
+        convertor_cls = MODEL_ARCH_CONFIG_CONVERTORS.get(self.hf_config.model_type, ModelArchConfigConvertorBase)
+        convertor = convertor_cls(self.hf_config, self.hf_text_config)
+        return convertor.convert()
+
+    @field_validator("tokenizer", "max_model_len", mode="wrap")
+    @classmethod
+    def _skip_none_validation(cls, value: Any, handler: Callable) -> Any:
+        """Skip validation if the value is `None` when initialisation is delayed."""
+        if value is None:
+            return value
+        return handler(value)
+
+    @field_validator("tokenizer_mode", mode="after")
+    def _lowercase_tokenizer_mode(cls, tokenizer_mode: str) -> str:
+        return tokenizer_mode.lower()
 
     @field_validator("quantization", mode="before")
     @classmethod
@@ -745,19 +692,28 @@ class ModelConfig:
 
     @model_validator(mode="after")
     def validate_model_config_after(self: "ModelConfig") -> "ModelConfig":
+        """Called after __post_init__"""
         if not isinstance(self.tokenizer, str):
-            raise ValueError("tokenizer must be a string after __post_init__.")
+            raise ValueError(
+                f"tokenizer must be a string, got "
+                f"{type(self.tokenizer).__name__}: {self.tokenizer!r}. "
+                "Please provide a valid tokenizer path or HuggingFace model ID."
+            )
         if not isinstance(self.max_model_len, int):
-            raise ValueError("max_model_len must be an integer after __post_init__.")
+            raise ValueError(
+                f"max_model_len must be a positive integer, "
+                f"got {type(self.max_model_len).__name__}: {self.max_model_len!r}. "
+                "Example: max_model_len=2048"
+            )
         return self
 
     def _get_transformers_backend_cls(self) -> str:
-        """Determine which Transformers backend class will be used if
+        """Determine which Transformers modeling backend class will be used if
         `model_impl` is set to `transformers` or `auto`."""
         cls = "Transformers"
         # If 'hf_config != hf_text_config' it's a nested config, i.e. multimodal
         cls += "MultiModal" if self.hf_config != self.hf_text_config else ""
-        cls += "MoE" if self.get_num_experts() > 1 else ""
+        cls += "MoE" if self.is_moe else ""
         # Check if the architecture we're wrapping has defaults
         runner = None
         task = None
@@ -766,8 +722,8 @@ class ModelConfig:
         # User specified value take precedence
         if self.runner != "auto":
             runner = self.runner
-        # Only consider Transformers backend pooling classes if we're wrapping an
-        # architecture that defaults to pooling. Otherwise, we return the LM class
+        # Only consider Transformers modeling backend pooling classes if we're wrapping
+        # an architecture that defaults to pooling. Otherwise, we return the LM class
         # and use adapters.
         if runner == "pooling" and task in {"embed", "classify"}:
             if task == "embed":
@@ -779,7 +735,7 @@ class ModelConfig:
         return cls
 
     def using_transformers_backend(self) -> bool:
-        """Check if the model is using the Transformers backend class."""
+        """Check if the model is using the Transformers modeling backend class."""
         used_cls = self._model_info.architecture
         transformers_backend_cls = self._get_transformers_backend_cls()
         return used_cls == transformers_backend_cls
@@ -790,7 +746,7 @@ class ModelConfig:
 
     @property
     def architectures(self) -> list[str]:
-        return getattr(self.hf_config, "architectures", [])
+        return self.model_arch_config.architectures
 
     @property
     def architecture(self) -> str:
@@ -805,6 +761,10 @@ class ModelConfig:
             model: Model name or path
             tokenizer: Tokenizer name or path
         """
+
+        # Skip if model_weights is already set (model already pulled)
+        if self.model_weights:
+            return
 
         if not (is_runai_obj_uri(model) or is_runai_obj_uri(tokenizer)):
             return
@@ -839,16 +799,11 @@ class ModelConfig:
             )
             self.tokenizer = object_storage_tokenizer.dir
 
-    def _get_encoder_config(self):
-        return get_sentence_transformer_tokenizer_config(self.model, self.revision)
-
-    def _verify_tokenizer_mode(self) -> None:
-        tokenizer_mode = cast(TokenizerMode, self.tokenizer_mode.lower())
-        if tokenizer_mode not in get_args(TokenizerMode):
-            raise ValueError(
-                f"Unknown tokenizer mode: {self.tokenizer_mode}. Must be one of {get_args(TokenizerMode)}."
-            )
-        self.tokenizer_mode = tokenizer_mode
+    def _get_encoder_config(self) -> dict[str, Any] | None:
+        model = self.model
+        if is_remote_gguf(model):
+            model, _ = split_remote_gguf(model)
+        return get_sentence_transformer_tokenizer_config(model, self.revision)
 
     def _get_default_runner_type(
         self,
@@ -940,79 +895,34 @@ class ModelConfig:
 
         return convert_type
 
-    def _get_default_pooling_task(
-        self,
-        architectures: list[str],
-    ) -> Literal["embed", "classify", "reward"]:
-        if self.registry.is_cross_encoder_model(architectures, self):
-            return "classify"
-
-        for arch in architectures:
-            match = try_match_architecture_defaults(arch, runner_type="pooling")
-            if match:
-                _, (_, convert_type) = match
-                assert convert_type != "none"
-                return convert_type
-
-        return "embed"
-
-    def _parse_quant_hf_config(self, hf_config: PretrainedConfig):
-        quant_cfg = getattr(hf_config, "quantization_config", None)
-        if quant_cfg is None:
-            # compressed-tensors uses a "compression_config" key
-            quant_cfg = getattr(hf_config, "compression_config", None)
-
-        else:
-            # Set quant_method for ModelOpt models.
-            producer_name = quant_cfg.get("producer", {}).get("name")
-            if producer_name == "modelopt":
-                quant_algo = quant_cfg.get("quantization", {}).get("quant_algo")
-                if quant_algo == "FP8":
-                    quant_cfg["quant_method"] = "modelopt"
-                elif quant_algo == "NVFP4":
-                    quant_cfg["quant_method"] = "modelopt_fp4"
-                elif quant_algo is not None:
-                    raise ValueError(f"Unknown ModelOpt quant algo: {quant_algo}")
-
-        return quant_cfg
-
     def _verify_quantization(self) -> None:
         supported_quantization = me_quant.QUANTIZATION_METHODS
         if self.quantization is not None:
             self.quantization = cast(me_quant.QuantizationMethods, self.quantization)
 
         # Parse quantization method from the HF model config, if available.
-        quant_cfg = self._parse_quant_hf_config(self.hf_config)
-        if quant_cfg is None and (text_config := getattr(self.hf_config, "text_config", None)):
-            # Check the text config as well for multi-modal models.
-            quant_cfg = self._parse_quant_hf_config(text_config)
+        quant_cfg = self.model_arch_config.quantization_config
 
         if quant_cfg is not None:
-            # Use the community standard 'quant_method'
-            quant_method = quant_cfg.get("quant_method", "").lower()
-
-            # Normalize library names
-            quant_method = quant_method.replace("compressed_tensors", "compressed-tensors")
-
-            quant_cfg["quant_method"] = quant_method
-
+            quant_method = quant_cfg["quant_method"]
             # Quantization methods which are overrides (i.e. they have a
             # `override_quantization_method` method) must be checked in order
             # of preference (this is particularly important for GPTQ).
             overrides = [
-                "bitblas",
-                "gptq_marlin_24",
                 "gptq_marlin",
-                "gptq_bitblas",
                 "awq_marlin",
-                "ipex",
+                "inc",
                 "moe_wna16",
                 "modelopt",
                 "modelopt_fp4",
-                "petit_nvfp4",
+                "modelopt_mxfp8",
+                "modelopt_mixed",
                 # Ensure heavy backends are probed last to avoid unnecessary
                 # imports during override detection (e.g., MXFP4 imports Triton)
                 "mxfp4",
+                "gpt_oss_mxfp4",
+                "cpu_awq",
+                "gguf",
             ]
             quantization_methods = [q for q in supported_quantization if q not in overrides]
             # Any custom overrides will be in quantization_methods so we place
@@ -1023,7 +933,9 @@ class ModelConfig:
             # Detect which checkpoint is it
             for name in quantization_methods:
                 method = me_quant.get_quantization_config(name)
-                quantization_override = method.override_quantization_method(quant_cfg, self.quantization)
+                quantization_override = method.override_quantization_method(
+                    quant_cfg, self.quantization, hf_config=self.hf_config
+                )
                 if quantization_override is not None:
                     # Raise error if the override is not custom (custom would
                     # be in QUANTIZATION_METHODS but not QuantizationMethods)
@@ -1056,34 +968,21 @@ class ModelConfig:
                 raise ValueError(
                     f"Unknown quantization method: {self.quantization}. Must be one of {supported_quantization}."
                 )
-            from aphrodite.platforms import current_platform
-
             current_platform.verify_quantization(self.quantization)
 
-        DEFAULT_EXP_BITS = {
-            2: 1,
-            3: 2,
-            4: 2,
-            5: 2,
-            6: 2,
-            7: 3,
-        }
-        online_quant_methods = ["fp2", "fp3", "fp4", "fp5", "fp6", "fp7"]
-        if self.quantization is not None and self.quantization in online_quant_methods:
-            fp_bits = int(self.quantization[2])
-            if fp_bits in [2, 3]:
+        if self.quantization in me_quant.DEPRECATED_QUANTIZATION_METHODS:
+            if self.allow_deprecated_quantization:
                 logger.warning(
-                    "FP2 and FP3 quantization methods lead to "
-                    "significant accuracy loss. Use them with "
-                    "caution. Model may be incoherent."
+                    "The quantization method %s is deprecated and will be removed in future versions of Aphrodite.",
+                    self.quantization,
                 )
-            exp_bits = DEFAULT_EXP_BITS[fp_bits]
-            self.hf_config.quantization_config = {
-                "bits": fp_bits,
-                "exp_bits": exp_bits,
-                "quant_method": self.quantization,
-            }
-            self.dtype = torch.float16
+            else:
+                raise ValueError(
+                    "The quantization method %s is deprecated "
+                    "and will be removed in future versions of Aphrodite. To bypass, "
+                    "set `--allow-deprecated-quantization`.",
+                    self.quantization,
+                )
 
     def _verify_cuda_graph(self) -> None:
         # CUDAGraph capture not supported for encoder-decoder models on ROCm
@@ -1091,7 +990,7 @@ class ModelConfig:
         if unsupported_rocm and not self.enforce_eager and current_platform.is_rocm():
             logger.warning(
                 "CUDA graph is not supported for %s on ROCm yet, fallback to eager mode.",
-                self.hf_config.model_type,
+                self.model_arch_config.model_type,
             )
             self.enforce_eager = True
 
@@ -1102,8 +1001,12 @@ class ModelConfig:
         # TODO Remove this when bitsandbytes supports.
         """
         is_bitsandbytes = self.quantization == "bitsandbytes"
-        has_quantization_config = getattr(self.hf_config, "quantization_config", None) is not None
-        is_8bit = self.hf_config.quantization_config.get("load_in_8bit", False) if has_quantization_config else False
+        has_quantization_config = self.model_arch_config.quantization_config is not None
+        is_8bit = (
+            self.model_arch_config.quantization_config.get("load_in_8bit", False)  # type: ignore[union-attr]
+            if has_quantization_config
+            else False
+        )
         if all(
             [
                 is_bitsandbytes,
@@ -1117,11 +1020,27 @@ class ModelConfig:
             self.enforce_eager = True
 
     def _verify_with_expert_parallelism(self) -> None:
-        num_experts = self.get_num_experts()
-        if num_experts < 1:
+        if not self.is_moe:
             raise ValueError(
                 "Number of experts in the model must be greater than 0 when expert parallelism is enabled."
             )
+
+    def _try_verify_and_update_model_config(self):
+        # Avoid running try_verify_and_update_config multiple times
+        if getattr(self, "config_updated", False):
+            return
+
+        architecture = self.architecture
+        if architecture is None:
+            return
+
+        from aphrodite.model_executor.models.config import (
+            MODELS_CONFIG_MAP,
+        )
+
+        cls = MODELS_CONFIG_MAP.get(architecture, None)
+        if cls is not None:
+            cls.verify_and_update_model_config(self)
 
     def verify_dual_chunk_attention_config(
         self,
@@ -1129,7 +1048,9 @@ class ModelConfig:
     ) -> None:
         if hasattr(self.hf_config, "dual_chunk_attention_config"):
             # Try loading the sparse attention config
-            from aphrodite.modeling.model_loader.weight_utils import get_sparse_attention_config
+            from aphrodite.model_executor.model_loader.weight_utils import (
+                get_sparse_attention_config,
+            )
 
             sparse_attn_config = get_sparse_attention_config(self, load_config)
             if sparse_attn_config:
@@ -1141,13 +1062,7 @@ class ModelConfig:
         self,
         parallel_config: ParallelConfig,
     ) -> None:
-        if parallel_config.distributed_executor_backend == "external_launcher":
-            assert self.seed is not None, (
-                "Seed must be set when using external launcher backend to "
-                "make sure sampling results are the same across workers."
-            )
-
-        total_num_attention_heads = getattr(self.hf_text_config, "num_attention_heads", 0)
+        total_num_attention_heads = self.model_arch_config.total_num_attention_heads
         tensor_parallel_size = parallel_config.tensor_parallel_size
         if total_num_attention_heads % tensor_parallel_size != 0:
             raise ValueError(
@@ -1183,122 +1098,74 @@ class ModelConfig:
                 f"but got {decode_context_parallel_size}"
             )
 
+            num_q_per_kv = total_num_attention_heads // total_num_kv_heads
+            assert num_q_per_kv % decode_context_parallel_size == 0, (
+                f"Total number of q per kv attn heads ({num_q_per_kv})"
+                " must be divisible by dcp world size when enable "
+                "decode context parallel for GQA "
+                f"({parallel_config.decode_context_parallel_size})."
+            )
+
+        # torch_shm uses a single IPC queue to rank 0; DP>1 is
+        # incompatible because API servers can't know which
+        # CoreEngine the scheduler will assign work to. TP>1 is
+        # also not supported because this requires broadcasting
+        # MM tensors between all TP ranks.
+        if (
+            self.multimodal_config is not None
+            and self.multimodal_config.mm_tensor_ipc == "torch_shm"
+            and parallel_config.world_size_across_dp > 1
+        ):
+            raise ValueError(
+                "mm_tensor_ipc='torch_shm' is not supported with "
+                "data_parallel_size > 1 or tensor_parallel_size > 1 "
+                "or pipeline_parallel_size > 1."
+            )
+
     def get_sliding_window(self) -> int | None:
         """Get the sliding window size from the HF text config if present."""
         return getattr(self.hf_text_config, "sliding_window", None)
 
     def get_vocab_size(self) -> int:
-        return getattr(self.hf_text_config, "vocab_size", 0)
+        return self.model_arch_config.vocab_size
 
     def get_hidden_size(self) -> int:
-        return getattr(self.hf_text_config, "hidden_size", 0)
+        return self.model_arch_config.hidden_size
+
+    def get_inputs_embeds_size(self) -> int:
+        # The size of inputs_embeds is usually identical to the size
+        # of the hidden states, however there are exceptions, such as
+        # embedding models like CLIP and SigLIP
+        names = ("projection_dim", "projection_size")
+        return getattr_iter(self.hf_text_config, names, default_factory=self.get_hidden_size)
 
     @property
     def is_deepseek_mla(self) -> bool:
-        if not hasattr(self.hf_text_config, "model_type"):
+        return self.model_arch_config.is_deepseek_mla
+
+    @cached_property
+    def is_mm_prefix_lm(self) -> bool:
+        """Whether to use bidirectional attention for mm positions."""
+        if hasattr(self.hf_config, "is_mm_prefix_lm"):
+            return bool(self.hf_config.is_mm_prefix_lm)
+        # fallback to list of known models
+        MM_PREFIX_LM_MODELS = (
+            "bagel",
+            "gemma3",
+            "molmo2",
+            "paligemma",
+            "umm",
+        )
+        if not hasattr(self.hf_config, "model_type"):
             return False
-        elif self.hf_text_config.model_type in (
-            "deepseek_v2",
-            "deepseek_v3",
-            "deepseek_v32",
-            "deepseek_mtp",
-            "kimi_k2",
-            "kimi_linear",
-            "longcat_flash",
-            "glm4_moe_lite",
-        ):
-            return self.hf_text_config.kv_lora_rank is not None
-        elif self.hf_text_config.model_type == "eagle":
-            # if the model is an EAGLE module, check for the
-            # underlying architecture
-            return (
-                self.hf_text_config.model.model_type in ("deepseek_v2", "deepseek_v3", "deepseek_v32")
-                and self.hf_text_config.kv_lora_rank is not None
-            )
-        return False
+        return self.hf_config.model_type in MM_PREFIX_LM_MODELS
 
     def get_head_size(self) -> int:
-        # TODO remove hard code
-        if self.is_deepseek_mla:
-            qk_rope_head_dim = getattr(self.hf_text_config, "qk_rope_head_dim", 0)
-            if self.use_mla:
-                return self.hf_text_config.kv_lora_rank + qk_rope_head_dim
-            else:
-                qk_nope_head_dim = getattr(self.hf_text_config, "qk_nope_head_dim", 0)
-                if qk_rope_head_dim and qk_nope_head_dim:
-                    return qk_rope_head_dim + qk_nope_head_dim
-
-        if hasattr(self.hf_text_config, "model_type") and (self.hf_text_config.model_type == "zamba2"):
-            return self.hf_text_config.attention_head_dim
-
-        if self.is_attention_free:
-            return 0
-
-        # NOTE: Some configs may set head_dim=None in the config
-        if getattr(self.hf_text_config, "head_dim", None) is not None:
-            return self.hf_text_config.head_dim
-
-        # NOTE: Some models (such as PLaMo2.1) use `hidden_size_per_head`
-        if getattr(self.hf_text_config, "hidden_size_per_head", None) is not None:
-            return self.hf_text_config.hidden_size_per_head
-
-        # FIXME(woosuk): This may not be true for all models.
-        return self.hf_text_config.hidden_size // self.hf_text_config.num_attention_heads
+        return self.model_arch_config.head_size
 
     def get_total_num_kv_heads(self) -> int:
         """Returns the total number of KV heads."""
-        # For GPTBigCode & Falcon:
-        # NOTE: for falcon, when new_decoder_architecture is True, the
-        # multi_query flag is ignored and we use n_head_kv for the number of
-        # KV heads.
-        falcon_model_types = ["falcon", "RefinedWeb", "RefinedWebModel"]
-        new_decoder_arch_falcon = self.hf_config.model_type in falcon_model_types and getattr(
-            self.hf_config, "new_decoder_architecture", False
-        )
-        if not new_decoder_arch_falcon and getattr(self.hf_text_config, "multi_query", False):
-            # Multi-query attention, only one KV head.
-            # Currently, tensor parallelism is not supported in this case.
-            return 1
-
-        # For DBRX and MPT
-        if self.hf_config.model_type == "mpt":
-            if "kv_n_heads" in self.hf_config.attn_config:
-                return self.hf_config.attn_config["kv_n_heads"]
-            return self.hf_config.num_attention_heads
-        if self.hf_config.model_type == "dbrx":
-            return getattr(
-                self.hf_config.attn_config,
-                "kv_n_heads",
-                self.hf_config.num_attention_heads,
-            )
-
-        if self.hf_config.model_type == "nemotron-nas":
-            for block in self.hf_config.block_configs:
-                if not block.attention.no_op:
-                    return self.hf_config.num_attention_heads // block.attention.n_heads_in_group
-
-            raise RuntimeError("Couldn't determine number of kv heads")
-
-        if self.is_attention_free:
-            return 0
-
-        attributes = [
-            # For Falcon:
-            "n_head_kv",
-            "num_kv_heads",
-            # For LLaMA-2:
-            "num_key_value_heads",
-            # For ChatGLM:
-            "multi_query_group_num",
-        ]
-        for attr in attributes:
-            num_kv_heads = getattr(self.hf_text_config, attr, None)
-            if num_kv_heads is not None:
-                return num_kv_heads
-
-        # For non-grouped-query attention models, the number of KV heads is
-        # equal to the number of attention heads.
-        return self.hf_text_config.num_attention_heads
+        return self.model_arch_config.total_num_kv_heads
 
     def get_num_kv_heads(self, parallel_config: ParallelConfig) -> int:
         """Returns the number of KV heads per GPU."""
@@ -1314,39 +1181,20 @@ class ModelConfig:
         return max(1, total_num_kv_heads // parallel_config.tensor_parallel_size)
 
     def get_num_attention_heads(self, parallel_config: ParallelConfig) -> int:
-        num_heads = getattr(self.hf_text_config, "num_attention_heads", 0)
+        num_heads = self.model_arch_config.total_num_attention_heads
         return num_heads // parallel_config.tensor_parallel_size
 
     def get_num_experts(self) -> int:
-        """Returns the number of experts in the model."""
-        num_expert_names = [
-            "num_experts",  # Jamba
-            "moe_num_experts",  # Dbrx
-            "n_routed_experts",  # DeepSeek
-            "num_local_experts",  # Mixtral
-        ]
-        num_experts = getattr_iter(self.hf_text_config, num_expert_names, 0)
-        if isinstance(num_experts, list):
-            # Ernie VL's remote code uses list[int]...
-            # The values are always the same so we just take the first one.
-            return num_experts[0]
-        return num_experts
+        return self.model_arch_config.num_experts
+
+    def get_total_num_hidden_layers(self) -> int:
+        return self.model_arch_config.total_num_hidden_layers
 
     def get_layers_start_end_indices(self, parallel_config: ParallelConfig) -> tuple[int, int]:
         from aphrodite.distributed.utils import get_pp_indices
 
-        if (
-            self.hf_text_config.model_type == "deepseek_mtp"
-            or self.hf_config.model_type == "mimo_mtp"
-            or self.hf_config.model_type == "glm4_moe_mtp"
-            or self.hf_config.model_type == "ernie_mtp"
-            or self.hf_config.model_type == "qwen3_next_mtp"
-        ):
-            total_num_hidden_layers = getattr(self.hf_text_config, "num_nextn_predict_layers", 0)
-        elif self.hf_config.model_type == "longcat_flash_mtp":
-            total_num_hidden_layers = getattr(self.hf_text_config, "num_nextn_predict_layers", 1)
-        else:
-            total_num_hidden_layers = getattr(self.hf_text_config, "num_hidden_layers", 0)
+        total_num_hidden_layers = self.get_total_num_hidden_layers()
+
         # the layout order is: DP x PP x TP
         pp_rank = (
             parallel_config.rank // parallel_config.tensor_parallel_size
@@ -1385,7 +1233,7 @@ class ModelConfig:
             # Hybrid model Jamba
             layers_block_type_value = getattr(self.hf_text_config, "layers_block_type", None)
             if layers_block_type_value is not None:
-                if hasattr(self.hf_text_config, "model_type") and (self.hf_text_config.model_type == "zamba2"):
+                if self.model_arch_config.text_model_type == "zamba2":
                     if attn_block_type:
                         return sum(t == "hybrid" for t in layers_block_type_value[start:end])
                     else:
@@ -1397,8 +1245,8 @@ class ModelConfig:
             if attn_type_list:
                 return sum(t == 1 for t in attn_type_list[start:end])
 
-            # Hybrid model Qwen3Next
-            layer_types_value = getattr(self.hf_config, "layer_types", None)
+            # Hybrid model Qwen3Next Qwen3.5 Series
+            layer_types_value = getattr(self.hf_text_config, "layer_types", None)
             if layer_types_value is not None:
                 if block_type == "attention":
                     return sum(t == "full_attention" for t in layer_types_value[start:end])
@@ -1413,6 +1261,7 @@ class ModelConfig:
                     "attn_type_list, or a layer_types in the hf_config, "
                     f"cannot determine the num of {block_type} layers"
                 )
+            raise AssertionError(f"Unsupported block type: {block_type}")
 
     def get_mamba_chunk_size(self) -> int | None:
         """
@@ -1428,6 +1277,7 @@ class ModelConfig:
         # we use a default chunk size of 1024.
         if chunk_size is None:
             chunk_size = 2048
+
         return chunk_size
 
     def get_multimodal_config(self) -> MultiModalConfig:
@@ -1460,12 +1310,14 @@ class ModelConfig:
                 trust_remote_code=self.trust_remote_code,
                 revision=self.revision,
                 config_format=self.config_format,
+                hf_token=self.hf_token,
             )
         else:
             config = try_get_generation_config(
                 self.generation_config,
                 trust_remote_code=self.trust_remote_code,
                 config_format=self.config_format,
+                hf_token=self.hf_token,
             )
 
         if config is None:
@@ -1488,10 +1340,9 @@ class ModelConfig:
         Returns:
             A dictionary containing the non-default sampling parameters.
         """
-        if self.generation_config == "aphrodite":
-            config = {}
-        else:
-            config = self.try_get_generation_config()
+        src = self.generation_config
+
+        config = {} if src == "aphrodite" else self.try_get_generation_config()
 
         # Overriding with given generation config
         config.update(self.override_generation_config)
@@ -1513,15 +1364,49 @@ class ModelConfig:
         else:
             diff_sampling_param = {}
 
-        if diff_sampling_param:
+        if diff_sampling_param and src != "aphrodite":
             logger.warning_once(
-                "Default sampling params have been overridden by the "
-                "model creator. Relaunch Aphrodite with "
-                "`--generation-config aphrodite` to use Aphrodite's defaults."
+                "Default Aphrodite sampling parameters have been overridden by %s: `%s`. "
+                "If this is not intended, please relaunch Aphrodite instance "
+                "with `--generation-config aphrodite`.",
+                "the model's `generation_config.json`" if src == "auto" else src,
+                str(diff_sampling_param),
+                scope="local",
             )
+
         return diff_sampling_param
 
-    @property
+    def get_pooling_task(self, supported_tasks: tuple[SupportedTask, ...]) -> PoolingTask | None:
+        if self.pooler_config is None:
+            return None
+
+        pooling_task = self.pooler_config.task
+
+        if pooling_task is not None:
+            if self.pooler_config.task in supported_tasks:
+                return self.pooler_config.task
+            else:
+                raise RuntimeError(f"Unsupported task: {pooling_task!r} Supported tasks: {supported_tasks}")
+
+        if "token_classify" in supported_tasks:
+            for architecture in self.architectures:
+                if "ForTokenClassification" in architecture:
+                    return "token_classify"
+
+        priority: list[PoolingTask] = [
+            "embed&token_classify",
+            "embed",
+            "classify",
+            "token_embed",
+            "token_classify",
+            "plugin",
+        ]
+        for task in priority:
+            if task in supported_tasks:
+                return task
+        return None
+
+    @cached_property
     def is_encoder_decoder(self) -> bool:
         """Extract the HF encoder/decoder model flag."""
         return is_encoder_decoder(self.hf_config)
@@ -1548,6 +1433,10 @@ class ModelConfig:
         return uses_mrope(self.hf_config)
 
     @property
+    def uses_xdrope_dim(self) -> int:
+        return uses_xdrope_dim(self.hf_config)
+
+    @property
     def is_multimodal_model(self) -> bool:
         return self.multimodal_config is not None
 
@@ -1556,8 +1445,23 @@ class ModelConfig:
         return self._model_info.supports_multimodal_raw_input_only
 
     @property
-    def is_cross_encoder(self) -> bool:
-        return self._model_info.supports_cross_encoding or self.convert_type == "classify"
+    def requires_raw_input_tokens(self) -> bool:
+        return self._model_info.requires_raw_input_tokens
+
+    @property
+    def score_type(self) -> ScoreType:
+        """
+        Scoring API handles score/rerank for:
+
+        - "classify" task (score_type: cross-encoder models)
+        - "embed" task (score_type: bi-encoder models)
+        - "token_embed" task (score_type: late interaction models)
+        """
+        # fixme: self._model_info.score_type is the score type before
+        #  as_seq_cls_model, which is "bi-encoder", rather than the
+        #  score type after as_seq_cls_model, which is "cross-encoder".
+        #  Therefore, the following logic is required.
+        return "cross-encoder" if self.convert_type == "classify" else self._model_info.score_type
 
     @property
     def is_pp_supported(self) -> bool:
@@ -1569,7 +1473,12 @@ class ModelConfig:
 
     @property
     def is_hybrid(self) -> bool:
-        return self._model_info.is_hybrid
+        if not self._model_info.is_hybrid:
+            return False
+        # Handle granite-4.0-micro case which uses hybrid config but does not
+        # actually contain any non-attention layers.
+        layer_types = getattr(self.hf_config, "layer_types", None)
+        return layer_types is None or not all(layer == "attention" for layer in layer_types)
 
     @property
     def has_noops(self) -> bool:
@@ -1598,10 +1507,16 @@ class ModelConfig:
         return getattr(self.hf_config, "matryoshka_dimensions", None)
 
     @property
-    def use_pad_token(self) -> bool:
-        # cross_encoder models defaults to using pad_token.
-        # `llm as reranker` models defaults to not using pad_token.
-        return getattr(self.hf_config, "use_pad_token", True)
+    def use_sep_token(self) -> bool:
+        # cross_encoder models defaults to using separating token.
+        # `llm as reranker` defaults to not using separating token.
+
+        use_pad_token = getattr(self.hf_config, "use_pad_token", None)
+        if use_pad_token is not None:
+            logger.warning_once("use_pad_token has been deprecated; please use use_sep_token instead.")
+            return use_pad_token
+
+        return getattr(self.hf_config, "use_sep_token", True)
 
     @property
     def head_dtype(self) -> torch.dtype:
@@ -1610,16 +1525,17 @@ class ModelConfig:
         such as the lm_head in a generation model,
         or the score or classifier in a classification model.
 
-        `head_dtype` currently only supports pooling models.\n
-        - The pooling model defaults to using fp32 head,
-        you can use --hf-overrides '{"head_dtype": "model"}' to disable it.
+        `head_dtype` currently only supports pooling models.
+
+        - The pooling model defaults to using fp32 head, you can use
+          --hf-overrides '{"head_dtype": "model"}' to disable it.
         """
 
         head_dtype = _get_head_dtype(config=self.hf_config, dtype=self.dtype, runner_type=self.runner_type)
 
         if self.runner_type != "pooling" and head_dtype != self.dtype:
             logger.warning_once(
-                "`head_dtype` currently only supports pooling models.fallback to model dtype [%s].",
+                "`head_dtype` currently only supports pooling models, fallback to model dtype [%s].",
                 self.dtype,
             )
             return self.dtype
@@ -1636,18 +1552,15 @@ class ModelConfig:
         return head_dtype
 
     @property
-    def hidden_size(self):
-        if hasattr(self.hf_config, "hidden_size"):
-            return self.hf_config.hidden_size
-        text_config = self.hf_config.get_text_config()
-        return text_config.hidden_size
-
-    @property
     def embedding_size(self):
+        # Check for embedding_size set by model config (e.g., Voyage models)
+        override = getattr(self.hf_config, "embedding_size", None)
+        if override is not None:
+            return override
         dense_modules = try_get_dense_modules(self.model, revision=self.revision)
         if dense_modules is not None:
             return dense_modules[-1]["out_features"]
-        return self.hidden_size
+        return self.get_hidden_size()
 
     def get_and_verify_max_len(self, max_model_len: int):
         # Consider max_model_len in tokenizer_config only when
@@ -1661,6 +1574,7 @@ class ModelConfig:
             )
         max_model_len = _get_and_verify_max_len(
             hf_config=self.hf_text_config,
+            model_arch_config=self.model_arch_config,
             tokenizer_config=tokenizer_config,
             max_model_len=max_model_len,
             disable_sliding_window=self.disable_sliding_window,
@@ -1670,6 +1584,131 @@ class ModelConfig:
         )
         logger.info("Using max model len %s", max_model_len)
         return max_model_len
+
+    @property
+    def attn_type(self) -> AttnTypeStr:
+        """Determine the attention type based on model configuration."""
+        if self.pooler_config is not None:
+            seq_pooling_type = self._model_info.default_seq_pooling_type
+            if seq_pooling_type == "CLS":
+                return "encoder_only"
+            else:
+                is_causal = getattr(self.hf_config, "is_causal", True)
+                return "encoder_only" if not is_causal else self._model_info.attn_type
+        elif self.is_hybrid:
+            return "hybrid"
+        elif self.is_attention_free:
+            return "attention_free"
+        elif self.is_encoder_decoder:
+            return "encoder_decoder"
+        else:
+            return "decoder"
+
+    @property
+    def is_chunked_prefill_supported(self) -> bool:
+        attn_type = self.attn_type
+
+        if pooler_config := self.pooler_config:
+            # for pooling models
+            if attn_type == "encoder_only":
+                logger.debug("Pooling models with bidirectional attn do not support chunked prefill.")
+                return False
+
+            if attn_type == "decoder":
+                if pooler_config.seq_pooling_type in ("MEAN", "CLS") or pooler_config.tok_pooling_type == "STEP":
+                    logger.debug(
+                        "Pooling models with causal attn and %s/%s pooling do not support chunked prefill.",
+                        pooler_config.seq_pooling_type,
+                        pooler_config.tok_pooling_type,
+                    )
+                    return False
+                else:
+                    logger.debug(
+                        "Pooling models with causal attn and %s/%s pooling support chunked prefill.",
+                        pooler_config.seq_pooling_type,
+                        pooler_config.tok_pooling_type,
+                    )
+                    return True
+
+            # aphrodite currently does not have pooling models using hybrid,
+            # attention_free or encoder_decoder attn types.
+            return attn_type != "encoder_decoder"
+        else:
+            # for generative models
+            if attn_type == "encoder_decoder":
+                logger.debug("Encoder decoder models do not support chunked prefill.")
+                return False
+
+            logger.debug("Generative models support chunked prefill.")
+            return True
+
+    @property
+    def is_prefix_caching_supported(self) -> bool:
+        attn_type = self.attn_type
+
+        if pooler_config := self.pooler_config:
+            # for pooling models
+            if attn_type == "encoder_only":
+                logger.debug("Pooling models with bidirectional attn do not support prefix caching.")
+                return False
+
+            if attn_type == "decoder":
+                if pooler_config.seq_pooling_type in ("MEAN", "CLS") or pooler_config.tok_pooling_type == "STEP":
+                    logger.debug(
+                        "Pooling models with causal attn and %s/%s pooling do not support prefix caching.",
+                        pooler_config.seq_pooling_type,
+                        pooler_config.tok_pooling_type,
+                    )
+                    return False
+                else:
+                    logger.debug(
+                        "Pooling models with causal attn and %s/%s pooling support prefix caching.",
+                        pooler_config.seq_pooling_type,
+                        pooler_config.tok_pooling_type,
+                    )
+                    return True
+
+            # aphrodite currently does not have pooling models using hybrid,
+            # attention_free or encoder_decoder attn types.
+            return False
+        else:
+            # for generative models
+            if attn_type == "hybrid":
+                logger.debug("Hybrid models do not support prefix caching since the feature is still experimental.")
+                return False
+            elif attn_type == "attention_free":
+                logger.debug(
+                    "Attention free models do not support prefix caching since the feature is still experimental."
+                )
+                return False
+            elif attn_type == "encoder_decoder":
+                logger.debug("Encoder decoder models do not support prefix caching.")
+                return False
+            else:  # attn_type == "decoder"
+                logger.debug("Generative models support prefix caching.")
+                return True
+
+    @property
+    def is_moe(self) -> bool:
+        return self.get_num_experts() > 0
+
+    @property
+    def is_quantized(self) -> bool:
+        return getattr(self.hf_config, "quantization_config", None) is not None
+
+    def is_nvfp4_quantized(self) -> bool:
+        # ModelOpt NVFP4 checkpoints resolve to modelopt_fp4 quantization method
+        if self.quantization in ("modelopt_fp4",):
+            return True
+
+        # For Compressed Tensors we look for `"format": "nvfp4-pack-quantized"`
+        # in the quantization config
+        quant_config = self.model_arch_config.quantization_config
+        return (
+            self.quantization == "compressed-tensors"
+            and quant_config is not None
+            and "nvfp4" in quant_config.get("format", "").lower()
+        )
 
 
 def get_served_model_name(model: str, served_model_name: str | list[str] | None):
@@ -1698,12 +1737,13 @@ _SUFFIX_TO_DEFAULTS: list[tuple[str, tuple[RunnerType, ConvertType]]] = [
     ("ForTextEncoding", ("pooling", "embed")),
     ("EmbeddingModel", ("pooling", "embed")),
     ("ForSequenceClassification", ("pooling", "classify")),
+    ("ForTokenClassification", ("pooling", "classify")),
     ("ForAudioClassification", ("pooling", "classify")),
     ("ForImageClassification", ("pooling", "classify")),
     ("ForVideoClassification", ("pooling", "classify")),
     ("ClassificationModel", ("pooling", "classify")),
-    ("ForRewardModeling", ("pooling", "reward")),
-    ("RewardModel", ("pooling", "reward")),
+    ("ForRewardModeling", ("pooling", "embed")),
+    ("RewardModel", ("pooling", "embed")),
     # Let other `*Model`s take priority
     ("Model", ("pooling", "embed")),
 ]
@@ -1741,6 +1781,11 @@ _STR_DTYPE_TO_TORCH_DTYPE = {
     "bfloat16": torch.bfloat16,
 }
 
+
+def str_dtype_to_torch_dtype(type: str):
+    return _STR_DTYPE_TO_TORCH_DTYPE.get(type)
+
+
 # model_type -> reason
 _FLOAT16_NOT_SUPPORTED_MODELS = {
     "gemma2": "Numerical instability. Please use bfloat16 or float32 instead.",
@@ -1766,54 +1811,12 @@ def _check_valid_dtype(model_type: str, dtype: torch.dtype):
     return True
 
 
-def _find_dtype(
-    model_id: str,
-    config: PretrainedConfig,
-    *,
-    revision: str | None,
-):
-    # NOTE: getattr(config, "dtype", torch.float32) is not correct
-    # because config.dtype can be None.
-    config_dtype = getattr(config, "dtype", None)
-
-    # Fallbacks for multi-modal models if the root config
-    # does not define dtype
-    if config_dtype is None:
-        config_dtype = getattr(config.get_text_config(), "dtype", None)
-    if config_dtype is None and hasattr(config, "vision_config"):
-        config_dtype = getattr(config.vision_config, "dtype", None)
-    if config_dtype is None and hasattr(config, "encoder_config"):
-        config_dtype = getattr(config.encoder_config, "dtype", None)
-
-    # Try to read the dtype of the weights if they are in safetensors format
-    if config_dtype is None:
-        repo_mt = try_get_safetensors_metadata(model_id, revision=revision)
-
-        if repo_mt and (files_mt := repo_mt.files_metadata):
-            param_dtypes: set[torch.dtype] = {
-                _SAFETENSORS_TO_TORCH_DTYPE[dtype_str]
-                for file_mt in files_mt.values()
-                for dtype_str in file_mt.parameter_count
-                if dtype_str in _SAFETENSORS_TO_TORCH_DTYPE
-            }
-
-            if param_dtypes:
-                return common_broadcastable_dtype(param_dtypes)
-
-    if config_dtype is None:
-        config_dtype = torch.float32
-
-    return config_dtype
-
-
 def _resolve_auto_dtype(
     model_type: str,
     config_dtype: torch.dtype,
     *,
     is_pooling_model: bool,
 ):
-    from aphrodite.platforms import current_platform
-
     supported_dtypes = [dtype for dtype in current_platform.supported_dtypes if _is_valid_dtype(model_type, dtype)]
 
     if is_pooling_model and torch.float16 in supported_dtypes:
@@ -1855,8 +1858,11 @@ def _get_and_verify_dtype(
     *,
     is_pooling_model: bool,
     revision: str | None = None,
+    config_format: str | ConfigFormat = "hf",
 ) -> torch.dtype:
-    config_dtype = _find_dtype(model_id, config, revision=revision)
+    config_dtype = ModelArchConfigConvertorBase.get_torch_dtype(
+        config, model_id, revision=revision, config_format=config_format
+    )
     model_type = config.model_type
 
     if isinstance(dtype, str):
@@ -1917,44 +1923,16 @@ def _get_head_dtype(config: PretrainedConfig, dtype: torch.dtype, runner_type: s
 
 def _get_and_verify_max_len(
     hf_config: PretrainedConfig,
+    model_arch_config: ModelArchitectureConfig,
     tokenizer_config: dict | None,
     max_model_len: int | None,
     disable_sliding_window: bool,
     sliding_window: int | None,
     spec_target_max_model_len: int | None = None,
-    encoder_config: Any | None = None,
+    encoder_config: dict[str, Any] | None = None,
 ) -> int:
     """Get and verify the model's maximum length."""
-    derived_max_model_len = float("inf")
-    possible_keys = [
-        # OPT
-        "max_position_embeddings",
-        # GPT-2
-        "n_positions",
-        # MPT
-        "max_seq_len",
-        # ChatGLM2
-        "seq_length",
-        # Command-R
-        "model_max_length",
-        # Whisper
-        "max_target_positions",
-        # Others
-        "max_sequence_length",
-        "max_seq_length",
-        "seq_len",
-    ]
-    # Choose the smallest "max_length" from the possible keys
-    max_len_key = None
-    for key in possible_keys:
-        max_len = getattr(hf_config, key, None)
-        if max_len is not None:
-            max_len_key = key if max_len < derived_max_model_len else max_len_key
-            derived_max_model_len = min(derived_max_model_len, max_len)
-    # For Command-R / Cohere, Cohere2 / Aya Vision models
-    if tmp_max_len := getattr(hf_config, "model_max_length", None):
-        max_len_key = "model_max_length"
-        derived_max_model_len = tmp_max_len
+    (derived_max_model_len, max_len_key) = model_arch_config.derived_max_model_len_and_key
 
     # If sliding window is manually disabled, max_length should be less
     # than the sliding window length in the model config.
@@ -1981,49 +1959,57 @@ def _get_and_verify_max_len(
 
         default_max_len = 2048
         logger.warning(
-            "The model's config.json does not contain any of the following "
-            "keys to determine the original maximum length of the model: "
-            "%s. Assuming the model's maximum length is %d.",
-            possible_keys,
+            "The model's config.json does not contain any of the keys "
+            "to determine the original maximum length of the model. "
+            "Assuming the model's maximum length is %d.",
             default_max_len,
         )
         derived_max_model_len = default_max_len
 
-    rope_scaling = getattr(hf_config, "rope_scaling", None)
-    # NOTE: Gemma3's max_model_len (128K) is already scaled by RoPE
+    # In Transformers v5 rope_parameters could be TypedDict or dict[str, TypedDict].
+    # To simplify the verification, we convert it to dict[str, TypedDict].
+    rope_parameters = getattr(hf_config, "rope_parameters", None)
+    if rope_parameters and not is_rope_parameters_nested(rope_parameters):
+        rope_parameters = {"": rope_parameters}
+
+    # NOTE(woosuk): Gemma3's max_model_len (128K) is already scaled by RoPE
     # scaling, so we skip applying the scaling factor again.
-    if rope_scaling is not None and "gemma3" not in hf_config.model_type:
-        # No need to consider "type" key because of patch_rope_scaling when
-        # loading HF config
-        rope_type = rope_scaling["rope_type"]
+    if rope_parameters is not None and "gemma3" not in hf_config.model_type:
+        scaling_factor = 1.0
+        for rp in rope_parameters.values():
+            # No need to consider "type" key because of patch_rope_parameters when
+            # loading HF config
+            rope_type = rp["rope_type"]
 
-        if rope_type not in ("su", "longrope", "llama3"):
-            if disable_sliding_window:
-                # TODO: Find a model that supports rope_scaling
-                # with sliding window to see if this case should be allowed.
-                raise NotImplementedError(
-                    "Disabling sliding window is not supported for models "
-                    "with rope_scaling. Please raise an issue so we can "
-                    "investigate."
-                )
+            if rope_type not in ("su", "longrope", "llama3"):
+                # NOTE: rope_type == "default" does not define factor https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/modeling_rope_utils.py
+                # NOTE: This assumes all layer types have the same scaling factor.
+                scaling_factor = rp.get("factor", scaling_factor)
 
-            # NOTE: rope_type == "default" does not define factor
-            # https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/modeling_rope_utils.py
-            scaling_factor = rope_scaling.get("factor", 1.0)
-
-            if rope_type == "yarn":
-                derived_max_model_len = rope_scaling["original_max_position_embeddings"]
-            derived_max_model_len *= scaling_factor
+                if rope_type == "yarn":
+                    derived_max_model_len = rp["original_max_position_embeddings"]
+        if scaling_factor is None:
+            # Fallback the factor to 1.0 if a user assigned `null`
+            logger.warning_once(
+                "The model's RoPE configuration has a null scaling "
+                "factor which is unexpected. This likely indicates a bug "
+                "in the model's HuggingFace config.json. Please notify the "
+                "model vendor. Falling back the value to 1.0. "
+            )
+            scaling_factor = 1.0
+        # Do this outside loop since all layer types should have the same scaling
+        derived_max_model_len *= scaling_factor
 
     if encoder_config and "max_seq_length" in encoder_config:
         derived_max_model_len = encoder_config["max_seq_length"]
 
-    # If the user didn't specify `max_model_len`, then use that derived from
-    # the model config as a default value.
-    if max_model_len is None:
+    # If the user didn't specify `max_model_len` or specified -1 (auto-fit),
+    # then use that derived from the model config as a default value.
+    # When -1 is specified, the engine will later auto-fit to available memory.
+    if max_model_len is None or max_model_len == -1:
         # For LongRoPE, default to original_max_position_embeddings to avoid
         # performance degradation for shorter sequences
-        if rope_scaling is not None and rope_scaling["rope_type"] == "longrope":
+        if rope_parameters is not None and any(rp["rope_type"] == "longrope" for rp in rope_parameters.values()):
             max_model_len = int(getattr(hf_config, "original_max_position_embeddings", derived_max_model_len))
         else:
             max_model_len = int(derived_max_model_len)
@@ -2036,16 +2022,7 @@ def _get_and_verify_max_len(
         # that will be bigger than derived_max_model_len. We compare user input
         # with model_max_length and allow this override when it's smaller.
         model_max_length = getattr(hf_config, "model_max_length", None)
-        if model_max_length is not None and max_model_len <= model_max_length:
-            if disable_sliding_window:
-                # TODO: Find a model that has model_max_length
-                # with sliding window to see if this case should be allowed.
-                raise NotImplementedError(
-                    "Disabling sliding window is not supported for models "
-                    "model_max_length in the config. Please raise an issue "
-                    "so we can investigate."
-                )
-        else:
+        if model_max_length is None or max_model_len > model_max_length:
             msg = (
                 f"User-specified max_model_len ({max_model_len}) is greater "
                 f"than the derived max_model_len ({max_len_key}="

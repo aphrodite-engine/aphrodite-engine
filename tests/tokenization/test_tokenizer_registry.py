@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from typing import TYPE_CHECKING, Any
 
-from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.transformers_utils.tokenizer_base import TokenizerBase, TokenizerRegistry
+
+from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 if TYPE_CHECKING:
     from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam

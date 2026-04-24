@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the triton_flash_attention kernel
 
 Run `pytest tests/kernels/test_triton_flash_attention.py`.
@@ -5,7 +7,6 @@ Run `pytest tests/kernels/test_triton_flash_attention.py`.
 
 import pytest
 import torch
-
 from aphrodite.attention.ops.triton_flash_attention import (
     SUPPORTED_LAYOUTS,
     MetaData,
@@ -13,6 +14,7 @@ from aphrodite.attention.ops.triton_flash_attention import (
     scale_fp8,
     triton_attention_rocm,
 )
+
 from aphrodite.platforms import current_platform
 
 

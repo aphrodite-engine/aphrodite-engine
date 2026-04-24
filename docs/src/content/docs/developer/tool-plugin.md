@@ -5,6 +5,7 @@ title: Aphrodite Tool Parser Plugin System
 Tool parsers in Aphrodite help convert model outputs into OpenAI-compatible function/tool calls. This guide goes through creating and using custom tool parsers.
 
 ## Creating a Tool Parser Plugin
+
 ### Basic Structure
 
 Create a new Python file (e.g. `my_tool_parser.py`) with the following structure:
@@ -58,6 +59,7 @@ class MyToolParser(ToolParser):
 ### Required Methods
 
 #### `extracted_tool_calls`
+
 This method handles complete (non-streaming) responses.
 
 - Input: Complete model output string.
@@ -66,6 +68,7 @@ This method handles complete (non-streaming) responses.
     - `tool_calls`: List of parsed tool calls
     - `content`: Any non-tool-call content
 Example:
+
 ```py
 def extract_tool_calls(
     self,
@@ -107,7 +110,9 @@ def extract_tool_calls(
 ```
 
 #### `extract_tool_calls_streaming`
+
 This method handles streaming responses token by token:
+
 - called for each new token
 - must track state between calls
 - return `None` if not ready to send delta
@@ -116,6 +121,7 @@ This method handles streaming responses token by token:
 ### Optional Methods
 
 #### `adjust_request`
+
 Modify the request before processing if needed.
 
 ```py
@@ -131,6 +137,7 @@ def adjust_request(
 ## Using the Tool Parser
 
 ### Starting the Server
+
 Launch a local Aphrodite instance:
 
 ```sh
@@ -142,6 +149,7 @@ aphrodite run <your_model> \
 ```
 
 ### Making API calls
+
 Use the OpenAI API format:
 
 ```py
@@ -172,7 +180,6 @@ response = openai.ChatCompletion.create(
     tool_choice="auto"
 )
 ```
-
 
 ## Example Implementations
 

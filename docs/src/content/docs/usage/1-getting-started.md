@@ -20,7 +20,7 @@ The server currently runs one model at a time, and implements the following endp
 - `/v1/completions`: Provides a POST endpoint to send text completions requests to. The model field in the body is mandatory.
 - `/v1/chat/completions`: Provides a POST endpoint to send chat completions requests to. The model field in the body is mandatory.
 
-There are two ways to start the server; using a YAML config file, or the CLI. In this guide, we assume you want to run the [Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct) model on 2 GPUs. 
+There are two ways to start the server; using a YAML config file, or the CLI. In this guide, we assume you want to run the [Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct) model on 2 GPUs.
 
 ### CLI
 
@@ -30,6 +30,7 @@ Start the server:
 export HUGGINGFACE_HUB_TOKEN=<your hf token>  # only if using private or gated repos
 aphrodite run meta-llama/Meta-Llama-3.1-8B-Instruct -tp 2
 ```
+
 To see the full list of supported arguments, run `aphrodite run -h`.
 
 By default, the server will use the chat template (for `/v1/chat/completions`) stored in the model's tokenizer. You can override this by adding the `--chat-template` argument:
@@ -114,7 +115,6 @@ completion = client.completions.create(
 print("Completion result:", completion)
 ```
 
-
 ## Offline Batched Inference
 
 You can use Aphrodite to process large datasets, or generate large amounts of data using a list of inputs.
@@ -152,6 +152,5 @@ for output in outputs:
     generated_text = output.outputs[0].text
     print(f"Prompt: {prompt!r},\nGenerated text: {generated_text!r}")
 ```
-
 
 Please view the [examples/](https://github.com/PygmalionAI/aphrodite-engine/tree/main/examples) directory for a full list of examples, for various different use-cases.

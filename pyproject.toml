@@ -4,11 +4,12 @@ requires = [
     "cmake>=3.26.1",
     "ninja",
     "packaging>=24.2",
-    "setuptools>=77.0.3,<80.0.0",
+    "setuptools>=77.0.3,<81.0.0",
     "setuptools-scm>=8.0",
-    "torch == 2.9.0",
+    "torch == 2.11.0",
     "wheel",
-    "jinja2",
+    "jinja2>=3.1.6",
+    "protobuf >= 5.29.6, !=6.30.*, !=6.31.*, !=6.32.*, !=6.33.0.*, !=6.33.1.*, !=6.33.2.*, !=6.33.3.*, !=6.33.4.*",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -37,7 +38,7 @@ Homepage="https://github.com/aphrodite-engine/aphrodite-engine"
 Documentation="https://aphrodite.pygmalion.chat"
 
 [project.scripts]
-aphrodite = "aphrodite.endpoints.cli.main:main"
+aphrodite = "aphrodite.entrypoints.cli.main:main"
 
 [project.entry-points."aphrodite.io_processor_plugins"]
 terratorch_segmentation = "aphrodite.modeling.models.terratorch_plugin.plugins.segmentation:register_segmentation_plugin"
@@ -74,7 +75,7 @@ exclude = [
     "examples/fp8/quantizer/quantize.py",
     "kernels/hadamard/generator.py",
     "kernels/flash_mla/**",
-    "aphrodite/aphrodite_flash_attn/**",
+    "aphrodite/vllm_flash_attn/**",
     "aphrodite/distributed/kv_transfer/**"
 ]
 
@@ -92,6 +93,7 @@ skip_gitignore = true
 "aphrodite/diffusion/third_party/**" = ["ALL"]
 "aphrodite/version.py" = ["F401"]
 "aphrodite/_version.py" = ["ALL"]
+"aphrodite/platforms/cuda.py" = ["E402"]
 
 [tool.ruff.lint]
 select = [
@@ -133,6 +135,11 @@ plugins = ['pydantic.mypy']
 ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"
+exclude = [
+    '^aphrodite/vllm_flash_attn/',
+    '^aphrodite/third_party/',
+    '^aphrodite/model_executor/layers/fla/ops/',
+]
 
 [tool.pytest.ini_options]
 markers = [
@@ -159,7 +166,8 @@ python = "./.venv"
 # these files may be written in non english words
 extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*",
     "benchmarks/sonnet.txt", "tests/lora/data/*", "build/*",
-    "aphrodite/third_party/*", "aphrodite/endpoints/openai/klite.embd"]
+    "aphrodite/third_party/*", "aphrodite/endpoints/openai/klite.embd",
+    "aphrodite/entrypoints/serve/instrumentator/static/*", ".git/*"]
 ignore-hidden = true
 ignore-files = true
 ignore-dot = true
@@ -206,6 +214,28 @@ tme = "tme"
 dout = "dout"
 Pn = "Pn"
 arange = "arange"
+thw = "thw"
+subtile = "subtile"
+HSA = "HSA"
+setp = "setp"
+CPY = "CPY"
+thr = "thr"
+Thr = "Thr"
+PARD = "PARD"
+pard = "pard"
+AKS = "AKS"
+ba = "ba"
+fo = "fo"
+nd = "nd"
+eles = "eles"
+datas = "datas"
+ser = "ser"
+ure = "ure"
+VALU = "VALU"
+wht = "wht"
+WHT = "WHT"
+indx = "indx"
+halfs = "halfs"
 
 [tool.typos.type.py]
 extend-glob = []

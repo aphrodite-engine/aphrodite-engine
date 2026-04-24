@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test:
 
@@ -8,10 +10,10 @@ from unittest.mock import patch
 
 import pytest
 import torch
-
 from aphrodite.attention.backends.registry import _Backend
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.attention.selector import _cached_get_attn_backend
+
 from aphrodite.platforms import current_platform
 from aphrodite.platforms.cpu import CpuPlatform
 from aphrodite.platforms.cuda import CudaPlatform

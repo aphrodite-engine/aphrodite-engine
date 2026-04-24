@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Callable
 from itertools import product
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.rotary_embedding import get_rope
+
 from aphrodite.platforms import current_platform
 from tests.kernels.allclose_default import get_default_atol, get_default_rtol
 
@@ -84,12 +86,17 @@ def test_rotary_embedding(
 
     # slice tensor if required, noop otherwise
     query = query[..., :head_size]
-    key = key[..., :head_size] if use_key else None
+    if use_key:
+        assert key is not None
+        key = key[..., :head_size]
+    else:
+        key = None
 
     # NOTE(woosuk): The reference implementation should be executed first
     # because the custom kernel is in-place.
     ref_query, ref_key = rope.forward_native(positions, query, key)
     out_query, out_key = rope.forward(positions, query, key)
+    assert out_query is not None
     # Compare the results.
     torch.testing.assert_close(
         out_query,

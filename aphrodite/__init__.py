@@ -1,4 +1,6 @@
-"""Aphrodite Engine: Large-scale LLM inference engine"""
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Aphrodite: a high-throughput and memory-efficient inference engine for LLMs"""
 
 # The version.py should be independent library, and we always import the
 # version library first.  Such assumption is critical for some customization.
@@ -12,20 +14,18 @@ import typing
 import aphrodite.env_override  # noqa: F401
 
 MODULE_ATTRS = {
-    "bc_linter_skip": "._bc_linter:bc_linter_skip",
-    "bc_linter_include": "._bc_linter:bc_linter_include",
-    "AsyncEngineArgs": ".engine.args_tools:AsyncEngineArgs",
-    "EngineArgs": ".engine.args_tools:EngineArgs",
-    "AsyncAphrodite": ".engine.async_aphrodite:AsyncAphrodite",
-    "AphroditeEngine": ".engine.aphrodite_engine:AphroditeEngine",
-    "LLM": ".endpoints.llm:LLM",
+    "AsyncEngineArgs": ".engine.arg_utils:AsyncEngineArgs",
+    "EngineArgs": ".engine.arg_utils:EngineArgs",
+    "AsyncLLMEngine": ".engine.async_llm_engine:AsyncLLMEngine",
+    "LLMEngine": ".engine.llm_engine:LLMEngine",
+    "LLM": ".entrypoints.llm:LLM",
     "initialize_ray_cluster": ".v1.executor.ray_utils:initialize_ray_cluster",
     "PromptType": ".inputs:PromptType",
     "TextPrompt": ".inputs:TextPrompt",
     "TokensPrompt": ".inputs:TokensPrompt",
-    "ModelRegistry": ".modeling.models:ModelRegistry",
-    "SamplingParams": ".common.sampling_params:SamplingParams",
-    "PoolingParams": ".common.pooling_params:PoolingParams",
+    "ModelRegistry": ".model_executor.models:ModelRegistry",
+    "SamplingParams": ".sampling_params:SamplingParams",
+    "PoolingParams": ".pooling_params:PoolingParams",
     "ClassificationOutput": ".outputs:ClassificationOutput",
     "ClassificationRequestOutput": ".outputs:ClassificationRequestOutput",
     "CompletionOutput": ".outputs:CompletionOutput",
@@ -39,14 +39,12 @@ MODULE_ATTRS = {
 }
 
 if typing.TYPE_CHECKING:
-    from aphrodite.common.pooling_params import PoolingParams
-    from aphrodite.common.sampling_params import SamplingParams
-    from aphrodite.endpoints.llm import LLM
-    from aphrodite.engine.aphrodite_engine import AphroditeEngine
-    from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
-    from aphrodite.engine.async_aphrodite import AsyncAphrodite
+    from aphrodite.engine.arg_utils import AsyncEngineArgs, EngineArgs
+    from aphrodite.engine.async_llm_engine import AsyncLLMEngine
+    from aphrodite.engine.llm_engine import LLMEngine
+    from aphrodite.entrypoints.llm import LLM
     from aphrodite.inputs import PromptType, TextPrompt, TokensPrompt
-    from aphrodite.modeling.models import ModelRegistry
+    from aphrodite.model_executor.models import ModelRegistry
     from aphrodite.outputs import (
         ClassificationOutput,
         ClassificationRequestOutput,
@@ -59,9 +57,9 @@ if typing.TYPE_CHECKING:
         ScoringOutput,
         ScoringRequestOutput,
     )
+    from aphrodite.pooling_params import PoolingParams
+    from aphrodite.sampling_params import SamplingParams
     from aphrodite.v1.executor.ray_utils import initialize_ray_cluster
-
-    from ._bc_linter import bc_linter_include, bc_linter_skip
 else:
 
     def __getattr__(name: str) -> typing.Any:
@@ -78,8 +76,6 @@ else:
 __all__ = [
     "__version__",
     "__version_tuple__",
-    "bc_linter_skip",
-    "bc_linter_include",
     "LLM",
     "ModelRegistry",
     "PromptType",
@@ -96,9 +92,9 @@ __all__ = [
     "ClassificationRequestOutput",
     "ScoringOutput",
     "ScoringRequestOutput",
-    "AphroditeEngine",
+    "LLMEngine",
     "EngineArgs",
-    "AsyncAphrodite",
+    "AsyncLLMEngine",
     "AsyncEngineArgs",
     "initialize_ray_cluster",
     "PoolingParams",

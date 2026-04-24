@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 
 import aphrodite
-from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, PassConfig
 
 from .backend import TestBackend

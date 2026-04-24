@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test model set-up and weight loading for quark-quantized models.
 
 Run `pytest tests/quantization/test_quark.py`.
@@ -14,10 +16,10 @@ import huggingface_hub
 import lm_eval
 import pytest
 import torch
+from aphrodite.quantization.quark.quark import QuarkLinearMethod, QuarkW8A8Fp8, QuarkW8A8Int8  # noqa: E501
 from packaging import version
 
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.quark.quark import QuarkLinearMethod, QuarkW8A8Fp8, QuarkW8A8Int8  # noqa: E501
 
 from .reference_mxfp4 import dq_mxfp4_torch, qdq_mxfp4_torch
 

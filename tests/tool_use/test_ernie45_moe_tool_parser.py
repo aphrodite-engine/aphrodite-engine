@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # ruff: noqa: E501
 
 import json
 from collections.abc import Generator
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, FunctionCall, ToolCall
 from aphrodite.endpoints.openai.tool_parsers import Ernie45ToolParser
 from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
+
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 # Use a common model that is likely to be available

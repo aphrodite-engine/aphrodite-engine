@@ -1,0 +1,106 @@
+# docker-bake.hcl - Aphrodite Docker build configuration
+#
+# This file lives in the Aphrodite repo at docker/docker-bake.hcl
+#
+# Usage:
+#   cd docker && docker buildx bake        # Build default target (openai)
+#   cd docker && docker buildx bake test   # Build test target
+#   docker buildx bake --print             # Show resolved config
+#
+# Reference: https://docs.docker.com/build/bake/reference/
+
+# Build configuration
+
+variable "MAX_JOBS" {
+  default = 16
+}
+
+variable "NVCC_THREADS" {
+  default = 8
+}
+
+variable "TORCH_CUDA_ARCH_LIST" {
+  default = "8.0 8.9 9.0 10.0 12.0"
+}
+
+variable "COMMIT" {
+  default = ""
+}
+
+# Groups
+
+group "default" {
+  targets = ["openai"]
+}
+
+group "all" {
+  targets = ["openai", "openai-ubuntu2404"]
+}
+
+# Base targets
+
+target "_common" {
+  dockerfile = "docker/Dockerfile"
+  context    = "."
+  args = {
+    max_jobs             = MAX_JOBS
+    nvcc_threads         = NVCC_THREADS
+    torch_cuda_arch_list = TORCH_CUDA_ARCH_LIST
+  }
+}
+
+target "_labels" {
+  labels = {
+    "org.opencontainers.image.source"      = "https://github.com/aphrodite-engine/aphrodite-engine"
+    "org.opencontainers.image.vendor"      = "Aphrodite"
+    "org.opencontainers.image.title"       = "Aphrodite"
+    "org.opencontainers.image.description" = "Aphrodite: A high-throughput and memory-efficient inference and serving engine for LLMs"
+    "org.opencontainers.image.licenses"    = "AGPL-3.0"
+    "org.opencontainers.image.revision"    = COMMIT
+  }
+  annotations = [
+      "index,manifest:org.opencontainers.image.revision=${COMMIT}",
+  ]
+}
+
+# Build targets
+
+target "test" {
+  inherits = ["_common", "_labels"]
+  target   = "test"
+  tags     = ["aphrodite:test"]
+  output   = ["type=docker"]
+}
+
+target "openai" {
+  inherits = ["_common", "_labels"]
+  target   = "aphrodite-openai"
+  tags     = ["aphrodite:openai"]
+  output   = ["type=docker"]
+}
+
+# Ubuntu 24.04 targets
+
+target "test-ubuntu2404" {
+  inherits = ["_common", "_labels"]
+  target   = "test"
+  tags     = ["aphrodite:test-ubuntu24.04"]
+  args = {
+    UBUNTU_VERSION          = "24.04"
+    GDRCOPY_OS_VERSION      = "Ubuntu24_04"
+    FLASHINFER_AOT_COMPILE  = "true"
+  }
+  output = ["type=docker"]
+}
+
+target "openai-ubuntu2404" {
+  inherits = ["_common", "_labels"]
+  target   = "aphrodite-openai"
+  tags     = ["aphrodite:openai-ubuntu24.04"]
+  args = {
+    UBUNTU_VERSION          = "24.04"
+    GDRCOPY_OS_VERSION      = "Ubuntu24_04"
+    FLASHINFER_AOT_COMPILE  = "true"
+  }
+  output = ["type=docker"]
+}

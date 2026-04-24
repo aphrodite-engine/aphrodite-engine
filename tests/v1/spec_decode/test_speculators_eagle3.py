@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.modeling.models.interfaces import supports_eagle3
 
 from aphrodite.config import SpeculativeConfig
-from aphrodite.modeling.models.interfaces import supports_eagle3
 
 
 @pytest.mark.parametrize(

@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import math
 
 import torch
-
 from aphrodite.attention.backends.registry import _Backend
+
 from aphrodite.config import ParallelConfig, SpeculativeConfig
 from aphrodite.v1.attention.backends.utils import CommonAttentionMetadata
 from tests.v1.attention.utils import create_aphrodite_config, create_standard_kv_cache_spec, try_get_attention_backend

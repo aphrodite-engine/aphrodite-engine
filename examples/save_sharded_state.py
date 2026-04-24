@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Saves each worker's model state dict directly to a checkpoint, which enables a
 fast load path for large tensor-parallel models where each worker only needs to

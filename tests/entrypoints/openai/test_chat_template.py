@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-
-from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import apply_hf_chat_template, load_chat_template
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
+
+from aphrodite.config import ModelConfig
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 from ...models.registry import HF_EXAMPLE_MODELS

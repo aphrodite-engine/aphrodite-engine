@@ -1,3 +1,4 @@
+
 # Distributed KV cache transfer
 
 This folder implements distributed KV cache transfer across Aphrodite instances.
@@ -18,3 +19,11 @@ communication service already supports key-value-based lookup (like redis or
 RDMA database).
 
 NOTE: If you want to not only transfer KV caches, but adjust the model execution flow of Aphrodite as well (for example, allow Aphrodite to receive KV caches on some tokens and do prefill on the remaining tokens), you can bypass both KV pipe layer and KV lookup buffer layer, and directly implement on KV connector layer. Bear in mind that as Aphrodite's model input is constantly changing, this implementation will likely be broken when Aphrodite has new updates.
+
+## Disaggregated prefilling
+
+The example usage is in [this file](../../../examples/online_serving/disaggregated_prefill.sh).
+
+Here is the diagram of how we run disaggregated prefilling.
+
+![Disaggregated prefill workflow](./disagg_prefill_workflow.jpg)

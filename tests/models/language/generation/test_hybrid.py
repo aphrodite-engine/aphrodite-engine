@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Callable
 
 import pytest
+from aphrodite.engine.args_tools import EngineArgs
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.engine.args_tools import EngineArgs
 from tests.models.registry import HF_EXAMPLE_MODELS
 from tests.utils import multi_gpu_test
 

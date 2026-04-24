@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import math
 from collections.abc import Callable
@@ -5,9 +7,9 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import torch
+from aphrodite.quantization.utils import fp8_utils, int8_utils
 
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils import fp8_utils, int8_utils
 
 
 @contextmanager

@@ -4,7 +4,6 @@ title: Debugging Tips
 
 This page will walk you through debugging your issues with Aphrodite. It's recommended you do these steps before submitting an issue. It may solve your problem, or help the maintainers have a clearer idea of what's wrong.
 
-
 ## Debugging hang/crash issues
 
 When an Aphrodite instance hangs or crashes unexpectedly, debugging might be quite difficult. It's certainly possible that Aphrodite is doing something that takes a long time:
@@ -15,10 +14,10 @@ When an Aphrodite instance hangs or crashes unexpectedly, debugging might be qui
 
 - **Tensor Parallel inference**: If your model is too large, you may be loading it on multiple GPUs using tensor parallelism. In this case, every process will read the whole model and split it into chunks, which makes the disk reading time even slower (proportional to the TP size). You can convert the model checkpoint to a sharded checkpoint using the [provided script](https://github.com/PygmalionAI/aphrodite-engine/tree/main/examples/save_sharded_state.py). The conversion process might takea bit, but you can load the checkpoint much faster later on, and the time will remain constant regardless of the TP size.
 
-
 Now if you've taken care of the above points but the issue still persists, with CPU and GPU utilization at near zero, it's very likely that Aphrodite is stuck somewhere. Here are some general tips:
 
 Set these environment variables:
+
 - `export APHRODITE_LOG_LEVEL=debug` to enable more logging.
 - `export CUDA_LAUNCH_BLOCKING=1` to know exactly which CUDA kernel is causing the issue.
 - `export NCCL_DEBUG=TRACE` to enable more logging for NCCL.
@@ -110,9 +109,7 @@ Adjust the values as needed. Make sure `MASTER_ADDR`:
 - is reachable from all nodes,
 - is set before running the script.
 
-
 If despite all this, the problem persists, then please [open a GitHub issue](https://github.com/PygmalionAI/aphrodite-engine/issues/new/choose), with a detailed description of the issue, your environment, and the logs.
-
 
 :::warning
 After finding the root cause of your issue, make sure to turn off all debugging env variables defined above, or start a new shell toa void being affected by the debugging settings. If you don't do this, the system might become very slow due to the debugging functionalities.

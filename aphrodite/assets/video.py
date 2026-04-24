@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, ClassVar, Literal
@@ -7,14 +10,9 @@ import numpy.typing as npt
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
-from aphrodite.utils.import_utils import PlaceholderModule
+from aphrodite.multimodal.media.audio import load_audio_pyav
 
 from .base import get_cache_dir
-
-try:
-    import librosa
-except ImportError:
-    librosa = PlaceholderModule("librosa")  # type: ignore[assignment]
 
 
 @lru_cache
@@ -142,4 +140,4 @@ class VideoAsset:
 
         See also: examples/offline_inference/qwen2_5_omni/only_thinker.py
         """
-        return librosa.load(self.video_path, sr=sampling_rate)[0]
+        return load_audio_pyav(self.video_path, sr=sampling_rate)[0]

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 This example shows how to use Aphrodite for running offline inference with
 the correct prompt format on vision language models for multimodal embedding.

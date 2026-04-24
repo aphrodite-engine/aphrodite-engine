@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import gc
 import os
 import tempfile
@@ -6,7 +8,6 @@ import openai
 import pytest
 import pytest_asyncio
 import torch.cuda
-
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.model_loader.tensorizer import (
     TensorizerConfig,

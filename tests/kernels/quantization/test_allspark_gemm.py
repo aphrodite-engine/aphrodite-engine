@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-from aphrodite import _custom_ops as ops
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.allspark_utils import (
     ALLSPARK_AMPERE_K_ALIGN,
     ALLSPARK_AMPERE_M_CUBLAS_THRESHOLD,
     ALLSPARK_AMPERE_N_ALIGN,
 )
 from aphrodite.quantization.utils.quant_utils import quantize_weights
+
+from aphrodite import _custom_ops as ops
+from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import scalar_types
 from tests.kernels.utils import DEFAULT_OPCHECK_TEST_UTILS, opcheck
 

@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 
 import pytest
 import torch
-
 from aphrodite.compilation.inductor_pass import CallableInductorPass, InductorPass
 from aphrodite.compilation.pass_manager import PostGradPassManager
+
 from aphrodite.config import AphroditeConfig, ModelConfig
 
 

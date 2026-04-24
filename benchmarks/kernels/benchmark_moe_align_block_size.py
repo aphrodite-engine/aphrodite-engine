@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import itertools
 
 import torch
-
 from aphrodite.modeling.layers.fused_moe.moe_align_block_size import (
     moe_align_block_size,
 )
+
 from aphrodite.triton_utils import triton
 
 

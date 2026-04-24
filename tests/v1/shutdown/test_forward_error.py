@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test that we handle an Error in model forward and shutdown."""
 
 import asyncio
 
 import pytest
+from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 from aphrodite import LLM, AsyncEngineArgs, SamplingParams
 from aphrodite.distributed import get_tensor_model_parallel_rank
-from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.exceptions import EngineDeadError

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from aphrodite.config.pooler import PoolerConfig
 from aphrodite.platforms import current_platform
 

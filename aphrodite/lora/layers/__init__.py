@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite.lora.layers.base import BaseLayerWithLoRA
 from aphrodite.lora.layers.column_parallel_linear import (
     ColumnParallelLinearWithLoRA,
     ColumnParallelLinearWithShardedLoRA,
+    MergedColumnParallelLinearVariableSliceWithLoRA,
     MergedColumnParallelLinearWithLoRA,
     MergedColumnParallelLinearWithShardedLoRA,
     MergedQKVParallelLinearWithLoRA,
@@ -9,14 +12,14 @@ from aphrodite.lora.layers.column_parallel_linear import (
     QKVParallelLinearWithLoRA,
     QKVParallelLinearWithShardedLoRA,
 )
-from aphrodite.lora.layers.fused_moe import FusedMoEWithLoRA
+from aphrodite.lora.layers.fused_moe import FusedMoE3DWithLoRA, FusedMoEWithLoRA
 from aphrodite.lora.layers.logits_processor import LogitsProcessorWithLoRA
 from aphrodite.lora.layers.replicated_linear import ReplicatedLinearWithLoRA
 from aphrodite.lora.layers.row_parallel_linear import (
     RowParallelLinearWithLoRA,
     RowParallelLinearWithShardedLoRA,
 )
-from aphrodite.lora.layers.utils import LoRAMapping
+from aphrodite.lora.layers.utils import LoRAMapping, LoRAMappingType
 from aphrodite.lora.layers.vocal_parallel_embedding import VocabParallelEmbeddingWithLoRA
 
 __all__ = [
@@ -27,6 +30,7 @@ __all__ = [
     "ColumnParallelLinearWithShardedLoRA",
     "MergedColumnParallelLinearWithLoRA",
     "MergedColumnParallelLinearWithShardedLoRA",
+    "MergedColumnParallelLinearVariableSliceWithLoRA",
     "MergedQKVParallelLinearWithLoRA",
     "MergedQKVParallelLinearWithShardedLoRA",
     "QKVParallelLinearWithLoRA",
@@ -35,5 +39,7 @@ __all__ = [
     "RowParallelLinearWithShardedLoRA",
     "ReplicatedLinearWithLoRA",
     "LoRAMapping",
+    "LoRAMappingType",
     "FusedMoEWithLoRA",
+    "FusedMoE3DWithLoRA",
 ]

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests whether PTPC w8a8 FP8 computation is enabled correctly.
 
 Run `pytest tests/quantization/test_ptpc_fp8.py --forked`.
@@ -5,10 +7,10 @@ Run `pytest tests/quantization/test_ptpc_fp8.py --forked`.
 
 import pytest
 import torch
-
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.fp8 import Fp8KVCacheMethod
 from aphrodite.quantization.ptpc_fp8 import PTPCFp8LinearMethod
+
+from aphrodite.platforms import current_platform
 from tests.quantization.utils import is_quant_method_supported
 
 UNSUPPORTED_STR = (

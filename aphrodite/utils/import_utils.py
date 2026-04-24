@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 Contains helpers related to importing modules.
@@ -16,16 +18,9 @@ from typing import Any
 import regex as re
 from typing_extensions import Never
 
+from aphrodite.logger import init_logger
 
-# TODO: This function can be removed if transformer_modules classes are
-# serialized by value when communicating between processes
-def init_cached_hf_modules() -> None:
-    """
-    Lazy initialization of the Hugging Face modules.
-    """
-    from transformers.dynamic_module_utils import init_hf_modules
-
-    init_hf_modules()
+logger = init_logger(__name__)
 
 
 def import_pynvml():
@@ -51,13 +46,42 @@ def import_pynvml():
     unofficial one by mistake, and we have to handle this case.
     For example, `nvcr.io/nvidia/pytorch:24.12-py3` uses the unofficial
     one, and it will cause errors, see the issue
-    https://github.com/aphrodite-project/aphrodite/issues/12847 for example.
+    https://github.com/vllm-project/vllm/issues/12847 for example.
     After all the troubles, we decide to copy the official `pynvml`
     module to our codebase, and use it directly.
     """
     import aphrodite.third_party.pynvml as pynvml
 
     return pynvml
+
+
+@cache
+def import_triton_kernels():
+    """
+    For convenience, prioritize triton_kernels that is available in
+    `site-packages`. Use `aphrodite.third_party.triton_kernels` as a fall-back.
+    """
+    if _has_module("triton_kernels"):
+        import triton_kernels
+
+        logger.debug_once(
+            f"Loading module triton_kernels from {triton_kernels.__file__}.",
+            scope="local",
+        )
+    elif _has_module("aphrodite.third_party.triton_kernels"):
+        import aphrodite.third_party.triton_kernels as triton_kernels
+
+        logger.debug_once(
+            f"Loading module triton_kernels from {triton_kernels.__file__}.",
+            scope="local",
+        )
+        sys.modules["triton_kernels"] = triton_kernels
+    else:
+        logger.info_once(
+            "triton_kernels unavailable in this build. "
+            "Please consider installing triton_kernels from "
+            "https://github.com/triton-lang/triton/tree/main/python/triton_kernels"
+        )
 
 
 def import_from_path(module_name: str, file_path: str | os.PathLike):
@@ -368,24 +392,32 @@ def _has_module(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
 
 
-def has_pplx() -> bool:
-    """Whether the optional `pplx_kernels` package is available."""
-    return _has_module("pplx_kernels")
-
-
 def has_deep_ep() -> bool:
     """Whether the optional `deep_ep` package is available."""
     return _has_module("deep_ep")
 
 
 def has_deep_gemm() -> bool:
-    """Whether the optional `deep_gemm` package is available."""
-    return _has_module("deep_gemm")
+    """Whether the optional `deep_gemm` package is available.
+
+    Prefers an externally installed ``deep_gemm`` package (so users can
+    override with a newer version), then falls back to the vendored copy
+    bundled in the Aphrodite wheel.
+    """
+    return _has_module("deep_gemm") or _has_module("aphrodite.third_party.deep_gemm")
+
+
+def has_nixl_ep() -> bool:
+    """Whether the optional `nixl_ep` package is available."""
+    return _has_module("nixl_ep")
 
 
 def has_triton_kernels() -> bool:
     """Whether the optional `triton_kernels` package is available."""
-    return _has_module("triton_kernels")
+    is_available = _has_module("triton_kernels") or _has_module("aphrodite.third_party.triton_kernels")
+    if is_available:
+        import_triton_kernels()
+    return is_available
 
 
 def has_tilelang() -> bool:
@@ -397,3 +429,33 @@ def has_arctic_inference() -> bool:
     """Whether the optional `arctic_inference` package is available."""
 
     return _has_module("arctic_inference")
+
+
+def has_helion() -> bool:
+    """Whether the optional `helion` package is available.
+
+    Helion is a Python-embedded DSL for writing ML kernels.
+    See: https://github.com/pytorch/helion
+
+    Usage:
+        if has_helion():
+            import helion
+            import helion.language as hl
+            # use helion...
+    """
+    return _has_module("helion")
+
+
+def has_aiter() -> bool:
+    """Whether the optional `aiter` package is available."""
+    return _has_module("aiter")
+
+
+def has_mori() -> bool:
+    """Whether the optional `mori` package is available."""
+    return _has_module("mori")
+
+
+def has_fbgemm_gpu() -> bool:
+    """Whether the optional `fbgemm_gpu` package is available."""
+    return _has_module("fbgemm_gpu")

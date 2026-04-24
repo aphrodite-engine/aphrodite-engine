@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import enum
 import json
 import logging
@@ -12,8 +14,8 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 from aphrodite.endpoints.logger import RequestLogger
+
 from aphrodite.logger import (
     _DATE_FORMAT,
     _FORMAT,

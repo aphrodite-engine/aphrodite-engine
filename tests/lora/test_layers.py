@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import random
 from copy import deepcopy
 from dataclasses import dataclass
@@ -6,6 +8,21 @@ from unittest.mock import patch
 import pytest
 import torch
 import torch.nn.functional as F
+from aphrodite.lora.models import LoRALayerWeights, PackedLoRALayerWeights
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
+from aphrodite.modeling.layers.logits_processor import LogitsProcessor
+from aphrodite.modeling.layers.vocab_parallel_embedding import (
+    ParallelLMHead,
+    VocabParallelEmbedding,
+    get_masked_input_and_mask,
+)
+from aphrodite.modeling.utils import set_random_seed
 
 from aphrodite.config.lora import LoRAConfig
 from aphrodite.lora.layers import (
@@ -25,22 +42,7 @@ from aphrodite.lora.layers import (
     RowParallelLinearWithShardedLoRA,
     VocabParallelEmbeddingWithLoRA,
 )
-from aphrodite.lora.models import LoRALayerWeights, PackedLoRALayerWeights
 from aphrodite.lora.punica_wrapper import get_punica_wrapper
-from aphrodite.modeling.layers.linear import (
-    ColumnParallelLinear,
-    MergedColumnParallelLinear,
-    QKVParallelLinear,
-    ReplicatedLinear,
-    RowParallelLinear,
-)
-from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead,
-    VocabParallelEmbedding,
-    get_masked_input_and_mask,
-)
-from aphrodite.modeling.utils import set_random_seed
 from aphrodite.platforms import current_platform
 
 from .utils import DummyLoRAManager

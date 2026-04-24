@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aphrodite.endpoints.context import HarmonyContext, StreamingHarmonyContext, TurnMetrics
 from openai_harmony import Author, Message, Role, StreamState, TextContent
 
-from aphrodite.endpoints.context import HarmonyContext, StreamingHarmonyContext, TurnMetrics
 from aphrodite.outputs import CompletionOutput, RequestOutput
 
 

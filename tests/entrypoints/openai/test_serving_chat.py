@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -6,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
-from openai import OpenAI
-
-from aphrodite.config.multimodal import MultiModalConfig
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
 from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
+from openai import OpenAI
+
+from aphrodite.config.multimodal import MultiModalConfig
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.v1.engine.async_llm import AsyncLLM
 

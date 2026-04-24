@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Generator
 from typing import Any
 
 import pytest
+from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.detokenizer import (
     FastIncrementalDetokenizer,

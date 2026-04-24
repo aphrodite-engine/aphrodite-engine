@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Containing tests that check for regressions in Aphrodite's behavior.
 
 It should include tests that are reported by users and making sure they

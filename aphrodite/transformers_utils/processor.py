@@ -1,18 +1,88 @@
-from functools import lru_cache
-from typing import TYPE_CHECKING, Any, cast
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from transformers import AutoFeatureExtractor, AutoImageProcessor, AutoProcessor, AutoVideoProcessor
+import importlib
+import inspect
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, cast, get_args, get_type_hints
+
+from transformers import (
+    AutoFeatureExtractor,
+    AutoImageProcessor,
+    AutoProcessor,
+    AutoVideoProcessor,
+    BatchFeature,
+    processing_utils,
+)
+from transformers.audio_utils import AudioInput
 from transformers.feature_extraction_utils import FeatureExtractionMixin
 from transformers.image_processing_utils import BaseImageProcessor
+from transformers.image_utils import ImageInput
 from transformers.processing_utils import ProcessorMixin
 from transformers.video_processing_utils import BaseVideoProcessor
+from transformers.video_utils import VideoInput
 from typing_extensions import TypeVar
 
+from aphrodite.logger import init_logger
+from aphrodite.transformers_utils import processors
+from aphrodite.transformers_utils.gguf_utils import is_gguf
+from aphrodite.transformers_utils.repo_utils import get_hf_file_to_dict
 from aphrodite.transformers_utils.utils import convert_model_repo_to_path
 from aphrodite.utils.func_utils import get_allowed_kwarg_only_overrides
 
+logger = init_logger(__name__)
+
 if TYPE_CHECKING:
     from aphrodite.config import ModelConfig
+
+
+def _transformers_v4_compatibility_import():
+    """Some remote code processors still import `ChatTemplateLoadKwargs` which was a
+    subset of `ProcessorChatTemplateKwargs` as defined in Transformers v4.
+    In Transformers v5 these were merged into `ProcessorChatTemplateKwargs` and
+    `ChatTemplateLoadKwargs` was removed. For backward compatibility, we add an alias
+    for `ChatTemplateLoadKwargs` if it doesn't exist.
+
+    This can be removed if `HCXVisionForCausalLM` is upstreamed to Transformers."""
+    old_import = getattr(processing_utils, "ChatTemplateLoadKwargs", None)
+    new_import = getattr(processing_utils, "ProcessorChatTemplateKwargs", None)
+    if old_import is None and new_import is not None:
+        processing_utils.ChatTemplateLoadKwargs = new_import
+
+
+def _transformers_v4_compatibility_init() -> Any:
+    """Some remote code processors may define `optional_attributes` in their
+    `ProcessorMixin` subclass, and then pass these arbitrary attributes directly to
+    `ProcessorMixin.__init__`, which is no longer allowed in Transformers v5. For
+    backward compatibility, we intercept these optional attributes and set them on the
+    processor instance before calling the original `ProcessorMixin.__init__`.
+
+    This can be removed if `Molmo2ForConditionalGeneration` is upstreamed to
+    Transformers."""
+    # Transformers v4
+    if hasattr(ProcessorMixin, "optional_attributes"):
+        return
+    # Transformers v5
+    if hasattr(ProcessorMixin.__init__, "_aphrodite_patched"):
+        return
+
+    original_init = ProcessorMixin.__init__
+
+    def __init__(self, *args, **kwargs):
+        for optional_attribute in getattr(self, "optional_attributes", []):
+            if optional_attribute in kwargs:
+                setattr(self, optional_attribute, kwargs.pop(optional_attribute))
+
+        original_init(self, *args, **kwargs)
+
+    # Only patch if ProcessorMixin is not mocked (for docs builds)
+    if not hasattr(ProcessorMixin, "_mock_name"):
+        __init__._aphrodite_patched = True  # type: ignore[attr-defined]
+        ProcessorMixin.__init__ = __init__
+
+
+_transformers_v4_compatibility_import()
+_transformers_v4_compatibility_init()
 
 _P = TypeVar("_P", bound=ProcessorMixin, default=ProcessorMixin)
 _V = TypeVar("_V", bound=BaseVideoProcessor, default=BaseVideoProcessor)
@@ -63,7 +133,6 @@ def _merge_mm_kwargs(
         requires_kw_only=False,
         allow_var_kwargs=True,
     )
-
     # NOTE: Pythonic dict is not hashable and will raise unhashable type
     # error when calling `cached_get_processor`, therefore we need to
     # wrap it to a hashable dict.
@@ -74,6 +143,22 @@ def _merge_mm_kwargs(
             allowed_kwargs[key] = HashableList(value)
 
     return allowed_kwargs
+
+
+def get_processor_cls_name_from_config(
+    processor_name: str,
+    revision: str | None = "main",
+) -> str | None:
+    config_file = [
+        "processor_config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+    ]
+    for file in config_file:
+        config = get_hf_file_to_dict(file, processor_name, revision=revision)
+        if config and "processor_class" in config:
+            return config["processor_class"]
+    return None
 
 
 def get_processor(
@@ -89,8 +174,14 @@ def get_processor(
         revision = "main"
     try:
         processor_name = convert_model_repo_to_path(processor_name)
+        registered_cls_name = get_processor_cls_name_from_config(processor_name, revision=revision)
+        registered_processor_cls = getattr(processors, registered_cls_name, None) if registered_cls_name else None
+        registered_processor_cls = cast(type[_P] | None, registered_processor_cls)
+        # Use registered processor class when it's available
+        # and explicit processor_cls is not set.
         if isinstance(processor_cls, tuple) or processor_cls == ProcessorMixin:
-            processor = AutoProcessor.from_pretrained(
+            _processor_cls = registered_processor_cls or AutoProcessor
+            processor = _processor_cls.from_pretrained(
                 processor_name,
                 *args,
                 revision=revision,
@@ -135,14 +226,126 @@ def get_processor(
 cached_get_processor = lru_cache(get_processor)
 
 
+@lru_cache
+def get_processor_kwargs_type(
+    processor: ProcessorMixin,
+) -> type[processing_utils.ProcessingKwargs]:
+    try:
+        # get kwargs annotations in processor
+        call_params = inspect.signature(type(processor).__call__).parameters
+        call_kwargs = call_params.get("kwargs")
+        call_kwargs_annotations = call_kwargs.annotation if call_kwargs else None
+
+        # if the processor has explicit kwargs annotation, use it
+        if call_kwargs_annotations not in (None, inspect._empty):  # noqa: SIM102
+            # get_type_hints will parse all type annotations at runtime,
+            # and if an annotation refers to a type or
+            # name that hasn’t been imported or defined, it will raise an error.
+            # So we use __annotations__ to get the raw annotations directly.
+            if anno_args := get_args(call_kwargs_annotations):
+                return anno_args[0]
+
+        # otherwise, try to get from ProcessorKwargs
+        module_name = type(processor).__module__
+        mod = importlib.import_module(module_name)
+        for name, obj in vars(mod).items():
+            if name.endswith("ProcessorKwargs"):
+                return obj
+
+    except Exception:
+        logger.exception("Failed to collect processor kwargs")
+
+    return processing_utils.ProcessingKwargs
+
+
+@lru_cache
+def get_processor_kwargs_keys(
+    kwargs_cls: type[processing_utils.ProcessingKwargs],
+) -> set[str]:
+    dynamic_kwargs: set[str] = set()
+    modality_kwargs = {
+        "text_kwargs",
+        "images_kwargs",
+        "videos_kwargs",
+        "audio_kwargs",
+    }
+
+    try:
+        # get kwargs annotations in processor
+        # merge text_kwargs / images_kwargs / videos_kwargs / audio_kwargs
+        kwargs_type_annotations = get_type_hints(kwargs_cls)
+        for kw_type in modality_kwargs:
+            if kw_type in kwargs_type_annotations:
+                # Use __annotations__ instead of get_type_hints() to avoid
+                # NameError from unresolved forward references (e.g.
+                # PILImageResampling). We only need key names, not types.
+                kw_cls = kwargs_type_annotations[kw_type]
+                kw_annotations: dict[str, Any] = {}
+                for base in reversed(kw_cls.__mro__):
+                    kw_annotations.update(getattr(base, "__annotations__", {}))
+                for kw_name in kw_annotations:
+                    dynamic_kwargs.add(kw_name)
+
+    except Exception:
+        logger.exception("Failed to collect processor kwargs")
+
+    return dynamic_kwargs | modality_kwargs
+
+
+def cached_get_processor_without_dynamic_kwargs(
+    processor_name: str,
+    *args: Any,
+    revision: str | None = None,
+    trust_remote_code: bool = False,
+    processor_cls: type[_P] | tuple[type[_P], ...] = ProcessorMixin,
+    **kwargs: Any,
+) -> _P:
+    # Step 1: use default kwargs to get a temporary processor instance
+    processor = cached_get_processor(
+        processor_name,
+        revision=revision,
+        trust_remote_code=trust_remote_code,
+        processor_cls=processor_cls,  # type: ignore[arg-type]
+    )
+
+    # Step 2: use temporary processor collect dynamic keys
+    dynamic_keys = get_processor_kwargs_keys(
+        get_processor_kwargs_type(processor)  # type: ignore[arg-type]
+    )
+
+    # Step 3: use dynamic_keys filter kwargs
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k not in dynamic_keys}
+
+    # Step 4: use filtered kwargs to get final processor instance
+    final_processor = cached_get_processor(
+        processor_name,
+        revision=revision,
+        trust_remote_code=trust_remote_code,
+        processor_cls=processor_cls,  # type: ignore[arg-type]
+        **filtered_kwargs,
+    )
+
+    return final_processor
+
+
 def cached_processor_from_config(
     model_config: "ModelConfig",
     processor_cls: type[_P] | tuple[type[_P], ...] = ProcessorMixin,
     **kwargs: Any,
 ) -> _P:
-    return cached_get_processor(
-        model_config.model,
-        revision=model_config.revision,
+    if is_gguf(model_config.model):
+        assert not is_gguf(model_config.tokenizer), (
+            "For multimodal GGUF models, the original tokenizer should be used to correctly load processor."
+        )
+        model = model_config.tokenizer
+        revision = model_config.tokenizer_revision
+    else:
+        model = model_config.model
+        revision = model_config.revision
+
+    return cached_get_processor_without_dynamic_kwargs(
+        model,
+        revision=revision,
         trust_remote_code=model_config.trust_remote_code,
         processor_cls=processor_cls,  # type: ignore[arg-type]
         **_merge_mm_kwargs(model_config, processor_cls, **kwargs),
@@ -243,9 +446,18 @@ def cached_image_processor_from_config(
     model_config: "ModelConfig",
     **kwargs: Any,
 ):
+    if is_gguf(model_config.model):
+        assert not is_gguf(model_config.tokenizer), (
+            "For multimodal GGUF models, the original tokenizer should be used to correctly load image processor."
+        )
+        model = model_config.tokenizer
+        revision = model_config.tokenizer_revision
+    else:
+        model = model_config.model
+        revision = model_config.revision
     return cached_get_image_processor(
-        model_config.model,
-        revision=model_config.revision,
+        model,
+        revision=revision,
         trust_remote_code=model_config.trust_remote_code,
         **_merge_mm_kwargs(model_config, AutoImageProcessor, **kwargs),
     )
@@ -303,4 +515,38 @@ def cached_video_processor_from_config(
         trust_remote_code=model_config.trust_remote_code,
         processor_cls_overrides=processor_cls,  # type: ignore[arg-type]
         **_merge_mm_kwargs(model_config, AutoVideoProcessor, **kwargs),
+    )
+
+
+def call_hf_processor_mm_only(
+    processor: ProcessorMixin,
+    images: ImageInput | None = None,
+    videos: VideoInput | None = None,
+    audio: AudioInput | None = None,
+    **kwargs,
+) -> BatchFeature:
+    output_kwargs = processor._merge_kwargs(
+        get_processor_kwargs_type(processor),
+        **kwargs,
+    )
+
+    if audio is not None and (feature_extractor := getattr(processor, "feature_extractor", None)):
+        audio_inputs = feature_extractor(audio, **output_kwargs["audio_kwargs"])
+        audio_inputs["feature_attention_mask"] = audio_inputs.pop("attention_mask")
+    else:
+        audio_inputs = {}
+
+    if images is not None and (image_processor := getattr(processor, "image_processor", None)):
+        images_inputs = image_processor(images=images, **output_kwargs["images_kwargs"])
+    else:
+        images_inputs = {}
+
+    if videos is not None and (video_processor := getattr(processor, "video_processor", None)):
+        videos_inputs = video_processor(videos=videos, **output_kwargs["videos_kwargs"])
+    else:
+        videos_inputs = {}
+
+    return BatchFeature(
+        data={**audio_inputs, **images_inputs, **videos_inputs},
+        tensor_type=kwargs.get("return_tensors"),
     )

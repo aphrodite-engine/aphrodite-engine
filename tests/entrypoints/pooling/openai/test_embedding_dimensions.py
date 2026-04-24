@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Run `pytest tests/entrypoints/openai/test_embedding_dimensions.py`.
 """
 
 import openai
 import pytest
-
 from aphrodite.endpoints.openai.protocol import EmbeddingResponse
+
 from tests.conftest import HfRunner
 from tests.models.language.pooling.embed_utils import run_embedding_correctness_test
 from tests.models.utils import EmbedModelInfo

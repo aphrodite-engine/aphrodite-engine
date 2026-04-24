@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests whether gptq models with quantized lm_head can be loaded.
 
 Run `pytest tests/quantization/test_quant_lm_head_true.py --forked`.
@@ -5,7 +7,6 @@ Run `pytest tests/quantization/test_quant_lm_head_true.py --forked`.
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.vocab_parallel_embedding import UnquantizedEmbeddingMethod
 from aphrodite.quantization.gptq import GPTQLinearMethod
 from aphrodite.quantization.gptq_marlin import GPTQMarlinLinearMethod

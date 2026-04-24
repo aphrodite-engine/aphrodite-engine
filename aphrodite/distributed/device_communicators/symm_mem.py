@@ -1,10 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import torch
 import torch.distributed as dist
 from torch.distributed import ProcessGroup
 
-from aphrodite.distributed.device_communicators.all_reduce_utils import SYMM_MEM_ALL_REDUCE_MAX_SIZES
+import aphrodite.envs as envs
+from aphrodite.distributed.device_communicators.all_reduce_utils import (
+    SYMM_MEM_ALL_REDUCE_MAX_SIZES,
+)
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.platforms import current_platform
 
 try:
@@ -21,6 +26,7 @@ class SymmMemCommunicator:
     _WORLD_SIZES_MULTIMEM = {
         "9.0": [4, 6, 8],
         "10.0": [6, 8],
+        "10.3": [6, 8],
     }
 
     def __init__(
@@ -43,24 +49,24 @@ class SymmMemCommunicator:
             device = torch.device(f"cuda:{device}")
         elif isinstance(device, str):
             device = torch.device(device)
-        torch.cuda.set_device(device)
+        torch.accelerator.set_device_index(device)
         self.dtype = torch.bfloat16
         self.device = device
         self.group = group
         self.world_size = dist.get_world_size(self.group)
         capability = current_platform.get_device_capability()
         if capability is None:
-            logger.warning("SymmMemCommunicator: device capability is unknown, communicator is not available.")
+            logger.warning_once("SymmMemCommunicator: device capability is unknown, communicator is not available.")
             return
         self.device_capability = capability.as_version_str()
         if self.device_capability not in SYMM_MEM_ALL_REDUCE_MAX_SIZES:
-            logger.warning(
+            logger.warning_once(
                 "SymmMemCommunicator: Device capability %s not supported, communicator is not available.",
                 self.device_capability,
             )
             return
         if self.world_size not in SYMM_MEM_ALL_REDUCE_MAX_SIZES[self.device_capability]:
-            logger.warning(
+            logger.warning_once(
                 "SymmMemCommunicator: World size %d not supported, communicator is not available.",
                 self.world_size,
             )
@@ -74,19 +80,27 @@ class SymmMemCommunicator:
             )
         else:
             self.max_size = SYMM_MEM_ALL_REDUCE_MAX_SIZES[self.device_capability][self.world_size]
-
-        self.buffer = torch_symm_mem.empty(
-            self.max_size // self.dtype.itemsize,
-            device=self.device,
-            dtype=self.dtype,
-        )
-        handle = torch_symm_mem.rendezvous(self.buffer, self.group.group_name)
+        try:
+            self.buffer = torch_symm_mem.empty(
+                self.max_size // self.dtype.itemsize,
+                device=self.device,
+                dtype=self.dtype,
+            )
+            handle = torch_symm_mem.rendezvous(self.buffer, self.group.group_name)
+        except RuntimeError as e:
+            logger.warning_once(
+                "SymmMemCommunicator: symmetric memory initialization failed: %s "
+                "Communicator is not available. To suppress this warning set "
+                "APHRODITE_ALLREDUCE_USE_SYMM_MEM=0",
+                str(e),
+            )
+            return
         if handle.multicast_ptr == 0:
-            logger.warning("SymmMemCommunicator: symmetric memory multicast operations are not supported.")
+            logger.warning_once("SymmMemCommunicator: symmetric memory multicast operations are not supported.")
             return
         self.force_multimem = force_multimem
         self.disabled = False
-        if aphrodite_is_batch_invariant():
+        if envs.APHRODITE_BATCH_INVARIANT:
             self.disabled = True
 
     def should_use_symm_mem(self, inp: torch.Tensor):

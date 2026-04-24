@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from typing import Any
 
 from transformers.configuration_utils import PretrainedConfig
@@ -50,8 +52,7 @@ class Step3TextConfig(PretrainedConfig):
         moe_intermediate_size: int = 5120,
         moe_num_experts: int = 48,
         moe_top_k: int = 3,
-        rope_theta: float = 500000,
-        rope_scaling: dict[str, Any] | None = None,
+        rope_parameters: dict[str, Any] | None = None,
         max_position_embedding: int = 65536,
         share_expert_dim: int = 5120,
         share_q_dim: int = 2048,
@@ -128,8 +129,13 @@ class Step3TextConfig(PretrainedConfig):
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_num_experts = moe_num_experts
         self.moe_top_k = moe_top_k
-        self.rope_theta = rope_theta
-        self.rope_scaling = rope_scaling
+        # Try to set `rope_scaling` if available, otherwise use `rope_parameters`
+        rope_scaling = kwargs.pop("rope_scaling", None)
+        rope_parameters = rope_scaling or rope_parameters or {"rope_type": "default"}
+        rope_theta = kwargs.pop("rope_theta", 500000.0)
+        if "rope_theta" not in rope_parameters:
+            rope_parameters["rope_theta"] = rope_theta
+        self.rope_parameters = rope_parameters
         self.max_position_embedding = max_position_embedding
         self.share_expert_dim = share_expert_dim
         self.share_q_dim = share_q_dim

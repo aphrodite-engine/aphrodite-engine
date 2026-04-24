@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 from __future__ import annotations
 
 import contextlib
@@ -7,21 +10,21 @@ import signal
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from shutil import which
 from typing import TextIO
 
 import psutil
-import regex as re
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
+from aphrodite.platforms import current_platform
+from aphrodite.platforms.interface import in_wsl
 from aphrodite.ray.lazy_utils import is_in_ray_actor
 
 from .platform_utils import cuda_is_initialized, xpu_is_initialized
 
 logger = init_logger(__name__)
 
-CYAN = "\033[1;36m"
+CYAN = "\033[0;36m"
 RESET = "\033[0;0m"
 
 
@@ -56,39 +59,35 @@ def set_env_var(key: str, value: str) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def suppress_c_lib_output():
+def suppress_stdout():
     """
-    Suppress stdout/stderr from C libraries at the file descriptor level.
+    Suppress stdout from C libraries at the file descriptor level.
+
+    Only suppresses stdout, not stderr, to preserve error messages.
+    Suppression is disabled when APHRODITE_LOGGING_LEVEL is set to DEBUG.
 
     Example:
-        with suppress_c_lib_output():
-            # C library calls that would normally print to stdout/stderr
+        with suppress_stdout():
+            # C library calls that would normally print to stdout
             torch.distributed.new_group(ranks, backend="gloo")
     """
-    if not envs.APHRODITE_SUPPRESS_C_LIB_OUTPUT:
+    # Don't suppress if logging level is DEBUG
+    if envs.APHRODITE_LOGGING_LEVEL == "DEBUG":
         yield
         return
 
     stdout_fd = sys.stdout.fileno()
-    stderr_fd = sys.stderr.fileno()
     stdout_dup = os.dup(stdout_fd)
-    stderr_dup = os.dup(stderr_fd)
-
     devnull_fd = os.open(os.devnull, os.O_WRONLY)
 
     try:
         sys.stdout.flush()
-        sys.stderr.flush()
         os.dup2(devnull_fd, stdout_fd)
-        os.dup2(devnull_fd, stderr_fd)
         yield
     finally:
         sys.stdout.flush()
-        sys.stderr.flush()
         os.dup2(stdout_dup, stdout_fd)
-        os.dup2(stderr_dup, stderr_fd)
         os.close(stdout_dup)
-        os.close(stderr_dup)
         os.close(devnull_fd)
 
 
@@ -113,6 +112,17 @@ def unique_filepath(fn: Callable[[int], Path]) -> Path:
 # Process management utilities
 
 
+def _sync_visible_devices_env_vars():
+    """Sync HIP/CUDA visibility env vars before spawning (ROCm only)."""
+
+    if not current_platform.is_rocm():
+        return
+
+    from aphrodite.platforms.rocm import _sync_hip_cuda_env_vars
+
+    _sync_hip_cuda_env_vars()
+
+
 def _maybe_force_spawn():
     """Check if we need to force the use of the `spawn` multiprocessing start
     method.
@@ -130,10 +140,18 @@ def _maybe_force_spawn():
         os.environ["RAY_ADDRESS"] = ray.get_runtime_context().gcs_address
         reasons.append("In a Ray actor and can only be spawned")
 
+    # Force spawn if NUMA binding is enabled via --numa-bind.
+    # NUMA binding uses executable hijacking which requires spawn
+    if "--numa-bind" in sys.argv:
+        reasons.append("NUMA binding requires spawn method")
+
     if cuda_is_initialized():
         reasons.append("CUDA is initialized")
     elif xpu_is_initialized():
         reasons.append("XPU is initialized")
+
+    if in_wsl():
+        reasons.append("WSL is detected and NVML is not compatible with fork")
 
     if reasons:
         logger.warning(
@@ -155,6 +173,10 @@ def get_mp_context():
     APHRODITE_WORKER_MULTIPROC_METHOD.
     """
     _maybe_force_spawn()
+    # (ROCm): Sync GPU visibility env vars so spawned children inherit
+    # consistent values. Must run after _maybe_force_spawn and regardless
+    # of whether spawn was already set.
+    _sync_visible_devices_env_vars()
     mp_method = envs.APHRODITE_WORKER_MULTIPROC_METHOD
     return multiprocessing.get_context(mp_method)
 
@@ -176,43 +198,15 @@ def set_process_title(
     setproctitle.setproctitle(f"{prefix}::{name}")
 
 
-def _simplify_process_name(process_name: str) -> str:
-    """Simplify process names to match the desired format.
-
-    Examples:
-        EngineCore -> Engine
-        EngineCore_DP0 -> Engine (DP0)
-        Worker_PP0 -> Worker (PP0)
-        Worker_TP1 -> Worker (TP1)
-        APIServer -> API
-        APIServer_0 -> API (0)
-    """
-    if process_name.startswith("EngineCore"):
-        if "_" in process_name:
-            suffix = process_name.split("_", 1)[1]
-            return f"Engine ({suffix})"
-        return "Engine"
-
-    if process_name.startswith("Worker"):
-        if "_" in process_name:
-            suffix = process_name.split("_", 1)[1]
-            return f"Worker ({suffix})"
-        return "Worker"
-
-    if process_name.startswith("APIServer"):
-        if "_" in process_name:
-            suffix = process_name.split("_", 1)[1]
-            return f"API ({suffix})"
-        return "API"
-
-    return process_name
-
-
 def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
     """Add colored prefix to file output for log decoration."""
-    simplified_name = _simplify_process_name(worker_name)
-    prefix = f"{CYAN}({simplified_name}){RESET} "
-    file_write = file.write
+    is_tty = hasattr(file, "isatty") and file.isatty()
+    if envs.NO_COLOR or envs.APHRODITE_LOGGING_COLOR == "0" or (envs.APHRODITE_LOGGING_COLOR != "1" and not is_tty):
+        prefix = f"({worker_name} pid={pid}) "
+    else:
+        prefix = f"{CYAN}({worker_name} pid={pid}){RESET} "
+    # Use the original write to avoid nesting prefixes on repeated calls.
+    file_write = getattr(file, "_original_write", file.write)
 
     def write_with_prefix(s: str):
         if not s:
@@ -232,20 +226,17 @@ def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
         file.start_new_line = False  # type: ignore[attr-defined]
 
     file.start_new_line = True  # type: ignore[attr-defined]
+    file._original_write = file_write  # type: ignore[attr-defined]
     file.write = write_with_prefix  # type: ignore[method-assign]
 
 
 def decorate_logs(process_name: str | None = None) -> None:
-    """Decorate stdout/stderr with process name and PID prefix."""
-    if os.environ.get("APHRODITE_DECORATE_LOGS", "0") not in ("1", "true", "True"):
-        return
+    """Keep process-local logging undecorated.
 
-    if process_name is None:
-        process_name = get_mp_context().current_process().name
-
-    pid = os.getpid()
-    _add_prefix(sys.stdout, process_name, pid)
-    _add_prefix(sys.stderr, process_name, pid)
+    Aphrodite uses its own logger/formatter stack, so rewriting stdout/stderr
+    with a per-process prefix only adds noise and duplicates context.
+    """
+    return
 
 
 def kill_process_tree(pid: int):
@@ -301,83 +292,26 @@ def set_ulimit(target_soft_limit: int = 65535):
             )
 
 
-def get_kernels_install_command() -> str:
-    """Get the install command for aphrodite-kernels based on the current environment."""
-
-    base_url = "https://downloads.pygmalion.chat/whl"
-    install_page = "https://aphrodite.pygmalion.chat/installation/installation/"
-
-    # Detect if uv is available
-    pip_cmd = "uv pip" if which("uv") else "pip"
-
-    try:
-        import torch
-
-        # Check for CPU build - no pre-built wheels available
-        if torch.version.cuda is None and torch.version.hip is None:
-            return (
-                "Pre-built wheels for CPU are not available.\n"
-                f"Please build aphrodite-kernels from source. See: {install_page}"
-            )
-
-        # Check for ROCm - no pre-built wheels available
-        if torch.version.hip is not None:
-            return (
-                "Pre-built wheels for ROCm are not available.\n"
-                f"Please build aphrodite-kernels from source. See: {install_page}"
-            )
-
-        # Check for CUDA
-        if torch.version.cuda:
-            cuda_major, cuda_minor = torch.version.cuda.split(".")
-            cuda_version_str = f"{cuda_major}{cuda_minor}"
-
-            # Support CUDA 12.8 and 12.9
-            if cuda_version_str == "129":
-                extra_index_url = f"{base_url}/cu129"
-                return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
-            elif cuda_version_str == "128":
-                # Default (12.8) uses base URL without /cu128 suffix
-                extra_index_url = base_url
-                return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
-
-            # Try to detect from nvcc if available
-            try:
-                import subprocess
-
-                from torch.utils.cpp_extension import CUDA_HOME
-
-                if CUDA_HOME:
-                    nvcc_output = subprocess.check_output(
-                        [f"{CUDA_HOME}/bin/nvcc", "-V"], universal_newlines=True, stderr=subprocess.DEVNULL
-                    )
-                    version_match = re.search(r"release (\d+\.\d+)", nvcc_output)
-                    if version_match:
-                        nvcc_version = version_match.group(1)
-                        nvcc_major, nvcc_minor = nvcc_version.split(".")
-                        nvcc_version_str = f"{nvcc_major}{nvcc_minor}"
-                        if nvcc_version_str == "129":
-                            extra_index_url = f"{base_url}/cu129"
-                            return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
-                        elif nvcc_version_str == "128":
-                            extra_index_url = base_url
-                            return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
-            except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as e:
-                logger.warning(
-                    "nvcc-based CUDA version detection failed. This is expected if nvcc is not in your PATH. Error: %s",
-                    e,
-                )
-                pass
-
-            # Unsupported CUDA version - direct to build from source
-            return (
-                f"Your CUDA version ({torch.version.cuda}) is not supported by pre-built wheels.\n"
-                f"Only CUDA 12.8 and 12.9 are supported. "
-                f"Please build aphrodite-kernels from source. See: {install_page}"
-            )
-    except ImportError:
-        pass
-
-    # Fallback - default to 12.8
-    extra_index_url = base_url
-    return f"{pip_cmd} install --extra-index-url {extra_index_url} aphrodite-kernels==0.0.1"
+def find_loaded_library(lib_name: str) -> str | None:
+    """
+    According to according to https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html,
+    the file `/proc/self/maps` contains the memory maps of the process, which includes the
+    shared libraries loaded by the process. We can use this file to find the path of the
+    loaded library.
+    """  # noqa
+    found_line = None
+    with open("/proc/self/maps") as f:
+        for line in f:
+            if lib_name in line:
+                found_line = line
+                break
+    if found_line is None:
+        # the library is not loaded in the current process
+        return None
+    # if lib_name is libcudart, we need to match a line with:
+    # address /path/to/libcudart-hash.so.11.0
+    start = found_line.index("/")
+    path = found_line[start:].strip()
+    filename = path.split("/")[-1]
+    assert filename.rpartition(".so")[0].startswith(lib_name), f"Unexpected filename: {filename} for library {lib_name}"
+    return path

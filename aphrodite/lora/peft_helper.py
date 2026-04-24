@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 # Adapted from: https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/config.py
 
 import json
@@ -8,7 +11,7 @@ from typing import Literal
 
 from aphrodite.config.lora import LoRAConfig
 from aphrodite.logger import init_logger
-from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
+from aphrodite.model_executor.model_loader.tensorizer import TensorizerConfig
 
 logger = init_logger(__name__)
 

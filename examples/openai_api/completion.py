@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from openai import OpenAI
 
 # Modify OpenAI's API key and API base to use Aphrodite's API server.

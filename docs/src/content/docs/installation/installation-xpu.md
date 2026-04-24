@@ -5,11 +5,13 @@ title: Installation with Intel XPU
 Aphrodite supports basic model inference on Intel Datacenter GPUs.
 
 ## Requirements
+
 - Linux
 - Intel Data Center GPU
 - OneAPI 2024.1
 
 ## Dockerfile
+
 ```sh
 docker build -f Dockerfile.xpu -t aphrodite-xpu --shm-size=4g .
 docker run -it \

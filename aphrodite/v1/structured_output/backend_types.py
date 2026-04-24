@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -7,10 +10,10 @@ if TYPE_CHECKING:
     import torch
 
     from aphrodite.config import AphroditeConfig
-    from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+    from aphrodite.tokenizers import TokenizerLike
 else:
     AphroditeConfig = object
-    AnyTokenizer = object
+    TokenizerLike = object
 
 
 class StructuredOutputOptions(enum.Enum):
@@ -97,7 +100,7 @@ class StructuredOutputBackend(ABC):
     """Engine-level backend for structured output requests."""
 
     aphrodite_config: AphroditeConfig
-    tokenizer: AnyTokenizer
+    tokenizer: TokenizerLike
     vocab_size: int
 
     @abstractmethod

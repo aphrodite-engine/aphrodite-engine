@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import contextlib
 import inspect
 import os
@@ -11,13 +13,6 @@ from unittest.mock import patch
 import pytest
 import ray
 import torch
-
-from aphrodite import LLM
-from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import KVTransferConfig
-from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
-from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
-from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import MultiKVConnectorStats
 from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import (
     KVConnectorRole,
     NixlAgentMetadata,
@@ -27,6 +22,13 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import (
     NixlConnectorWorker,
     NixlKVConnectorStats,
 )
+
+from aphrodite import LLM
+from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.config import KVTransferConfig
+from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
+from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
+from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import MultiKVConnectorStats
 from aphrodite.distributed.kv_transfer.kv_transfer_state import ensure_kv_transfer_shutdown, has_kv_transfer_group
 from aphrodite.forward_context import ForwardContext
 from aphrodite.platforms.interface import Platform

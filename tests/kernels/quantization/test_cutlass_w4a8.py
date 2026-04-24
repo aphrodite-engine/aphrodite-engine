@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the CUTLASS W4A8 kernel.
 
 Run `pytest tests/kernels/quantization/test_cutlass_w4a8.py`.
@@ -7,10 +9,10 @@ from dataclasses import dataclass
 
 import pytest
 import torch
+from aphrodite.quantization.utils.quant_utils import pack_rows, quantize_weights
 
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import pack_rows, quantize_weights
 from aphrodite.scalar_type import ScalarType, scalar_types
 
 # TODO: in future PR refactor this and `is_quant_method_supported` in the kernel

@@ -9,6 +9,7 @@ Technical details of the implementation are in the next page!
 :::
 
 ## Using APC in Aphrodite
+
 Simply set `enable_prefix_caching=True` in the Engine, or pass `--enable-prefix-caching` to the CLI.
 
 Here's an example:

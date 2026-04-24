@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import base64
 
 import pytest
 import requests
+from aphrodite.endpoints.openai.protocol import IOProcessorResponse
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.endpoints.openai.protocol import IOProcessorResponse
 from aphrodite.plugins.io_processors import get_io_processor
 from tests.utils import RemoteOpenAIServer
 

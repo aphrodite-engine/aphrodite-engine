@@ -1,12 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-
 from aphrodite.attention.layer import Attention
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, SchedulerConfig, set_current_aphrodite_config
-from aphrodite.utils.mem_constants import GiB_bytes
-from aphrodite.v1.core.kv_cache_utils import estimate_max_model_len, get_kv_cache_configs
-from aphrodite.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
 from aphrodite.v1.worker.tpu_model_runner import (
     TPUModelRunner,
     _get_padded_num_reqs_with_upper_limit,
@@ -14,6 +10,12 @@ from aphrodite.v1.worker.tpu_model_runner import (
     _get_req_paddings,
     _get_token_paddings,
 )
+
+from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, SchedulerConfig, set_current_aphrodite_config
+from aphrodite.utils.mem_constants import GiB_bytes
+from aphrodite.v1.core.kv_cache_utils import estimate_max_model_len, get_kv_cache_configs
+from aphrodite.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
 
 
 def get_aphrodite_config():

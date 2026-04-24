@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+import aphrodite.v1.attention.backends.pallas  # noqa: F401
 import numpy as np
 import pytest
 import torch
 import torch_xla
 
-import aphrodite.v1.attention.backends.pallas  # noqa: F401
 from aphrodite.platforms import current_platform
 
 

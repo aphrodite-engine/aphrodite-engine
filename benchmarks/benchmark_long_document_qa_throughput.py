@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Offline benchmark to test the long document QA throughput.
 
@@ -42,8 +44,9 @@ import dataclasses
 import random
 import time
 
-from aphrodite import LLM, SamplingParams
 from aphrodite.engine.args_tools import EngineArgs
+
+from aphrodite import LLM, SamplingParams
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 

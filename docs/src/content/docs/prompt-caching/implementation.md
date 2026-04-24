@@ -6,7 +6,6 @@ The core idea of PagedAttention is to partition the KV cache of each request int
 
 To automatically cache the KV cache, we utilize the following key observation: Each KV block can be uniquely identified by the tokens within the block and the tokens in the prefix before the block.
 
-
 ```console
                     Block 1                  Block 2                  Block 3
          [A gentle breeze stirred] [the leaves as children] [laughed in the distance]
@@ -26,6 +25,7 @@ With this mapping, we can add another indirection in Aphrodite's KV cache manage
 This design achieves automatic prefix caching without the need of maintaining a tree structure among the KV blocks. More specifically, all of the blocks are independent of each other and can be allocated and freed by itself, which enables us to manages the KV cache as ordinary caches in operating system.
 
 ## Generalized Caching Policy
+
 Keeping all the KV blocks in a hash table enables vLLM to cache KV blocks from earlier requests to save memory and accelerate the computation of future requests. For example, if a new request shares the system prompt with the previous request, the KV cache of the shared prompt can directly be used for the new request without recomputation. However, the total KV cache space is limited and we have to decide which KV blocks to keep or evict when the cache is full.
 
 Managing KV cache with a hash table allows us to implement flexible caching policies. As an example, in current vLLM, we implement the following eviction policy:
