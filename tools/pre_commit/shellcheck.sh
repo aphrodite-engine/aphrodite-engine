@@ -19,5 +19,15 @@ if ! [ -x "$(command -v shellcheck)" ]; then
     export PATH="$PATH:${shellcheck_dir}"
 fi
 
-find . -path ./.git -prune -o -name "*.sh" -print0 | \
-  xargs -0 sh -c "for f in \"\$@\"; do case \"\$f\" in ./reference/*|./shellcheck-stable/*) continue ;; esac; git check-ignore -q \"\$f\" || shellcheck -s bash \"\$f\"; done" --
+if [ "$#" -eq 0 ]; then
+    exit 0
+fi
+
+for f in "$@"; do
+    case "$f" in
+        ./reference/*|reference/*|./shellcheck-stable/*|shellcheck-stable/*)
+            continue
+            ;;
+    esac
+    git check-ignore -q "$f" || shellcheck -s bash "$f"
+done
