@@ -99,12 +99,8 @@ class BaseRenderer(ABC, Generic[_T]):
         self.mm_processor: BaseMultiModalProcessor | None = None
         self._readonly_mm_processor: BaseMultiModalProcessor | None = None
         self._mm_cache_stats: MultiModalCacheStats | None = None
-        self._clear_mm_cache_async = make_async(
-            self.clear_mm_cache, executor=self._executor
-        )
-        self._process_multimodal_async = make_async(
-            self._process_multimodal, executor=self._mm_executor
-        )
+        self._clear_mm_cache_async = make_async(self.clear_mm_cache, executor=self._executor)
+        self._process_multimodal_async = make_async(self._process_multimodal, executor=self._mm_executor)
         if config.model_config.is_multimodal_model:
             mm_processor_cache = mm_registry.processor_cache_from_config(config)
 
@@ -141,9 +137,7 @@ class BaseRenderer(ABC, Generic[_T]):
             # This is used to generate internal request ID for MM processing
             # It has no relation to the request ID for engine core
             self._mm_req_counter = AtomicCounter()
-            self._mm_timing_registry = MultiModalTimingRegistry(
-                config.observability_config
-            )
+            self._mm_timing_registry = MultiModalTimingRegistry(config.observability_config)
 
     def get_tokenizer(self) -> _T:
         tokenizer = self.tokenizer
@@ -154,9 +148,7 @@ class BaseRenderer(ABC, Generic[_T]):
 
     def get_async_tokenizer(self) -> AsyncMicrobatchTokenizer:
         if self._async_tokenizer is None:
-            self._async_tokenizer = AsyncMicrobatchTokenizer(
-                self.get_tokenizer(), executor=self._executor
-            )
+            self._async_tokenizer = AsyncMicrobatchTokenizer(self.get_tokenizer(), executor=self._executor)
 
         return self._async_tokenizer
 
@@ -226,9 +218,7 @@ class BaseRenderer(ABC, Generic[_T]):
             model_config = self.model_config
             mm_config = model_config.get_multimodal_config()
             processor = self.mm_processor
-            mm_limits = {
-                k: v for k, v in processor.info.allowed_mm_limits.items() if v > 0
-            }
+            mm_limits = {k: v for k, v in processor.info.allowed_mm_limits.items() if v > 0}
 
             try:
                 logger.debug("Warming up multi-modal processing...")
@@ -239,9 +229,7 @@ class BaseRenderer(ABC, Generic[_T]):
                     mm_counts=dict.fromkeys(mm_limits, 1),
                     mm_options=mm_config.limit_per_prompt,
                 )
-                _ = processor.apply(
-                    processor_inputs, timing_ctx=TimingContext(enabled=False)
-                )
+                _ = processor.apply(processor_inputs, timing_ctx=TimingContext(enabled=False))
 
                 elapsed = time.perf_counter() - start_time
                 logger.info("Multi-modal warmup completed in %.3fs", elapsed)
@@ -263,25 +251,19 @@ class BaseRenderer(ABC, Generic[_T]):
         if executor := getattr(self, "_executor", None):
             executor.shutdown(wait=False)
 
-        if (
-            mm_executor := getattr(self, "_mm_executor", None)
-        ) is not None and mm_executor is not executor:
+        if (mm_executor := getattr(self, "_mm_executor", None)) is not None and mm_executor is not executor:
             mm_executor.shutdown(wait=False)
 
     def get_bos_token_id(self) -> int | None:
         if self.tokenizer is None:
-            logger.warning_once(
-                "Using None for BOS token id because tokenizer is not initialized"
-            )
+            logger.warning_once("Using None for BOS token id because tokenizer is not initialized")
             return None
 
         return self.tokenizer.bos_token_id
 
     def get_eos_token_id(self) -> int | None:
         if self.tokenizer is None:
-            logger.warning_once(
-                "Using None for EOS token id because tokenizer is not initialized"
-            )
+            logger.warning_once("Using None for EOS token id because tokenizer is not initialized")
             return None
 
         return self.tokenizer.eos_token_id
@@ -291,14 +273,11 @@ class BaseRenderer(ABC, Generic[_T]):
         Obtain the decoder start token id employed by an encoder/decoder model,
         raising an error if it is not available.
         """
-        dec_start_token_id = getattr(
-            self.model_config.hf_config, "decoder_start_token_id", None
-        )
+        dec_start_token_id = getattr(self.model_config.hf_config, "decoder_start_token_id", None)
 
         if dec_start_token_id is None:
             logger.warning_once(
-                "Falling back on <BOS> for decoder start token id "
-                "because decoder start token id is not available."
+                "Falling back on <BOS> for decoder start token id because decoder start token id is not available."
             )
             dec_start_token_id = self.get_bos_token_id()
 
@@ -518,9 +497,7 @@ class BaseRenderer(ABC, Generic[_T]):
             (
                 asyncio.sleep(0)
                 if prompt["decoder_prompt"] is None
-                else self._tokenize_singleton_prompt_async(
-                    prompt["decoder_prompt"], params
-                )
+                else self._tokenize_singleton_prompt_async(prompt["decoder_prompt"], params)
             ),
         )
 
@@ -561,9 +538,7 @@ class BaseRenderer(ABC, Generic[_T]):
         prompts: Sequence[DictPrompt],
         params: TokenizeParams,
     ) -> list[TokPrompt]:
-        return await asyncio.gather(
-            *(self.tokenize_prompt_async(prompt, params) for prompt in prompts)
-        )
+        return await asyncio.gather(*(self.tokenize_prompt_async(prompt, params) for prompt in prompts))
 
     # Step 3: Add extra keys to the prompts
     def _apply_prompt_extras(
@@ -596,8 +571,7 @@ class BaseRenderer(ABC, Generic[_T]):
             if data_items is None:
                 if uuid_items is None:
                     raise ValueError(
-                        f"multi_modal_data[{modality!r}] is empty but "
-                        f"multi_modal_uuids[{modality!r}] is missing."
+                        f"multi_modal_data[{modality!r}] is empty but multi_modal_uuids[{modality!r}] is missing."
                     )
 
             elif uuid_items is not None:
@@ -664,9 +638,7 @@ class BaseRenderer(ABC, Generic[_T]):
         mm_data_items = mm_processor.info.parse_mm_data(mm_data)
         mm_uuid_items = parse_mm_uuids(mm_uuids)
 
-        mm_uuid_items = self._process_mm_uuids(
-            mm_data, mm_data_items, mm_uuid_items, mm_req_id
-        )
+        mm_uuid_items = self._process_mm_uuids(mm_data, mm_data_items, mm_uuid_items, mm_req_id)
 
         mm_processor_inputs = MMProcessorInputs(
             prompt,
@@ -717,9 +689,7 @@ class BaseRenderer(ABC, Generic[_T]):
 
     def _process_embeds(self, prompt: EmbedsPrompt) -> EmbedsInput:
         if not self.model_config.enable_prompt_embeds:
-            raise ValueError(
-                "You must set `--enable-prompt-embeds` to input `prompt_embeds`."
-            )
+            raise ValueError("You must set `--enable-prompt-embeds` to input `prompt_embeds`.")
 
         prompt_embeds = prompt["prompt_embeds"]
 
@@ -810,13 +780,9 @@ class BaseRenderer(ABC, Generic[_T]):
                 skip_decoder_start_token = self.mm_processor.skip_decoder_start_token
 
         return build_enc_dec_input(
-            encoder_input=self._process_singleton(
-                enc_prompt, skip_mm_cache=skip_mm_cache
-            ),
+            encoder_input=self._process_singleton(enc_prompt, skip_mm_cache=skip_mm_cache),
             decoder_input=(
-                None
-                if dec_prompt is None
-                else self._process_singleton(dec_prompt, skip_mm_cache=skip_mm_cache)
+                None if dec_prompt is None else self._process_singleton(dec_prompt, skip_mm_cache=skip_mm_cache)
             ),
             decoder_start_token_id=self.get_dec_start_token_id(),
             skip_decoder_start_token=skip_decoder_start_token,
@@ -836,9 +802,7 @@ class BaseRenderer(ABC, Generic[_T]):
             (
                 asyncio.sleep(0)
                 if dec_prompt is None
-                else self._process_singleton_async(
-                    dec_prompt, skip_mm_cache=skip_mm_cache
-                )
+                else self._process_singleton_async(dec_prompt, skip_mm_cache=skip_mm_cache)
             ),
         )
 
@@ -879,9 +843,7 @@ class BaseRenderer(ABC, Generic[_T]):
                 skip_mm_cache=skip_mm_cache,
             )
         else:
-            engine_input = await self._process_singleton_async(
-                prompt, skip_mm_cache=skip_mm_cache
-            )
+            engine_input = await self._process_singleton_async(prompt, skip_mm_cache=skip_mm_cache)
 
         engine_input["arrival_time"] = arrival_time
 
@@ -906,10 +868,7 @@ class BaseRenderer(ABC, Generic[_T]):
 
         self._apply_prompt_extras(tok_prompts, prompt_extras)
 
-        return [
-            self.process_for_engine(prompt, arrival_time, skip_mm_cache=skip_mm_cache)
-            for prompt in tok_prompts
-        ]
+        return [self.process_for_engine(prompt, arrival_time, skip_mm_cache=skip_mm_cache) for prompt in tok_prompts]
 
     async def render_cmpl_async(
         self,
@@ -930,12 +889,7 @@ class BaseRenderer(ABC, Generic[_T]):
         self._apply_prompt_extras(tok_prompts, prompt_extras)
 
         return await asyncio.gather(
-            *(
-                self.process_for_engine_async(
-                    p, arrival_time, skip_mm_cache=skip_mm_cache
-                )
-                for p in tok_prompts
-            )
+            *(self.process_for_engine_async(p, arrival_time, skip_mm_cache=skip_mm_cache) for p in tok_prompts)
         )
 
     def render_chat(
@@ -952,10 +906,7 @@ class BaseRenderer(ABC, Generic[_T]):
         if tok_params is None:
             tok_params = self.default_chat_tok_params
 
-        rendered = [
-            self.render_messages(conversation, chat_params)
-            for conversation in conversations
-        ]
+        rendered = [self.render_messages(conversation, chat_params) for conversation in conversations]
 
         out_conversations = list[list["ConversationMessage"]]()
         dict_prompts = list[DictPrompt]()
@@ -968,8 +919,7 @@ class BaseRenderer(ABC, Generic[_T]):
         self._apply_prompt_extras(tok_prompts, prompt_extras)
 
         eng_prompts = [
-            self.process_for_engine(prompt, arrival_time, skip_mm_cache=skip_mm_cache)
-            for prompt in tok_prompts
+            self.process_for_engine(prompt, arrival_time, skip_mm_cache=skip_mm_cache) for prompt in tok_prompts
         ]
 
         return out_conversations, eng_prompts
@@ -988,10 +938,7 @@ class BaseRenderer(ABC, Generic[_T]):
         if tok_params is None:
             tok_params = self.default_chat_tok_params
 
-        rendered = [
-            self.render_messages_async(conversation, chat_params)
-            for conversation in conversations
-        ]
+        rendered = [self.render_messages_async(conversation, chat_params) for conversation in conversations]
 
         out_conversations = list[list["ConversationMessage"]]()
         dict_prompts = list[DictPrompt]()
@@ -1004,12 +951,7 @@ class BaseRenderer(ABC, Generic[_T]):
         self._apply_prompt_extras(tok_prompts, prompt_extras)
 
         eng_prompts = await asyncio.gather(
-            *(
-                self.process_for_engine_async(
-                    p, arrival_time, skip_mm_cache=skip_mm_cache
-                )
-                for p in tok_prompts
-            )
+            *(self.process_for_engine_async(p, arrival_time, skip_mm_cache=skip_mm_cache) for p in tok_prompts)
         )
 
         return out_conversations, eng_prompts

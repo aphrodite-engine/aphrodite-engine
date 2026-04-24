@@ -51,4 +51,3 @@ aphrodite run meta-llama/Meta-Llama-3.1-70B-Instruct \
     --speculative-draft-tensor-parallel-size 1 \  # [!code highlight]
     --use-v2-block-manager  # [!code highlight]
 ```
-

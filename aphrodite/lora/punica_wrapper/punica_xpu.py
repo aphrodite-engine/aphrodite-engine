@@ -48,9 +48,7 @@ class PunicaWrapperXPU(PunicaWrapperBase):
 
         self.lora_config = kwargs["lora_config"]
         self.max_loras = self.lora_config.max_loras
-        self.token_mapping_meta = LoRAKernelMeta.make(
-            self.max_loras, max_num_batched_tokens, device=device
-        )
+        self.token_mapping_meta = LoRAKernelMeta.make(self.max_loras, max_num_batched_tokens, device=device)
 
     def update_metadata(
         self,
@@ -85,9 +83,7 @@ class PunicaWrapperXPU(PunicaWrapperBase):
         add_inputs: bool,
     ):
         token_lora_indices = self._get_token_lora_indices(x)
-        bgmv_expand_slice(
-            x, w_t_all, y, token_lora_indices, y_offset, y_slice_size, add_inputs
-        )
+        bgmv_expand_slice(x, w_t_all, y, token_lora_indices, y_offset, y_slice_size, add_inputs)
 
     def add_shrink(
         self,
@@ -302,10 +298,8 @@ class PunicaWrapperXPU(PunicaWrapperBase):
         Aligns tokens and experts into block-sized chunks for LoRA-based
         mixture-of-experts (MoE) execution.
         """
-        (token_lora_mapping, _, _, _, lora_ids, _, _) = (
-            self.token_mapping_meta.meta_args(
-                num_tokens, self.lora_config.specialize_active_lora
-            )
+        (token_lora_mapping, _, _, _, lora_ids, _, _) = self.token_mapping_meta.meta_args(
+            num_tokens, self.lora_config.specialize_active_lora
         )
         if naive_block_assignment:
             expert_ids = topk_ids.reshape(-1)
@@ -327,9 +321,7 @@ class PunicaWrapperXPU(PunicaWrapperBase):
                 dtype=torch.int32,
                 device=topk_ids.device,
             )
-            num_tokens_post_pad = torch.empty(
-                (max_loras), dtype=torch.int32, device=topk_ids.device
-            )
+            num_tokens_post_pad = torch.empty((max_loras), dtype=torch.int32, device=topk_ids.device)
 
             ops.moe_lora_align_block_size(
                 topk_ids,
@@ -381,9 +373,7 @@ class PunicaWrapperXPU(PunicaWrapperBase):
             lora_ids,
             _,
             num_active_loras,
-        ) = self.token_mapping_meta.meta_args(
-            x.size(0), self.lora_config.specialize_active_lora
-        )
+        ) = self.token_mapping_meta.meta_args(x.size(0), self.lora_config.specialize_active_lora)
         if token_lora_mapping is None:
             token_lora_mapping = token_lora_mapping_meta
         fused_moe_lora(

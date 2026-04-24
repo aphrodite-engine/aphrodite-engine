@@ -16,8 +16,8 @@ from aphrodite.distributed.parallel_state import (
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 
-from ..inductor_pass import enable_fake_mode
 from ..aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
+from ..inductor_pass import enable_fake_mode
 
 FP8_DTYPE = current_platform.fp8_dtype()
 
@@ -60,9 +60,7 @@ class GEMMReduceScatterPattern(BasePattern):
 
             return gemm_rs
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class AllGatherGEMMPattern(BasePattern):
@@ -95,19 +93,13 @@ class AllGatherGEMMPattern(BasePattern):
             )
             return mm_outputs
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class ScaledMMReduceScatterPattern(BasePattern):
     def get_inputs(self) -> list[torch.Tensor]:
         input = torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE)
-        mm_weight = (
-            torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE)
-            .contiguous()
-            .transpose(0, 1)
-        )
+        mm_weight = torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE).contiguous().transpose(0, 1)
         scale_a = torch.empty([16, 1], device=self.device, dtype=torch.float32)
         scale_b = torch.empty([1, 16], device=self.device, dtype=torch.float32)
         return [input, mm_weight, scale_a, scale_b]
@@ -163,19 +155,13 @@ class ScaledMMReduceScatterPattern(BasePattern):
 
             return gemm_rs
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class AllGatherScaledMMPattern(BasePattern):
     def get_inputs(self) -> list[torch.Tensor]:
         x = torch.empty([8, 16], device=self.device, dtype=FP8_DTYPE)
-        weight = (
-            torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE)
-            .contiguous()
-            .transpose(0, 1)
-        )
+        weight = torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE).contiguous().transpose(0, 1)
 
         s1 = x.shape[0] * self.tp_size
 
@@ -225,19 +211,13 @@ class AllGatherScaledMMPattern(BasePattern):
             )
             return mm_outputs
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class CutlassScaledMMReduceScatterPattern(BasePattern):
     def get_inputs(self) -> list[torch.Tensor]:
         input = torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE)
-        mm_weight = (
-            torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE)
-            .contiguous()
-            .transpose(0, 1)
-        )
+        mm_weight = torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE).contiguous().transpose(0, 1)
         scale_a = torch.empty([16, 1], device=self.device, dtype=torch.float32)
         scale_b = torch.empty([1, 16], device=self.device, dtype=torch.float32)
 
@@ -298,19 +278,13 @@ class CutlassScaledMMReduceScatterPattern(BasePattern):
 
             return gemm_rs
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class AllGatherCutlassScaledMMPattern(BasePattern):
     def get_inputs(self) -> list[torch.Tensor]:
         x = torch.empty([8, 16], device=self.device, dtype=FP8_DTYPE)
-        weight = (
-            torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE)
-            .contiguous()
-            .transpose(0, 1)
-        )
+        weight = torch.empty([16, 16], device=self.device, dtype=FP8_DTYPE).contiguous().transpose(0, 1)
 
         s1 = x.shape[0] * self.tp_size
 
@@ -366,9 +340,7 @@ class AllGatherCutlassScaledMMPattern(BasePattern):
             )
             return mm_outputs
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class AsyncTPPass(AphroditePatternMatcherPass):
@@ -378,9 +350,7 @@ class AsyncTPPass(AphroditePatternMatcherPass):
 
         # Enable symmetric memory for the TP process group
         enable_symm_mem_for_group(get_tp_group().device_group.group_name)
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="async_tp_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="async_tp_pass")
         GEMMReduceScatterPattern(self.model_dtype, self.device).register(self.patterns)
 
         AllGatherGEMMPattern(self.model_dtype, self.device).register(self.patterns)
@@ -389,19 +359,11 @@ class AsyncTPPass(AphroditePatternMatcherPass):
         # `scaled_mm` or `cutlass_scaled_mm` with per-token (row-wise) scaling
         # only supports bfloat16 as the output dtype.
         if self.model_dtype == torch.bfloat16:
-            ScaledMMReduceScatterPattern(self.model_dtype, self.device).register(
-                self.patterns
-            )
-            AllGatherScaledMMPattern(self.model_dtype, self.device).register(
-                self.patterns
-            )
+            ScaledMMReduceScatterPattern(self.model_dtype, self.device).register(self.patterns)
+            AllGatherScaledMMPattern(self.model_dtype, self.device).register(self.patterns)
 
-            CutlassScaledMMReduceScatterPattern(self.model_dtype, self.device).register(
-                self.patterns
-            )
-            AllGatherCutlassScaledMMPattern(self.model_dtype, self.device).register(
-                self.patterns
-            )
+            CutlassScaledMMReduceScatterPattern(self.model_dtype, self.device).register(self.patterns)
+            AllGatherCutlassScaledMMPattern(self.model_dtype, self.device).register(self.patterns)
 
         self.dump_patterns(config, self.patterns)
 
@@ -409,10 +371,7 @@ class AsyncTPPass(AphroditePatternMatcherPass):
         # This pass is applied on top of the sequence parallelism pass.
         # It inherits the same applicability condition as `SequenceParallelismPass`.
         # See `SequenceParallelismPass.is_applicable` for more details.
-        if (
-            not self.compilation_config.splitting_ops
-            or self.compilation_config.use_inductor_graph_partition
-        ):
+        if not self.compilation_config.splitting_ops or self.compilation_config.use_inductor_graph_partition:
             return True
         tp_size = get_tensor_model_parallel_world_size()
         return bool(compile_range.is_single_size() and compile_range.end % tp_size == 0)

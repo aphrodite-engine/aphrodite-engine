@@ -208,28 +208,29 @@ void rms_norm(torch::Tensor& out,     // [..., hidden_size]
   const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   APHRODITE_DISPATCH_RANK234(num_dims, [&] {
-    APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "rms_norm_kernel", [&] {
-      const int calculated_vec_size =
-          std::gcd(16 / sizeof(scalar_t), hidden_size);
-      const int block_size =
-          std::min(hidden_size / calculated_vec_size, max_block_size);
-      dim3 block(block_size);
-      APHRODITE_DISPATCH_VEC_SIZE(calculated_vec_size, [&] {
-        aphrodite::rms_norm_kernel<scalar_t, vec_size, tensor_rank>
-            <<<grid, block, 0, stream>>>(
-                out.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-                input_stride_d2, input_stride_d3, input_stride_d4,
-                input_shape_d2, input_shape_d3, weight.data_ptr<scalar_t>(),
-                epsilon, num_tokens, hidden_size);
-      });
-    });
+    APHRODITE_DISPATCH_FLOATING_TYPES(
+        input.scalar_type(), "rms_norm_kernel", [&] {
+          const int calculated_vec_size =
+              std::gcd(16 / sizeof(scalar_t), hidden_size);
+          const int block_size =
+              std::min(hidden_size / calculated_vec_size, max_block_size);
+          dim3 block(block_size);
+          APHRODITE_DISPATCH_VEC_SIZE(calculated_vec_size, [&] {
+            aphrodite::rms_norm_kernel<scalar_t, vec_size, tensor_rank>
+                <<<grid, block, 0, stream>>>(
+                    out.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
+                    input_stride_d2, input_stride_d3, input_stride_d4,
+                    input_shape_d2, input_shape_d3, weight.data_ptr<scalar_t>(),
+                    epsilon, num_tokens, hidden_size);
+          });
+        });
   });
 }
 
 #define LAUNCH_FUSED_ADD_RMS_NORM(width)                                    \
-  APHRODITE_DISPATCH_FLOATING_TYPES(                                             \
+  APHRODITE_DISPATCH_FLOATING_TYPES(                                        \
       input.scalar_type(), "fused_add_rms_norm_kernel", [&] {               \
-        aphrodite::fused_add_rms_norm_kernel<scalar_t, width>                    \
+        aphrodite::fused_add_rms_norm_kernel<scalar_t, width>               \
             <<<grid, block, 0, stream>>>(                                   \
                 input.data_ptr<scalar_t>(), input_stride,                   \
                 residual.data_ptr<scalar_t>(), weight.data_ptr<scalar_t>(), \

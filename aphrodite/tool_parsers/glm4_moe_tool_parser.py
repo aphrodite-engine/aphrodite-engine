@@ -71,18 +71,11 @@ class Glm4MoeModelToolParser(ToolParser):
         self.tool_calls_start_token = self.tool_call_start_token
 
         self.func_call_regex = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL)
-        self.func_detail_regex = re.compile(
-            r"<tool_call>([^\n]*)\n(.*)</tool_call>", re.DOTALL
-        )
-        self.func_arg_regex = re.compile(
-            r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.DOTALL
-        )
+        self.func_detail_regex = re.compile(r"<tool_call>([^\n]*)\n(.*)</tool_call>", re.DOTALL)
+        self.func_arg_regex = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.DOTALL)
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         self.tool_call_start_token_id = self.vocab.get(self.tool_call_start_token)
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
@@ -136,11 +129,7 @@ class Glm4MoeModelToolParser(ToolParser):
                 continue
             if tool.function.parameters is None:
                 return False
-            arg_type = (
-                tool.function.parameters.get("properties", {})
-                .get(arg_name, {})
-                .get("type", None)
-            )
+            arg_type = tool.function.parameters.get("properties", {}).get(arg_name, {}).get("type", None)
             return arg_type == "string"
         logger.debug("No tool named '%s'.", tool_name)
         return False
@@ -226,23 +215,15 @@ class Glm4MoeModelToolParser(ToolParser):
                 )
         except Exception:
             logger.exception("Failed to extract tool call spec")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
         else:
             if len(tool_calls) > 0:
-                content: str | None = model_output[
-                    : model_output.find(self.tool_calls_start_token)
-                ]
+                content: str | None = model_output[: model_output.find(self.tool_calls_start_token)]
                 # Normalize empty/whitespace-only content to None
                 if not content or not content.strip():
                     content = None
-                return ExtractedToolCallInformation(
-                    tools_called=True, tool_calls=tool_calls, content=content
-                )
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+                return ExtractedToolCallInformation(tools_called=True, tool_calls=tool_calls, content=content)
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def _extract_content(self, current_text: str) -> str | None:
         """Return unsent non-tool-call text, or None.
@@ -356,18 +337,14 @@ class Glm4MoeModelToolParser(ToolParser):
                 # and must match the partial-value path for diffing.
                 val_json = json.dumps(value, ensure_ascii=False)
             else:
-                val_json = json.dumps(
-                    self._deserialize(value.strip()), ensure_ascii=False
-                )
+                val_json = json.dumps(self._deserialize(value.strip()), ensure_ascii=False)
             parts.append(f"{key_json}: {val_json}")
 
         # Check for a partial (incomplete) arg value
         # Find the last <arg_value> that isn't closed
         last_val_start = inner_text.rfind(self.arg_val_start)
         last_val_end = inner_text.rfind(self.arg_val_end)
-        has_partial_value = last_val_start != -1 and (
-            last_val_end == -1 or last_val_end < last_val_start
-        )
+        has_partial_value = last_val_start != -1 and (last_val_end == -1 or last_val_end < last_val_start)
 
         if has_partial_value:
             # Find the key for this partial value
@@ -417,9 +394,7 @@ class Glm4MoeModelToolParser(ToolParser):
 
     def _compute_args_diff(self, index: int, args_so_far: str) -> str | None:
         """Return new argument text not yet sent for tool *index*, or None."""
-        if not args_so_far or len(args_so_far) <= len(
-            self.streamed_args_for_tool[index]
-        ):
+        if not args_so_far or len(args_so_far) <= len(self.streamed_args_for_tool[index]):
             return None
         diff = args_so_far[len(self.streamed_args_for_tool[index]) :]
         self.streamed_args_for_tool[index] = args_so_far
@@ -429,9 +404,7 @@ class Glm4MoeModelToolParser(ToolParser):
     def _ensure_tool_state_for(self, index: int) -> None:
         """Grow state arrays so that *index* is valid."""
         while len(self._tool_call_ids) <= index:
-            self._tool_call_ids.append(
-                make_tool_call_id(id_type="random", func_name=None, idx=None)
-            )
+            self._tool_call_ids.append(make_tool_call_id(id_type="random", func_name=None, idx=None))
         while len(self.streamed_args_for_tool) <= index:
             self.streamed_args_for_tool.append("")
         while len(self.prev_tool_call_arr) <= index:
@@ -478,17 +451,13 @@ class Glm4MoeModelToolParser(ToolParser):
                 )
 
             # Build args JSON so far, diff, emit
-            args_so_far = self._build_args_json_so_far(
-                tool_name, inner_text, is_complete
-            )
+            args_so_far = self._build_args_json_so_far(tool_name, inner_text, is_complete)
             diff = self._compute_args_diff(i, args_so_far)
             if diff:
                 tool_call_deltas.append(
                     DeltaToolCall(
                         index=i,
-                        function=DeltaFunctionCall(arguments=diff).model_dump(
-                            exclude_none=True
-                        ),
+                        function=DeltaFunctionCall(arguments=diff).model_dump(exclude_none=True),
                     )
                 )
 

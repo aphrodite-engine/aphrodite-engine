@@ -10,7 +10,7 @@ from typing import Final, Generic, Literal, Protocol, TypeAlias, TypeVar
 import torch
 from transformers import PretrainedConfig
 
-from aphrodite.config import MultiModalConfig, AphroditeConfig, get_current_aphrodite_config
+from aphrodite.config import AphroditeConfig, MultiModalConfig, get_current_aphrodite_config
 from aphrodite.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
@@ -111,11 +111,7 @@ def get_vit_attn_backend(
     except (AssertionError, AttributeError):
         multimodal_config = None
 
-    attn_backend_override = (
-        multimodal_config.mm_encoder_attn_backend
-        if multimodal_config is not None
-        else None
-    )
+    attn_backend_override = multimodal_config.mm_encoder_attn_backend if multimodal_config is not None else None
     attn_backend = _get_vit_attn_backend(
         head_size,
         dtype,
@@ -137,17 +133,13 @@ def is_vit_use_data_parallel():
     except (AssertionError, AttributeError):
         multimodal_config = None
 
-    mm_encoder_tp_mode = (
-        multimodal_config.mm_encoder_tp_mode if multimodal_config is not None else None
-    )
+    mm_encoder_tp_mode = multimodal_config.mm_encoder_tp_mode if multimodal_config is not None else None
     return mm_encoder_tp_mode == "data"
 
 
 VisionFeatureSelectStrategyStr = Literal["class", "default", "full"]
 
-VisionFeatureSelectStrategy: TypeAlias = (
-    VisionFeatureSelectStrategyStr | Callable[[torch.Tensor], torch.Tensor]
-)
+VisionFeatureSelectStrategy: TypeAlias = VisionFeatureSelectStrategyStr | Callable[[torch.Tensor], torch.Tensor]
 
 
 def _get_vision_feature_selector(
@@ -220,10 +212,7 @@ def resolve_visual_encoder_outputs(
     """
     if select_layers is None:
         if not isinstance(encoder_outputs, torch.Tensor):
-            raise ValueError(
-                "Expected only a single encoder output when "
-                "`select_layers` is not provided"
-            )
+            raise ValueError("Expected only a single encoder output when `select_layers` is not provided")
 
         # Preprocess the encoder outputs as needed, e.g., map head
         # and layer norm for siglip, which runs before feature selection
@@ -240,9 +229,7 @@ def resolve_visual_encoder_outputs(
         return encoder_outputs
 
     if max_possible_layers is None:
-        raise ValueError(
-            "`max_possible_layers` must be provided alongside `select_layers`"
-        )
+        raise ValueError("`max_possible_layers` must be provided alongside `select_layers`")
 
     # Get the hidden states corresponding to the layer indices.
     # Negative values are relative to the full visual encoder,
@@ -253,9 +240,7 @@ def resolve_visual_encoder_outputs(
     num_loaded_layers = len(encoder_outputs) - 1
     offset = max_possible_layers - num_loaded_layers
     hs_pool = [
-        encoder_outputs[layer_idx]
-        if layer_idx >= 0
-        else encoder_outputs[layer_idx + offset]
+        encoder_outputs[layer_idx] if layer_idx >= 0 else encoder_outputs[layer_idx + offset]
         for layer_idx in select_layers
     ]
 
@@ -274,9 +259,7 @@ def resolve_visual_encoder_outputs(
     return torch.cat(hs_pool, dim=-1)
 
 
-def run_dp_sharded_vision_model(
-    image_input: torch.Tensor, vision_model: torch.nn.Module
-) -> torch.Tensor:
+def run_dp_sharded_vision_model(image_input: torch.Tensor, vision_model: torch.nn.Module) -> torch.Tensor:
     """Run a vision model with data parallelism (DP) sharding. The function
     will shard the input image tensor on the first dimension and run the vision
     model
@@ -295,9 +278,7 @@ def run_dp_sharded_vision_model(
     pad = (0,) * (2 * (image_input.dim() - 1)) + (0, num_padded_chunks)
     image_input_padded = torch.nn.functional.pad(image_input, pad)
     rank = get_tensor_model_parallel_rank()
-    image_input_per_rank = image_input_padded[
-        rank * num_chunks_per_rank : (rank + 1) * num_chunks_per_rank, ...
-    ]
+    image_input_per_rank = image_input_padded[rank * num_chunks_per_rank : (rank + 1) * num_chunks_per_rank, ...]
 
     vision_embeddings = vision_model(image_input_per_rank)
     # Ensure tensor is contiguous before all_gather
@@ -350,9 +331,7 @@ def get_load_balance_assignment(
     # Sort indices by size (largest first for better load balancing)
     # sizes = [1000, 100, 200, 50]
     # large_to_small_indices = [0, 2, 1, 3]
-    large_to_small_indices = sorted(
-        range(n_samples), key=lambda i: sizes[i], reverse=True
-    )
+    large_to_small_indices = sorted(range(n_samples), key=lambda i: sizes[i], reverse=True)
 
     for idx in large_to_small_indices:
         # Find GPU with minimum current load (by total size)
@@ -424,8 +403,8 @@ def run_dp_sharded_mrope_vision_model(
     # image_to_tp_rank = [0, 2, 1, 3]
     # gpu_sample_counts = [1, 3]
     # grouped_pixel_values_len = [1000, 350]
-    (image_to_tp_rank, gpu_sample_counts, grouped_pixel_values_len) = (
-        get_load_balance_assignment(patches_per_image, tp_size)
+    (image_to_tp_rank, gpu_sample_counts, grouped_pixel_values_len) = get_load_balance_assignment(
+        patches_per_image, tp_size
     )
 
     # cu_gpu_sample_counts = [0, 1, 4]
@@ -433,17 +412,12 @@ def run_dp_sharded_mrope_vision_model(
 
     # GPU_0 image_idxs_local = [0]
     # GPU_1 image_idxs_local = [2, 1, 3]
-    image_idxs_local = image_to_tp_rank[
-        cum_gpu_sample_counts[tp_rank_local] : cum_gpu_sample_counts[tp_rank_local + 1]
-    ]
+    image_idxs_local = image_to_tp_rank[cum_gpu_sample_counts[tp_rank_local] : cum_gpu_sample_counts[tp_rank_local + 1]]
 
     # Get the pixel values for the local images based on the image_idxs_local
     if len(image_idxs_local) > 0:
         pixel_values_local = torch.cat(
-            [
-                pixel_values[cum_patches_per_image[i] : cum_patches_per_image[i + 1]]
-                for i in image_idxs_local
-            ]
+            [pixel_values[cum_patches_per_image[i] : cum_patches_per_image[i + 1]] for i in image_idxs_local]
         )
     else:
         # Handle case where this rank has no images
@@ -454,13 +428,9 @@ def run_dp_sharded_mrope_vision_model(
         )
     # embed_dim_reduction_factor = 2 * 2
     if rope_type == "rope_2d":
-        embed_dim_reduction_factor = (
-            vision_model.merge_kernel_size[0] * vision_model.merge_kernel_size[1]
-        )
+        embed_dim_reduction_factor = vision_model.merge_kernel_size[0] * vision_model.merge_kernel_size[1]
     else:
-        embed_dim_reduction_factor = (
-            vision_model.spatial_merge_size * vision_model.spatial_merge_size
-        )
+        embed_dim_reduction_factor = vision_model.spatial_merge_size * vision_model.spatial_merge_size
 
     # Find the max length across all ranks
     # The output embedding of every DP rank has to be
@@ -472,9 +442,7 @@ def run_dp_sharded_mrope_vision_model(
     # Run the vision model on the local pixel_values_local
     if rope_type == "rope_2d":
         if pixel_values_local.shape[0] > 0:
-            image_embeds_local = vision_model(
-                pixel_values_local, torch.tensor(local_grid_thw_list)
-            )
+            image_embeds_local = vision_model(pixel_values_local, torch.tensor(local_grid_thw_list))
             if isinstance(image_embeds_local, list):
                 image_embeds_local = torch.cat(image_embeds_local, dim=0)
         else:
@@ -527,14 +495,10 @@ def run_dp_sharded_mrope_vision_model(
     rank_embeddings = list[torch.Tensor]()
     for rank in range(tp_size):
         start_idx = rank * max_len_per_rank
-        end_idx = start_idx + (
-            grouped_pixel_values_len[rank] // embed_dim_reduction_factor
-        )
+        end_idx = start_idx + (grouped_pixel_values_len[rank] // embed_dim_reduction_factor)
         rank_embeddings.append(gathered_embeds[start_idx:end_idx])
 
-    patches_per_output_image = [
-        (patch_size // embed_dim_reduction_factor) for patch_size in patches_per_image
-    ]
+    patches_per_output_image = [(patch_size // embed_dim_reduction_factor) for patch_size in patches_per_image]
 
     # Reconstruct embeddings in the original order
     original_order_embeddings = [None] * len(grid_thw_list)
@@ -552,17 +516,11 @@ def run_dp_sharded_mrope_vision_model(
             embed_start = 0
             for img_idx in rank_images:
                 img_patches = patches_per_output_image[img_idx]
-                original_order_embeddings[img_idx] = rank_embed[
-                    embed_start : embed_start + img_patches
-                ]
+                original_order_embeddings[img_idx] = rank_embed[embed_start : embed_start + img_patches]
                 embed_start += img_patches
             current_idx += count
-    out_embeddings = tuple(
-        embed for embed in original_order_embeddings if embed is not None
-    )
-    assert len(out_embeddings) == len(original_order_embeddings), (
-        "Found unassigned embeddings"
-    )
+    out_embeddings = tuple(embed for embed in original_order_embeddings if embed is not None)
+    assert len(out_embeddings) == len(original_order_embeddings), "Found unassigned embeddings"
     return out_embeddings
 
 
@@ -577,25 +535,10 @@ def get_llm_pos_ids_for_vision(
     llm_pos_ids_list = []
     llm_grid_h = grid_hs[vision_idx] // spatial_merge_size
     llm_grid_w = grid_ws[vision_idx] // spatial_merge_size
-    h_index = (
-        torch.arange(llm_grid_h)
-        .view(1, -1, 1)
-        .expand(len(t_index), -1, llm_grid_w)
-        .flatten()
-    )
-    w_index = (
-        torch.arange(llm_grid_w)
-        .view(1, 1, -1)
-        .expand(len(t_index), llm_grid_h, -1)
-        .flatten()
-    )
+    h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(len(t_index), -1, llm_grid_w).flatten()
+    w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(len(t_index), llm_grid_h, -1).flatten()
     t_index_tensor = (
-        torch.Tensor(t_index)
-        .to(llm_grid_h.device)
-        .view(-1, 1)
-        .expand(-1, llm_grid_h * llm_grid_w)
-        .long()
-        .flatten()
+        torch.Tensor(t_index).to(llm_grid_h.device).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).long().flatten()
     )
     _llm_pos_ids = torch.stack([t_index_tensor, h_index, w_index])
     llm_pos_ids_list.append(_llm_pos_ids + start_idx)

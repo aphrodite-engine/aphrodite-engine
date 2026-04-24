@@ -56,6 +56,4 @@ class MiniMaxM2Parser(DelegatingParser):
         self._reasoning_parser = MiniMaxM2ReasoningParser(tokenizer, *args, **kwargs)
         self._tool_parser = MinimaxM2ToolParser(tokenizer, tools)
 
-        logger.debug(
-            "Aphrodite Successfully initialized parser %s!", self.__class__.__name__
-        )
+        logger.debug("Aphrodite Successfully initialized parser %s!", self.__class__.__name__)

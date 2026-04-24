@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import tempfile
 from pathlib import Path
 from ssl import SSLContext
 
 import pytest
-
 from aphrodite.endpoints.ssl import SSLCertRefresher
 
 

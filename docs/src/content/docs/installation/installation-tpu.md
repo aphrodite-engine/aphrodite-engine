@@ -5,11 +5,13 @@ title: Installation with TPU
 Aphrodite supports Google Cloud TPUs using PyTorch XLA.
 
 ## Requirements
+
 - Google Cloud TPU VM (single and multi-host)
 - TPU versions: v5e, v5p, v4
 - Python: 3.10
 
 ## Dockerfile
+
 ```sh
 docker build -f Dockerfile.tpu -t aphrodite-tpu .
 ```
@@ -21,6 +23,7 @@ docker run --privileged --net host --ipc=host --shm-size=16G -it aphrodite-tpu
 ```
 
 ## Building from Source
+
 First, install the dependencies:
 
 ```sh

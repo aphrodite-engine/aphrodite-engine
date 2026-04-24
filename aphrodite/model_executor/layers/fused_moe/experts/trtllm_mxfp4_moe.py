@@ -41,9 +41,7 @@ class TrtLlmMxfp4ExpertsBase:
 
         self.routing_method_type = moe_config.routing_method
         self.topk = moe_config.experts_per_token
-        self.intermediate_size_per_partition = (
-            moe_config.intermediate_size_per_partition
-        )
+        self.intermediate_size_per_partition = moe_config.intermediate_size_per_partition
         self.hidden_dim = moe_config.hidden_dim
         self.local_num_experts = moe_config.num_local_experts
         self.ep_rank = moe_config.moe_parallel_config.ep_rank
@@ -68,9 +66,7 @@ class TrtLlmMxfp4ExpertsBase:
 
         from aphrodite.config import get_current_aphrodite_config
 
-        self.max_capture_size = (
-            get_current_aphrodite_config().compilation_config.max_cudagraph_capture_size
-        )
+        self.max_capture_size = get_current_aphrodite_config().compilation_config.max_cudagraph_capture_size
 
         # P1-5 fix: use public quant_dtype property instead of private _a1
         self.use_mxfp8_input = quant_config.quant_dtype == "mxfp8"
@@ -115,9 +111,7 @@ class TrtLlmMxfp4ExpertsBase:
         return True
 
 
-class TrtLlmMxfp4ExpertsMonolithic(
-    TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsMonolithic
-):
+class TrtLlmMxfp4ExpertsMonolithic(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsMonolithic):
     """
     Monolithic version of the MXFP4 TRTLLM kernel (router + experts).
     Wraps flashinfer.trtllm_fp4_block_scale_moe().
@@ -180,9 +174,7 @@ class TrtLlmMxfp4ExpertsMonolithic(
                 is_sf_swizzled_layout=False,
                 alignment=256,
             )
-            x_scale = x_scale.view(torch.float8_e4m3fn).reshape(
-                *hidden_states.shape[:-1], -1
-            )
+            x_scale = x_scale.view(torch.float8_e4m3fn).reshape(*hidden_states.shape[:-1], -1)
         else:
             assert hidden_states.dtype == torch.bfloat16
             x_quant = hidden_states
@@ -294,17 +286,13 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
                 is_sf_swizzled_layout=False,
                 alignment=256,
             )
-            x_scale = x_scale.view(torch.float8_e4m3fn).reshape(
-                *hidden_states.shape[:-1], -1
-            )
+            x_scale = x_scale.view(torch.float8_e4m3fn).reshape(*hidden_states.shape[:-1], -1)
         else:
             assert hidden_states.dtype == torch.bfloat16
             x_quant = hidden_states
             x_scale = None
 
-        packed_tensor = (topk_ids.to(torch.int32) << 16) | topk_weights.to(
-            torch.bfloat16
-        ).view(torch.int16)
+        packed_tensor = (topk_ids.to(torch.int32) << 16) | topk_weights.to(torch.bfloat16).view(torch.int16)
 
         assert self.w1_scale is not None
         assert self.w2_scale is not None

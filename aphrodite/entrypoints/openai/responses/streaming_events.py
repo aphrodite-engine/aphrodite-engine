@@ -789,10 +789,6 @@ def emit_tool_action_events(
         if recipient == "python":
             events.extend(emit_code_interpreter_completion_events(previous_item, state))
         elif recipient.startswith("mcp.") or is_mcp_tool_by_namespace(recipient):
-            events.extend(
-                emit_mcp_completion_events(
-                    recipient, previous_item.content[0].text, state
-                )
-            )
+            events.extend(emit_mcp_completion_events(recipient, previous_item.content[0].text, state))
 
     return events

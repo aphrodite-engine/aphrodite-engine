@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import copy
 import itertools
@@ -12,10 +14,6 @@ from itertools import product
 import pandas as pd
 import torch
 import torch.utils.benchmark as TBenchmark
-from torch.utils.benchmark import Measurement as TMeasurement
-from weight_shapes import WEIGHT_SHAPES
-
-from aphrodite import _custom_ops as ops
 from aphrodite.quantization.utils.marlin_utils import (
     GPTQ_MARLIN_MAX_PARALLEL,
     GPTQ_MARLIN_MIN_THREAD_N,
@@ -29,6 +27,10 @@ from aphrodite.quantization.utils.quant_utils import (
     pack_rows,
     quantize_weights,
 )
+from torch.utils.benchmark import Measurement as TMeasurement
+from weight_shapes import WEIGHT_SHAPES
+
+from aphrodite import _custom_ops as ops
 from aphrodite.scalar_type import ScalarType, scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

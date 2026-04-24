@@ -112,9 +112,7 @@ class AyaVisionMultiModalProjector(nn.Module):
     def pixel_shuffle(self, image_features: torch.Tensor) -> torch.Tensor:  # B, S, D
         batch_size, seq_length, _ = image_features.shape
         height = width = int(seq_length**0.5)
-        image_features = image_features.reshape(
-            image_features.shape[0], width, height, -1
-        )
+        image_features = image_features.reshape(image_features.shape[0], width, height, -1)
         channels = image_features.shape[-1]
         image_features = image_features.reshape(
             batch_size,
@@ -229,9 +227,7 @@ class AyaVisionMultiModalProcessor(BaseMultiModalProcessor[AyaVisionProcessingIn
         if (images := mm_data.get("images")) is not None:
             mm_items = self.info.parse_mm_data({"image": images}, validate=False)
             parsed_images = mm_items.get_items("image", ImageProcessorItems)
-            image_sizes = [
-                parsed_images.get_image_size(i) for i in range(len(parsed_images))
-            ]
+            image_sizes = [parsed_images.get_image_size(i) for i in range(len(parsed_images))]
 
             num_patches = [
                 self.info.get_num_patches(
@@ -302,9 +298,7 @@ def _get_num_hidden_layers(hf_config: AyaVisionConfig) -> int:
     # If we have multiple feature layers, initialize up to the deepest m
     elif isinstance(feature_layers, (list, tuple)):
         return max(get_layer_index(idx, num_hidden_layers) for idx in feature_layers)
-    raise TypeError(
-        f"vision_layer_feature type: {type(feature_layers)} is not supported"
-    )
+    raise TypeError(f"vision_layer_feature type: {type(feature_layers)} is not supported")
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -376,20 +370,14 @@ class AyaVisionForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsP
             feature_select_strategy=self.config.vision_feature_select_strategy,
         )
 
-    def _process_image_input(
-        self, image_input: AyaVisionImagePixelInputs, **kwargs
-    ) -> list[torch.Tensor]:
+    def _process_image_input(self, image_input: AyaVisionImagePixelInputs, **kwargs) -> list[torch.Tensor]:
         pixel_values = image_input["pixel_values"]
         num_patches = image_input["num_patches"]
-        image_features = self._image_pixels_to_features(
-            self.vision_tower, pixel_values=pixel_values
-        )
+        image_features = self._image_pixels_to_features(self.vision_tower, pixel_values=pixel_values)
         image_embeds = self.multi_modal_projector(image_features)
         return [e.flatten(0, 2) for e in image_embeds.split(num_patches.tolist())]
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> AyaVisionImagePixelInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> AyaVisionImagePixelInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         num_patches = kwargs.pop("num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)

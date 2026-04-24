@@ -93,9 +93,7 @@ class GenerativeScoringRequest(OpenAIBaseModel):
     )
     priority: int = Field(
         default=0,
-        description=(
-            "The priority of the request (lower means earlier handling; default: 0)."
-        ),
+        description=("The priority of the request (lower means earlier handling; default: 0)."),
     )
     request_id: str = Field(
         default_factory=random_uuid,
@@ -197,9 +195,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
         # Get tokenizer
         tokenizer = self.renderer.tokenizer
         if tokenizer is None:
-            return self.create_error_response(
-                "Tokenizer not available. Cannot process generative scoring request."
-            )
+            return self.create_error_response("Tokenizer not available. Cannot process generative scoring request.")
 
         # Validate label_token_ids
         vocab_size = self.model_config.get_vocab_size()
@@ -211,9 +207,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
                 )
 
         if len(request.label_token_ids) == 0:
-            return self.create_error_response(
-                "label_token_ids must contain at least one token ID."
-            )
+            return self.create_error_response("label_token_ids must contain at least one token ID.")
 
         # Validate items
         if len(request.items) == 0:
@@ -255,11 +249,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
         )
 
         # Get trace headers
-        trace_headers = (
-            None
-            if raw_request is None
-            else await self._get_trace_headers(raw_request.headers)
-        )
+        trace_headers = None if raw_request is None else await self._get_trace_headers(raw_request.headers)
 
         # Schedule requests for all inputs
         generators: list[AsyncGenerator[RequestOutput, None]] = []
@@ -303,9 +293,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
 
         for i, result in enumerate(results):
             if result is None:
-                return self.create_error_response(
-                    f"Failed to generate result for item {i}"
-                )
+                return self.create_error_response(f"Failed to generate result for item {i}")
 
             # Check for errors
             if result.outputs and result.outputs[0].finish_reason == "error":
@@ -318,8 +306,7 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
             output = result.outputs[0]
             if output.logprobs is None or len(output.logprobs) == 0:
                 return self.create_error_response(
-                    f"No logprobs available for item {i}. "
-                    "This might indicate an issue with logprobs configuration."
+                    f"No logprobs available for item {i}. This might indicate an issue with logprobs configuration."
                 )
 
             # The logprobs dict maps token_id -> Logprob object
@@ -458,23 +445,15 @@ class OpenAIServingGenerativeScoring(OpenAIServing):
             max_logprob = max(logprobs_list)
 
             # Compute exp(logprob - max) for numerical stability
-            exp_values = {
-                token_id: math.exp(logprob - max_logprob)
-                for token_id, logprob in label_logprobs.items()
-            }
+            exp_values = {token_id: math.exp(logprob - max_logprob) for token_id, logprob in label_logprobs.items()}
             sum_exp = sum(exp_values.values())
 
-            return {
-                token_id: exp_val / sum_exp for token_id, exp_val in exp_values.items()
-            }
+            return {token_id: exp_val / sum_exp for token_id, exp_val in exp_values.items()}
         else:
             # Return true model probabilities
             # Since logprobs are already log(softmax(logits)),
             # we just need to exp() them
-            return {
-                token_id: math.exp(logprob)
-                for token_id, logprob in label_logprobs.items()
-            }
+            return {token_id: math.exp(logprob) for token_id, logprob in label_logprobs.items()}
 
     async def _get_trace_headers(
         self,

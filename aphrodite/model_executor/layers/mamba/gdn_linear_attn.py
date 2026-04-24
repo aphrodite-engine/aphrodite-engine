@@ -121,14 +121,10 @@ def fi_chunk_gated_delta_rule(
 class ChunkGatedDeltaRule(CustomOp):
     def __init__(self) -> None:
         super().__init__()
-        backend_cfg = get_current_aphrodite_config().additional_config.get(
-            "gdn_prefill_backend", "auto"
-        )
+        backend_cfg = get_current_aphrodite_config().additional_config.get("gdn_prefill_backend", "auto")
         backend = str(backend_cfg).strip().lower()
 
-        supports_flashinfer = (
-            current_platform.is_cuda() and current_platform.is_device_capability(90)
-        )
+        supports_flashinfer = current_platform.is_cuda() and current_platform.is_device_capability(90)
 
         if backend == "flashinfer":
             use_flashinfer = supports_flashinfer
@@ -154,9 +150,7 @@ class ChunkGatedDeltaRule(CustomOp):
         else:
             logger.info_once("Using Triton/FLA GDN prefill kernel", scope="local")
 
-        self._forward_method = (
-            self.forward_cuda if use_flashinfer else self.forward_native
-        )
+        self._forward_method = self.forward_cuda if use_flashinfer else self.forward_native
 
     def forward_cuda(
         self,
@@ -267,15 +261,9 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         self.cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         self.speculative_config = aphrodite_config.speculative_config
-        self.num_spec = (
-            self.speculative_config.num_speculative_tokens
-            if self.speculative_config
-            else 0
-        )
+        self.num_spec = self.speculative_config.num_speculative_tokens if self.speculative_config else 0
         self.gqa_interleaved_layout = gqa_interleaved_layout
-        self._forward_method = (
-            self.forward_xpu if current_platform.is_xpu() else self.forward_cuda
-        )
+        self._forward_method = self.forward_xpu if current_platform.is_xpu() else self.forward_cuda
 
         # QKV
         self.conv_dim = self.key_dim * 2 + self.value_dim
@@ -360,9 +348,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         output_gate_type = getattr(config, "output_gate_type", "silu")
         if output_gate_type == "swish":
             output_gate_type = "silu"
-        assert output_gate_type in ["silu", "swish", "sigmoid"], (
-            f"unsupported {output_gate_type=}"
-        )
+        assert output_gate_type in ["silu", "swish", "sigmoid"], f"unsupported {output_gate_type=}"
 
         self.norm = RMSNormGated(
             self.head_v_dim,
@@ -383,9 +369,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         )
 
         self.chunk_gated_delta_rule = ChunkGatedDeltaRule()
-        self.enable_packed_recurrent_decode = (
-            envs.APHRODITE_ENABLE_FLA_PACKED_RECURRENT_DECODE
-        )
+        self.enable_packed_recurrent_decode = envs.APHRODITE_ENABLE_FLA_PACKED_RECURRENT_DECODE
 
         compilation_config = get_current_aphrodite_config().compilation_config
         if prefix in compilation_config.static_forward_context:
@@ -430,9 +414,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         # by key-head group; a single output shard preserves this across TP.
         # When gqa_interleaved_layout=False (Qwen3.5), in_proj_b and in_proj_a
         # are separate checkpoint weights, so we use 2 independent output sizes.
-        output_sizes = (
-            [num_v_heads * 2] if self.gqa_interleaved_layout else [num_v_heads] * 2
-        )
+        output_sizes = [num_v_heads * 2] if self.gqa_interleaved_layout else [num_v_heads] * 2
         return MergedColumnParallelLinear(
             input_size=hidden_size,
             output_sizes=output_sizes,
@@ -454,9 +436,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
             (
                 self.head_k_dim
                 + self.head_k_dim
-                + (self.head_v_dim + self.head_v_dim)
-                * self.num_v_heads
-                // self.num_k_heads
+                + (self.head_v_dim + self.head_v_dim) * self.num_v_heads // self.num_k_heads
             ),
         )
         new_tensor_shape_ba = mixed_ba.size()[:-1] + (
@@ -548,12 +528,8 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
 
             if self.gqa_interleaved_layout:
                 # Qwen3-Next: unpack the interleaved GQA layout
-                query, key, value, z, b, a = self.fix_query_key_value_ordering(
-                    mixed_qkvz, ba
-                )
-                query, key, value = map(
-                    lambda x: rearrange(x, "l p d -> l (p d)"), (query, key, value)
-                )
+                query, key, value, z, b, a = self.fix_query_key_value_ordering(mixed_qkvz, ba)
+                query, key, value = map(lambda x: rearrange(x, "l p d -> l (p d)"), (query, key, value))
                 mixed_qkv = torch.cat((query, key, value), dim=-1)
             else:
                 # Qwen3.5: weights are already in [q, k, v, z] and [b, a] order
@@ -635,9 +611,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
             spec_sequence_masks = attn_metadata.spec_sequence_masks
             assert spec_sequence_masks is None
 
-            conv_weights = self.conv1d.weight.view(
-                self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-            )
+            conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
 
             conv_state = self.kv_cache[0]
             ssm_state = self.kv_cache[1]
@@ -720,9 +694,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         # prefill path here: build q/k/v/g/beta via fused_post_conv_prep and
         # then run chunk_gated_delta_rule with in-kernel L2 norm disabled.
         T = FLA_CHUNK_SIZE
-        dummy_mixed_qkv = torch.randn(
-            T, mixed_qkv.shape[-1], device=device, dtype=dtype
-        )
+        dummy_mixed_qkv = torch.randn(T, mixed_qkv.shape[-1], device=device, dtype=dtype)
         dummy_a = torch.randn(T, num_v_heads, device=device, dtype=dtype)
         dummy_b = torch.randn(T, num_v_heads, device=device, dtype=dtype)
         q, k, v, g, beta = fused_post_conv_prep(
@@ -766,9 +738,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
             )
         except Exception:
             logger.warning(
-                "GDN prefill kernel warmup (T=%d) failed for "
-                "layer %s. First inference may OOM due to "
-                "autotuner.",
+                "GDN prefill kernel warmup (T=%d) failed for layer %s. First inference may OOM due to autotuner.",
                 T,
                 self.prefix,
                 exc_info=True,
@@ -829,11 +799,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         self_kv_cache = self.kv_cache
         # conv_state must be (..., dim, width-1) for the conv kernels.
         # DS layout stores it that way directly; SD layout needs a transpose.
-        conv_state = (
-            self_kv_cache[0]
-            if is_conv_state_dim_first()
-            else self_kv_cache[0].transpose(-1, -2)
-        )
+        conv_state = self_kv_cache[0] if is_conv_state_dim_first() else self_kv_cache[0].transpose(-1, -2)
         ssm_state = self_kv_cache[1]
         num_actual_tokens = attn_metadata.num_actual_tokens
         num_accepted_tokens = attn_metadata.num_accepted_tokens
@@ -843,9 +809,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         a = a[:num_actual_tokens]
 
         # 1. Convolution sequence transformation
-        conv_weights = self.conv1d.weight.view(
-            self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-        )
+        conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
 
         if spec_sequence_masks is not None:
             if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
@@ -866,9 +830,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
                 conv_weights,
                 self.conv1d.bias,
                 self.activation,
-                conv_state_indices=spec_state_indices_tensor[:, 0][
-                    : attn_metadata.num_spec_decodes
-                ],
+                conv_state_indices=spec_state_indices_tensor[:, 0][: attn_metadata.num_spec_decodes],
                 num_accepted_tokens=num_accepted_tokens,
                 query_start_loc=spec_query_start_loc,
                 max_query_len=spec_state_indices_tensor.size(-1),
@@ -900,9 +862,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
                 conv_weights,
                 self.conv1d.bias,
                 self.activation,
-                conv_state_indices=non_spec_state_indices_tensor[
-                    : attn_metadata.num_actual_tokens
-                ],
+                conv_state_indices=non_spec_state_indices_tensor[: attn_metadata.num_actual_tokens],
                 validate_data=True,
             )
         else:
@@ -910,9 +870,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
 
         query_spec, key_spec, value_spec = self.rearrange_mixed_qkv(mixed_qkv_spec)
         if attn_metadata.num_prefills > 0:
-            assert mixed_qkv_non_spec is not None, (
-                "mixed_qkv_non_spec must be provided for prefill path"
-            )
+            assert mixed_qkv_non_spec is not None, "mixed_qkv_non_spec must be provided for prefill path"
             if spec_sequence_masks is not None:
                 a_non_spec = a.index_select(0, non_spec_token_indx)
                 b_non_spec = b.index_select(0, non_spec_token_indx)
@@ -944,9 +902,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
             g_non_spec = g_non_spec.unsqueeze(0)
             beta_non_spec = beta_non_spec.unsqueeze(0)
         else:
-            query_non_spec, key_non_spec, value_non_spec = self.rearrange_mixed_qkv(
-                mixed_qkv_non_spec
-            )
+            query_non_spec, key_non_spec, value_non_spec = self.rearrange_mixed_qkv(mixed_qkv_non_spec)
             g_non_spec = None
             beta_non_spec = None
 
@@ -954,24 +910,20 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
 
         # 2.1: Process the multi-query part
         if spec_sequence_masks is not None:
-            core_attn_out_spec, last_recurrent_state = (
-                fused_sigmoid_gating_delta_rule_update(
-                    A_log=self.A_log,
-                    a=a,
-                    b=b,
-                    dt_bias=self.dt_bias,
-                    q=query_spec,
-                    k=key_spec,
-                    v=value_spec,
-                    initial_state=ssm_state,
-                    inplace_final_state=True,
-                    cu_seqlens=spec_query_start_loc[
-                        : attn_metadata.num_spec_decodes + 1
-                    ],
-                    ssm_state_indices=spec_state_indices_tensor,
-                    num_accepted_tokens=num_accepted_tokens,
-                    use_qk_l2norm_in_kernel=True,
-                )
+            core_attn_out_spec, last_recurrent_state = fused_sigmoid_gating_delta_rule_update(
+                A_log=self.A_log,
+                a=a,
+                b=b,
+                dt_bias=self.dt_bias,
+                q=query_spec,
+                k=key_spec,
+                v=value_spec,
+                initial_state=ssm_state,
+                inplace_final_state=True,
+                cu_seqlens=spec_query_start_loc[: attn_metadata.num_spec_decodes + 1],
+                ssm_state_indices=spec_state_indices_tensor,
+                num_accepted_tokens=num_accepted_tokens,
+                use_qk_l2norm_in_kernel=True,
             )
         else:
             core_attn_out_spec, last_recurrent_state = None, None
@@ -997,27 +949,21 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
                 use_qk_l2norm_in_kernel=False,
             )
             # Init cache
-            ssm_state[non_spec_state_indices_tensor] = last_recurrent_state.to(
-                ssm_state.dtype
-            )
+            ssm_state[non_spec_state_indices_tensor] = last_recurrent_state.to(ssm_state.dtype)
         elif attn_metadata.num_decodes > 0:
-            core_attn_out_non_spec, last_recurrent_state = (
-                fused_sigmoid_gating_delta_rule_update(
-                    A_log=self.A_log,
-                    a=a,
-                    b=b,
-                    dt_bias=self.dt_bias,
-                    q=query_non_spec,
-                    k=key_non_spec,
-                    v=value_non_spec,
-                    initial_state=ssm_state,
-                    inplace_final_state=True,
-                    cu_seqlens=non_spec_query_start_loc[
-                        : attn_metadata.num_decodes + 1
-                    ],
-                    ssm_state_indices=non_spec_state_indices_tensor,
-                    use_qk_l2norm_in_kernel=True,
-                )
+            core_attn_out_non_spec, last_recurrent_state = fused_sigmoid_gating_delta_rule_update(
+                A_log=self.A_log,
+                a=a,
+                b=b,
+                dt_bias=self.dt_bias,
+                q=query_non_spec,
+                k=key_non_spec,
+                v=value_non_spec,
+                initial_state=ssm_state,
+                inplace_final_state=True,
+                cu_seqlens=non_spec_query_start_loc[: attn_metadata.num_decodes + 1],
+                ssm_state_indices=non_spec_state_indices_tensor,
+                use_qk_l2norm_in_kernel=True,
             )
         else:
             core_attn_out_non_spec, last_recurrent_state = None, None
@@ -1052,11 +998,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         self_kv_cache = self.kv_cache
         # conv_state must be (..., dim, width-1) for the conv kernels.
         # DS layout stores it that way directly; SD layout needs a transpose.
-        conv_state = (
-            self_kv_cache[0]
-            if is_conv_state_dim_first()
-            else self_kv_cache[0].transpose(-1, -2)
-        )
+        conv_state = self_kv_cache[0] if is_conv_state_dim_first() else self_kv_cache[0].transpose(-1, -2)
         ssm_state = self_kv_cache[1]
         num_actual_tokens = attn_metadata.num_actual_tokens
 
@@ -1064,9 +1006,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         b = b[:num_actual_tokens]
         a = a[:num_actual_tokens]
 
-        conv_weights = self.conv1d.weight.view(
-            self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-        )
+        conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
         mixed_qkv_non_spec = causal_conv1d_update(
             mixed_qkv,
             conv_state,
@@ -1158,16 +1098,12 @@ def fused_gdn_gating_kernel(
     blk_bias = tl.load(dt_bias + head_off, mask=mask)
     # If the model is loaded in fp16, without the .float() here, A might be -inf
     x = blk_a.to(tl.float32) + blk_bias.to(tl.float32)
-    softplus_x = tl.where(
-        beta * x <= threshold, (1 / beta) * tl.log(1 + tl.exp(beta * x)), x
-    )
+    softplus_x = tl.where(beta * x <= threshold, (1 / beta) * tl.log(1 + tl.exp(beta * x)), x)
     blk_g = -tl.exp(blk_A_log.to(tl.float32)) * softplus_x
     tl.store(g + off, blk_g.to(g.dtype.element_ty), mask=mask)
     # compute beta_output = sigmoid(b)
     blk_beta_output = tl.sigmoid(blk_b.to(tl.float32))
-    tl.store(
-        beta_output + off, blk_beta_output.to(beta_output.dtype.element_ty), mask=mask
-    )
+    tl.store(beta_output + off, blk_beta_output.to(beta_output.dtype.element_ty), mask=mask)
 
 
 def fused_gdn_gating(

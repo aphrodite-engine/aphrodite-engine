@@ -277,8 +277,10 @@ __global__ void fusedQKNormRopeKernel(
 
           dim_idx = (dim_idx * 2) % rotary_dim;
           int half_dim = dim_idx / 2;
-          float cos_val = CacheConverter::convert(APHRODITE_LDG(cos_ptr + half_dim));
-          float sin_val = CacheConverter::convert(APHRODITE_LDG(sin_ptr + half_dim));
+          float cos_val =
+              CacheConverter::convert(APHRODITE_LDG(cos_ptr + half_dim));
+          float sin_val =
+              CacheConverter::convert(APHRODITE_LDG(sin_ptr + half_dim));
 
           elements[i] = elements[i] * cos_val + elements2[i] * sin_val;
         }
@@ -795,21 +797,22 @@ void fused_qk_norm_rope(
     }
   }
 
-  APHRODITE_DISPATCH_HALF_TYPES(qkv.scalar_type(), "fused_qk_norm_rope_kernel", [&] {
-    using qkv_scalar_t = scalar_t;
-    APHRODITE_DISPATCH_FLOATING_TYPES(
-        cos_sin_cache.scalar_type(), "fused_qk_norm_rope_kernel", [&] {
-          using cache_scalar_t = scalar_t;
-          tensorrt_llm::kernels::launchFusedQKNormRopeNTokenHeads<
-              qkv_scalar_t, cache_scalar_t>(
-              qkv.data_ptr(), static_cast<int>(num_tokens),
-              static_cast<int>(num_heads_q), static_cast<int>(num_heads_k),
-              static_cast<int>(num_heads_v), static_cast<int>(head_dim),
-              static_cast<int>(cos_sin_cache.size(1)), static_cast<float>(eps),
-              q_weight.data_ptr(), k_weight.data_ptr(),
-              cos_sin_cache.data_ptr(), !is_neox,
-              reinterpret_cast<int64_t const*>(position_ids.data_ptr()),
-              token_heads_per_warp, stream);
-        });
-  });
+  APHRODITE_DISPATCH_HALF_TYPES(
+      qkv.scalar_type(), "fused_qk_norm_rope_kernel", [&] {
+        using qkv_scalar_t = scalar_t;
+        APHRODITE_DISPATCH_FLOATING_TYPES(
+            cos_sin_cache.scalar_type(), "fused_qk_norm_rope_kernel", [&] {
+              using cache_scalar_t = scalar_t;
+              tensorrt_llm::kernels::launchFusedQKNormRopeNTokenHeads<
+                  qkv_scalar_t, cache_scalar_t>(
+                  qkv.data_ptr(), static_cast<int>(num_tokens),
+                  static_cast<int>(num_heads_q), static_cast<int>(num_heads_k),
+                  static_cast<int>(num_heads_v), static_cast<int>(head_dim),
+                  static_cast<int>(cos_sin_cache.size(1)),
+                  static_cast<float>(eps), q_weight.data_ptr(),
+                  k_weight.data_ptr(), cos_sin_cache.data_ptr(), !is_neox,
+                  reinterpret_cast<int64_t const*>(position_ids.data_ptr()),
+                  token_heads_per_warp, stream);
+            });
+      });
 }

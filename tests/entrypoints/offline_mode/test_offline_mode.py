@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for HF_HUB_OFFLINE mode"""
 
 import dataclasses
@@ -6,10 +8,10 @@ import sys
 
 import pytest
 import urllib3
+from aphrodite.engine.args_tools import EngineArgs
 
 from aphrodite import LLM
 from aphrodite.distributed import cleanup_dist_env_and_memory
-from aphrodite.engine.args_tools import EngineArgs
 
 MODEL_CONFIGS = [
     {

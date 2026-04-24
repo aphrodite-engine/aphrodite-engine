@@ -39,9 +39,7 @@ class WorkspaceManager:
         self._device = device
         # Cache num ubatches at init based on configuration (default to 1)
         self._num_ubatches = num_ubatches if num_ubatches is not None else 1
-        self._current_workspaces: list[torch.Tensor | None] = [
-            None
-        ] * self._num_ubatches
+        self._current_workspaces: list[torch.Tensor | None] = [None] * self._num_ubatches
         self._locked: bool = False
 
     @staticmethod
@@ -61,11 +59,7 @@ class WorkspaceManager:
         if envs.APHRODITE_DEBUG_WORKSPACE:
             logger.info(
                 "[WORKSPACE DEBUG] Workspace locked. Current sizes: %s",
-                [
-                    self._workspace_size_bytes(ws) / _MB
-                    for ws in self._current_workspaces
-                    if ws is not None
-                ],
+                [self._workspace_size_bytes(ws) / _MB for ws in self._current_workspaces if ws is not None],
             )
 
     def unlock(self) -> None:
@@ -78,20 +72,14 @@ class WorkspaceManager:
         if envs.APHRODITE_DEBUG_WORKSPACE:
             logger.info(
                 "[WORKSPACE DEBUG] Workspace unlocked. Current sizes: %s",
-                [
-                    self._workspace_size_bytes(ws) / _MB
-                    for ws in self._current_workspaces
-                    if ws is not None
-                ],
+                [self._workspace_size_bytes(ws) / _MB for ws in self._current_workspaces if ws is not None],
             )
 
     def is_locked(self) -> bool:
         """Check if workspace is locked."""
         return self._locked
 
-    def get_simultaneous(
-        self, *shapes_and_dtypes: tuple[tuple[int, ...], torch.dtype]
-    ) -> list[torch.Tensor]:
+    def get_simultaneous(self, *shapes_and_dtypes: tuple[tuple[int, ...], torch.dtype]) -> list[torch.Tensor]:
         """Get multiple workspace tensors simultaneously from a single allocation.
 
         Args:
@@ -148,9 +136,7 @@ class WorkspaceManager:
                         curr_frame = curr_frame.f_back
                         continue
                     filename = os.path.basename(curr_frame.f_code.co_filename)
-                    return (
-                        f"{filename}:{curr_frame.f_lineno}:{curr_frame.f_code.co_name}"
-                    )
+                    return f"{filename}:{curr_frame.f_lineno}:{curr_frame.f_code.co_name}"
                 return "unknown"
 
             if self._locked:
@@ -163,10 +149,7 @@ class WorkspaceManager:
 
             for ubatch_id in range(self._num_ubatches):
                 current_workspace = self._current_workspaces[ubatch_id]
-                if (
-                    current_workspace is None
-                    or self._workspace_size_bytes(current_workspace) < required_bytes
-                ):
+                if current_workspace is None or self._workspace_size_bytes(current_workspace) < required_bytes:
                     # Delete old tensor before allocating new one to avoid
                     # memory spike from resize_(). resize_() allocates new
                     # memory before freeing old, which can cause OOM.
@@ -216,9 +199,7 @@ def current_workspace_manager() -> "WorkspaceManager":
     return _manager
 
 
-def init_workspace_manager(
-    device: torch.device, num_ubatches: int | None = None
-) -> None:
+def init_workspace_manager(device: torch.device, num_ubatches: int | None = None) -> None:
     """Initialize the workspace manager with a device.
 
     Must be called before using any workspace functions. Typically called
@@ -231,8 +212,7 @@ def init_workspace_manager(
     global _manager
     if _manager is not None:
         logger.warning(
-            "WorkspaceManager already initialized on device %s, "
-            "reinitializing on device %s",
+            "WorkspaceManager already initialized on device %s, reinitializing on device %s",
             _manager._device,
             device,
         )

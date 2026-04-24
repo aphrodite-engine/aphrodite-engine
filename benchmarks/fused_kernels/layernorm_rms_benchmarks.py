@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pickle as pkl
 import time
 from collections.abc import Callable, Iterable
@@ -6,11 +8,11 @@ from itertools import product
 
 import torch
 import torch.utils.benchmark as TBenchmark
+from aphrodite.modeling.layers.layernorm import RMSNorm
 from torch.utils.benchmark import Measurement as TMeasurement
 from tqdm import tqdm
 
 import aphrodite._custom_ops as ops
-from aphrodite.modeling.layers.layernorm import RMSNorm
 
 
 @dataclass

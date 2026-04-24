@@ -1,15 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import glob
 import tempfile
 
 import huggingface_hub.constants
 import pytest
 import torch
-
 from aphrodite.modeling.model_loader.weight_utils import (
     download_weights_from_hf,
     fastsafetensors_weights_iterator,
     safetensors_weights_iterator,
 )
+
 from aphrodite.platforms import current_platform
 
 

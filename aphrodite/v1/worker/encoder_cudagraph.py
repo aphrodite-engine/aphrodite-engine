@@ -78,19 +78,11 @@ class EncoderCudaGraphManager:
             self.max_batch_size = user_max_vision_items
         else:
             # Auto-infer missing values from model
-            min_budget, max_budget = model.get_encoder_cudagraph_budget_range(
-                aphrodite_config
-            )
+            min_budget, max_budget = model.get_encoder_cudagraph_budget_range(aphrodite_config)
             self.token_budgets = (
-                sorted(user_budgets)
-                if user_budgets
-                else self._generate_budgets(min_budget, max_budget)
+                sorted(user_budgets) if user_budgets else self._generate_budgets(min_budget, max_budget)
             )
-            self.max_batch_size = (
-                user_max_vision_items
-                if user_max_vision_items > 0
-                else max_budget // min_budget
-            )
+            self.max_batch_size = user_max_vision_items if user_max_vision_items > 0 else max_budget // min_budget
 
         assert multimodal_config is not None
         if multimodal_config.get_limit_per_prompt("video") == 0:
@@ -153,8 +145,7 @@ class EncoderCudaGraphManager:
     def _capture_budget_graph(self, token_budget: int):
         """Capture CUDA graph for a single token budget."""
         logger.debug(
-            "Capturing encoder cudagraph for budget=%d, max_batch_size=%d, "
-            "max_frames_per_batch=%d",
+            "Capturing encoder cudagraph for budget=%d, max_batch_size=%d, max_frames_per_batch=%d",
             token_budget,
             self.max_batch_size,
             self.max_frames_per_batch,
@@ -194,9 +185,7 @@ class EncoderCudaGraphManager:
             output_buffer=output_buffer,
         )
 
-    def _find_smallest_fitting_budget_given_tokens(
-        self, total_tokens: int
-    ) -> int | None:
+    def _find_smallest_fitting_budget_given_tokens(self, total_tokens: int) -> int | None:
         """Find smallest budget >= total_tokens.
 
         Returns:
@@ -209,10 +198,7 @@ class EncoderCudaGraphManager:
 
     def _get_per_item_out_tokens(self, mm_kwargs: dict[str, Any]) -> list[int]:
         """Get per-item output token counts as plain ints."""
-        return [
-            int(t)
-            for t in self.model.get_encoder_cudagraph_per_item_output_tokens(mm_kwargs)
-        ]
+        return [int(t) for t in self.model.get_encoder_cudagraph_per_item_output_tokens(mm_kwargs)]
 
     @staticmethod
     def _scatter_output_slices(
@@ -257,9 +243,7 @@ class EncoderCudaGraphManager:
         # Copy the input tensor. Buffers are sized for the full budget;
         # actual inputs may be smaller. Zero then slice-copy so padded
         # positions are invisible to attention (cu_seqlens masks them out).
-        input_key = self.config.input_key_by_modality[
-            self.model.get_input_modality(mm_kwargs)
-        ]
+        input_key = self.config.input_key_by_modality[self.model.get_input_modality(mm_kwargs)]
         src = mm_kwargs[input_key]
         n = src.shape[0]
         graph_meta.input_buffer[:n].copy_(src)
@@ -322,10 +306,7 @@ class EncoderCudaGraphManager:
 
         for orig_idx in sorted_indices:
             item_tokens = per_item_out_tokens[orig_idx]
-            if (
-                current_batch_tokens + item_tokens <= max_budget
-                and len(current_batch) < self.max_batch_size
-            ):
+            if current_batch_tokens + item_tokens <= max_budget and len(current_batch) < self.max_batch_size:
                 current_batch.append(orig_idx)
                 current_batch_tokens += item_tokens
             else:
@@ -333,9 +314,7 @@ class EncoderCudaGraphManager:
                     batches.append(
                         (
                             current_batch,
-                            self._find_smallest_fitting_budget_given_tokens(
-                                current_batch_tokens
-                            ),
+                            self._find_smallest_fitting_budget_given_tokens(current_batch_tokens),
                         )
                     )
                 current_batch = [orig_idx]
@@ -345,9 +324,7 @@ class EncoderCudaGraphManager:
             batches.append(
                 (
                     current_batch,
-                    self._find_smallest_fitting_budget_given_tokens(
-                        current_batch_tokens
-                    ),
+                    self._find_smallest_fitting_budget_given_tokens(current_batch_tokens),
                 )
             )
 
@@ -357,17 +334,14 @@ class EncoderCudaGraphManager:
         outputs_by_orig_idx: dict[int, torch.Tensor] = {}
 
         for batch_orig_indices, token_budget in batches:
-            batch_mm_kwargs = self.model.select_encoder_cudagraph_items(
-                mm_kwargs, batch_orig_indices
-            )
+            batch_mm_kwargs = self.model.select_encoder_cudagraph_items(mm_kwargs, batch_orig_indices)
             batch_out_tokens = sum(per_item_out_tokens[i] for i in batch_orig_indices)
 
             if token_budget is None:
                 # Single oversized image: item_tokens > max_budget.
                 # graph_misses counted here for this eager fallback.
                 logger.debug(
-                    "Encoder CUDA graph fallback to eager: no budget for "
-                    "%d tokens from %d images",
+                    "Encoder CUDA graph fallback to eager: no budget for %d tokens from %d images",
                     batch_out_tokens,
                     len(batch_orig_indices),
                 )
@@ -382,8 +356,7 @@ class EncoderCudaGraphManager:
                 )
             else:
                 logger.debug(
-                    "Encoder CUDA graph: batch_size=%d, tokens=%d, "
-                    "budget=%d, waste=%.1f%%",
+                    "Encoder CUDA graph: batch_size=%d, tokens=%d, budget=%d, waste=%.1f%%",
                     len(batch_orig_indices),
                     batch_out_tokens,
                     token_budget,
@@ -396,9 +369,7 @@ class EncoderCudaGraphManager:
                 )
 
                 # graph_hits counted inside _run_budget_graph after replay.
-                output = self._run_budget_graph(
-                    batch_mm_kwargs, token_budget, replay.buffers
-                )
+                output = self._run_budget_graph(batch_mm_kwargs, token_budget, replay.buffers)
                 assert output is not None
                 self._scatter_output_slices(
                     output,
@@ -431,12 +402,10 @@ class EncoderCudaGraphManager:
         tp_size = get_tensor_model_parallel_world_size()
         current_rank = get_tensor_model_parallel_rank()
 
-        per_item_input_sizes = self.model.get_encoder_cudagraph_per_item_input_sizes(
-            mm_kwargs
-        )
+        per_item_input_sizes = self.model.get_encoder_cudagraph_per_item_input_sizes(mm_kwargs)
 
-        (image_rank_assignment, images_per_rank, input_patches_per_rank) = (
-            get_load_balance_assignment(per_item_input_sizes, tp_size)
+        (image_rank_assignment, images_per_rank, input_patches_per_rank) = get_load_balance_assignment(
+            per_item_input_sizes, tp_size
         )
 
         # Extract local indices for this rank
@@ -444,14 +413,10 @@ class EncoderCudaGraphManager:
         for count in images_per_rank:
             cum_images_per_rank.append(cum_images_per_rank[-1] + count)
 
-        local_indices = image_rank_assignment[
-            cum_images_per_rank[current_rank] : cum_images_per_rank[current_rank + 1]
-        ]
+        local_indices = image_rank_assignment[cum_images_per_rank[current_rank] : cum_images_per_rank[current_rank + 1]]
 
         if len(local_indices) > 0:
-            local_mm_kwargs = self.model.select_encoder_cudagraph_items(
-                mm_kwargs, local_indices
-            )
+            local_mm_kwargs = self.model.select_encoder_cudagraph_items(mm_kwargs, local_indices)
         else:
             local_mm_kwargs = self.model.select_encoder_cudagraph_items(mm_kwargs, [])
 
@@ -459,9 +424,7 @@ class EncoderCudaGraphManager:
             max(
                 sum(
                     per_item_out_tokens[i]
-                    for i in image_rank_assignment[
-                        cum_images_per_rank[r] : cum_images_per_rank[r + 1]
-                    ]
+                    for i in image_rank_assignment[cum_images_per_rank[r] : cum_images_per_rank[r + 1]]
                 )
                 for r in range(tp_size)
             )
@@ -496,9 +459,7 @@ class EncoderCudaGraphManager:
         if len(local_outputs) > 0:
             local_concat = torch.cat(local_outputs, dim=0)
         else:
-            local_concat = torch.empty(
-                (0, hidden_size), device=self.device, dtype=self.dtype
-            )
+            local_concat = torch.empty((0, hidden_size), device=self.device, dtype=self.dtype)
 
         # Pad to max_output_tokens_per_rank for all_gather
         current_len = local_concat.shape[0]
@@ -583,8 +544,7 @@ class EncoderCudaGraphManager:
         total_requests = self.graph_hits + self.graph_misses
         if total_requests > 0 and total_requests % self.log_stats_interval == 0:
             logger.debug(
-                "Encoder CUDA graph cumulative stats: "
-                "hits=%d, misses=%d, hit_rate=%.1f%%",
+                "Encoder CUDA graph cumulative stats: hits=%d, misses=%d, hit_rate=%.1f%%",
                 stats["graph_hits"],
                 stats["graph_misses"],
                 stats["hit_rate"] * 100,

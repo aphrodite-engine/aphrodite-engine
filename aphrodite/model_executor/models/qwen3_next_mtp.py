@@ -85,12 +85,8 @@ class Qwen3NextMultiTokenPredictor(nn.Module):
         )
 
         self.norm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.pre_fc_norm_hidden = Qwen3NextRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
-        self.pre_fc_norm_embedding = Qwen3NextRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.pre_fc_norm_hidden = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pre_fc_norm_embedding = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -126,9 +122,7 @@ class Qwen3NextMultiTokenPredictor(nn.Module):
         )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
@@ -189,9 +183,7 @@ class Qwen3NextMultiTokenPredictor(nn.Module):
                     if is_pp_missing_parameter(name, self):
                         continue
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
@@ -211,9 +203,7 @@ class Qwen3NextMultiTokenPredictor(nn.Module):
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -244,9 +234,7 @@ class Qwen3NextMTP(nn.Module, QwenNextMixtureOfExperts):
 
         super().__init__()
         self.config = config
-        self.model = Qwen3NextMultiTokenPredictor(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "mtp")
-        )
+        self.model = Qwen3NextMultiTokenPredictor(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "mtp"))
 
         self.lm_head = ParallelLMHead(
             config.vocab_size,
@@ -268,9 +256,7 @@ class Qwen3NextMTP(nn.Module, QwenNextMixtureOfExperts):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ):
-        hidden_states = self.model(
-            input_ids, positions, hidden_states, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, hidden_states, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

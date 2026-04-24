@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test ModelOpt quantization method setup and weight loading.
 
 Run `pytest tests/quantization/test_modelopt.py`.

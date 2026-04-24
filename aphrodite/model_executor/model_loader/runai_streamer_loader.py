@@ -43,9 +43,7 @@ class RunaiModelStreamerLoader(BaseModelLoader):
             if runai_streamer_s3_endpoint is None and aws_endpoint_url is not None:
                 os.environ["RUNAI_STREAMER_S3_ENDPOINT"] = aws_endpoint_url
 
-    def _prepare_weights(
-        self, model_name_or_path: str, revision: str | None
-    ) -> list[str]:
+    def _prepare_weights(self, model_name_or_path: str, revision: str | None) -> list[str]:
         """Prepare weights for the model.
 
         If the model is not local, it will be downloaded."""
@@ -74,9 +72,7 @@ class RunaiModelStreamerLoader(BaseModelLoader):
             )
 
         if not hf_weights_files:
-            raise RuntimeError(
-                f"Cannot find any safetensors model weights with `{model_name_or_path}`"
-            )
+            raise RuntimeError(f"Cannot find any safetensors model weights with `{model_name_or_path}`")
 
         return hf_weights_files
 
@@ -98,6 +94,4 @@ class RunaiModelStreamerLoader(BaseModelLoader):
         model_weights = model_config.model
         if model_weights_override := model_config.model_weights:
             model_weights = model_weights_override
-        model.load_weights(
-            self._get_weights_iterator(model_weights, model_config.revision)
-        )
+        model.load_weights(self._get_weights_iterator(model_weights, model_config.revision))

@@ -20,9 +20,9 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8StaticTensorSym,
 )
 
+from ..aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
 from ..inductor_pass import enable_fake_mode
 from ..utility.noop_elimination import NoOpEliminationPass
-from ..aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
 from .matcher_utils import MatcherFusedAddRMSNorm, MatcherQuantFP8
 
 logger = init_logger(__name__)
@@ -158,9 +158,7 @@ class FirstAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
             all_gather = self._all_gather(rmsnorm)
             return all_gather, reduce_scatter
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class MiddleAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
@@ -206,9 +204,7 @@ class MiddleAllReduceRMSNormPattern(_SequenceParallelPatternHelper):
             # next node is already slicing it, now becomes a noop
             return all_gather, rmsnorm[1]
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
         pm.register_replacement(
             get_first_out_wrapper(pattern),
             get_first_out_wrapper(replacement),
@@ -255,9 +251,7 @@ class FirstAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
 
             return all_gather, reduce_scatter
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class MiddleAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
@@ -282,9 +276,7 @@ class MiddleAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
             scale: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor]:
             all_reduce = self._all_reduce(mm_1)
-            rms, residual_out = self.rmsnorm_matcher(
-                all_reduce, rms_norm_weights, residual
-            )
+            rms, residual_out = self.rmsnorm_matcher(all_reduce, rms_norm_weights, residual)
             quant, _ = self.quant_matcher(rms, scale)
             return quant, residual_out
 
@@ -300,18 +292,14 @@ class MiddleAllReduceRMSNormStaticFP8Pattern(_SequenceParallelPatternHelper):
             # once the seqpar pattern with the previous rmsnorm is replaced
             reduce_scatter = self._reduce_scatter(mm_1)
             residual = residual[0 : reduce_scatter.size(0), ...]
-            rms, residual_out = self.rmsnorm_matcher(
-                reduce_scatter, rms_norm_weights, residual
-            )
+            rms, residual_out = self.rmsnorm_matcher(reduce_scatter, rms_norm_weights, residual)
             quant, _ = self.quant_matcher(rms, scale)
             all_gather = self._all_gather(quant)
             # shape of residual changes but that's fine,
             # next node is already slicing it, now becomes a noop
             return all_gather, residual_out
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
         pm.register_replacement(
             get_first_out_wrapper(pattern),
@@ -385,27 +373,17 @@ class SequenceParallelismPass(AphroditePatternMatcherPass):
         self.noop_cleanup = NoOpEliminationPass(config)
         self.noop_cleanup.pass_name = f"{self.pass_name}.{self.noop_cleanup.pass_name}"
 
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="sequence_parallelism_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="sequence_parallelism_pass")
 
         for epsilon in [1e-5, 1e-6]:
             # RMSNorm + Static FP8 quantization patterns
-            FirstAllReduceRMSNormStaticFP8Pattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
-            MiddleAllReduceRMSNormStaticFP8Pattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
+            FirstAllReduceRMSNormStaticFP8Pattern(epsilon, self.model_dtype, self.device).register(self.patterns)
+            MiddleAllReduceRMSNormStaticFP8Pattern(epsilon, self.model_dtype, self.device).register(self.patterns)
 
             # Normal RMSNorm patterns
-            FirstAllReduceRMSNormPattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
+            FirstAllReduceRMSNormPattern(epsilon, self.model_dtype, self.device).register(self.patterns)
 
-            MiddleAllReduceRMSNormPattern(
-                epsilon, self.model_dtype, self.device
-            ).register(self.patterns)
+            MiddleAllReduceRMSNormPattern(epsilon, self.model_dtype, self.device).register(self.patterns)
 
         self.dump_patterns(config, self.patterns)
 
@@ -425,10 +403,7 @@ class SequenceParallelismPass(AphroditePatternMatcherPass):
         """
         # For piecewise compilation (not using inductor graph partition),
         # we need concrete sizes that are divisible by TP for correct splitting
-        if (
-            not self.compilation_config.use_inductor_graph_partition
-            and self.compilation_config.splitting_ops
-        ):
+        if not self.compilation_config.use_inductor_graph_partition and self.compilation_config.splitting_ops:
             tp_size = get_tensor_model_parallel_world_size()
             if not compile_range.is_single_size() or compile_range.end % tp_size != 0:
                 return False

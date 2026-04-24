@@ -122,8 +122,7 @@ class FlashInferMLASparseBackend(AttentionBackend):
             qk_nope_head_dim = getattr(hf_text_config, "qk_nope_head_dim", 1)
             if qk_nope_head_dim not in [128, 192]:
                 return (
-                    "FlashInfer MLA Sparse kernel requires qk_nope_head_dim "
-                    f"in [128, 192], but got {qk_nope_head_dim}"
+                    f"FlashInfer MLA Sparse kernel requires qk_nope_head_dim in [128, 192], but got {qk_nope_head_dim}"
                 )
             # Check for index_topk which indicates sparse model
             if not hasattr(hf_text_config, "index_topk"):
@@ -168,9 +167,7 @@ class FlashInferMLASparseMetadata(AttentionMetadata):
     topk_tokens: int = 2048
 
 
-class FlashInferMLASparseMetadataBuilder(
-    AttentionMetadataBuilder[FlashInferMLASparseMetadata]
-):
+class FlashInferMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashInferMLASparseMetadata]):
     """Builder for FlashInfer MLA Sparse attention metadata."""
 
     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
@@ -209,9 +206,7 @@ class FlashInferMLASparseMetadataBuilder(
         # Build req_id_per_token mapping
         starts = np.asarray(cm.query_start_loc_cpu, dtype=np.int32)
         seg_lengths = np.diff(starts)
-        req_id_per_token = np.repeat(
-            np.arange(seg_lengths.shape[0], dtype=np.int32), seg_lengths
-        )
+        req_id_per_token = np.repeat(np.arange(seg_lengths.shape[0], dtype=np.int32), seg_lengths)
 
         # Zero-fill for cudagraphs
         self.req_id_per_token_buffer.fill_(0)

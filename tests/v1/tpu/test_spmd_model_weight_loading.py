@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import gc
 import tempfile
 
@@ -5,11 +7,11 @@ import numpy as np
 import pytest
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
+from aphrodite.engine.args_tools import EngineArgs
+from aphrodite.modeling.model_loader.tpu import TPUModelLoader
 
 from aphrodite.config import set_current_aphrodite_config
 from aphrodite.distributed.parallel_state import ensure_model_parallel_initialized, init_distributed_environment
-from aphrodite.engine.args_tools import EngineArgs
-from aphrodite.modeling.model_loader.tpu import TPUModelLoader
 
 
 def _setup_environment(model):

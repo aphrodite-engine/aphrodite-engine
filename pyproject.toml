@@ -93,6 +93,7 @@ skip_gitignore = true
 "aphrodite/diffusion/third_party/**" = ["ALL"]
 "aphrodite/version.py" = ["F401"]
 "aphrodite/_version.py" = ["ALL"]
+"aphrodite/platforms/cuda.py" = ["E402"]
 
 [tool.ruff.lint]
 select = [
@@ -160,7 +161,8 @@ python = "./.venv"
 # these files may be written in non english words
 extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*",
     "benchmarks/sonnet.txt", "tests/lora/data/*", "build/*",
-    "aphrodite/third_party/*", "aphrodite/endpoints/openai/klite.embd"]
+    "aphrodite/third_party/*", "aphrodite/endpoints/openai/klite.embd",
+    "aphrodite/entrypoints/serve/instrumentator/static/*", ".git/*"]
 ignore-hidden = true
 ignore-files = true
 ignore-dot = true
@@ -207,6 +209,28 @@ tme = "tme"
 dout = "dout"
 Pn = "Pn"
 arange = "arange"
+thw = "thw"
+subtile = "subtile"
+HSA = "HSA"
+setp = "setp"
+CPY = "CPY"
+thr = "thr"
+Thr = "Thr"
+PARD = "PARD"
+pard = "pard"
+AKS = "AKS"
+ba = "ba"
+fo = "fo"
+nd = "nd"
+eles = "eles"
+datas = "datas"
+ser = "ser"
+ure = "ure"
+VALU = "VALU"
+wht = "wht"
+WHT = "WHT"
+indx = "indx"
+halfs = "halfs"
 
 [tool.typos.type.py]
 extend-glob = []

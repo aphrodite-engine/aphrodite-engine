@@ -58,9 +58,7 @@ class SamplerID(IntEnum):
             return cls[value.upper()]
         except KeyError as e:
             valid_names = [x.name for x in cls]
-            raise ValueError(
-                f"Invalid sampler name '{value}'. Must be one of: {valid_names}"
-            ) from e
+            raise ValueError(f"Invalid sampler name '{value}'. Must be one of: {valid_names}") from e
 
 
 # maybe make msgspec?
@@ -102,8 +100,7 @@ class StructuredOutputsParams:
             )
         if count < 1:
             raise ValueError(
-                "You must use one kind of structured outputs constraint "
-                f"but none are specified: {self.__dict__}"
+                f"You must use one kind of structured outputs constraint but none are specified: {self.__dict__}"
             )
 
     def all_constraints_none(self) -> bool:
@@ -157,11 +154,7 @@ class RepetitionDetectionParams:
     3 times. Must be used together with max_pattern_size."""
 
     def __post_init__(self):
-        if (
-            self.max_pattern_size < 0
-            or self.min_pattern_size < 0
-            or self.min_pattern_size > self.max_pattern_size
-        ):
+        if self.max_pattern_size < 0 or self.min_pattern_size < 0 or self.min_pattern_size > self.max_pattern_size:
             raise ValueError(
                 "max_pattern_size, min_pattern_size must be >=0, "
                 "with min_pattern_size <= max_pattern_size. "
@@ -459,30 +452,19 @@ class SamplingParams(
         if logit_bias is not None:
             # Convert token_id to integer
             # Clamp the bias between -100 and 100 per OpenAI API spec
-            logit_bias = {
-                int(token): min(100.0, max(-100.0, bias))
-                for token, bias in logit_bias.items()
-            }
+            logit_bias = {int(token): min(100.0, max(-100.0, bias)) for token, bias in logit_bias.items()}
 
         return SamplingParams(
             n=1 if n is None else n,
             presence_penalty=0.0 if presence_penalty is None else presence_penalty,
             frequency_penalty=0.0 if frequency_penalty is None else frequency_penalty,
-            repetition_penalty=1.0
-            if repetition_penalty is None
-            else repetition_penalty,
-            no_repeat_ngram_size=0
-            if no_repeat_ngram_size is None
-            else no_repeat_ngram_size,
+            repetition_penalty=1.0 if repetition_penalty is None else repetition_penalty,
+            no_repeat_ngram_size=0 if no_repeat_ngram_size is None else no_repeat_ngram_size,
             temperature=1.0 if temperature is None else temperature,
             dynatemp_min=0.0 if dynatemp_min is None else dynatemp_min,
             dynatemp_max=0.0 if dynatemp_max is None else dynatemp_max,
-            dynatemp_exponent=1.0
-            if dynatemp_exponent is None
-            else dynatemp_exponent,
-            temperature_last=False
-            if temperature_last is None
-            else temperature_last,
+            dynatemp_exponent=1.0 if dynatemp_exponent is None else dynatemp_exponent,
+            temperature_last=False if temperature_last is None else temperature_last,
             top_p=1.0 if top_p is None else top_p,
             top_k=top_k,
             top_a=0.0 if top_a is None else top_a,
@@ -491,41 +473,27 @@ class SamplingParams(
             eta_cutoff=0.0 if eta_cutoff is None else eta_cutoff,
             epsilon_cutoff=0.0 if epsilon_cutoff is None else epsilon_cutoff,
             typical_p=1.0 if typical_p is None else typical_p,
-            smoothing_factor=0.0
-            if smoothing_factor is None
-            else smoothing_factor,
+            smoothing_factor=0.0 if smoothing_factor is None else smoothing_factor,
             smoothing_curve=1.0 if smoothing_curve is None else smoothing_curve,
             seed=seed,
             stop=stop,
             stop_token_ids=stop_token_ids,
             bad_words=bad_words,
             xtc_threshold=0.1 if xtc_threshold is None else xtc_threshold,
-            xtc_probability=0.0
-            if xtc_probability is None
-            else xtc_probability,
+            xtc_probability=0.0 if xtc_probability is None else xtc_probability,
             nsigma=0.0 if nsigma is None else nsigma,
             mirostat_mode=0 if mirostat_mode is None else mirostat_mode,
             mirostat_tau=0.0 if mirostat_tau is None else mirostat_tau,
             mirostat_eta=0.0 if mirostat_eta is None else mirostat_eta,
-            dry_multiplier=0.0
-            if dry_multiplier is None
-            else dry_multiplier,
+            dry_multiplier=0.0 if dry_multiplier is None else dry_multiplier,
             dry_base=1.75 if dry_base is None else dry_base,
-            dry_allowed_length=2
-            if dry_allowed_length is None
-            else dry_allowed_length,
+            dry_allowed_length=2 if dry_allowed_length is None else dry_allowed_length,
             dry_sequence_breakers=dry_sequence_breakers,
-            dry_sequence_breaker_ids=[]
-            if dry_sequence_breaker_ids is None
-            else dry_sequence_breaker_ids,
+            dry_sequence_breaker_ids=[] if dry_sequence_breaker_ids is None else dry_sequence_breaker_ids,
             dry_range=0 if dry_range is None else dry_range,
             dry_max_ngram=12 if dry_max_ngram is None else dry_max_ngram,
-            dry_max_occurrences=8
-            if dry_max_occurrences is None
-            else dry_max_occurrences,
-            dry_early_exit_match_len=8
-            if dry_early_exit_match_len is None
-            else dry_early_exit_match_len,
+            dry_max_occurrences=8 if dry_max_occurrences is None else dry_max_occurrences,
+            dry_early_exit_match_len=8 if dry_early_exit_match_len is None else dry_early_exit_match_len,
             skew=0.0 if skew is None else skew,
             thinking_token_budget=thinking_token_budget,
             include_stop_str_in_output=include_stop_str_in_output,
@@ -614,18 +582,11 @@ class SamplingParams(
                 "environment variable."
             )
         if not -2.0 <= self.presence_penalty <= 2.0:
-            raise ValueError(
-                f"presence_penalty must be in [-2, 2], got {self.presence_penalty}."
-            )
+            raise ValueError(f"presence_penalty must be in [-2, 2], got {self.presence_penalty}.")
         if not -2.0 <= self.frequency_penalty <= 2.0:
-            raise ValueError(
-                f"frequency_penalty must be in [-2, 2], got {self.frequency_penalty}."
-            )
+            raise ValueError(f"frequency_penalty must be in [-2, 2], got {self.frequency_penalty}.")
         if self.repetition_penalty <= 0.0:
-            raise ValueError(
-                "repetition_penalty must be greater than zero, got "
-                f"{self.repetition_penalty}."
-            )
+            raise ValueError(f"repetition_penalty must be greater than zero, got {self.repetition_penalty}.")
         if self.temperature < 0.0:
             raise APHRODITEValidationError(
                 f"temperature must be non-negative, got {self.temperature}.",
@@ -640,18 +601,11 @@ class SamplingParams(
             )
         # quietly accept -1 as disabled, but prefer 0
         if self.top_k < -1:
-            raise ValueError(
-                f"top_k must be 0 (disable), or at least 1, got {self.top_k}."
-            )
+            raise ValueError(f"top_k must be 0 (disable), or at least 1, got {self.top_k}.")
         if not isinstance(self.top_k, int):
-            raise TypeError(
-                f"top_k must be an integer, got {type(self.top_k).__name__}"
-            )
+            raise TypeError(f"top_k must be an integer, got {type(self.top_k).__name__}")
         if self.no_repeat_ngram_size < 0:
-            raise ValueError(
-                "no_repeat_ngram_size must be non-negative, got "
-                f"{self.no_repeat_ngram_size}."
-            )
+            raise ValueError(f"no_repeat_ngram_size must be non-negative, got {self.no_repeat_ngram_size}.")
         if self.dynatemp_min < 0.0 or self.dynatemp_max < 0.0:
             raise ValueError("dynatemp values must be non-negative.")
         if self.dynatemp_exponent <= 0.0:
@@ -675,13 +629,10 @@ class SamplingParams(
                 value=self.max_tokens,
             )
         if self.min_tokens < 0:
-            raise ValueError(
-                f"min_tokens must be greater than or equal to 0, got {self.min_tokens}."
-            )
+            raise ValueError(f"min_tokens must be greater than or equal to 0, got {self.min_tokens}.")
         if self.max_tokens is not None and self.min_tokens > self.max_tokens:
             raise ValueError(
-                f"min_tokens must be less than or equal to "
-                f"max_tokens={self.max_tokens}, got {self.min_tokens}."
+                f"min_tokens must be less than or equal to max_tokens={self.max_tokens}, got {self.min_tokens}."
             )
         if self.logprobs is not None and self.logprobs != -1 and self.logprobs < 0:
             raise APHRODITEValidationError(
@@ -689,29 +640,21 @@ class SamplingParams(
                 parameter="logprobs",
                 value=self.logprobs,
             )
-        if (
-            self.prompt_logprobs is not None
-            and self.prompt_logprobs != -1
-            and self.prompt_logprobs < 0
-        ):
+        if self.prompt_logprobs is not None and self.prompt_logprobs != -1 and self.prompt_logprobs < 0:
             raise APHRODITEValidationError(
-                f"prompt_logprobs must be non-negative or -1, got "
-                f"{self.prompt_logprobs}.",
+                f"prompt_logprobs must be non-negative or -1, got {self.prompt_logprobs}.",
                 parameter="prompt_logprobs",
                 value=self.prompt_logprobs,
             )
         assert isinstance(self.stop_token_ids, list)
         if not all(isinstance(st_id, int) for st_id in self.stop_token_ids):
-            raise ValueError(
-                f"stop_token_ids must contain only integers, got {self.stop_token_ids}."
-            )
+            raise ValueError(f"stop_token_ids must contain only integers, got {self.stop_token_ids}.")
         assert isinstance(self.stop, list)
         if any(not stop_str for stop_str in self.stop):
             raise ValueError("stop cannot contain an empty string.")
         if self.stop and not self.detokenize:
             raise ValueError(
-                "stop strings are only supported when detokenize is True. "
-                "Set detokenize=True to use stop."
+                "stop strings are only supported when detokenize is True. Set detokenize=True to use stop."
             )
         if self.xtc_threshold < 0.0:
             raise ValueError("xtc_threshold must be non-negative.")
@@ -773,9 +716,7 @@ class SamplingParams(
     def update_from_tokenizer(self, tokenizer: TokenizerLike) -> None:
         if self.dry_sequence_breakers and not self.dry_sequence_breaker_ids:
             for breaker in self.dry_sequence_breakers:
-                token_id = tokenizer.encode(
-                    text=f"a{breaker}", add_special_tokens=False
-                )[-1]
+                token_id = tokenizer.encode(text=f"a{breaker}", add_special_tokens=False)[-1]
                 self.dry_sequence_breaker_ids.append(token_id)
         if not self.bad_words:
             return
@@ -787,9 +728,7 @@ class SamplingParams(
             for add_prefix_space in [False, True]:
                 prefix = " " if add_prefix_space else ""
                 prompt = prefix + bad_word.lstrip()
-                prompt_token_ids = tokenizer.encode(
-                    text=prompt, add_special_tokens=False
-                )
+                prompt_token_ids = tokenizer.encode(text=prompt, add_special_tokens=False)
 
                 # If no space at the beginning
                 # or if prefix space produces a new word token
@@ -870,8 +809,7 @@ class SamplingParams(
                 num_logprobs = model_config.get_vocab_size()
             if num_logprobs > max_logprobs:
                 raise APHRODITEValidationError(
-                    f"Requested sample logprobs of {num_logprobs}, "
-                    f"which is greater than max allowed: {max_logprobs}",
+                    f"Requested sample logprobs of {num_logprobs}, which is greater than max allowed: {max_logprobs}",
                     parameter="logprobs",
                     value=num_logprobs,
                 )
@@ -894,11 +832,7 @@ class SamplingParams(
             return
 
         vocab_size = model_config.get_vocab_size()
-        invalid_token_ids = [
-            token_id
-            for token_id in self.logit_bias
-            if token_id < 0 or token_id >= vocab_size
-        ]
+        invalid_token_ids = [token_id for token_id in self.logit_bias if token_id < 0 or token_id >= vocab_size]
 
         if invalid_token_ids:
             raise APHRODITEValidationError(
@@ -929,11 +863,7 @@ class SamplingParams(
 
         if tokenizer is not None:
             vocab_size = len(tokenizer)
-            invalid_token_ids = [
-                token_id
-                for token_id in allowed_token_ids
-                if token_id < 0 or token_id >= vocab_size
-            ]
+            invalid_token_ids = [token_id for token_id in allowed_token_ids if token_id < 0 or token_id >= vocab_size]
             if invalid_token_ids:
                 raise APHRODITEValidationError(
                     "allowed_token_ids contains out-of-vocab token id!",
@@ -951,8 +881,7 @@ class SamplingParams(
         # Some sampling parameters are not yet compatible with spec decoding.
         if self.min_p > _SAMPLING_EPS or self.logit_bias:
             raise ValueError(
-                "The min_p and logit_bias sampling parameters "
-                "are not yet supported with speculative decoding."
+                "The min_p and logit_bias sampling parameters are not yet supported with speculative decoding."
             )
 
     def _validate_structured_outputs(
@@ -975,9 +904,7 @@ class SamplingParams(
             # to a specific backend based on `auto` behavior in a previous
             # request. We remember that it was set as a result of `auto`
             # using the `_backend_was_auto` field set in the params.
-            if backend != _backend and not (
-                backend == "auto" and self.structured_outputs._backend_was_auto
-            ):
+            if backend != _backend and not (backend == "auto" and self.structured_outputs._backend_was_auto):
                 raise ValueError(
                     "Request-level structured output backend selection is not "
                     f"supported. The request specified '{_backend}', but Aphrodite "
@@ -988,19 +915,13 @@ class SamplingParams(
             self.structured_outputs._backend = backend
 
         # Request content validation
-        if (
-            isinstance(self.structured_outputs.choice, list)
-            and not self.structured_outputs.choice
-        ):
+        if isinstance(self.structured_outputs.choice, list) and not self.structured_outputs.choice:
             # It is invalid for choice to be an empty list
             raise ValueError(
                 f"Choice '{self.structured_outputs.choice}' cannot be an empty list"  # noqa: E501
             )
         # Reject empty string grammar early to avoid engine-side crashes
-        if (
-            isinstance(self.structured_outputs.grammar, str)
-            and self.structured_outputs.grammar.strip() == ""
-        ):
+        if isinstance(self.structured_outputs.grammar, str) and self.structured_outputs.grammar.strip() == "":
             raise ValueError("structured_outputs.grammar cannot be an empty string")
 
         from aphrodite.v1.structured_output.backend_guidance import (

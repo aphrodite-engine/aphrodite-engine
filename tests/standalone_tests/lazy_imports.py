@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Description: Test the lazy import module
 # The utility function cannot be placed in `aphrodite.utils`
 # this needs to be a standalone script

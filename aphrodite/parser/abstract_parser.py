@@ -134,9 +134,7 @@ class Parser:
             True if the reasoning content ends in the input_ids.
         """
 
-    def is_reasoning_end_streaming(
-        self, input_ids: list[int], delta_ids: list[int]
-    ) -> bool:
+    def is_reasoning_end_streaming(self, input_ids: list[int], delta_ids: list[int]) -> bool:
         """
         Check if the reasoning content ends during a decode step.
 
@@ -369,9 +367,7 @@ class DelegatingParser(Parser):
                 id=f"rs_{random_uuid()}",
                 summary=[],
                 type="reasoning",
-                content=[
-                    ResponseReasoningTextContent(text=reasoning, type="reasoning_text")
-                ],
+                content=[ResponseReasoningTextContent(text=reasoning, type="reasoning_text")],
                 status=None,  # NOTE: Only the last output item has status.
             )
             outputs.append(reasoning_item)
@@ -437,19 +433,13 @@ class DelegatingParser(Parser):
         if request.tool_choice and isinstance(request.tool_choice, ToolChoiceFunction):
             # Forced Function Call (Responses API style)
             assert content is not None
-            function_calls.append(
-                FunctionCall(name=request.tool_choice.name, arguments=content)
-            )
+            function_calls.append(FunctionCall(name=request.tool_choice.name, arguments=content))
             return function_calls, None  # Clear content since tool is called.
 
-        if request.tool_choice and isinstance(
-            request.tool_choice, ChatCompletionNamedToolChoiceParam
-        ):
+        if request.tool_choice and isinstance(request.tool_choice, ChatCompletionNamedToolChoiceParam):
             # Forced Function Call (Chat Completion API style)
             assert content is not None
-            function_calls.append(
-                FunctionCall(name=request.tool_choice.function.name, arguments=content)
-            )
+            function_calls.append(FunctionCall(name=request.tool_choice.function.name, arguments=content))
             return function_calls, None  # Clear content since tool is called.
 
         if request.tool_choice == "required":
@@ -457,9 +447,7 @@ class DelegatingParser(Parser):
             tool_calls = []
             with contextlib.suppress(ValidationError):
                 content = content or ""
-                tool_calls = TypeAdapter(list[FunctionDefinition]).validate_json(
-                    content
-                )
+                tool_calls = TypeAdapter(list[FunctionDefinition]).validate_json(content)
             for tool_call in tool_calls:
                 function_calls.append(
                     FunctionCall(
@@ -531,9 +519,7 @@ class DelegatingParser(Parser):
         request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
         if self._tool_parser is None:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
         return self._tool_parser.extract_tool_calls(model_output, request)
 
     def extract_tool_calls_streaming(
@@ -665,14 +651,10 @@ class _WrappedParser(DelegatingParser):
     reasoning_parser_cls: type[ReasoningParser] | None = None
     tool_parser_cls: type[ToolParser] | None = None
 
-    def __init__(
-        self, tokenizer: TokenizerLike, tools: list[Tool] | None = None, **kwargs
-    ):
+    def __init__(self, tokenizer: TokenizerLike, tools: list[Tool] | None = None, **kwargs):
         super().__init__(tokenizer)
         # Instantiate the underlying parsers from class attributes
         if self.__class__.reasoning_parser_cls is not None:
-            self._reasoning_parser = self.__class__.reasoning_parser_cls(
-                tokenizer, **kwargs
-            )
+            self._reasoning_parser = self.__class__.reasoning_parser_cls(tokenizer, **kwargs)
         if self.__class__.tool_parser_cls is not None:
             self._tool_parser = self.__class__.tool_parser_cls(tokenizer, tools)

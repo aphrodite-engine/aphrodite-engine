@@ -46,9 +46,7 @@ class MistralCommonFeatureExtractor:
 
             audios_processed.append(torch.tensor(audio))
 
-        return BatchFeature(
-            {"audio_arrays": audios_processed}, tensor_type=return_tensors
-        )
+        return BatchFeature({"audio_arrays": audios_processed}, tensor_type=return_tensors)
 
     def get_num_audio_tokens(self, audio_length: int) -> int:
         return ceil(audio_length / (self.sampling_rate // self.frame_rate))

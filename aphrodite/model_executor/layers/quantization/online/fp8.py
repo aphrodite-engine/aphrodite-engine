@@ -168,10 +168,7 @@ class Fp8PerTensorOnlineLinearMethod(_Fp8OnlineLinearBase):
                 weight_bf16 = weight_fp8 * weight_scale
             else:
                 # Multiple scales (fused modules like QKV)
-                if (
-                    weight_scale.dim() == 1
-                    and weight_scale.shape[0] == weight_fp8.shape[0]
-                ):
+                if weight_scale.dim() == 1 and weight_scale.shape[0] == weight_fp8.shape[0]:
                     # Per-row scaling
                     weight_bf16 = weight_fp8 * weight_scale.unsqueeze(1)
                 else:
@@ -193,9 +190,7 @@ class Fp8PerBlockOnlineLinearMethod(_Fp8OnlineLinearBase):
             static=False,
             group_shape=GroupShape(1, self.weight_block_size[0]),
         )
-        self.weight_quant_key = create_fp8_quant_key(
-            static=True, group_shape=GroupShape(*self.weight_block_size)
-        )
+        self.weight_quant_key = create_fp8_quant_key(static=True, group_shape=GroupShape(*self.weight_block_size))
 
     def create_weights(
         self,
@@ -234,9 +229,7 @@ class Fp8PerBlockOnlineLinearMethod(_Fp8OnlineLinearBase):
         layer.input_scale = None
         block_size = self.weight_block_size
 
-        qweight, weight_scale_inv = per_block_cast_to_fp8(
-            layer.weight, block_size=block_size, use_ue8m0=False
-        )
+        qweight, weight_scale_inv = per_block_cast_to_fp8(layer.weight, block_size=block_size, use_ue8m0=False)
 
         replace_parameter(layer, "weight", qweight.data)
         replace_parameter(layer, "weight_scale_inv", weight_scale_inv.data)
@@ -286,9 +279,7 @@ class _Fp8OnlineMoEBase(OnlineMoEMethodBase):
         super().__init__(layer.moe_config)
         self.weight_block_size = weight_block_size
         self.block_quant: bool = self.weight_block_size is not None
-        self.weight_scale_name = (
-            "weight_scale_inv" if self.block_quant else "weight_scale"
-        )
+        self.weight_scale_name = "weight_scale_inv" if self.block_quant else "weight_scale"
 
         # Set weight key and activation key for kernel compatibility
         if self.block_quant:
@@ -352,9 +343,7 @@ class _Fp8OnlineMoEBase(OnlineMoEMethodBase):
                 shared_experts=layer.shared_experts,
             )
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> "FusedMoEQuantConfig":
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> "FusedMoEQuantConfig":
         from aphrodite.model_executor.layers.fused_moe.oracle.fp8 import (
             make_fp8_moe_quant_config,
         )
@@ -400,20 +389,14 @@ class Fp8PerTensorOnlineMoEMethod(_Fp8OnlineMoEBase):
         fp8_dtype = current_platform.fp8_dtype()
         w13 = torch.empty_like(layer.w13_weight, dtype=fp8_dtype)
         w2 = torch.empty_like(layer.w2_weight, dtype=fp8_dtype)
-        w13_scale = torch.ones(
-            layer.num_experts, device=w13.device, dtype=torch.float32
-        )
+        w13_scale = torch.ones(layer.num_experts, device=w13.device, dtype=torch.float32)
         w2_scale = torch.ones(layer.num_experts, device=w2.device, dtype=torch.float32)
         layer.w13_input_scale = None
         layer.w2_input_scale = None
 
         for expert in range(layer.local_num_experts):
-            w13[expert, :, :], w13_scale[expert] = ops.scaled_fp8_quant(
-                layer.w13_weight[expert, :, :]
-            )
-            w2[expert, :, :], w2_scale[expert] = ops.scaled_fp8_quant(
-                layer.w2_weight[expert, :, :]
-            )
+            w13[expert, :, :], w13_scale[expert] = ops.scaled_fp8_quant(layer.w13_weight[expert, :, :])
+            w2[expert, :, :], w2_scale[expert] = ops.scaled_fp8_quant(layer.w2_weight[expert, :, :])
 
         # Shuffle weights to runtime format and setup kernel.
         self._setup_kernel(

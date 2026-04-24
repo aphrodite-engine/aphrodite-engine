@@ -15,9 +15,7 @@ __all__ = [
 FLOAT4_E2M1_MAX = scalar_types.float4_e2m1f.max()
 FLOAT4_E2M1_MAX_RECIPROCAL = 1 / FLOAT4_E2M1_MAX
 
-kE2M1ToFloat_handle = SimpleNamespace(
-    val=torch.tensor([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], dtype=torch.float32)
-)
+kE2M1ToFloat_handle = SimpleNamespace(val=torch.tensor([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], dtype=torch.float32))
 
 
 def break_fp4_bytes(a, dtype):

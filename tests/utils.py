@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import contextlib
 import copy
@@ -28,14 +30,14 @@ import pytest
 import requests
 import torch
 import torch.nn.functional as F
+from aphrodite.endpoints.cli.run import ServeSubcommand
+from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.modeling.model_loader import get_model_loader
 from openai.types.completion import Completion
 from typing_extensions import ParamSpec
 
 import aphrodite.envs as envs
 from aphrodite.distributed import ensure_model_parallel_initialized, init_distributed_environment
-from aphrodite.endpoints.cli.run import ServeSubcommand
-from aphrodite.engine.args_tools import AsyncEngineArgs
-from aphrodite.modeling.model_loader import get_model_loader
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser

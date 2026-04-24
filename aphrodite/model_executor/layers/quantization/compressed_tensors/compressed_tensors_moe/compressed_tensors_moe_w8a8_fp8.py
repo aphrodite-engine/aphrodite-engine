@@ -81,8 +81,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
         self.static_input_scales = not self.input_quant.dynamic
         if self.static_input_scales and per_channel:
             raise ValueError(
-                "For FP8 Fused MoE layer, we require either per tensor or "
-                "channelwise, dynamic per token quantization."
+                "For FP8 Fused MoE layer, we require either per tensor or channelwise, dynamic per token quantization."
             )
 
         ct2aphrodite_weight = {
@@ -92,9 +91,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
         }
         ct2aphrodite_act = {
             QuantizationStrategy.TOKEN: kFp8DynamicTokenSym,
-            QuantizationStrategy.TENSOR: (
-                kFp8StaticTensorSym if self.static_input_scales else kFp8Dynamic128Sym
-            ),
+            QuantizationStrategy.TENSOR: (kFp8StaticTensorSym if self.static_input_scales else kFp8Dynamic128Sym),
         }
         weight_key = ct2aphrodite_weight[self.weight_quant.strategy]
         if weight_key == kFp8Static128BlockSym:
@@ -187,14 +184,10 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                 requires_grad=False,
             )
             layer.register_parameter("w13_weight_scale", w13_weight_scale)
-            w2_weight_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w2_weight_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w2_weight_scale", w2_weight_scale)
             # Add PER-TENSOR quantization for FusedMoE.weight_loader.
-            extra_weight_attrs.update(
-                {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value}
-            )
+            extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.TENSOR.value})
             set_weight_attrs(w13_weight_scale, extra_weight_attrs)
             set_weight_attrs(w2_weight_scale, extra_weight_attrs)
 
@@ -215,9 +208,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             )
             layer.register_parameter("w2_weight_scale", w2_weight_scale)
             # Add PER-CHANNEL quantization for FusedMoE.weight_loader.
-            extra_weight_attrs.update(
-                {"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value}
-            )
+            extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value})
             set_weight_attrs(w13_weight_scale, extra_weight_attrs)
             set_weight_attrs(w2_weight_scale, extra_weight_attrs)
 
@@ -225,8 +216,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             w13_weight_scale = torch.nn.Parameter(
                 torch.ones(
                     num_experts,
-                    w13_num_shards
-                    * ((intermediate_size_per_partition + block_n - 1) // block_n),
+                    w13_num_shards * ((intermediate_size_per_partition + block_n - 1) // block_n),
                     (hidden_size + block_k - 1) // block_k,
                     dtype=torch.float32,
                 ),
@@ -244,23 +234,17 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             )
             layer.register_parameter("w2_weight_scale", w2_weight_scale)
             # Add PER-CHANNEL quantization for FusedMoE.weight_loader.
-            extra_weight_attrs.update(
-                {"quant_method": FusedMoeWeightScaleSupported.BLOCK.value}
-            )
+            extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.BLOCK.value})
             set_weight_attrs(w13_weight_scale, extra_weight_attrs)
             set_weight_attrs(w2_weight_scale, extra_weight_attrs)
 
         # INPUT_SCALES
         if self.static_input_scales:
-            w13_input_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w13_input_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w13_input_scale", w13_input_scale)
             set_weight_attrs(w13_input_scale, extra_weight_attrs)
 
-            w2_input_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w2_input_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w2_input_scale", w2_input_scale)
             set_weight_attrs(w2_input_scale, extra_weight_attrs)
         else:
@@ -278,20 +262,14 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
 
         # MI300x and MI325x use FNUZ format for FP8. Convert if needed.
         if current_platform.is_fp8_fnuz():
-            w13, w13_scale, w13_input_scale = normalize_e4m3fn_to_e4m3fnuz(
-                w13, w13_scale, w13_input_scale
-            )
-            w2, w2_scale, w2_input_scale = normalize_e4m3fn_to_e4m3fnuz(
-                w2, w2_scale, w2_input_scale
-            )
+            w13, w13_scale, w13_input_scale = normalize_e4m3fn_to_e4m3fnuz(w13, w13_scale, w13_input_scale)
+            w2, w2_scale, w2_input_scale = normalize_e4m3fn_to_e4m3fnuz(w2, w2_scale, w2_input_scale)
 
         # Per tensor kernels require single activation scale. Use the max.
         if self.static_input_scales:
             assert self.input_quant.strategy == QuantizationStrategy.TENSOR
             assert w13_input_scale is not None and w2_input_scale is not None
-            w13_input_scale, w2_input_scale = process_fp8_input_tensor_strategy_moe(
-                w13_input_scale, w2_input_scale
-            )
+            w13_input_scale, w2_input_scale = process_fp8_input_tensor_strategy_moe(w13_input_scale, w2_input_scale)
             replace_parameter(layer, "w13_input_scale", w13_input_scale)
             replace_parameter(layer, "w2_input_scale", w2_input_scale)
 

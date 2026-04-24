@@ -132,12 +132,8 @@ class MMEncoderAttention(CustomOp):
             return None
 
         sequence_lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-        sequence_lengths = add_padding_to_seqlens(
-            sequence_lengths, len(sequence_lengths), 0
-        )
-        sequence_lengths = torch.from_numpy(sequence_lengths).to(
-            device, non_blocking=True
-        )
+        sequence_lengths = add_padding_to_seqlens(sequence_lengths, len(sequence_lengths), 0)
+        sequence_lengths = torch.from_numpy(sequence_lengths).to(device, non_blocking=True)
         return sequence_lengths
 
     @classmethod
@@ -162,12 +158,8 @@ class MMEncoderAttention(CustomOp):
             cu_seqlens_qko = cu_seqlens
             cu_seqlens_v = cu_seqlens * 3
 
-            cu_seqlens_qko = add_padding_to_seqlens(
-                cu_seqlens_qko, batch_size, cu_seqlens_qko[-1]
-            )
-            cu_seqlens_v = add_padding_to_seqlens(
-                cu_seqlens_v, batch_size, cu_seqlens_v[-1]
-            )
+            cu_seqlens_qko = add_padding_to_seqlens(cu_seqlens_qko, batch_size, cu_seqlens_qko[-1])
+            cu_seqlens_v = add_padding_to_seqlens(cu_seqlens_v, batch_size, cu_seqlens_v[-1])
             cu_seqlens = np.concatenate([cu_seqlens_qko, cu_seqlens_v])
 
         cu_seqlens = torch.from_numpy(cu_seqlens).to(device, non_blocking=True)
@@ -198,8 +190,7 @@ class MMEncoderAttention(CustomOp):
         self.num_kv_heads = num_heads if num_kv_heads is None else num_kv_heads
         self.layer_name = prefix
         assert self.num_heads % self.num_kv_heads == 0, (
-            f"num_heads ({self.num_heads}) is not "
-            f"divisible by num_kv_heads ({self.num_kv_heads})"
+            f"num_heads ({self.num_heads}) is not divisible by num_kv_heads ({self.num_kv_heads})"
         )
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
 
@@ -218,18 +209,12 @@ class MMEncoderAttention(CustomOp):
             AttentionBackendEnum.ROCM_AITER_FA,
         }
 
-        self._fa_version = (
-            get_flash_attn_version(head_size=head_size)
-            if self.is_flash_attn_backend
-            else None
-        )
+        self._fa_version = get_flash_attn_version(head_size=head_size) if self.is_flash_attn_backend else None
 
         if self.attn_backend == AttentionBackendEnum.FLASHINFER:
             _get_flashinfer_workspace_buffer()
 
-        logger.info_once(
-            f"Using {self.attn_backend} for MMEncoderAttention.", scope="local"
-        )
+        logger.info_once(f"Using {self.attn_backend} for MMEncoderAttention.", scope="local")
 
     @classmethod
     def enabled(cls) -> bool:
@@ -295,9 +280,9 @@ class MMEncoderAttention(CustomOp):
         (batch_size x seq_len x hidden_size) or
         (batch_size x seq_len x num_heads x head_size)
         """
-        assert (cu_seqlens is not None and max_seqlen is not None) or (
-            cu_seqlens is None and max_seqlen is None
-        ), "cu_seqlens and max_seqlen should be both set or both None."
+        assert (cu_seqlens is not None and max_seqlen is not None) or (cu_seqlens is None and max_seqlen is None), (
+            "cu_seqlens and max_seqlen should be both set or both None."
+        )
 
         bsz, q_len = query.size()[:2]
         kv_len = key.size(1)
@@ -332,9 +317,9 @@ class MMEncoderAttention(CustomOp):
         (batch_size x seq_len x hidden_size) or
         (batch_size x seq_len x num_heads x head_size)
         """
-        assert (cu_seqlens is not None and max_seqlen is not None) or (
-            cu_seqlens is None and max_seqlen is None
-        ), "cu_seqlens and max_seqlen should be both set or both None."
+        assert (cu_seqlens is not None and max_seqlen is not None) or (cu_seqlens is None and max_seqlen is None), (
+            "cu_seqlens and max_seqlen should be both set or both None."
+        )
 
         bsz, q_len = query.size()[:2]
         kv_len = key.size(1)
@@ -362,8 +347,7 @@ class MMEncoderAttention(CustomOp):
         value: torch.Tensor,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: torch.Tensor | None = None,
-        sequence_lengths: torch.Tensor
-        | None = None,  # Only used for FlashInfer CuDNN backend
+        sequence_lengths: torch.Tensor | None = None,  # Only used for FlashInfer CuDNN backend
     ) -> torch.Tensor:
         return vit_flashinfer_wrapper(
             q=query,
@@ -383,8 +367,7 @@ class MMEncoderAttention(CustomOp):
         value: torch.Tensor,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
-        sequence_lengths: torch.Tensor
-        | None = None,  # Only used for FlashInfer CuDNN backend
+        sequence_lengths: torch.Tensor | None = None,  # Only used for FlashInfer CuDNN backend
     ) -> torch.Tensor:
         return self._forward_sdpa(query, key, value, cu_seqlens)
 
@@ -395,24 +378,18 @@ class MMEncoderAttention(CustomOp):
         value: torch.Tensor,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
-        sequence_lengths: torch.Tensor
-        | None = None,  # Only used for FlashInfer CuDNN backend
+        sequence_lengths: torch.Tensor | None = None,  # Only used for FlashInfer CuDNN backend
     ) -> torch.Tensor:
         if self.is_flash_attn_backend:
             return self._forward_fa(query, key, value, cu_seqlens, max_seqlen)
         elif self.attn_backend == AttentionBackendEnum.TRITON_ATTN:
             return self._forward_triton(query, key, value, cu_seqlens, max_seqlen)
         elif self.attn_backend == AttentionBackendEnum.FLASHINFER:
-            return self._forward_flashinfer(
-                query, key, value, cu_seqlens, max_seqlen, sequence_lengths
-            )
+            return self._forward_flashinfer(query, key, value, cu_seqlens, max_seqlen, sequence_lengths)
         elif self.attn_backend == AttentionBackendEnum.TORCH_SDPA:
             return self._forward_sdpa(query, key, value, cu_seqlens)
         else:
-            raise ValueError(
-                f"Unsupported multi-modal encoder attention backend for CUDA: "
-                f"{self.attn_backend}."
-            )
+            raise ValueError(f"Unsupported multi-modal encoder attention backend for CUDA: {self.attn_backend}.")
 
     def forward_cpu(
         self,
@@ -421,8 +398,7 @@ class MMEncoderAttention(CustomOp):
         value: torch.Tensor,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
-        sequence_lengths: torch.Tensor
-        | None = None,  # Only used for FlashInfer CuDNN backend
+        sequence_lengths: torch.Tensor | None = None,  # Only used for FlashInfer CuDNN backend
     ) -> torch.Tensor:
         return self._forward_sdpa(query, key, value, cu_seqlens)
 
@@ -433,8 +409,7 @@ class MMEncoderAttention(CustomOp):
         value: torch.Tensor,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
-        sequence_lengths: torch.Tensor
-        | None = None,  # Only used for FlashInfer CuDNN backend
+        sequence_lengths: torch.Tensor | None = None,  # Only used for FlashInfer CuDNN backend
     ) -> torch.Tensor:
         if self.attn_backend == AttentionBackendEnum.FLASH_ATTN:
             return self._forward_fa(query, key, value, cu_seqlens, max_seqlen)
@@ -443,7 +418,4 @@ class MMEncoderAttention(CustomOp):
         elif self.attn_backend == AttentionBackendEnum.TORCH_SDPA:
             return self._forward_sdpa(query, key, value, cu_seqlens)
         else:
-            raise ValueError(
-                f"Unsupported multi-modal encoder attention backend for XPU: "
-                f"{self.attn_backend}."
-            )
+            raise ValueError(f"Unsupported multi-modal encoder attention backend for XPU: {self.attn_backend}.")

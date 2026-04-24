@@ -6,8 +6,6 @@ Speculative decoding is a technique to speed up inference of large language mode
 
 In short, Speculative decoding is an optimization technique for inference that makes educated guesses about future tokens while generating the current token, all within a single forward pass. It incorporates a verification mechanism to ensure the correctness of these speculated tokens, thereby guaranteeing that the overall output of speculative decoding is identical to that of vanilla decoding. Optimizing the cost of inference of large language models (LLMs) is arguably one of the most critical factors in reducing the cost of generative AI and increasing its adoption. Towards this goal, various inference optimization techniques are available, including custom kernels, dynamic batching of input requests, and quantization of large models. Aphrodite implements many of these techniques, which you will find in the next pages.
 
-
-
 Reference:
 
 - [Accelerating Large Language Model Decoding with Speculative Sampling](https://arxiv.org/abs/2302.01318)
@@ -15,4 +13,3 @@ Reference:
 - [Fast Inference from Transformers via Speculative Decoding](https://arxiv.org/abs/2211.17192)
 
 The next sections will explain each method and how to use them with Aphrodite.
-

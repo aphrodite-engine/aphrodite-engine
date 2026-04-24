@@ -177,20 +177,14 @@ class KimiVLProcessingInfo(BaseProcessingInfo):
         assert kernel_size is not None, "kernel_size must be specified"
 
         if (width // patch_size) * (height // patch_size) > in_token_limit:
-            scale = math.sqrt(
-                in_token_limit / ((width // patch_size) * (height // patch_size))
-            )
+            scale = math.sqrt(in_token_limit / ((width // patch_size) * (height // patch_size)))
             new_w, new_h = int(width * scale), int(height * scale)
             width, height = new_w, new_h
 
         kernel_height, kernel_width = kernel_size
 
-        pad_height = (
-            kernel_height * patch_size - height % (kernel_height * patch_size)
-        ) % (kernel_height * patch_size)
-        pad_width = (
-            kernel_width * patch_size - width % (kernel_width * patch_size)
-        ) % (kernel_width * patch_size)
+        pad_height = (kernel_height * patch_size - height % (kernel_height * patch_size)) % (kernel_height * patch_size)
+        pad_width = (kernel_width * patch_size - width % (kernel_width * patch_size)) % (kernel_width * patch_size)
 
         # Calculate new dimensions after padding and patching
         token_height = (height + pad_height) // (kernel_size[0] * patch_size)
@@ -243,9 +237,7 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
         # pixel_values is merged as a single large tensor
         # image_grid_hws is shapes for each subtensor in pixel_values
         return dict(
-            pixel_values=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_grid_sizes
-            ),
+            pixel_values=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
             image_grid_hws=MultiModalFieldConfig.batched("image"),
         )
 
@@ -258,9 +250,7 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
         image_token_id = self.info.image_token_id
 
         def get_replacement(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 num_image_tokens = images.get_feature_size(item_idx)
@@ -311,9 +301,7 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
         self.quant_config = quant_config
 
         assert isinstance(config.vision_config, MoonViTConfig)
-        self.use_data_parallel = (
-            model_config.multimodal_config.mm_encoder_tp_mode == "data"
-        )
+        self.use_data_parallel = model_config.multimodal_config.mm_encoder_tp_mode == "data"
         self.hidden_size = config.text_config.hidden_size
 
         with self._mark_tower_model(aphrodite_config, "image"):
@@ -334,15 +322,11 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
                 architectures=["DeepseekV2ForCausalLM"],
             )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
         self.media_placeholder: int = self.config.media_placeholder_token_id
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> KimiVLImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> KimiVLImageInputs | None:
         # image input type must be pixel values now
         pixel_values = kwargs.pop("pixel_values", None)
         image_grid_hws = kwargs.pop("image_grid_hws", None)

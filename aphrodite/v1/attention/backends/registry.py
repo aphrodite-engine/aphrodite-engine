@@ -25,10 +25,7 @@ class _AttentionBackendEnumMeta(EnumMeta):
         except KeyError:
             members = cast("dict[str, Enum]", cls.__members__).keys()
             valid_backends = ", ".join(members)
-            raise ValueError(
-                f"Unknown attention backend: '{name}'. "
-                f"Valid options are: {valid_backends}"
-            ) from None
+            raise ValueError(f"Unknown attention backend: '{name}'. Valid options are: {valid_backends}") from None
 
 
 class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
@@ -42,45 +39,27 @@ class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
     """
 
     FLASH_ATTN = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"
-    FLASH_ATTN_DIFFKV = (
-        "aphrodite.v1.attention.backends.flash_attn_diffkv.FlashAttentionDiffKVBackend"
-    )
+    FLASH_ATTN_DIFFKV = "aphrodite.v1.attention.backends.flash_attn_diffkv.FlashAttentionDiffKVBackend"
     TRITON_ATTN = "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"
     ROCM_ATTN = "aphrodite.v1.attention.backends.rocm_attn.RocmAttentionBackend"
     ROCM_AITER_MLA = "aphrodite.v1.attention.backends.mla.rocm_aiter_mla.AiterMLABackend"
-    ROCM_AITER_TRITON_MLA = (
-        "aphrodite.v1.attention.backends.mla.aiter_triton_mla.AiterTritonMLABackend"
-    )
-    ROCM_AITER_FA = (
-        "aphrodite.v1.attention.backends.rocm_aiter_fa.AiterFlashAttentionBackend"
-    )
-    ROCM_AITER_MLA_SPARSE = (
-        "aphrodite.v1.attention.backends.mla.rocm_aiter_mla_sparse.ROCMAiterMLASparseBackend"
-    )
+    ROCM_AITER_TRITON_MLA = "aphrodite.v1.attention.backends.mla.aiter_triton_mla.AiterTritonMLABackend"
+    ROCM_AITER_FA = "aphrodite.v1.attention.backends.rocm_aiter_fa.AiterFlashAttentionBackend"
+    ROCM_AITER_MLA_SPARSE = "aphrodite.v1.attention.backends.mla.rocm_aiter_mla_sparse.ROCMAiterMLASparseBackend"
     XPU_MLA_SPARSE = "aphrodite.v1.attention.backends.mla.xpu_mla_sparse.XPUMLASparseBackend"
     TORCH_SDPA = ""  # this tag is only used for ViT
     FLASHINFER = "aphrodite.v1.attention.backends.flashinfer.FlashInferBackend"
-    FLASHINFER_MLA = (
-        "aphrodite.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend"
-    )
-    FLASHINFER_MLA_SPARSE = (
-        "aphrodite.v1.attention.backends.mla.flashinfer_mla_sparse."
-        "FlashInferMLASparseBackend"
-    )
+    FLASHINFER_MLA = "aphrodite.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend"
+    FLASHINFER_MLA_SPARSE = "aphrodite.v1.attention.backends.mla.flashinfer_mla_sparse.FlashInferMLASparseBackend"
     TRITON_MLA = "aphrodite.v1.attention.backends.mla.triton_mla.TritonMLABackend"
     CUTLASS_MLA = "aphrodite.v1.attention.backends.mla.cutlass_mla.CutlassMLABackend"
     FLASHMLA = "aphrodite.v1.attention.backends.mla.flashmla.FlashMLABackend"
-    FLASHMLA_SPARSE = (
-        "aphrodite.v1.attention.backends.mla.flashmla_sparse.FlashMLASparseBackend"
-    )
+    FLASHMLA_SPARSE = "aphrodite.v1.attention.backends.mla.flashmla_sparse.FlashMLASparseBackend"
     FLASH_ATTN_MLA = "aphrodite.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend"
     NO_ATTENTION = "aphrodite.v1.attention.backends.no_attention.NoAttentionBackend"
     FLEX_ATTENTION = "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"
     TREE_ATTN = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"
-    ROCM_AITER_UNIFIED_ATTN = (
-        "aphrodite.v1.attention.backends.rocm_aiter_unified_attn."
-        "RocmAiterUnifiedAttentionBackend"
-    )
+    ROCM_AITER_UNIFIED_ATTN = "aphrodite.v1.attention.backends.rocm_aiter_unified_attn.RocmAiterUnifiedAttentionBackend"
     CPU_ATTN = "aphrodite.v1.attention.backends.cpu_attn.CPUAttentionBackend"
     TURBOQUANT = "aphrodite.v1.attention.backends.turboquant_attn.TurboQuantAttentionBackend"
     # Placeholder for third-party/custom backends - must be registered before use

@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.modeling.layers.activation import SiluAndMul
 
 import aphrodite._custom_ops as ops
-from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.platforms import current_platform
 from tests.kernels.utils import opcheck
 

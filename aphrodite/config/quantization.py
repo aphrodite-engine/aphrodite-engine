@@ -50,13 +50,9 @@ class OnlineQuantizationConfigArgs:
     patterns with ``re:`` prefix (e.g. ``re:.*attn.*``), consistent with
     compressed_tensors layer skipping."""
 
-    @field_validator(
-        "global_scheme", "linear_scheme_override", "moe_scheme_override", mode="before"
-    )
+    @field_validator("global_scheme", "linear_scheme_override", "moe_scheme_override", mode="before")
     @classmethod
-    def _coerce_scheme(
-        cls, v: str | OnlineQuantScheme | None
-    ) -> OnlineQuantScheme | None:
+    def _coerce_scheme(cls, v: str | OnlineQuantScheme | None) -> OnlineQuantScheme | None:
         if isinstance(v, str):
             return OnlineQuantScheme(v)
         return v
@@ -106,11 +102,7 @@ def resolve_online_quant_config(
                 quantization_config["global_scheme"] = scheme.value
             else:
                 # Coerce to enum for comparison
-                existing_scheme = (
-                    OnlineQuantScheme(existing)
-                    if isinstance(existing, str)
-                    else existing
-                )
+                existing_scheme = OnlineQuantScheme(existing) if isinstance(existing, str) else existing
                 if existing_scheme != scheme:
                     raise ValueError(
                         f"quantization={quantization!r} conflicts "

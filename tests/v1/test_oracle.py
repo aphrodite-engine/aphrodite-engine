@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
 
 import pytest
+from aphrodite.engine.args_tools import AsyncEngineArgs
 
 import aphrodite.envs as envs
 from aphrodite import LLM
-from aphrodite.engine.args_tools import AsyncEngineArgs
 
 MODEL = "meta-llama/Llama-3.2-1B-Instruct"
 

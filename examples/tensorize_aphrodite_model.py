@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import dataclasses
 import json
 import uuid
 
 import aphrodite.common.envs as envs
-
-from aphrodite import LLM
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.model_loader.tensorizer import TensorizerArgs, TensorizerConfig, tensorize_aphrodite_model
+
+from aphrodite import LLM
 
 # yapf conflicts with isort for this docstring
 # yapf: disable

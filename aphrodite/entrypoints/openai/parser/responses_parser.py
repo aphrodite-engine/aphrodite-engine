@@ -61,9 +61,7 @@ class ResponsesParser:
         # Store the finish_reason from the output
         self.finish_reason = output.finish_reason
 
-        reasoning, content = self.reasoning_parser_instance.extract_reasoning(
-            output.text, request=self.request
-        )
+        reasoning, content = self.reasoning_parser_instance.extract_reasoning(output.text, request=self.request)
         if reasoning:
             self.response_messages.append(
                 ResponseReasoningItem(
@@ -135,17 +133,13 @@ class ResponsesParser:
                 output_messages.append(message)
             else:
                 if len(output_messages) == 0:
-                    raise ValueError(
-                        "Cannot have a FunctionToolCallOutput before FunctionToolCall."
-                    )
+                    raise ValueError("Cannot have a FunctionToolCallOutput before FunctionToolCall.")
                 if isinstance(output_messages[-1], ResponseFunctionToolCall):
                     mcp_message = McpCall(
                         id=f"{MCP_PREFIX}{random_uuid()}",
                         arguments=output_messages[-1].arguments,
                         name=output_messages[-1].name,
-                        server_label=output_messages[
-                            -1
-                        ].name,  # TODO: store the server label
+                        server_label=output_messages[-1].name,  # TODO: store the server label
                         type="mcp_call",
                         status="completed",
                         output=message.output,

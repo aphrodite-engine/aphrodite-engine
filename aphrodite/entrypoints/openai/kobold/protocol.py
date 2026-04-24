@@ -42,17 +42,10 @@ class KAIGenerationInputSchema(OpenAIBaseModel):
         if isinstance(values, dict):
             max_length = values.get("max_length")
             max_context_length = values.get("max_context_length")
-            if (
-                isinstance(max_length, int)
-                and isinstance(max_context_length, int)
-                and max_length > max_context_length
-            ):
-                raise ValueError(
-                    "max_length must not be larger than max_context_length"
-                )
+            if isinstance(max_length, int) and isinstance(max_context_length, int) and max_length > max_context_length:
+                raise ValueError("max_length must not be larger than max_context_length")
         return values
 
 
 class KAITokenizeRequest(OpenAIBaseModel):
     prompt: str = Field(min_length=0)
-

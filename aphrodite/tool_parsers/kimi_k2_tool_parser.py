@@ -55,10 +55,7 @@ class KimiK2ToolParser(ToolParser):
         )
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
     def adjust_request(
         self, request: ChatCompletionRequest | ResponsesRequest
@@ -77,9 +74,7 @@ class KimiK2ToolParser(ToolParser):
     ) -> ExtractedToolCallInformation:
         # sanity check; avoid unnecessary processing
         if self.tool_calls_start_token not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         else:
             try:
@@ -100,9 +95,7 @@ class KimiK2ToolParser(ToolParser):
                         ToolCall(
                             id=function_id,
                             type="function",
-                            function=FunctionCall(
-                                name=function_name, arguments=function_args
-                            ),
+                            function=FunctionCall(name=function_name, arguments=function_args),
                         )
                     )
 
@@ -115,9 +108,7 @@ class KimiK2ToolParser(ToolParser):
 
             except Exception:
                 logger.exception("Error in extracting tool call from response.")
-                return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
-                )
+                return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def _extract_content(self, current_text: str) -> str | None:
         """Return unsent content before the tool-calls section, or None.
@@ -246,9 +237,7 @@ class KimiK2ToolParser(ToolParser):
                             index=i,
                             type="function",
                             id=tool_id,
-                            function=DeltaFunctionCall(name=tool_name).model_dump(
-                                exclude_none=True
-                            ),
+                            function=DeltaFunctionCall(name=tool_name).model_dump(exclude_none=True),
                         )
                     )
 
@@ -258,9 +247,7 @@ class KimiK2ToolParser(ToolParser):
                     tool_call_deltas.append(
                         DeltaToolCall(
                             index=i,
-                            function=DeltaFunctionCall(arguments=args_diff).model_dump(
-                                exclude_none=True
-                            ),
+                            function=DeltaFunctionCall(arguments=args_diff).model_dump(exclude_none=True),
                         )
                     )
 

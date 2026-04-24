@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.v1.engine.processor import Processor
 
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import AphroditeConfig, CacheConfig, DeviceConfig, ModelConfig
 from aphrodite.v1.engine import processor as processor_mod
-from aphrodite.v1.engine.processor import Processor
 
 cherry_pil_image = ImageAsset("cherry_blossom").pil_image
 stop_pil_image = ImageAsset("stop_sign").pil_image

@@ -1,9 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 
 import pytest
 import torch._dynamo
-
-from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.attention.backends.registry import _Backend
 from aphrodite.attention.selector import global_force_attn_backend_context_manager
@@ -12,6 +12,10 @@ from aphrodite.compilation.fx_utils import find_op_nodes
 from aphrodite.compilation.matcher_utils import QUANT_OPS
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
+from aphrodite.quantization.utils.quant_utils import QuantKey, kFp8StaticTensorSym, kNvfp4Quant
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
+
+from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.config import (
     AphroditeConfig,
     CacheConfig,
@@ -24,8 +28,6 @@ from aphrodite.config import (
 )
 from aphrodite.forward_context import get_forward_context, set_forward_context
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import QuantKey, kFp8StaticTensorSym, kNvfp4Quant
-from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
 from aphrodite.utils.flashinfer import has_flashinfer
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 from tests.compile.backend import LazyInitPass, TestBackend

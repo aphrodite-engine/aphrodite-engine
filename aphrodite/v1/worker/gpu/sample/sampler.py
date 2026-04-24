@@ -40,9 +40,7 @@ class Sampler:
         self.bad_words_state = BadWordsState(req_states)
         self.num_speculative_tokens = num_speculative_tokens
 
-    def add_request(
-        self, req_idx: int, prompt_len: int, sampling_params: SamplingParams
-    ) -> None:
+    def add_request(self, req_idx: int, prompt_len: int, sampling_params: SamplingParams) -> None:
         self.sampling_states.add_request(req_idx, sampling_params)
         self.penalties_state.add_request(req_idx, sampling_params)
         self.logit_bias_state.add_request(req_idx, prompt_len, sampling_params)
@@ -84,9 +82,7 @@ class Sampler:
                 logits = processed_logits
             expanded_logits = logits.shape[0] != idx_mapping_np.shape[0]
             cu_num_logits = cu_num_logits_np.tolist() if expanded_logits else None
-            logprobs_tensors = compute_topk_logprobs(
-                logits, max_num_logprobs, sampled, cu_num_logits
-            )
+            logprobs_tensors = compute_topk_logprobs(logits, max_num_logprobs, sampled, cu_num_logits)
         else:
             logprobs_tensors = None
 
@@ -115,9 +111,7 @@ class Sampler:
         logits = torch.empty_like(logits, dtype=torch.float32).copy_(logits)
 
         # Apply logit bias (e.g., allowed_token_ids, min_tokens) in place.
-        self.logit_bias_state.apply_logit_bias(
-            logits, expanded_idx_mapping, idx_mapping_np, pos
-        )
+        self.logit_bias_state.apply_logit_bias(logits, expanded_idx_mapping, idx_mapping_np, pos)
 
         # Apply penalties in place.
         self.penalties_state.apply_penalties(
@@ -139,17 +133,13 @@ class Sampler:
         )
 
         # Apply temperature in place.
-        self.sampling_states.apply_temperature(
-            logits, expanded_idx_mapping, idx_mapping_np
-        )
+        self.sampling_states.apply_temperature(logits, expanded_idx_mapping, idx_mapping_np)
 
         # Apply min_p in place.
         self.sampling_states.apply_min_p(logits, expanded_idx_mapping, idx_mapping_np)
 
         # Apply top_k and/or top_p. This might or might not return a new tensor.
-        return self.sampling_states.apply_top_k_top_p(
-            logits, expanded_idx_mapping, idx_mapping_np
-        )
+        return self.sampling_states.apply_top_k_top_p(logits, expanded_idx_mapping, idx_mapping_np)
 
     def sample(
         self,

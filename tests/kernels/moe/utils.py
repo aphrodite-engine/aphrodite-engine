@@ -1,6 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
-
-import aphrodite._custom_ops as ops
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts, fused_topk
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
@@ -11,6 +11,8 @@ from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
 )
 from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input
+
+import aphrodite._custom_ops as ops
 from aphrodite.utils.deep_gemm import per_block_cast_to_fp8
 from aphrodite.utils.math_utils import round_up
 from tests.kernels.quant_utils import per_block_cast_to_int8

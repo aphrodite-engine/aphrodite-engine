@@ -64,18 +64,18 @@ On ROCm platforms, Mistral and Mixtral are capped to 4096 max context length due
 :::
 
 ## Encoder-Decoder Language Models
+
 | Architecture                   |             Example Model |
 | ------------------------------ | ------------------------: |
 | `BartForConditionalGeneration` | `facebook/bart-large-cnn` |
 
-
 ## Embedding Models
+
 | Architecture          | Example Model                     |
 | --------------------- | --------------------------------- |
 | `MistralModel`        | `intfloat/e5-mistral-7b-instruct` |
 | `Qwen2ForRewardModel` | `Qwen/Qwen2.5-Math-RM-72B`        |
 | `Gemma2Model`         | `BAAI/bge-multilingual-gemma2`    |
-
 
 ## Multimodal Language Models
 
@@ -100,13 +100,12 @@ On ROCm platforms, Mistral and Mixtral are capped to 4096 max context length due
 | `Qwen2VLForConditionalGeneration`        |        Image         |                `Qwen/Qwen2-VL-7B-Instruct` |
 | `UltravoxModel`                          |        Audio         |                   `fixie-ai/ultravox-v0_3` |
 
-
 ## Speculative Models
+
 | Architecture                   | Example Model                            |
 | ------------------------------ | ---------------------------------------- |
 | `EAGLEModel`                   | `abhigoyal/aphrodite-eagle-llama-68m-random`  |
 | `MedusaModel`                  | `abhigoyal/aphrodite-medusa-llama-68m-random` |
 | `MLPSpeculatorPreTrainedModel` | `ibm-fms/llama-160m-accelerator`         |
-
 
 If your model uses any of the architectures above, you can seamlessly run your model with Aphrodite.

@@ -68,9 +68,7 @@ class WeightTransferEngine(ABC, Generic[TInitInfo, TUpdateInfo]):
     init_info_cls: type[TInitInfo]
     update_info_cls: type[TUpdateInfo]
 
-    def __init__(
-        self, config: WeightTransferConfig, parallel_config: ParallelConfig
-    ) -> None:
+    def __init__(self, config: WeightTransferConfig, parallel_config: ParallelConfig) -> None:
         """
         Initialize the weight transfer engine.
 
@@ -97,9 +95,7 @@ class WeightTransferEngine(ABC, Generic[TInitInfo, TUpdateInfo]):
         try:
             return self.init_info_cls(**init_dict)
         except TypeError as e:
-            raise ValueError(
-                f"Invalid init_info for {self.__class__.__name__}: {e}"
-            ) from e
+            raise ValueError(f"Invalid init_info for {self.__class__.__name__}: {e}") from e
 
     def parse_update_info(self, update_dict: dict[str, Any]) -> TUpdateInfo:
         """
@@ -117,9 +113,7 @@ class WeightTransferEngine(ABC, Generic[TInitInfo, TUpdateInfo]):
         try:
             return self.update_info_cls(**update_dict)
         except TypeError as e:
-            raise ValueError(
-                f"Invalid update_info for {self.__class__.__name__}: {e}"
-            ) from e
+            raise ValueError(f"Invalid update_info for {self.__class__.__name__}: {e}") from e
 
     @abstractmethod
     def init_transfer_engine(self, init_info: TInitInfo) -> None:

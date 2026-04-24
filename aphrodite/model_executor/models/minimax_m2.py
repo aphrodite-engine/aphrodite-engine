@@ -32,7 +32,7 @@ from torch import nn
 from transformers import PretrainedConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, ModelConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import (
     get_pp_group,
     get_tensor_model_parallel_world_size,
@@ -82,17 +82,12 @@ class MiniMaxM2MoE(nn.Module):
 
         if self.tp_size > config.num_local_experts:
             raise ValueError(
-                f"Tensor parallel size {self.tp_size} is greater than "
-                f"the number of experts {config.num_local_experts}."
+                f"Tensor parallel size {self.tp_size} is greater than the number of experts {config.num_local_experts}."
             )
         self.use_routing_bias = getattr(config, "use_routing_bias", False)
         if self.use_routing_bias:
-            self.e_score_correction_bias = nn.Parameter(
-                torch.empty(config.num_local_experts, dtype=torch.float32)
-            )
-            self.e_score_correction_bias.weight_loader = (
-                MiniMaxM2MoE.ebias_weight_loader
-            )
+            self.e_score_correction_bias = nn.Parameter(torch.empty(config.num_local_experts, dtype=torch.float32))
+            self.e_score_correction_bias.weight_loader = MiniMaxM2MoE.ebias_weight_loader
         else:
             self.e_score_correction_bias = None
 
@@ -129,9 +124,7 @@ class MiniMaxM2MoE(nn.Module):
 
         # router_logits: (num_tokens, n_experts)
         router_logits, _ = self.gate(hidden_states.to(torch.float32))
-        final_hidden_states = self.experts(
-            hidden_states=hidden_states, router_logits=router_logits
-        )
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
 
         return final_hidden_states.view(num_tokens, hidden_dim)
 
@@ -193,10 +186,7 @@ class MiniMaxM2Attention(nn.Module):
             prefix=f"{prefix}.o_proj",
         )
 
-        if (
-            rope_parameters is not None
-            and "partial_rotary_factor" not in rope_parameters
-        ):
+        if rope_parameters is not None and "partial_rotary_factor" not in rope_parameters:
             rope_parameters["partial_rotary_factor"] = rotary_dim / self.head_dim
         self.rotary_emb = get_rope(
             self.head_dim,
@@ -214,12 +204,8 @@ class MiniMaxM2Attention(nn.Module):
             prefix=f"{prefix}.attn",
         )
 
-        self.q_norm = MiniMaxText01RMSNormTP(
-            self.head_dim * self.total_num_heads, eps=rms_norm_eps
-        )
-        self.k_norm = MiniMaxText01RMSNormTP(
-            self.head_dim * self.total_num_kv_heads, eps=rms_norm_eps
-        )
+        self.q_norm = MiniMaxText01RMSNormTP(self.head_dim * self.total_num_heads, eps=rms_norm_eps)
+        self.k_norm = MiniMaxText01RMSNormTP(self.head_dim * self.total_num_kv_heads, eps=rms_norm_eps)
 
     def forward(
         self,
@@ -248,9 +234,7 @@ class MiniMaxM2DecoderLayer(nn.Module):
         self.hidden_size = config.hidden_size
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         if hasattr(config, "max_model_len") and isinstance(config.max_model_len, int):
-            max_position_embeddings = max(
-                config.max_position_embeddings, config.max_model_len
-            )
+            max_position_embeddings = max(config.max_position_embeddings, config.max_model_len)
         # DecoderLayers are created with `make_layers` which passes the prefix
         # with the layer's index.
         layer_idx = int(prefix.split(sep=".")[-1])
@@ -277,9 +261,7 @@ class MiniMaxM2DecoderLayer(nn.Module):
             prefix=f"{prefix}.mlp",
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -373,18 +355,12 @@ class MiniMaxM2Model(nn.Module, EagleModelMixin):
             residual = intermediate_tensors["residual"]
 
         aux_hidden_states = self._maybe_add_hidden_state([], 0, hidden_states, residual)
-        for idx, layer in enumerate(
-            islice(self.layers, self.start_layer, self.end_layer)
-        ):
+        for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer)):
             hidden_states, residual = layer(positions, hidden_states, residual)
-            self._maybe_add_hidden_state(
-                aux_hidden_states, idx + 1, hidden_states, residual
-            )
+            self._maybe_add_hidden_state(aux_hidden_states, idx + 1, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
 
         if len(aux_hidden_states) > 0:
@@ -448,9 +424,7 @@ class MiniMaxM2Model(nn.Module, EagleModelMixin):
                     remapped_name = maybe_remap_kv_scale_name(name, params_dict)
                     if remapped_name is not None and remapped_name in params_dict:
                         param = params_dict[remapped_name]
-                        weight_loader = getattr(
-                            param, "weight_loader", default_weight_loader
-                        )
+                        weight_loader = getattr(param, "weight_loader", default_weight_loader)
                         weight_loader(param, loaded_weight)
                         break
 
@@ -492,9 +466,7 @@ class MiniMaxM2Model(nn.Module, EagleModelMixin):
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -517,9 +489,7 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle3):
         self.quant_config = quant_config
         if hasattr(aphrodite_config.model_config, "max_model_len"):
             self.config.max_model_len = aphrodite_config.model_config.max_model_len
-        self.model = MiniMaxM2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = MiniMaxM2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:
             self.lm_head = ParallelLMHead(
                 config.vocab_size,
@@ -530,9 +500,7 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle3):
         else:
             self.lm_head = PPMissingLayer()
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -545,9 +513,7 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle3):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
@@ -565,9 +531,7 @@ class MiniMaxM2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle3):
         return self.model.get_expert_mapping()
 
 
-def get_spec_layer_idx_from_weight_name(
-    config: PretrainedConfig, weight_name: str
-) -> int | None:
+def get_spec_layer_idx_from_weight_name(config: PretrainedConfig, weight_name: str) -> int | None:
     if hasattr(config, "num_mtp_modules") and (config.num_mtp_modules > 0):
         layer_idx = config.num_hidden_layers
         for i in range(config.num_mtp_modules):

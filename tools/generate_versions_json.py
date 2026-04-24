@@ -61,9 +61,7 @@ def parse_dockerfile_args(dockerfile_path: Path) -> dict[str, str]:
 
         # Strip surrounding quotes if present
         default = default.strip()
-        if (default.startswith('"') and default.endswith('"')) or (
-            default.startswith("'") and default.endswith("'")
-        ):
+        if (default.startswith('"') and default.endswith('"')) or (default.startswith("'") and default.endswith("'")):
             default = default[1:-1]
 
         if default:
@@ -93,8 +91,7 @@ def generate_bake_native_json(args: dict[str, str]) -> dict:
 
     return {
         "_comment": (
-            "Auto-generated from Dockerfile ARGs. "
-            "Do not edit manually. Run: python tools/generate_versions_json.py"
+            "Auto-generated from Dockerfile ARGs. Do not edit manually. Run: python tools/generate_versions_json.py"
         ),
         "variable": variables,
     }

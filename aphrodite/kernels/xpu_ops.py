@@ -23,12 +23,8 @@ rms_no_var = lambda x, weight, epsilon, variance_size=None: variance_size is Non
 )
 
 
-@ir.ops.rms_norm.register_impl(
-    "xpu_kernels", supports_args=rms_no_var, supported=XPU_KERNELS_SUPPORTED
-)
-def rms_norm(
-    x: Tensor, weight: Tensor | None, epsilon: float, variance_size: int | None = None
-) -> Tensor:
+@ir.ops.rms_norm.register_impl("xpu_kernels", supports_args=rms_no_var, supported=XPU_KERNELS_SUPPORTED)
+def rms_norm(x: Tensor, weight: Tensor | None, epsilon: float, variance_size: int | None = None) -> Tensor:
     if weight is None:
         # Kernel requires weight tensor, pass ones
         weight = torch.ones(x.shape[-1], device=x.device, dtype=x.dtype)

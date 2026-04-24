@@ -54,11 +54,7 @@ class OnlineQuantizationConfig(QuantizationConfig):
         args: OnlineQuantizationConfigArgs,
     ) -> None:
         super().__init__()
-        if (
-            args.global_scheme is None
-            and args.linear_scheme_override is None
-            and args.moe_scheme_override is None
-        ):
+        if args.global_scheme is None and args.linear_scheme_override is None and args.moe_scheme_override is None:
             raise ValueError(
                 "OnlineQuantizationConfig requires at least one of "
                 "global_scheme, linear_scheme_override, or "
@@ -94,9 +90,7 @@ class OnlineQuantizationConfig(QuantizationConfig):
             "quantization='fp8_per_tensor'/'fp8_per_block' instead."
         )
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> "QuantizeMethodBase | None":
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> "QuantizeMethodBase | None":
         if isinstance(layer, LinearBase):
             if should_ignore_layer(
                 prefix,

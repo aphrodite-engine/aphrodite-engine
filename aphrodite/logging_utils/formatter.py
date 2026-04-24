@@ -46,9 +46,7 @@ class NewLineFormatter(logging.Formatter):
         if self.use_relpath:
             self.root_dir = Path(__file__).resolve().parent.parent.parent
 
-        self.use_color = _supports_color() and os.environ.get(
-            "APHRODITE_LOGGING_COLOR", "1"
-        ) in ("1", "true", "True")
+        self.use_color = _supports_color() and os.environ.get("APHRODITE_LOGGING_COLOR", "1") in ("1", "true", "True")
         self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
         self.level_colors = {
             "DEBUG": Colors.DEBUG,
@@ -121,15 +119,11 @@ class NewLineFormatter(logging.Formatter):
             level_str = "WARN" if record.levelname == "WARNING" else record.levelname
 
             if level_str in msg:
-                msg = msg.replace(
-                    level_str, f"{level_color}{level_str}{Colors.RESET}", 1
-                )
+                msg = msg.replace(level_str, f"{level_color}{level_str}{Colors.RESET}", 1)
 
             asctime = self.formatTime(record, self.datefmt)
             if asctime in msg:
-                msg = msg.replace(
-                    asctime, f"{Colors.TIME}{asctime}{Colors.RESET}", 1
-                )
+                msg = msg.replace(asctime, f"{Colors.TIME}{asctime}{Colors.RESET}", 1)
 
             if self.verbose_logging:
                 fileinfo_str = f"[{record.fileinfo:<15}:{record.lineno:>4}]"
@@ -159,9 +153,7 @@ class UvicornFormatter(logging.Formatter):
         super().__init__(fmt, datefmt, style)
 
         self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
-        self.use_color = _supports_color() and os.environ.get(
-            "APHRODITE_LOGGING_COLOR", "1"
-        ) in ("1", "true", "True")
+        self.use_color = _supports_color() and os.environ.get("APHRODITE_LOGGING_COLOR", "1") in ("1", "true", "True")
         self.level_colors = {
             "DEBUG": Colors.DEBUG,
             "INFO": Colors.INFO,
@@ -193,18 +185,14 @@ class UvicornFormatter(logging.Formatter):
             level_str = "WARN" if record.levelname == "WARNING" else record.levelname
 
             if level_str in msg:
-                msg = msg.replace(
-                    level_str, f"{level_color}{level_str}{self.reset_color}", 1
-                )
+                msg = msg.replace(level_str, f"{level_color}{level_str}{self.reset_color}", 1)
 
             asctime = self.formatTime(
                 record,
                 self.datefmt if not self.verbose_logging else "%m-%d %H:%M:%S",
             )
             if asctime in msg:
-                msg = msg.replace(
-                    asctime, f"{self.time_color}{asctime}{self.reset_color}", 1
-                )
+                msg = msg.replace(asctime, f"{self.time_color}{asctime}{self.reset_color}", 1)
 
             if self.verbose_logging:
                 name_with_lineno = f"[{record.name:<15}:{record.lineno:>4}]"

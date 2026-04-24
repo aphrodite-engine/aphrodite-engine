@@ -13,9 +13,7 @@ def load_eagle_model(target_model: nn.Module, aphrodite_config: AphroditeConfig)
     assert speculative_config is not None
     draft_model_config = speculative_config.draft_model_config
     with set_model_tag("eagle_head"):
-        eagle_model = get_model(
-            aphrodite_config=aphrodite_config, model_config=draft_model_config
-        )
+        eagle_model = get_model(aphrodite_config=aphrodite_config, model_config=draft_model_config)
 
     # Share target embeddings when the draft checkpoint does not include
     # its own vocab embedding table.
@@ -24,9 +22,7 @@ def load_eagle_model(target_model: nn.Module, aphrodite_config: AphroditeConfig)
         share_embeddings = not eagle_model.has_own_embed_tokens
     if share_embeddings:
         target_language_model = (
-            target_model.get_language_model()
-            if hasattr(target_model, "get_language_model")
-            else target_model
+            target_model.get_language_model() if hasattr(target_model, "get_language_model") else target_model
         )
         inner_model = getattr(target_language_model, "model", None)
         target_embed_tokens = None

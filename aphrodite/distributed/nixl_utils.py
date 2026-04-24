@@ -12,14 +12,11 @@ logger = init_logger(__name__)
 if "UCX_RCACHE_MAX_UNRELEASED" not in os.environ:
     if "nixl" in sys.modules or "rixl" in sys.modules:
         logger.warning_once(
-            "NIXL was already imported, we can't reset "
-            "UCX_RCACHE_MAX_UNRELEASED. "
-            "Please set it to '1024' manually."
+            "NIXL was already imported, we can't reset UCX_RCACHE_MAX_UNRELEASED. Please set it to '1024' manually."
         )
     else:
         logger.info_once(
-            "Setting UCX_RCACHE_MAX_UNRELEASED to '1024' to avoid a rare "
-            "memory leak in UCX when using NIXL."
+            "Setting UCX_RCACHE_MAX_UNRELEASED to '1024' to avoid a rare memory leak in UCX when using NIXL."
         )
         os.environ["UCX_RCACHE_MAX_UNRELEASED"] = "1024"
 

@@ -56,12 +56,7 @@ class OpenAIServingTranscription(OpenAISpeechToText):
         audio_data: bytes,
         request: TranscriptionRequest,
         raw_request: Request | None = None,
-    ) -> (
-        TranscriptionResponse
-        | TranscriptionResponseVerbose
-        | AsyncGenerator[str, None]
-        | ErrorResponse
-    ):
+    ) -> TranscriptionResponse | TranscriptionResponseVerbose | AsyncGenerator[str, None] | ErrorResponse:
         """Transcription API similar to OpenAI's API.
 
         See https://platform.openai.com/docs/api-reference/audio/createTranscription
@@ -72,9 +67,7 @@ class OpenAIServingTranscription(OpenAISpeechToText):
             request=request,
             raw_request=raw_request,
             response_class=(
-                TranscriptionResponseVerbose
-                if request.response_format == "verbose_json"
-                else TranscriptionResponse
+                TranscriptionResponseVerbose if request.response_format == "verbose_json" else TranscriptionResponse
             ),
             stream_generator_method=self.transcription_stream_generator,
         )
@@ -129,12 +122,7 @@ class OpenAIServingTranslation(OpenAISpeechToText):
         audio_data: bytes,
         request: TranslationRequest,
         raw_request: Request | None = None,
-    ) -> (
-        TranslationResponse
-        | TranslationResponseVerbose
-        | AsyncGenerator[str, None]
-        | ErrorResponse
-    ):
+    ) -> TranslationResponse | TranslationResponseVerbose | AsyncGenerator[str, None] | ErrorResponse:
         """Translation API similar to OpenAI's API.
 
         See https://platform.openai.com/docs/api-reference/audio/createTranslation
@@ -145,9 +133,7 @@ class OpenAIServingTranslation(OpenAISpeechToText):
             request=request,
             raw_request=raw_request,
             response_class=(
-                TranslationResponseVerbose
-                if request.response_format == "verbose_json"
-                else TranslationResponse
+                TranslationResponseVerbose if request.response_format == "verbose_json" else TranslationResponse
             ),
             stream_generator_method=self.translation_stream_generator,
         )

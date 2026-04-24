@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 #
 # Copyright (C) 2025 Roberto L. Castro (Roberto.LopezCastro@ist.ac.at).
 # All Rights Reserved.
@@ -20,12 +22,12 @@ import copy
 import itertools
 
 import torch
+from aphrodite.quantization.qutlass_utils import to_blocked
 from compressed_tensors.transform.utils.hadamard import deterministic_hadamard_matrix
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite import _custom_ops as ops  # use existing nvfp4 gemm in aphrodite
 from aphrodite._custom_ops import fusedQuantizeNv
-from aphrodite.quantization.qutlass_utils import to_blocked
 from aphrodite.triton_utils import triton
 
 PROVIDER_CFGS = {

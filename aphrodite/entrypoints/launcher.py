@@ -57,9 +57,7 @@ async def serve_http(
         logger.info("Route: %s, Endpoint: %s", path, endpoint.__name__)
 
     # Extract header limit options if present
-    h11_max_incomplete_event_size = uvicorn_kwargs.pop(
-        "h11_max_incomplete_event_size", None
-    )
+    h11_max_incomplete_event_size = uvicorn_kwargs.pop("h11_max_incomplete_event_size", None)
     h11_max_header_count = uvicorn_kwargs.pop("h11_max_header_count", None)
 
     # Set safe defaults if not provided
@@ -109,9 +107,7 @@ async def serve_http(
         engine_client = app.state.engine_client
         timeout = engine_client.aphrodite_config.shutdown_timeout
 
-        await loop.run_in_executor(
-            None, partial(engine_client.shutdown, timeout=timeout)
-        )
+        await loop.run_in_executor(None, partial(engine_client.shutdown, timeout=timeout))
 
         server.should_exit = True
         server_task.cancel()

@@ -10,7 +10,7 @@ from torch import nn
 from transformers import BambaConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, ModelConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.model_executor.layers.activation import SiluAndMul
@@ -79,10 +79,7 @@ class BambaMLP(nn.Module):
             prefix=f"{prefix}.down_proj",
         )
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -122,9 +119,7 @@ class BambaMixerDecoderLayer(nn.Module):
             prefix=f"{prefix}.mixer",
         )
 
-        self.feed_forward = BambaMLP(
-            config, quant_config=quant_config, prefix=f"{prefix}.feed_forward"
-        )
+        self.feed_forward = BambaMLP(config, quant_config=quant_config, prefix=f"{prefix}.feed_forward")
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.pre_ff_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -217,9 +212,7 @@ class BambaAttentionDecoderLayer(nn.Module):
             prefix=f"{prefix}.attn",
         )
 
-        self.feed_forward = BambaMLP(
-            config, quant_config=quant_config, prefix=f"{prefix}.feed_forward"
-        )
+        self.feed_forward = BambaMLP(config, quant_config=quant_config, prefix=f"{prefix}.feed_forward")
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.pre_ff_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -336,9 +329,7 @@ class BambaModel(nn.Module):
             )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.final_layernorm(hidden_states, residual)
         return hidden_states
 
@@ -472,9 +463,7 @@ class BambaForCausalLM(
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = BambaModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = BambaModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.lm_head = ParallelLMHead(
             config.vocab_size,
@@ -484,9 +473,7 @@ class BambaForCausalLM(
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -499,9 +486,7 @@ class BambaForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

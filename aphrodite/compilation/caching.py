@@ -64,8 +64,7 @@ class StandaloneCompiledArtifacts:
             self.submodule_bytes_store[hex_digest] = entry
             compilation_counter.num_compiled_artifacts_saved += 1
             logger.debug(
-                "inserting new artifact for submod %s with shape %s "
-                "(%s bytes) at hash %s",
+                "inserting new artifact for submod %s with shape %s (%s bytes) at hash %s",
                 submod_name,
                 shape,
                 len(entry),
@@ -73,8 +72,7 @@ class StandaloneCompiledArtifacts:
             )
         else:
             logger.debug(
-                "reusing existing cache artifact for submod %s "
-                "with shape %s (%s bytes) at hash %s",
+                "reusing existing cache artifact for submod %s with shape %s (%s bytes) at hash %s",
                 submod_name,
                 shape,
                 len(entry),
@@ -87,9 +85,7 @@ class StandaloneCompiledArtifacts:
             submod_name,
             shape,
         )
-        return self.submodule_bytes_store[
-            self.submodule_bytes[f"{submod_name}_{shape}"]
-        ]
+        return self.submodule_bytes_store[self.submodule_bytes[f"{submod_name}_{shape}"]]
 
     def get_loaded(self, submod_name: str, shape: str) -> Any:
         logger.debug(
@@ -97,9 +93,7 @@ class StandaloneCompiledArtifacts:
             submod_name,
             shape,
         )
-        return self.loaded_submodule_store[
-            self.submodule_bytes[f"{submod_name}_{shape}"]
-        ]
+        return self.loaded_submodule_store[self.submodule_bytes[f"{submod_name}_{shape}"]]
 
     def size_bytes(self) -> int:
         return sum(len(entry) for entry in self.submodule_bytes_store.values())
@@ -152,9 +146,7 @@ class StandaloneCompiledArtifacts:
 
 @contextlib.contextmanager
 def patch_pytree_map_over_slice():
-    pytree._private_register_pytree_node(
-        slice, lambda x: ([x.start, x.stop, x.step], None), lambda x, c: slice(*x)
-    )
+    pytree._private_register_pytree_node(slice, lambda x: ([x.start, x.stop, x.step], None), lambda x, c: slice(*x))
 
     try:
         yield
@@ -202,12 +194,8 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
 
         import torch._functorch.config as functorch_config
 
-        self.aot_autograd_config = (
-            aot_autograd_config or functorch_config.save_config_portable()
-        )
-        sym_input = next(
-            (i for i in self.example_inputs if isinstance(i, torch.SymInt)), None
-        )
+        self.aot_autograd_config = aot_autograd_config or functorch_config.save_config_portable()
+        sym_input = next((i for i in self.example_inputs if isinstance(i, torch.SymInt)), None)
         if sym_input is not None:
             self.shape_env = sym_input.node.shape_env
 
@@ -220,14 +208,8 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
 
         graph_reducer_override = GraphPickler.reducer_override
 
-        def _graph_reducer_override(
-            self: GraphPickler, obj: Any
-        ) -> tuple[Callable[..., Any], tuple[Any, ...]] | Any:
-            if (
-                inspect.isclass(obj)
-                and issubclass(obj, sympy.Function)
-                and hasattr(obj, "_torch_unpickler")
-            ):
+        def _graph_reducer_override(self: GraphPickler, obj: Any) -> tuple[Callable[..., Any], tuple[Any, ...]] | Any:
+            if inspect.isclass(obj) and issubclass(obj, sympy.Function) and hasattr(obj, "_torch_unpickler"):
                 return obj._torch_unpickler, (obj._torch_handler_name,)
             if isinstance(obj, FakeTensorMode):
                 return type(None), ()
@@ -240,16 +222,12 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
             return GraphPickler.dumps(graph_module, Options(ops_filter=None))
 
     @classmethod
-    def deserialize_graph_module(
-        cls, data: bytes, fake_mode: FakeTensorMode
-    ) -> torch.fx.GraphModule:
+    def deserialize_graph_module(cls, data: bytes, fake_mode: FakeTensorMode) -> torch.fx.GraphModule:
         with patch_pytree_map_over_slice():
             return GraphPickler.loads(data, fake_mode)
 
     @classmethod
-    def serialize_compile_artifacts(
-        cls, compiled_fn: "AphroditeSerializableFunction"
-    ) -> bytes:
+    def serialize_compile_artifacts(cls, compiled_fn: "AphroditeSerializableFunction") -> bytes:
         state = compiled_fn.__dict__.copy()
         state.pop("optimized_call")
         state.pop("shape_env")
@@ -302,9 +280,7 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
         state = pickle.loads(data)
         fake_mode = FakeTensorMode(shape_env=ShapeEnv())
 
-        state["graph_module"] = cls.deserialize_graph_module(
-            state["graph_module"], fake_mode
-        )
+        state["graph_module"] = cls.deserialize_graph_module(state["graph_module"], fake_mode)
         state["graph_module"].recompile()
         state["example_inputs"] = GraphPickler.loads(state["example_inputs"], fake_mode)
 
@@ -334,8 +310,7 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
                 )
 
             logger.info(
-                "reconstructed serializable fn from standalone compile "
-                "artifacts. num_artifacts=%d num_submods=%d",
+                "reconstructed serializable fn from standalone compile artifacts. num_artifacts=%d num_submods=%d",
                 num_artifacts,
                 num_submods,
             )
@@ -354,13 +329,9 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
         compile_inputs = list(state["example_inputs"])
 
         def optimized_call(*example_inputs: Any) -> Any:
-            aphrodite_backend: AphroditeBackend = AphroditeBackend(
-                aphrodite_config, state["prefix"], is_encoder
-            )
+            aphrodite_backend: AphroditeBackend = AphroditeBackend(aphrodite_config, state["prefix"], is_encoder)
             with tracing(TracingContext(fake_mode)), functorch_ctx:
-                fn.optimized_call = aphrodite_backend(
-                    state["graph_module"], compile_inputs
-                ).optimized_call
+                fn.optimized_call = aphrodite_backend(state["graph_module"], compile_inputs).optimized_call
                 fn.aphrodite_backend = aphrodite_backend
             return fn.optimized_call(*example_inputs)
 
@@ -462,8 +433,8 @@ def reconstruct_serializable_fn_from_mega_artifact(
 
     for cache_key in standalone_compile_artifacts.submodule_bytes:
         submod_name, shape_str = cache_key.rsplit("_", 1)
-        compiled_callables.setdefault(submod_name, {})[shape_str] = (
-            standalone_compile_artifacts.get_loaded(submod_name, shape_str)
+        compiled_callables.setdefault(submod_name, {})[shape_str] = standalone_compile_artifacts.get_loaded(
+            submod_name, shape_str
         )
 
     aphrodite_backend = AphroditeBackend(aphrodite_config, prefix, is_encoder)
@@ -478,10 +449,7 @@ def reconstruct_serializable_fn_from_mega_artifact(
     # spot check that cached submodules exist in the graph structure
     graph_children = {name for name, _ in split_gm.named_children()}
     missing = set(piecewise_submod_names) - graph_children
-    assert not missing, (
-        f"artifacts reference submodules not in graph: {missing}. "
-        f"graph has: {sorted(graph_children)}"
-    )
+    assert not missing, f"artifacts reference submodules not in graph: {missing}. graph has: {sorted(graph_children)}"
 
     for i, submod_name in enumerate(piecewise_submod_names):
         assert submod_name in sym_shape_indices_map and submod_name in returns_tuple_map
@@ -523,26 +491,18 @@ def reconstruct_serializable_fn_from_mega_artifact(
     if execution_code is not None and submod_names is not None:
         from aphrodite.compilation.codegen import compile_execution_fn
 
-        submod_callables = {
-            name: getattr(split_gm, name) for name, _ in split_gm.named_children()
-        }
-        runtime_callable = compile_execution_fn(
-            execution_code, submod_callables, submod_names
-        )
+        submod_callables = {name: getattr(split_gm, name) for name, _ in split_gm.named_children()}
+        runtime_callable = compile_execution_fn(execution_code, submod_callables, submod_names)
     else:
         runtime_callable = split_gm
 
     if compilation_config.cudagraph_copy_inputs:
         sym_tensor_indices = state["sym_tensor_indices"]
         input_buffers = [
-            torch.empty_like(
-                state["example_inputs"][idx], device=aphrodite_config.device_config.device
-            )
+            torch.empty_like(state["example_inputs"][idx], device=aphrodite_config.device_config.device)
             for idx in sym_tensor_indices
         ]
-        optimized_call = make_copy_and_call(
-            sym_tensor_indices, input_buffers, runtime_callable
-        )
+        optimized_call = make_copy_and_call(sym_tensor_indices, input_buffers, runtime_callable)
     else:
         optimized_call = runtime_callable
 
@@ -583,16 +543,12 @@ def _compute_code_hash_with_content(file_contents: dict[str, str]) -> str:
             # e.g. exec(). We can't actually check these.
             continue
         hash_content.append(content)
-    result: str = safe_hash(
-        "\n".join(hash_content).encode(), usedforsecurity=False
-    ).hexdigest()
+    result: str = safe_hash("\n".join(hash_content).encode(), usedforsecurity=False).hexdigest()
     return result
 
 
 def _compute_code_hash(files: set[str]) -> str:
-    logger.debug(
-        "Traced files (to be considered for compilation cache):\n%s", "\n".join(files)
-    )
+    logger.debug("Traced files (to be considered for compilation cache):\n%s", "\n".join(files))
     file_contents = {}
     for filepath in files:
         # Skip files that don't exist (e.g., <string>, <frozen modules>, etc.)

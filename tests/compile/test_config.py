@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 from contextlib import nullcontext
 
 import pytest
+from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
+from aphrodite.engine.args_tools import EngineArgs
 
 from aphrodite.compilation.counter import compilation_counter
-from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.config import AphroditeConfig, CompilationConfig, CUDAGraphMode
 from aphrodite.config.compilation import CompilationMode
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import _is_torch_equal_or_newer, is_torch_equal_or_newer
 

@@ -79,15 +79,9 @@ class ServingPooling(PoolingServingBase):
         # plugin task uses io_processor.parse_request to verify inputs
         if pooling_task != "plugin" and pooling_task != self.pooling_task:
             if pooling_task not in self.supported_tasks:
-                raise ValueError(
-                    f"Unsupported task: {pooling_task!r} "
-                    f"Supported tasks: {self.supported_tasks}"
-                )
+                raise ValueError(f"Unsupported task: {pooling_task!r} Supported tasks: {self.supported_tasks}")
             else:
-                raise ValueError(
-                    "Try switching the model's pooling_task "
-                    f"via --pooler-config.task {request.task}."
-                )
+                raise ValueError(f"Try switching the model's pooling_task via --pooler-config.task {request.task}.")
 
         if pooling_task == "plugin" and "plugin" not in self.io_processors:
             raise ValueError(

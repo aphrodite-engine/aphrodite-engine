@@ -131,9 +131,7 @@ class OpenAIServingChatBatch(OpenAIServingChat):
             return render_result
         all_conversations, engine_prompts = render_result
 
-        request_id = (
-            f"chatcmpl-{self._base_request_id(raw_request, request.request_id)}"
-        )
+        request_id = f"chatcmpl-{self._base_request_id(raw_request, request.request_id)}"
         request_metadata = RequestResponseMetadata(request_id=request_id)
         if raw_request:
             raw_request.state.request_metadata = request_metadata
@@ -148,28 +146,20 @@ class OpenAIServingChatBatch(OpenAIServingChat):
             sub_request_id = f"{request_id}_{i}"
             max_tokens = get_max_tokens(
                 max_model_len,
-                request.max_completion_tokens
-                if request.max_completion_tokens is not None
-                else request.max_tokens,
+                request.max_completion_tokens if request.max_completion_tokens is not None else request.max_tokens,
                 self._extract_prompt_len(engine_prompt),
                 self.default_sampling_params,
                 self.override_max_tokens,
             )
             single_request = request.to_chat_completion_request(request.messages[i])
-            sampling_params = single_request.to_sampling_params(
-                max_tokens, self.default_sampling_params
-            )
+            sampling_params = single_request.to_sampling_params(max_tokens, self.default_sampling_params)
             self._log_inputs(
                 sub_request_id,
                 engine_prompt,
                 params=sampling_params,
                 lora_request=lora_request,
             )
-            trace_headers = (
-                None
-                if raw_request is None
-                else await self._get_trace_headers(raw_request.headers)
-            )
+            trace_headers = None if raw_request is None else await self._get_trace_headers(raw_request.headers)
             generators.append(
                 self.engine_client.generate(
                     engine_prompt,
@@ -242,9 +232,7 @@ class OpenAIServingChatBatch(OpenAIServingChat):
             if final_res.encoder_prompt_token_ids is not None:
                 num_prompt_tokens += len(final_res.encoder_prompt_token_ids)
             total_prompt_tokens += num_prompt_tokens
-            total_completion_tokens += sum(
-                len(output.token_ids) for output in final_res.outputs
-            )
+            total_completion_tokens += sum(len(output.token_ids) for output in final_res.outputs)
 
             for output in final_res.outputs:
                 self._raise_if_error(output.finish_reason, request_id)
@@ -280,22 +268,16 @@ class OpenAIServingChatBatch(OpenAIServingChat):
                     if conversation and "content" in conversation[-1]:
                         last_msg_content = conversation[-1]["content"] or ""
                     if isinstance(last_msg_content, list):
-                        last_msg_content = "\n".join(
-                            msg["text"] for msg in last_msg_content
-                        )
+                        last_msg_content = "\n".join(msg["text"] for msg in last_msg_content)
                     message.content = last_msg_content + (message.content or "")
 
                 choice_data = ChatCompletionResponseChoice(
                     index=prompt_idx,
                     message=message,
                     logprobs=logprobs,
-                    finish_reason=output.finish_reason
-                    if output.finish_reason
-                    else "stop",
+                    finish_reason=output.finish_reason if output.finish_reason else "stop",
                     stop_reason=output.stop_reason,
-                    token_ids=(
-                        as_list(output.token_ids) if request.return_token_ids else None
-                    ),
+                    token_ids=(as_list(output.token_ids) if request.return_token_ids else None),
                 )
                 choices.append(choice_data)
 

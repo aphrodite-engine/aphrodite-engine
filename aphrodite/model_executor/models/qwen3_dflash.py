@@ -10,7 +10,7 @@ from transformers import Qwen3Config
 
 from aphrodite import _custom_ops as ops
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, AphroditeConfig, get_current_aphrodite_config
+from aphrodite.config import AphroditeConfig, CacheConfig, get_current_aphrodite_config
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.attention import Attention
@@ -136,12 +136,8 @@ class DFlashQwen3Attention(nn.Module):
 
         # Per-head RMSNorm
         q_shape, k_shape = q.shape, k.shape
-        q = self.q_norm(
-            q.view(*q_shape[:-1], q_shape[-1] // self.head_dim, self.head_dim)
-        ).view(q_shape)
-        k = self.k_norm(
-            k.view(*k_shape[:-1], k_shape[-1] // self.head_dim, self.head_dim)
-        ).view(k_shape)
+        q = self.q_norm(q.view(*q_shape[:-1], q_shape[-1] // self.head_dim, self.head_dim)).view(q_shape)
+        k = self.k_norm(k.view(*k_shape[:-1], k_shape[-1] // self.head_dim, self.head_dim)).view(k_shape)
 
         q, k = self.rotary_emb(positions, q, k)
 
@@ -187,9 +183,7 @@ class DFlashQwen3DecoderLayer(nn.Module):
             prefix=f"{prefix}.mlp",
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -378,15 +372,11 @@ class DFlashQwen3Model(nn.Module):
             self._hidden_norm_weight,
             self._rms_norm_eps,
         )
-        all_kv_flat = F.linear(
-            normed_context_states, self._fused_kv_weight, self._fused_kv_bias
-        )
+        all_kv_flat = F.linear(normed_context_states, self._fused_kv_weight, self._fused_kv_bias)
         # Single contiguous copy that separates K/V and transposes to
         # layer-major layout.  Result: [2, L, num_ctx, nkv, hd] contiguous.
         # Indexing dim-0 gives contiguous [L, num_ctx, nkv, hd] for K and V.
-        all_kv = (
-            all_kv_flat.view(num_ctx, L, 2, nkv, hd).permute(2, 1, 0, 3, 4).contiguous()
-        )
+        all_kv = all_kv_flat.view(num_ctx, L, 2, nkv, hd).permute(2, 1, 0, 3, 4).contiguous()
         all_k = all_kv[0]  # [L, num_ctx, nkv, hd], contiguous
         all_v = all_kv[1]  # [L, num_ctx, nkv, hd], contiguous
 
@@ -467,14 +457,10 @@ class DFlashQwen3Model(nn.Module):
         for name, loaded_weight in weights:
             if "midlayer." in name:
                 name = name.replace("midlayer.", "layers.0.")
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -504,9 +490,7 @@ class DFlashQwen3ForCausalLM(Qwen3ForCausalLM):
         self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
         if getattr(self.config, "draft_vocab_size", None) is None:
             self.config.draft_vocab_size = getattr(self.config, "vocab_size", None)
-        target_layer_num = aphrodite_config.model_config.get_num_layers(
-            aphrodite_config.parallel_config
-        )
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
         self.config.target_layer_count = target_layer_num
         self.model = DFlashQwen3Model(
             aphrodite_config=aphrodite_config,
@@ -520,9 +504,7 @@ class DFlashQwen3ForCausalLM(Qwen3ForCausalLM):
             self.config.hidden_size,
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        self.logits_processor = LogitsProcessor(
-            self.config.draft_vocab_size, scale=logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.config.draft_vocab_size, scale=logit_scale)
         target_vocab_size = aphrodite_config.model_config.get_vocab_size()
         if self.config.draft_vocab_size != target_vocab_size:
             self.draft_id_to_target_id = nn.Parameter(
@@ -572,9 +554,7 @@ class DFlashQwen3ForCausalLM(Qwen3ForCausalLM):
         context_slot_mapping: torch.Tensor | None = None,
     ) -> None:
         """Precompute projected + RoPE'd K/V and write to cache."""
-        self.model.precompute_and_store_context_kv(
-            context_states, context_positions, context_slot_mapping
-        )
+        self.model.precompute_and_store_context_kv(context_states, context_positions, context_slot_mapping)
 
     def combine_hidden_states(
         self,
@@ -595,9 +575,7 @@ class DFlashQwen3ForCausalLM(Qwen3ForCausalLM):
         includes_draft_id_mapping = False
         includes_embed_tokens = False
         for name, loaded_weight in weights:
-            assert "mask_hidden" not in name, (
-                "DFlash should use mask_token_id to embed the padding hidden state"
-            )
+            assert "mask_hidden" not in name, "DFlash should use mask_token_id to embed the padding hidden state"
             if "t2d" in name:
                 continue
             if "d2t" in name:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 GSM8K evaluation using Aphrodite server and isolated GSM8K script.
 Replacement for lm-eval-harness with better performance and control.

@@ -197,25 +197,13 @@ def fused_moe_kernel_gptq_awq(
 
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (
-        offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak
-    )
+    a_ptrs = a_ptr + (offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak)
 
     if use_int4_w4a16:
-        b_ptrs = (
-            b_ptr
-            + off_experts * stride_be
-            + (offs_k[:, None] // 2) * stride_bk
-            + offs_bn[None, :] * stride_bn
-        )
+        b_ptrs = b_ptr + off_experts * stride_be + (offs_k[:, None] // 2) * stride_bk + offs_bn[None, :] * stride_bn
         b_shifter = (offs_k[:, None] % 2) * 4
     elif use_int8_w8a16:
-        b_ptrs = (
-            b_ptr
-            + off_experts * stride_be
-            + offs_k[:, None] * stride_bk
-            + offs_bn[None, :] * stride_bn
-        )
+        b_ptrs = b_ptr + off_experts * stride_be + offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn
 
     if not has_zp and use_int4_w4a16:
         b_zp_num = 8
@@ -262,22 +250,14 @@ def fused_moe_kernel_gptq_awq(
         if has_zp and use_int4_w4a16:
             offs_k_true = (offs_k[:, None] + BLOCK_SIZE_K * k) // group_size
             b_zp_ptrs = (
-                b_zp_ptr
-                + off_experts * stride_bze
-                + (offs_bn[None, :] // 2) * stride_bzn
-                + offs_k_true * stride_bzk
+                b_zp_ptr + off_experts * stride_bze + (offs_bn[None, :] // 2) * stride_bzn + offs_k_true * stride_bzk
             )
             b_zp = tl.load(b_zp_ptrs, mask=k_mask, other=k_other)
             b_zp = (b_zp >> b_zp_shifter) & 0xF
             b_zp = b_zp.to(tl.float32)
         elif has_zp and use_int8_w8a16:
             offs_k_true = (offs_k[:, None] + BLOCK_SIZE_K * k) // group_size
-            b_zp_ptrs = (
-                b_zp_ptr
-                + off_experts * stride_bze
-                + offs_bn[None, :] * stride_bzn
-                + offs_k_true * stride_bzk
-            )
+            b_zp_ptrs = b_zp_ptr + off_experts * stride_bze + offs_bn[None, :] * stride_bzn + offs_k_true * stride_bzk
             b_zp = tl.load(b_zp_ptrs, mask=k_mask, other=k_other)
             b_zp = b_zp.to(tl.float32)
 
@@ -451,19 +431,11 @@ def fused_moe_kernel(
 
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (
-        offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak
-    )
+    a_ptrs = a_ptr + (offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak)
 
-    b_ptrs = (
-        b_ptr
-        + off_experts * stride_be
-        + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
-    )
+    b_ptrs = b_ptr + off_experts * stride_be + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
     if use_int8_w8a16:
-        b_scale_ptrs = (
-            b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
-        )
+        b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
         b_scale = tl.load(b_scale_ptrs)
 
     if use_fp8_w8a8 or use_int8_w8a8:
@@ -471,14 +443,10 @@ def fused_moe_kernel(
         if group_k > 0 and group_n > 0:
             a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
             offs_bsn = offs_bn // group_n
-            b_scale_ptrs = (
-                b_scale_ptr + off_experts * stride_bse + offs_bsn * stride_bsn
-            )
+            b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bsn * stride_bsn
         # channel-wise
         elif per_channel_quant:
-            b_scale_ptrs = (
-                b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
-            )
+            b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
             b_scale = tl.load(b_scale_ptrs)
             # Load per-token scale for activations
             a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
@@ -513,9 +481,7 @@ def fused_moe_kernel(
             if group_k > 0 and group_n > 0:
                 k_start = k * BLOCK_SIZE_K
                 offs_ks = k_start // group_k
-                a_scale = tl.load(
-                    a_scale_ptrs + offs_ks * stride_ask, mask=token_mask, other=0.0
-                )
+                a_scale = tl.load(a_scale_ptrs + offs_ks * stride_ask, mask=token_mask, other=0.0)
                 b_scale = tl.load(b_scale_ptrs + offs_ks * stride_bsk)
 
                 accumulator += tl.dot(a, b) * a_scale[:, None] * b_scale[None, :]
@@ -664,10 +630,7 @@ def invoke_fused_moe_wna16_triton_kernel(
         # so num_valid_experts <= batch_size <= BLOCK_SIZE_M,
         # and we can skip some invalid blocks.
         EM = min(sorted_token_ids.size(0), A.size(0) * top_k * config["BLOCK_SIZE_M"])
-    grid = lambda META: (
-        triton.cdiv(EM, META["BLOCK_SIZE_M"])
-        * triton.cdiv(B.size(1), META["BLOCK_SIZE_N"]),
-    )
+    grid = lambda META: (triton.cdiv(EM, META["BLOCK_SIZE_M"]) * triton.cdiv(B.size(1), META["BLOCK_SIZE_N"]),)
     config = config.copy()
     config.update(
         get_moe_wna16_block_config(
@@ -750,12 +713,8 @@ def invoke_fused_moe_triton_kernel(
 
     if use_fp8_w8a8 or use_int8_w8a8:
         assert B_scale is not None
-        assert block_shape is None or triton.cdiv(
-            B.size(-2), block_shape[0]
-        ) == B_scale.size(-2)
-        assert block_shape is None or triton.cdiv(
-            B.size(-1), block_shape[1]
-        ) == B_scale.size(-1)
+        assert block_shape is None or triton.cdiv(B.size(-2), block_shape[0]) == B_scale.size(-2)
+        assert block_shape is None or triton.cdiv(B.size(-1), block_shape[1]) == B_scale.size(-1)
     elif use_int8_w8a16 or use_int4_w4a16:
         assert B_scale is not None
         assert block_shape is None or block_shape[0] == 0
@@ -772,15 +731,10 @@ def invoke_fused_moe_triton_kernel(
             # We assume that top_ids of each token is unique,
             # so num_valid_experts <= batch_size <= BLOCK_SIZE_M,
             # and we can skip some invalid blocks.
-            EM = min(
-                sorted_token_ids.size(0), A.size(0) * top_k * config["BLOCK_SIZE_M"]
-            )
+            EM = min(sorted_token_ids.size(0), A.size(0) * top_k * config["BLOCK_SIZE_M"])
     else:
         EM = num_tokens * config["BLOCK_SIZE_M"]
-    grid = lambda META: (
-        triton.cdiv(EM, META["BLOCK_SIZE_M"])
-        * triton.cdiv(B.size(1), META["BLOCK_SIZE_N"]),
-    )
+    grid = lambda META: (triton.cdiv(EM, META["BLOCK_SIZE_M"]) * triton.cdiv(B.size(1), META["BLOCK_SIZE_N"]),)
     HAS_BIAS = B_bias is not None
 
     config = config.copy()
@@ -863,9 +817,7 @@ def dispatch_fused_moe_kernel(
     M = A.size(0)
     num_tokens = M * top_k
 
-    if (use_int8_w8a16 or use_int4_w4a16) and (
-        block_shape is not None and block_shape[1] > 0
-    ):
+    if (use_int8_w8a16 or use_int4_w4a16) and (block_shape is not None and block_shape[1] > 0):
         assert B_bias is None
 
         use_moe_wna16_cuda = should_moe_wna16_use_cuda(
@@ -956,10 +908,7 @@ def compute_identity_kernel(
         return
 
     h = tl.load(
-        hidden_states_ptr
-        + batch_id * hidden_dim
-        + dim_offset
-        + tl.arange(0, BLOCK_SIZE),
+        hidden_states_ptr + batch_id * hidden_dim + dim_offset + tl.arange(0, BLOCK_SIZE),
         mask=(dim_offset + tl.arange(0, BLOCK_SIZE)) < hidden_dim,
     )
 
@@ -1015,17 +964,15 @@ def zero_experts_compute_triton(
 
 
 # Adapted from: https://github.com/sgl-project/sglang/pull/2628
-def get_config_file_name(
-    E: int, N: int, dtype: str | None, block_shape: list[int] | None = None
-) -> str:
+def get_config_file_name(E: int, N: int, dtype: str | None, block_shape: list[int] | None = None) -> str:
     device_name = current_platform.get_device_name().replace(" ", "_")
     # Set device_name to H200 if a device from the H200 family is detected
     if "H200" in device_name.split("_"):
         device_name = "NVIDIA_H200"
     dtype_selector = "" if not dtype else f",dtype={dtype}"
-    block_shape_selector = (
-        "" if not block_shape or not all(block_shape) else f",block_shape={block_shape}"
-    ).replace(" ", "")
+    block_shape_selector = ("" if not block_shape or not all(block_shape) else f",block_shape={block_shape}").replace(
+        " ", ""
+    )
     return f"E={E},N={N},device_name={device_name}{dtype_selector}{block_shape_selector}.json"  # noqa: E501
 
 
@@ -1061,14 +1008,10 @@ def get_moe_configs(
     # note that we prioritize user defined config
     user_defined_config_folder = envs.APHRODITE_TUNED_CONFIG_FOLDER
     if user_defined_config_folder is not None:
-        user_defined_config_file_path = os.path.join(
-            user_defined_config_folder, json_file_name
-        )
+        user_defined_config_file_path = os.path.join(user_defined_config_folder, json_file_name)
         config_file_paths.append(user_defined_config_file_path)
 
-    default_config_file_path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name
-    )
+    default_config_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name)
     config_file_paths.append(default_config_file_path)
 
     for config_file_path in config_file_paths:
@@ -1088,17 +1031,14 @@ def get_moe_configs(
     # If no optimized configuration is available, we will use the default
     # configuration
     logger.warning_once(
-        "Using default MoE config. Performance might be sub-optimal! "
-        "Config file not found at %s",
+        "Using default MoE config. Performance might be sub-optimal! Config file not found at %s",
         ", ".join(config_file_paths),
         scope="local",
     )
     return None
 
 
-def _ensure_block_size_k_divisible(
-    size_k: int, block_size_k: int, group_size: int
-) -> int:
+def _ensure_block_size_k_divisible(size_k: int, block_size_k: int, group_size: int) -> int:
     """Ensure block_size_k is a divisor of size_k and divisible by group_size.
 
     This ensures BLOCK_SIZE_K compatibility with MoeWNA16 CUDA kernel which
@@ -1170,9 +1110,7 @@ def get_moe_wna16_block_config(
 
         num_n_blocks = size_k // block_size_k
         num_k_blocks = size_n // block_size_k
-        num_m_blocks = (
-            num_valid_tokens + block_size_m - 1
-        ) / block_size_m + num_experts
+        num_m_blocks = (num_valid_tokens + block_size_m - 1) / block_size_m + num_experts
         if num_valid_tokens // real_top_k <= block_size_m:
             num_m_blocks = min(num_m_blocks, num_valid_tokens)
         num_blocks = num_m_blocks * num_n_blocks * num_k_blocks
@@ -1209,14 +1147,9 @@ def get_moe_wna16_block_config(
         return {"BLOCK_SIZE_N": block_size_n, "BLOCK_SIZE_K": block_size_k}
 
 
-def should_moe_wna16_use_cuda(
-    num_valid_tokens: int, group_size: int, num_experts: int, bit: int
-):
+def should_moe_wna16_use_cuda(num_valid_tokens: int, group_size: int, num_experts: int, bit: int):
     return (
-        current_platform.is_cuda()
-        and bit == 4
-        and group_size in [32, 64, 128]
-        and num_valid_tokens / num_experts <= 6
+        current_platform.is_cuda() and bit == 4 and group_size in [32, 64, 128] and num_valid_tokens / num_experts <= 6
     )
 
 
@@ -1572,11 +1505,7 @@ def _prepare_expert_assignment(
     naive_block_assignment = (
         expert_map is None
         and num_tokens * top_k_num * 4 <= global_num_experts
-        and not (
-            (use_int8_w8a16 or use_int4_w4a16)
-            and block_shape is not None
-            and block_shape[1] > 0
-        )
+        and not ((use_int8_w8a16 or use_int4_w4a16) and block_shape is not None and block_shape[1] > 0)
     )
 
     if naive_block_assignment:
@@ -1717,15 +1646,11 @@ def fused_experts_impl(
             # 16bit activation and fp4x2 packed weight
             assert hidden_states.size(1) == w1.size(2) * 2, "hidden size mismatch"
         elif ocp_mx_scheme.startswith("w_mxfp6"):
-            assert hidden_states.size(1) == (w1.size(2) * 4) // 3, (
-                "hidden size mismatch"
-            )
+            assert hidden_states.size(1) == (w1.size(2) * 4) // 3, "hidden size mismatch"
         else:
             raise NotImplementedError(f"Unsupported ocp_mx_scheme={ocp_mx_scheme}")
     else:
-        assert hidden_states.size(1) == w1.size(2), (
-            f"Hidden size mismatch {hidden_states.size(1)} != {w1.size(2)}"
-        )
+        assert hidden_states.size(1) == w1.size(2), f"Hidden size mismatch {hidden_states.size(1)} != {w1.size(2)}"
 
     assert topk_weights.size() == topk_ids.size(), "topk shape mismatch"
     assert hidden_states.is_contiguous(), "Hidden_states must be contiguous"
@@ -1780,9 +1705,7 @@ def fused_experts_impl(
     intermediate_cache3 = cache13[: M * top_k_num * K].view(M, top_k_num, K)
 
     # This needs separate memory since it's used concurrently with cache1
-    activation_out_dim = mk.FusedMoEExpertsModular.adjust_N_for_activation(
-        N, activation_enum
-    )
+    activation_out_dim = mk.FusedMoEExpertsModular.adjust_N_for_activation(N, activation_enum)
     intermediate_cache2 = torch.empty(
         (M * top_k_num, activation_out_dim),
         device=hidden_states.device,
@@ -1811,22 +1734,14 @@ def fused_experts_impl(
             w2 = dequant_mxfp4(w2, w2_scale, hidden_states.dtype)
             w2_scale = None
         elif ocp_mx_scheme.startswith("w_mxfp6_e3m2"):
-            w1 = dequant_mxfp6(
-                w1, w1_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype
-            )
+            w1 = dequant_mxfp6(w1, w1_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype)
             w1_scale = None
-            w2 = dequant_mxfp6(
-                w2, w2_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype
-            )
+            w2 = dequant_mxfp6(w2, w2_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype)
             w2_scale = None
         elif ocp_mx_scheme.startswith("w_mxfp6_e2m3"):
-            w1 = dequant_mxfp6(
-                w1, w1_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype
-            )
+            w1 = dequant_mxfp6(w1, w1_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype)
             w1_scale = None
-            w2 = dequant_mxfp6(
-                w2, w2_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype
-            )
+            w2 = dequant_mxfp6(w2, w2_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype)
             w2_scale = None
         else:
             raise NotImplementedError(f"Unsupported ocp_mx_scheme={ocp_mx_scheme}")
@@ -1877,9 +1792,7 @@ def fused_experts_impl(
         B_bias=w1_bias,
     )
 
-    apply_moe_activation(
-        activation_enum, intermediate_cache2, intermediate_cache1.view(-1, N)
-    )
+    apply_moe_activation(activation_enum, intermediate_cache2, intermediate_cache1.view(-1, N))
 
     qintermediate_cache2, a2q_scale = moe_kernel_quantize_input(
         A=intermediate_cache2,
@@ -1963,10 +1876,7 @@ class TritonExperts(mk.FusedMoEExpertsModular):
             is_rocm_on_gfx12x = False
 
         device_supports_fp8 = (
-            is_rocm_on_gfx9
-            or is_rocm_on_gfx12x
-            or (p.is_cuda() and p.has_device_capability((8, 9)))
-            or p.is_xpu()
+            is_rocm_on_gfx9 or is_rocm_on_gfx12x or (p.is_cuda() and p.has_device_capability((8, 9))) or p.is_xpu()
         )
 
         if not device_supports_fp8:
@@ -1997,8 +1907,7 @@ class TritonExperts(mk.FusedMoEExpertsModular):
     @staticmethod
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
         return not (
-            moe_parallel_config.use_fi_nvl_two_sided_kernels
-            or moe_parallel_config.use_fi_nvl_one_sided_kernels
+            moe_parallel_config.use_fi_nvl_two_sided_kernels or moe_parallel_config.use_fi_nvl_one_sided_kernels
         )
 
     @staticmethod
@@ -2066,9 +1975,7 @@ class TritonExperts(mk.FusedMoEExpertsModular):
             torch.float8_e4m3fnuz,
         ]
 
-        E, num_tokens, N, K, top_k_num = self.moe_problem_size(
-            hidden_states, w1, w2, topk_ids
-        )
+        E, num_tokens, N, K, top_k_num = self.moe_problem_size(hidden_states, w1, w2, topk_ids)
 
         if global_num_experts == -1:
             global_num_experts = E
@@ -2088,10 +1995,7 @@ class TritonExperts(mk.FusedMoEExpertsModular):
             compute_type = tl.float16
         elif hidden_states.dtype == torch.float32:
             compute_type = tl.float32
-        elif (
-            hidden_states.dtype == torch.float8_e4m3fn
-            or hidden_states.dtype == torch.float8_e4m3fnuz
-        ):
+        elif hidden_states.dtype == torch.float8_e4m3fn or hidden_states.dtype == torch.float8_e4m3fnuz:
             compute_type = tl.bfloat16
         else:
             raise ValueError(f"Unsupported compute_type: {hidden_states.dtype}")
@@ -2099,23 +2003,19 @@ class TritonExperts(mk.FusedMoEExpertsModular):
         # Note that the output tensor might be in workspace1
         intermediate_cache1 = _resize_cache(workspace2, (num_tokens, top_k_num, N))
         cache2_dim = self.adjust_N_for_activation(N, activation)
-        intermediate_cache2 = _resize_cache(
-            workspace13, (num_tokens * top_k_num, cache2_dim)
-        )
+        intermediate_cache2 = _resize_cache(workspace13, (num_tokens * top_k_num, cache2_dim))
         intermediate_cache3 = _resize_cache(workspace2, (num_tokens, top_k_num, K))
 
-        sorted_token_ids, expert_ids, num_tokens_post_padded = (
-            _prepare_expert_assignment(
-                topk_ids,
-                config,
-                num_tokens,
-                top_k_num,
-                global_num_experts,
-                expert_map,
-                use_int8_w8a16=self.quant_config.use_int8_w8a16,
-                use_int4_w4a16=self.quant_config.use_int4_w4a16,
-                block_shape=self.block_shape,
-            )
+        sorted_token_ids, expert_ids, num_tokens_post_padded = _prepare_expert_assignment(
+            topk_ids,
+            config,
+            num_tokens,
+            top_k_num,
+            global_num_experts,
+            expert_map,
+            use_int8_w8a16=self.quant_config.use_int8_w8a16,
+            use_int4_w4a16=self.quant_config.use_int4_w4a16,
+            block_shape=self.block_shape,
         )
 
         invoke_fused_moe_triton_kernel(
@@ -2141,9 +2041,7 @@ class TritonExperts(mk.FusedMoEExpertsModular):
             B_bias=self.w1_bias,
         )
 
-        self.activation(
-            activation, intermediate_cache2, intermediate_cache1.view(-1, N)
-        )
+        self.activation(activation, intermediate_cache2, intermediate_cache1.view(-1, N))
 
         a2q_scale: torch.Tensor | None = None
 
@@ -2188,41 +2086,26 @@ class TritonExperts(mk.FusedMoEExpertsModular):
 class TritonWNA16Experts(TritonExperts):
     @staticmethod
     def _supports_current_device() -> bool:
-        raise NotImplementedError(
-            "TritonWNA16Experts is not yet used by an Oracle. "
-            "This method should not be called."
-        )
+        raise NotImplementedError("TritonWNA16Experts is not yet used by an Oracle. This method should not be called.")
 
     @staticmethod
     def _supports_no_act_and_mul() -> bool:
-        raise NotImplementedError(
-            "TritonWNA16Experts is not yet used by an Oracle. "
-            "This method should not be called."
-        )
+        raise NotImplementedError("TritonWNA16Experts is not yet used by an Oracle. This method should not be called.")
 
     @staticmethod
     def _supports_quant_scheme(
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
-        raise NotImplementedError(
-            "TritonWNA16Experts is not yet used by an Oracle. "
-            "This method should not be called."
-        )
+        raise NotImplementedError("TritonWNA16Experts is not yet used by an Oracle. This method should not be called.")
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
-        raise NotImplementedError(
-            "TritonWNA16Experts is not yet used by an Oracle. "
-            "This method should not be called."
-        )
+        raise NotImplementedError("TritonWNA16Experts is not yet used by an Oracle. This method should not be called.")
 
     @staticmethod
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
-        raise NotImplementedError(
-            "TritonWNA16Experts is not yet used by an Oracle. "
-            "This method should not be called."
-        )
+        raise NotImplementedError("TritonWNA16Experts is not yet used by an Oracle. This method should not be called.")
 
     def apply(
         self,
@@ -2262,9 +2145,7 @@ class TritonWNA16Experts(TritonExperts):
             torch.float8_e4m3fnuz,
         ]
 
-        E, num_tokens, N, K, top_k_num = self.moe_problem_size(
-            hidden_states, w1, w2, topk_ids
-        )
+        E, num_tokens, N, K, top_k_num = self.moe_problem_size(hidden_states, w1, w2, topk_ids)
 
         if global_num_experts == -1:
             global_num_experts = E
@@ -2284,10 +2165,7 @@ class TritonWNA16Experts(TritonExperts):
             compute_type = tl.float16
         elif hidden_states.dtype == torch.float32:
             compute_type = tl.float32
-        elif (
-            hidden_states.dtype == torch.float8_e4m3fn
-            or hidden_states.dtype == torch.float8_e4m3fnuz
-        ):
+        elif hidden_states.dtype == torch.float8_e4m3fn or hidden_states.dtype == torch.float8_e4m3fnuz:
             compute_type = tl.bfloat16
         else:
             raise ValueError(f"Unsupported compute_type: {hidden_states.dtype}")
@@ -2295,9 +2173,7 @@ class TritonWNA16Experts(TritonExperts):
         # Note that the output tensor might be in workspace1
         intermediate_cache1 = _resize_cache(workspace2, (num_tokens, top_k_num, N))
         activation_out_dim = self.adjust_N_for_activation(N, activation)
-        intermediate_cache2 = _resize_cache(
-            workspace13, (num_tokens * top_k_num, activation_out_dim)
-        )
+        intermediate_cache2 = _resize_cache(workspace13, (num_tokens * top_k_num, activation_out_dim))
         intermediate_cache3 = _resize_cache(workspace2, (num_tokens, top_k_num, K))
 
         sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
@@ -2323,9 +2199,7 @@ class TritonWNA16Experts(TritonExperts):
             block_shape=self.block_shape,
         )
 
-        self.activation(
-            activation, intermediate_cache2, intermediate_cache1.view(-1, N)
-        )
+        self.activation(activation, intermediate_cache2, intermediate_cache1.view(-1, N))
 
         a2q_scale: torch.Tensor | None = None
 

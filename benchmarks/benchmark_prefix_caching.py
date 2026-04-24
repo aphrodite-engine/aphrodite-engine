@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Benchmark the efficiency of prefix caching.
 
@@ -42,10 +44,10 @@ import json
 import random
 import time
 
+from aphrodite.engine.args_tools import EngineArgs
 from transformers import PreTrainedTokenizerBase
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 try:

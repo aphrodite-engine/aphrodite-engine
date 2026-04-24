@@ -3,9 +3,11 @@
 Aphrodite Engine welcomes any and all contributors to submit fixes, features, issues - no matter the scope.
 
 ### Code of Ethics
+
 If you wish, you can read the [Aphrodite Engine Code of Conduct](./CODE_OF_CONDUCT.md). You don't need to follow it! :)
 
 ### Setup
+
 For development, you will need to build the engine from source.
 
 ```sh

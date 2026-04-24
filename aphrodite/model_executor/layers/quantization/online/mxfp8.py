@@ -116,14 +116,8 @@ class Mxfp8OnlineMoEMethod(OnlineMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
-        if (
-            hidden_size % MXFP8_BLOCK_SIZE != 0
-            or intermediate_size_per_partition % MXFP8_BLOCK_SIZE != 0
-        ):
-            raise ValueError(
-                "Online MXFP8 MoE requires hidden/intermediate sizes divisible "
-                f"by {MXFP8_BLOCK_SIZE}."
-            )
+        if hidden_size % MXFP8_BLOCK_SIZE != 0 or intermediate_size_per_partition % MXFP8_BLOCK_SIZE != 0:
+            raise ValueError(f"Online MXFP8 MoE requires hidden/intermediate sizes divisible by {MXFP8_BLOCK_SIZE}.")
 
         super().create_weights(
             layer=layer,
@@ -136,26 +130,18 @@ class Mxfp8OnlineMoEMethod(OnlineMoEMethodBase):
 
         layer.weight_block_size = [1, MXFP8_BLOCK_SIZE]
 
-    def _quantize_mxfp8_moe_weight(
-        self, weight: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _quantize_mxfp8_moe_weight(self, weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Batch quantization: bf16/fp16 weights -> MXFP8 (fp8 + uint8 scales)."""
         E = weight.size(0)
         first_q, first_s = mxfp8_e4m3_quantize(weight[0], is_sf_swizzled_layout=False)
         # Pre-allocate the output tensors rather than stacking.
         # This is important for consistent memory layout.
-        w_quant = torch.empty(
-            (E, *first_q.shape), dtype=first_q.dtype, device=weight.device
-        )
-        w_scales = torch.empty(
-            (E, *first_s.shape), dtype=first_s.dtype, device=weight.device
-        )
+        w_quant = torch.empty((E, *first_q.shape), dtype=first_q.dtype, device=weight.device)
+        w_scales = torch.empty((E, *first_s.shape), dtype=first_s.dtype, device=weight.device)
         w_quant[0] = first_q
         w_scales[0] = first_s
         for i in range(1, E):
-            w_quant[i], w_scales[i] = mxfp8_e4m3_quantize(
-                weight[i], is_sf_swizzled_layout=False
-            )
+            w_quant[i], w_scales[i] = mxfp8_e4m3_quantize(weight[i], is_sf_swizzled_layout=False)
 
         return w_quant, w_scales
 
@@ -203,9 +189,7 @@ class Mxfp8OnlineMoEMethod(OnlineMoEMethodBase):
                 shared_experts=layer.shared_experts,
             )
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> "FusedMoEQuantConfig":
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> "FusedMoEQuantConfig":
         from aphrodite.model_executor.layers.fused_moe.oracle.fp8 import (
             make_fp8_moe_quant_config,
         )

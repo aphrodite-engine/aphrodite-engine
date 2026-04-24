@@ -79,20 +79,14 @@ def get_system_message(
         sys_msg_content = sys_msg_content.with_model_identity(model_identity)
     if instructions is not None and envs.APHRODITE_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS:
         current_identity = sys_msg_content.model_identity
-        new_identity = (
-            f"{current_identity}\n{instructions}" if current_identity else instructions
-        )
+        new_identity = f"{current_identity}\n{instructions}" if current_identity else instructions
         sys_msg_content = sys_msg_content.with_model_identity(new_identity)
     if reasoning_effort is not None:
-        sys_msg_content = sys_msg_content.with_reasoning_effort(
-            REASONING_EFFORT[reasoning_effort]
-        )
+        sys_msg_content = sys_msg_content.with_reasoning_effort(REASONING_EFFORT[reasoning_effort])
     if start_date is None:
         # NOTE(woosuk): This brings non-determinism in Aphrodite.
         # Set APHRODITE_SYSTEM_START_DATE to pin it.
-        start_date = envs.APHRODITE_SYSTEM_START_DATE or datetime.datetime.now().strftime(
-            "%Y-%m-%d"
-        )
+        start_date = envs.APHRODITE_SYSTEM_START_DATE or datetime.datetime.now().strftime("%Y-%m-%d")
     sys_msg_content = sys_msg_content.with_conversation_start_date(start_date)
     if browser_description is not None:
         sys_msg_content = sys_msg_content.with_tools(browser_description)
@@ -140,12 +134,8 @@ def get_developer_message(
             else:
                 raise ValueError(f"tool type {tool.type} not supported")
         if function_tools:
-            function_tool_descriptions = [
-                create_tool_definition(tool) for tool in function_tools
-            ]
-            dev_msg_content = dev_msg_content.with_function_tools(
-                function_tool_descriptions
-            )
+            function_tool_descriptions = [create_tool_definition(tool) for tool in function_tools]
+            dev_msg_content = dev_msg_content.with_function_tools(function_tool_descriptions)
     dev_msg = Message.from_role_and_content(Role.DEVELOPER, dev_msg_content)
     return dev_msg
 
@@ -165,9 +155,7 @@ def parse_chat_inputs_to_harmony_messages(chat_msgs: list) -> list[Message]:
     # Collect tool id to name mappings for tool response recipient values
     for chat_msg in chat_msgs:
         for tool_call in chat_msg.get("tool_calls", []):
-            tool_id_names[tool_call.get("id")] = tool_call.get("function", {}).get(
-                "name"
-            )
+            tool_id_names[tool_call.get("id")] = tool_call.get("function", {}).get("name")
 
     for chat_msg in chat_msgs:
         msgs.extend(parse_chat_input_to_harmony_message(chat_msg, tool_id_names))
@@ -215,16 +203,12 @@ def flatten_chat_text_content(content: str | list | None) -> str | None:
     """
     if isinstance(content, list):
         return "".join(
-            item.get("text", "")
-            for item in content
-            if isinstance(item, dict) and item.get("type") == "text"
+            item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text"
         )
     return content
 
 
-def parse_chat_input_to_harmony_message(
-    chat_msg, tool_id_names: dict[str, str] | None = None
-) -> list[Message]:
+def parse_chat_input_to_harmony_message(chat_msg, tool_id_names: dict[str, str] | None = None) -> list[Message]:
     """
     Parse a message from request.messages in the Chat Completion API to
     Harmony messages.
@@ -276,9 +260,7 @@ def parse_chat_input_to_harmony_message(
         content = flatten_chat_text_content(content)
 
         msg = (
-            Message.from_author_and_content(
-                Author.new(Role.TOOL, f"functions.{name}"), content
-            )
+            Message.from_author_and_content(Author.new(Role.TOOL, f"functions.{name}"), content)
             .with_channel("commentary")
             .with_recipient("assistant")
         )
@@ -318,9 +300,7 @@ def parse_chat_input_to_harmony_message(
 
 def render_for_completion(messages: list[Message]) -> list[int]:
     conversation = Conversation.from_messages(messages)
-    token_ids = get_encoding().render_conversation_for_completion(
-        conversation, Role.ASSISTANT
-    )
+    token_ids = get_encoding().render_conversation_for_completion(conversation, Role.ASSISTANT)
     return token_ids
 
 
@@ -361,9 +341,7 @@ def parse_chat_output(
     # - commentary channel without recipient (preambles): visible to user
     # - final channel: visible to user
     # - commentary with recipient (tool calls): handled separately by tool parser
-    reasoning_texts = [
-        msg.content[0].text for msg in output_msgs if msg.channel == "analysis"
-    ]
+    reasoning_texts = [msg.content[0].text for msg in output_msgs if msg.channel == "analysis"]
     final_texts = [
         msg.content[0].text
         for msg in output_msgs
@@ -375,11 +353,7 @@ def parse_chat_output(
         reasoning_texts.append(parser.current_content)
     elif parser.current_channel == "final" and parser.current_content:
         final_texts.append(parser.current_content)
-    elif (
-        parser.current_channel == "commentary"
-        and not parser.current_recipient
-        and parser.current_content
-    ):
+    elif parser.current_channel == "commentary" and not parser.current_recipient and parser.current_content:
         # Preambles (commentary without recipient) are visible to user
         final_texts.append(parser.current_content)
 

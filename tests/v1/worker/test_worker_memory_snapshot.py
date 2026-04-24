@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import multiprocessing as mp
 import os
 import tempfile
@@ -6,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 import torch
-
 from aphrodite.engine.args_tools import EngineArgs
+
 from aphrodite.utils.mem_utils import MemorySnapshot
 from aphrodite.v1.worker.gpu_worker import Worker, init_worker_distributed_environment
 

@@ -64,8 +64,7 @@ def get_attn_backend(
     if kv_cache_dtype is not None:
         valid_cache_dtypes = get_args(CacheDType)
         assert kv_cache_dtype in valid_cache_dtypes, (
-            f"Invalid kv_cache_dtype: {kv_cache_dtype}. "
-            f"Valid values are: {valid_cache_dtypes}"
+            f"Invalid kv_cache_dtype: {kv_cache_dtype}. Valid values are: {valid_cache_dtypes}"
         )
 
     from aphrodite.config import get_current_aphrodite_config
@@ -79,9 +78,7 @@ def get_attn_backend(
         block_size = None
 
     speculative_config = aphrodite_config.speculative_config
-    use_non_causal = (
-        speculative_config is not None and speculative_config.method == "dflash"
-    )
+    use_non_causal = speculative_config is not None and speculative_config.method == "dflash"
 
     attn_selector_config = AttentionSelectorConfig(
         head_size=head_size,
@@ -118,9 +115,7 @@ def _cached_get_attn_backend(
         num_heads=num_heads,
     )
     if not attention_cls:
-        raise ValueError(
-            f"Invalid attention backend for {current_platform.device_name}"
-        )
+        raise ValueError(f"Invalid attention backend for {current_platform.device_name}")
     backend = resolve_obj_by_qualname(attention_cls)
 
     # Adjust kv cache layout if the selected backend requires a specific one

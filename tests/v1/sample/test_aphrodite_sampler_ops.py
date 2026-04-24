@@ -1,5 +1,7 @@
-import torch
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+import torch
 
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.v1.sample.logits_processor import LogitsProcessors
@@ -515,31 +517,23 @@ def test_input_batch_preserves_custom_sampler_metadata():
     assert metadata.eta_cutoff is not None and metadata.eta_cutoff[0].item() == pytest.approx(
         sampling_params.eta_cutoff
     )
-    assert (
-        metadata.epsilon_cutoff is not None
-        and metadata.epsilon_cutoff[0].item() == pytest.approx(sampling_params.epsilon_cutoff)
+    assert metadata.epsilon_cutoff is not None and metadata.epsilon_cutoff[0].item() == pytest.approx(
+        sampling_params.epsilon_cutoff
     )
-    assert metadata.typical_p is not None and metadata.typical_p[0].item() == pytest.approx(
-        sampling_params.typical_p
-    )
-    assert (
-        metadata.quadratic_smoothing_factor is not None
-        and metadata.quadratic_smoothing_factor[0].item() == pytest.approx(sampling_params.smoothing_factor)
-    )
-    assert (
-        metadata.quadratic_smoothing_curve is not None
-        and metadata.quadratic_smoothing_curve[0].item() == pytest.approx(sampling_params.smoothing_curve)
-    )
+    assert metadata.typical_p is not None and metadata.typical_p[0].item() == pytest.approx(sampling_params.typical_p)
+    assert metadata.quadratic_smoothing_factor is not None and metadata.quadratic_smoothing_factor[
+        0
+    ].item() == pytest.approx(sampling_params.smoothing_factor)
+    assert metadata.quadratic_smoothing_curve is not None and metadata.quadratic_smoothing_curve[
+        0
+    ].item() == pytest.approx(sampling_params.smoothing_curve)
     assert metadata.xtc_threshold is not None and metadata.xtc_threshold[0].item() == pytest.approx(
         sampling_params.xtc_threshold
     )
-    assert (
-        metadata.xtc_probability is not None
-        and metadata.xtc_probability[0].item() == pytest.approx(sampling_params.xtc_probability)
+    assert metadata.xtc_probability is not None and metadata.xtc_probability[0].item() == pytest.approx(
+        sampling_params.xtc_probability
     )
-    assert metadata.top_nsigma is not None and metadata.top_nsigma[0].item() == pytest.approx(
-        sampling_params.nsigma
-    )
+    assert metadata.top_nsigma is not None and metadata.top_nsigma[0].item() == pytest.approx(sampling_params.nsigma)
     assert metadata.mirostat_mode is not None and metadata.mirostat_mode[0].item() == sampling_params.mirostat_mode
     assert metadata.mirostat_tau is not None and metadata.mirostat_tau[0].item() == pytest.approx(
         sampling_params.mirostat_tau

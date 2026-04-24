@@ -50,9 +50,7 @@ def _get_max_total_output_tokens(
     return max_total_tokens, max_output_tokens
 
 
-class EmbeddingCompletionRequest(
-    PoolingBasicRequestMixin, CompletionRequestMixin, EmbedRequestMixin
-):
+class EmbeddingCompletionRequest(PoolingBasicRequestMixin, CompletionRequestMixin, EmbedRequestMixin):
     def build_tok_params(self, model_config: ModelConfig) -> TokenizeParams:
         encoder_config = model_config.encoder_config or {}
 
@@ -80,9 +78,7 @@ class EmbeddingCompletionRequest(
         )
 
 
-class EmbeddingChatRequest(
-    PoolingBasicRequestMixin, ChatRequestMixin, EmbedRequestMixin
-):
+class EmbeddingChatRequest(PoolingBasicRequestMixin, ChatRequestMixin, EmbedRequestMixin):
     def build_tok_params(self, model_config: ModelConfig) -> TokenizeParams:
         encoder_config = model_config.encoder_config or {}
 
@@ -231,10 +227,7 @@ def _pack_binary_embeddings(
     for embedding in float_embeddings:
         dim = len(embedding)
         if dim % 8 != 0:
-            raise ValueError(
-                "Embedding dimension must be a multiple of 8 for binary "
-                f"embedding types, but got {dim}."
-            )
+            raise ValueError(f"Embedding dimension must be a multiple of 8 for binary embedding types, but got {dim}.")
         packed_len = dim // 8
         packed: list[int] = []
         byte_val = 0

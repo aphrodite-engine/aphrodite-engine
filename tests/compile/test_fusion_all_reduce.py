@@ -1,14 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from importlib.util import find_spec
 
 import pytest
 import torch
-
-import aphrodite.envs as envs
-from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.compilation.collective_fusion import AllReduceFusionPass
 from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
+from aphrodite.modeling.layers.layernorm import RMSNorm
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, GroupShape
+
+import aphrodite.envs as envs
+from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.config import (
     AphroditeConfig,
     CompilationConfig,
@@ -20,9 +24,7 @@ from aphrodite.config import (
 )
 from aphrodite.distributed import tensor_model_parallel_all_reduce
 from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
-from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, GroupShape
 from aphrodite.utils.system_utils import update_environment_variables
 
 from ..utils import has_module_attribute, multi_gpu_test

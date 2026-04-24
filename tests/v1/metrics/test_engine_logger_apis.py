@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 
 import pytest
-from tests.plugins.aphrodite_add_dummy_stat_logger.dummy_stat_logger.dummy_stat_logger import (  # noqa E501
-    DummyStatLogger,
-)
 
 from aphrodite.v1.engine.async_llm import AsyncEngineArgs, AsyncLLM
 from aphrodite.v1.metrics.ray_wrappers import RayPrometheusStatLogger
+from tests.plugins.aphrodite_add_dummy_stat_logger.dummy_stat_logger.dummy_stat_logger import (  # noqa E501
+    DummyStatLogger,
+)
 
 
 @pytest.fixture

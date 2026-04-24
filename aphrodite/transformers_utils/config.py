@@ -177,11 +177,7 @@ class HFConfigParser(ConfigParserBase):
         # Use custom model class if it's in our registry
         model_type = config_dict.get("model_type")
         if model_type is None:
-            model_type = (
-                "speculators"
-                if config_dict.get("speculators_config") is not None
-                else model_type
-            )
+            model_type = "speculators" if config_dict.get("speculators_config") is not None else model_type
         # Allow hf_overrides to override model_type before checking _CONFIG_REGISTRY
         if (hf_overrides := kwargs.pop("hf_overrides", None)) is not None:
             if isinstance(hf_overrides, dict) and "model_type" in hf_overrides:
@@ -215,9 +211,7 @@ class HFConfigParser(ConfigParserBase):
                 # one, register under both so AutoConfig.from_pretrained
                 # returns the correct class regardless of what the
                 # checkpoint says
-                if (
-                    config_model_type := config_dict.get("model_type")
-                ) and config_model_type != model_type:
+                if (config_model_type := config_dict.get("model_type")) and config_model_type != model_type:
                     config_class.model_type = config_model_type
                     AutoConfig.register(config_model_type, config_class, exist_ok=True)
                     config_class.model_type = model_type
@@ -233,10 +227,7 @@ class HFConfigParser(ConfigParserBase):
                     **kwargs,
                 )
             except ValueError as e:
-                if (
-                    not trust_remote_code
-                    and "requires you to execute the configuration file" in str(e)
-                ):
+                if not trust_remote_code and "requires you to execute the configuration file" in str(e):
                     err_msg = (
                         "Failed to load the model config. If the model "
                         "is a custom model not yet available in the "
@@ -263,12 +254,8 @@ class MistralConfigParser(ConfigParserBase):
         # This function loads a params.json config which
         # should be used when loading models in mistral format
         config_dict = _download_mistral_config_file(model, revision)
-        if (
-            max_position_embeddings := config_dict.get("max_position_embeddings")
-        ) is None:
-            max_position_embeddings = _maybe_retrieve_max_pos_from_hf(
-                model, revision, **kwargs
-            )
+        if (max_position_embeddings := config_dict.get("max_position_embeddings")) is None:
+            max_position_embeddings = _maybe_retrieve_max_pos_from_hf(model, revision, **kwargs)
             config_dict["max_position_embeddings"] = max_position_embeddings
 
         from aphrodite.transformers_utils.configs.mistral import adapt_config_dict
@@ -292,16 +279,12 @@ class MistralConfigParser(ConfigParserBase):
                 param_dtypes: set[torch.dtype] = {
                     _SAFETENSORS_TO_TORCH_DTYPE[dtype]
                     for info in param_mt.values()
-                    if (dtype := info.get("dtype", None))
-                    and dtype in _SAFETENSORS_TO_TORCH_DTYPE
+                    if (dtype := info.get("dtype", None)) and dtype in _SAFETENSORS_TO_TORCH_DTYPE
                 }
 
                 if param_dtypes:
                     config_dict["dtype"] = common_broadcastable_dtype(param_dtypes)
-                    logger.info_once(
-                        "Inferred from consolidated*.safetensors files "
-                        f"{config_dict['dtype']} dtype."
-                    )
+                    logger.info_once(f"Inferred from consolidated*.safetensors files {config_dict['dtype']} dtype.")
 
         config = adapt_config_dict(config_dict, defaults=hf_config_dict)
 
@@ -358,15 +341,12 @@ def register_config_parser(config_format: str):
     def _wrapper(config_parser_cls):
         if config_format in _CONFIG_FORMAT_TO_CONFIG_PARSER:
             logger.warning(
-                "Config format `%s` is already registered, and will be "
-                "overwritten by the new parser class `%s`.",
+                "Config format `%s` is already registered, and will be overwritten by the new parser class `%s`.",
                 config_format,
                 config_parser_cls,
             )
         if not issubclass(config_parser_cls, ConfigParserBase):
-            raise ValueError(
-                "The config parser must be a subclass of `ConfigParserBase`."
-            )
+            raise ValueError("The config parser must be a subclass of `ConfigParserBase`.")
         _CONFIG_FORMAT_TO_CONFIG_PARSER[config_format] = config_parser_cls
         logger.info(
             "Registered config parser `%s` with config format `%s`",
@@ -403,11 +383,9 @@ def patch_rope_parameters(config: PretrainedConfig) -> None:
         # Transformers v4 installed, legacy config fields may be present
         if (rope_scaling := getattr(config, "rope_scaling", None)) is not None:
             config.rope_parameters = rope_scaling
-        if (
-            rope_theta is not None
-            or partial_rotary_factor is not None
-            or ompe is not None
-        ) and not getattr(config, "rope_parameters", None):
+        if (rope_theta is not None or partial_rotary_factor is not None or ompe is not None) and not getattr(
+            config, "rope_parameters", None
+        ):
             config.rope_parameters = {"rope_type": "default"}
         # Patch legacy fields into rope_parameters
         if rope_theta is not None:
@@ -466,9 +444,7 @@ def patch_rope_parameters_dict(rope_parameters: dict[str, Any]) -> None:
         logger.warning("Replacing legacy rope_type 'su' with 'longrope'")
     elif rope_parameters["rope_type"] == "mrope":
         if "mrope_section" not in rope_parameters:
-            raise ValueError(
-                "Legacy rope_type 'mrope' requires 'mrope_section' in rope_parameters"
-            )
+            raise ValueError("Legacy rope_type 'mrope' requires 'mrope_section' in rope_parameters")
         rope_parameters["rope_type"] = "default"
         logger.warning("Replacing legacy rope_type 'mrope' with 'default'")
 
@@ -483,11 +459,7 @@ def _uses_mrope(config: PretrainedConfig) -> bool:
 
 def uses_mrope(config: PretrainedConfig) -> bool:
     """Detect if the model with this config uses M-ROPE."""
-    return (
-        _uses_mrope(config)
-        or _uses_mrope(config.get_text_config())
-        or thinker_uses_mrope(config)
-    )
+    return _uses_mrope(config) or _uses_mrope(config.get_text_config()) or thinker_uses_mrope(config)
 
 
 def thinker_uses_mrope(config: PretrainedConfig) -> bool:
@@ -608,9 +580,7 @@ def maybe_override_with_speculators(
     # Speculators format detected - process overrides
     from aphrodite.transformers_utils.configs.speculators.base import SpeculatorsConfig
 
-    speculative_config = SpeculatorsConfig.extract_aphrodite_speculative_config(
-        config_dict=config_dict
-    )
+    speculative_config = SpeculatorsConfig.extract_aphrodite_speculative_config(config_dict=config_dict)
 
     # Set the draft model to the speculators model
     speculative_config["model"] = model
@@ -651,22 +621,16 @@ def get_config(
         try:
             # First check for Mistral to avoid defaulting to
             # Transformers implementation.
-            if is_mistral_model_repo(
-                model_name_or_path=str(model), revision=revision
-            ) and file_or_path_exists(
+            if is_mistral_model_repo(model_name_or_path=str(model), revision=revision) and file_or_path_exists(
                 model=model, config_name=MISTRAL_CONFIG_NAME, revision=revision
             ):
                 config_format = "mistral"
-            elif (_is_gguf and not _is_remote_gguf) or file_or_path_exists(
-                model, HF_CONFIG_NAME, revision=revision
-            ):
+            elif (_is_gguf and not _is_remote_gguf) or file_or_path_exists(model, HF_CONFIG_NAME, revision=revision):
                 config_format = "hf"
             # Remote GGUF models must have config.json in repo,
             # otherwise the config can't be parsed correctly.
             # FIXME(Isotr0py): Support remote GGUF repos without config.json
-            elif _is_remote_gguf and not file_or_path_exists(
-                model, HF_CONFIG_NAME, revision=revision
-            ):
+            elif _is_remote_gguf and not file_or_path_exists(model, HF_CONFIG_NAME, revision=revision):
                 err_msg = (
                     "Could not find config.json for remote GGUF model repo. "
                     "To load remote GGUF model through `<repo_id>:<quant_type>`, "
@@ -756,12 +720,8 @@ def get_config(
 
     # ModelOpt 0.29.0 and before saves the quantization config in a separate
     # "hf_quant_config.json" in the same directory as the model config file.
-    if quantization_config is None and file_or_path_exists(
-        model, "hf_quant_config.json", revision
-    ):
-        quantization_config = get_hf_file_to_dict(
-            "hf_quant_config.json", model, revision
-        )
+    if quantization_config is None and file_or_path_exists(model, "hf_quant_config.json", revision):
+        quantization_config = get_hf_file_to_dict("hf_quant_config.json", model, revision)
 
     if quantization_config is not None:
         config.quantization_config = quantization_config
@@ -771,10 +731,7 @@ def get_config(
             if not envs.is_set("APHRODITE_USE_DEEP_GEMM_E8M0"):
                 os.environ["APHRODITE_USE_DEEP_GEMM_E8M0"] = "1"
                 logger.info_once(
-                    (
-                        "Detected quantization_config.scale_fmt=%s; "
-                        "enabling UE8M0 for DeepGEMM."
-                    ),
+                    ("Detected quantization_config.scale_fmt=%s; enabling UE8M0 for DeepGEMM."),
                     scale_fmt,
                 )
             elif not envs.APHRODITE_USE_DEEP_GEMM_E8M0:
@@ -835,9 +792,7 @@ def get_pooling_config(
     modules_file_name = "modules.json"
 
     modules_dict = None
-    if file_or_path_exists(
-        model=model, config_name=modules_file_name, revision=revision
-    ):
+    if file_or_path_exists(model=model, config_name=modules_file_name, revision=revision):
         modules_dict = get_hf_file_to_dict(modules_file_name, model, revision)
 
     if modules_dict is None:
@@ -846,20 +801,12 @@ def get_pooling_config(
     logger.info("Found sentence-transformers modules configuration.")
 
     pooling = next(
-        (
-            item
-            for item in modules_dict
-            if item["type"] == "sentence_transformers.models.Pooling"
-        ),
+        (item for item in modules_dict if item["type"] == "sentence_transformers.models.Pooling"),
         None,
     )
     normalize = bool(
         next(
-            (
-                item
-                for item in modules_dict
-                if item["type"] == "sentence_transformers.models.Normalize"
-            ),
+            (item for item in modules_dict if item["type"] == "sentence_transformers.models.Normalize"),
             False,
         )
     )
@@ -931,10 +878,7 @@ def get_sentence_transformer_tokenizer_config(
     encoder_dict = None
 
     for config_file in sentence_transformer_config_files:
-        if (
-            try_get_local_file(model=model, file_name=config_file, revision=revision)
-            is not None
-        ):
+        if try_get_local_file(model=model, file_name=config_file, revision=revision) is not None:
             encoder_dict = get_hf_file_to_dict(config_file, model, revision)
             if encoder_dict:
                 break
@@ -972,14 +916,10 @@ def maybe_register_config_serialize_by_value() -> None:
     Examples:
 
     >>> from transformers import AutoConfig
-    >>> klass = AutoConfig.from_pretrained(
-    ...     "meta-llama/Meta-Llama-3-8B", trust_remote_code=True
-    ... )
+    >>> klass = AutoConfig.from_pretrained("meta-llama/Meta-Llama-3-8B", trust_remote_code=True)
     >>> klass.__class__  # transformers.models.llama.configuration_llama.LlamaConfig
     >>> import transformers_modules  # error, not initialized
-    >>> klass = AutoConfig.from_pretrained(
-    ...     "deepseek-ai/DeepSeek-V2.5", trust_remote_code=True
-    ... )
+    >>> klass = AutoConfig.from_pretrained("deepseek-ai/DeepSeek-V2.5", trust_remote_code=True)
     >>> import transformers_modules  # success, initialized
     >>> klass.__class__  # transformers_modules.deepseek-ai.DeepSeek-V2.5.98b11844770b2c3ffc18b175c758a803640f4e77.configuration_deepseek.DeepseekV2Config
 
@@ -1052,9 +992,7 @@ def get_hf_image_processor_config(
         model = Path(model).parent
     elif is_remote_gguf(model):
         model, _ = split_remote_gguf(model)
-    return get_image_processor_config(
-        model, token=hf_token, revision=revision, **kwargs
-    )
+    return get_image_processor_config(model, token=hf_token, revision=revision, **kwargs)
 
 
 def get_hf_text_config(config: PretrainedConfig):
@@ -1113,14 +1051,10 @@ def try_get_safetensors_metadata(
     *,
     revision: str | None = None,
 ):
-    get_safetensors_metadata_partial = partial(
-        get_safetensors_metadata, model, revision=revision
-    )
+    get_safetensors_metadata_partial = partial(get_safetensors_metadata, model, revision=revision)
 
     try:
-        return with_retry(
-            get_safetensors_metadata_partial, "Error retrieving safetensors"
-        )
+        return with_retry(get_safetensors_metadata_partial, "Error retrieving safetensors")
     except Exception:
         return None
 

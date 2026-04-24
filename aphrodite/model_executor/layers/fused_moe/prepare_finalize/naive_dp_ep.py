@@ -23,11 +23,7 @@ def _quantize_and_setup_dispatch(
         a1q = a1
         a1q_scale = None
     else:
-        input_sf = (
-            quant_config.a1_gscale
-            if quant_config.use_nvfp4_w4a4
-            else quant_config.a1_scale
-        )
+        input_sf = quant_config.a1_gscale if quant_config.use_nvfp4_w4a4 else quant_config.a1_scale
 
         # NOTE: swizzling pads the scales to multiple of 128
         # which makes the scales tensor different shape than
@@ -115,9 +111,7 @@ class MoEPrepareAndFinalizeNaiveDPEPModular(mk.FusedMoEPrepareAndFinalizeModular
 
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
-            assert topk == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
             # Note: do not use inplace for shared experts overlap
             a1 = a1 * topk_weights.to(a1.dtype)
 
@@ -160,9 +154,7 @@ class MoEPrepareAndFinalizeNaiveDPEPModular(mk.FusedMoEPrepareAndFinalizeModular
             apply_router_weight_on_input=apply_router_weight_on_input,
         )
 
-        output.copy_(
-            get_ep_group().combine(out, is_sequence_parallel=self.is_sequence_parallel)
-        )
+        output.copy_(get_ep_group().combine(out, is_sequence_parallel=self.is_sequence_parallel))
 
 
 class MoEPrepareAndFinalizeNaiveDPEPMonolithic(mk.FusedMoEPrepareAndFinalizeMonolithic):
@@ -229,9 +221,7 @@ class MoEPrepareAndFinalizeNaiveDPEPMonolithic(mk.FusedMoEPrepareAndFinalizeMono
         self,
         fused_expert_output: torch.Tensor,
     ) -> torch.Tensor:
-        out = get_ep_group().combine(
-            fused_expert_output, is_sequence_parallel=self.is_sequence_parallel
-        )
+        out = get_ep_group().combine(fused_expert_output, is_sequence_parallel=self.is_sequence_parallel)
         return out
 
 

@@ -1,9 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from unittest import mock
 
 import pytest
 import torch
-
 from aphrodite.attention.backends.registry import _Backend
+from aphrodite.modeling.models.llama import LlamaForCausalLM
+
 from aphrodite.config import (
     AphroditeConfig,
     CacheConfig,
@@ -14,7 +17,6 @@ from aphrodite.config import (
     SpeculativeConfig,
 )
 from aphrodite.config.load import LoadConfig
-from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.platforms import current_platform
 from aphrodite.v1.spec_decode.eagle import EagleProposer
 from tests.v1.attention.utils import (

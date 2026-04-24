@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test the piecewise compilation with a simple model, comparing the output
 with and without the piecewise compilation.

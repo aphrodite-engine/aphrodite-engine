@@ -38,9 +38,7 @@ def get_token_bin_counts_and_mask(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     # Compute the bin counts for the tokens.
     # vocab_size + 1 for padding.
-    bin_counts = torch.zeros(
-        (num_seqs, vocab_size + 1), dtype=torch.long, device=tokens.device
-    )
+    bin_counts = torch.zeros((num_seqs, vocab_size + 1), dtype=torch.long, device=tokens.device)
     bin_counts.scatter_add_(1, tokens, torch.ones_like(tokens))
     bin_counts = bin_counts[:, :vocab_size]
     mask = bin_counts > 0
@@ -70,12 +68,8 @@ def apply_penalties(
     repetition_penalties: The repetition penalties of shape (num_seqs, )
     """
     num_seqs, vocab_size = logits.shape
-    _, prompt_mask = get_token_bin_counts_and_mask(
-        prompt_tokens_tensor, vocab_size, num_seqs
-    )
-    output_bin_counts, output_mask = get_token_bin_counts_and_mask(
-        output_tokens_tensor, vocab_size, num_seqs
-    )
+    _, prompt_mask = get_token_bin_counts_and_mask(prompt_tokens_tensor, vocab_size, num_seqs)
+    output_bin_counts, output_mask = get_token_bin_counts_and_mask(output_tokens_tensor, vocab_size, num_seqs)
 
     # Apply repetition penalties as a custom op
     from aphrodite._custom_ops import apply_repetition_penalties
@@ -119,9 +113,7 @@ def use_aiter_triton_gemm(n, m, k, dtype):
     )
 
 
-def rocm_unquantized_gemm_impl(
-    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None
-) -> torch.Tensor:
+def rocm_unquantized_gemm_impl(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
     from aphrodite.platforms.rocm import on_gfx1x, on_gfx9, on_gfx950
 
     n = x.numel() // x.size(-1)
@@ -141,23 +133,14 @@ def rocm_unquantized_gemm_impl(
     # Given the above, how many CUs would we need?
     CuNeeded = rndup_cus * GrpsShrB
     # candidate for atomic reduce count splitk?
-    fits_wvsplitkrc = (
-        N_p2 * m * ((k + 512 - 1) // 512)
-    ) <= 128 * 1024 * 12  # deterministic
+    fits_wvsplitkrc = (N_p2 * m * ((k + 512 - 1) // 512)) <= 128 * 1024 * 12  # deterministic
     fits_wvsplitkrc &= CuNeeded <= cu_count
 
     use_skinny_reduce_counting = (
         envs.APHRODITE_ROCM_USE_SKINNY_GEMM
         and on_gfx950()
         and x.dtype in [torch.float16, torch.bfloat16]
-        and (
-            10 <= n <= 128
-            and k % 8 == 0
-            and k > 512
-            and m % 16 == 0
-            and fits_wvsplitkrc
-            and weight.is_contiguous()
-        )
+        and (10 <= n <= 128 and k % 8 == 0 and k > 512 and m % 16 == 0 and fits_wvsplitkrc and weight.is_contiguous())
     )
     if use_skinny_reduce_counting:
         return ops.wvSplitKrc(x, weight, cu_count, bias)
@@ -188,9 +171,7 @@ def rocm_unquantized_gemm_impl(
     return torch.nn.functional.linear(x, weight, bias)
 
 
-def rocm_unquantized_gemm_fake(
-    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None
-) -> torch.Tensor:
+def rocm_unquantized_gemm_fake(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
     return x.new_empty((*x.shape[:-1], weight.shape[0]))
 
 
@@ -212,10 +193,7 @@ direct_register_custom_op(
 
 def check_cpu_sgl_kernel(n: int, k: int, dtype: torch.dtype) -> bool:
     return (
-        torch.cpu._is_amx_tile_supported()
-        and (dtype in (torch.bfloat16, torch.int8))
-        and k % 32 == 0
-        and n % 16 == 0
+        torch.cpu._is_amx_tile_supported() and (dtype in (torch.bfloat16, torch.int8)) and k % 32 == 0 and n % 16 == 0
     )
 
 
@@ -232,24 +210,16 @@ def dispatch_cpu_unquantized_gemm(
     dtype = layer.weight.dtype
 
     # Zen CPU path: zentorch_linear_unary with optional eager weight prepacking.
-    if current_platform.is_zen_cpu() and hasattr(
-        torch.ops.zentorch, "zentorch_linear_unary"
-    ):
+    if current_platform.is_zen_cpu() and hasattr(torch.ops.zentorch, "zentorch_linear_unary"):
         zen_weight = layer.weight.detach()
         is_prepacked = False
 
-        if envs.APHRODITE_ZENTORCH_WEIGHT_PREPACK and hasattr(
-            torch.ops.zentorch, "zentorch_weight_prepack_for_linear"
-        ):
-            zen_weight = torch.ops.zentorch.zentorch_weight_prepack_for_linear(
-                zen_weight
-            )
+        if envs.APHRODITE_ZENTORCH_WEIGHT_PREPACK and hasattr(torch.ops.zentorch, "zentorch_weight_prepack_for_linear"):
+            zen_weight = torch.ops.zentorch.zentorch_weight_prepack_for_linear(zen_weight)
             is_prepacked = True
 
         layer.cpu_linear = lambda x, weight, bias, _p=is_prepacked: (
-            torch.ops.zentorch.zentorch_linear_unary(
-                x, zen_weight, bias, is_weight_prepacked=_p
-            )
+            torch.ops.zentorch.zentorch_linear_unary(x, zen_weight, bias, is_weight_prepacked=_p)
         )
         if remove_weight:
             layer.weight = torch.nn.Parameter(torch.empty(0), requires_grad=False)
@@ -267,10 +237,7 @@ def dispatch_cpu_unquantized_gemm(
         if remove_weight:
             layer.weight = torch.nn.Parameter(torch.empty(0), requires_grad=False)
         return
-    elif (
-        ops._supports_onednn
-        and current_platform.get_cpu_architecture() != CpuArchEnum.POWERPC
-    ):
+    elif ops._supports_onednn and current_platform.get_cpu_architecture() != CpuArchEnum.POWERPC:
         try:
             origin_weight = layer.weight
             handler = ops.create_onednn_mm(origin_weight.t(), 32)
@@ -279,15 +246,10 @@ def dispatch_cpu_unquantized_gemm(
                 layer.weight = torch.nn.Parameter(torch.empty(0), requires_grad=False)
             return
         except RuntimeError as e:
-            logger.warning_once(
-                "Failed to create oneDNN linear, fallback to torch linear."
-                f" Exception: {e}"
-            )
+            logger.warning_once(f"Failed to create oneDNN linear, fallback to torch linear. Exception: {e}")
 
     # fallback case
-    layer.cpu_linear = lambda x, weight, bias: torch.nn.functional.linear(
-        x, weight, bias
-    )
+    layer.cpu_linear = lambda x, weight, bias: torch.nn.functional.linear(x, weight, bias)
 
 
 def cpu_unquantized_gemm(

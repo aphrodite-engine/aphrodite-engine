@@ -31,9 +31,7 @@ else:
     xgr = LazyLoader("xgr", globals(), "xgrammar")
     oc = LazyLoader("oc", globals(), "outlines_core")
     file_utils = LazyLoader("file_utils", globals(), "transformers.file_utils")
-    convert_slow_tokenizer = LazyLoader(
-        "convert_slow_tokenizer", globals(), "transformers.convert_slow_tokenizer"
-    )
+    convert_slow_tokenizer = LazyLoader("convert_slow_tokenizer", globals(), "transformers.convert_slow_tokenizer")
 
 
 logger = init_logger(__name__)
@@ -97,9 +95,7 @@ def apply_grammar_bitmask(
         cumulative_index += 1 + num_spec_tokens
 
     # Copy async to device as tensor.
-    grammar_bitmask = torch.from_numpy(sorted_bitmask).to(
-        logits.device, non_blocking=True
-    )
+    grammar_bitmask = torch.from_numpy(sorted_bitmask).to(logits.device, non_blocking=True)
 
     # If the length of out indices and the logits have the same shape
     # we don't need to pass indices to the kernel,
@@ -113,9 +109,7 @@ def apply_grammar_bitmask(
             # a tensor. If we copy the tensor ourselves here we can do it in a
             # non_blocking manner and there should be no cpu sync within xgrammar.
             pin_memory = is_pin_memory_available()
-            index_tensor = torch.tensor(
-                out_indices, dtype=torch.int32, device="cpu", pin_memory=pin_memory
-            )
+            index_tensor = torch.tensor(out_indices, dtype=torch.int32, device="cpu", pin_memory=pin_memory)
             index_tensor = index_tensor.to(logits.device, non_blocking=True)
 
         xgr.apply_token_bitmask_inplace(logits, grammar_bitmask, indices=index_tensor)
@@ -211,19 +205,13 @@ def _reduced_vocabulary(tokenizer: TokenizerLike) -> dict[bytes, list[int]]:
     """
     eos_token_id = tokenizer.eos_token_id
 
-    unicode_to_bytes = {
-        v: k for k, v in convert_slow_tokenizer.bytes_to_unicode().items()
-    }
+    unicode_to_bytes = {v: k for k, v in convert_slow_tokenizer.bytes_to_unicode().items()}
 
     def convert_token_to_string(token: str) -> str:
         string = tokenizer.convert_tokens_to_string([token])
 
         # A hack to handle missing spaces to HF's Llama tokenizers
-        if (
-            type(token) is str
-            and token.startswith(file_utils.SPIECE_UNDERLINE)
-            or token == "<0x20>"
-        ):
+        if type(token) is str and token.startswith(file_utils.SPIECE_UNDERLINE) or token == "<0x20>":
             return " " + string
 
         return string
@@ -254,10 +242,7 @@ def _reduced_vocabulary(tokenizer: TokenizerLike) -> dict[bytes, list[int]]:
                     # GPT2 tokenizers: map each byte back using unicode_to_bytes
                     byte_vals = [unicode_to_bytes.get(c) for c in token]
                     if None in byte_vals:
-                        raise RuntimeError(
-                            f"Cannot convert token `{token}`"
-                            f" ({token_idx}) to bytes: {token_str}"
-                        )
+                        raise RuntimeError(f"Cannot convert token `{token}` ({token_idx}) to bytes: {token_str}")
                     # safe to ignore, since if None in byte_vals,
                     # an error is thrown.
                     token_bytes = bytes(byte_vals)  # type: ignore[arg-type]
@@ -278,9 +263,7 @@ def get_outlines_vocabulary(tokenizer: TokenizerLike) -> oc.Vocabulary:
         return tokenizer._outlines_vocabulary  # type: ignore
 
     reduced_vocab = _reduced_vocabulary(tokenizer)
-    vocabulary = OutlinesVocabulary(
-        oc.Vocabulary(tokenizer.eos_token_id, reduced_vocab)
-    )
+    vocabulary = OutlinesVocabulary(oc.Vocabulary(tokenizer.eos_token_id, reduced_vocab))
     tokenizer._outlines_vocabulary = vocabulary  # type: ignore
 
     return vocabulary
@@ -380,10 +363,7 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
                 if name == "start":
                     first_rule = "start"
             except IndexError as e:
-                raise ValueError(
-                    f"Invalid rule format on line {line_num}. "
-                    "Expected 'rule_name: definition'"
-                ) from e
+                raise ValueError(f"Invalid rule format on line {line_num}. Expected 'rule_name: definition'") from e
 
     if not defined_rules:
         raise ValueError("No valid rules found in grammar")
@@ -403,9 +383,7 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
             if ":" in line and not line.startswith("|"):
                 # Save previous rule if exists
                 if current_rule:
-                    output_lines.append(
-                        f"{current_rule} ::= {' | '.join(current_definition)}"
-                    )
+                    output_lines.append(f"{current_rule} ::= {' | '.join(current_definition)}")
 
                 # Process new rule
                 name, definition = line.split(":", 1)
@@ -418,15 +396,10 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
 
             elif line.startswith("|"):
                 if not current_rule:
-                    raise ValueError(
-                        f"Alternative '|' on line {line_num} "
-                        "without a preceding rule definition"
-                    )
+                    raise ValueError(f"Alternative '|' on line {line_num} without a preceding rule definition")
 
                 alt_def = line[1:].strip()
-                check_quotes(
-                    alt_def, f"alternative for rule '{current_rule}'", line_num
-                )
+                check_quotes(alt_def, f"alternative for rule '{current_rule}'", line_num)
                 alt_def = re.sub(r"'([^']*)'", r'"\1"', alt_def)
                 referenced_rules.update(extract_references(alt_def))
                 current_definition.append(alt_def)
@@ -441,9 +414,7 @@ def convert_lark_to_ebnf(grammar_str: str) -> str:
     # Validate all rules are defined
     undefined_rules = referenced_rules - defined_rules - {"root"}
     if undefined_rules:
-        raise ValueError(
-            f"Referenced rules are not defined: {', '.join(sorted(undefined_rules))}"
-        )
+        raise ValueError(f"Referenced rules are not defined: {', '.join(sorted(undefined_rules))}")
 
     return "\n".join(output_lines)
 

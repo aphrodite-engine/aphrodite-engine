@@ -124,15 +124,9 @@ class VisualAttention(nn.Module):
         self.hidden_size_per_partition = embed_dim
 
         # Strided linear layer.
-        assert self._qkv_same_embed_dim, (
-            "Visual Attention implementation only supports self-attention"
-        )
-        self.in_proj = ReplicatedLinear(
-            embed_dim, 3 * embed_dim, prefix=f"{prefix}.in_proj"
-        )
-        self.out_proj = ReplicatedLinear(
-            embed_dim, embed_dim, prefix=f"{prefix}.out_proj"
-        )
+        assert self._qkv_same_embed_dim, "Visual Attention implementation only supports self-attention"
+        self.in_proj = ReplicatedLinear(embed_dim, 3 * embed_dim, prefix=f"{prefix}.in_proj")
+        self.out_proj = ReplicatedLinear(embed_dim, embed_dim, prefix=f"{prefix}.out_proj")
         self.norm_factor = math.sqrt(self.hidden_size_per_attention_head)
 
     def forward(
@@ -152,9 +146,7 @@ class VisualAttention(nn.Module):
         mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
         # [sq, b, np, 3 * hn] --> 3 [sq, b, np, hn]
-        query_layer, key_layer, value_layer = mixed_x_layer.split(
-            self.hidden_size_per_attention_head, dim=-1
-        )
+        query_layer, key_layer, value_layer = mixed_x_layer.split(self.hidden_size_per_attention_head, dim=-1)
 
         # [sq, b, np, hn] -> [sq, b * np, hn]
         query_layer = query_layer.view(
@@ -171,9 +163,7 @@ class VisualAttention(nn.Module):
 
         q_scaled = query_layer / self.norm_factor
         if attn_mask is not None:
-            attention_probs = torch.baddbmm(
-                attn_mask, q_scaled, key_layer.transpose(-2, -1)
-            )
+            attention_probs = torch.baddbmm(attn_mask, q_scaled, key_layer.transpose(-2, -1))
         else:
             attention_probs = torch.bmm(q_scaled, key_layer.transpose(-2, -1))
         attention_probs = attention_probs.softmax(dim=-1)
@@ -199,9 +189,7 @@ class VisualAttention(nn.Module):
         context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # [sq, b, np, hn] --> [sq, b, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + (
-            self.hidden_size_per_partition,
-        )
+        new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
         output, _ = self.out_proj(context_layer)
@@ -319,9 +307,7 @@ class TransformerBlock(nn.Module):
     def get_cast_device(self) -> torch.device:
         return self.resblocks[0].mlp.c_fc.weight.device
 
-    def forward(
-        self, x: torch.Tensor, attn_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
         for r in self.resblocks:
             x = r(x, attn_mask=attn_mask)
         return x
@@ -388,9 +374,7 @@ class VisionTransformer(nn.Module):
         )
 
         self.ln_post = norm_layer(output_dim)
-        self.proj = nn.Parameter(
-            (output_dim**-0.5) * torch.randn(output_dim, output_dim)
-        )
+        self.proj = nn.Parameter((output_dim**-0.5) * torch.randn(output_dim, output_dim))
 
         self.image_start_id = image_start_id
         self.image_end_id = image_start_id + 1
@@ -429,9 +413,7 @@ class QwenVLModel(QWenModel):
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
 
-        self.visual = VisionTransformer(
-            **config.visual, quant_config=quant_config, prefix=f"{prefix}.visual"
-        )
+        self.visual = VisionTransformer(**config.visual, quant_config=quant_config, prefix=f"{prefix}.visual")
 
 
 class QwenVLProcessingInfo(BaseProcessingInfo):
@@ -472,9 +454,7 @@ class QwenVLDummyInputsBuilder(BaseDummyInputsBuilder[QwenVLProcessingInfo]):
         img_start = hf_processor.image_start_tag
         img_end = hf_processor.image_end_tag
 
-        return "".join(
-            f"Picture {i}: {img_start}{img_end}\n" for i in range(1, num_images + 1)
-        )
+        return "".join(f"Picture {i}: {img_start}{img_end}\n" for i in range(1, num_images + 1))
 
     def get_dummy_mm_data(
         self,
@@ -583,9 +563,7 @@ class QwenVLMultiModalProcessor(BaseMultiModalProcessor[QwenVLProcessingInfo]):
     info=QwenVLProcessingInfo,
     dummy_inputs=QwenVLDummyInputsBuilder,
 )
-class QwenVLForConditionalGeneration(
-    QWenBaseModel, SupportsPP, SupportsLoRA, SupportsMultiModal
-):
+class QwenVLForConditionalGeneration(QWenBaseModel, SupportsPP, SupportsLoRA, SupportsMultiModal):
     packed_modules_mapping = {
         "c_attn": ["c_attn"],
         "gate_up_proj": [
@@ -633,9 +611,7 @@ class QwenVLForConditionalGeneration(
 
         self.transformer: QwenVLModel
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> QwenImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> QwenImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -682,7 +658,5 @@ class QwenVLForConditionalGeneration(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states

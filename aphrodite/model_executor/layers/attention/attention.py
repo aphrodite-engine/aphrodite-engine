@@ -50,12 +50,9 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
-def validate_kv_sharing_target(
-    current_layer_name, target_layer_name, static_forward_context
-):
+def validate_kv_sharing_target(current_layer_name, target_layer_name, static_forward_context):
     error_msg = (
-        f"Specified KV sharing target layer for {current_layer_name} "
-        f"is not valid: target layer {target_layer_name} "
+        f"Specified KV sharing target layer for {current_layer_name} is not valid: target layer {target_layer_name} "
     )
 
     if current_layer_name == target_layer_name:
@@ -78,16 +75,12 @@ def validate_kv_sharing_target(
     target_layer_attn_type = static_forward_context[target_layer_name].attn_type
     expected = static_forward_context[current_layer_name].attn_type
     if target_layer_attn_type != expected:
-        raise ValueError(
-            error_msg + f"must be the same type as the current layer ({expected})."
-        )
+        raise ValueError(error_msg + f"must be the same type as the current layer ({expected}).")
 
 
 def should_load_quant_weights(quant_method: QuantizeMethodBase | None) -> bool:
     """Returns whether the quantization method should load quantized weights."""
-    return quant_method is not None and not isinstance(
-        quant_method, UnquantizedLinearMethod
-    )
+    return quant_method is not None and not isinstance(quant_method, UnquantizedLinearMethod)
 
 
 def set_default_quant_scales(layer: nn.Module, register_buffer: bool = False) -> None:
@@ -154,9 +147,7 @@ def _init_kv_cache_quant(
     # the quant op after this attention layer.
     layer._o_scale_float = None
 
-    quant_method = (
-        quant_config.get_quant_method(layer, prefix=prefix) if quant_config else None
-    )
+    quant_method = quant_config.get_quant_method(layer, prefix=prefix) if quant_config else None
 
     # See [Note: Register q/k/v/prob scales in state dict]
     if should_load_quant_weights(quant_method):
@@ -236,10 +227,7 @@ class Attention(nn.Module, AttentionLayerBase):
                 cache_config.calculate_kv_scales = False
 
         # Check if per-head quant scales are required based on kv_cache_scheme
-        use_per_head_quant_scales = (
-            kv_cache_scheme is not None
-            and kv_cache_scheme.get("strategy") == "attn_head"
-        )
+        use_per_head_quant_scales = kv_cache_scheme is not None and kv_cache_scheme.get("strategy") == "attn_head"
 
         # Skip quantization for specified layers
         if cache_config is not None and cache_config.kv_cache_dtype_skip_layers:
@@ -247,10 +235,7 @@ class Attention(nn.Module, AttentionLayerBase):
 
             skip = False
             # Check attention type
-            if (
-                sliding_window is not None
-                and "sliding_window" in cache_config.kv_cache_dtype_skip_layers
-            ):
+            if sliding_window is not None and "sliding_window" in cache_config.kv_cache_dtype_skip_layers:
                 skip = True
             # Check layer index
             layer_idx = extract_layer_index(prefix)
@@ -266,9 +251,7 @@ class Attention(nn.Module, AttentionLayerBase):
                 sliding_window,
             )
 
-        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(
-            kv_cache_dtype, aphrodite_config.model_config
-        )
+        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(kv_cache_dtype, aphrodite_config.model_config)
         self.kv_cache_dtype = kv_cache_dtype
         self.calculate_kv_scales = calculate_kv_scales
         if num_kv_heads is None:
@@ -309,10 +292,7 @@ class Attention(nn.Module, AttentionLayerBase):
         backend_supports_alibi_sqrt = self.attn_backend.supports_alibi_sqrt()
         use_alibi_sqrt = use_alibi_sqrt if use_alibi_sqrt else False
         if use_alibi_sqrt and not backend_supports_alibi_sqrt:
-            raise ValueError(
-                f"use_alibi_sqrt is not supported by backend "
-                f"{self.attn_backend.get_name()}."
-            )
+            raise ValueError(f"use_alibi_sqrt is not supported by backend {self.attn_backend.get_name()}.")
         self.use_alibi_sqrt = bool(use_alibi_sqrt)
         if backend_supports_alibi_sqrt:
             extra_impl_args["use_alibi_sqrt"] = self.use_alibi_sqrt
@@ -322,14 +302,10 @@ class Attention(nn.Module, AttentionLayerBase):
             cache_config is not None
             and cache_config.enable_prefix_caching
             and envs.APHRODITE_BATCH_INVARIANT
-            and (
-                self.attn_backend.get_name() == "FLASHINFER"
-                or self.attn_backend.get_name() == "TRITON_MLA"
-            )
+            and (self.attn_backend.get_name() == "FLASHINFER" or self.attn_backend.get_name() == "TRITON_MLA")
         ):
             logger.warning_once(
-                "Disabling prefix caching for FLASHINFER/TRITON_MLA "
-                "with batch invariance, as it is not yet supported.",
+                "Disabling prefix caching for FLASHINFER/TRITON_MLA with batch invariance, as it is not yet supported.",
                 scope="local",
             )
             cache_config.enable_prefix_caching = False
@@ -387,25 +363,17 @@ class Attention(nn.Module, AttentionLayerBase):
         self.query_quant = None
         if (
             self.impl.supports_quant_query_input
-            and (
-                self.kv_cache_dtype.startswith("fp8") or self.kv_cache_dtype == "nvfp4"
-            )
+            and (self.kv_cache_dtype.startswith("fp8") or self.kv_cache_dtype == "nvfp4")
             and not self.kv_cache_dtype.endswith("per_token_head")
         ):
-            is_per_head = (
-                hasattr(self, "q_scale") and self.q_scale.numel() == self.num_kv_heads
-            )
+            is_per_head = hasattr(self, "q_scale") and self.q_scale.numel() == self.num_kv_heads
             block_size = self.head_size * self.num_heads // self.num_kv_heads
             self.query_quant = QuantFP8(
                 static=True,
-                group_shape=GroupShape(-1, block_size)
-                if is_per_head
-                else GroupShape.PER_TENSOR,
+                group_shape=GroupShape(-1, block_size) if is_per_head else GroupShape.PER_TENSOR,
             )
 
-    def _init_turboquant_buffers(
-        self, cache_dtype: str, head_size: int, prefix: str
-    ) -> None:
+    def _init_turboquant_buffers(self, cache_dtype: str, head_size: int, prefix: str) -> None:
         """Initialize TurboQuant centroids for Lloyd-Max quantization."""
         from aphrodite.model_executor.layers.quantization.turboquant.centroids import (
             get_centroids,
@@ -467,9 +435,7 @@ class Attention(nn.Module, AttentionLayerBase):
         `aphrodite.forward_context.get_forward_context().attn_metadata`.
         """
         if self.calculate_kv_scales:
-            torch.ops.aphrodite.maybe_calc_kv_scales(
-                query, key, value, _encode_layer_name(self.layer_name)
-            )
+            torch.ops.aphrodite.maybe_calc_kv_scales(query, key, value, _encode_layer_name(self.layer_name))
         output_dtype = query.dtype
         if self.query_quant is not None:
             # quantizing with a simple torch operation enables
@@ -508,9 +474,7 @@ class Attention(nn.Module, AttentionLayerBase):
                 and key is not None
                 and value is not None
             ):
-                kv_cache_dummy_dep = unified_kv_cache_update(
-                    key, value, self.layer_name
-                )
+                kv_cache_dummy_dep = unified_kv_cache_update(key, value, self.layer_name)
             unified_attention_with_output(
                 query,
                 key,
@@ -528,9 +492,7 @@ class Attention(nn.Module, AttentionLayerBase):
                 and key is not None
                 and value is not None
             ):
-                kv_cache_dummy_dep = torch.ops.aphrodite.unified_kv_cache_update(
-                    key, value, encoded
-                )
+                kv_cache_dummy_dep = torch.ops.aphrodite.unified_kv_cache_update(key, value, encoded)
             torch.ops.aphrodite.unified_attention_with_output(
                 query,
                 key,
@@ -565,11 +527,7 @@ class Attention(nn.Module, AttentionLayerBase):
         # If we should not load quant weights, we initialize the scales to 1.0
         # as the default value. See [Note: Register q/k/v/prob scales in state dict]
         # for more details.
-        quant_method = (
-            self.quant_config.get_quant_method(self, prefix=self.layer_name)
-            if self.quant_config
-            else None
-        )
+        quant_method = self.quant_config.get_quant_method(self, prefix=self.layer_name) if self.quant_config else None
         if not should_load_quant_weights(quant_method):
             set_default_quant_scales(self, register_buffer=False)
 
@@ -583,9 +541,7 @@ class Attention(nn.Module, AttentionLayerBase):
         assert self.attn_type == AttentionType.DECODER
         quant_mode = get_kv_quant_mode(self.kv_cache_dtype)
         if self.sliding_window is not None:
-            assert not aphrodite_config.model_config.use_mla, (
-                "MLA is not supported for slidingwindow"
-            )
+            assert not aphrodite_config.model_config.use_mla, "MLA is not supported for slidingwindow"
             return SlidingWindowSpec(
                 block_size=block_size,
                 num_kv_heads=self.num_kv_heads,
@@ -600,9 +556,7 @@ class Attention(nn.Module, AttentionLayerBase):
             )
             from aphrodite.v1.kv_cache_interface import TQFullAttentionSpec
 
-            tq_config = TurboQuantConfig.from_cache_dtype(
-                self.kv_cache_dtype, self.head_size
-            )
+            tq_config = TurboQuantConfig.from_cache_dtype(self.kv_cache_dtype, self.head_size)
             return TQFullAttentionSpec(
                 block_size=block_size,
                 num_kv_heads=self.num_kv_heads,
@@ -686,9 +640,7 @@ def get_attention_context(
     attn_layer: Attention | MLAAttention = forward_context.no_compile_layers[layer_name]
     kv_cache = attn_layer.kv_cache
     slot_mapping = forward_context.slot_mapping
-    assert isinstance(slot_mapping, dict), (
-        f"Expected slot_mapping to be a dict, got {type(slot_mapping)}. "
-    )
+    assert isinstance(slot_mapping, dict), f"Expected slot_mapping to be a dict, got {type(slot_mapping)}. "
     layer_slot_mapping = slot_mapping.get(layer_name)
     return attn_metadata, attn_layer, kv_cache, layer_slot_mapping
 

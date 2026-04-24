@@ -62,9 +62,7 @@ class OpenAIToolParser(ToolParser):
                         try:
                             tool_args = json.dumps(json.loads(msg_text))
                         except json.JSONDecodeError:
-                            logger.exception(
-                                "Error decoding JSON tool call from response."
-                            )
+                            logger.exception("Error decoding JSON tool call from response.")
                             tool_args = msg_text
                     else:
                         tool_args = msg_text
@@ -86,9 +84,7 @@ class OpenAIToolParser(ToolParser):
         if parser.current_content:
             if parser.current_channel == "final":
                 final_content = parser.current_content
-            elif (
-                parser.current_channel == "commentary" and not parser.current_recipient
-            ):
+            elif parser.current_channel == "commentary" and not parser.current_recipient:
                 commentary_content = parser.current_content
 
         return ExtractedToolCallInformation(

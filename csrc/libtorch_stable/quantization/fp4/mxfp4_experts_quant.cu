@@ -422,9 +422,9 @@ void silu_and_mul_mxfp4_experts_quant(
       });
 }
 
-// Registered here (not torch_bindings.cpp) because APHRODITE_GPU_FLAGS is applied
-// only under COMPILE_LANGUAGE:CUDA, so ENABLE_NVFP4_SM100 is invisible to
-// .cpp files and cannot gate the registration from there.
+// Registered here (not torch_bindings.cpp) because APHRODITE_GPU_FLAGS is
+// applied only under COMPILE_LANGUAGE:CUDA, so ENABLE_NVFP4_SM100 is invisible
+// to .cpp files and cannot gate the registration from there.
 STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, m) {
   m.impl("mxfp4_experts_quant", TORCH_BOX(&mxfp4_experts_quant));
   m.impl("silu_and_mul_mxfp4_experts_quant",

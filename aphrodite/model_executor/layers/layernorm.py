@@ -30,9 +30,7 @@ def _can_view_as_2d(x: torch.Tensor) -> bool:
     # respect to each other (size-1 dims are ignored).
     for dim in range(x.dim() - 1):
         # Strides for size-1 dims are irrelevant and can be arbitrary.
-        if x.size(dim + 1) != 1 and x.stride(dim) != x.stride(dim + 1) * x.size(
-            dim + 1
-        ):
+        if x.size(dim + 1) != 1 and x.stride(dim) != x.stride(dim + 1) * x.size(dim + 1):
             return False
     return True
 
@@ -70,9 +68,7 @@ def fused_add_rms_norm(
     return x, residual
 
 
-def poly_norm(
-    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, variance_epsilon: float
-) -> torch.Tensor:
+def poly_norm(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, variance_epsilon: float) -> torch.Tensor:
     from aphrodite import _custom_ops as ops
 
     out = torch.empty_like(x)
@@ -121,9 +117,7 @@ class RMSNorm(CustomOp):
 
         self.hidden_size = hidden_size
         self.variance_epsilon = eps
-        self.variance_size_override = (
-            None if var_hidden_size == hidden_size else var_hidden_size
-        )
+        self.variance_size_override = None if var_hidden_size == hidden_size else var_hidden_size
         weight_dtype = dtype or torch.get_default_dtype()
         self.has_weight = has_weight
         self.weight = torch.ones(hidden_size, dtype=weight_dtype)
@@ -149,9 +143,7 @@ class RMSNorm(CustomOp):
             # NOTE: Aphrodite disables custom ops by default when using Inductor.
             # If this op is disabled, CustomOp will dispatch to forward_native,
             # and the Oink path in forward_cuda will never run.
-            if getattr(self._forward_method, "__func__", None) is getattr(
-                self.forward_native, "__func__", None
-            ):
+            if getattr(self._forward_method, "__func__", None) is getattr(self.forward_native, "__func__", None):
                 try:
                     from aphrodite.config import get_cached_compilation_config
 
@@ -171,9 +163,7 @@ class RMSNorm(CustomOp):
                 try:
                     device_index = torch.accelerator.current_device_index()
                     if _oink_ops.is_oink_available_for_device(device_index):
-                        self._use_oink_fused_add_rmsnorm = (
-                            _oink_ops.has_fused_add_rms_norm()
-                        )
+                        self._use_oink_fused_add_rmsnorm = _oink_ops.has_fused_add_rms_norm()
                 except Exception as e:
                     # If anything goes wrong (no Oink install, CPU-only env, etc.),
                     # silently fall back to the built-in RMSNorm path.
@@ -204,17 +194,14 @@ class RMSNorm(CustomOp):
             residual = x.to(orig_dtype)
 
         if x.shape[-1] != hidden_size:
-            raise ValueError(
-                f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}"
-            )
+            raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
         if variance_size_override is None:
             x_var = x
         else:
             if hidden_size < variance_size_override:
                 raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{variance_size_override}, but found: {hidden_size}"
+                    f"Expected hidden_size to be at least {variance_size_override}, but found: {hidden_size}"
                 )
 
             x_var = x[:, :, :variance_size_override]
@@ -261,9 +248,7 @@ class RMSNorm(CustomOp):
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if residual is None and not envs.APHRODITE_BATCH_INVARIANT:
-            return ir.ops.rms_norm(
-                x, self.weight.data, self.variance_epsilon, self.variance_size_override
-            )
+            return ir.ops.rms_norm(x, self.weight.data, self.variance_epsilon, self.variance_size_override)
 
         if self.variance_size_override is not None:
             return self.forward_native(x, residual)
@@ -310,9 +295,7 @@ class RMSNorm(CustomOp):
                     return x, residual
 
         if residual is not None:
-            return fused_add_rms_norm(
-                x, residual, self.weight.data, self.variance_epsilon
-            )
+            return fused_add_rms_norm(x, residual, self.weight.data, self.variance_epsilon)
         else:
             assert envs.APHRODITE_BATCH_INVARIANT
             return rms_norm_batch_invariant(x, self.weight.data, self.variance_epsilon)
@@ -323,17 +306,13 @@ class RMSNorm(CustomOp):
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         if residual is None and not envs.APHRODITE_BATCH_INVARIANT:
-            return ir.ops.rms_norm(
-                x, self.weight.data, self.variance_epsilon, self.variance_size_override
-            )
+            return ir.ops.rms_norm(x, self.weight.data, self.variance_epsilon, self.variance_size_override)
 
         if self.variance_size_override is not None:
             return self.forward_native(x, residual)
 
         if residual is not None:
-            return self.rocm_norm_func_with_add(
-                x, residual, self.weight.data, self.variance_epsilon
-            )
+            return self.rocm_norm_func_with_add(x, residual, self.weight.data, self.variance_epsilon)
         else:
             assert envs.APHRODITE_BATCH_INVARIANT
             return rms_norm_batch_invariant(x, self.weight.data, self.variance_epsilon)
@@ -381,17 +360,11 @@ class GemmaRMSNorm(CustomOp):
         orig_dtype = x.dtype
         weight = self.weight.data.float() + 1.0
         if residual is not None:
-            x = (
-                x.float() + residual.float()
-                if orig_dtype == torch.float16
-                else x + residual
-            )
+            x = x.float() + residual.float() if orig_dtype == torch.float16 else x + residual
             residual = x
         # ir.ops.rms_norm handles fp32 upcast internally
         out = ir.ops.rms_norm(x, weight, self.variance_epsilon)
-        return (
-            out.to(orig_dtype) if residual is None else (out.to(orig_dtype), residual)
-        )
+        return out.to(orig_dtype) if residual is None else (out.to(orig_dtype), residual)
 
     def forward_cuda(
         self,
@@ -452,9 +425,7 @@ class RMSNormGated(CustomOp):
     def reset_parameters(self):
         torch.nn.init.ones_(self.weight)
 
-    def forward_native(
-        self, x: torch.Tensor, z: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward_native(self, x: torch.Tensor, z: torch.Tensor | None = None) -> torch.Tensor:
         """
         Native PyTorch implementation of RMS normalization with gating.
 
@@ -502,9 +473,7 @@ class RMSNormGated(CustomOp):
 
         return out.to(orig_dtype)
 
-    def forward_cuda(
-        self, x: torch.Tensor, z: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward_cuda(self, x: torch.Tensor, z: torch.Tensor | None = None) -> torch.Tensor:
         from aphrodite.model_executor.layers.fla.ops.layernorm_guard import rmsnorm_fn
 
         return rmsnorm_fn(
@@ -518,9 +487,7 @@ class RMSNormGated(CustomOp):
             activation=self.activation,
         )
 
-    def forward_xpu(
-        self, x: torch.Tensor, z: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward_xpu(self, x: torch.Tensor, z: torch.Tensor | None = None) -> torch.Tensor:
         return self.forward_cuda(x, z)
 
 
@@ -537,6 +504,4 @@ class LayerNorm(nn.Module):
         self.bias = nn.Parameter(torch.zeros(dim, dtype=torch.float32))
 
     def forward(self, x: torch.Tensor):
-        return F.layer_norm(
-            x.float(), (self.dim,), self.weight, self.bias, self.eps
-        ).type_as(x)
+        return F.layer_norm(x.float(), (self.dim,), self.weight, self.bias, self.eps).type_as(x)

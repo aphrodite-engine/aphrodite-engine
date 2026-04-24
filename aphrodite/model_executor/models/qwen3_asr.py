@@ -31,7 +31,7 @@ import torch.nn as nn
 from transformers.feature_extraction_utils import BatchFeature
 from transformers.models.whisper import WhisperFeatureExtractor
 
-from aphrodite.config import ModelConfig, SpeechToTextConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.inputs import ModalityData, MultiModalDataDict, PromptType, TokensPrompt
 from aphrodite.logger import init_logger
@@ -95,9 +95,7 @@ _ASR_TEXT_TAG = "<asr_text>"
 def _get_feat_extract_output_lengths(input_lengths: torch.Tensor):
     input_lengths_leave = input_lengths % 100
     feat_lengths = (input_lengths_leave - 1) // 2 + 1
-    output_lengths = (
-        ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
-    )
+    output_lengths = ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
     return output_lengths
 
 
@@ -173,9 +171,7 @@ class Qwen3ASRDummyInputsBuilder(BaseDummyInputsBuilder[Qwen3ASRProcessingInfo])
 def _qwen3asr_field_config(hf_inputs: Mapping[str, torch.Tensor]):
     audio_feature_lengths = hf_inputs.get("audio_feature_lengths", torch.empty((0,)))
     return dict(
-        input_audio_features=MultiModalFieldConfig.flat_from_sizes(
-            "audio", audio_feature_lengths, dim=1
-        ),
+        input_audio_features=MultiModalFieldConfig.flat_from_sizes("audio", audio_feature_lengths, dim=1),
         feature_attention_mask=MultiModalFieldConfig.batched("audio"),
         audio_feature_lengths=MultiModalFieldConfig.batched("audio"),
     )
@@ -230,9 +226,7 @@ class Qwen3ASRMultiModalProcessor(
             audio_output_lengths = audio_output_lens.tolist()
         elif feature_attention_mask is not None:
             assert isinstance(feature_attention_mask, torch.Tensor)
-            audio_output_lens = _get_feat_extract_output_lengths(
-                feature_attention_mask.sum(-1)
-            )
+            audio_output_lens = _get_feat_extract_output_lengths(feature_attention_mask.sum(-1))
             audio_output_lengths = audio_output_lens.tolist()
 
         def get_replacement_qwen2_audio(item_idx: int):
@@ -241,8 +235,7 @@ class Qwen3ASRMultiModalProcessor(
                 audios = mm_items.get_items("audio", AudioProcessorItems)
                 audio = audios.get(item_idx)
                 raise ValueError(
-                    f"The audio {audio} (len={len(audio)}) is too short "
-                    "to be represented inside the model"
+                    f"The audio {audio} (len={len(audio)}) is too short to be represented inside the model"
                 )
 
             return [audio_token_id] * num_features
@@ -302,9 +295,7 @@ class Qwen3ASRForConditionalGeneration(
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         self.aphrodite_config = aphrodite_config  # needed for torch compile forward context
-        thinker_config: Qwen3ASRThinkerConfig = (
-            aphrodite_config.model_config.hf_config.thinker_config
-        )
+        thinker_config: Qwen3ASRThinkerConfig = aphrodite_config.model_config.hf_config.thinker_config
         quant_config = aphrodite_config.quant_config
         multimodal_config = aphrodite_config.model_config.multimodal_config
         self.config = thinker_config
@@ -325,13 +316,9 @@ class Qwen3ASRForConditionalGeneration(
                 prefix=maybe_prefix(prefix, "language_model"),
             )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_audio_input(
-        self, **kwargs: object
-    ) -> Qwen2_5OmniAudioFeatureInputs | None:
+    def _parse_and_validate_audio_input(self, **kwargs: object) -> Qwen2_5OmniAudioFeatureInputs | None:
         input_audio_features = kwargs.pop("input_audio_features", None)
         audio_feature_lengths = kwargs.pop("audio_feature_lengths", None)
         feature_attention_mask = kwargs.pop("feature_attention_mask", None)
@@ -351,13 +338,8 @@ class Qwen3ASRForConditionalGeneration(
         # Preserve the order of modalities if there are multiple of them
         # from the order of kwargs.
         for input_key in kwargs:
-            if (
-                input_key in ("input_audio_features")
-                and "audio" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(
-                    **kwargs
-                )
+            if input_key in ("input_audio_features") and "audio" not in mm_input_by_modality:
+                mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(**kwargs)
         return mm_input_by_modality
 
     def _process_audio_input(
@@ -462,9 +444,7 @@ class Qwen3ASRForConditionalGeneration(
 
         if not mm_features:
             # No audio features, just return linear positions
-            llm_positions = (
-                torch.arange(seq_len, dtype=torch.long).view(1, -1).expand(3, -1)
-            )
+            llm_positions = torch.arange(seq_len, dtype=torch.long).view(1, -1).expand(3, -1)
             return llm_positions.clone(), 0
 
         llm_pos_ids_list: list[torch.Tensor] = []
@@ -477,25 +457,17 @@ class Qwen3ASRForConditionalGeneration(
             audio_feature_length = mm_feature.data["audio_feature_lengths"].data
             if isinstance(audio_feature_length, torch.Tensor):
                 audio_feature_length = audio_feature_length.item()
-            audio_len = _get_feat_extract_output_lengths(
-                torch.tensor(audio_feature_length)
-            ).item()
+            audio_len = _get_feat_extract_output_lengths(torch.tensor(audio_feature_length)).item()
 
             # Text segment before audio (includes audio_start token)
             text_len = offset - st
             st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-            text_positions = (
-                torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                + st_idx
-            )
+            text_positions = torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
             llm_pos_ids_list.append(text_positions)
             st_idx = st_idx + text_len
 
             # Audio token segment
-            audio_positions = (
-                torch.arange(audio_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                + st_idx
-            )
+            audio_positions = torch.arange(audio_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
             llm_pos_ids_list.append(audio_positions)
 
             st = offset + audio_len
@@ -504,10 +476,7 @@ class Qwen3ASRForConditionalGeneration(
         if st < seq_len:
             st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
             text_len = seq_len - st
-            final_text_positions = (
-                torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                + st_idx
-            )
+            final_text_positions = torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
             llm_pos_ids_list.append(final_text_positions)
 
         llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
@@ -538,9 +507,7 @@ class Qwen3ASRForConditionalGeneration(
         return num_audio_tokens
 
     @classmethod
-    def get_speech_to_text_config(
-        cls, model_config: ModelConfig, task_type: str
-    ) -> SpeechToTextConfig:
+    def get_speech_to_text_config(cls, model_config: ModelConfig, task_type: str) -> SpeechToTextConfig:
         processor = cached_processor_from_config(model_config)
         feature_extractor: WhisperFeatureExtractor = processor.feature_extractor
         return SpeechToTextConfig(
@@ -565,15 +532,11 @@ class Qwen3ASRForConditionalGeneration(
 
         if task_type not in ("transcribe", "translate"):
             raise ValueError(
-                f"Unsupported task_type '{task_type}'. "
-                "Supported task types are 'transcribe' and 'translate'."
+                f"Unsupported task_type '{task_type}'. Supported task types are 'transcribe' and 'translate'."
             )
         full_lang_name_to = cls.supported_languages.get(to_language, to_language)
         if to_language is None:
-            prompt = (
-                f"<|im_start|>user\n{audio_placeholder}<|im_end|>\n"
-                f"<|im_start|>assistant\n"
-            )
+            prompt = f"<|im_start|>user\n{audio_placeholder}<|im_end|>\n<|im_start|>assistant\n"
         else:
             prompt = (
                 f"<|im_start|>user\n{audio_placeholder}<|im_end|>\n"

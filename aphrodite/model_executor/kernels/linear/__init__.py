@@ -185,9 +185,7 @@ _POSSIBLE_FP8_KERNELS: dict[PlatformEnum, list[type[FP8ScaledMMLinearKernel]]] =
 
 
 # in priority/performance order (when available)
-_POSSIBLE_FP8_BLOCK_KERNELS: dict[
-    PlatformEnum, list[type[Fp8BlockScaledMMLinearKernel | FP8ScaledMMLinearKernel]]
-] = {
+_POSSIBLE_FP8_BLOCK_KERNELS: dict[PlatformEnum, list[type[Fp8BlockScaledMMLinearKernel | FP8ScaledMMLinearKernel]]] = {
     PlatformEnum.CUDA: [
         FlashInferFp8DeepGEMMDynamicBlockScaledKernel,
         DeepGemmFp8BlockScaledMMKernel,
@@ -336,9 +334,7 @@ def choose_scaled_mm_linear_kernel(
     failure_reason_list = []
 
     if force_kernel is not None:
-        can_implement, failure_reason = is_supported_and_can_implement_kernel(
-            force_kernel, config, compute_capability
-        )
+        can_implement, failure_reason = is_supported_and_can_implement_kernel(force_kernel, config, compute_capability)
         if can_implement:
             return force_kernel
 
@@ -349,8 +345,8 @@ def choose_scaled_mm_linear_kernel(
         )
 
     for kernel in possible_kernels[current_platform._enum]:
-        is_supported_and_can_implement, failure_reason = (
-            is_supported_and_can_implement_kernel(kernel, config, compute_capability)
+        is_supported_and_can_implement, failure_reason = is_supported_and_can_implement_kernel(
+            kernel, config, compute_capability
         )
         if is_supported_and_can_implement:
             return kernel
@@ -471,9 +467,7 @@ def init_int8_linear_kernel(
     )
 
 
-def choose_mp_linear_kernel(
-    config: MPLinearLayerConfig, compute_capability: int | None = None
-) -> type[MPLinearKernel]:
+def choose_mp_linear_kernel(config: MPLinearLayerConfig, compute_capability: int | None = None) -> type[MPLinearKernel]:
     """
     Choose an MPLinearKernel that can implement the given config for the given
      compute capability. Attempts to choose the best kernel in terms of
@@ -502,14 +496,9 @@ def choose_mp_linear_kernel(
     failure_reasons = []
     for kernel in _POSSIBLE_KERNELS[current_platform._enum]:
         if kernel.__name__ in envs.APHRODITE_DISABLED_KERNELS:
-            failure_reasons.append(
-                f" {kernel.__name__} disabled by environment variable"
-            )
+            failure_reasons.append(f" {kernel.__name__} disabled by environment variable")
             continue
-        if (
-            compute_capability is not None
-            and kernel.get_min_capability() > compute_capability
-        ):
+        if compute_capability is not None and kernel.get_min_capability() > compute_capability:
             failure_reasons.append(
                 f"{kernel.__name__} requires capability "
                 f"{kernel.get_min_capability()}, current compute "
@@ -521,13 +510,10 @@ def choose_mp_linear_kernel(
         if can_implement:
             return kernel
         else:
-            failure_reasons.append(
-                f" {kernel.__name__} cannot implement due to: {failure_reason}"
-            )
+            failure_reasons.append(f" {kernel.__name__} cannot implement due to: {failure_reason}")
 
     raise ValueError(
-        "Failed to find a kernel that can implement the "
-        "WNA16 linear layer. Reasons: \n" + "\n".join(failure_reasons)
+        "Failed to find a kernel that can implement the WNA16 linear layer. Reasons: \n" + "\n".join(failure_reasons)
     )
 
 
@@ -542,9 +528,7 @@ def init_mxfp8_linear_kernel() -> Mxfp8LinearKernel:
     failure_reasons = []
     for kernel_cls in possible:
         if kernel_cls.__name__ in envs.APHRODITE_DISABLED_KERNELS:
-            failure_reasons.append(
-                f" {kernel_cls.__name__} disabled by environment variable"
-            )
+            failure_reasons.append(f" {kernel_cls.__name__} disabled by environment variable")
             continue
 
         is_supported, reason = kernel_cls.is_supported()
@@ -561,8 +545,7 @@ def init_mxfp8_linear_kernel() -> Mxfp8LinearKernel:
         return kernel_cls(config)
 
     raise ValueError(
-        "Failed to find a kernel that can implement the "
-        "MXFP8 linear layer. Reasons: \n" + "\n".join(failure_reasons)
+        "Failed to find a kernel that can implement the MXFP8 linear layer. Reasons: \n" + "\n".join(failure_reasons)
     )
 
 
@@ -583,9 +566,7 @@ def init_wfp8_a16_linear_kernel(
         out_dtype=out_dtype,
     )
 
-    kernel_type = choose_scaled_mm_linear_kernel(
-        config, _POSSIBLE_WFP8A16_KERNELS, force_kernel=force_kernel
-    )
+    kernel_type = choose_scaled_mm_linear_kernel(config, _POSSIBLE_WFP8A16_KERNELS, force_kernel=force_kernel)
 
     if module_name:
         logger.info_once(
@@ -621,8 +602,7 @@ def init_nvfp4_linear_kernel() -> NvFp4LinearKernel:
     force_kernel: type[NvFp4LinearKernel] | None = None
     if envs.APHRODITE_BATCH_INVARIANT:
         logger.info_once(
-            "APHRODITE_BATCH_INVARIANT forces NVFP4 linear to use the "
-            "emulation backend for deterministic execution."
+            "APHRODITE_BATCH_INVARIANT forces NVFP4 linear to use the emulation backend for deterministic execution."
         )
         force_kernel = EmulationNvFp4LinearKernel
     elif envs.APHRODITE_USE_FBGEMM:
@@ -641,10 +621,7 @@ def init_nvfp4_linear_kernel() -> NvFp4LinearKernel:
     if force_kernel is not None:
         is_supported, reason = force_kernel.is_supported()
         if not is_supported:
-            raise ValueError(
-                f"Forced NVFP4 kernel {force_kernel.__name__} is not "
-                f"supported: {reason}"
-            )
+            raise ValueError(f"Forced NVFP4 kernel {force_kernel.__name__} is not supported: {reason}")
         logger.info_once("Using %s for NVFP4 GEMM", force_kernel.__name__)
         return force_kernel(config)
 
@@ -655,9 +632,7 @@ def init_nvfp4_linear_kernel() -> NvFp4LinearKernel:
     failure_reasons = []
     for kernel_cls in possible:
         if kernel_cls.__name__ in envs.APHRODITE_DISABLED_KERNELS:
-            failure_reasons.append(
-                f" {kernel_cls.__name__} disabled by environment variable"
-            )
+            failure_reasons.append(f" {kernel_cls.__name__} disabled by environment variable")
             continue
 
         is_supported, reason = kernel_cls.is_supported()
@@ -684,8 +659,7 @@ def init_nvfp4_linear_kernel() -> NvFp4LinearKernel:
         return kernel_cls(config)
 
     raise ValueError(
-        "Failed to find a kernel that can implement the "
-        "NVFP4 linear layer. Reasons: \n" + "\n".join(failure_reasons)
+        "Failed to find a kernel that can implement the NVFP4 linear layer. Reasons: \n" + "\n".join(failure_reasons)
     )
 
 

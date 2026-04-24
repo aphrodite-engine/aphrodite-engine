@@ -1,15 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
 import torch.utils.benchmark as benchmark
-from benchmark_shapes import WEIGHT_SHAPES_MOE
-
-from aphrodite import _custom_ops as ops
-from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp8
 from aphrodite.modeling.layers.fused_moe.fused_moe import (
     fused_experts,
     fused_topk,
 )
+from benchmark_shapes import WEIGHT_SHAPES_MOE
+
+from aphrodite import _custom_ops as ops
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 DEFAULT_MODELS = [

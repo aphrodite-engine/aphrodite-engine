@@ -56,9 +56,7 @@ def create_fp4_scale_tensor(
         rounded_m = round_up(m, 128)
         scale_n = n // block_size
         rounded_n = round_up(scale_n, 4)
-        return torch.zeros(
-            (rounded_m, rounded_n // 4), device=device, dtype=torch.int32
-        )
+        return torch.zeros((rounded_m, rounded_n // 4), device=device, dtype=torch.int32)
     else:
         return torch.zeros((m, n // block_size), device=device, dtype=torch.uint8)
 
@@ -547,9 +545,7 @@ def convert_vertical_slash_indexes(
     nnz_vertical = vertical_indexes.size(2)
     num_rows = (context_size + block_size_M - 1) // block_size_M
 
-    block_count = torch.zeros(
-        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
-    )
+    block_count = torch.zeros(batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device)
     block_offset = torch.zeros(
         batch_size,
         num_heads,
@@ -558,9 +554,7 @@ def convert_vertical_slash_indexes(
         dtype=q_seqlens.dtype,
         device=q_seqlens.device,
     )
-    column_count = torch.zeros(
-        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
-    )
+    column_count = torch.zeros(batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device)
     column_index = torch.zeros(
         batch_size,
         num_heads,
@@ -606,9 +600,7 @@ def convert_vertical_slash_indexes_mergehead(
     nnz_vertical = vertical_indexes.size(2)
     num_rows = (context_size + block_size_M - 1) // block_size_M
 
-    block_count = torch.empty(
-        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
-    )
+    block_count = torch.empty(batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device)
     block_offset = torch.empty(
         batch_size,
         num_heads,
@@ -617,9 +609,7 @@ def convert_vertical_slash_indexes_mergehead(
         dtype=q_seqlens.dtype,
         device=q_seqlens.device,
     )
-    column_count = torch.empty(
-        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
-    )
+    column_count = torch.empty(batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device)
     column_index = torch.empty(
         batch_size,
         num_heads,
@@ -657,21 +647,15 @@ def rotary_embedding(
     cos_sin_cache: torch.Tensor,
     is_neox: bool,
 ) -> None:
-    torch.ops._C.rotary_embedding(
-        positions, query, key, head_size, cos_sin_cache, is_neox
-    )
+    torch.ops._C.rotary_embedding(positions, query, key, head_size, cos_sin_cache, is_neox)
 
 
 # layer norm ops
-def rms_norm(
-    out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, epsilon: float
-) -> None:
+def rms_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, epsilon: float) -> None:
     torch.ops._C.rms_norm(out, input, weight, epsilon)
 
 
-def fused_add_rms_norm(
-    input: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, epsilon: float
-) -> None:
+def fused_add_rms_norm(input: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, epsilon: float) -> None:
     # Note: this func is batch invariant
     torch.ops._C.fused_add_rms_norm(input, residual, weight, epsilon)
 
@@ -712,9 +696,7 @@ def apply_repetition_penalties_torch(
     output_mask: torch.Tensor,
     repetition_penalties: torch.Tensor,
 ) -> None:
-    repetition_penalties = repetition_penalties.unsqueeze(dim=1).repeat(
-        1, logits.size(1)
-    )
+    repetition_penalties = repetition_penalties.unsqueeze(dim=1).repeat(1, logits.size(1))
     # If token appears in prompt or output, apply, otherwise use 1.0 for no-op.
     penalties = torch.where(prompt_mask | output_mask, repetition_penalties, 1.0)
     # If logits are positive, divide by penalty, otherwise multiply by penalty.
@@ -728,9 +710,7 @@ def apply_repetition_penalties_cuda(
     output_mask: torch.Tensor,
     repetition_penalties: torch.Tensor,
 ) -> None:
-    torch.ops._C.apply_repetition_penalties_(
-        logits, prompt_mask, output_mask, repetition_penalties
-    )
+    torch.ops._C.apply_repetition_penalties_(logits, prompt_mask, output_mask, repetition_penalties)
 
 
 def apply_repetition_penalties(
@@ -748,13 +728,9 @@ def apply_repetition_penalties(
         repetition_penalties: The repetition penalties of shape (num_seqs, ).
     """
     if logits.is_cuda and logits.is_contiguous():
-        apply_repetition_penalties_cuda(
-            logits, prompt_mask, output_mask, repetition_penalties
-        )
+        apply_repetition_penalties_cuda(logits, prompt_mask, output_mask, repetition_penalties)
     else:
-        apply_repetition_penalties_torch(
-            logits, prompt_mask, output_mask, repetition_penalties
-        )
+        apply_repetition_penalties_torch(logits, prompt_mask, output_mask, repetition_penalties)
 
 
 # fused quant layer norm ops
@@ -767,13 +743,9 @@ def rms_norm_dynamic_per_token_quant(
     residual: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     output = torch.empty(input.shape, dtype=quant_dtype, device=input.device)
-    scales = torch.empty(
-        (input.numel() // input.shape[-1], 1), device=input.device, dtype=torch.float32
-    )
+    scales = torch.empty((input.numel() // input.shape[-1], 1), device=input.device, dtype=torch.float32)
 
-    torch.ops._C.rms_norm_dynamic_per_token_quant(
-        output, input, weight, scales, epsilon, scale_ub, residual
-    )
+    torch.ops._C.rms_norm_dynamic_per_token_quant(output, input, weight, scales, epsilon, scale_ub, residual)
     return output, scales
 
 
@@ -803,14 +775,8 @@ def rms_norm_per_block_quant(
             sf_k = input.shape[-1] // group_size[1]
             tma_aligned_m = (m + tma_alignment - 1) // tma_alignment * tma_alignment
             shape = input.shape[:-2] + (m, sf_k)
-            stride = (
-                (1, tma_aligned_m)
-                if input.dim() == 2
-                else (tma_aligned_m * sf_k, 1, tma_aligned_m)
-            )
-            scales = torch.empty_strided(
-                shape, stride, device=input.device, dtype=torch.float32
-            )
+            stride = (1, tma_aligned_m) if input.dim() == 2 else (tma_aligned_m * sf_k, 1, tma_aligned_m)
+            scales = torch.empty_strided(shape, stride, device=input.device, dtype=torch.float32)
     else:
         scales = torch.empty(
             (input.numel() // input.shape[-1], input.shape[-1] // group_size[1]),
@@ -818,9 +784,7 @@ def rms_norm_per_block_quant(
             dtype=torch.float32,
         )
 
-    assert tma_alignment in [0, 4], "Expected TMA alignment 0 or 4, but got " + str(
-        tma_alignment
-    )
+    assert tma_alignment in [0, 4], "Expected TMA alignment 0 or 4, but got " + str(tma_alignment)
 
     torch.ops._C.rms_norm_per_block_quant(
         output,
@@ -845,18 +809,14 @@ def silu_and_mul_per_block_quant(
     is_scale_transposed: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     assert input.ndim == 2, f"input must be 2D [batch, hidden*2], got {input.shape}"
-    assert input.shape[-1] % 2 == 0, (
-        f"input last dim must be even (gate||up layout), got {input.shape[-1]}"
-    )
+    assert input.shape[-1] % 2 == 0, f"input last dim must be even (gate||up layout), got {input.shape[-1]}"
 
     # Output is half the width of input (after silu_and_mul)
     num_tokens = input.shape[0]
     hidden_size = input.shape[-1] // 2  # Divide by 2 because input is [gate || up]
 
     # Allocate output tensor (FP8 or INT8)
-    output = torch.empty(
-        (num_tokens, hidden_size), device=input.device, dtype=quant_dtype
-    )
+    output = torch.empty((num_tokens, hidden_size), device=input.device, dtype=quant_dtype)
 
     # Allocate scales tensor
     num_groups = hidden_size // group_size  # Directly use group_size
@@ -990,9 +950,7 @@ if hasattr(torch.ops._C, "gptq_gemm"):
         use_v2_format: bool,
         bit: int,
     ) -> torch.Tensor:
-        return torch.empty(
-            (a.size(0), b_q_weight.size(1)), dtype=a.dtype, device=a.device
-        )
+        return torch.empty((a.size(0), b_q_weight.size(1)), dtype=a.dtype, device=a.device)
 
 
 def gptq_shuffle(q_weight: torch.Tensor, q_perm: torch.Tensor, bit: int) -> None:
@@ -1114,9 +1072,7 @@ def cutlass_scaled_mm_supports_fp8(cuda_device_capability: int) -> bool:
 
 def cutlass_scaled_mm_supports_block_fp8(cuda_device_capability: int) -> bool:
     try:
-        return torch.ops._C.cutlass_scaled_mm_supports_block_fp8(
-            cuda_device_capability
-        )
+        return torch.ops._C.cutlass_scaled_mm_supports_block_fp8(cuda_device_capability)
     except AttributeError:
         return False
 
@@ -1525,9 +1481,7 @@ def gptq_marlin_repack(
     num_bits: int,
     is_a_8bit: bool = False,
 ) -> torch.Tensor:
-    return torch.ops._C.gptq_marlin_repack(
-        b_q_weight, perm, size_k, size_n, num_bits, is_a_8bit
-    )
+    return torch.ops._C.gptq_marlin_repack(b_q_weight, perm, size_k, size_n, num_bits, is_a_8bit)
 
 
 if hasattr(torch.ops._C, "gptq_marlin_repack"):
@@ -1558,9 +1512,7 @@ def awq_marlin_repack(
     num_bits: int,
     is_a_8bit: bool = False,
 ) -> torch.Tensor:
-    return torch.ops._C.awq_marlin_repack(
-        b_q_weight, size_k, size_n, num_bits, is_a_8bit
-    )
+    return torch.ops._C.awq_marlin_repack(b_q_weight, size_k, size_n, num_bits, is_a_8bit)
 
 
 if hasattr(torch.ops._C, "awq_marlin_repack"):
@@ -1598,9 +1550,7 @@ def gptq_marlin_moe_repack(
         dtype=b_q_weight.dtype,
     )
     for e in range(num_experts):
-        output[e] = torch.ops._C.gptq_marlin_repack(
-            b_q_weight[e], perm[e], size_k, size_n, num_bits, is_a_8bit
-        )
+        output[e] = torch.ops._C.gptq_marlin_repack(b_q_weight[e], perm[e], size_k, size_n, num_bits, is_a_8bit)
     return output
 
 
@@ -1620,9 +1570,7 @@ def awq_marlin_moe_repack(
         dtype=b_q_weight.dtype,
     )
     for e in range(num_experts):
-        output[e] = torch.ops._C.awq_marlin_repack(
-            b_q_weight[e], size_k, size_n, num_bits, is_a_8bit
-        )
+        output[e] = torch.ops._C.awq_marlin_repack(b_q_weight[e], size_k, size_n, num_bits, is_a_8bit)
     return output
 
 
@@ -1783,9 +1731,7 @@ def machete_prepack_B(
     b_type: ScalarType,
     group_scales_type: torch.dtype | None,
 ) -> torch.Tensor:
-    return torch.ops._C.machete_prepack_B(
-        b_q_weight, a_type, b_type.id, group_scales_type
-    )
+    return torch.ops._C.machete_prepack_B(b_q_weight, a_type, b_type.id, group_scales_type)
 
 
 if hasattr(torch.ops._C, "machete_prepack_B"):
@@ -1997,14 +1943,10 @@ def scaled_fp4_quant(
     use_8x4_sf_layout = True if "trtllm" in backend and m <= 32 else False  # noqa: SIM210
 
     if use_8x4_sf_layout:
-        output, output_scale = flashinfer_quant_nvfp4_8x4_sf_layout(
-            input, input_global_scale
-        )
+        output, output_scale = flashinfer_quant_nvfp4_8x4_sf_layout(input, input_global_scale)
     else:
         # Pre-allocate and call .out variant (same behavior as old in-place API)
-        output, output_scale = create_fp4_output_tensors(
-            m, n, input.device, is_sf_swizzled_layout
-        )
+        output, output_scale = create_fp4_output_tensors(m, n, input.device, is_sf_swizzled_layout)
         torch.ops._C.scaled_fp4_quant.out(
             input,
             input_global_scale,
@@ -2037,9 +1979,7 @@ def scaled_fp4_experts_quant(
         output_scales: The blockscale tensor in FP8-E4M3
     """
     assert not current_platform.is_rocm()
-    assert input_tensor.ndim == 2, (
-        f"input.ndim needs to be == 2, but got {input_tensor.ndim}."
-    )
+    assert input_tensor.ndim == 2, f"input.ndim needs to be == 2, but got {input_tensor.ndim}."
 
     # Control the maximum number of tokens per expert supported by the
     # NVFP4 MoE Expert Quantization. This is used to prevent the kernel
@@ -2058,9 +1998,7 @@ def scaled_fp4_experts_quant(
     padded_k = (scales_k + (4 - 1)) // 4
 
     # output is uint8 and packed fp4 values
-    output = torch.empty(
-        m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8
-    )
+    output = torch.empty(m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8)
     output_scales = torch.empty(
         MAX_TOKENS_PER_EXPERT * topk,
         padded_k,
@@ -2100,9 +2038,7 @@ def silu_and_mul_scaled_fp4_experts_quant(
         output_scales: The blockscale tensor in FP8-E4M3
     """
     assert not current_platform.is_rocm()
-    assert input_tensor.ndim == 2, (
-        f"input.ndim needs to be == 2, but got {input_tensor.ndim}."
-    )
+    assert input_tensor.ndim == 2, f"input.ndim needs to be == 2, but got {input_tensor.ndim}."
 
     # Control the maximum number of tokens per expert supported by the
     # NVFP4 MoE Expert Quantization. This is used to prevent the kernel
@@ -2123,9 +2059,7 @@ def silu_and_mul_scaled_fp4_experts_quant(
     padded_k = (scales_k + (4 - 1)) // 4
 
     # output is uint8 and packed fp4 values
-    output = torch.empty(
-        m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8
-    )
+    output = torch.empty(m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8)
     output_scales = torch.empty(
         MAX_TOKENS_PER_EXPERT * topk,
         padded_k,
@@ -2181,9 +2115,7 @@ def mxfp4_experts_quant(
     scales_k = k // 32
     padded_k = (scales_k + (4 - 1)) // 4
 
-    output = torch.empty(
-        m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8
-    )
+    output = torch.empty(m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8)
     output_scales = torch.empty(
         MAX_TOKENS_PER_EXPERT * topk,
         padded_k,
@@ -2226,9 +2158,7 @@ def silu_and_mul_mxfp4_experts_quant(
     scales_k = k // 32
     padded_k = (scales_k + (4 - 1)) // 4
 
-    output = torch.empty(
-        m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8
-    )
+    output = torch.empty(m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8)
     output_scales = torch.empty(
         MAX_TOKENS_PER_EXPERT * topk,
         padded_k,
@@ -2305,9 +2235,7 @@ def scaled_fp8_quant(
     if scale is None:
         if use_per_token_if_dynamic:
             scale = torch.empty((shape[0], 1), device=input.device, dtype=torch.float32)
-            torch.ops._C.dynamic_per_token_scaled_fp8_quant(
-                output, input, scale, scale_ub
-            )
+            torch.ops._C.dynamic_per_token_scaled_fp8_quant(output, input, scale, scale_ub)
         else:
             scale = torch.empty(1, device=input.device, dtype=torch.float32)
             torch.ops._C.dynamic_scaled_fp8_quant(output, input, scale)
@@ -2344,18 +2272,12 @@ def allspark_repack_weight(
     N = qweight.shape[1]
     N_32align = (N + 32 - 1) // 32 * 32
 
-    qweight_reorder = torch.empty(
-        (N_32align, K), device=qweight.device, dtype=qweight.dtype
-    )
+    qweight_reorder = torch.empty((N_32align, K), device=qweight.device, dtype=qweight.dtype)
     scale_reorder = torch.empty((1, N_32align), device=scale.device, dtype=scale.dtype)
     zero_point_reorder = None
     if has_zp:
-        assert zero_point is not None, (
-            "zero_point must be provided for asymmetric quantization."
-        )
-        zero_point_reorder = torch.empty(
-            (1, N_32align), device=zero_point.device, dtype=zero_point.dtype
-        )
+        assert zero_point is not None, "zero_point must be provided for asymmetric quantization."
+        zero_point_reorder = torch.empty((1, N_32align), device=zero_point.device, dtype=zero_point.dtype)
 
     torch.ops._C.rearrange_kn_weight_as_n32k16_order(
         qweight,
@@ -2425,27 +2347,19 @@ def scaled_int8_quant(
     output = torch.empty_like(input, dtype=torch.int8)
     if scale is not None:
         # static-per-tensor quantization.
-        assert symmetric == (azp is None), (
-            "azp must only be provided for asymmetric quantization."
-        )
+        assert symmetric == (azp is None), "azp must only be provided for asymmetric quantization."
         torch.ops._C.static_scaled_int8_quant(output, input, scale, azp)
         return output, scale, azp
 
     # dynamic-per-token quantization.
-    input_scales = torch.empty(
-        (input.numel() // input.shape[-1], 1), device=input.device, dtype=torch.float32
-    )
+    input_scales = torch.empty((input.numel() // input.shape[-1], 1), device=input.device, dtype=torch.float32)
     input_azp = None if symmetric else torch.empty_like(input_scales, dtype=torch.int32)
-    torch.ops._C.dynamic_scaled_int8_quant(
-        output, input.contiguous(), input_scales, input_azp
-    )
+    torch.ops._C.dynamic_scaled_int8_quant(output, input.contiguous(), input_scales, input_azp)
     return output, input_scales, input_azp
 
 
 # gguf
-def ggml_dequantize(
-    W: torch.Tensor, quant_type: int, m: int, n: int, dtype: torch.dtype | None
-) -> torch.Tensor:
+def ggml_dequantize(W: torch.Tensor, quant_type: int, m: int, n: int, dtype: torch.dtype | None) -> torch.Tensor:
     return torch.ops._C.ggml_dequantize(W, quant_type, m, n, dtype)
 
 
@@ -2559,15 +2473,11 @@ def LLMM1(a: torch.Tensor, b: torch.Tensor, rows_per_block: int) -> torch.Tensor
     return torch.ops._rocm_C.LLMM1(a, b, rows_per_block)
 
 
-def wvSplitK(
-    a: torch.Tensor, b: torch.Tensor, cu_count: int, bias: torch.Tensor = None
-) -> torch.Tensor:
+def wvSplitK(a: torch.Tensor, b: torch.Tensor, cu_count: int, bias: torch.Tensor = None) -> torch.Tensor:
     return torch.ops._rocm_C.wvSplitK(a, b, bias, cu_count)
 
 
-def wvSplitKrc(
-    a: torch.Tensor, b: torch.Tensor, cu_count: int, bias: torch.Tensor = None
-) -> torch.Tensor:
+def wvSplitKrc(a: torch.Tensor, b: torch.Tensor, cu_count: int, bias: torch.Tensor = None) -> torch.Tensor:
     return torch.ops._rocm_C.wvSplitKrc(a, b, bias, cu_count)
 
 
@@ -2677,9 +2587,7 @@ def moe_wna16_gemm(
     bit: int,
 ) -> torch.Tensor:
     if not current_platform.is_cuda():
-        raise NotImplementedError(
-            "The optimized moe_wna16_gemm kernel is only available on CUDA platforms"
-        )
+        raise NotImplementedError("The optimized moe_wna16_gemm kernel is only available on CUDA platforms")
     torch.ops._moe_C.moe_wna16_gemm(
         input,
         output,
@@ -2710,9 +2618,7 @@ if hasattr(torch.ops, "_moe_C") and hasattr(torch.ops._moe_C, "router_gemm_bf16_
         input: torch.Tensor,
         weight: torch.Tensor,
     ) -> torch.Tensor:
-        return torch.empty(
-            input.shape[0], weight.shape[0], dtype=torch.float32, device=input.device
-        )
+        return torch.empty(input.shape[0], weight.shape[0], dtype=torch.float32, device=input.device)
 
 
 def dsv3_router_gemm(
@@ -2790,9 +2696,7 @@ def grouped_topk(
         scoring_func: 0=none (no activation), 1=sigmoid
     """
     if not current_platform.is_cuda():
-        raise NotImplementedError(
-            "The fused grouped_topk kernel is only available on CUDA platforms"
-        )
+        raise NotImplementedError("The fused grouped_topk kernel is only available on CUDA platforms")
     return torch.ops._moe_C.grouped_topk(
         scores,
         num_expert_group,
@@ -2925,9 +2829,7 @@ if hasattr(torch.ops, "_moe_C") and hasattr(torch.ops._moe_C, "marlin_gemm_moe")
         use_fp32_reduce: bool,
         is_zp_float: bool,
     ):
-        return torch.empty(
-            (size_m * top_k, size_n), dtype=input.dtype, device=input.device
-        )
+        return torch.empty((size_m * top_k, size_n), dtype=input.dtype, device=input.device)
 
 
 def reshape_and_cache(
@@ -2982,9 +2884,7 @@ def concat_and_cache_mla(
     kv_cache_dtype: str,
     scale: torch.Tensor,
 ) -> None:
-    torch.ops._C_cache_ops.concat_and_cache_mla(
-        kv_c, k_pe, kv_cache, slot_mapping, kv_cache_dtype, scale
-    )
+    torch.ops._C_cache_ops.concat_and_cache_mla(kv_c, k_pe, kv_cache, slot_mapping, kv_cache_dtype, scale)
 
 
 def concat_and_cache_mla_rope_fused(
@@ -3058,9 +2958,7 @@ def swap_blocks_batch(
     torch.ops._C_cache_ops.swap_blocks_batch(src_ptrs, dst_ptrs, sizes)
 
 
-def convert_fp8(
-    output: torch.Tensor, input: torch.Tensor, scale: float = 1.0, kv_dtype: str = "fp8"
-) -> None:
+def convert_fp8(output: torch.Tensor, input: torch.Tensor, scale: float = 1.0, kv_dtype: str = "fp8") -> None:
     torch.ops._C_cache_ops.convert_fp8(output, input, scale, kv_dtype)
 
 
@@ -3096,9 +2994,7 @@ def cp_gather_cache(
     batch_size: int,
     seq_starts: torch.Tensor | None = None,
 ) -> None:
-    torch.ops._C_cache_ops.cp_gather_cache(
-        src_cache, dst, block_table, cu_seq_lens, batch_size, seq_starts
-    )
+    torch.ops._C_cache_ops.cp_gather_cache(src_cache, dst, block_table, cu_seq_lens, batch_size, seq_starts)
 
 
 def cp_gather_and_upconvert_fp8_kv_cache(
@@ -3146,9 +3042,7 @@ def indexer_k_quant_and_cache(
     quant_block_size: int,
     kv_cache_dtype: str,
 ) -> None:
-    torch.ops._C_cache_ops.indexer_k_quant_and_cache(
-        k, kv_cache, slot_mapping, quant_block_size, kv_cache_dtype
-    )
+    torch.ops._C_cache_ops.indexer_k_quant_and_cache(k, kv_cache, slot_mapping, quant_block_size, kv_cache_dtype)
 
 
 def cp_gather_indexer_k_quant_cache(
@@ -3158,9 +3052,7 @@ def cp_gather_indexer_k_quant_cache(
     block_table: torch.Tensor,
     cu_seq_lens: torch.Tensor,
 ) -> None:
-    torch.ops._C_cache_ops.cp_gather_indexer_k_quant_cache(
-        kv_cache, dst_k, dst_scale, block_table, cu_seq_lens
-    )
+    torch.ops._C_cache_ops.cp_gather_indexer_k_quant_cache(kv_cache, dst_k, dst_scale, block_table, cu_seq_lens)
 
 
 def get_device_attribute(attribute: int, device: int) -> int:
@@ -3169,9 +3061,7 @@ def get_device_attribute(attribute: int, device: int) -> int:
 
 def get_max_shared_memory_per_block_device_attribute(device: int) -> int:
     # ruff: noqa: E501
-    return torch.ops._C_cuda_utils.get_max_shared_memory_per_block_device_attribute(
-        device
-    )
+    return torch.ops._C_cuda_utils.get_max_shared_memory_per_block_device_attribute(device)
 
 
 # custom ar
@@ -3181,9 +3071,7 @@ def init_custom_ar(
     rank: int,
     fully_connected: bool,
 ) -> int:
-    return torch.ops._C_custom_ar.init_custom_ar(
-        ipc_tensors, rank_data, rank, fully_connected
-    )
+    return torch.ops._C_custom_ar.init_custom_ar(ipc_tensors, rank_data, rank, fully_connected)
 
 
 def all_reduce(
@@ -3212,9 +3100,7 @@ def get_graph_buffer_ipc_meta(fa: int) -> tuple[list[int], list[int]]:
     return torch.ops._C_custom_ar.get_graph_buffer_ipc_meta(fa)
 
 
-def register_graph_buffers(
-    fa: int, handles: list[list[int]], offsets: list[list[int]]
-) -> None:
+def register_graph_buffers(fa: int, handles: list[list[int]], offsets: list[list[int]]) -> None:
     torch.ops._C_custom_ar.register_graph_buffers(fa, handles, offsets)
 
 
@@ -3276,9 +3162,7 @@ def get_flash_mla_metadata(
         tile_scheduler_metadata: (num_sm_parts, TileSchedulerMetaDataSize), dtype torch.int32.
         num_splits: (batch_size + 1), dtype torch.int32.
     """
-    return torch.ops._C.get_flash_mla_metadata(
-        cache_seqlens, num_heads_per_head_k, num_heads_k
-    )
+    return torch.ops._C.get_flash_mla_metadata(cache_seqlens, num_heads_per_head_k, num_heads_k)
 
 
 def flash_mla_with_kvcache(
@@ -3352,12 +3236,8 @@ def sm100_cutlass_mla_decode(
     return out
 
 
-def sm100_cutlass_mla_get_workspace_size(
-    max_seq_len: int, num_batches: int, sm_count: int, num_kv_splits: int
-) -> int:
-    return torch.ops._C.sm100_cutlass_mla_get_workspace_size(
-        max_seq_len, num_batches, sm_count, num_kv_splits
-    )
+def sm100_cutlass_mla_get_workspace_size(max_seq_len: int, num_batches: int, sm_count: int, num_kv_splits: int) -> int:
+    return torch.ops._C.sm100_cutlass_mla_get_workspace_size(max_seq_len, num_batches, sm_count, num_kv_splits)
 
 
 def dsv3_fused_a_gemm(
@@ -3387,9 +3267,7 @@ if hasattr(torch.ops._C, "weight_packed_linear"):
         bias: torch.Tensor | None,
         is_vnni: bool,
     ) -> torch.Tensor:
-        return torch.empty(
-            (mat1.size(0), mat2.size(0)), dtype=mat1.dtype, device=mat2.device
-        )
+        return torch.empty((mat1.size(0), mat2.size(0)), dtype=mat1.dtype, device=mat2.device)
 
 
 if hasattr(torch.ops._C, "fused_experts_cpu"):
@@ -3500,9 +3378,7 @@ def onednn_mm(
     bias: torch.Tensor | None,
 ) -> torch.Tensor:
     output = torch.empty((*x.shape[0:-1], dnnl_handler.n), dtype=x.dtype)
-    torch.ops._C.onednn_mm(
-        output, x.reshape(-1, dnnl_handler.k), bias, dnnl_handler.handler_tensor
-    )
+    torch.ops._C.onednn_mm(output, x.reshape(-1, dnnl_handler.k), bias, dnnl_handler.handler_tensor)
 
     return output
 
@@ -3557,9 +3433,7 @@ def onednn_scaled_int8_quant(
     input = input.view((token_num, input.shape[-1]))
     if scale is not None:
         # static-per-tensor quantization.
-        assert symmetric == (azp is None), (
-            "azp must only be provided for asymmetric quantization."
-        )
+        assert symmetric == (azp is None), "azp must only be provided for asymmetric quantization."
         torch.ops._C.static_scaled_int8_quant(output, input, scale, azp)
         return output, scale, azp
 
@@ -3792,18 +3666,14 @@ def matmul_ada_mxf4_bf16_tn(
 if hasattr(torch.ops._qutlass_C, "fusedQuantizeMxQuest"):
 
     @register_fake("_qutlass_C::fusedQuantizeMxQuest")
-    def _fake_fused_quantize_mx_quest(
-        a: torch.Tensor, b: torch.Tensor, xh_e2m1: torch.Tensor, xh_e8m0: torch.Tensor
-    ):
+    def _fake_fused_quantize_mx_quest(a: torch.Tensor, b: torch.Tensor, xh_e2m1: torch.Tensor, xh_e8m0: torch.Tensor):
         return xh_e2m1, xh_e8m0
 
 
 if hasattr(torch.ops._qutlass_C, "fusedQuantizeMxAbsMax"):
 
     @register_fake("_qutlass_C::fusedQuantizeMxAbsMax")
-    def _fake_fused_quantize_mx_absmax(
-        a: torch.Tensor, b: torch.Tensor, xh_e2m1: torch.Tensor, xh_e8m0: torch.Tensor
-    ):
+    def _fake_fused_quantize_mx_absmax(a: torch.Tensor, b: torch.Tensor, xh_e2m1: torch.Tensor, xh_e8m0: torch.Tensor):
         return xh_e2m1, xh_e8m0
 
 
@@ -3817,9 +3687,7 @@ def fusedQuantizeMx(
     if b.device != a.device:
         raise ValueError("`a` and `b` must be on the same device.")
 
-    xh_e2m1 = torch.empty(
-        *a.shape[:-1], a.size(-1) // 2, dtype=torch.uint8, device=a.device
-    )
+    xh_e2m1 = torch.empty(*a.shape[:-1], a.size(-1) // 2, dtype=torch.uint8, device=a.device)
 
     rows, cols = a.numel() // a.size(-1), a.size(-1) // 32
     n_row_blocks = cdiv(rows, 128)
@@ -3827,9 +3695,7 @@ def fusedQuantizeMx(
     padded_rows = n_row_blocks * 128
     padded_cols = n_col_blocks * 4
 
-    xh_e8m0 = torch.empty(
-        padded_rows, padded_cols, dtype=torch.float8_e8m0fnu, device=a.device
-    )
+    xh_e8m0 = torch.empty(padded_rows, padded_cols, dtype=torch.float8_e8m0fnu, device=a.device)
 
     if not hasattr(torch.ops, "_qutlass_C"):
         raise RuntimeError(
@@ -3858,21 +3724,15 @@ if hasattr(torch.ops._qutlass_C, "fusedQuantizeNv"):
         return xh_e2m1, xh_e4m3
 
 
-def fusedQuantizeNv(
-    a: torch.Tensor, b: torch.Tensor, global_scale: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    xh_e2m1 = torch.empty(
-        *a.shape[:-1], a.size(-1) // 2, dtype=torch.uint8, device=a.device
-    )
+def fusedQuantizeNv(a: torch.Tensor, b: torch.Tensor, global_scale: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    xh_e2m1 = torch.empty(*a.shape[:-1], a.size(-1) // 2, dtype=torch.uint8, device=a.device)
 
     rows, cols = a.numel() // a.size(-1), a.size(-1) // 16
     n_row_blocks = cdiv(rows, 128)
     n_col_blocks = cdiv(cols, 4)
     padded_rows = n_row_blocks * 128
     padded_cols = n_col_blocks * 4
-    xh_e4m3 = torch.empty(
-        padded_rows, padded_cols, dtype=torch.float8_e4m3fn, device=a.device
-    )
+    xh_e4m3 = torch.empty(padded_rows, padded_cols, dtype=torch.float8_e4m3fn, device=a.device)
 
     return torch.ops._qutlass_C.fusedQuantizeNv(a, b, xh_e2m1, xh_e4m3, global_scale)
 

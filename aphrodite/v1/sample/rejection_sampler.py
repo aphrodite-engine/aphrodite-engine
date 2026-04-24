@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from dataclasses import replace
 
 import torch
@@ -5,7 +7,7 @@ import torch.nn as nn
 
 from aphrodite.logger import init_logger
 from aphrodite.triton_utils import tl, triton
-from aphrodite.v1.outputs import LogprobsTensors, SamplerOutput
+from aphrodite.v1.outputs import LogprobsLists, LogprobsTensors, SamplerOutput
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.ops.bad_words import apply_bad_words_with_drafts
 from aphrodite.v1.sample.ops.penalties import apply_all_penalties
@@ -230,9 +232,7 @@ class RejectionSampler(nn.Module):
 
         logprobs_lists = None
         if logprobs_tensors is not None:
-            logprobs_lists = logprobs_tensors.tolists(
-                cu_num_generated_tokens=cu_num_generated_tokens
-            )
+            logprobs_lists = logprobs_tensors.tolists(cu_num_generated_tokens=cu_num_generated_tokens)
 
         return outputs, logprobs_lists
 

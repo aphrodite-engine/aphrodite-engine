@@ -165,36 +165,39 @@ __global__ void concat_and_cache_mla_rope_fused_kernel(
 
 }  // namespace aphrodite
 
-#define CALL_CONCAT_AND_CACHE_MLA_ROPE_FUSED(RAW_KV_T, CACHE_T, KV_DTYPE)      \
-  do {                                                                         \
-    APHRODITE_DISPATCH_FLOATING_TYPES(q_pe.scalar_type(), "qk_scalar_type", [&] {   \
-      using qk_t = scalar_t;                                                   \
-      if (rope_is_neox) {                                                      \
-        aphrodite::concat_and_cache_mla_rope_fused_kernel<qk_t, true, RAW_KV_T,     \
-                                                     CACHE_T, KV_DTYPE>        \
-            <<<grid, block, 0, stream>>>(                                      \
-                positions.data_ptr<int64_t>(), q_pe.data_ptr<qk_t>(),          \
-                k_pe.data_ptr<qk_t>(), kv_c.data_ptr<qk_t>(),                  \
-                rope_cos_sin_cache.data_ptr<qk_t>(), rot_dim,                  \
-                q_pe_stride_token, q_pe_stride_head, k_pe_stride, kv_c_stride, \
-                num_q_heads, reinterpret_cast<CACHE_T*>(kv_cache.data_ptr()),  \
-                kv_cache_slot_mapping.data_ptr<int64_t>(), block_stride,       \
-                entry_stride, kv_lora_rank, block_size,                        \
-                kv_cache_quant_scale.data_ptr<float>());                       \
-      } else {                                                                 \
-        aphrodite::concat_and_cache_mla_rope_fused_kernel<qk_t, false, RAW_KV_T,    \
-                                                     CACHE_T, KV_DTYPE>        \
-            <<<grid, block, 0, stream>>>(                                      \
-                positions.data_ptr<int64_t>(), q_pe.data_ptr<qk_t>(),          \
-                k_pe.data_ptr<qk_t>(), kv_c.data_ptr<qk_t>(),                  \
-                rope_cos_sin_cache.data_ptr<qk_t>(), rot_dim,                  \
-                q_pe_stride_token, q_pe_stride_head, k_pe_stride, kv_c_stride, \
-                num_q_heads, reinterpret_cast<CACHE_T*>(kv_cache.data_ptr()),  \
-                kv_cache_slot_mapping.data_ptr<int64_t>(), block_stride,       \
-                entry_stride, kv_lora_rank, block_size,                        \
-                kv_cache_quant_scale.data_ptr<float>());                       \
-      }                                                                        \
-    });                                                                        \
+#define CALL_CONCAT_AND_CACHE_MLA_ROPE_FUSED(RAW_KV_T, CACHE_T, KV_DTYPE)    \
+  do {                                                                       \
+    APHRODITE_DISPATCH_FLOATING_TYPES(                                       \
+        q_pe.scalar_type(), "qk_scalar_type", [&] {                          \
+          using qk_t = scalar_t;                                             \
+          if (rope_is_neox) {                                                \
+            aphrodite::concat_and_cache_mla_rope_fused_kernel<               \
+                qk_t, true, RAW_KV_T, CACHE_T, KV_DTYPE>                     \
+                <<<grid, block, 0, stream>>>(                                \
+                    positions.data_ptr<int64_t>(), q_pe.data_ptr<qk_t>(),    \
+                    k_pe.data_ptr<qk_t>(), kv_c.data_ptr<qk_t>(),            \
+                    rope_cos_sin_cache.data_ptr<qk_t>(), rot_dim,            \
+                    q_pe_stride_token, q_pe_stride_head, k_pe_stride,        \
+                    kv_c_stride, num_q_heads,                                \
+                    reinterpret_cast<CACHE_T*>(kv_cache.data_ptr()),         \
+                    kv_cache_slot_mapping.data_ptr<int64_t>(), block_stride, \
+                    entry_stride, kv_lora_rank, block_size,                  \
+                    kv_cache_quant_scale.data_ptr<float>());                 \
+          } else {                                                           \
+            aphrodite::concat_and_cache_mla_rope_fused_kernel<               \
+                qk_t, false, RAW_KV_T, CACHE_T, KV_DTYPE>                    \
+                <<<grid, block, 0, stream>>>(                                \
+                    positions.data_ptr<int64_t>(), q_pe.data_ptr<qk_t>(),    \
+                    k_pe.data_ptr<qk_t>(), kv_c.data_ptr<qk_t>(),            \
+                    rope_cos_sin_cache.data_ptr<qk_t>(), rot_dim,            \
+                    q_pe_stride_token, q_pe_stride_head, k_pe_stride,        \
+                    kv_c_stride, num_q_heads,                                \
+                    reinterpret_cast<CACHE_T*>(kv_cache.data_ptr()),         \
+                    kv_cache_slot_mapping.data_ptr<int64_t>(), block_stride, \
+                    entry_stride, kv_lora_rank, block_size,                  \
+                    kv_cache_quant_scale.data_ptr<float>());                 \
+          }                                                                  \
+        });                                                                  \
   } while (false)
 
 // Executes RoPE on q_pe and k_pe, then writes k_pe and kv_c in the kv cache.

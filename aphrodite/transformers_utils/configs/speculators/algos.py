@@ -32,15 +32,11 @@ def update_eagle3(config_dict: dict, pre_trained_config: dict) -> None:
     pre_trained_config["draft_vocab_size"] = config_dict.get("draft_vocab_size")
     if config_dict.get("target_hidden_size") is not None:
         pre_trained_config["target_hidden_size"] = config_dict["target_hidden_size"]
-    pre_trained_config["norm_before_residual"] = config_dict.get(
-        "norm_before_residual", True
-    )
+    pre_trained_config["norm_before_residual"] = config_dict.get("norm_before_residual", True)
     pre_trained_config["norm_before_fc"] = config_dict.get("norm_before_fc", False)
     pre_trained_config["architectures"] = ["Eagle3LlamaForCausalLM"]
     if config_dict.get("eagle_aux_hidden_state_layer_ids"):
-        pre_trained_config["eagle_aux_hidden_state_layer_ids"] = config_dict[
-            "eagle_aux_hidden_state_layer_ids"
-        ]
+        pre_trained_config["eagle_aux_hidden_state_layer_ids"] = config_dict["eagle_aux_hidden_state_layer_ids"]
 
 
 @register_speculator("dflash")

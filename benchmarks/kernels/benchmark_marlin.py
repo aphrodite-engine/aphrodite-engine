@@ -1,8 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
 import torch.utils.benchmark as benchmark
-from benchmark_shapes import WEIGHT_SHAPES
-
-from aphrodite import _custom_ops as ops
 from aphrodite.quantization.gptq_marlin_24 import (
     GPTQ_MARLIN_24_MAX_PARALLEL,
     GPTQ_MARLIN_24_MIN_THREAD_N,
@@ -40,6 +39,9 @@ from aphrodite.quantization.utils.quant_utils import (
     quantize_weights,
     sort_weights,
 )
+from benchmark_shapes import WEIGHT_SHAPES
+
+from aphrodite import _custom_ops as ops
 from aphrodite.scalar_type import ScalarType, scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

@@ -37,8 +37,7 @@ if has_triton_kernels():
         from triton_kernels.matmul_ogs import PrecisionConfig
     except (ImportError, AttributeError) as e:
         logger.error(
-            "Failed to import Triton kernels. Please make sure your triton "
-            "version is compatible. Error: %s",
+            "Failed to import Triton kernels. Please make sure your triton version is compatible. Error: %s",
             e,
         )
 
@@ -161,8 +160,7 @@ def map_mxfp4_backend(runner_backend: str) -> Mxfp4MoeBackend:
     if backend := mapping.get(runner_backend):
         return backend
     raise ValueError(
-        f"moe_backend='{runner_backend}' is not supported for MXFP4 MoE. "
-        f"Expected one of {list(mapping.keys())}."
+        f"moe_backend='{runner_backend}' is not supported for MXFP4 MoE. Expected one of {list(mapping.keys())}."
     )
 
 
@@ -216,9 +214,7 @@ def select_gpt_oss_mxfp4_moe_backend(
             raise NotImplementedError("Mxfp4 LoRA is currently only supported on CUDA.")
         if envs.APHRODITE_MXFP4_USE_MARLIN is False and triton_kernels_supported:
             logger.info_once("Using Triton backend for mxfp4 lora")
-            return Mxfp4MoeBackend.TRITON_UNFUSED, backend_to_kernel_cls(
-                Mxfp4MoeBackend.TRITON_UNFUSED
-            )[0]
+            return Mxfp4MoeBackend.TRITON_UNFUSED, backend_to_kernel_cls(Mxfp4MoeBackend.TRITON_UNFUSED)[0]
         logger.info_once("Using Marlin backend for mxfp4 lora")
         return Mxfp4MoeBackend.MARLIN, backend_to_kernel_cls(Mxfp4MoeBackend.MARLIN)[0]
 
@@ -233,14 +229,8 @@ def select_gpt_oss_mxfp4_moe_backend(
 
     def _make_log_unsupported(backend: Mxfp4MoeBackend, reason: str | None) -> str:
         if reason:
-            return (
-                f"Mxfp4 MoE backend '{backend.value}' does not support the "
-                f"deployment configuration since {reason}."
-            )
-        return (
-            f"Mxfp4 MoE backend '{backend.value}' does not support the "
-            "deployment configuration."
-        )
+            return f"Mxfp4 MoE backend '{backend.value}' does not support the deployment configuration since {reason}."
+        return f"Mxfp4 MoE backend '{backend.value}' does not support the deployment configuration."
 
     def _return_or_raise(
         backend: Mxfp4MoeBackend,
@@ -251,9 +241,7 @@ def select_gpt_oss_mxfp4_moe_backend(
     ) -> tuple[Mxfp4MoeBackend, type[mk.FusedMoEExperts]]:
         reason: str | None = None
         for k_cls in backend_to_kernel_cls(backend):
-            supported, reason = k_cls.is_supported_config(
-                k_cls, config, weight_key, activation_key, activation_format
-            )
+            supported, reason = k_cls.is_supported_config(k_cls, config, weight_key, activation_key, activation_format)
             if supported:
                 logger.info_once(_make_log_backend(backend), scope="local")
                 return backend, k_cls
@@ -307,10 +295,7 @@ def select_gpt_oss_mxfp4_moe_backend(
             )
 
     # Handle explicit FlashInfer MXFP4 MXFP8 TRTLLM configuration.
-    if (
-        envs.is_set("APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8")
-        and envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8
-    ):
+    if envs.is_set("APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8") and envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8:
         return _return_or_raise(
             Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_MXFP8,
             config,
@@ -366,9 +351,7 @@ def select_gpt_oss_mxfp4_moe_backend(
         )
 
     if current_platform.is_cuda() or current_platform.is_rocm():
-        raise NotImplementedError(
-            "No MXFP4 MoE backend supports the deployment configuration."
-        )
+        raise NotImplementedError("No MXFP4 MoE backend supports the deployment configuration.")
 
     return Mxfp4MoeBackend.NONE, None
 
@@ -493,9 +476,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
                 epilogue_tile_m,
             )
             gemm1_weights_shuffled.append(
-                w13_weight[i]
-                .view(torch.uint8)[permute_indices.to(w13_weight.device)]
-                .contiguous()
+                w13_weight[i].view(torch.uint8)[permute_indices.to(w13_weight.device)].contiguous()
             )
             # w13 scale
             permute_sf_indices = get_w2_permute_indices_with_cache(
@@ -506,9 +487,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
             )
             gemm1_scales_shuffled.append(
                 nvfp4_block_scale_interleave(
-                    w13_weight_scale[i]
-                    .view(torch.uint8)[permute_sf_indices.to(w13_weight_scale.device)]
-                    .contiguous()
+                    w13_weight_scale[i].view(torch.uint8)[permute_sf_indices.to(w13_weight_scale.device)].contiguous()
                 )
             )
             # w13 bias
@@ -518,10 +497,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
                 epilogue_tile_m,
             )
             gemm1_bias_shuffled.append(
-                w13_bias[i]
-                .clone()
-                .reshape(-1, 1)[permute_bias_indices.to(w13_bias.device)]
-                .contiguous()
+                w13_bias[i].clone().reshape(-1, 1)[permute_bias_indices.to(w13_bias.device)].contiguous()
             )
             # w2 weight
             permute_indices = get_w2_permute_indices_with_cache(
@@ -530,9 +506,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
                 epilogue_tile_m,
             )
             gemm2_weights_shuffled.append(
-                w2_weight[i]
-                .view(torch.uint8)[permute_indices.to(w2_weight.device)]
-                .contiguous()
+                w2_weight[i].view(torch.uint8)[permute_indices.to(w2_weight.device)].contiguous()
             )
             # w2 scale
             permute_sf_indices = get_w2_permute_indices_with_cache(
@@ -543,9 +517,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
             )
             gemm2_scales_shuffled.append(
                 nvfp4_block_scale_interleave(
-                    w2_weight_scale[i]
-                    .view(torch.uint8)[permute_sf_indices.to(w2_weight_scale.device)]
-                    .contiguous()
+                    w2_weight_scale[i].view(torch.uint8)[permute_sf_indices.to(w2_weight_scale.device)].contiguous()
                 )
             )
             # w2 bias
@@ -555,10 +527,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
                 epilogue_tile_m,
             )
             gemm2_bias_shuffled.append(
-                w2_bias[i]
-                .clone()
-                .reshape(-1, 1)[permute_indices.to(w2_bias.device)]
-                .contiguous()
+                w2_bias[i].clone().reshape(-1, 1)[permute_indices.to(w2_bias.device)].contiguous()
             )
 
         w13_weight = torch.stack(gemm1_weights_shuffled)
@@ -613,15 +582,11 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
             from flashinfer import block_scale_interleave
 
             orig_shape = w13_scale_swapped.shape
-            w13_scale_interleaved = block_scale_interleave(
-                w13_scale_swapped.view(torch.uint8)
-            ).reshape(orig_shape)
+            w13_scale_interleaved = block_scale_interleave(w13_scale_swapped.view(torch.uint8)).reshape(orig_shape)
 
             w2_s = w2_weight_scale.data
             orig_shape = w2_s.shape
-            w2_scale_interleaved = block_scale_interleave(
-                w2_s.view(torch.uint8)
-            ).reshape(orig_shape)
+            w2_scale_interleaved = block_scale_interleave(w2_s.view(torch.uint8)).reshape(orig_shape)
 
             return (
                 w13_weight_swapped,
@@ -639,9 +604,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
                 w_shape = w.shape
                 w_interleaved = w.reshape(w_shape[0], w_shape[1], (w_shape[2] // 4), 4)
                 w_interleaved = w_interleaved.permute(0, 2, 1, 3)
-                w_interleaved = w_interleaved.reshape(
-                    w_shape[0], w_shape[2] // 4, w_shape[1] * 4
-                )
+                w_interleaved = w_interleaved.reshape(w_shape[0], w_shape[2] // 4, w_shape[1] * 4)
                 return w_interleaved
 
             w31_scales = w13_scale_swapped.to(torch.uint8)
@@ -671,17 +634,10 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
 
         # De-interleave w13 rows: gate/up pairs -> contiguous gate, up blocks
         w13_weight.view(torch.uint8).copy_(
-            w13_weight.data.view(torch.uint8)
-            .view(e, n // 2, 2, k)
-            .permute(0, 2, 1, 3)
-            .contiguous()
-            .view(e, n, k)
+            w13_weight.data.view(torch.uint8).view(e, n // 2, 2, k).permute(0, 2, 1, 3).contiguous().view(e, n, k)
         )
         w13_weight_scale.data = (
-            w13_weight_scale.data.view(e, n // 2, 2, -1)
-            .permute(0, 2, 1, 3)
-            .contiguous()
-            .view(e, n, -1)
+            w13_weight_scale.data.view(e, n // 2, 2, -1).permute(0, 2, 1, 3).contiguous().view(e, n, -1)
         )
 
         # View as native FP4 dtype for AITER shuffle
@@ -705,12 +661,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
 
         # Permute bias to match de-interleaved weight layout
         if w13_bias is not None:
-            w13_bias = (
-                w13_bias.data.view(-1, n // 2, 2)
-                .permute(0, 2, 1)
-                .contiguous()
-                .view(-1, n)
-            )
+            w13_bias = w13_bias.data.view(-1, n // 2, 2).permute(0, 2, 1).contiguous().view(-1, n)
 
         return (
             w13_weight,
@@ -737,12 +688,8 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
             w2_weight_scale,
         )
 
-        w13_precision_config = PrecisionConfig(
-            weight_scale=w13_scale, flex_ctx=FlexCtx(rhs_data=w13_flex)
-        )
-        w2_precision_config = PrecisionConfig(
-            weight_scale=w2_scale, flex_ctx=FlexCtx(rhs_data=w2_flex)
-        )
+        w13_precision_config = PrecisionConfig(weight_scale=w13_scale, flex_ctx=FlexCtx(rhs_data=w13_flex))
+        w2_precision_config = PrecisionConfig(weight_scale=w2_scale, flex_ctx=FlexCtx(rhs_data=w2_flex))
 
         del layer.w13_weight
         del layer.w2_weight
@@ -766,10 +713,7 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
             w2_bias,
         )
     else:
-        raise ValueError(
-            f"Unsupported mxfp4_backend: {mxfp4_backend}: "
-            f"should be one of: {list(Mxfp4MoeBackend)}."
-        )
+        raise ValueError(f"Unsupported mxfp4_backend: {mxfp4_backend}: should be one of: {list(Mxfp4MoeBackend)}.")
 
 
 def make_mxfp4_moe_quant_config(
@@ -857,14 +801,8 @@ def make_mxfp4_moe_kernel(
     kernel = mk.FusedMoEKernel(
         prepare_finalize,
         experts,
-        shared_experts=(
-            shared_experts
-            if moe_config.moe_parallel_config.use_deepep_ll_kernels
-            else None
-        ),
-        inplace=(
-            not moe_config.disable_inplace and mxfp4_backend not in TRTLLM_BACKENDS
-        ),
+        shared_experts=(shared_experts if moe_config.moe_parallel_config.use_deepep_ll_kernels else None),
+        inplace=(not moe_config.disable_inplace and mxfp4_backend not in TRTLLM_BACKENDS),
     )
 
     return kernel

@@ -51,27 +51,20 @@ from aphrodite.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.tokenizers import get_tokenizer
 
 SpeechToTextResponse: TypeAlias = TranscriptionResponse | TranslationResponse
-SpeechToTextResponseVerbose: TypeAlias = (
-    TranscriptionResponseVerbose | TranslationResponseVerbose
-)
+SpeechToTextResponseVerbose: TypeAlias = TranscriptionResponseVerbose | TranslationResponseVerbose
 SpeechToTextSegment: TypeAlias = TranscriptionSegment | TranslationSegment
 T = TypeVar("T", bound=SpeechToTextResponse)
 V = TypeVar("V", bound=SpeechToTextResponseVerbose)
 S = TypeVar("S", bound=SpeechToTextSegment)
 
 ResponseType: TypeAlias = (
-    TranscriptionResponse
-    | TranslationResponse
-    | TranscriptionResponseVerbose
-    | TranslationResponseVerbose
+    TranscriptionResponse | TranslationResponse | TranscriptionResponseVerbose | TranslationResponseVerbose
 )
 
 logger = init_logger(__name__)
 
 
-def asr_inter_chunk_separator(
-    language: str | None, no_space_languages: Set[str]
-) -> str:
+def asr_inter_chunk_separator(language: str | None, no_space_languages: Set[str]) -> str:
     """Space to insert between ASR text chunks for streaming and non-streaming join.
 
     Languages in ``no_space_languages`` (e.g. Chinese, Japanese) use an empty
@@ -104,9 +97,7 @@ class OpenAISpeechToText(OpenAIServing):
         self.default_sampling_params = self.model_config.get_diff_sampling_param()
         self.task_type: Final = task_type
 
-        self.asr_config = self.model_cls.get_speech_to_text_config(
-            self.model_config, task_type
-        )
+        self.asr_config = self.model_cls.get_speech_to_text_config(self.model_config, task_type)
 
         self.enable_force_include_usage = enable_force_include_usage
 
@@ -186,11 +177,7 @@ class OpenAISpeechToText(OpenAIServing):
         # Validate request
         language = self.model_cls.validate_language(request.language)
         # Skip to_language validation to avoid extra logging for Whisper.
-        to_language = (
-            self.model_cls.validate_language(request.to_language)
-            if request.to_language
-            else None
-        )
+        to_language = self.model_cls.validate_language(request.to_language) if request.to_language else None
 
         if len(audio_data) / 1024**2 > self.max_audio_filesize_mb:
             raise APHRODITEValidationError(
@@ -212,8 +199,7 @@ class OpenAISpeechToText(OpenAIServing):
 
         duration = get_audio_duration(y=y, sr=sr)
         do_split_audio = self.asr_config.allow_audio_chunking and (
-            self.asr_config.max_audio_clip_s is not None
-            and duration > self.asr_config.max_audio_clip_s
+            self.asr_config.max_audio_clip_s is not None and duration > self.asr_config.max_audio_clip_s
         )
 
         if not do_split_audio:
@@ -229,13 +215,9 @@ class OpenAISpeechToText(OpenAIServing):
                 min_energy_window_size=self.asr_config.min_energy_split_window_size,
             )
 
-        if language is None and getattr(
-            self.model_cls, "supports_explicit_language_detection", False
-        ):
+        if language is None and getattr(self.model_cls, "supports_explicit_language_detection", False):
             # Auto-detect language from the first chunk.
-            language = await self._detect_language(
-                chunks[0], f"{request_id}-lang_detect"
-            )
+            language = await self._detect_language(chunks[0], f"{request_id}-lang_detect")
             request.language = language
 
         parsed_prompts: list[DictPrompt] = []
@@ -275,9 +257,7 @@ class OpenAISpeechToText(OpenAIServing):
                 value=type(dec_prompt).__name__,
             )
 
-        dec_prompt["prompt"] = dec_prompt["prompt"].replace(
-            "<|notimestamps|>", "<|0.00|>"
-        )
+        dec_prompt["prompt"] = dec_prompt["prompt"].replace("<|notimestamps|>", "<|0.00|>")
 
         return prompt
 
@@ -357,8 +337,7 @@ class OpenAISpeechToText(OpenAIServing):
                         # how compressible the generated text is.
                         # A higher ratio indicates more repetitive content,
                         # which is a strong sign of hallucination in outputs.
-                        compression_ratio=len(text_bytes)
-                        / len(zlib.compress(text_bytes)),
+                        compression_ratio=len(text_bytes) / len(zlib.compress(text_bytes)),
                         tokens=sliced_timestamp_tokens[1:-1],
                         avg_logprob=avg_logprob / (idx - last_timestamp_start),
                     ),
@@ -381,9 +360,7 @@ class OpenAISpeechToText(OpenAIServing):
         """Base method for speech-to-text operations like transcription and
         translation."""
         if request.stream and request.use_beam_search:
-            return self.create_error_response(
-                "Streaming is not currently supported with beam search"
-            )
+            return self.create_error_response("Streaming is not currently supported with beam search")
 
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
@@ -400,22 +377,14 @@ class OpenAISpeechToText(OpenAIServing):
 
         if request.response_format not in ["text", "json", "verbose_json"]:
             return self.create_error_response(
-                "Currently only support response_format: "
-                "`text`, `json` or `verbose_json`"
+                "Currently only support response_format: `text`, `json` or `verbose_json`"
             )
 
-        if (
-            request.response_format == "verbose_json"
-            and not self.model_cls.supports_segment_timestamp
-        ):
-            return self.create_error_response(
-                f"Currently do not support verbose_json for {request.model}"
-            )
+        if request.response_format == "verbose_json" and not self.model_cls.supports_segment_timestamp:
+            return self.create_error_response(f"Currently do not support verbose_json for {request.model}")
 
         if request.response_format == "verbose_json" and request.stream:
-            return self.create_error_response(
-                "verbose_json format doesn't support streaming case"
-            )
+            return self.create_error_response("verbose_json format doesn't support streaming case")
         request_id = f"{self.task_type}-{self._base_request_id(raw_request)}"
 
         request_metadata = RequestResponseMetadata(request_id=request_id)
@@ -434,11 +403,7 @@ class OpenAISpeechToText(OpenAIServing):
         max_model_len = self.model_config.max_model_len
         list_result_generator: list[AsyncGenerator[RequestOutput, None]] | None = None
 
-        input_len = (
-            OpenAISpeechToText._get_decoder_prompt_len(engine_inputs)
-            if request.use_beam_search
-            else 0
-        )
+        input_len = OpenAISpeechToText._get_decoder_prompt_len(engine_inputs) if request.use_beam_search else 0
 
         # Unlike most decoder-only models, whisper generation length is not
         # constrained by the size of the input audio, which is mapped to a
@@ -452,9 +417,7 @@ class OpenAISpeechToText(OpenAIServing):
         )
 
         if request.use_beam_search:
-            sampling_params = request.to_beam_search_params(
-                max_tokens, self.default_sampling_params
-            )
+            sampling_params = request.to_beam_search_params(max_tokens, self.default_sampling_params)
         else:
             sampling_params = request.to_sampling_params(
                 max_tokens,
@@ -475,11 +438,7 @@ class OpenAISpeechToText(OpenAIServing):
                 lora_request=lora_request,
             )
 
-            trace_headers = (
-                None
-                if raw_request is None
-                else await self._get_trace_headers(raw_request.headers)
-            )
+            trace_headers = None if raw_request is None else await self._get_trace_headers(raw_request.headers)
 
             if isinstance(sampling_params, BeamSearchParams):
                 generator = self.beam_search(
@@ -500,9 +459,7 @@ class OpenAISpeechToText(OpenAIServing):
 
             list_result_generator.append(generator)
 
-        separator = asr_inter_chunk_separator(
-            request.language, self.model_cls.no_space_languages
-        )
+        separator = asr_inter_chunk_separator(request.language, self.model_cls.no_space_languages)
 
         if request.stream:
             return stream_generator_method(
@@ -525,24 +482,18 @@ class OpenAISpeechToText(OpenAIServing):
             segment_class: type[SpeechToTextSegment] = segments_types[self.task_type]
             chunk_size_in_s = self.asr_config.max_audio_clip_s
             if chunk_size_in_s is None:
-                assert len(list_result_generator) == 1, (
-                    "`max_audio_clip_s` is set to None, audio cannot be chunked"
-                )
+                assert len(list_result_generator) == 1, "`max_audio_clip_s` is set to None, audio cannot be chunked"
             for idx, result_generator in enumerate(list_result_generator):
-                start_time = (
-                    float(idx * chunk_size_in_s) if chunk_size_in_s is not None else 0.0
-                )
+                start_time = float(idx * chunk_size_in_s) if chunk_size_in_s is not None else 0.0
                 async for op in result_generator:
                     if request.response_format == "verbose_json":
                         assert op.outputs[0].logprobs
-                        segments: list[SpeechToTextSegment] = (
-                            self._get_verbose_segments(
-                                tokens=tuple(op.outputs[0].token_ids),
-                                segment_class=segment_class,
-                                request=request,
-                                start_time=start_time,
-                                log_probs=op.outputs[0].logprobs,
-                            )
+                        segments: list[SpeechToTextSegment] = self._get_verbose_segments(
+                            tokens=tuple(op.outputs[0].token_ids),
+                            segment_class=segment_class,
+                            request=request,
+                            start_time=start_time,
+                            log_probs=op.outputs[0].logprobs,
                         )
 
                         total_segments.extend(segments)
@@ -560,9 +511,7 @@ class OpenAISpeechToText(OpenAIServing):
                     "seconds": int(math.ceil(duration_s)),
                 }
                 if request.response_format != "verbose_json":
-                    final_response = cast(
-                        T, TranscriptionResponse(text=text, usage=usage)
-                    )
+                    final_response = cast(T, TranscriptionResponse(text=text, usage=usage))
                 else:
                     final_response = cast(
                         V,
@@ -599,10 +548,8 @@ class OpenAISpeechToText(OpenAIServing):
         request_metadata: RequestResponseMetadata,
         audio_duration_s: float,
         chunk_object_type: Literal["translation.chunk", "transcription.chunk"],
-        response_stream_choice_class: type[TranscriptionResponseStreamChoice]
-        | type[TranslationResponseStreamChoice],
-        stream_response_class: type[TranscriptionStreamResponse]
-        | type[TranslationStreamResponse],
+        response_stream_choice_class: type[TranscriptionResponseStreamChoice] | type[TranslationResponseStreamChoice],
+        stream_response_class: type[TranscriptionStreamResponse] | type[TranslationStreamResponse],
         separator: str,
     ) -> AsyncGenerator[str, None]:
         created_time = int(time.time())
@@ -613,9 +560,7 @@ class OpenAISpeechToText(OpenAIServing):
 
         include_usage = self.enable_force_include_usage or request.stream_include_usage
         include_continuous_usage = (
-            request.stream_continuous_usage_stats
-            if include_usage and request.stream_continuous_usage_stats
-            else False
+            request.stream_continuous_usage_stats if include_usage and request.stream_continuous_usage_stats else False
         )
 
         try:
@@ -639,10 +584,7 @@ class OpenAISpeechToText(OpenAIServing):
                     output = res.outputs[0]
 
                     # dont add separator to the first chunk
-                    if (
-                        result_generator is not list_result_generator[0]
-                        and beginning_of_chunk
-                    ):
+                    if result_generator is not list_result_generator[0] and beginning_of_chunk:
                         output.text = separator + output.text
                         beginning_of_chunk = False
 
@@ -700,9 +642,7 @@ class OpenAISpeechToText(OpenAIServing):
                     model=model_name,
                     usage=final_usage,
                 )
-                final_usage_data = final_usage_chunk.model_dump_json(
-                    exclude_unset=True, exclude_none=True
-                )
+                final_usage_data = final_usage_chunk.model_dump_json(exclude_unset=True, exclude_none=True)
                 yield f"data: {final_usage_data}\n\n"
 
             # report to FastAPI middleware aggregate usage across all choices

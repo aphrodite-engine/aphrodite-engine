@@ -947,8 +947,9 @@ __global__ void __launch_bounds__(kThreadsPerBlock, 2)
 
 // ============================================================================
 // FlashInfer FilteredTopK (BS>32 dispatch) — float32 only.
-// Extracted from flashinfer_topk.cuh. Lives in namespace aphrodite (not persistent).
-// Adapted from https://github.com/flashinfer-ai/flashinfer/pull/2215
+// Extracted from flashinfer_topk.cuh. Lives in namespace aphrodite (not
+// persistent). Adapted from
+// https://github.com/flashinfer-ai/flashinfer/pull/2215
 // ============================================================================
 
 #define FLASHINFER_CUDA_CALL(func, ...) \

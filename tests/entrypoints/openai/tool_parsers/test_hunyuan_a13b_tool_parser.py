@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # ruff: noqa: E501
 
 import json
 from unittest.mock import MagicMock
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import FunctionCall, ToolCall
 from aphrodite.endpoints.openai.tool_parsers import ToolParser, ToolParserManager
+
 from tests.entrypoints.openai.tool_parsers.utils import run_tool_extraction, run_tool_extraction_streaming
 
 

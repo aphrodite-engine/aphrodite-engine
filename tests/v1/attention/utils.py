@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Utility functions for attention-related v1 tests."""
 
 from dataclasses import dataclass
 
 import pytest
 import torch
-
 from aphrodite.attention.backends.abstract import AttentionImpl
 from aphrodite.attention.backends.registry import _Backend, backend_to_class_str
+
 from aphrodite.config import (
     AphroditeConfig,
     CacheConfig,

@@ -81,9 +81,7 @@ class DefaultModelLoader(BaseModelLoader):
 
         if unexpected_keys:
             raise ValueError(
-                f"Unexpected extra config keys for load format "
-                f"{load_config.load_format}: "
-                f"{unexpected_keys}"
+                f"Unexpected extra config keys for load format {load_config.load_format}: {unexpected_keys}"
             )
 
     def _prepare_weights(
@@ -97,10 +95,7 @@ class DefaultModelLoader(BaseModelLoader):
         """Prepare weights for the model.
 
         If the model is not local, it will be downloaded."""
-        model_name_or_path = (
-            maybe_download_from_modelscope(model_name_or_path, revision)
-            or model_name_or_path
-        )
+        model_name_or_path = maybe_download_from_modelscope(model_name_or_path, revision) or model_name_or_path
 
         is_local = os.path.isdir(model_name_or_path)
         load_format = self.load_config.load_format
@@ -126,11 +121,7 @@ class DefaultModelLoader(BaseModelLoader):
         # Some quantized models use .pt files for storing the weights.
         if load_format == "hf":
             allow_patterns = ["*.safetensors", "*.bin"]
-        elif (
-            load_format == "safetensors"
-            or load_format == "fastsafetensors"
-            or load_format == "instanttensor"
-        ):
+        elif load_format == "safetensors" or load_format == "fastsafetensors" or load_format == "instanttensor":
             use_safetensors = True
             allow_patterns = ["*.safetensors"]
         elif load_format == "mistral":
@@ -187,22 +178,16 @@ class DefaultModelLoader(BaseModelLoader):
                     subfolder=subfolder,
                     revision=revision,
                 )
-            hf_weights_files = filter_duplicate_safetensors_files(
-                hf_weights_files, hf_folder, index_file
-            )
+            hf_weights_files = filter_duplicate_safetensors_files(hf_weights_files, hf_folder, index_file)
         else:
             hf_weights_files = filter_files_not_needed_for_inference(hf_weights_files)
 
         if len(hf_weights_files) == 0:
-            raise RuntimeError(
-                f"Cannot find any model weights with `{model_name_or_path}`"
-            )
+            raise RuntimeError(f"Cannot find any model weights with `{model_name_or_path}`")
 
         return hf_folder, hf_weights_files, use_safetensors
 
-    def _get_weights_iterator(
-        self, source: "Source"
-    ) -> Generator[tuple[str, torch.Tensor], None, None]:
+    def _get_weights_iterator(self, source: "Source") -> Generator[tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
         extra_config = self.load_config.model_loader_extra_config
         hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
@@ -238,9 +223,7 @@ class DefaultModelLoader(BaseModelLoader):
                     weights_iterator = multi_thread_safetensors_weights_iterator(
                         hf_weights_files,
                         self.load_config.use_tqdm_on_load,
-                        max_workers=extra_config.get(
-                            "num_threads", self.DEFAULT_NUM_THREADS
-                        ),
+                        max_workers=extra_config.get("num_threads", self.DEFAULT_NUM_THREADS),
                     )
                 else:
                     weights_iterator = safetensors_weights_iterator(
@@ -255,9 +238,7 @@ class DefaultModelLoader(BaseModelLoader):
                     hf_weights_files,
                     self.load_config.use_tqdm_on_load,
                     self.load_config.pt_load_map_location,
-                    max_workers=extra_config.get(
-                        "num_threads", self.DEFAULT_NUM_THREADS
-                    ),
+                    max_workers=extra_config.get("num_threads", self.DEFAULT_NUM_THREADS),
                 )
             else:
                 weights_iterator = pt_weights_iterator(
@@ -322,9 +303,7 @@ class DefaultModelLoader(BaseModelLoader):
         parallel_config = aphrodite_config.parallel_config
 
         if not (
-            model_config.is_moe
-            and parallel_config.enable_expert_parallel
-            and parallel_config.enable_ep_weight_filter
+            model_config.is_moe and parallel_config.enable_expert_parallel and parallel_config.enable_ep_weight_filter
         ):
             return
 
@@ -404,7 +383,4 @@ class DefaultModelLoader(BaseModelLoader):
         if model_config.quantization is None and loaded_weights is not None:
             weights_not_loaded = weights_to_load - loaded_weights
             if weights_not_loaded:
-                raise ValueError(
-                    "Following weights were not initialized from "
-                    f"checkpoint: {weights_not_loaded}"
-                )
+                raise ValueError(f"Following weights were not initialized from checkpoint: {weights_not_loaded}")

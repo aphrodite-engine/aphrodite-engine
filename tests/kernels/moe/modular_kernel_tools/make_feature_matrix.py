@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 from enum import Enum
 from itertools import product
 
 import torch
+from aphrodite.modeling.layers.fused_moe.config import FUSED_MOE_UNQUANTIZED_CONFIG
 from tqdm import tqdm
 
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.modeling.layers.fused_moe.config import FUSED_MOE_UNQUANTIZED_CONFIG
 from aphrodite.platforms import current_platform
 
 from .common import Config, RankTensors, WeightTensors, reference_moe_impl, run_modular_kernel

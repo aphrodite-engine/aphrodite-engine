@@ -11,7 +11,7 @@ import torch.nn as nn
 from huggingface_hub import hf_hub_download
 from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
 
-from aphrodite.config import ModelConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.model_loader.base_loader import BaseModelLoader
@@ -45,10 +45,7 @@ class GGUFModelLoader(BaseModelLoader):
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
         if load_config.model_loader_extra_config:
-            raise ValueError(
-                f"Model loader extra config is not supported for "
-                f"load format {load_config.load_format}"
-            )
+            raise ValueError(f"Model loader extra config is not supported for load format {load_config.load_format}")
 
     def _prepare_weights(self, model_config: ModelConfig):
         model_name_or_path = model_config.model
@@ -116,9 +113,7 @@ class GGUFModelLoader(BaseModelLoader):
         # models, this returns config itself.
         text_config = config.get_text_config()
         model_type = config.model_type
-        is_multimodal = (
-            hasattr(config, "vision_config") and config.vision_config is not None
-        )
+        is_multimodal = hasattr(config, "vision_config") and config.vision_config is not None
         gguf_to_hf_name_map = {}
         sideload_params: list[re.Pattern] = []
         # hack: ggufs have a different name than transformers
@@ -216,18 +211,12 @@ class GGUFModelLoader(BaseModelLoader):
         # For multimodal: use AutoModelForImageTextToText to get
         # language + vision + projector params
         # For text-only: use AutoModelForCausalLM to get language model params
-        auto_cls = (
-            AutoModelForImageTextToText if is_multimodal else AutoModelForCausalLM
-        )
+        auto_cls = AutoModelForImageTextToText if is_multimodal else AutoModelForCausalLM
         with torch.device("meta"):
-            dummy_model = auto_cls.from_config(
-                config, trust_remote_code=model_config.trust_remote_code
-            )
+            dummy_model = auto_cls.from_config(config, trust_remote_code=model_config.trust_remote_code)
 
         state_dict = dummy_model.state_dict()
-        if hf_checkpoint_map := getattr(
-            dummy_model, "_checkpoint_conversion_mapping", None
-        ):
+        if hf_checkpoint_map := getattr(dummy_model, "_checkpoint_conversion_mapping", None):
 
             def revert_hf_rename(name: str) -> str:
                 for original_name, hf_name in hf_checkpoint_map.items():
@@ -235,16 +224,11 @@ class GGUFModelLoader(BaseModelLoader):
                         name = name.replace(hf_name, original_name).lstrip("^")
                 return name
 
-            state_dict = {
-                revert_hf_rename(name): tensor for name, tensor in state_dict.items()
-            }
+            state_dict = {revert_hf_rename(name): tensor for name, tensor in state_dict.items()}
 
         if model_type == "minimax-m2" and not hf_checkpoint_map:
             # Reverse HF convention: mlp -> block_sparse_moe
-            state_dict = {
-                name.replace(".mlp.", ".block_sparse_moe."): tensor
-                for name, tensor in state_dict.items()
-            }
+            state_dict = {name.replace(".mlp.", ".block_sparse_moe."): tensor for name, tensor in state_dict.items()}
 
         def find_hf_name_in_tensor_map(hf_name: str) -> str | None:
             """
@@ -332,11 +316,7 @@ class GGUFModelLoader(BaseModelLoader):
                 )
             )
         if unmapped_params:
-            raise RuntimeError(
-                f"Failed to map GGUF parameters "
-                f"({len(unmapped_params)}): "
-                f"{unmapped_params}"
-            )
+            raise RuntimeError(f"Failed to map GGUF parameters ({len(unmapped_params)}): {unmapped_params}")
         return gguf_to_hf_name_map
 
     def _get_gguf_weight_type(
@@ -352,13 +332,9 @@ class GGUFModelLoader(BaseModelLoader):
         is_multimodal = hasattr(model_config.hf_config, "vision_config")
         if is_multimodal:
             mmproj_file = detect_gguf_multimodal(model_name_or_path)
-            assert mmproj_file is not None, (
-                "Could not find mm_proj file for multimodal GGUF model"
-            )
+            assert mmproj_file is not None, "Could not find mm_proj file for multimodal GGUF model"
             logger.info("Loading extra mm_proj weights from %s...", mmproj_file)
-            mm_proj_weight_type_map = get_gguf_weight_type_map(
-                mmproj_file, gguf_to_hf_name_map
-            )
+            mm_proj_weight_type_map = get_gguf_weight_type_map(mmproj_file, gguf_to_hf_name_map)
             weight_type_map.update(mm_proj_weight_type_map)
         return weight_type_map
 
@@ -385,20 +361,14 @@ class GGUFModelLoader(BaseModelLoader):
         if is_multimodal:
             # Load mm_proj (mm_encoder + projector) for multimodal weights
             mmproj_file = detect_gguf_multimodal(model_name_or_path)
-            assert mmproj_file is not None, (
-                "Could not find mm_proj file for multimodal GGUF model"
-            )
+            assert mmproj_file is not None, "Could not find mm_proj file for multimodal GGUF model"
             yield from gguf_quant_weights_iterator(mmproj_file, gguf_to_hf_name_map)
 
         gguf_files = self._get_all_gguf_files(model_name_or_path)
         if len(gguf_files) > 1:
-            yield from gguf_quant_weights_iterator_multi(
-                gguf_files, gguf_to_hf_name_map
-            )
+            yield from gguf_quant_weights_iterator_multi(gguf_files, gguf_to_hf_name_map)
         else:
-            yield from gguf_quant_weights_iterator(
-                model_name_or_path, gguf_to_hf_name_map
-            )
+            yield from gguf_quant_weights_iterator(model_name_or_path, gguf_to_hf_name_map)
 
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(model_config)
@@ -406,13 +376,9 @@ class GGUFModelLoader(BaseModelLoader):
     def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
         local_model_path = self._prepare_weights(model_config)
         gguf_weights_map = self._get_gguf_weights_map(model_config)
-        model.load_weights(
-            self._get_weights_iterator(model_config, local_model_path, gguf_weights_map)
-        )
+        model.load_weights(self._get_weights_iterator(model_config, local_model_path, gguf_weights_map))
 
-    def load_model(
-        self, aphrodite_config: AphroditeConfig, model_config: ModelConfig, prefix: str = ""
-    ) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig, model_config: ModelConfig, prefix: str = "") -> nn.Module:
         device_config = aphrodite_config.device_config
         local_model_path = self._prepare_weights(model_config)
         gguf_weights_map = self._get_gguf_weights_map(model_config)
@@ -424,9 +390,7 @@ class GGUFModelLoader(BaseModelLoader):
         if "lm_head.weight" in all_extra_names:
             model_config.hf_config.update({"tie_word_embeddings": True})
 
-        weight_type_map = self._get_gguf_weight_type(
-            model_config, local_model_path, gguf_weights_map
-        )
+        weight_type_map = self._get_gguf_weight_type(model_config, local_model_path, gguf_weights_map)
         # filter out unquantized modules to skip
         unquant_names = [
             name.removesuffix(".weight")

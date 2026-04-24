@@ -99,16 +99,12 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "TritonMLAImpl does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "TritonMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "TritonMLAImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for TritonMLAImpl"
             )
 
         # For FP8 KV cache, we dequantize to BF16 on load inside the
@@ -119,9 +115,7 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
 
         self._sm_count = current_platform.num_compute_units()
 
-    def _flash_attn_varlen_diff_headdims(
-        self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs
-    ):
+    def _flash_attn_varlen_diff_headdims(self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs):
         return super()._flash_attn_varlen_diff_headdims(
             q,
             k,
@@ -147,9 +141,7 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
         assert isinstance(q, torch.Tensor)
         B = q.shape[0]
         q_num_heads = q.shape[1]
-        o = torch.zeros(
-            B, q_num_heads, self.kv_lora_rank, dtype=q.dtype, device=q.device
-        )
+        o = torch.zeros(B, q_num_heads, self.kv_lora_rank, dtype=q.dtype, device=q.device)
         lse = torch.zeros(B, q_num_heads, dtype=q.dtype, device=q.device)
 
         # For batch invariance, use only 1 split to ensure deterministic reduction

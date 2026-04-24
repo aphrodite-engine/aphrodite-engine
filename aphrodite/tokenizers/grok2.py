@@ -94,15 +94,13 @@ def _maybe_load_tokenizer_config(
             return json.load(f)
     except json.JSONDecodeError as exc:
         logger.warning(
-            "Failed to parse tokenizer_config.json. "
-            "The default chat template will be used. Error: %s",
+            "Failed to parse tokenizer_config.json. The default chat template will be used. Error: %s",
             exc,
         )
         return {}
     except OSError as exc:
         logger.warning(
-            "Failed to open tokenizer_config.json. "
-            "The default chat template will be used. Error: %s",
+            "Failed to open tokenizer_config.json. The default chat template will be used. Error: %s",
             exc,
         )
         return {}
@@ -119,10 +117,7 @@ def _load_tiktoken_encoding(
     with vocab_file.open("rb") as f:
         xtok_dict = json.load(f)
 
-    mergeable_ranks = {
-        bytes(item["bytes"]): item["token"]
-        for item in xtok_dict.get("regular_tokens", [])
-    }
+    mergeable_ranks = {bytes(item["bytes"]): item["token"] for item in xtok_dict.get("regular_tokens", [])}
     special_tokens = {
         bytes(item["bytes"]).decode("utf-8", errors="replace"): item["token"]
         for item in xtok_dict.get("special_tokens", [])
@@ -150,8 +145,7 @@ def _load_tiktoken_encoding(
     default_allowed_special: set[str] | None = None
     if "default_allowed_special" in xtok_dict:
         default_allowed_special = {
-            bytes(bytes_list).decode("utf-8", errors="replace")
-            for bytes_list in xtok_dict["default_allowed_special"]
+            bytes(bytes_list).decode("utf-8", errors="replace") for bytes_list in xtok_dict["default_allowed_special"]
         }
 
     tokenizer._default_allowed_special = default_allowed_special or set()
@@ -176,9 +170,7 @@ def _load_tiktoken_encoding(
 
     tokenizer.encode = functools.partial(encode_patched, tokenizer)
     tokenizer._default_allowed_special |= set(DEFAULT_CONTROL_TOKENS.values())
-    tokenizer._default_allowed_special |= set(
-        CONTROL_TOKEN_TEXTS + RESERVED_TOKEN_TEXTS
-    )
+    tokenizer._default_allowed_special |= set(CONTROL_TOKEN_TEXTS + RESERVED_TOKEN_TEXTS)
 
     return tokenizer, special_tokens
 
@@ -348,17 +340,11 @@ class Grok2Tokenizer(TokenizerLike):
             tokens = self._maybe_truncate(tokens, max_length)
         return tokens
 
-    def decode(
-        self, ids: Sequence[int] | int, skip_special_tokens: bool = False
-    ) -> str:
+    def decode(self, ids: Sequence[int] | int, skip_special_tokens: bool = False) -> str:
         if isinstance(ids, int):
             ids = [ids]
         if skip_special_tokens:
-            ids = [
-                token_id
-                for token_id in ids
-                if token_id not in self._special_tokens.values()
-            ]
+            ids = [token_id for token_id in ids if token_id not in self._special_tokens.values()]
         return self._tokenizer.decode(ids)
 
     @overload
@@ -372,9 +358,7 @@ class Grok2Tokenizer(TokenizerLike):
             return self._token_to_id.get(tokens, self._unk_token_id)
         return [self._token_to_id.get(token, self._unk_token_id) for token in tokens]
 
-    def convert_ids_to_tokens(
-        self, ids: Sequence[int], skip_special_tokens: bool = False
-    ) -> list[str]:
+    def convert_ids_to_tokens(self, ids: Sequence[int], skip_special_tokens: bool = False) -> list[str]:
         tokens = []
         for token_id in ids:
             if skip_special_tokens and token_id in self._special_tokens.values():
@@ -408,9 +392,7 @@ class Grok2Tokenizer(TokenizerLike):
                 for item in text
             ]
             attention_mask_batch = [[1] * len(ids) for ids in input_ids_batch]
-            return BatchEncoding(
-                {"input_ids": input_ids_batch, "attention_mask": attention_mask_batch}
-            )
+            return BatchEncoding({"input_ids": input_ids_batch, "attention_mask": attention_mask_batch})
 
         input_ids = self.encode(
             text,
@@ -421,9 +403,7 @@ class Grok2Tokenizer(TokenizerLike):
         attention_mask = [1] * len(input_ids)
         return BatchEncoding({"input_ids": input_ids, "attention_mask": attention_mask})
 
-    def get_chat_template(
-        self, chat_template: str | None, tools: list[dict[str, Any]] | None = None
-    ) -> str | None:
+    def get_chat_template(self, chat_template: str | None, tools: list[dict[str, Any]] | None = None) -> str | None:
         del tools
         return chat_template or self._chat_template
 
@@ -437,9 +417,7 @@ class Grok2Tokenizer(TokenizerLike):
     ) -> str | list[int]:
         template = self.get_chat_template(chat_template, tools=tools)
         if template is None:
-            raise ValueError(
-                "No chat template available. Provide `chat_template` explicitly."
-            )
+            raise ValueError("No chat template available. Provide `chat_template` explicitly.")
         kwargs["return_dict"] = False
         prompt = hf_chat_utils.apply_chat_template(
             conversation=messages,

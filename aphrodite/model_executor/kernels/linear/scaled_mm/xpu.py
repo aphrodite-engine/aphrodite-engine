@@ -19,9 +19,7 @@ from aphrodite.platforms import current_platform
 
 class XPUFP8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
     @classmethod
-    def is_supported(
-        cls, compute_capability: int | None = None
-    ) -> tuple[bool, str | None]:
+    def is_supported(cls, compute_capability: int | None = None) -> tuple[bool, str | None]:
         if not current_platform.is_xpu():
             return False, "XPUFP8ScaledMM only support on XPU"
         return True, None
@@ -37,9 +35,7 @@ class XPUFP8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
             return False, "XPUFP8ScaledMM only support FP8 weight dtype"
         return True, None
 
-    def __init__(
-        self, c: FP8ScaledMMLinearLayerConfig, layer_param_names: Sequence[str]
-    ) -> None:
+    def __init__(self, c: FP8ScaledMMLinearLayerConfig, layer_param_names: Sequence[str]) -> None:
         assert self.can_implement(c)[0]
         assert self.is_supported()[0]
         self.config = c

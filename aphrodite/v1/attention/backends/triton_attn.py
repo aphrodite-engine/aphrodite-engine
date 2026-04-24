@@ -8,7 +8,7 @@ from typing import ClassVar
 import torch
 
 from aphrodite._aiter_ops import rocm_aiter_ops
-from aphrodite.config import CUDAGraphMode, AphroditeConfig
+from aphrodite.config import AphroditeConfig, CUDAGraphMode
 from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
@@ -102,9 +102,7 @@ class TritonAttentionMetadata:
             return None
 
         # Collect ranges, using [(0,0)] for empty sequences to ensure uniform dims
-        range_lists = [
-            mm_prefix_range.get(i, [(0, 0)]) or [(0, 0)] for i in range(num_seqs)
-        ]
+        range_lists = [mm_prefix_range.get(i, [(0, 0)]) or [(0, 0)] for i in range(num_seqs)]
 
         # Return None if all ranges are trivial (only (0,0) placeholders)
         if all(r == [(0, 0)] for r in range_lists):
@@ -118,9 +116,7 @@ class TritonAttentionMetadata:
             padded_r = list(r) + [(0, 0)] * (max_ranges - len(r))
             padded.append(padded_r)
         # Create tensor with efficient H2D transfer
-        return torch.tensor(padded, dtype=torch.int32, device=device).view(
-            num_seqs, max_ranges, 2
-        )
+        return torch.tensor(padded, dtype=torch.int32, device=device).view(num_seqs, max_ranges, 2)
 
 
 class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMetadata]):
@@ -138,20 +134,15 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
         self.block_size = kv_cache_spec.block_size
 
         model_config = aphrodite_config.model_config
-        self.num_heads_q = model_config.get_num_attention_heads(
-            aphrodite_config.parallel_config
-        )
+        self.num_heads_q = model_config.get_num_attention_heads(aphrodite_config.parallel_config)
         self.num_heads_kv = model_config.get_num_kv_heads(aphrodite_config.parallel_config)
         self.headdim = model_config.get_head_size()
 
         # Check if CUDA Graphs are enabled for decode
-        self.decode_cudagraph_enabled = (
-            self.aphrodite_config.compilation_config.cudagraph_mode
-            in (
-                CUDAGraphMode.FULL_AND_PIECEWISE,
-                CUDAGraphMode.FULL_DECODE_ONLY,
-                CUDAGraphMode.FULL,
-            )
+        self.decode_cudagraph_enabled = self.aphrodite_config.compilation_config.cudagraph_mode in (
+            CUDAGraphMode.FULL_AND_PIECEWISE,
+            CUDAGraphMode.FULL_DECODE_ONLY,
+            CUDAGraphMode.FULL,
         )
 
         # The launch grid for the 2D kernel is defined as (num_q_blocks, num_heads_kv).
@@ -198,9 +189,7 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
             device=device,
         )
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ) -> TritonAttentionMetadata:
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata) -> TritonAttentionMetadata:
         attn_metadata = self.build(0, common_attn_metadata)
         # When doing full graph capture, setting seq_lens to
         # max_model_len will cause graph capture to be extremely
@@ -226,12 +215,8 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
         use_cascade = common_prefix_len > 0
 
         if use_cascade:
-            cu_prefix_query_lens = torch.tensor(
-                [0, num_actual_tokens], dtype=torch.int32, device=self.device
-            )
-            prefix_kv_lens = torch.tensor(
-                [common_prefix_len], dtype=torch.int32, device=self.device
-            )
+            cu_prefix_query_lens = torch.tensor([0, num_actual_tokens], dtype=torch.int32, device=self.device)
+            prefix_kv_lens = torch.tensor([common_prefix_len], dtype=torch.int32, device=self.device)
             suffix_kv_lens = common_attn_metadata.seq_lens.cpu() - common_prefix_len
             suffix_kv_lens = suffix_kv_lens.to(self.device)
         else:
@@ -409,9 +394,7 @@ class TritonAttentionImpl(AttentionImpl):
         hs = padded_hs - scale_pad
 
         raw = kv_cache.untyped_storage()
-        base_f32 = torch.tensor([], dtype=torch.float32, device=kv_cache.device).set_(
-            raw
-        )
+        base_f32 = torch.tensor([], dtype=torch.float32, device=kv_cache.device).set_(raw)
 
         # In the raw bytes, each (block, kv_half, slot, head) occupies
         # padded_hs * dtype_sz bytes.  The scale float32 sits at byte
@@ -523,8 +506,7 @@ class TritonAttentionImpl(AttentionImpl):
         """
         if output_block_scale is not None:
             raise NotImplementedError(
-                "fused block_scale output quantization is not yet supported"
-                " for TritonAttentionImpl"
+                "fused block_scale output quantization is not yet supported for TritonAttentionImpl"
             )
 
         if attn_metadata is None:
@@ -575,9 +557,7 @@ class TritonAttentionImpl(AttentionImpl):
                 if key_cache.dtype != self.fp8_dtype:
                     key_cache = key_cache.view(self.fp8_dtype)
                     value_cache = value_cache.view(self.fp8_dtype)
-                assert layer._q_scale_float == 1.0, (
-                    "A non 1.0 q_scale is not currently supported."
-                )
+                assert layer._q_scale_float == 1.0, "A non 1.0 q_scale is not currently supported."
             descale_shape = (
                 attn_metadata.query_start_loc.shape[0] - 1,
                 key_cache.shape[2],
@@ -656,9 +636,7 @@ class TritonAttentionImpl(AttentionImpl):
         """
         # Quantized KV cache is not supported for encoder attention.
         if is_quantized_kv_cache(self.kv_cache_dtype):
-            raise NotImplementedError(
-                "quantized KV cache is not supported for encoder attention"
-            )
+            raise NotImplementedError("quantized KV cache is not supported for encoder attention")
 
         # Use encoder-specific metadata for sequence information
         query_start_loc = attn_metadata.query_start_loc

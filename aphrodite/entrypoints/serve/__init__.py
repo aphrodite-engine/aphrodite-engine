@@ -11,10 +11,7 @@ logger = init_logger(__name__)
 
 def register_aphrodite_serve_api_routers(app: FastAPI):
     if envs.APHRODITE_SERVER_DEV_MODE:
-        logger.warning(
-            "SECURITY WARNING: Development endpoints are enabled! "
-            "This should NOT be used in production!"
-        )
+        logger.warning("SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!")
 
     from aphrodite.entrypoints.serve.lora.api_router import (
         attach_router as attach_lora_router,

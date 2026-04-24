@@ -19,10 +19,7 @@ from typing import Any, Literal, cast
 import aphrodite.envs as envs
 from aphrodite.logging_utils import ColoredFormatter, NewLineFormatter
 
-_FORMAT = (
-    f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
-    "[%(fileinfo)-15s:%(lineno)4d] %(message)s"
-)
+_FORMAT = f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s [%(fileinfo)-15s:%(lineno)4d] %(message)s"
 _FORMAT_INFO = f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
@@ -46,12 +43,6 @@ DEFAULT_LOGGING_CONFIG: dict[str, dict[str, Any] | Any] = {
             "datefmt": _DATE_FORMAT,
             "format": _FORMAT,
         },
-        "aphrodite_color": {
-            "class": "aphrodite.logging_utils.ColoredFormatter",
-            "datefmt": _DATE_FORMAT,
-            "format": _FORMAT,
-        },
-        # Backward-compatible config key accepted by older logging configs.
         "aphrodite_color": {
             "class": "aphrodite.logging_utils.ColoredFormatter",
             "datefmt": _DATE_FORMAT,
@@ -140,9 +131,7 @@ class _AphroditeLogger(Logger):
             return
         _print_info_once(self, msg, *args)
 
-    def warning_once(
-        self, msg: str, *args: Hashable, scope: LogScope = "local"
-    ) -> None:
+    def warning_once(self, msg: str, *args: Hashable, scope: LogScope = "local") -> None:
         """
         As [`warning`][logging.Logger.warning], but subsequent calls with
         the same message are silently dropped.
@@ -178,9 +167,7 @@ def _configure_aphrodite_root_logger() -> None:
         # Refresh these values in case env vars have changed.
         aphrodite_handler["level"] = envs.APHRODITE_LOGGING_LEVEL
         aphrodite_handler["stream"] = envs.APHRODITE_LOGGING_STREAM
-        aphrodite_handler["formatter"] = (
-            "aphrodite_color" if _use_color() else "aphrodite"
-        )
+        aphrodite_handler["formatter"] = "aphrodite_color" if _use_color() else "aphrodite"
 
         aphrodite_loggers = logging_config["loggers"]["aphrodite"]
         aphrodite_loggers["level"] = envs.APHRODITE_LOGGING_LEVEL

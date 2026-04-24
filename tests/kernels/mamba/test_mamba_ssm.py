@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 import torch.nn.functional as F
+from aphrodite.attention.backends.utils import PAD_SLOT_ID
+from aphrodite.modeling.layers.mamba.ops.mamba_ssm import selective_scan_fn, selective_state_update
 from einops import rearrange, repeat
 
 from aphrodite import _custom_ops as ops  # noqa: F401
-from aphrodite.attention.backends.utils import PAD_SLOT_ID
-from aphrodite.modeling.layers.mamba.ops.mamba_ssm import selective_scan_fn, selective_state_update
 from aphrodite.platforms import current_platform
 from tests.kernels.utils import opcheck
 

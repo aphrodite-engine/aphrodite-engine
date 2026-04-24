@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Benchmark offline prioritization."""
 
 import argparse
@@ -6,9 +8,9 @@ import json
 import random
 import time
 
+from aphrodite.engine.args_tools import EngineArgs
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 

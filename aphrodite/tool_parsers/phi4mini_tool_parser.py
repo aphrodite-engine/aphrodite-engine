@@ -48,14 +48,10 @@ class Phi4MiniJsonToolParser(ToolParser):
         self.prev_tool_call_arr: list[dict[str, Any]] = []
         self.current_tool_id: int = -1
         self.current_tool_name_sent: bool = False
-        self.streamed_args_for_tool: list[
-            str
-        ] = []  # map what has been streamed for each tool so far to a list
+        self.streamed_args_for_tool: list[str] = []  # map what has been streamed for each tool so far to a list
         self.bot_token: str = "functools"
 
-    def extract_tool_calls(
-        self, model_output: str, request: ChatCompletionRequest
-    ) -> ExtractedToolCallInformation:
+    def extract_tool_calls(self, model_output: str, request: ChatCompletionRequest) -> ExtractedToolCallInformation:
         """
         Extract the tool calls from a complete model response.
         """
@@ -66,9 +62,7 @@ class Phi4MiniJsonToolParser(ToolParser):
 
         if not matches:
             logger.debug("No function calls found")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             function_call_arr: list[dict[str, Any]] = []
@@ -76,9 +70,7 @@ class Phi4MiniJsonToolParser(ToolParser):
                 json_content = "[" + matches.group(1) + "]"
 
                 function_call_arr = json.loads(json_content)
-                logger.debug(
-                    "Successfully extracted %d function calls", len(function_call_arr)
-                )
+                logger.debug("Successfully extracted %d function calls", len(function_call_arr))
             except json.JSONDecodeError as e:
                 logger.error(
                     "Failed to parse function calls from model output. Error: %s",
@@ -104,15 +96,11 @@ class Phi4MiniJsonToolParser(ToolParser):
             ]
 
             # get any content before the tool call
-            ret = ExtractedToolCallInformation(
-                tools_called=True, tool_calls=tool_calls, content=None
-            )
+            ret = ExtractedToolCallInformation(tools_called=True, tool_calls=tool_calls, content=None)
             return ret
 
         except Exception:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def extract_tool_calls_streaming(
         self,

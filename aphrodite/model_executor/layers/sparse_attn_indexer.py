@@ -65,9 +65,7 @@ def sparse_attn_indexer(
         # Dummy allocation to simulate for peak logits tensor memory during inference.
         # FP8 elements so elements == bytes
         max_logits_elems = envs.APHRODITE_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024
-        _ = torch.empty(
-            max_logits_elems, dtype=torch.uint8, device=hidden_states.device
-        )
+        _ = torch.empty(max_logits_elems, dtype=torch.uint8, device=hidden_states.device)
 
         return sparse_attn_indexer_fake(
             hidden_states,
@@ -139,9 +137,7 @@ def sparse_attn_indexer(
             )
             num_rows = logits.shape[0]
 
-            topk_indices = topk_indices_buffer[
-                chunk.token_start : chunk.token_end, :topk_tokens
-            ]
+            topk_indices = topk_indices_buffer[chunk.token_start : chunk.token_end, :topk_tokens]
 
             if current_platform.is_xpu():
                 ops.top_k_per_row_prefill(
@@ -179,13 +175,9 @@ def sparse_attn_indexer(
             # decode_threshold since we unstrictly split
             # prefill and decode by decode_threshold
             # (currently set to 1 + speculative tokens)
-            padded_q_fp8_decode_tokens = pack_seq_triton(
-                q_fp8[:num_decode_tokens], decode_lens
-            )
+            padded_q_fp8_decode_tokens = pack_seq_triton(q_fp8[:num_decode_tokens], decode_lens)
         else:
-            padded_q_fp8_decode_tokens = q_fp8[:num_decode_tokens].reshape(
-                decode_lens.shape[0], -1, *q_fp8.shape[1:]
-            )
+            padded_q_fp8_decode_tokens = q_fp8[:num_decode_tokens].reshape(decode_lens.shape[0], -1, *q_fp8.shape[1:])
         # TODO: move and optimize below logic with triton kernels
         batch_size = padded_q_fp8_decode_tokens.shape[0]
         next_n = padded_q_fp8_decode_tokens.shape[1]
@@ -250,9 +242,7 @@ def sparse_attn_indexer(
                 topk_indices.reshape(batch_size, -1, topk_indices.shape[-1]),
                 decode_lens,
             )
-            topk_indices_buffer[: topk_indices.shape[0], : topk_indices.shape[-1]] = (
-                topk_indices
-            )
+            topk_indices_buffer[: topk_indices.shape[0], : topk_indices.shape[-1]] = topk_indices
 
     return topk_indices_buffer
 
@@ -318,9 +308,7 @@ class SparseAttnIndexer(CustomOp):
         self.max_total_seq_len = max_total_seq_len
         self.topk_indices_buffer = topk_indices_buffer
         if current_platform.is_cuda() and not has_deep_gemm():
-            raise RuntimeError(
-                "Sparse Attention Indexer CUDA op requires DeepGEMM to be installed."
-            )
+            raise RuntimeError("Sparse Attention Indexer CUDA op requires DeepGEMM to be installed.")
 
     def forward_native(
         self,
@@ -335,8 +323,7 @@ class SparseAttnIndexer(CustomOp):
             return self.forward_hip(hidden_states, q_fp8, k, weights)
         else:
             raise NotImplementedError(
-                "SparseAttnIndexer native forward is only implemented for "
-                "CUDA, ROCm and XPU platforms."
+                "SparseAttnIndexer native forward is only implemented for CUDA, ROCm and XPU platforms."
             )
 
     def forward_cuda(
@@ -386,7 +373,4 @@ class SparseAttnIndexer(CustomOp):
                 self.topk_indices_buffer,
             )
         else:
-            raise RuntimeError(
-                "Sparse attention indexer ROCm custom op requires ROCm "
-                "Aiter ops to be enabled."
-            )
+            raise RuntimeError("Sparse attention indexer ROCm custom op requires ROCm Aiter ops to be enabled.")

@@ -182,10 +182,7 @@ class TurboQuantConfig:
         """
         if cache_dtype not in TQ_PRESETS:
             valid = ", ".join(TQ_PRESETS.keys())
-            raise ValueError(
-                f"Unknown TurboQuant cache dtype: {cache_dtype!r}. "
-                f"Valid presets: {valid}"
-            )
+            raise ValueError(f"Unknown TurboQuant cache dtype: {cache_dtype!r}. Valid presets: {valid}")
         preset = TQ_PRESETS[cache_dtype]
         return TurboQuantConfig(
             head_dim=head_dim,

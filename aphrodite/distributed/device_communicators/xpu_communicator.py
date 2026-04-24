@@ -61,18 +61,14 @@ class XpuCommunicator(DeviceCommunicatorBase):
         chunk_size = input_tensor.shape[0] // world_size
         output_shape = (chunk_size,) + input_tensor.shape[1:]
 
-        output = torch.empty(
-            output_shape, dtype=input_tensor.dtype, device=input_tensor.device
-        )
+        output = torch.empty(output_shape, dtype=input_tensor.dtype, device=input_tensor.device)
 
         dist.reduce_scatter_tensor(output, input_tensor, group=self.device_group)
 
         # Reshape before returning
         return output.movedim(0, dim).contiguous()
 
-    def reduce_scatterv(
-        self, input_: torch.Tensor, dim: int = -1, sizes: list[int] | None = None
-    ):
+    def reduce_scatterv(self, input_: torch.Tensor, dim: int = -1, sizes: list[int] | None = None):
         world_size = self.world_size
 
         if dim < 0:
@@ -92,9 +88,7 @@ class XpuCommunicator(DeviceCommunicatorBase):
             chunk_size = input_tensor.shape[0] // world_size
         output_shape = (chunk_size,) + input_tensor.shape[1:]
 
-        output = torch.empty(
-            output_shape, dtype=input_tensor.dtype, device=input_tensor.device
-        )
+        output = torch.empty(output_shape, dtype=input_tensor.dtype, device=input_tensor.device)
         if sizes is not None and sizes.count(sizes[0]) != len(sizes):
             # if inputs shape in different ranks is not the same using reduce_scatter
             input_splits = list(input_tensor.split(sizes, dim=0))
@@ -130,9 +124,7 @@ class XpuCommunicator(DeviceCommunicatorBase):
             else:
                 output_size = (input_size[0] * world_size,) + input_size[1:]
             # Allocate output tensor.
-            output_tensor = torch.empty(
-                output_size, dtype=input_.dtype, device=input_.device
-            )
+            output_tensor = torch.empty(output_size, dtype=input_.dtype, device=input_.device)
 
             if sizes is not None:
                 all_gather_list = []
@@ -158,12 +150,8 @@ class XpuCommunicator(DeviceCommunicatorBase):
             output_list.append(_all_gather_single(inp, sizes=sizes))
         return output_list
 
-    def gather(
-        self, input_: torch.Tensor, dst: int = 0, dim: int = -1
-    ) -> torch.Tensor | None:
-        assert -input_.dim() <= dim < input_.dim(), (
-            f"Invalid dim ({dim}) for input tensor with shape {input_.size()}"
-        )
+    def gather(self, input_: torch.Tensor, dst: int = 0, dim: int = -1) -> torch.Tensor | None:
+        assert -input_.dim() <= dim < input_.dim(), f"Invalid dim ({dim}) for input tensor with shape {input_.size()}"
         if dim < 0:
             # Convert negative dim to positive.
             dim += input_.dim()
@@ -171,18 +159,14 @@ class XpuCommunicator(DeviceCommunicatorBase):
         # cluster so we use all_gather instead for now.
         input_size = input_.size()
         # Allocate output tensor.
-        output_tensor = torch.empty(
-            (self.world_size,) + input_size, dtype=input_.dtype, device=input_.device
-        )
+        output_tensor = torch.empty((self.world_size,) + input_size, dtype=input_.dtype, device=input_.device)
         # All-gather.
         dist.all_gather_into_tensor(output_tensor, input_, group=self.device_group)
         if self.rank_in_group == dst:
             # Reshape
             output_tensor = output_tensor.movedim(0, dim)
             output_tensor = output_tensor.reshape(
-                input_size[:dim]
-                + (self.world_size * input_size[dim],)
-                + input_size[dim + 1 :]
+                input_size[:dim] + (self.world_size * input_size[dim],) + input_size[dim + 1 :]
             )
         else:
             output_tensor = None
@@ -197,10 +181,7 @@ class XpuCommunicator(DeviceCommunicatorBase):
         router_logits: torch.Tensor,
         is_sequence_parallel: bool = False,
         extra_tensors: list[torch.Tensor] | None = None,
-    ) -> (
-        tuple[torch.Tensor, torch.Tensor]
-        | tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
         """
         Dispatch the hidden states and router logits to the appropriate device.
         This is a no-op in the base class.
@@ -238,9 +219,7 @@ class XpuCommunicator(DeviceCommunicatorBase):
             extra_tensors=extra_tensors,
         )
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         """
         Combine the hidden states and router logits from the appropriate device.
         This is a no-op in the base class.

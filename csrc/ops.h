@@ -10,19 +10,20 @@
 #include <vector>
 
 #ifndef USE_ROCM
-#include "quantization/exl3/exllamav3_ext/hgemm.cuh"
-#include "quantization/exl3/exllamav3_ext/quant/exl3_gemm.cuh"
-#include "quantization/exl3/exllamav3_ext/quant/exl3_moe.cuh"
-#include "quantization/exl3/exllamav3_ext/quant/hadamard.cuh"
-#include "quantization/exl3/exllamav3_ext/quant/reconstruct.cuh"
+  #include "quantization/exl3/exllamav3_ext/hgemm.cuh"
+  #include "quantization/exl3/exllamav3_ext/quant/exl3_gemm.cuh"
+  #include "quantization/exl3/exllamav3_ext/quant/exl3_moe.cuh"
+  #include "quantization/exl3/exllamav3_ext/quant/hadamard.cuh"
+  #include "quantization/exl3/exllamav3_ext/quant/reconstruct.cuh"
 #endif
 
-inline void aphrodite_exl3_gemm(
-    const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
-    const std::optional<at::Tensor>& suh,
-    const std::optional<at::Tensor>& A_had,
-    const std::optional<at::Tensor>& svh, int64_t force_shape_idx, bool mcg,
-    bool mul1, int64_t force_num_sms) {
+inline void aphrodite_exl3_gemm(const at::Tensor& A, const at::Tensor& B,
+                                at::Tensor& C,
+                                const std::optional<at::Tensor>& suh,
+                                const std::optional<at::Tensor>& A_had,
+                                const std::optional<at::Tensor>& svh,
+                                int64_t force_shape_idx, bool mcg, bool mul1,
+                                int64_t force_num_sms) {
 #ifndef USE_ROCM
   exl3_gemm(A, B, C, suh, A_had, svh, static_cast<int>(force_shape_idx), mcg,
             mul1, static_cast<int>(force_num_sms));
@@ -31,13 +32,14 @@ inline void aphrodite_exl3_gemm(
 #endif
 }
 
-inline void aphrodite_exl3_mgemm(
-    const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
-    const at::Tensor& suh, const at::Tensor& A_had, const at::Tensor& svh,
-    const std::optional<at::Tensor>& indices,
-    const std::optional<at::Tensor>& weights, int64_t k,
-    int64_t force_shape_idx, bool mcg, bool mul1, int64_t min_index,
-    int64_t max_index, int64_t force_num_sms) {
+inline void aphrodite_exl3_mgemm(const at::Tensor& A, const at::Tensor& B,
+                                 at::Tensor& C, const at::Tensor& suh,
+                                 const at::Tensor& A_had, const at::Tensor& svh,
+                                 const std::optional<at::Tensor>& indices,
+                                 const std::optional<at::Tensor>& weights,
+                                 int64_t k, int64_t force_shape_idx, bool mcg,
+                                 bool mul1, int64_t min_index,
+                                 int64_t max_index, int64_t force_num_sms) {
 #ifndef USE_ROCM
   exl3_mgemm(A, B, C, suh, A_had, svh, indices, weights, static_cast<int>(k),
              static_cast<int>(force_shape_idx), static_cast<uint32_t>(mcg),
@@ -90,14 +92,14 @@ inline void aphrodite_exl3_moe(
     bool gate_mcg, bool gate_mul1, bool up_mcg, bool up_mul1, bool down_mcg,
     bool down_mul1, double act_limit) {
 #ifndef USE_ROCM
-  exl3_moe(hidden_state, output_state, expert_count, token_sorted, weight_sorted,
-           temp_state_g, temp_state_u, temp_intermediate_g, temp_intermediate_u,
-           static_cast<int>(act_function), static_cast<int>(K_gate),
-           static_cast<int>(K_up), static_cast<int>(K_down), gate_ptrs_trellis,
-           gate_ptrs_suh, gate_ptrs_svh, up_ptrs_trellis, up_ptrs_suh,
-           up_ptrs_svh, down_ptrs_trellis, down_ptrs_suh, down_ptrs_svh,
-           gate_mcg, gate_mul1, up_mcg, up_mul1, down_mcg, down_mul1,
-           static_cast<float>(act_limit));
+  exl3_moe(hidden_state, output_state, expert_count, token_sorted,
+           weight_sorted, temp_state_g, temp_state_u, temp_intermediate_g,
+           temp_intermediate_u, static_cast<int>(act_function),
+           static_cast<int>(K_gate), static_cast<int>(K_up),
+           static_cast<int>(K_down), gate_ptrs_trellis, gate_ptrs_suh,
+           gate_ptrs_svh, up_ptrs_trellis, up_ptrs_suh, up_ptrs_svh,
+           down_ptrs_trellis, down_ptrs_suh, down_ptrs_svh, gate_mcg, gate_mul1,
+           up_mcg, up_mul1, down_mcg, down_mul1, static_cast<float>(act_limit));
 #else
   TORCH_CHECK(false, "EXL3 is not supported on ROCm");
 #endif

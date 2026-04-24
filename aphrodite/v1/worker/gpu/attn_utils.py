@@ -56,9 +56,7 @@ def init_attn_backend(
     # Find minimum cudagraph support across all attention backends
     min_cg_support = AttentionCGSupport.ALWAYS
     min_cg_attn_backend = None
-    for kv_cache_group_id, kv_cache_group_spec in enumerate(
-        kv_cache_config.kv_cache_groups
-    ):
+    for kv_cache_group_id, kv_cache_group_spec in enumerate(kv_cache_config.kv_cache_groups):
         layer_names = kv_cache_group_spec.layer_names
         if active_layer_names is not None:
             layer_names = list(active_layer_names.intersection(layer_names))
@@ -135,9 +133,7 @@ def _allocate_kv_cache(kv_cache_config: KVCacheConfig, device: torch.device):
     for group in kv_cache_config.kv_cache_groups:
         for layer_name in group.layer_names:
             layer_names.add(layer_name)
-    assert layer_names == set(kv_cache_raw_tensors.keys()), (
-        "Some layers are not correctly initialized"
-    )
+    assert layer_names == set(kv_cache_raw_tensors.keys()), "Some layers are not correctly initialized"
     return kv_cache_raw_tensors
 
 
@@ -176,10 +172,7 @@ def _reshape_kv_cache(
                 kv_cache_stride_order = tuple(range(len(kv_cache_shape)))
 
             kv_cache_shape = tuple(kv_cache_shape[i] for i in kv_cache_stride_order)
-            inv_order = [
-                kv_cache_stride_order.index(i)
-                for i in range(len(kv_cache_stride_order))
-            ]
+            inv_order = [kv_cache_stride_order.index(i) for i in range(len(kv_cache_stride_order))]
 
             dtype = kv_cache_spec.dtype
             raw_tensor = raw_tensor.view(dtype)
@@ -197,9 +190,7 @@ def init_kv_cache(
     cache_dtype: str,
 ) -> dict[str, torch.Tensor]:
     kv_cache_raw_tensors = _allocate_kv_cache(kv_cache_config, device)
-    kv_caches = _reshape_kv_cache(
-        kv_cache_config, kv_cache_raw_tensors, attn_backends, cache_dtype
-    )
+    kv_caches = _reshape_kv_cache(kv_cache_config, kv_cache_raw_tensors, attn_backends, cache_dtype)
     bind_kv_cache(kv_caches, forward_context, runner_kv_caches)
     return kv_caches
 
@@ -260,9 +251,7 @@ def build_attn_metadata(
 
         for attn_group in attn_groups[i]:
             attn_metadata_builder = attn_group.get_metadata_builder(0)
-            metadata = attn_metadata_builder.build(
-                common_prefix_len=0, common_attn_metadata=common_attn_metadata
-            )
+            metadata = attn_metadata_builder.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)
             for layer_name in attn_group.layer_names:
                 attn_metadata[layer_name] = metadata
     return attn_metadata

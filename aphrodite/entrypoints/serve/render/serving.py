@@ -90,9 +90,7 @@ class OpenAIServingRender:
         self.model_registry = model_registry
         self.request_logger = request_logger
         self.chat_template = chat_template
-        self.chat_template_content_format: ChatTemplateContentFormatOption = (
-            chat_template_content_format
-        )
+        self.chat_template_content_format: ChatTemplateContentFormatOption = chat_template_content_format
         self.trust_request_chat_template = trust_request_chat_template
         self.enable_auto_tools = enable_auto_tools
         self.exclude_tools_when_tool_choice_none = exclude_tools_when_tool_choice_none
@@ -101,14 +99,10 @@ class OpenAIServingRender:
             enable_auto_tools=enable_auto_tools,
             model_name=model_config.model,
         )
-        self.reasoning_parser: type[ReasoningParser] | None = (
-            ParserManager.get_reasoning_parser(
-                reasoning_parser_name=reasoning_parser,
-            )
+        self.reasoning_parser: type[ReasoningParser] | None = ParserManager.get_reasoning_parser(
+            reasoning_parser_name=reasoning_parser,
         )
-        self.default_chat_template_kwargs: dict[str, Any] = (
-            default_chat_template_kwargs or {}
-        )
+        self.default_chat_template_kwargs: dict[str, Any] = default_chat_template_kwargs or {}
         self.log_error_stack = log_error_stack
         self.use_harmony = model_config.hf_config.model_type == "gpt_oss"
         self.supports_browsing = False
@@ -137,9 +131,7 @@ class OpenAIServingRender:
             return error_check_ret
 
         if request.use_beam_search:
-            return self.create_error_response(
-                "Beam search is not supported by the render endpoint"
-            )
+            return self.create_error_response("Beam search is not supported by the render endpoint")
 
         result = await self.render_chat(request)
         if isinstance(result, ErrorResponse):
@@ -148,9 +140,7 @@ class OpenAIServingRender:
         _, engine_inputs = result
 
         if len(engine_inputs) != 1:
-            return self.create_error_response(
-                f"Expected exactly 1 engine prompt, got {len(engine_inputs)}"
-            )
+            return self.create_error_response(f"Expected exactly 1 engine prompt, got {len(engine_inputs)}")
 
         engine_input = engine_inputs[0]
 
@@ -163,9 +153,7 @@ class OpenAIServingRender:
         input_length = extract_prompt_len(self.model_config, engine_input)
         max_tokens = get_max_tokens(
             self.model_config.max_model_len,
-            request.max_completion_tokens
-            if request.max_completion_tokens is not None
-            else request.max_tokens,
+            request.max_completion_tokens if request.max_completion_tokens is not None else request.max_tokens,
             input_length,
             self.default_sampling_params,
             self.override_max_tokens,
@@ -207,11 +195,7 @@ class OpenAIServingRender:
             _mt.validate_request_params(request)
 
         # Check if tool parsing is unavailable (common condition)
-        tool_parsing_unavailable = (
-            tool_parser is None
-            and not is_mistral_tokenizer(tokenizer)
-            and not self.use_harmony
-        )
+        tool_parsing_unavailable = tool_parser is None and not is_mistral_tokenizer(tokenizer) and not self.use_harmony
 
         # Validate tool_choice when tool parsing is required but unavailable
         if tool_parsing_unavailable and request.tool_choice not in (
@@ -222,19 +206,15 @@ class OpenAIServingRender:
                 # for hf tokenizers, "auto" tools requires
                 # --enable-auto-tool-choice and --tool-call-parser
                 return self.create_error_response(
-                    '"auto" tool choice requires '
-                    "--enable-auto-tool-choice and --tool-call-parser to be set"
+                    '"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set'
                 )
             elif request.tool_choice != "auto":
                 # "required" or named tool requires tool parser
                 return self.create_error_response(
-                    f'tool_choice="{request.tool_choice}" requires '
-                    "--tool-call-parser to be set"
+                    f'tool_choice="{request.tool_choice}" requires --tool-call-parser to be set'
                 )
 
-        if request.tools is None or (
-            request.tool_choice == "none" and self.exclude_tools_when_tool_choice_none
-        ):
+        if request.tools is None or (request.tool_choice == "none" and self.exclude_tools_when_tool_choice_none):
             tool_dicts = None
         else:
             tool_dicts = [tool.model_dump() for tool in request.tools]
@@ -263,9 +243,7 @@ class OpenAIServingRender:
         else:
             # For GPT-OSS.
             should_include_tools = tool_dicts is not None
-            conversation, engine_inputs = self._make_request_with_harmony(
-                request, should_include_tools
-            )
+            conversation, engine_inputs = self._make_request_with_harmony(request, should_include_tools)
 
         return conversation, engine_inputs
 
@@ -286,9 +264,7 @@ class OpenAIServingRender:
             return result
         generate_requests: list[GenerateRequest] = []
         for engine_input in result:
-            prompt_components = extract_prompt_components(
-                self.model_config, engine_input
-            )
+            prompt_components = extract_prompt_components(self.model_config, engine_input)
             token_ids = prompt_components.token_ids
             if not token_ids:
                 return self.create_error_response("No token_ids rendered")
@@ -302,9 +278,7 @@ class OpenAIServingRender:
                 self.default_sampling_params,
                 self.override_max_tokens,
             )
-            params = request.to_sampling_params(
-                max_tokens, self.default_sampling_params
-            )
+            params = request.to_sampling_params(max_tokens, self.default_sampling_params)
 
             request_id = f"cmpl-{random_uuid()}"
 
@@ -341,9 +315,7 @@ class OpenAIServingRender:
             return self.create_error_response("Echo is unsupported with prompt embeds.")
 
         if request.prompt_logprobs is not None and request.prompt_embeds is not None:
-            return self.create_error_response(
-                "prompt_logprobs is not compatible with prompt embeds."
-            )
+            return self.create_error_response("prompt_logprobs is not compatible with prompt embeds.")
 
         engine_inputs = await self.preprocess_completion(
             request,
@@ -371,9 +343,7 @@ class OpenAIServingRender:
         raw_placeholders: MultiModalPlaceholders = mm_engine_input["mm_placeholders"]
 
         mm_placeholders = {
-            modality: [
-                PlaceholderRangeInfo(offset=p.offset, length=p.length) for p in ranges
-            ]
+            modality: [PlaceholderRangeInfo(offset=p.offset, length=p.length) for p in ranges]
             for modality, ranges in raw_placeholders.items()
         }
 
@@ -382,10 +352,7 @@ class OpenAIServingRender:
         if raw_mm_kwargs := mm_engine_input.get("mm_kwargs"):
             kwargs_data = {}
             for modality, items in raw_mm_kwargs.items():
-                kwargs_data[modality] = [
-                    encode_mm_kwargs_item(item) if item is not None else None
-                    for item in items
-                ]
+                kwargs_data[modality] = [encode_mm_kwargs_item(item) if item is not None else None for item in items]
 
         return MultiModalFeatures(
             mm_hashes=mm_hashes,
@@ -461,10 +428,7 @@ class OpenAIServingRender:
         """Copied from OpenAIServing._validate_chat_template."""
         if not trust_request_chat_template and (
             request_chat_template is not None
-            or (
-                chat_template_kwargs
-                and chat_template_kwargs.get("chat_template") is not None
-            )
+            or (chat_template_kwargs and chat_template_kwargs.get("chat_template") is not None)
         ):
             return self.create_error_response(
                 "Chat template is passed with request, but "
@@ -501,12 +465,7 @@ class OpenAIServingRender:
         model_config = self.model_config
 
         parsed_prompts = [
-            (
-                prompt
-                if isinstance(prompt, bytes)
-                else parse_model_prompt(model_config, prompt)
-            )
-            for prompt in prompts
+            (prompt if isinstance(prompt, bytes) else parse_model_prompt(model_config, prompt)) for prompt in prompts
         ]
         tok_params = request.build_tok_params(model_config)
 
@@ -514,9 +473,7 @@ class OpenAIServingRender:
             parsed_prompts,
             tok_params,
             prompt_extras={
-                k: v
-                for k in ("mm_processor_kwargs", "cache_salt")
-                if (v := getattr(request, k, None)) is not None
+                k: v for k in ("mm_processor_kwargs", "cache_salt") if (v := getattr(request, k, None)) is not None
             },
             skip_mm_cache=skip_mm_cache,
         )
@@ -547,9 +504,7 @@ class OpenAIServingRender:
         )
 
         tok_params = request.build_tok_params(self.model_config)
-        chat_params = request.build_chat_params(
-            default_template, default_template_content_format
-        ).with_defaults(
+        chat_params = request.build_chat_params(default_template, default_template_content_format).with_defaults(
             default_template_kwargs,
             default_media_io_kwargs=(mm_config.media_io_kwargs if mm_config else None),
             default_mm_processor_kwargs=getattr(request, "mm_processor_kwargs", None),
@@ -560,18 +515,14 @@ class OpenAIServingRender:
             chat_params,
             tok_params,
             prompt_extras={
-                k: v
-                for k in ("mm_processor_kwargs", "cache_salt")
-                if (v := getattr(request, k, None)) is not None
+                k: v for k in ("mm_processor_kwargs", "cache_salt") if (v := getattr(request, k, None)) is not None
             },
             skip_mm_cache=skip_mm_cache,
         )
 
         if reasoning_parser is not None:
             tokenizer = renderer.get_tokenizer()
-            request = reasoning_parser(
-                tokenizer, model_config=self.model_config
-            ).adjust_request(request=request)
+            request = reasoning_parser(tokenizer, model_config=self.model_config).adjust_request(request=request)
 
         # tool parsing is done only if a tool_parser has been set and if
         # tool_choice is not "none" (if tool_choice is "none" but a tool_parser
@@ -597,8 +548,6 @@ class OpenAIServingRender:
                         f"but got {type(request).__name__}"
                     )
                     raise NotImplementedError(msg)
-                request = tool_parser(tokenizer, request.tools).adjust_request(
-                    request=request
-                )
+                request = tool_parser(tokenizer, request.tools).adjust_request(request=request)
 
         return conversation, [engine_input]

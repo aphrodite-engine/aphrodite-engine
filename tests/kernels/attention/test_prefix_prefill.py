@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import math
 import random
 import time
@@ -5,11 +7,11 @@ from collections.abc import Callable
 
 import pytest
 import torch
+from aphrodite.attention.ops.chunked_prefill_paged_decode import chunked_prefill_paged_decode
+from aphrodite.attention.ops.prefix_prefill import context_attention_fwd
 from xformers import ops as xops
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalFromBottomRightMask
 
-from aphrodite.attention.ops.chunked_prefill_paged_decode import chunked_prefill_paged_decode
-from aphrodite.attention.ops.prefix_prefill import context_attention_fwd
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from tests.kernels.utils import make_alibi_bias

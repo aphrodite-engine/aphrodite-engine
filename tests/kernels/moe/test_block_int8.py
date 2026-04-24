@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts, fused_topk
+
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 from tests.kernels.moe.utils import make_test_quant_config
 from tests.kernels.quant_utils import native_per_token_group_quant_int8, native_w8a8_block_matmul

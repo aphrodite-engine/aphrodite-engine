@@ -110,9 +110,7 @@ class Mamba2AttentionMetadata(BaseMambaAttentionMetadata):
     seq_idx_p: torch.Tensor | None = None
 
 
-class Mamba2AttentionMetadataBuilder(
-    BaseMambaAttentionMetadataBuilder[Mamba2AttentionMetadata]
-):
+class Mamba2AttentionMetadataBuilder(BaseMambaAttentionMetadataBuilder[Mamba2AttentionMetadata]):
     metadata_cls = Mamba2AttentionMetadata
 
     def __init__(
@@ -124,9 +122,7 @@ class Mamba2AttentionMetadataBuilder(
     ):
         super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
         chunk_size = aphrodite_config.model_config.get_mamba_chunk_size()
-        assert chunk_size is not None, (
-            "chunk_size needs to be set in the model config for Mamba2 models"
-        )
+        assert chunk_size is not None, "chunk_size needs to be set in the model config for Mamba2 models"
         self.chunk_size: int = chunk_size
 
     def build(
@@ -148,17 +144,13 @@ class Mamba2AttentionMetadataBuilder(
         # Compute seq_idx for prefill only
         if common.num_prefills > 0:
             prep_initial_states = (
-                torch.any(common.has_initial_states_p).item()
-                if common.has_initial_states_p is not None
-                else False
+                torch.any(common.has_initial_states_p).item() if common.has_initial_states_p is not None else False
             )
 
-            cu_chunk_seqlen_p, seq_idx_p, last_chunk_indices_p = (
-                self._build_chunk_metadata_tensors(
-                    self.chunk_size,
-                    common,
-                    common_attn_metadata,
-                )
+            cu_chunk_seqlen_p, seq_idx_p, last_chunk_indices_p = self._build_chunk_metadata_tensors(
+                self.chunk_size,
+                common,
+                common_attn_metadata,
             )
 
         return replace(

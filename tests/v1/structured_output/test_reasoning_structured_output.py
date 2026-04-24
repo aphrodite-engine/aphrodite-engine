@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Unit tests for reasoning-aware structured output functionality (PR #25515)."""
 
 from unittest.mock import Mock

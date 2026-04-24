@@ -1,20 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-import aphrodite.envs as envs
 from aphrodite.compilation.activation_quant_fusion import ActivationQuantFusionPass
 from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.compilation.fusion import RMSNormQuantFusionPass
 from aphrodite.compilation.fx_utils import find_auto_fn, find_auto_fn_maybe, is_func
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
-from aphrodite.config import AphroditeConfig, CompilationConfig, ModelConfig, PassConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.quant_utils import GroupShape
 from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
+
+import aphrodite.envs as envs
+from aphrodite.config import AphroditeConfig, CompilationConfig, ModelConfig, PassConfig, set_current_aphrodite_config
+from aphrodite.platforms import current_platform
 
 from .backend import TestBackend
 

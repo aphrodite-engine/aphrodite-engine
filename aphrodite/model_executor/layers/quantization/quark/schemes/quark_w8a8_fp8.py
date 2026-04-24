@@ -36,9 +36,7 @@ logger = init_logger(__name__)
 
 
 class QuarkW8A8Fp8(QuarkScheme):
-    def __init__(
-        self, weight_config: dict[str, Any], input_config: dict[str, Any] | None
-    ):
+    def __init__(self, weight_config: dict[str, Any], input_config: dict[str, Any] | None):
         self.weight_qscheme = cast(str, weight_config.get("qscheme"))
         self.is_static_input_scheme: bool = False
         self.input_qscheme: str | None = None
@@ -46,17 +44,11 @@ class QuarkW8A8Fp8(QuarkScheme):
             self.is_static_input_scheme = not cast(bool, input_config.get("is_dynamic"))
             self.input_qscheme = cast(str, input_config.get("qscheme"))
 
-        per_token_activation = (
-            not self.is_static_input_scheme and self.input_qscheme == "per_channel"
-        )
+        per_token_activation = not self.is_static_input_scheme and self.input_qscheme == "per_channel"
         per_token_weight = self.weight_qscheme == "per_channel"
 
-        self.activation_quant_key = (
-            kFp8DynamicTokenSym if per_token_activation else kFp8StaticTensorSym
-        )
-        self.weight_quant_key = (
-            kFp8StaticTokenSym if per_token_weight else kFp8StaticTensorSym
-        )
+        self.activation_quant_key = kFp8DynamicTokenSym if per_token_activation else kFp8StaticTensorSym
+        self.weight_quant_key = kFp8StaticTokenSym if per_token_weight else kFp8StaticTensorSym
         self.out_dtype = torch.get_default_dtype()
         self.input_dtype = get_current_aphrodite_config().model_config.dtype
 

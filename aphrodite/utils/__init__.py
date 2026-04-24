@@ -75,10 +75,7 @@ def get_progress_log_prefix() -> str:
 
     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
     if _supports_color():
-        return (
-            f"{Colors.INFO}INFO{Colors.RESET} "
-            f"{Colors.TIME}{timestamp}{Colors.RESET}"
-        )
+        return f"{Colors.INFO}INFO{Colors.RESET} {Colors.TIME}{timestamp}{Colors.RESET}"
     return f"INFO {timestamp}"
 
 
@@ -122,9 +119,7 @@ def tensor_progress_bar(
             with Progress(
                 TextColumn(log_prefix + " [progress.description]{task.description}"),
                 BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%")
-                if total is not None
-                else TextColumn(""),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%") if total is not None else TextColumn(""),
                 TextColumn(f"{{task.completed:.2f}}/{{task.total:.2f}} {unit_label}")
                 if total is not None
                 else TextColumn(f"{{task.completed:.2f}} {unit_label}"),

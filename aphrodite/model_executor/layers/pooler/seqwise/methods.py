@@ -40,9 +40,7 @@ class CLSPool(SequencePoolingMethod):
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolingMethodOutput:
         pooling_cursor = pooling_metadata.get_pooling_cursor()
-        assert not pooling_cursor.is_partial_prefill(), (
-            "partial prefill not supported with CLS pooling"
-        )
+        assert not pooling_cursor.is_partial_prefill(), "partial prefill not supported with CLS pooling"
 
         return hidden_states[pooling_cursor.first_token_indices_gpu]
 
@@ -64,13 +62,9 @@ class MeanPool(SequencePoolingMethod):
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolingMethodOutput:
         pooling_cursor = pooling_metadata.get_pooling_cursor()
-        assert not pooling_cursor.is_partial_prefill(), (
-            "partial prefill not supported with MEAN pooling"
-        )
+        assert not pooling_cursor.is_partial_prefill(), "partial prefill not supported with MEAN pooling"
 
-        prompt_lens = pooling_cursor.prompt_lens_cpu.to(
-            hidden_states.device, dtype=torch.int64, non_blocking=True
-        )
+        prompt_lens = pooling_cursor.prompt_lens_cpu.to(hidden_states.device, dtype=torch.int64, non_blocking=True)
 
         num_seqs = prompt_lens.numel()
         hidden_size = hidden_states.shape[-1]

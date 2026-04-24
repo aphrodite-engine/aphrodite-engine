@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from contextlib import suppress
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aphrodite.endpoints.openai.protocol import CompletionRequest, ErrorResponse
 from aphrodite.endpoints.openai.serving_completion import OpenAIServingCompletion
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 
 from aphrodite.config.multimodal import MultiModalConfig
-from aphrodite.endpoints.openai.protocol import CompletionRequest, ErrorResponse
-from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.resolver import LoRAResolver, LoRAResolverRegistry
 from aphrodite.transformers_utils.tokenizer import get_tokenizer

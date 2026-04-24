@@ -103,10 +103,7 @@ class IrOp:
 
     def __init__(self, name: str, native_impl: Callable):
         self._py_signature = inspect.signature(native_impl)
-        if any(
-            p.kind == inspect.Parameter.KEYWORD_ONLY
-            for p in self._py_signature.parameters.values()
-        ):
+        if any(p.kind == inspect.Parameter.KEYWORD_ONLY for p in self._py_signature.parameters.values()):
             raise ValueError(
                 f"Op {name} has keyword-only arguments which are not currently "
                 f"supported. That's because kwargs are not allowed during lowering."
@@ -120,9 +117,7 @@ class IrOp:
         self._tolerance_overrides: ToleranceSpec = {}
 
         # native implementation
-        self.impls["native"] = IrOpImpl(
-            self, "native", native_impl, supported=True, supports_args=None
-        )
+        self.impls["native"] = IrOpImpl(self, "native", native_impl, supported=True, supports_args=None)
 
         # By default, fake routes directly to native,
         # can be overridden by register_fake
@@ -132,9 +127,7 @@ class IrOp:
         aphrodite_ir_lib.define(self.name + self._schema_str)
         # CompositeExplicitAutograd is not decomposed
         # by ATen IR normalization in AOTAutograd
-        aphrodite_ir_lib.impl(
-            self.name, self._inner_call, dispatch_key="CompositeExplicitAutograd"
-        )
+        aphrodite_ir_lib.impl(self.name, self._inner_call, dispatch_key="CompositeExplicitAutograd")
         aphrodite_ir_lib._register_fake(self.name, self._fake_call)
         assert hasattr(torch.ops.aphrodite_ir, name)
         self.torch_op: torch._ops.OpOverload = getattr(torch.ops.aphrodite_ir, name).default
@@ -188,9 +181,7 @@ class IrOp:
         ```
 
         """
-        assert provider not in RESERVED_PROVIDERS, (
-            f"Provider name {provider} is reserved."
-        )
+        assert provider not in RESERVED_PROVIDERS, f"Provider name {provider} is reserved."
 
         def _register_impl(f: Callable):
             impl = IrOpImpl(self, provider, f, supported, supports_args)
@@ -255,8 +246,7 @@ class IrOp:
 
             if not torch.compiler.is_compiling():
                 logger.debug(
-                    "Skipping provider %s because it does not support "
-                    "%s with args=%s kwargs=%s",
+                    "Skipping provider %s because it does not support %s with args=%s kwargs=%s",
                     impl.provider,
                     self.name,
                     lazy(lambda: tensors_str_no_data(args)),
@@ -283,9 +273,7 @@ class IrOp:
         """
         Context manager to set the dispatch priority for implementations for this op.
         """
-        assert all(p in self.impls for p in priority), (
-            "All providers in priority must be registered implementations."
-        )
+        assert all(p in self.impls for p in priority), "All providers in priority must be registered implementations."
 
         def filter_priority_impls(p_list: list[str]) -> list[IrOpImpl]:
             filtered_impls = []
@@ -332,14 +320,11 @@ class IrOp:
     def generate_inputs(self, **kwargs: Any) -> tuple[Any, ...]:
         if self._input_generator is None:
             raise RuntimeError(
-                f"No input generator registered for op '{self.name}'. "
-                f"Use @ir.ops.{self.name}.register_input_generator"
+                f"No input generator registered for op '{self.name}'. Use @ir.ops.{self.name}.register_input_generator"
             )
         return self._input_generator(**kwargs)
 
-    def override_tolerance(
-        self, dtype: torch.dtype, *, atol: float, rtol: float
-    ) -> None:
+    def override_tolerance(self, dtype: torch.dtype, *, atol: float, rtol: float) -> None:
         self._tolerance_overrides[dtype] = {"atol": atol, "rtol": rtol}
 
     def get_tolerance(self, dtype: torch.dtype) -> dict[str, float]:
@@ -363,9 +348,7 @@ class IrOpImpl:
         supported: bool,
         supports_args: Callable[..., bool] | None,
     ):
-        assert provider not in op.impls, (
-            f"Implementation for provider {provider} already registered."
-        )
+        assert provider not in op.impls, f"Implementation for provider {provider} already registered."
         # Native also uses this path, so we allow it here.
         assert provider == "native" or provider not in RESERVED_PROVIDERS
 
@@ -380,9 +363,7 @@ class IrOpImpl:
 
         if supports_args is not None:
             if not callable(supports_args):
-                raise ValueError(
-                    f"supports_args for provider {provider} must be a callable"
-                )
+                raise ValueError(f"supports_args for provider {provider} must be a callable")
 
             # We also manually validate the supports_args signature.
             # Matching signatures allow faster dispatch on the hotpath.
@@ -391,10 +372,7 @@ class IrOpImpl:
             supports_args_signature = inspect.signature(supports_args)
             params = supports_args_signature.parameters
             if any(p.kind == inspect.Parameter.KEYWORD_ONLY for p in params.values()):
-                raise ValueError(
-                    f"supports_args for provider {provider} "
-                    f"cannot have keyword-only parameters"
-                )
+                raise ValueError(f"supports_args for provider {provider} cannot have keyword-only parameters")
 
             # Check that supports_args has the same total number of parameters
             op_params = op._py_signature.parameters

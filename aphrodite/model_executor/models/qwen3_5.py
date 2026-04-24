@@ -169,12 +169,8 @@ class Qwen3_5DecoderLayer(Qwen3NextDecoderLayer):
         else:
             raise ValueError(f"Invalid model_type {config.model_type}")
 
-        self.input_layernorm = Qwen3_5RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
-        self.post_attention_layernorm = Qwen3_5RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.input_layernorm = Qwen3_5RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = Qwen3_5RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.layer_scale = getattr(config, "layer_scale", False)
         if self.layer_scale:
@@ -208,9 +204,7 @@ class Qwen3_5Model(Qwen3NextModel):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super(Qwen3NextModel, self).__init__()
 
-        config: Qwen3_5TextConfig | Qwen3_5MoeTextConfig = (
-            aphrodite_config.model_config.hf_text_config
-        )
+        config: Qwen3_5TextConfig | Qwen3_5MoeTextConfig = aphrodite_config.model_config.hf_text_config
         parallel_config = aphrodite_config.parallel_config
 
         eplb_config = parallel_config.eplb_config
@@ -306,16 +300,12 @@ class Qwen3_5Model(Qwen3NextModel):
         loaded_params: set[str] = set()
         expert_params_mapping = self.get_expert_mapping()
         is_fused_expert = False
-        base_layer = (
-            "base_layer." if any(".base_layer." in name for name in params_dict) else ""
-        )
+        base_layer = "base_layer." if any(".base_layer." in name for name in params_dict) else ""
         fused_expert_params_mapping = [
             (f"experts.{base_layer}w13_weight", "experts.gate_up_proj", 0, "w1"),
             (f"experts.{base_layer}w2_weight", "experts.down_proj", 0, "w2"),
         ]
-        num_experts = (
-            self.config.num_experts if hasattr(self.config, "num_experts") else 0
-        )
+        num_experts = self.config.num_experts if hasattr(self.config, "num_experts") else 0
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
                 continue
@@ -403,8 +393,7 @@ class Qwen3_5Model(Qwen3NextModel):
                     else:
                         # Skip loading extra bias for GPTQ models.
                         if (
-                            name_mapped.endswith(".bias")
-                            or name_mapped.endswith("_bias")
+                            name_mapped.endswith(".bias") or name_mapped.endswith("_bias")
                         ) and name_mapped not in params_dict:
                             continue
                         param = params_dict[name_mapped]
@@ -432,14 +421,10 @@ class Qwen3_5Model(Qwen3NextModel):
                     if is_pp_missing_parameter(name, self):
                         continue
                     if name not in params_dict:
-                        logger.warning_once(
-                            f"Parameter {name} not found in params_dict, skip loading"
-                        )
+                        logger.warning_once(f"Parameter {name} not found in params_dict, skip loading")
                         continue
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -473,17 +458,14 @@ class Qwen3_5ForCausalLMBase(
         scheduler_config = aphrodite_config.scheduler_config
         if cache_config.mamba_cache_mode == "all":
             raise NotImplementedError(
-                "Qwen3.5 currently does not support 'all' prefix caching, "
-                "please use '--mamba-cache-mode=align' instead"
+                "Qwen3.5 currently does not support 'all' prefix caching, please use '--mamba-cache-mode=align' instead"
             )
         self.quant_config = aphrodite_config.quant_config
 
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = Qwen3_5Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Qwen3_5Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         # When LoRA is enabled, GDN uses separate in_proj_qkv and in_proj_z
         # instead of merged in_proj_qkvz; pack mapping must match.
@@ -520,9 +502,7 @@ class Qwen3_5ForCausalLMBase(
             self.lm_head = PPMissingLayer()
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -542,9 +522,7 @@ class Qwen3_5ForCausalLMBase(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ):
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 
@@ -623,16 +601,12 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
                 aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "language_model")
             )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     def update_packed_mapping(self, enable_lora: bool):
         # When LoRA is enabled, GDN uses separate in_proj_qkv and in_proj_z
         if enable_lora:
-            base = getattr(
-                Qwen3_5ForConditionalGeneration, "packed_modules_mapping", {}
-            )
+            base = getattr(Qwen3_5ForConditionalGeneration, "packed_modules_mapping", {})
             self.packed_modules_mapping = {k: list(v) for k, v in base.items()}
             self.packed_modules_mapping.pop("in_proj_qkvz", None)
             self.packed_modules_mapping["in_proj_qkv"] = ["in_proj_qkv"]
@@ -666,8 +640,7 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
 
     def recompute_mrope_positions(self, *args, **kwargs):
         raise NotImplementedError(
-            "Qwen3.5 does not support multimodal pruning (EVS). "
-            "recompute_mrope_positions should never be called."
+            "Qwen3.5 does not support multimodal pruning (EVS). recompute_mrope_positions should never be called."
         )
 
     def forward(
@@ -740,9 +713,7 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         hf_config = aphrodite_config.model_config.hf_text_config
         tp_size = parallel_config.tensor_parallel_size
         num_spec = (
-            aphrodite_config.speculative_config.num_speculative_tokens
-            if aphrodite_config.speculative_config
-            else 0
+            aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
         )
         return MambaStateShapeCalculator.gated_delta_net_state_shape(
             tp_size,
@@ -788,16 +759,12 @@ class Qwen3_5_MoeMixtureOfExperts(MixtureOfExperts):
         self.moe_layers = []
         example_moe = None
         for layer in self.language_model.model.layers:
-            if isinstance(layer, Qwen3_5DecoderLayer) and isinstance(
-                layer.mlp, Qwen3NextSparseMoeBlock
-            ):
+            if isinstance(layer, Qwen3_5DecoderLayer) and isinstance(layer.mlp, Qwen3NextSparseMoeBlock):
                 example_moe = layer.mlp
                 self.moe_layers.append(layer.mlp.experts)
 
         if example_moe is None:
-            raise RuntimeError(
-                "No Qwen3_5 layer found in the language_model.model.layers."
-            )
+            raise RuntimeError("No Qwen3_5 layer found in the language_model.model.layers.")
 
         # Set MoE hyperparameters
         self.num_moe_layers = len(self.moe_layers)
@@ -815,9 +782,7 @@ class Qwen3_5_MoeMixtureOfExperts(MixtureOfExperts):
     info=Qwen3_5MoeProcessingInfo,
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
-class Qwen3_5MoeForConditionalGeneration(
-    Qwen3_5ForConditionalGeneration, Qwen3_5_MoeMixtureOfExperts
-):
+class Qwen3_5MoeForConditionalGeneration(Qwen3_5ForConditionalGeneration, Qwen3_5_MoeMixtureOfExperts):
     # For MoE LoRA weights loading
     is_3d_moe_weight: bool = True
 
@@ -848,9 +813,7 @@ class Qwen3_5MoeForConditionalGeneration(
                 aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "language_model")
             )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
         # set MoE hyperparameters
         self.set_moe_parameters()

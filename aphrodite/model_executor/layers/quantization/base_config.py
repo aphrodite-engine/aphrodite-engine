@@ -25,9 +25,7 @@ class QuantizeMethodBase(ABC):
     uses_meta_device: bool = False
 
     @abstractmethod
-    def create_weights(
-        self, layer: torch.nn.Module, *weight_args, **extra_weight_attrs
-    ):
+    def create_weights(self, layer: torch.nn.Module, *weight_args, **extra_weight_attrs):
         """Create weights for a layer.
 
         The weights will be set as attributes of the layer."""
@@ -135,9 +133,7 @@ class QuantizationConfig(ABC):
         for key in keys:
             if key in config:
                 return config[key]
-        raise ValueError(
-            f"Cannot find any of {keys} in the model's quantization config."
-        )
+        raise ValueError(f"Cannot find any of {keys} in the model's quantization config.")
 
     @staticmethod
     def get_from_keys_or(config: dict[str, Any], keys: list[str], default: Any) -> Any:
@@ -148,9 +144,7 @@ class QuantizationConfig(ABC):
             return default
 
     @abstractmethod
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> QuantizeMethodBase | None:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
         """Get the quantize method to use for the quantized layer.
 
         Args:

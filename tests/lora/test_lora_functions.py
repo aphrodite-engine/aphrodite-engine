@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Script to test add_lora, remove_lora, pin_lora, list_loras functions.
 """
 
 import pytest
-
 from aphrodite.endpoints.openai.api_server import build_async_engine_client_from_engine_args
 from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
+
 from aphrodite.lora.request import LoRARequest
 from aphrodite.v1.engine.llm_engine import LLMEngine
 

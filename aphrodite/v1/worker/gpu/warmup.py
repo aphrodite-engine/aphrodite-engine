@@ -46,15 +46,12 @@ def warmup_kernels(
     group_block_sizes = [g.kv_cache_spec.block_size for g in kv_cache_groups]
     prefill_block_counts = [cdiv(prompt_len, bs) for bs in group_block_sizes]
     decode_block_counts = [cdiv(decode_len, bs) for bs in group_block_sizes]
-    decode_block_deltas = [
-        d - p for d, p in zip(decode_block_counts, prefill_block_counts)
-    ]
+    decode_block_deltas = [d - p for d, p in zip(decode_block_counts, prefill_block_counts)]
     max_blocks_per_req = sum(decode_block_counts)
 
     num_reqs = min(
         model_runner.scheduler_config.max_num_seqs,
-        model_runner.scheduler_config.max_num_batched_tokens
-        // max(prompt_len, 1 + num_spec_steps),
+        model_runner.scheduler_config.max_num_batched_tokens // max(prompt_len, 1 + num_spec_steps),
         # Reserve block 0 (null block) and ensure we have enough blocks.
         max(1, (model_runner.kv_cache_config.num_blocks - 1) // max_blocks_per_req),
     )
@@ -105,12 +102,8 @@ def warmup_kernels(
             # kernel during the prefill step.
             vocab_size = model_runner.model_config.get_vocab_size()
             bitmask_width = (vocab_size + 31) // 32
-            grammar_bitmask = np.full(
-                (len(req_ids), bitmask_width), fill_value=-1, dtype=np.int32
-            )
-            grammar_output = GrammarOutput(
-                structured_output_request_ids=req_ids, grammar_bitmask=grammar_bitmask
-            )
+            grammar_bitmask = np.full((len(req_ids), bitmask_width), fill_value=-1, dtype=np.int32)
+            grammar_output = GrammarOutput(structured_output_request_ids=req_ids, grammar_bitmask=grammar_bitmask)
 
         worker_sample_tokens(grammar_output)
 
@@ -121,22 +114,15 @@ def warmup_kernels(
         cached_req_data.num_output_tokens = [1] * num_reqs
         new_block = any(decode_block_deltas)
         cached_req_data.new_block_ids = [
-            tuple(_alloc_blocks(n) for n in decode_block_deltas) if new_block else None
-            for _ in range(num_reqs)
+            tuple(_alloc_blocks(n) for n in decode_block_deltas) if new_block else None for _ in range(num_reqs)
         ]
 
         decode_output = SchedulerOutput.make_empty()
         decode_output.scheduled_cached_reqs = cached_req_data
-        decode_output.num_scheduled_tokens = {
-            req_id: 1 + num_spec_steps for req_id in req_ids
-        }
+        decode_output.num_scheduled_tokens = {req_id: 1 + num_spec_steps for req_id in req_ids}
         if num_spec_steps > 0:
-            decode_output.scheduled_spec_decode_tokens = {
-                req_id: [0] * num_spec_steps for req_id in req_ids
-            }
-        decode_output.total_num_scheduled_tokens = sum(
-            decode_output.num_scheduled_tokens.values()
-        )
+            decode_output.scheduled_spec_decode_tokens = {req_id: [0] * num_spec_steps for req_id in req_ids}
+        decode_output.total_num_scheduled_tokens = sum(decode_output.num_scheduled_tokens.values())
         decode_output.num_common_prefix_blocks = [0] * num_kv_cache_groups
 
         worker_execute_model(decode_output)

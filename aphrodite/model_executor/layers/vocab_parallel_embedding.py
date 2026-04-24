@@ -95,9 +95,7 @@ def vocab_range_from_global_vocab_size(
     global_vocab_size: int, rank: int, world_size: int, offset: int = 0
 ) -> Sequence[int]:
     per_partition_vocab_size = divide(global_vocab_size, world_size)
-    return vocab_range_from_per_partition_vocab_size(
-        per_partition_vocab_size, rank, offset=offset
-    )
+    return vocab_range_from_per_partition_vocab_size(per_partition_vocab_size, rank, offset=offset)
 
 
 @dataclass
@@ -171,17 +169,9 @@ def get_masked_input_and_mask(
     # torch.compile will fuse all of the pointwise ops below
     # into a single kernel, making it very fast
     org_vocab_mask = (input_ >= org_vocab_start_index) & (input_ < org_vocab_end_index)
-    added_vocab_mask = (input_ >= added_vocab_start_index) & (
-        input_ < added_vocab_end_index
-    )
-    added_offset = (
-        added_vocab_start_index
-        - (org_vocab_end_index - org_vocab_start_index)
-        - num_org_vocab_padding
-    )
-    valid_offset = (org_vocab_start_index * org_vocab_mask) + (
-        added_offset * added_vocab_mask
-    )
+    added_vocab_mask = (input_ >= added_vocab_start_index) & (input_ < added_vocab_end_index)
+    added_offset = added_vocab_start_index - (org_vocab_end_index - org_vocab_start_index) - num_org_vocab_padding
+    valid_offset = (org_vocab_start_index * org_vocab_mask) + (added_offset * added_vocab_mask)
     vocab_mask = org_vocab_mask | added_vocab_mask
     input_ = vocab_mask * (input_ - valid_offset)
     return input_, ~vocab_mask
@@ -249,9 +239,7 @@ class VocabParallelEmbedding(PluggableLayer):
         self.padding_size = padding_size
         self.org_vocab_size = org_num_embeddings or num_embeddings
         num_added_embeddings = num_embeddings - self.org_vocab_size
-        self.org_vocab_size_padded = pad_vocab_size(
-            self.org_vocab_size, self.padding_size
-        )
+        self.org_vocab_size_padded = pad_vocab_size(self.org_vocab_size, self.padding_size)
         self.num_embeddings_padded = pad_vocab_size(
             self.org_vocab_size_padded + num_added_embeddings, self.padding_size
         )
@@ -277,9 +265,7 @@ class VocabParallelEmbedding(PluggableLayer):
         # method must implement the embedding operation. If we are another
         # layer type like ParallelLMHead, this is not important.
         is_embedding_layer = type(self) is VocabParallelEmbedding
-        quant_method_implements_embedding = method_has_implemented_embedding(
-            type(quant_method)
-        )
+        quant_method_implements_embedding = method_has_implemented_embedding(type(quant_method))
         if is_embedding_layer and not quant_method_implements_embedding:
             raise NotImplementedError(
                 f"The class {type(quant_method).__name__} must implement "
@@ -292,19 +278,13 @@ class VocabParallelEmbedding(PluggableLayer):
             params_dtype = torch.get_default_dtype()
         # Divide the weight matrix along the vocabulary dimension.
         self.num_added_embeddings = self.num_embeddings - self.org_vocab_size
-        self.num_embeddings_per_partition = divide(
-            self.num_embeddings_padded, self.tp_size
-        )
-        assert (
-            self.shard_indices.num_elements_padded == self.num_embeddings_per_partition
-        )
+        self.num_embeddings_per_partition = divide(self.num_embeddings_padded, self.tp_size)
+        assert self.shard_indices.num_elements_padded == self.num_embeddings_per_partition
         self.num_org_embeddings_per_partition = (
-            self.shard_indices.org_vocab_end_index
-            - self.shard_indices.org_vocab_start_index
+            self.shard_indices.org_vocab_end_index - self.shard_indices.org_vocab_start_index
         )
         self.num_added_embeddings_per_partition = (
-            self.shard_indices.added_vocab_end_index
-            - self.shard_indices.added_vocab_start_index
+            self.shard_indices.added_vocab_end_index - self.shard_indices.added_vocab_start_index
         )
 
         self.quant_method.create_weights(
@@ -331,13 +311,11 @@ class VocabParallelEmbedding(PluggableLayer):
         layout outlined in the class docstring, based on the given tp_rank and
         tp_size."""
         num_added_embeddings_padded = vocab_size_padded - org_vocab_size_padded
-        padded_org_vocab_start_index, padded_org_vocab_end_index = (
-            vocab_range_from_global_vocab_size(org_vocab_size_padded, tp_rank, tp_size)
+        padded_org_vocab_start_index, padded_org_vocab_end_index = vocab_range_from_global_vocab_size(
+            org_vocab_size_padded, tp_rank, tp_size
         )
-        padded_added_vocab_start_index, padded_added_vocab_end_index = (
-            vocab_range_from_global_vocab_size(
-                num_added_embeddings_padded, tp_rank, tp_size, offset=org_vocab_size
-            )
+        padded_added_vocab_start_index, padded_added_vocab_end_index = vocab_range_from_global_vocab_size(
+            num_added_embeddings_padded, tp_rank, tp_size, offset=org_vocab_size
         )
         # remove padding
         org_vocab_start_index = min(padded_org_vocab_start_index, org_vocab_size)
@@ -383,9 +361,7 @@ class VocabParallelEmbedding(PluggableLayer):
             )
             range_start = self.num_embeddings_per_partition * tp_rank
             range_end = self.num_embeddings_per_partition * (tp_rank + 1)
-            base_embeddings.extend(
-                range(range_start, range_start + shard_indices.num_org_elements)
-            )
+            base_embeddings.extend(range(range_start, range_start + shard_indices.num_org_elements))
             padding.extend(
                 range(
                     range_start + shard_indices.num_org_elements,
@@ -395,25 +371,17 @@ class VocabParallelEmbedding(PluggableLayer):
             added_embeddings.extend(
                 range(
                     range_start + shard_indices.num_org_elements_padded,
-                    range_start
-                    + shard_indices.num_org_elements_padded
-                    + shard_indices.num_added_elements,
+                    range_start + shard_indices.num_org_elements_padded + shard_indices.num_added_elements,
                 )
             )
             padding.extend(
                 range(
-                    range_start
-                    + shard_indices.num_org_elements_padded
-                    + shard_indices.num_added_elements,
-                    range_start
-                    + shard_indices.num_org_elements_padded
-                    + shard_indices.num_added_elements_padded,
+                    range_start + shard_indices.num_org_elements_padded + shard_indices.num_added_elements,
+                    range_start + shard_indices.num_org_elements_padded + shard_indices.num_added_elements_padded,
                 )
             )
             assert (
-                range_start
-                + shard_indices.num_org_elements_padded
-                + shard_indices.num_added_elements_padded
+                range_start + shard_indices.num_org_elements_padded + shard_indices.num_added_elements_padded
                 == range_end
             )
         ret = base_embeddings + added_embeddings + padding
@@ -449,14 +417,8 @@ class VocabParallelEmbedding(PluggableLayer):
         # If param packed on the same dim we are sharding on, then
         # need to adjust offsets of loaded weight by pack_factor.
         if packed_dim is not None and packed_dim == output_dim:
-            packed_factor = (
-                param.packed_factor
-                if isinstance(param, BaseAphroditeParameter)
-                else param.pack_factor
-            )
-            assert loaded_weight.shape[output_dim] == (
-                self.org_vocab_size // param.packed_factor
-            )
+            packed_factor = param.packed_factor if isinstance(param, BaseAphroditeParameter) else param.pack_factor
+            assert loaded_weight.shape[output_dim] == (self.org_vocab_size // param.packed_factor)
             start_idx = start_idx // packed_factor
             shard_size = shard_size // packed_factor
         else:
@@ -540,9 +502,7 @@ class ParallelLMHead(VocabParallelEmbedding):
         )
         self.quant_config = quant_config
         if bias:
-            self.bias = Parameter(
-                torch.empty(self.num_embeddings_per_partition, dtype=params_dtype)
-            )
+            self.bias = Parameter(torch.empty(self.num_embeddings_per_partition, dtype=params_dtype))
             set_weight_attrs(
                 self.bias,
                 {

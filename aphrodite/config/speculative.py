@@ -25,9 +25,7 @@ if TYPE_CHECKING:
 else:
     PretrainedConfig = Any
 
-    me_quant = LazyLoader(
-        "model_executor", globals(), "aphrodite.model_executor.layers.quantization"
-    )
+    me_quant = LazyLoader("model_executor", globals(), "aphrodite.model_executor.layers.quantization")
 
 logger = init_logger(__name__)
 
@@ -50,9 +48,7 @@ MTPModelTypes = Literal[
 ]
 NgramGPUTypes = Literal["ngram_gpu"]
 DFlashModelTypes = Literal["dflash"]
-EagleModelTypes = Literal[
-    "eagle", "eagle3", "extract_hidden_states", MTPModelTypes, DFlashModelTypes
-]
+EagleModelTypes = Literal["eagle", "eagle3", "extract_hidden_states", MTPModelTypes, DFlashModelTypes]
 SpeculativeMethod = Literal[
     "ngram",
     "medusa",
@@ -238,16 +234,12 @@ class SpeculativeConfig:
             hf_config.model_type = "deepseek_mtp"
         if hf_config.model_type == "deepseek_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["DeepSeekMTPModel"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["DeepSeekMTPModel"]})
         if hf_config.model_type in ("pangu_ultra_moe"):
             hf_config.model_type = "pangu_ultra_moe_mtp"
         if hf_config.model_type == "pangu_ultra_moe_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["OpenPanguMTPModel"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["OpenPanguMTPModel"]})
 
         if hf_config.architectures[0] == "MiMoForCausalLM":
             hf_config.model_type = "mimo_mtp"
@@ -296,9 +288,7 @@ class SpeculativeConfig:
             hf_config.model_type = "ernie_mtp"
         if hf_config.model_type == "ernie_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["ErnieMTPModel"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["ErnieMTPModel"]})
 
         if hf_config.architectures[0] == "NemotronH_Super_Omni_Reasoning_V3":
             # Promote VLM's text_config so MTP detection below fires correctly
@@ -313,32 +303,24 @@ class SpeculativeConfig:
             hf_config.model_type = "nemotron_h_mtp"
         if hf_config.model_type == "nemotron_h_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", 1)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["NemotronHMTPModel"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["NemotronHMTPModel"]})
 
         if hf_config.model_type == "qwen3_next":
             hf_config.model_type = "qwen3_next_mtp"
         if hf_config.model_type == "qwen3_next_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["Qwen3NextMTP"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["Qwen3NextMTP"]})
 
         if hf_config.model_type == "exaone_moe":
             hf_config.model_type = "exaone_moe_mtp"
         if hf_config.model_type == "exaone_moe_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["ExaoneMoeMTP"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["ExaoneMoeMTP"]})
         if "exaone4_5" in hf_config.model_type:
             hf_config.model_type = "exaone4_5_mtp"
         if hf_config.model_type == "exaone4_5_mtp":
             n_predict = getattr(hf_config, "num_nextn_predict_layers", None)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["Exaone4_5_MTP"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["Exaone4_5_MTP"]})
         if hf_config.model_type in ("qwen3_5", "qwen3_5_moe"):
             is_moe = hf_config.model_type == "qwen3_5_moe"
             hf_config.model_type = "qwen3_5_mtp"
@@ -352,9 +334,7 @@ class SpeculativeConfig:
         if hf_config.model_type == "longcat_flash":
             hf_config.model_type = "longcat_flash_mtp"
             n_predict = getattr(hf_config, "num_nextn_predict_layers", 1)
-            hf_config.update(
-                {"n_predict": n_predict, "architectures": ["LongCatFlashMTPModel"]}
-            )
+            hf_config.update({"n_predict": n_predict, "architectures": ["LongCatFlashMTPModel"]})
 
         if hf_config.model_type == "step3p5":
             hf_config.model_type = "step3p5_mtp"
@@ -383,9 +363,7 @@ class SpeculativeConfig:
                 self.method = "draft_model"
 
         if self.method in get_args(MTPModelTypes) and self.method != "mtp":
-            logger.warning(
-                "method `%s` is deprecated and replaced with mtp.", self.method
-            )
+            logger.warning("method `%s` is deprecated and replaced with mtp.", self.method)
             self.method = "mtp"
 
         if self.model is None and self.num_speculative_tokens is not None:
@@ -411,9 +389,7 @@ class SpeculativeConfig:
             elif self.method == "extract_hidden_states":
                 self.model = "extract_hidden_states"
             else:
-                raise ValueError(
-                    "num_speculative_tokens was provided but without speculative model."
-                )
+                raise ValueError("num_speculative_tokens was provided but without speculative model.")
 
         if self.method in ("ngram", "[ngram]"):
             self.method = "ngram"
@@ -427,23 +403,20 @@ class SpeculativeConfig:
             elif self.prompt_lookup_min is None:
                 if self.prompt_lookup_max is None:
                     raise ValueError(
-                        "Either prompt_lookup_max or prompt_lookup_min must be "
-                        "provided when using the ngram method."
+                        "Either prompt_lookup_max or prompt_lookup_min must be provided when using the ngram method."
                     )
                 self.prompt_lookup_min = self.prompt_lookup_max
             elif self.prompt_lookup_max is None:
                 if self.prompt_lookup_min is None:
                     raise ValueError(
-                        "Either prompt_lookup_max or prompt_lookup_min must be "
-                        "provided when using the ngram method."
+                        "Either prompt_lookup_max or prompt_lookup_min must be provided when using the ngram method."
                     )
                 self.prompt_lookup_max = self.prompt_lookup_min
 
             # Validate values
             if self.prompt_lookup_min > self.prompt_lookup_max:
                 raise ValueError(
-                    f"prompt_lookup_min={self.prompt_lookup_min} must "
-                    f"be <= prompt_lookup_max={self.prompt_lookup_max}"
+                    f"prompt_lookup_min={self.prompt_lookup_min} must be <= prompt_lookup_max={self.prompt_lookup_max}"
                 )
 
             # TODO: current we still need extract vocab_size from target model
@@ -466,10 +439,7 @@ class SpeculativeConfig:
 
             if hasattr(self.draft_model_config, "hf_config"):
                 hf_config = self.draft_model_config.hf_config.to_dict()
-            elif (
-                isinstance(self.draft_model_config, dict)
-                and "hf_config" in self.draft_model_config
-            ):
+            elif isinstance(self.draft_model_config, dict) and "hf_config" in self.draft_model_config:
                 hf_config = self.draft_model_config["hf_config"]
             else:
                 hf_config = {}
@@ -524,9 +494,7 @@ class SpeculativeConfig:
                     self.method = "medusa"
                 elif self.draft_model_config.hf_config.model_type == "mlp_speculator":
                     self.method = "mlp_speculator"
-                elif self.draft_model_config.hf_config.model_type in get_args(
-                    MTPModelTypes
-                ):
+                elif self.draft_model_config.hf_config.model_type in get_args(MTPModelTypes):
                     self.method = "mtp"
                     if self.num_speculative_tokens > 1:
                         logger.warning(
@@ -534,9 +502,7 @@ class SpeculativeConfig:
                             "multiple times of forward on same MTP layer"
                             ",which may result in lower acceptance rate"
                         )
-                elif self.draft_model_config.hf_config.model_type in (
-                    "longcat_flash_mtp"
-                ):
+                elif self.draft_model_config.hf_config.model_type in ("longcat_flash_mtp"):
                     self.method = "longcat_flash_mtp"
                     if self.num_speculative_tokens > 1:
                         logger.warning(
@@ -547,9 +513,7 @@ class SpeculativeConfig:
                 elif self.method == "draft_model":
                     pass
                 else:
-                    raise NotImplementedError(
-                        f"Unsupported speculative method: '{self.method}'"
-                    )
+                    raise NotImplementedError(f"Unsupported speculative method: '{self.method}'")
 
                 # Replace hf_config for EAGLE draft_model
                 if self.method in ("eagle", "eagle3", "dflash"):
@@ -578,25 +542,17 @@ class SpeculativeConfig:
                 if self.num_speculative_tokens is not None and hasattr(
                     self.draft_model_config.hf_config, "num_lookahead_tokens"
                 ):
-                    self.draft_model_config.hf_config.num_lookahead_tokens = (
-                        self.num_speculative_tokens
-                    )
+                    self.draft_model_config.hf_config.num_lookahead_tokens = self.num_speculative_tokens
 
-                n_predict = getattr(
-                    self.draft_model_config.hf_config, "n_predict", None
-                )
+                n_predict = getattr(self.draft_model_config.hf_config, "n_predict", None)
                 if n_predict is not None:
                     if self.num_speculative_tokens is None:
                         # Default to max value defined in draft model config.
                         self.num_speculative_tokens = n_predict
-                    elif (
-                        self.num_speculative_tokens > n_predict
-                        and self.num_speculative_tokens % n_predict != 0
-                    ):
+                    elif self.num_speculative_tokens > n_predict and self.num_speculative_tokens % n_predict != 0:
                         # Ensure divisibility for MTP module reuse.
                         raise ValueError(
-                            f"num_speculative_tokens:{self.num_speculative_tokens}"
-                            f" must be divisible by {n_predict=}"
+                            f"num_speculative_tokens:{self.num_speculative_tokens} must be divisible by {n_predict=}"
                         )
 
                 if self.speculative_token_tree is None:
@@ -608,44 +564,33 @@ class SpeculativeConfig:
                         )
 
                     # Generate chain of tokens.
-                    self.speculative_token_tree = str(
-                        [(i + 1) * (0,) for i in range(self.num_speculative_tokens)]
-                    )
+                    self.speculative_token_tree = str([(i + 1) * (0,) for i in range(self.num_speculative_tokens)])
                 else:
                     # Sort the token tree breadth-first.
                     tree_choices = ast.literal_eval(self.speculative_token_tree)
-                    self.speculative_token_tree = str(
-                        sorted(tree_choices, key=lambda t: (len(t), t))
-                    )
+                    self.speculative_token_tree = str(sorted(tree_choices, key=lambda t: (len(t), t)))
 
-                self.draft_tensor_parallel_size = (
-                    SpeculativeConfig._verify_and_get_draft_tp(
-                        self.target_parallel_config,
-                        self.draft_tensor_parallel_size,
-                        self.draft_model_config.hf_config,
-                    )
+                self.draft_tensor_parallel_size = SpeculativeConfig._verify_and_get_draft_tp(
+                    self.target_parallel_config,
+                    self.draft_tensor_parallel_size,
+                    self.draft_model_config.hf_config,
                 )
 
-                self.draft_model_config.max_model_len = (
-                    SpeculativeConfig._maybe_override_draft_max_model_len(
-                        self.max_model_len,
-                        self.draft_model_config.max_model_len,
-                        self.target_model_config.max_model_len,
-                    )
+                self.draft_model_config.max_model_len = SpeculativeConfig._maybe_override_draft_max_model_len(
+                    self.max_model_len,
+                    self.draft_model_config.max_model_len,
+                    self.target_model_config.max_model_len,
                 )
 
-                self.draft_parallel_config = (
-                    SpeculativeConfig.create_draft_parallel_config(
-                        self.target_parallel_config, self.draft_tensor_parallel_size
-                    )
+                self.draft_parallel_config = SpeculativeConfig.create_draft_parallel_config(
+                    self.target_parallel_config, self.draft_tensor_parallel_size
                 )
         return self
 
     def _validate_suffix_decoding(self):
         if not has_arctic_inference():
             raise ImportError(
-                "Arctic Inference is required for suffix decoding. "
-                "Install via `pip install arctic-inference==0.1.1`."
+                "Arctic Inference is required for suffix decoding. Install via `pip install arctic-inference==0.1.1`."
             )
         if self.num_speculative_tokens is None:
             # Suffix decoding decides the actual number of speculative tokens
@@ -657,25 +602,15 @@ class SpeculativeConfig:
             )
         # Validate values
         if self.suffix_decoding_max_tree_depth < 1:
-            raise ValueError(
-                f"suffix_decoding_max_tree_depth="
-                f"{self.suffix_decoding_max_tree_depth} must be >= 1"
-            )
+            raise ValueError(f"suffix_decoding_max_tree_depth={self.suffix_decoding_max_tree_depth} must be >= 1")
         if self.suffix_decoding_max_cached_requests < 0:
             raise ValueError(
-                f"suffix_decoding_max_cached_requests="
-                f"{self.suffix_decoding_max_cached_requests} must be >= 0"
+                f"suffix_decoding_max_cached_requests={self.suffix_decoding_max_cached_requests} must be >= 0"
             )
         if self.suffix_decoding_max_spec_factor < 0:
-            raise ValueError(
-                f"suffix_decoding_max_spec_factor="
-                f"{self.suffix_decoding_max_spec_factor} must be >= 0"
-            )
+            raise ValueError(f"suffix_decoding_max_spec_factor={self.suffix_decoding_max_spec_factor} must be >= 0")
         if not 0 <= self.suffix_decoding_min_token_prob <= 1:
-            raise ValueError(
-                f"suffix_decoding_min_token_prob="
-                f"{self.suffix_decoding_min_token_prob} must be in [0, 1]"
-            )
+            raise ValueError(f"suffix_decoding_min_token_prob={self.suffix_decoding_min_token_prob} must be in [0, 1]")
 
     @staticmethod
     def _maybe_override_draft_max_model_len(
@@ -697,16 +632,10 @@ class SpeculativeConfig:
 
         if speculative_max_model_len is not None:
             if speculative_max_model_len > draft_max_model_len:
-                raise ValueError(
-                    f"{speculative_max_model_len=} cannot be "
-                    f"larger than {draft_max_model_len=}"
-                )
+                raise ValueError(f"{speculative_max_model_len=} cannot be larger than {draft_max_model_len=}")
 
             if speculative_max_model_len > target_max_model_len:
-                raise ValueError(
-                    f"{speculative_max_model_len=} cannot be "
-                    f"larger than {target_max_model_len=}"
-                )
+                raise ValueError(f"{speculative_max_model_len=} cannot be larger than {target_max_model_len=}")
 
             return speculative_max_model_len
 
@@ -732,14 +661,11 @@ class SpeculativeConfig:
                 speculative_draft_tensor_parallel_size = 1
                 if target_parallel_config.tensor_parallel_size > 1:
                     logger.warning(
-                        "%s cannot currently be run with tp>1; "
-                        "setting speculative_draft_tensor_parallel_size=1",
+                        "%s cannot currently be run with tp>1; setting speculative_draft_tensor_parallel_size=1",
                         draft_hf_config.model_type,
                     )
             else:
-                speculative_draft_tensor_parallel_size = (
-                    target_parallel_config.tensor_parallel_size
-                )
+                speculative_draft_tensor_parallel_size = target_parallel_config.tensor_parallel_size
         elif speculative_draft_tensor_parallel_size not in (
             1,
             target_parallel_config.tensor_parallel_size,
@@ -755,12 +681,8 @@ class SpeculativeConfig:
         EagleConfig and ExtractHiddenStatesConfig update architectures, so update all
         architectures-related fields in self.draft_model_config
         """
-        self.draft_model_config.hf_text_config = get_hf_text_config(
-            self.draft_model_config.hf_config
-        )
-        self.draft_model_config.model_arch_config = (
-            self.draft_model_config.get_model_arch_config()
-        )
+        self.draft_model_config.hf_text_config = get_hf_text_config(self.draft_model_config.hf_config)
+        self.draft_model_config.model_arch_config = self.draft_model_config.get_model_arch_config()
         model_info, arch = self.draft_model_config.registry.inspect_model_cls(
             self.draft_model_config.architectures,
             self.draft_model_config,
@@ -806,14 +728,11 @@ class SpeculativeConfig:
 
         if self.num_speculative_tokens <= 0:
             raise ValueError(
-                "Expected num_speculative_tokens to be greater "
-                f"than zero ({self.num_speculative_tokens})."
+                f"Expected num_speculative_tokens to be greater than zero ({self.num_speculative_tokens})."
             )
 
         if self.draft_model_config:
-            self.draft_model_config.verify_with_parallel_config(
-                self.draft_parallel_config
-            )
+            self.draft_model_config.verify_with_parallel_config(self.draft_parallel_config)
 
         aux_hidden_states_supported = [
             "llama",
@@ -896,10 +815,6 @@ class SpeculativeConfig:
 
     def __repr__(self) -> str:
         method = self.method
-        model = (
-            None
-            if method in ("ngram", "suffix", "extract_hidden_states")
-            else self.draft_model_config.model
-        )
+        model = None if method in ("ngram", "suffix", "extract_hidden_states") else self.draft_model_config.model
         num_spec_tokens = self.num_speculative_tokens
         return f"SpeculativeConfig({method=}, {model=}, {num_spec_tokens=})"

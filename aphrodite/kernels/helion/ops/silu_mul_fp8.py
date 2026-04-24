@@ -10,10 +10,7 @@ from aphrodite.logger import init_logger
 from aphrodite.utils.import_utils import has_helion
 
 if not has_helion():
-    raise ImportError(
-        "silu_mul_fp8 Helion kernel requires helion to be installed. "
-        "Install it with: pip install helion"
-    )
+    raise ImportError("silu_mul_fp8 Helion kernel requires helion to be installed. Install it with: pip install helion")
 
 import helion.language as hl
 
@@ -46,9 +43,7 @@ def generate_silu_mul_fp8_inputs() -> dict[str, tuple[Any, ...]]:
     return inputs
 
 
-def pick_silu_mul_fp8_config(
-    args: tuple[Any, ...], config_keys: list[str]
-) -> str | None:
+def pick_silu_mul_fp8_config(args: tuple[Any, ...], config_keys: list[str]) -> str | None:
     """Pick the best pre-tuned config for the given input shape.
 
     Selection strategy:
@@ -73,10 +68,7 @@ def pick_silu_mul_fp8_config(
             continue
         match = re.fullmatch(r"intermediate_(\d+)_numtokens_(\d+)", key)
         if not match:
-            raise ValueError(
-                f"Malformed config key '{key}', "
-                f"expected format 'intermediate_{{int}}_numtokens_{{int}}'"
-            )
+            raise ValueError(f"Malformed config key '{key}', expected format 'intermediate_{{int}}_numtokens_{{int}}'")
         isize_str, ntokens_str = match.groups()
         configs.setdefault(int(isize_str), []).append(int(ntokens_str))
 
@@ -85,9 +77,7 @@ def pick_silu_mul_fp8_config(
 
     best_isize = min(configs, key=lambda s: abs(s - intermediate_size))
     available_ntokens = sorted(configs[best_isize])
-    best_ntokens = next(
-        (n for n in available_ntokens if n >= num_tokens), available_ntokens[-1]
-    )
+    best_ntokens = next((n for n in available_ntokens if n >= num_tokens), available_ntokens[-1])
 
     return f"intermediate_{best_isize}_numtokens_{best_ntokens}"
 

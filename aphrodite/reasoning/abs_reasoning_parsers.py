@@ -74,9 +74,7 @@ class ReasoningParser:
             True if the reasoning content ends in the input_ids.
         """
 
-    def is_reasoning_end_streaming(
-        self, input_ids: Sequence[int], delta_ids: Iterable[int]
-    ) -> bool:
+    def is_reasoning_end_streaming(self, input_ids: Sequence[int], delta_ids: Iterable[int]) -> bool:
         """
         Check if the reasoning content ends in the input_ids on a
         decode step.
@@ -218,9 +216,7 @@ class ReasoningParserManager:
             return cls._load_lazy_parser(name)
 
         registered = ", ".join(cls.list_registered())
-        raise KeyError(
-            f"Reasoning parser '{name}' not found. Available parsers: {registered}"
-        )
+        raise KeyError(f"Reasoning parser '{name}' not found. Available parsers: {registered}")
 
     @classmethod
     def list_registered(cls) -> list[str]:
@@ -235,9 +231,7 @@ class ReasoningParserManager:
             mod = importlib.import_module(module_path)
             parser_cls = getattr(mod, class_name)
             if not issubclass(parser_cls, ReasoningParser):
-                raise TypeError(
-                    f"{class_name} in {module_path} is not a ReasoningParser subclass."
-                )
+                raise TypeError(f"{class_name} in {module_path} is not a ReasoningParser subclass.")
 
             cls.reasoning_parsers[name] = parser_cls  # cache
             return parser_cls
@@ -259,9 +253,7 @@ class ReasoningParserManager:
     ) -> None:
         """Register a ReasoningParser class immediately."""
         if not issubclass(module, ReasoningParser):
-            raise TypeError(
-                f"module must be subclass of ReasoningParser, but got {type(module)}"
-            )
+            raise TypeError(f"module must be subclass of ReasoningParser, but got {type(module)}")
 
         if module_name is None:
             module_names = [module.__name__]
@@ -298,9 +290,7 @@ class ReasoningParserManager:
         name: str | list[str] | None = None,
         force: bool = True,
         module: type[ReasoningParser] | None = None,
-    ) -> (
-        type[ReasoningParser] | Callable[[type[ReasoningParser]], type[ReasoningParser]]
-    ):
+    ) -> type[ReasoningParser] | Callable[[type[ReasoningParser]], type[ReasoningParser]]:
         """
         Register module with the given name or name list. it can be used as a
         decoder(with module as None) or normal function(with module as not
@@ -344,7 +334,5 @@ class ReasoningParserManager:
         try:
             import_from_path(module_name, plugin_path)
         except Exception:
-            logger.exception(
-                "Failed to load module '%s' from %s.", module_name, plugin_path
-            )
+            logger.exception("Failed to load module '%s' from %s.", module_name, plugin_path)
             return

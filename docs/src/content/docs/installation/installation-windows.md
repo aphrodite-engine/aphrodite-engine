@@ -4,9 +4,9 @@ title: Windows Installation
 
 Aphrodite Engine supports native Windows builds, alongside Windows Subsystem for Linux (WSL) builds. This guide will cover both methods of installation.
 
-
 Generally, it's recommended to use WSL, as it seems to be slightly faster than native Windows when batched - and it's easier to set up if you're building from source, or wish to use Triton functionalities, such as LoRA and guided decoding.
 ***
+
 ## Native Windows
 
 We recommend CUDA 12.4.1 for Windows. You can download it from [here](https://developer.nvidia.com/cuda-12-4-1-download-archive).
@@ -53,6 +53,7 @@ This is a lot more complicated than installing from PyPI, and generally not reco
 #### Prerequisites
 
 ##### Visual Studio 2022
+
 Download and install Visual Studio 2022 from [here](https://visualstudio.microsoft.com/downloads/). Download the Community edition, as it's free.
 
 Once the Visual Studio installer is launched, make sure to select the "Desktop development with C++" workload. Next, navigate to the "Individual components" tab and select the following components (use the search bar to find them):
@@ -65,6 +66,7 @@ Once the Visual Studio installer is launched, make sure to select the "Desktop d
 Once you've selected these components, click "Install" and wait for the installation to complete. You may need to restart your computer after the installation is complete (to be confirmed).
 
 ##### CUDA 12.4.1
+
 Download and install CUDA 12.4.1 from [here](https://developer.nvidia.com/cuda-12-4-1-download-archive). Make sure to select the correct installer for your system.
 
 #### Building
@@ -105,7 +107,7 @@ C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Microsoft
 C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Microsoft\VC\v170\BuildCustomizations
 ```
 
-2. Paste them into the following directory:
+1. Paste them into the following directory:
 
 ```
 C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v160\BuildCustomizations
@@ -117,20 +119,19 @@ Now try building again.
 
 The story behind this error is fascinating. The CUDA installer stopped shipping compiled binaries for nvToolsExt, which is a dependency for PyTorch, since CUDA 12.0. PyTorch never updated their code to use the recommended nvToolsExt headers, so they still rely on the old binaries. This makes building code that uses PyTorch on CUDA 12.0+ a nightmare. The solution seems to be this:
 
-1. Download the NvToolsExt.7z file from the official pytorch builder: https://ossci-windows.s3.us-east-1.amazonaws.com/builder/NvToolsExt.7z
+1. Download the NvToolsExt.7z file from the official pytorch builder: <https://ossci-windows.s3.us-east-1.amazonaws.com/builder/NvToolsExt.7z>
 
 (you can also just install CUDA 11.8 but with only the NSight NVTX component selected)
 
-2. Extract the contents of the archive. You can use a 7zip tool for this, like 7zip or WinRAR.
+1. Extract the contents of the archive. You can use a 7zip tool for this, like 7zip or WinRAR.
 
-3. Copy the `NvToolsExt` directory to the following location:
+2. Copy the `NvToolsExt` directory to the following location:
 
 ```
 C:\ProgramFiles\NVIDIA Corporation
 ```
 
 You may need to replace the existing `NvToolsExt` directory. Now try building again.
-
 
 ## Windows Subsystem for Linux (WSL)
 

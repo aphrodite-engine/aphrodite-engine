@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Compares the outputs of gptq vs gptq_marlin.
 
 Note: GPTQ and Marlin do not have bitwise correctness.
@@ -11,8 +13,8 @@ up to 3 times to see if we pass.
 import os
 
 import pytest
-
 from aphrodite.modeling.layers.rotary_embedding import _ROPE_DICT
+
 from aphrodite.platforms import current_platform
 from tests.quantization.utils import is_quant_method_supported
 

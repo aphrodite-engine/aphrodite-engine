@@ -76,9 +76,7 @@ class OpenAIServingRealtime(OpenAIServing):
         # TODO(Patrick) - fix this
         stream_input_iter = cast(
             AsyncGenerator[PromptType, None],
-            self.model_cls.buffer_realtime_audio(
-                audio_stream, input_stream, model_config
-            ),
+            self.model_cls.buffer_realtime_audio(audio_stream, input_stream, model_config),
         )
 
         async for prompt in stream_input_iter:

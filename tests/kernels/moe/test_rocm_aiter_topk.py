@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # This is a test for the AITER ops.
 # It tests if the AITER ops are
 # 1. correctly registered as custom ops
@@ -9,11 +11,11 @@
 
 import importlib.util
 
+# this import statement is needed to ensure the ops are registered
+import aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe  # noqa: F401
 import pytest
 import torch
 
-# this import statement is needed to ensure the ops are registered
-import aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe  # noqa: F401
 from aphrodite.platforms import current_platform
 
 # need to import once to ensure the ops are registered

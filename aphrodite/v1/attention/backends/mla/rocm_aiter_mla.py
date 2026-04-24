@@ -105,9 +105,7 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        super().__init__(
-            kv_cache_spec, layer_names, aphrodite_config, device, AiterMLAMetadata
-        )
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device, AiterMLAMetadata)
 
         self.compilation_config = aphrodite_config.compilation_config
         self.decode_attn_out_dtype = aphrodite_config.model_config.dtype
@@ -133,15 +131,11 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         # paged_kv_last_page_len is always 1s (the aiter kernel always sees
         # page_size=1 after .view(-1,1,1,H) flattening), so we create it
         # once and reuse slices in both eager and cudagraph modes.
-        self.paged_kv_last_page_len = torch.ones(
-            max_num_reqs, dtype=torch.int32, device=device
-        )
+        self.paged_kv_last_page_len = torch.ones(max_num_reqs, dtype=torch.int32, device=device)
 
         # Persistent buffer for paged_kv_indices to avoid blocking boolean mask
         # indexing (block_table_tensor[mask]) which has data-dependent output size.
-        self.paged_kv_indices = torch.zeros(
-            max_num_pages, dtype=torch.int32, device=device
-        )
+        self.paged_kv_indices = torch.zeros(max_num_pages, dtype=torch.int32, device=device)
 
         from aiter import dtypes, get_mla_metadata_info_v1
 
@@ -172,21 +166,11 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
             is_sparse=False,
             fast_mode=True,
         )
-        self._mla_work_meta_data = torch.empty(
-            work_meta_data_size, dtype=work_meta_data_type, device=device
-        )
-        self._mla_work_indptr = torch.empty(
-            work_indptr_size, dtype=work_indptr_type, device=device
-        )
-        self._mla_work_info_set = torch.empty(
-            work_info_set_size, dtype=work_info_set_type, device=device
-        )
-        self._mla_reduce_indptr = torch.empty(
-            reduce_indptr_size, dtype=reduce_indptr_type, device=device
-        )
-        self._mla_reduce_final_map = torch.empty(
-            reduce_final_map_size, dtype=reduce_final_map_type, device=device
-        )
+        self._mla_work_meta_data = torch.empty(work_meta_data_size, dtype=work_meta_data_type, device=device)
+        self._mla_work_indptr = torch.empty(work_indptr_size, dtype=work_indptr_type, device=device)
+        self._mla_work_info_set = torch.empty(work_info_set_size, dtype=work_info_set_type, device=device)
+        self._mla_reduce_indptr = torch.empty(reduce_indptr_size, dtype=reduce_indptr_type, device=device)
+        self._mla_reduce_final_map = torch.empty(reduce_final_map_size, dtype=reduce_final_map_type, device=device)
         self._mla_reduce_partial_map = torch.empty(
             reduce_partial_map_size,
             dtype=reduce_partial_map_type,
@@ -194,13 +178,9 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         )
 
         if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
-            self.paged_kv_indptr = torch.zeros(
-                max_num_reqs + 1, dtype=torch.int32, device=device
-            )
+            self.paged_kv_indptr = torch.zeros(max_num_reqs + 1, dtype=torch.int32, device=device)
 
-            self.qo_indptr = torch.zeros(
-                max_num_reqs + 1, dtype=torch.int32, device=device
-            )
+            self.qo_indptr = torch.zeros(max_num_reqs + 1, dtype=torch.int32, device=device)
 
     def _build_decode(
         self,
@@ -249,25 +229,19 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         paged_kv_indices = self.paged_kv_indices
 
         if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
-            self.paged_kv_indptr[: 1 + num_reqs].copy_(
-                paged_kv_indptr, non_blocking=True
-            )
+            self.paged_kv_indptr[: 1 + num_reqs].copy_(paged_kv_indptr, non_blocking=True)
             self.paged_kv_indptr[1 + num_reqs :].fill_(paged_kv_indptr[-1])
             paged_kv_indptr = self.paged_kv_indptr[: 1 + num_reqs]
 
             # paged_kv_last_page_len already uses the pre-initialized buffer slice
             # (set above), so no copy needed - buffer is always 1s.
 
-            self.qo_indptr[: 1 + num_reqs].copy_(
-                query_start_loc_device, non_blocking=True
-            )
+            self.qo_indptr[: 1 + num_reqs].copy_(query_start_loc_device, non_blocking=True)
             self.qo_indptr[1 + num_reqs :] = query_start_loc_device[-1]
             qo_indptr = self.qo_indptr[: 1 + num_reqs]
 
         else:
-            qo_indptr = torch.arange(
-                0, num_reqs + 1, step=1, dtype=torch.int32, device=device
-            )
+            qo_indptr = torch.arange(0, num_reqs + 1, step=1, dtype=torch.int32, device=device)
 
         # The aiter MLA ASM kernel only supports qseqlen=1 (single-token
         # decode). With speculative decoding, the verification step has
@@ -322,13 +296,8 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> AiterMLAMetadata:
-        attn_metadata = super().build(
-            common_prefix_len, common_attn_metadata, fast_build
-        )
-        if (
-            attn_metadata.decode is not None
-            and attn_metadata.decode.has_persistent_metadata
-        ):
+        attn_metadata = super().build(common_prefix_len, common_attn_metadata, fast_build)
+        if attn_metadata.decode is not None and attn_metadata.decode.has_persistent_metadata:
             attn_metadata.work_meta_data = self._mla_work_meta_data
             attn_metadata.work_indptr = self._mla_work_indptr
             attn_metadata.work_info_set = self._mla_work_info_set
@@ -418,9 +387,7 @@ class AiterMLAImpl(MLACommonImpl[AiterMLAMetadata]):
             kv_sharing_target_layer_name,
             **mla_args,
         )
-        _valid_heads = num_heads in (4, 8) or (
-            num_heads % 16 == 0 and 16 <= num_heads <= 128
-        )
+        _valid_heads = num_heads in (4, 8) or (num_heads % 16 == 0 and 16 <= num_heads <= 128)
         assert _valid_heads, (
             f"Aiter MLA supports num_heads of 4, 8, or multiples of 16 "
             f"in [16, 128].\n"
@@ -432,17 +399,14 @@ class AiterMLAImpl(MLACommonImpl[AiterMLAMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "Aiter MLA does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "Aiter MLA does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         from aiter import flash_attn_varlen_func
 
         self.flash_attn_varlen_func = flash_attn_varlen_func
 
-    def _flash_attn_varlen_diff_headdims(
-        self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs
-    ):
+    def _flash_attn_varlen_diff_headdims(self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs):
         output = self.flash_attn_varlen_func(  # type: ignore[call-arg]
             q=q,
             k=k,

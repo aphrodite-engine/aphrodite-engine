@@ -95,30 +95,18 @@ class RendererChatRequest(RendererRequest, Protocol):
         raise NotImplementedError
 
 
-CompletionLikeRequest: TypeAlias = (
-    CompletionRequest | TokenizeCompletionRequest | DetokenizeRequest
-)
+CompletionLikeRequest: TypeAlias = CompletionRequest | TokenizeCompletionRequest | DetokenizeRequest
 
-ChatLikeRequest: TypeAlias = (
-    ChatCompletionRequest | BatchChatCompletionRequest | TokenizeChatRequest
-)
+ChatLikeRequest: TypeAlias = ChatCompletionRequest | BatchChatCompletionRequest | TokenizeChatRequest
 
 SpeechToTextRequest: TypeAlias = TranscriptionRequest | TranslationRequest
 
 AnyRequest: TypeAlias = (
-    CompletionLikeRequest
-    | ChatLikeRequest
-    | SpeechToTextRequest
-    | ResponsesRequest
-    | GenerateRequest
+    CompletionLikeRequest | ChatLikeRequest | SpeechToTextRequest | ResponsesRequest | GenerateRequest
 )
 
 AnyResponse: TypeAlias = (
-    CompletionResponse
-    | ChatCompletionResponse
-    | TranscriptionResponse
-    | TokenizeResponse
-    | GenerateResponse
+    CompletionResponse | ChatCompletionResponse | TranscriptionResponse | TokenizeResponse | GenerateResponse
 )
 
 RequestT = TypeVar("RequestT", bound=AnyRequest)
@@ -184,9 +172,7 @@ class OpenAIServing:
             raise NotImplementedError("Embedding prompt not supported for beam search")
 
         # Extract prompt tokens and text based on model type
-        decoder_prompt = (
-            prompt if prompt["type"] != "enc_dec" else prompt["decoder_prompt"]
-        )
+        decoder_prompt = prompt if prompt["type"] != "enc_dec" else prompt["decoder_prompt"]
         prompt_text = decoder_prompt.get("prompt")
         prompt_token_ids = decoder_prompt["prompt_token_ids"]
 
@@ -267,12 +253,7 @@ class OpenAIServing:
                 if result.outputs[0].logprobs is not None:
                     logprobs = result.outputs[0].logprobs[0]
                     all_beams_token_id.extend(list(logprobs.keys()))
-                    all_beams_logprob.extend(
-                        [
-                            current_beam.cum_logprob + obj.logprob
-                            for obj in logprobs.values()
-                        ]
-                    )
+                    all_beams_logprob.extend([current_beam.cum_logprob + obj.logprob for obj in logprobs.values()])
 
             # Handle the token for the end of sentence (EOS)
             all_beams_token_id = np.array(all_beams_token_id)
@@ -304,9 +285,7 @@ class OpenAIServing:
 
             # Processing non-EOS tokens
             # Get indices of the top beam_width probabilities
-            topn_idx = np.argpartition(np.negative(all_beams_logprob), beam_width)[
-                :beam_width
-            ]
+            topn_idx = np.argpartition(np.negative(all_beams_logprob), beam_width)[:beam_width]
 
             for idx in topn_idx:
                 current_beam = all_beams[idx // logprobs_num]
@@ -348,9 +327,7 @@ class OpenAIServing:
                     token_ids=beam.tokens[tokenized_length:],
                     index=i,
                     logprobs=beam.logprobs,
-                    finish_reason=beam.finish_reason
-                    if beam.finish_reason is not None
-                    else "length",
+                    finish_reason=beam.finish_reason if beam.finish_reason is not None else "length",
                     stop_reason=beam.stop_reason,
                 )
                 for (i, beam) in enumerate(best_beams)
@@ -395,9 +372,7 @@ class OpenAIServing:
             )
             raise GenerationError("Internal server error")
 
-    def _convert_generation_error_to_streaming_response(
-        self, e: GenerationError
-    ) -> str:
+    def _convert_generation_error_to_streaming_response(self, e: GenerationError) -> str:
         """Convert GenerationError to streaming error response."""
         return self.create_streaming_error_response(
             str(e),
@@ -422,10 +397,7 @@ class OpenAIServing:
         ):
             if isinstance(load_result, LoRARequest):
                 return None
-            if (
-                isinstance(load_result, ErrorResponse)
-                and load_result.error.code == HTTPStatus.BAD_REQUEST.value
-            ):
+            if isinstance(load_result, ErrorResponse) and load_result.error.code == HTTPStatus.BAD_REQUEST.value:
                 error_response = load_result
 
         return error_response or self.create_error_response(
@@ -494,11 +466,7 @@ class OpenAIServing:
             return message_types
 
         for message in messages:
-            if (
-                isinstance(message, dict)
-                and "content" in message
-                and isinstance(message["content"], list)
-            ):
+            if isinstance(message, dict) and "content" in message and isinstance(message["content"], list):
                 for content_dict in message["content"]:
                     if "type" in content_dict:
                         message_types.add(content_dict["type"].split("_")[0])
@@ -512,10 +480,7 @@ class OpenAIServing:
     ) -> ErrorResponse | None:
         if not trust_request_chat_template and (
             request_chat_template is not None
-            or (
-                chat_template_kwargs
-                and chat_template_kwargs.get("chat_template") is not None
-            )
+            or (chat_template_kwargs and chat_template_kwargs.get("chat_template") is not None)
         ):
             return self.create_error_response(
                 "Chat template is passed with request, but "
@@ -581,13 +546,9 @@ class OpenAIServing:
         return None
 
     @staticmethod
-    def _base_request_id(
-        raw_request: Request | None, default: str | None = None
-    ) -> str | None:
+    def _base_request_id(raw_request: Request | None, default: str | None = None) -> str | None:
         """Pulls the request id to use from a header, if provided"""
-        if raw_request is not None and (
-            (req_id := raw_request.headers.get("X-Request-Id")) is not None
-        ):
+        if raw_request is not None and ((req_id := raw_request.headers.get("X-Request-Id")) is not None):
             return req_id
 
         return random_uuid() if default is None else default
@@ -626,16 +587,10 @@ class OpenAIServing:
         )
 
         function_calls = list[FunctionCall]()
-        if (
-            not use_mistral_tool_parser
-            and request.tool_choice
-            and isinstance(request.tool_choice, ToolChoiceFunction)
-        ):
+        if not use_mistral_tool_parser and request.tool_choice and isinstance(request.tool_choice, ToolChoiceFunction):
             assert content is not None
             # Forced Function Call (Responses API)
-            function_calls.append(
-                FunctionCall(name=request.tool_choice.name, arguments=content)
-            )
+            function_calls.append(FunctionCall(name=request.tool_choice.name, arguments=content))
             content = None  # Clear content since tool is called.
         elif (
             not use_mistral_tool_parser
@@ -645,9 +600,7 @@ class OpenAIServing:
         ):
             # Named function with standard JSON-based parsing
             assert content is not None
-            function_calls.append(
-                FunctionCall(name=request.tool_choice.function.name, arguments=content)
-            )
+            function_calls.append(FunctionCall(name=request.tool_choice.function.name, arguments=content))
             content = None  # Clear content since tool is called.
         elif (
             not use_mistral_tool_parser
@@ -658,9 +611,7 @@ class OpenAIServing:
             tool_calls = []
             with contextlib.suppress(ValidationError):
                 content = content or ""
-                tool_calls = TypeAdapter(list[FunctionDefinition]).validate_json(
-                    content
-                )
+                tool_calls = TypeAdapter(list[FunctionDefinition]).validate_json(content)
             for tool_call in tool_calls:
                 function_calls.append(
                     FunctionCall(
@@ -693,9 +644,7 @@ class OpenAIServing:
             # Automatic Tool Call Parsing (also used as fallback for
             # required/named when supports_required_and_named=False)
             if tokenizer is None:
-                raise ValueError(
-                    "Tokenizer not available when `skip_tokenizer_init=True`"
-                )
+                raise ValueError("Tokenizer not available when `skip_tokenizer_init=True`")
 
             try:
                 tool_parser = tool_parser_cls(tokenizer, request.tools)
@@ -739,9 +688,7 @@ class OpenAIServing:
             return logprob.decoded_token
 
         if tokenizer is None:
-            raise ValueError(
-                "Unable to get tokenizer because `skip_tokenizer_init=True`"
-            )
+            raise ValueError("Unable to get tokenizer because `skip_tokenizer_init=True`")
 
         return tokenizer.decode([token_id])
 

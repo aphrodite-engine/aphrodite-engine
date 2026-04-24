@@ -33,10 +33,7 @@ def select_int8_moe_backend(
         mk.FusedMoEActivationFormat.Standard,
     )
     if not supported:
-        raise ValueError(
-            f"INT8 Triton MoE backend does not support the "
-            f"deployment configuration: {reason}"
-        )
+        raise ValueError(f"INT8 Triton MoE backend does not support the deployment configuration: {reason}")
 
     logger.info_once("Using Triton INT8 MoE backend", scope="local")
     return TritonExperts

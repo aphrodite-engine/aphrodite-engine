@@ -63,9 +63,7 @@ def is_aiter_found_and_supported() -> bool:
 
 
 @functools.cache
-def _load_gemm_tuned_configs(
-    q_dtype_w: torch.dtype, csv_path: str
-) -> set[tuple[int, int, int]]:
+def _load_gemm_tuned_configs(q_dtype_w: torch.dtype, csv_path: str) -> set[tuple[int, int, int]]:
     try:
         df = pd.read_csv(csv_path).drop_duplicates()
         df = df[df["q_dtype_w"] == str(q_dtype_w)]
@@ -76,12 +74,7 @@ def _load_gemm_tuned_configs(
 
 def _check_kernel_tuned(N: int, K: int, q_dtype_w: torch.dtype, csv_path: str) -> bool:
     configs = _load_gemm_tuned_configs(q_dtype_w, csv_path)
-    l_m = (
-        [1, 2, 4]
-        + list(range(8, 513, 8))
-        + [1024, 1536]
-        + [2**i for i in range(11, 19)]
-    )
+    l_m = [1, 2, 4] + list(range(8, 513, 8)) + [1024, 1536] + [2**i for i in range(11, 19)]
     return any((N, K, M) in configs for M in l_m)
 
 
@@ -240,9 +233,7 @@ def _rocm_aiter_topk_softmax_impl(
 ) -> None:
     from aiter import topk_softmax
 
-    topk_softmax(
-        topk_weights, topk_indices, token_expert_indices, gating_output, renormalize
-    )
+    topk_softmax(topk_weights, topk_indices, token_expert_indices, gating_output, renormalize)
 
 
 def _rocm_aiter_topk_softmax_fake(
@@ -367,9 +358,7 @@ def _rocm_aiter_fused_topk_fake(
     gate_up: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     num_tokens = x.shape[0]
-    topk_weights = torch.empty(
-        (num_tokens, top_k), dtype=torch.float32, device=x.device
-    )
+    topk_weights = torch.empty((num_tokens, top_k), dtype=torch.float32, device=x.device)
     topk_indices = torch.empty((num_tokens, top_k), dtype=torch.int32, device=x.device)
     return topk_weights, topk_indices
 
@@ -404,9 +393,7 @@ def _check_aiter_mla_fp8_support() -> bool:
             from aiter.mla import mla_decode_fwd
 
             sig = inspect.signature(mla_decode_fwd)
-            _AITER_MLA_SUPPORTS_FP8 = (
-                "q_scale" in sig.parameters and "kv_scale" in sig.parameters
-            )
+            _AITER_MLA_SUPPORTS_FP8 = "q_scale" in sig.parameters and "kv_scale" in sig.parameters
         except (
             ImportError,
             ModuleNotFoundError,
@@ -455,21 +442,11 @@ def _rocm_aiter_mla_decode_fwd_impl(
         kwargs["kv_scale"] = kv_scale
 
     if work_meta_data is not None:
-        assert work_indptr is not None, (
-            "work_indptr must be provided with work_meta_data"
-        )
-        assert work_info_set is not None, (
-            "work_info_set must be provided with work_meta_data"
-        )
-        assert reduce_indptr is not None, (
-            "reduce_indptr must be provided with work_meta_data"
-        )
-        assert reduce_final_map is not None, (
-            "reduce_final_map must be provided with work_meta_data"
-        )
-        assert reduce_partial_map is not None, (
-            "reduce_partial_map must be provided with work_meta_data"
-        )
+        assert work_indptr is not None, "work_indptr must be provided with work_meta_data"
+        assert work_info_set is not None, "work_info_set must be provided with work_meta_data"
+        assert reduce_indptr is not None, "reduce_indptr must be provided with work_meta_data"
+        assert reduce_final_map is not None, "reduce_final_map must be provided with work_meta_data"
+        assert reduce_partial_map is not None, "reduce_partial_map must be provided with work_meta_data"
         kwargs["work_meta_data"] = work_meta_data
         kwargs["work_indptr"] = work_indptr
         kwargs["work_info_set"] = work_info_set
@@ -623,9 +600,7 @@ def _rocm_aiter_gemm_a8w8_blockscale_fake(
     return Y
 
 
-def _rocm_aiter_rms_norm_impl(
-    x: torch.Tensor, weight: torch.Tensor, variance_epsilon: float
-) -> torch.Tensor:
+def _rocm_aiter_rms_norm_impl(x: torch.Tensor, weight: torch.Tensor, variance_epsilon: float) -> torch.Tensor:
     from aiter import rms_norm
 
     if x.dim() > 2:
@@ -637,9 +612,7 @@ def _rocm_aiter_rms_norm_impl(
     return rms_norm(x, weight, variance_epsilon)
 
 
-def _rocm_aiter_rms_norm_fake(
-    x: torch.Tensor, weight: torch.Tensor, variance_epsilon: float
-) -> torch.Tensor:
+def _rocm_aiter_rms_norm_fake(x: torch.Tensor, weight: torch.Tensor, variance_epsilon: float) -> torch.Tensor:
     return torch.empty_like(x)
 
 
@@ -731,9 +704,7 @@ def _rocm_aiter_rmsnorm_fused_dynamic_quant_impl(
     y_scale = torch.empty(x.shape[0], 1, dtype=torch.float32, device=x.device)
     out = torch.empty(x.shape, dtype=quant_dtype, device=x.device)
 
-    rocm_aiter.rmsnorm2d_fwd_with_dynamicquant(
-        out, x, y_scale, weight, epsilon, use_model_sensitive_rmsnorm=0
-    )
+    rocm_aiter.rmsnorm2d_fwd_with_dynamicquant(out, x, y_scale, weight, epsilon, use_model_sensitive_rmsnorm=0)
 
     return out, y_scale
 
@@ -765,9 +736,7 @@ def _rocm_aiter_per_tensor_quant_fake(
     quant_dtype: torch.dtype,
     scale: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    return torch.empty_like(x, dtype=quant_dtype), torch.empty(
-        1, dtype=torch.float32, device=x.device
-    )
+    return torch.empty_like(x, dtype=quant_dtype), torch.empty(1, dtype=torch.float32, device=x.device)
 
 
 def _rocm_aiter_per_token_quant_impl(
@@ -1603,9 +1572,7 @@ class rocm_aiter_ops:
         return torch.ops.aphrodite.fused_mla_dual_rms_norm.default
 
     @staticmethod
-    def rms_norm(
-        x: torch.Tensor, weight: torch.Tensor, variance_epsilon: float
-    ) -> torch.Tensor:
+    def rms_norm(x: torch.Tensor, weight: torch.Tensor, variance_epsilon: float) -> torch.Tensor:
         return torch.ops.aphrodite.rocm_aiter_rms_norm(x, weight, variance_epsilon)
 
     @staticmethod
@@ -1615,9 +1582,7 @@ class rocm_aiter_ops:
         weight: torch.Tensor,
         variance_epsilon: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        return torch.ops.aphrodite.rocm_aiter_rmsnorm2d_fwd_with_add(
-            x, residual, weight, variance_epsilon
-        )
+        return torch.ops.aphrodite.rocm_aiter_rmsnorm2d_fwd_with_add(x, residual, weight, variance_epsilon)
 
     @staticmethod
     def w8a8_gemm(
@@ -1639,9 +1604,7 @@ class rocm_aiter_ops:
         bias: torch.Tensor | None = None,
         output_dtype: torch.dtype = torch.float16,
     ) -> torch.Tensor:
-        return torch.ops.aphrodite._rocm_aiter_preshuffled_per_token_w8a8_gemm(
-            A, B, As, Bs, bias, output_dtype
-        )
+        return torch.ops.aphrodite._rocm_aiter_preshuffled_per_token_w8a8_gemm(A, B, As, Bs, bias, output_dtype)
 
     @staticmethod
     def triton_gemm_a8w8_blockscale(
@@ -1652,9 +1615,7 @@ class rocm_aiter_ops:
         block_size: list[int],
         output_dtype: torch.dtype = torch.float16,
     ) -> torch.Tensor:
-        return torch.ops.aphrodite.rocm_aiter_triton_gemm_a8w8_blockscale(
-            A, B, As, Bs, output_dtype
-        )
+        return torch.ops.aphrodite.rocm_aiter_triton_gemm_a8w8_blockscale(A, B, As, Bs, output_dtype)
 
     @staticmethod
     def gemm_a8w8_blockscale(
@@ -1665,9 +1626,7 @@ class rocm_aiter_ops:
         block_size: list[int],
         output_dtype: torch.dtype = torch.float16,
     ) -> torch.Tensor:
-        return torch.ops.aphrodite.rocm_aiter_gemm_a8w8_blockscale(
-            A, B, As, Bs, output_dtype
-        )
+        return torch.ops.aphrodite.rocm_aiter_gemm_a8w8_blockscale(A, B, As, Bs, output_dtype)
 
     @staticmethod
     def fused_moe(
@@ -1766,9 +1725,7 @@ class rocm_aiter_ops:
         gating_output: torch.Tensor,
         renormalize: bool,
     ) -> tuple[torch.Tensor, ...]:
-        torch.ops.aphrodite.rocm_aiter_topk_sigmoid(
-            topk_weights, topk_indices, gating_output
-        )
+        torch.ops.aphrodite.rocm_aiter_topk_sigmoid(topk_weights, topk_indices, gating_output)
         return topk_weights, topk_indices
 
     @staticmethod
@@ -1890,9 +1847,7 @@ class rocm_aiter_ops:
         w_scales: torch.Tensor,
         out_dtype: torch.dtype,
     ) -> torch.Tensor:
-        return torch.ops.aphrodite.rocm_aiter_gemm_a8wfp4(
-            x, w, x_scales, w_scales, out_dtype
-        )
+        return torch.ops.aphrodite.rocm_aiter_gemm_a8wfp4(x, w, x_scales, w_scales, out_dtype)
 
     @staticmethod
     def triton_fp4_gemm_dynamic_quant(
@@ -1911,9 +1866,7 @@ class rocm_aiter_ops:
             x_q = x
             x_s = x_scales
 
-        y = torch.empty(
-            x_q.shape[0], weight.shape[0], device=x_q.device, dtype=out_dtype
-        )
+        y = torch.empty(x_q.shape[0], weight.shape[0], device=x_q.device, dtype=out_dtype)
 
         gemm_afp4wfp4(x_q, weight, x_s, weight_scale.T, out_dtype, y)
         return y
@@ -2061,14 +2014,10 @@ class rocm_aiter_ops:
         ]
 
     @staticmethod
-    def is_shuffled_per_token_w8a8_gemm_tuned(
-        N: int, K: int, q_dtype_w: torch.dtype
-    ) -> bool:
+    def is_shuffled_per_token_w8a8_gemm_tuned(N: int, K: int, q_dtype_w: torch.dtype) -> bool:
         import aiter.ops.gemm_op_a8w8 as aiter_gemm_a8w8_ops
 
-        csv_path = (
-            aiter_gemm_a8w8_ops.AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE_FILE
-        )
+        csv_path = aiter_gemm_a8w8_ops.AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE_FILE
         return _check_kernel_tuned(N, K, q_dtype_w, csv_path)
 
     @staticmethod
@@ -2079,9 +2028,7 @@ class rocm_aiter_ops:
         return _check_kernel_tuned(N, K, q_dtype_w, csv_path)
 
     @staticmethod
-    def shuffle_weight(
-        tensor: torch.Tensor, layout: tuple[int, int] = (16, 16)
-    ) -> torch.Tensor:
+    def shuffle_weight(tensor: torch.Tensor, layout: tuple[int, int] = (16, 16)) -> torch.Tensor:
         from aiter.ops.shuffle import shuffle_weight
 
         return shuffle_weight(tensor, layout=layout)
@@ -2128,9 +2075,7 @@ class rocm_aiter_ops:
         return shuffle_scale_a16w4(tensor, num_experts, gate_up)
 
     @staticmethod
-    def shuffle_weights(
-        *tensors: torch.Tensor, layout: tuple[int, int] = (16, 16)
-    ) -> tuple[torch.Tensor, ...]:
+    def shuffle_weights(*tensors: torch.Tensor, layout: tuple[int, int] = (16, 16)) -> tuple[torch.Tensor, ...]:
         """
         Applies shuffle_weight function from AITER to each
         input tensor and returns them.

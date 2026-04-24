@@ -44,34 +44,20 @@ class MinimaxM2ToolParser(ToolParser):
         self.current_tool_index: int = 0
 
         # Regex patterns for complete parsing
-        self.tool_call_complete_regex = re.compile(
-            r"<minimax:tool_call>(.*?)</minimax:tool_call>", re.DOTALL
-        )
-        self.invoke_complete_regex = re.compile(
-            r"<invoke name=(.*?)</invoke>", re.DOTALL
-        )
-        self.parameter_complete_regex = re.compile(
-            r"<parameter name=(.*?)</parameter>", re.DOTALL
-        )
+        self.tool_call_complete_regex = re.compile(r"<minimax:tool_call>(.*?)</minimax:tool_call>", re.DOTALL)
+        self.invoke_complete_regex = re.compile(r"<invoke name=(.*?)</invoke>", re.DOTALL)
+        self.parameter_complete_regex = re.compile(r"<parameter name=(.*?)</parameter>", re.DOTALL)
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         self.tool_call_start_token_id = self.vocab.get(self.tool_call_start_token)
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
 
         if self.tool_call_start_token_id is None or self.tool_call_end_token_id is None:
-            raise RuntimeError(
-                "MiniMax M2 Tool parser could not locate tool call start/end "
-                "tokens in the tokenizer!"
-            )
+            raise RuntimeError("MiniMax M2 Tool parser could not locate tool call start/end tokens in the tokenizer!")
 
-        logger.debug(
-            "Aphrodite Successfully import tool parser %s !", self.__class__.__name__
-        )
+        logger.debug("Aphrodite Successfully import tool parser %s !", self.__class__.__name__)
 
     def _generate_tool_call_id(self) -> str:
         """Generate a unique tool call ID."""
@@ -146,9 +132,7 @@ class MinimaxM2ToolParser(ToolParser):
 
         return list(types)
 
-    def _convert_param_value_with_types(
-        self, value: str, param_types: list[str]
-    ) -> Any:
+    def _convert_param_value_with_types(self, value: str, param_types: list[str]) -> Any:
         """
         Convert parameter value to the correct type based on a list of possible types.
         Tries each type in order until one succeeds.
@@ -219,9 +203,7 @@ class MinimaxM2ToolParser(ToolParser):
         except json.JSONDecodeError:
             return value
 
-    def _get_param_types_from_config(
-        self, param_name: str, param_config: dict
-    ) -> list[str]:
+    def _get_param_types_from_config(self, param_name: str, param_config: dict) -> list[str]:
         """
         Get parameter types from parameter configuration.
         Handles anyOf, oneOf, allOf, and direct type definitions.
@@ -242,9 +224,7 @@ class MinimaxM2ToolParser(ToolParser):
 
         return self._extract_types_from_schema(param_schema)
 
-    def _parse_single_invoke(
-        self, invoke_str: str, tools: list | None
-    ) -> ToolCall | None:
+    def _parse_single_invoke(self, invoke_str: str, tools: list | None) -> ToolCall | None:
         """Parse a single <invoke> block."""
         # Extract function name
         name_match = re.search(r"^([^>]+)", invoke_str)
@@ -279,9 +259,7 @@ class MinimaxM2ToolParser(ToolParser):
                 param_type = self._get_param_types_from_config(param_name, param_config)
 
                 # Convert value
-                param_dict[param_name] = self._convert_param_value_with_types(
-                    param_value, param_type
-                )
+                param_dict[param_name] = self._convert_param_value_with_types(param_value, param_type)
 
         return ToolCall(
             type="function",
@@ -347,9 +325,7 @@ class MinimaxM2ToolParser(ToolParser):
         """Extract tool calls from complete model output (non-streaming)."""
         # Quick check
         if self.tool_call_start_token not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             tool_calls = []
@@ -363,9 +339,7 @@ class MinimaxM2ToolParser(ToolParser):
                         tool_calls.append(tool_call)
 
             if not tool_calls:
-                return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
-                )
+                return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
             # Update prev_tool_call_arr
             self.prev_tool_call_arr.clear()
@@ -381,15 +355,11 @@ class MinimaxM2ToolParser(ToolParser):
             first_tool_idx = model_output.find(self.tool_call_start_token)
             content = model_output[:first_tool_idx] if first_tool_idx > 0 else None
 
-            return ExtractedToolCallInformation(
-                tools_called=True, tool_calls=tool_calls, content=content
-            )
+            return ExtractedToolCallInformation(tools_called=True, tool_calls=tool_calls, content=content)
 
         except Exception:
             logger.exception("Error extracting tool calls")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def extract_tool_calls_streaming(
         self,

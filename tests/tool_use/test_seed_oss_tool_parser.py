@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # ruff: noqa: E501
 
 import json
 from collections.abc import Generator
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import (
     ChatCompletionRequest,
     ChatCompletionToolsParam,
@@ -14,6 +15,7 @@ from aphrodite.endpoints.openai.protocol import (
 )
 from aphrodite.endpoints.openai.tool_parsers import SeedOssToolParser
 from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
+
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 pytestmark = pytest.mark.cpu_test

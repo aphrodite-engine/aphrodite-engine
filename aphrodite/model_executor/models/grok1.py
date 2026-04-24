@@ -33,7 +33,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import GeluAndMul
@@ -128,9 +128,7 @@ def _get_rope_parameters(config) -> dict[str, Any] | None:
 
 
 def _get_moe_renormalize(config) -> bool:
-    explicit_value = getattr(
-        config, "moe_router_renormalize", getattr(config, "moe_renormalize", None)
-    )
+    explicit_value = getattr(config, "moe_router_renormalize", getattr(config, "moe_renormalize", None))
     if explicit_value is not None:
         return bool(explicit_value)
     return not getattr(config, "residual_moe", False)
@@ -224,9 +222,7 @@ class Grok1MoE(nn.Module):
         # router_logits: (num_tokens, n_experts)
         router_logits, _ = self.gate(hidden_states)
         if self.router_logit_soft_cap > 0:
-            router_logits = self.router_logit_soft_cap * F.tanh(
-                router_logits / self.router_logit_soft_cap
-            )
+            router_logits = self.router_logit_soft_cap * F.tanh(router_logits / self.router_logit_soft_cap)
         final_hidden_states = self.experts(hidden_states, router_logits)
         return final_hidden_states.view(orig_shape)
 
@@ -290,13 +286,10 @@ class Grok1Attention(nn.Module):
         )
 
         attn_logits_soft_cap = max(getattr(config, "attn_logit_softcapping", 30.0), 0.0)
-        attn_logit_softcapping_method = getattr(
-            config, "attn_logit_softcapping_method", None
-        )
+        attn_logit_softcapping_method = getattr(config, "attn_logit_softcapping_method", None)
         if attn_logit_softcapping_method not in (None, "tanh"):
             logger.warning_once(
-                "Grok attention logit softcapping method '%s' is not "
-                "supported; falling back to default behavior.",
+                "Grok attention logit softcapping method '%s' is not supported; falling back to default behavior.",
                 attn_logit_softcapping_method,
             )
 
@@ -310,9 +303,7 @@ class Grok1Attention(nn.Module):
             logits_soft_cap=attn_logits_soft_cap,
             prefix=f"{prefix}.attn",
         )
-        self.attn_multiplier = (
-            getattr(self.config, "attn_output_multiplier", 1.0) if self.config else 1.0
-        )
+        self.attn_multiplier = getattr(self.config, "attn_output_multiplier", 1.0) if self.config else 1.0
 
     def forward(
         self,
@@ -420,9 +411,7 @@ class Grok1DecoderLayer(nn.Module):
         hidden_states, residual = self.pre_moe_norm(hidden_states, residual)
         if self.residual_moe:
             assert self.mlp is not None
-            hidden_states = (
-                self.moe_block(hidden_states) + self.mlp(hidden_states)
-            ) * self.residual_moe_scale
+            hidden_states = (self.moe_block(hidden_states) + self.mlp(hidden_states)) * self.residual_moe_scale
         else:
             hidden_states = self.moe_block(hidden_states)
         hidden_states = self.post_moe_norm(hidden_states)
@@ -471,9 +460,7 @@ class Grok1Model(nn.Module):
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: Grok1DecoderLayer(
-                config, cache_config, quant_config=quant_config, prefix=prefix
-            ),
+            lambda prefix: Grok1DecoderLayer(config, cache_config, quant_config=quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
 
@@ -509,9 +496,7 @@ class Grok1Model(nn.Module):
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
@@ -545,15 +530,11 @@ class Grok1Model(nn.Module):
             for old_pattern, new_pattern in self.weight_name_remapping.items():
                 if old_pattern in name:
                     name = name.replace(old_pattern, new_pattern)
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -563,9 +544,7 @@ class Grok1Model(nn.Module):
                     continue
                 name = name.replace(weight_name, param_name)
                 # Skip loading extra bias for GPTQ models.
-                if (
-                    name.endswith(".bias") or name.endswith("_bias")
-                ) and name not in params_dict:
+                if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                     continue
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name, self):
@@ -590,9 +569,7 @@ class Grok1Model(nn.Module):
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
                         continue
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
@@ -606,9 +583,7 @@ class Grok1Model(nn.Module):
                     break
                 else:
                     # Skip loading extra bias for GPTQ models.
-                    if (
-                        name.endswith(".bias") or name.endswith("_bias")
-                    ) and name not in params_dict:
+                    if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                         continue
                     # Skip layers on other devices.
                     if is_pp_missing_parameter(name, self):
@@ -626,9 +601,7 @@ class Grok1Model(nn.Module):
                     if name not in params_dict:
                         continue
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -685,18 +658,14 @@ class GrokBaseForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
 
-        self.output_multiplier_scale = getattr(
-            config, "output_multiplier_scale", DEFAULT_OUTPUT_MULTIPLIER_SCALE
-        )
+        self.output_multiplier_scale = getattr(config, "output_multiplier_scale", DEFAULT_OUTPUT_MULTIPLIER_SCALE)
         self.logits_processor = LogitsProcessor(
             config.vocab_size,
             scale=self.output_multiplier_scale,
             soft_cap=getattr(config, "final_logit_softcapping", None),
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -708,9 +677,7 @@ class GrokBaseForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

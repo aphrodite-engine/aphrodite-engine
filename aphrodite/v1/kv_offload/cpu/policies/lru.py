@@ -28,9 +28,7 @@ class LRUCachePolicy(CachePolicy):
             if key in self.blocks:
                 self.blocks.move_to_end(key)
 
-    def evict(
-        self, n: int, protected: set[OffloadKey]
-    ) -> list[tuple[OffloadKey, BlockStatus]] | None:
+    def evict(self, n: int, protected: set[OffloadKey]) -> list[tuple[OffloadKey, BlockStatus]] | None:
         if n == 0:
             return []
         candidates: list[tuple[OffloadKey, BlockStatus]] = []

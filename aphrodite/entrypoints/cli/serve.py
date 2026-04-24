@@ -4,6 +4,7 @@
 import argparse
 import signal
 import time
+from contextlib import suppress
 
 import torch
 import uvloop
@@ -51,10 +52,8 @@ class ServeSubcommand(CLISubcommand):
         # that surface is absent, the default compilation path fails during
         # import even for standard BF16 models, so fall back to eager mode.
         if not args.enforce_eager:
-            try:
+            with suppress(ImportError):
                 import aphrodite._C  # noqa: F401
-            except ImportError:
-                pass
             if not hasattr(torch.ops._C, "per_token_group_fp8_quant"):
                 logger.warning(
                     "Stable-libtorch quant ops are unavailable in this Aphrodite "
@@ -81,12 +80,8 @@ class ServeSubcommand(CLISubcommand):
         # Detect LB mode for defaulting api_server_count.
         # External LB: --data-parallel-external-lb or --data-parallel-rank
         # Hybrid LB: --data-parallel-hybrid-lb or --data-parallel-start-rank
-        is_external_lb = (
-            args.data_parallel_external_lb or args.data_parallel_rank is not None
-        )
-        is_hybrid_lb = (
-            args.data_parallel_hybrid_lb or args.data_parallel_start_rank is not None
-        )
+        is_external_lb = args.data_parallel_external_lb or args.data_parallel_rank is not None
+        is_hybrid_lb = args.data_parallel_hybrid_lb or args.data_parallel_start_rank is not None
 
         if is_external_lb and is_hybrid_lb:
             raise ValueError(
@@ -108,8 +103,7 @@ class ServeSubcommand(CLISubcommand):
                 args.api_server_count = args.data_parallel_size_local or 1
                 if args.api_server_count > 1:
                     logger.info(
-                        "Defaulting api_server_count to data_parallel_size_local "
-                        "(%d) for hybrid LB mode.",
+                        "Defaulting api_server_count to data_parallel_size_local (%d) for hybrid LB mode.",
                         args.api_server_count,
                     )
             else:
@@ -141,13 +135,10 @@ class ServeSubcommand(CLISubcommand):
     def validate(self, args: argparse.Namespace) -> None:
         validate_parsed_serve_args(args)
 
-    def subparser_init(
-        self, subparsers: argparse._SubParsersAction
-    ) -> FlexibleArgumentParser:
+    def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         serve_parser = subparsers.add_parser(
             self.name,
-            help="Launch a local OpenAI-compatible API server to serve LLM "
-            "completions via HTTP.",
+            help="Launch a local OpenAI-compatible API server to serve LLM completions via HTTP.",
             description=DESCRIPTION,
             usage="aphrodite serve [model_tag] [options]",
         )
@@ -168,9 +159,7 @@ def run_headless(args: argparse.Namespace):
     # Create the EngineConfig.
     engine_args = aphrodite.AsyncEngineArgs.from_cli_args(args)
     usage_context = UsageContext.OPENAI_API_SERVER
-    aphrodite_config = engine_args.create_engine_config(
-        usage_context=usage_context, headless=True
-    )
+    aphrodite_config = engine_args.create_engine_config(usage_context=usage_context, headless=True)
 
     if engine_args.data_parallel_hybrid_lb:
         raise ValueError("data_parallel_hybrid_lb is not applicable in headless mode")
@@ -216,8 +205,7 @@ def run_headless(args: argparse.Namespace):
     handshake_address = get_tcp_uri(host, port)
 
     logger.info(
-        "Launching %d data parallel engine(s) in headless mode, "
-        "with head node address %s.",
+        "Launching %d data parallel engine(s) in headless mode, with head node address %s.",
         local_engine_count,
         handshake_address,
     )
@@ -276,9 +264,7 @@ def run_multi_api_server(args: argparse.Namespace):
     aphrodite_config = engine_args.create_engine_config(usage_context=usage_context)
 
     if num_api_servers > 1 and envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING:
-        raise ValueError(
-            "APHRODITE_ALLOW_RUNTIME_LORA_UPDATING cannot be used with api_server_count > 1"
-        )
+        raise ValueError("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING cannot be used with api_server_count > 1")
 
     executor_class = Executor.get_class(aphrodite_config)
     log_stats = not engine_args.disable_log_stats
@@ -293,9 +279,12 @@ def run_multi_api_server(args: argparse.Namespace):
 
     addresses = get_engine_zmq_addresses(aphrodite_config, num_api_servers)
 
-    with launch_core_engines(
-        aphrodite_config, executor_class, log_stats, addresses, num_api_servers
-    ) as (local_engine_manager, coordinator, addresses, tensor_queue):
+    with launch_core_engines(aphrodite_config, executor_class, log_stats, addresses, num_api_servers) as (
+        local_engine_manager,
+        coordinator,
+        addresses,
+        tensor_queue,
+    ):
         # Construct common args for the APIServerProcessManager up-front.
         stats_update_address = None
         if coordinator:
@@ -328,9 +317,7 @@ def run_multi_api_server(args: argparse.Namespace):
             logger.info("Waiting up to %d seconds for processes to exit", timeout)
 
         def to_timeout(deadline: float | None) -> float | None:
-            return (
-                deadline if deadline is None else max(deadline - time.monotonic(), 0.0)
-            )
+            return deadline if deadline is None else max(deadline - time.monotonic(), 0.0)
 
         api_server_manager.shutdown(timeout=timeout)
         if local_engine_manager:

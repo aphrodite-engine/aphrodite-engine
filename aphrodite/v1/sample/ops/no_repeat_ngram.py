@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
 
 from aphrodite.utils.torch_utils import make_tensor_with_pad
@@ -14,7 +16,7 @@ def _get_ngrams(ngram_size: int, prev_input_ids: torch.Tensor) -> dict[tuple[int
     Returns:
         Dictionary mapping ngram tuples to list of tokens that followed them
     """
-    generated_ngrams = {}
+    generated_ngrams: dict[tuple[int, ...], list[int]] = {}
     gen_tokens = prev_input_ids.tolist()
 
     for i in range(len(gen_tokens) - ngram_size + 1):
@@ -107,9 +109,7 @@ def no_repeat_ngram(
                 output_tokens = output_tokens_t[i]
                 output_tokens = output_tokens[output_tokens != vocab_size]
             else:
-                output_tokens = torch.empty(
-                    (0,), dtype=torch.int64, device=logits.device
-                )
+                output_tokens = torch.empty((0,), dtype=torch.int64, device=logits.device)
             input_ids = torch.cat([prompt_tokens, output_tokens])
         else:
             if output_tokens_t is None or i >= output_tokens_t.shape[0]:

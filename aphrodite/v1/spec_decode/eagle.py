@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 
 from aphrodite.config import (
-    CUDAGraphMode,
     AphroditeConfig,
+    CUDAGraphMode,
     get_layers_from_aphrodite_config,
     replace,
 )
@@ -88,9 +88,7 @@ class SpecDecodeBaseProposer:
         # DFlash always uses parallel drafting (all tokens in one pass),
         # but has an additional slot for the next_token_id (does not shift like EAGLE)
         self.parallel_drafting: bool = self.speculative_config.parallel_drafting
-        self.extra_slots_per_request = (
-            1 if not self.parallel_drafting else self.num_speculative_tokens
-        )
+        self.extra_slots_per_request = 1 if not self.parallel_drafting else self.num_speculative_tokens
         self.net_num_new_slots_per_request = self.extra_slots_per_request - (
             1 if (self.pass_hidden_states_to_model and self.method != "dflash") else 0
         )
@@ -100,9 +98,7 @@ class SpecDecodeBaseProposer:
         self.parallel_drafting_hidden_state_tensor: torch.Tensor | None = None
         if self.parallel_drafting:
             self._init_parallel_drafting_params()
-        self.use_local_argmax_reduction: bool = (
-            self.speculative_config.use_local_argmax_reduction
-        )
+        self.use_local_argmax_reduction: bool = self.speculative_config.use_local_argmax_reduction
 
         self.max_batch_size = aphrodite_config.scheduler_config.max_num_seqs
         self.max_num_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
@@ -114,15 +110,11 @@ class SpecDecodeBaseProposer:
 
         # Multi-modal data support
         self.mm_registry = MULTIMODAL_REGISTRY
-        self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(
-            aphrodite_config.model_config
-        )
+        self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(aphrodite_config.model_config)
 
         self.draft_attn_groups: list[AttentionGroup] = []
         self.kv_cache_gid: int = -1
-        self.eagle3_use_aux_hidden_state: bool = (
-            self._get_eagle3_use_aux_hidden_state_from_config()
-        )
+        self.eagle3_use_aux_hidden_state: bool = self._get_eagle3_use_aux_hidden_state_from_config()
 
         self.compilation_config = self.aphrodite_config.compilation_config
 
@@ -133,9 +125,7 @@ class SpecDecodeBaseProposer:
         self.cudagraph_dispatcher = CudagraphDispatcher(self.aphrodite_config)
 
         # persistent buffers for cuda graph
-        self.input_ids = torch.zeros(
-            self.max_num_tokens, dtype=torch.int32, device=device
-        )
+        self.input_ids = torch.zeros(self.max_num_tokens, dtype=torch.int32, device=device)
         # Use draft model's M-RoPE setting, not target model's
         # Draft models may be text-only even if target is multimodal
         self.uses_mrope = self.draft_model_config.uses_mrope
@@ -152,9 +142,7 @@ class SpecDecodeBaseProposer:
             # identical position IDs, making M-RoPE functionally equivalent to
             # 1D-RoPE.
             # See page 5 of https://arxiv.org/abs/2409.12191
-            self.mrope_positions = torch.zeros(
-                (3, self.max_positions + 1), dtype=torch.int64, device=device
-            )
+            self.mrope_positions = torch.zeros((3, self.max_positions + 1), dtype=torch.int64, device=device)
         elif self.uses_xdrope_dim > 0 and self.draft_uses_xdrope_dim > 0:
             self.xdrope_positions = torch.zeros(
                 (self.uses_xdrope_dim, self.max_positions + 1),
@@ -168,9 +156,7 @@ class SpecDecodeBaseProposer:
                 dtype=torch.int64,
                 device=device,
             )
-        self.hidden_states = torch.zeros(
-            (self.max_num_tokens, self.hidden_size), dtype=self.dtype, device=device
-        )
+        self.hidden_states = torch.zeros((self.max_num_tokens, self.hidden_size), dtype=self.dtype, device=device)
 
         # Will be set when we initialize the attention backend
         self.block_size: int = -1
@@ -178,9 +164,7 @@ class SpecDecodeBaseProposer:
         # We need +1 here because the arange is used to set query_start_loc,
         # which has one more element than batch_size.
         max_num_slots_for_arange = max(self.max_batch_size + 1, self.max_num_tokens)
-        self.arange = torch.arange(
-            max_num_slots_for_arange, device=device, dtype=torch.int32
-        )
+        self.arange = torch.arange(max_num_slots_for_arange, device=device, dtype=torch.int32)
 
         if self.needs_extra_input_slots:
             self._raise_if_padded_drafter_batch_disabled()
@@ -192,15 +176,11 @@ class SpecDecodeBaseProposer:
         if self.needs_extra_input_slots:
             # For draft models and parallel drafting, we need to keep track of
             # which tokens are rejected to update the slot mapping with padding slots.
-            self.is_rejected_token_mask = torch.zeros(
-                (self.max_num_tokens,), dtype=torch.bool, device=device
-            )
+            self.is_rejected_token_mask = torch.zeros((self.max_num_tokens,), dtype=torch.bool, device=device)
             # For parallel drafting, we also need to keep track of which tokens
             # are parallel-padding tokens used to sample at later positions.
             # We populate this tensor even when using draft models for simplicity.
-            self.is_masked_token_mask = torch.zeros(
-                (self.max_num_tokens,), dtype=torch.bool, device=device
-            )
+            self.is_masked_token_mask = torch.zeros((self.max_num_tokens,), dtype=torch.bool, device=device)
 
         self.inputs_embeds = torch.zeros(
             (self.max_num_tokens, self.inputs_embeds_size),
@@ -246,9 +226,7 @@ class SpecDecodeBaseProposer:
             # attention_config still works because the backend module is loaded
             # directly when selected, not through this auto-discovery path.
             # Check if backend module exists to allow explicit selection
-            if find_spec(
-                AttentionBackendEnum.ROCM_AITER_FA.get_path(include_classname=False)
-            ):
+            if find_spec(AttentionBackendEnum.ROCM_AITER_FA.get_path(include_classname=False)):
                 from aphrodite.v1.attention.backends.rocm_aiter_fa import (
                     AiterFlashAttentionMetadata,
                 )
@@ -281,12 +259,8 @@ class SpecDecodeBaseProposer:
         self.cu_drafts_per_level = [num_drafts_per_level[0]]
         self.child_drafts_per_level = [num_drafts_per_level[0]]
         for level in range(1, tree_depth):
-            self.cu_drafts_per_level.append(
-                self.cu_drafts_per_level[-1] + num_drafts_per_level[level]
-            )
-            self.child_drafts_per_level.append(
-                num_drafts_per_level[level] // num_drafts_per_level[level - 1]
-            )
+            self.cu_drafts_per_level.append(self.cu_drafts_per_level[-1] + num_drafts_per_level[level])
+            self.child_drafts_per_level.append(num_drafts_per_level[level] // num_drafts_per_level[level - 1])
         # Precompute draft position offsets in flattened tree.
         self.tree_draft_pos_offsets = torch.arange(
             1, len(self.tree_choices) + 1, device=device, dtype=torch.int32
@@ -303,15 +277,13 @@ class SpecDecodeBaseProposer:
     def _raise_if_multimodal(self):
         if self.supports_mm_inputs:
             raise NotImplementedError(
-                "Speculative Decoding with draft models or parallel drafting "
-                "does not support multimodal models yet"
+                "Speculative Decoding with draft models or parallel drafting does not support multimodal models yet"
             )
 
     def _raise_if_mrope(self):
         if self.draft_model_config.uses_mrope:
             raise NotImplementedError(
-                "Speculative Decoding with draft models or parallel drafting "
-                "does not support M-RoPE yet"
+                "Speculative Decoding with draft models or parallel drafting does not support M-RoPE yet"
             )
 
     def _init_parallel_drafting_params(self):
@@ -384,11 +356,10 @@ class SpecDecodeBaseProposer:
         Eagle only supports PIECEWISE cudagraphs (via mixed_mode).
         This should be called after adjust_cudagraph_sizes_for_spec_decode.
         """
-        if (
-            not self.speculative_config.enforce_eager
-            and cudagraph_mode.mixed_mode()
-            in [CUDAGraphMode.PIECEWISE, CUDAGraphMode.FULL]
-        ):
+        if not self.speculative_config.enforce_eager and cudagraph_mode.mixed_mode() in [
+            CUDAGraphMode.PIECEWISE,
+            CUDAGraphMode.FULL,
+        ]:
             eagle_cudagraph_mode = CUDAGraphMode.PIECEWISE
         else:
             eagle_cudagraph_mode = CUDAGraphMode.NONE
@@ -416,9 +387,7 @@ class SpecDecodeBaseProposer:
         sampling_metadata: SamplingMetadata,
         mm_embed_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
         num_rejected_tokens_gpu: torch.Tensor | None = None,
-        slot_mappings: dict[str, torch.Tensor]
-        | list[dict[str, torch.Tensor]]
-        | None = None,
+        slot_mappings: dict[str, torch.Tensor] | list[dict[str, torch.Tensor]] | None = None,
     ) -> torch.Tensor:
         batch_size = common_attn_metadata.batch_size()
 
@@ -431,29 +400,25 @@ class SpecDecodeBaseProposer:
                     DFlashQwen3ForCausalLM,
                 ),
             )
-            target_hidden_states = self.model.combine_hidden_states(
-                target_hidden_states
-            )
+            target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
             assert target_hidden_states.shape[-1] == self.hidden_size
 
-        num_tokens, token_indices_to_sample, common_attn_metadata = (
-            self.set_inputs_first_pass(
-                target_token_ids=target_token_ids,
-                next_token_ids=next_token_ids,
-                target_positions=target_positions,
-                target_hidden_states=target_hidden_states,
-                token_indices_to_sample=token_indices_to_sample,
-                cad=common_attn_metadata,
-                num_rejected_tokens_gpu=num_rejected_tokens_gpu,
-            )
+        num_tokens, token_indices_to_sample, common_attn_metadata = self.set_inputs_first_pass(
+            target_token_ids=target_token_ids,
+            next_token_ids=next_token_ids,
+            target_positions=target_positions,
+            target_hidden_states=target_hidden_states,
+            token_indices_to_sample=token_indices_to_sample,
+            cad=common_attn_metadata,
+            num_rejected_tokens_gpu=num_rejected_tokens_gpu,
         )
 
-        per_group_attn_metadata, per_layer_attn_metadata = (
-            self.build_per_group_and_layer_attn_metadata(common_attn_metadata)
+        per_group_attn_metadata, per_layer_attn_metadata = self.build_per_group_and_layer_attn_metadata(
+            common_attn_metadata
         )
 
-        cudagraph_runtime_mode, num_input_tokens, num_tokens_across_dp = (
-            self._determine_batch_execution_and_padding(num_tokens)
+        cudagraph_runtime_mode, num_input_tokens, num_tokens_across_dp = self._determine_batch_execution_and_padding(
+            num_tokens
         )
 
         model_kwargs, slot_mapping_size = self.build_model_inputs_first_pass(
@@ -466,9 +431,7 @@ class SpecDecodeBaseProposer:
             num_tokens=num_input_tokens,
             num_tokens_across_dp=num_tokens_across_dp,
             cudagraph_runtime_mode=cudagraph_runtime_mode,
-            slot_mapping=self._get_slot_mapping(
-                slot_mapping_size, common_attn_metadata.slot_mapping
-            ),
+            slot_mapping=self._get_slot_mapping(slot_mapping_size, common_attn_metadata.slot_mapping),
         ):
             ret_hidden_states = self.model(**model_kwargs)
             if not self.model_returns_tuple():
@@ -519,16 +482,14 @@ class SpecDecodeBaseProposer:
         # Generate the remaining draft tokens.
         draft_token_ids_list = [draft_token_ids]
 
-        cudagraph_runtime_mode, input_batch_size, batch_size_across_dp = (
-            self._determine_batch_execution_and_padding(batch_size)
+        cudagraph_runtime_mode, input_batch_size, batch_size_across_dp = self._determine_batch_execution_and_padding(
+            batch_size
         )
 
         common_attn_metadata.num_actual_tokens = batch_size
         common_attn_metadata.max_query_len = 1
         common_attn_metadata.query_start_loc = self.arange[: batch_size + 1]
-        common_attn_metadata.query_start_loc_cpu = torch.from_numpy(
-            self.token_arange_np[: batch_size + 1]
-        ).clone()
+        common_attn_metadata.query_start_loc_cpu = torch.from_numpy(self.token_arange_np[: batch_size + 1]).clone()
 
         # In padded drafter batch, we need to adjust the sequence lengths
         # to remove the "padding" (i.e. rejected tokens).
@@ -569,23 +530,17 @@ class SpecDecodeBaseProposer:
             )
             common_attn_metadata.slot_mapping = self._slot_mapping_buffer[:batch_size]
             if self.uses_mrope:
-                self.mrope_positions[1:, :batch_size] = self.mrope_positions[
-                    0, :batch_size
-                ]
+                self.mrope_positions[1:, :batch_size] = self.mrope_positions[0, :batch_size]
                 positions = self.mrope_positions[:, :batch_size]
             elif self.uses_xdrope_dim > 0 and self.draft_uses_xdrope_dim > 0:
-                self.xdrope_positions[1:, :batch_size] = self.xdrope_positions[
-                    0, :batch_size
-                ]
+                self.xdrope_positions[1:, :batch_size] = self.xdrope_positions[0, :batch_size]
                 positions = self.xdrope_positions[0, :batch_size]
             else:
                 positions = self.positions[:batch_size]
             # Increment the maximum sequence length. We increment max_seq_len
             # unconditionally even though some seq_lens may have been capped above,
             # as max_seq_len serves as an upper bound for sequence lengths.
-            common_attn_metadata.max_seq_len = min(
-                common_attn_metadata.max_seq_len + 1, self.max_model_len
-            )
+            common_attn_metadata.max_seq_len = min(common_attn_metadata.max_seq_len + 1, self.max_model_len)
 
             # Also update the CPU-side shadow; NOTE: this is hacky and should be
             # removed in when common_attn_metadata.seq_lens_cpu is deprecated.
@@ -686,17 +641,11 @@ class SpecDecodeBaseProposer:
             batch_size = cad.batch_size()
             # Since we might have to copy a lot of data for prefills, we select the
             # block size based on the max query length and limit to max 256 slots/block.
-            max_num_tokens_per_request = (
-                cad.max_query_len + self.net_num_new_slots_per_request
-            )
+            max_num_tokens_per_request = cad.max_query_len + self.net_num_new_slots_per_request
             BLOCK_SIZE_TOKENS = min(256, next_power_of_2(max_num_tokens_per_request))
-            num_blocks = (
-                max_num_tokens_per_request + BLOCK_SIZE_TOKENS - 1
-            ) // BLOCK_SIZE_TOKENS
+            num_blocks = (max_num_tokens_per_request + BLOCK_SIZE_TOKENS - 1) // BLOCK_SIZE_TOKENS
             total_num_input_tokens = target_token_ids.shape[0]
-            total_num_output_tokens = total_num_input_tokens + (
-                self.net_num_new_slots_per_request * batch_size
-            )
+            total_num_output_tokens = total_num_input_tokens + (self.net_num_new_slots_per_request * batch_size)
 
             token_indices_to_sample = torch.empty(
                 batch_size * self.extra_slots_per_request,
@@ -705,9 +654,7 @@ class SpecDecodeBaseProposer:
             )
 
             # Destination indices to write target_hidden_states into drafting buffer.
-            out_hidden_state_mapping = torch.empty(
-                total_num_input_tokens, dtype=torch.int32, device=self.device
-            )
+            out_hidden_state_mapping = torch.empty(total_num_input_tokens, dtype=torch.int32, device=self.device)
 
             # Kernel grid: one program per request (row)
             grid = (batch_size, num_blocks)
@@ -759,9 +706,7 @@ class SpecDecodeBaseProposer:
             new_slot_mapping = compute_new_slot_mapping(
                 cad=cad,
                 new_positions=self.positions[:total_num_output_tokens],
-                is_rejected_token_mask=self.is_rejected_token_mask[
-                    :total_num_output_tokens
-                ],
+                is_rejected_token_mask=self.is_rejected_token_mask[:total_num_output_tokens],
                 block_size=self.block_size,
                 num_new_tokens=self.net_num_new_slots_per_request,
                 max_model_len=self.max_model_len,
@@ -853,9 +798,7 @@ class SpecDecodeBaseProposer:
                 seq_len = req_state.num_computed_tokens + num_scheduled_tokens[req_id]
                 next_token_id = req_state.get_token_id(seq_len)
             next_token_ids.append(next_token_id)
-        next_token_ids = torch.tensor(
-            next_token_ids, dtype=torch.int32, device=self.input_ids.device
-        )
+        next_token_ids = torch.tensor(next_token_ids, dtype=torch.int32, device=self.input_ids.device)
         return next_token_ids
 
     def prepare_next_token_ids_padded(
@@ -876,10 +819,7 @@ class SpecDecodeBaseProposer:
         num_reqs = gpu_input_batch.num_reqs
         seq_lens_list = (gpu_input_batch.num_tokens_no_spec[:num_reqs] - 1).tolist()
         self.backup_next_token_ids.np[:num_reqs] = np.array(
-            [
-                requests[gpu_input_batch.req_ids[i]].get_token_id(seq_lens_list[i])
-                for i in range(num_reqs)
-            ],
+            [requests[gpu_input_batch.req_ids[i]].get_token_id(seq_lens_list[i]) for i in range(num_reqs)],
             dtype=np.int32,
         )
         self.backup_next_token_ids.copy_to_gpu(num_reqs)
@@ -931,12 +871,8 @@ class SpecDecodeBaseProposer:
         num_reqs = common_attn_metadata.num_reqs
         device = valid_sampled_tokens_count.device
 
-        token_indices_to_sample = torch.empty(
-            (num_reqs,), dtype=torch.int32, device=device
-        )
-        num_rejected_tokens_gpu = torch.empty(
-            (num_reqs,), dtype=torch.int32, device=device
-        )
+        token_indices_to_sample = torch.empty((num_reqs,), dtype=torch.int32, device=device)
+        num_rejected_tokens_gpu = torch.empty((num_reqs,), dtype=torch.int32, device=device)
 
         grid = (num_reqs,)
         eagle_prepare_inputs_padded_kernel[grid](
@@ -985,9 +921,7 @@ class SpecDecodeBaseProposer:
         # [num_tokens, hidden_size]
         hidden_states: torch.Tensor,
         common_attn_metadata: CommonAttentionMetadata,
-        slot_mappings: dict[str, torch.Tensor]
-        | list[dict[str, torch.Tensor]]
-        | None = None,
+        slot_mappings: dict[str, torch.Tensor] | list[dict[str, torch.Tensor]] | None = None,
     ) -> list[torch.Tensor]:
         tree_attn_metadata_builder = self.draft_attn_groups[0].get_metadata_builder()
         assert isinstance(tree_attn_metadata_builder, TreeAttentionMetadataBuilder)
@@ -999,26 +933,16 @@ class SpecDecodeBaseProposer:
         if num_children == 1:
             draft_token_ids = logits.argmax(dim=-1).view(batch_size, -1)
         else:
-            draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(
-                batch_size, -1
-            )
+            draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(batch_size, -1)
         draft_token_ids_list = [draft_token_ids]
         draft_hidden_states = hidden_states.view(batch_size, 1, -1)
 
         # Initialize empty tensors for concatenation with the level outputs.
-        tree_input_ids = torch.empty(
-            0, device=self.input_ids.device, dtype=self.input_ids.dtype
-        )
-        tree_positions = torch.empty(
-            0, device=self.positions.device, dtype=self.positions.dtype
-        )
-        tree_hidden_states = torch.empty(
-            0, device=self.hidden_states.device, dtype=self.hidden_states.dtype
-        )
+        tree_input_ids = torch.empty(0, device=self.input_ids.device, dtype=self.input_ids.dtype)
+        tree_positions = torch.empty(0, device=self.positions.device, dtype=self.positions.dtype)
+        tree_hidden_states = torch.empty(0, device=self.hidden_states.device, dtype=self.hidden_states.dtype)
         # Precompute the draft token positions.
-        flattened_draft_positions = (
-            positions.view(batch_size, -1) + self.tree_draft_pos_offsets[:batch_size, :]
-        )
+        flattened_draft_positions = positions.view(batch_size, -1) + self.tree_draft_pos_offsets[:batch_size, :]
         tree_depth = len(self.cu_drafts_per_level)
         for level in range(tree_depth - 1):
             # Get draft positions for RoPE.
@@ -1034,22 +958,16 @@ class SpecDecodeBaseProposer:
 
             if level_num_drafts > 1:
                 # Repeat the positions for each draft at this level.
-                draft_positions = draft_positions.repeat_interleave(
-                    level_num_drafts, dim=1
-                )
+                draft_positions = draft_positions.repeat_interleave(level_num_drafts, dim=1)
 
             if num_children > 1:
                 # Repeat draft hidden states for each child.
-                draft_hidden_states = draft_hidden_states.repeat_interleave(
-                    num_children, dim=1
-                )
+                draft_hidden_states = draft_hidden_states.repeat_interleave(num_children, dim=1)
 
             # Concatenate the draft tokens, positions, and hidden states.
             tree_input_ids = torch.cat([tree_input_ids, draft_token_ids], dim=1)
             tree_positions = torch.cat([tree_positions, draft_positions], dim=1)
-            tree_hidden_states = torch.cat(
-                [tree_hidden_states, draft_hidden_states], dim=1
-            )
+            tree_hidden_states = torch.cat([tree_hidden_states, draft_hidden_states], dim=1)
 
             # Build new attention metadata for the next level of drafts.
             # This is necessary to support tree attention.
@@ -1072,9 +990,7 @@ class SpecDecodeBaseProposer:
                     per_layer_attn_metadata[layer_name] = attn_metadata
 
             # Consider max model length.
-            attn_metadata.max_seq_len = min(
-                attn_metadata.max_seq_len, self.max_model_len
-            )
+            attn_metadata.max_seq_len = min(attn_metadata.max_seq_len, self.max_model_len)
             # For the requests that exceed the max model length, we set the
             # sequence length to 1 to minimize their overheads in attention.
             attn_metadata.seq_lens.masked_fill_(exceeds_max_model_len, 1)
@@ -1098,9 +1014,7 @@ class SpecDecodeBaseProposer:
             self.positions[:num_tokens] = tree_positions.view(-1)
             self.hidden_states[:num_tokens] = tree_hidden_states.view(num_tokens, -1)
 
-            cudagraph_runtime_mode, batch_desc = self.cudagraph_dispatcher.dispatch(
-                num_tokens
-            )
+            cudagraph_runtime_mode, batch_desc = self.cudagraph_dispatcher.dispatch(num_tokens)
             num_input_tokens = batch_desc.num_tokens
             # Run the model.
             with set_forward_context(
@@ -1108,9 +1022,7 @@ class SpecDecodeBaseProposer:
                 self.aphrodite_config,
                 num_tokens=num_input_tokens,
                 cudagraph_runtime_mode=cudagraph_runtime_mode,
-                slot_mapping=self._get_slot_mapping(
-                    num_input_tokens, attn_metadata.slot_mapping
-                ),
+                slot_mapping=self._get_slot_mapping(num_input_tokens, attn_metadata.slot_mapping),
             ):
                 last_hidden_states, hidden_states = self.model(
                     input_ids=self.input_ids[:num_input_tokens],
@@ -1120,26 +1032,20 @@ class SpecDecodeBaseProposer:
                 )
 
             # Get the output hidden states for the draft tokens.
-            draft_hidden_states = hidden_states[:num_tokens].view(
-                batch_size, query_len, -1
-            )[:, -level_num_drafts:]
-            draft_last_hidden_states = last_hidden_states[:num_tokens].view(
-                batch_size, query_len, -1
-            )[:, -level_num_drafts:]
+            draft_hidden_states = hidden_states[:num_tokens].view(batch_size, query_len, -1)[:, -level_num_drafts:]
+            draft_last_hidden_states = last_hidden_states[:num_tokens].view(batch_size, query_len, -1)[
+                :, -level_num_drafts:
+            ]
 
             # Get the output logits for the draft tokens.
-            logits = self.model.compute_logits(
-                draft_last_hidden_states.reshape(batch_size * level_num_drafts, -1)
-            )
+            logits = self.model.compute_logits(draft_last_hidden_states.reshape(batch_size * level_num_drafts, -1))
 
             # Sample a draft token for each child at the next tree level.
             num_children = self.child_drafts_per_level[level + 1]
             if num_children == 1:
                 draft_token_ids = logits.argmax(dim=-1).view(batch_size, -1)
             else:
-                draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(
-                    batch_size, -1
-                )
+                draft_token_ids = torch.topk(logits, num_children, dim=-1).indices.view(batch_size, -1)
             draft_token_ids_list.append(draft_token_ids)
 
             # Update the # drafts counters for the next tree level.
@@ -1176,8 +1082,7 @@ class SpecDecodeBaseProposer:
         #                 q1 + q2, q1 + q2 + 1, ..., q1 + q2 + q3 - n3 - 1]
 
         num_rejected_tokens = [
-            n + 1 - len(sampled_token_ids[i]) if n > 0 else 0
-            for i, n in enumerate(num_draft_tokens)
+            n + 1 - len(sampled_token_ids[i]) if n > 0 else 0 for i, n in enumerate(num_draft_tokens)
         ]
         num_rejected_tokens = torch.tensor(num_rejected_tokens, dtype=torch.int32)
 
@@ -1207,23 +1112,17 @@ class SpecDecodeBaseProposer:
         # [0, 2, 6, 9] ->
         # [0, 0, 2, 2, 2, 2, 6, 6, 6]
         #  _r1_  ____r2____  ___r3__
-        new_query_start_locs_expanded = np.repeat(
-            new_query_start_loc_np[:-1], new_num_tokens_per_req_np
-        )
+        new_query_start_locs_expanded = np.repeat(new_query_start_loc_np[:-1], new_num_tokens_per_req_np)
         # [0, 1, 2, 3, 4, 5, 6, 7, 8] ->
         # [0, 1, 0, 1, 2, 3, 0, 1, 2]
         #  _r1_  ____r2____  ___r3__
-        token_offsets = (
-            self.token_arange_np[:total_num_tokens] - new_query_start_locs_expanded
-        )
+        token_offsets = self.token_arange_np[:total_num_tokens] - new_query_start_locs_expanded
 
         # Expand starting positions to match token pattern
         # [0, q1, q1 + q2] ->
         # [0, 0, q1, q1, q1, q1, q1 + q2, q1 + q2, q1 + q2]
         #  _r1_  _____r2_______  ___________r3____________
-        old_query_start_locs_expanded = np.repeat(
-            query_start_loc_cpu[:-1].numpy(), new_num_tokens_per_req_np
-        )
+        old_query_start_locs_expanded = np.repeat(query_start_loc_cpu[:-1].numpy(), new_num_tokens_per_req_np)
         # Final token indices are:
         # [0, 1,                                // req 1
         #  q1 + 0, q1 + 1, q1 + 2, q1 + 3,       // req 2
@@ -1300,9 +1199,7 @@ class SpecDecodeBaseProposer:
             self.aphrodite_config,
             AttentionLayerBase,  # type: ignore[type-abstract]
         )
-        self._draft_attn_layer_names = (
-            set(all_attn_layers.keys()) - target_attn_layer_names
-        )
+        self._draft_attn_layer_names = set(all_attn_layers.keys()) - target_attn_layer_names
 
         if self.supports_mm_inputs:
             # Even if the target model is multimodal, we can also use
@@ -1311,10 +1208,7 @@ class SpecDecodeBaseProposer:
                 dummy_input_ids = torch.tensor([[1]], device=self.input_ids.device)
                 self.model.embed_input_ids(dummy_input_ids, multimodal_embeddings=None)
             except (NotImplementedError, AttributeError, TypeError):
-                logger.warning(
-                    "Draft model does not support multimodal inputs, "
-                    "falling back to text-only mode"
-                )
+                logger.warning("Draft model does not support multimodal inputs, falling back to text-only mode")
                 self.supports_mm_inputs = False
 
         if supports_multimodal(target_model):
@@ -1333,20 +1227,12 @@ class SpecDecodeBaseProposer:
             ]:
                 self.model.config.image_token_index = target_model.config.image_token_id
             elif self.get_model_name(target_model) == "PixtralForConditionalGeneration":
-                self.model.config.image_token_index = (
-                    target_model.config.vision_config.image_token_id
-                )
+                self.model.config.image_token_index = target_model.config.vision_config.image_token_id
             elif self.get_model_name(target_model) == "KimiK25ForConditionalGeneration":
-                self.model.config.image_token_index = (
-                    target_model.config.media_placeholder_token_id
-                )
+                self.model.config.image_token_index = target_model.config.media_placeholder_token_id
             else:
-                self.model.config.image_token_index = (
-                    target_model.config.image_token_index
-                )
-            target_language_model = cast(
-                SupportsMultiModal, target_model
-            ).get_language_model()
+                self.model.config.image_token_index = target_model.config.image_token_index
+            target_language_model = cast(SupportsMultiModal, target_model).get_language_model()
         else:
             target_language_model = target_model
 
@@ -1362,9 +1248,7 @@ class SpecDecodeBaseProposer:
             if self.eagle3_use_aux_hidden_state:
                 # EAGLE3: mask_hidden stores all aux hidden states,
                 # project through combine_hidden_states
-                self.parallel_drafting_hidden_state_tensor.copy_(
-                    self.model.combine_hidden_states(flat_mask)
-                )
+                self.parallel_drafting_hidden_state_tensor.copy_(self.model.combine_hidden_states(flat_mask))
             else:
                 self.parallel_drafting_hidden_state_tensor.copy_(flat_mask)
 
@@ -1384,9 +1268,7 @@ class SpecDecodeBaseProposer:
             elif hasattr(inner_model, "embedding"):
                 target_embed_tokens = inner_model.embedding
             else:
-                raise AttributeError(
-                    "Target model does not have 'embed_tokens' or 'embedding' attribute"
-                )
+                raise AttributeError("Target model does not have 'embed_tokens' or 'embedding' attribute")
 
             share_embeddings = False
             if hasattr(self.model, "has_own_embed_tokens"):
@@ -1422,20 +1304,14 @@ class SpecDecodeBaseProposer:
             else:
                 # MTP model
                 share_embeddings = True
-                logger.info(
-                    "Detected MTP model. "
-                    "Sharing target model embedding weights with the draft model."
-                )
+                logger.info("Detected MTP model. Sharing target model embedding weights with the draft model.")
 
             if share_embeddings:
                 if hasattr(self.model.model, "embed_tokens"):
                     del self.model.model.embed_tokens
                 self.model.model.embed_tokens = target_embed_tokens
         else:
-            logger.info(
-                "The draft model's vocab embedding will be loaded separately"
-                " from the target model."
-            )
+            logger.info("The draft model's vocab embedding will be loaded separately from the target model.")
 
     def _maybe_share_lm_head(self, target_language_model: nn.Module) -> None:
         """
@@ -1478,10 +1354,7 @@ class SpecDecodeBaseProposer:
         else:
             # MTP model
             share_lm_head = True
-            logger.info(
-                "Detected MTP model. "
-                "Sharing target model lm_head weights with the draft model."
-            )
+            logger.info("Detected MTP model. Sharing target model lm_head weights with the draft model.")
 
         if share_lm_head and hasattr(target_language_model, "lm_head"):
             if hasattr(self.model, "lm_head"):
@@ -1502,9 +1375,7 @@ class SpecDecodeBaseProposer:
                     if sh is not None and hasattr(sh, "head"):
                         del sh.head
                         sh.head = target_language_model.lm_head
-                        logger.info(
-                            "Shared target model lm_head with MTP shared_head.head."
-                        )
+                        logger.info("Shared target model lm_head with MTP shared_head.head.")
 
         if self.use_local_argmax_reduction:
             if not hasattr(self.model, "get_top_tokens"):
@@ -1515,10 +1386,7 @@ class SpecDecodeBaseProposer:
                 )
             # Warn if draft model has vocab remapping, which forces fallback
             # to the full-logits path (negating the optimization).
-            if (
-                hasattr(self.model, "draft_id_to_target_id")
-                and self.model.draft_id_to_target_id is not None
-            ):
+            if hasattr(self.model, "draft_id_to_target_id") and self.model.draft_id_to_target_id is not None:
                 logger.warning(
                     "use_local_argmax_reduction is enabled but draft model "
                     "uses draft_id_to_target_id vocab remapping. The "
@@ -1542,14 +1410,10 @@ class SpecDecodeBaseProposer:
         # FIXME: when using tree-based specdec, adjust number of forward-passes
         # according to the depth of the tree.
         only_one_forward_pass = is_graph_capturing or self.parallel_drafting
-        for fwd_idx in range(
-            1 if only_one_forward_pass else self.num_speculative_tokens
-        ):
+        for fwd_idx in range(1 if only_one_forward_pass else self.num_speculative_tokens):
             if fwd_idx <= 1:
                 cudagraph_runtime_mode, num_input_tokens, num_tokens_across_dp = (
-                    self._determine_batch_execution_and_padding(
-                        num_tokens, use_cudagraphs=use_cudagraphs
-                    )
+                    self._determine_batch_execution_and_padding(num_tokens, use_cudagraphs=use_cudagraphs)
                 )
 
             # Make sure to use EAGLE's own buffer during cudagraph capture.
@@ -1613,17 +1477,9 @@ class SpecDecodeBaseProposer:
         for id, kv_cache_group in enumerate(kv_cache_config.kv_cache_groups):
             for layer_name in kv_cache_group.layer_names:
                 kv_cache_groups[layer_name] = id
-        assert (
-            len(
-                set(
-                    [
-                        kv_cache_groups[layer_name]
-                        for layer_name in self._draft_attn_layer_names
-                    ]
-                )
-            )
-            == 1
-        ), "All drafting layers should belong to the same kv cache group"
+        assert len(set([kv_cache_groups[layer_name] for layer_name in self._draft_attn_layer_names])) == 1, (
+            "All drafting layers should belong to the same kv cache group"
+        )
 
     def initialize_attn_backend(
         self,
@@ -1656,14 +1512,11 @@ class SpecDecodeBaseProposer:
                 if backend_key not in attention_groups:
                     layer_kv_cache_spec = kv_cache_spec
                     if isinstance(layer_kv_cache_spec, UniformTypeKVCacheSpecs):
-                        layer_kv_cache_spec = layer_kv_cache_spec.kv_cache_specs[
-                            layer_name
-                        ]
+                        layer_kv_cache_spec = layer_kv_cache_spec.kv_cache_specs[layer_name]
 
                     kernel_block_size = (
                         kernel_block_sizes[self.kv_cache_gid]
-                        if kernel_block_sizes is not None
-                        and self.kv_cache_gid < len(kernel_block_sizes)
+                        if kernel_block_sizes is not None and self.kv_cache_gid < len(kernel_block_sizes)
                         else None
                     )
                     attn_group = AttentionGroup(
@@ -1682,9 +1535,7 @@ class SpecDecodeBaseProposer:
                     attention_groups[backend_key].layer_names.append(layer_name)
 
         self.draft_attn_groups = list(attention_groups.values())
-        self.block_size = (
-            self.draft_attn_groups[0].get_metadata_builder().kv_cache_spec.block_size
-        )
+        self.block_size = self.draft_attn_groups[0].get_metadata_builder().kv_cache_spec.block_size
         logger.debug("Using block size %d for drafting layers", self.block_size)
 
     def _determine_batch_execution_and_padding(
@@ -1703,14 +1554,12 @@ class SpecDecodeBaseProposer:
         # TODO(Flechman): support DBO ubatching
         should_ubatch, num_tokens_across_dp = False, None
         if self.aphrodite_config.parallel_config.data_parallel_size > 1:
-            should_ubatch, num_tokens_across_dp, synced_cudagraph_mode = (
-                coordinate_batch_across_dp(
-                    num_tokens_unpadded=num_tokens,
-                    parallel_config=self.aphrodite_config.parallel_config,
-                    allow_microbatching=False,
-                    num_tokens_padded=num_tokens_padded,
-                    cudagraph_mode=cudagraph_mode.value,
-                )
+            should_ubatch, num_tokens_across_dp, synced_cudagraph_mode = coordinate_batch_across_dp(
+                num_tokens_unpadded=num_tokens,
+                parallel_config=self.aphrodite_config.parallel_config,
+                allow_microbatching=False,
+                num_tokens_padded=num_tokens_padded,
+                cudagraph_mode=cudagraph_mode.value,
             )
             assert not should_ubatch, "DBO ubatching not implemented for EAGLE"
 

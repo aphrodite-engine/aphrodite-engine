@@ -45,10 +45,7 @@ class CPUOffloadingManager(OffloadingManager):
         self.events: list[OffloadingEvent] | None = [] if enable_events else None
         policy_cls = _CACHE_POLICIES.get(cache_policy)
         if policy_cls is None:
-            raise ValueError(
-                f"Unknown cache policy: {cache_policy!r}. "
-                f"Supported: {list(_CACHE_POLICIES)}"
-            )
+            raise ValueError(f"Unknown cache policy: {cache_policy!r}. Supported: {list(_CACHE_POLICIES)}")
         self._policy: CachePolicy = policy_cls(cache_capacity=num_blocks)
 
     # --- block pool ---
@@ -153,9 +150,7 @@ class CPUOffloadingManager(OffloadingManager):
             )
 
         blocks = self._allocate_blocks(keys_to_store)
-        assert len(blocks) == len(keys_to_store), (
-            "Block pool did not allocate the expected number of blocks"
-        )
+        assert len(blocks) == len(keys_to_store), "Block pool did not allocate the expected number of blocks"
 
         for key, block in zip(keys_to_store, blocks):
             self._policy.insert(key, block)

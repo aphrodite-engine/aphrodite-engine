@@ -39,9 +39,7 @@ class DefaultMoERunner(MoERunnerBase):
 
     @property
     def do_naive_dispatch_combine(self) -> bool:
-        return (
-            self.moe_config.dp_size > 1 and not self.quant_method.supports_internal_mk
-        )
+        return self.moe_config.dp_size > 1 and not self.quant_method.supports_internal_mk
 
     def _maybe_dispatch(
         self,
@@ -81,9 +79,7 @@ class DefaultMoERunner(MoERunnerBase):
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
         if self.do_naive_dispatch_combine:
-            hidden_states = get_ep_group().combine(
-                hidden_states, self.moe_config.is_sequence_parallel
-            )
+            hidden_states = get_ep_group().combine(hidden_states, self.moe_config.is_sequence_parallel)
 
         if self.moe_config.pcp_size > 1:
             hidden_states = get_pcp_group().reduce_scatter(

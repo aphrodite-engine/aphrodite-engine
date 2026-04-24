@@ -3,8 +3,6 @@
 
 from aphrodite.model_executor.parameter import (
     BaseAphroditeParameter,
-    BaseAphroditeParameter,
-    PackedAphroditeParameter,
     PackedAphroditeParameter,
 )
 

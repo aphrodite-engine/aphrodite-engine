@@ -119,11 +119,7 @@ def get_aphrodite_optional_dependencies():
     extras = metadata.get_all("Provides-Extra", [])
 
     return {
-        extra: [
-            re.split(r";|>=|<=|==", req)[0]
-            for req in requirements
-            if req.endswith(f'extra == "{extra}"')
-        ]
+        extra: [re.split(r";|>=|<=|==", req)[0] for req in requirements if req.endswith(f'extra == "{extra}"')]
         for extra in extras
     }
 
@@ -314,10 +310,7 @@ class PlaceholderModule(_PlaceholderBase):
 
             raise exc
 
-        raise AssertionError(
-            "PlaceholderModule should not be used "
-            "when the original module can be imported"
-        )
+        raise AssertionError("PlaceholderModule should not be used when the original module can be imported")
 
 
 class _PlaceholderModuleAttr(_PlaceholderBase):
@@ -334,10 +327,7 @@ class _PlaceholderModuleAttr(_PlaceholderBase):
     def __getattr__(self, key: str) -> Never:
         getattr(self.__module, f"{self.__attr_path}.{key}")
 
-        raise AssertionError(
-            "PlaceholderModule should not be used "
-            "when the original module can be imported"
-        )
+        raise AssertionError("PlaceholderModule should not be used when the original module can be imported")
 
 
 class LazyLoader(ModuleType):
@@ -424,9 +414,7 @@ def has_nixl_ep() -> bool:
 
 def has_triton_kernels() -> bool:
     """Whether the optional `triton_kernels` package is available."""
-    is_available = _has_module("triton_kernels") or _has_module(
-        "aphrodite.third_party.triton_kernels"
-    )
+    is_available = _has_module("triton_kernels") or _has_module("aphrodite.third_party.triton_kernels")
     if is_available:
         import_triton_kernels()
     return is_available

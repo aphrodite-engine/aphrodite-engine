@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import persistent_masked_m_silu_mul_quant
+
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import cdiv
 

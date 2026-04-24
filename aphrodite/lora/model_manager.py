@@ -86,9 +86,7 @@ class LoRAModelManager:
         """
         self.model: SupportsLoRA = model
         self.supported_lora_modules = get_supported_lora_modules(self.model)
-        assert self.supported_lora_modules, (
-            f"No supported LoRA modules found in {self.model.__class__.__name__}."
-        )
+        assert self.supported_lora_modules, f"No supported LoRA modules found in {self.model.__class__.__name__}."
 
         self._registered_adapters: dict[int, LoRAModel] = {}
         # Dict instead of a set for compatibility with LRUCache.
@@ -116,9 +114,7 @@ class LoRAModelManager:
 
         self.model.lora_manager = self
 
-    def _init_punica_wrapper(
-        self, max_num_batched_tokens: int, aphrodite_config: AphroditeConfig
-    ) -> None:
+    def _init_punica_wrapper(self, max_num_batched_tokens: int, aphrodite_config: AphroditeConfig) -> None:
         # Used to indicate whether the model is a multimodal model
         self.supports_mm: bool = (
             supports_multimodal(self.model)
@@ -137,9 +133,7 @@ class LoRAModelManager:
                 lora_config=self.lora_config,
             )
 
-            self.punica_wrapper_mapping[DEFAULT_LANGUAGE_WRAPPER_KEY] = (
-                llm_punica_wrapper
-            )
+            self.punica_wrapper_mapping[DEFAULT_LANGUAGE_WRAPPER_KEY] = llm_punica_wrapper
 
     def _maybe_init_mm(
         self,
@@ -166,9 +160,7 @@ class LoRAModelManager:
         self.punica_wrapper_mapping[lm_prefix] = llm_punica_wrapper
 
         # First, determine if the model supports tower connector LoRA.
-        self.supports_tower_connector_lora = self.supports_mm and hasattr(
-            self.model, "get_num_mm_encoder_tokens"
-        )
+        self.supports_tower_connector_lora = self.supports_mm and hasattr(self.model, "get_num_mm_encoder_tokens")
 
         # Then, handle the case where the feature is disabled in the config.
         if not self.lora_config.enable_tower_connector_lora:
@@ -186,8 +178,7 @@ class LoRAModelManager:
         if not self.supports_tower_connector_lora:
             # Enabled but not supported: log warning and return.
             logger.warning(
-                "LoRA with tower connector is enabled, but the model %s "
-                "does not support it. This will be ignored.",
+                "LoRA with tower connector is enabled, but the model %s does not support it. This will be ignored.",
                 self.model.__class__.__name__,
             )
             return
@@ -212,9 +203,7 @@ class LoRAModelManager:
 
         mm_budget = MultiModalBudget(aphrodite_config, mm_registry)
         limit_per_prompt = max(mm_budget.mm_max_items_per_prompt.values())
-        num_encoder_tokens = self.model.get_num_mm_encoder_tokens(
-            mm_budget.get_encoder_budget()
-        )
+        num_encoder_tokens = self.model.get_num_mm_encoder_tokens(mm_budget.get_encoder_budget())
 
         # Tower wrappers
         tower_punica_wrapper = get_punica_wrapper(
@@ -229,9 +218,7 @@ class LoRAModelManager:
         # Use wrapper for connector if present.
         if self.mm_mapping.connector:
             if hasattr(self.model, "get_num_mm_connector_tokens"):
-                connector_tokens = self.model.get_num_mm_connector_tokens(
-                    num_encoder_tokens
-                )
+                connector_tokens = self.model.get_num_mm_connector_tokens(num_encoder_tokens)
                 connector_punica_wrapper = get_punica_wrapper(
                     connector_tokens,
                     max_batches=self.max_num_seqs * limit_per_prompt,
@@ -270,11 +257,7 @@ class LoRAModelManager:
         if lora_id in self._active_adapters:
             return False
         first_free_slot = next(
-            (
-                (i, lora_id)
-                for i, lora_id in enumerate(self.lora_index_to_id)
-                if lora_id is None
-            ),
+            ((i, lora_id) for i, lora_id in enumerate(self.lora_index_to_id) if lora_id is None),
             None,
         )
         if first_free_slot is None:
@@ -282,17 +265,13 @@ class LoRAModelManager:
         index, _ = first_free_slot
         self._active_adapters[lora_id] = None
         lora_model = self._registered_adapters[lora_id]
-        logger.debug(
-            "Activating LoRA. int id: %d, slot index: %d", lora_model.id, index
-        )
+        logger.debug("Activating LoRA. int id: %d, slot index: %d", lora_model.id, index)
         self.lora_index_to_id[index] = lora_model.id
         for module_name, module in self.modules.items():
             module_lora = self._get_lora_layer_weights(lora_model, module_name)
             if not module_lora:
                 module.reset_lora(index)
-                logger.debug(
-                    "No LoRA weights found for module %s, skipping.", module_name
-                )
+                logger.debug("No LoRA weights found for module %s, skipping.", module_name)
                 continue
 
             module.set_lora(
@@ -317,18 +296,13 @@ class LoRAModelManager:
     def pin_adapter(self, lora_id: int) -> bool:
         """Pin a LoRAModel in the manager cache."""
         raise NotImplementedError(
-            "Pinning is not supported in LoRAModelManager. "
-            "Use LRUCacheLoRAModelManager for pinning"
+            "Pinning is not supported in LoRAModelManager. Use LRUCacheLoRAModelManager for pinning"
         )  # type: ignore
 
     def _set_adapter_mapping(self, mapping: LoRAMapping) -> None:
         # Default to the main language model wrapper
         if not (self.supports_mm and self.supports_tower_connector_lora):
-            target_prefix = (
-                self.mm_mapping.language_model[0]
-                if self.supports_mm
-                else DEFAULT_LANGUAGE_WRAPPER_KEY
-            )
+            target_prefix = self.mm_mapping.language_model[0] if self.supports_mm else DEFAULT_LANGUAGE_WRAPPER_KEY
         elif mapping.type == LoRAMappingType.TOWER and self.mm_mapping.tower_model:
             target_prefix = self.mm_mapping.tower_model[0]
         elif mapping.type == LoRAMappingType.CONNECTOR and self.mm_mapping.connector:
@@ -370,8 +344,7 @@ class LoRAModelManager:
             punica_wrapper = self._get_punica_wrapper(module_name)
             if punica_wrapper is None:
                 logger.warning(
-                    "Regarding %s, no matching PunicaWrapper "
-                    "is found; %s will be ignored.",
+                    "Regarding %s, no matching PunicaWrapper is found; %s will be ignored.",
                     self.model.__class__.__name__,
                     module_name,
                 )
@@ -384,8 +357,7 @@ class LoRAModelManager:
             # LoraConfig(target_modules="all-linear", ...)
             if self._is_non_gated_moe and module_name.endswith("mixer.gate"):
                 logger.debug_once(
-                    "LoRA is not supported for non-gated MoE gate module."
-                    " %s will be ignored.",
+                    "LoRA is not supported for non-gated MoE gate module. %s will be ignored.",
                     module_name,
                     scope="local",
                 )
@@ -417,13 +389,9 @@ class LoRAModelManager:
                 logits_processor_module_name = "logits_processor"
                 parent_module = _parent_module(module_name)
                 if parent_module:
-                    logits_processor_module_name = (
-                        f"{parent_module}.{logits_processor_module_name}"
-                    )
+                    logits_processor_module_name = f"{parent_module}.{logits_processor_module_name}"
 
-                logits_processor_module = self.model.get_submodule(
-                    logits_processor_module_name
-                )
+                logits_processor_module = self.model.get_submodule(logits_processor_module_name)
 
                 new_module = replace_submodule(
                     self.model,
@@ -452,8 +420,7 @@ class LoRAModelManager:
 
     def register_module(self, module_name: str, module: "BaseLayerWithLoRA"):
         assert isinstance(module, BaseLayerWithLoRA), (
-            f"Module {module_name} must be a BaseLayerWithLoRA instance, "
-            f"got {type(module)}"
+            f"Module {module_name} must be a BaseLayerWithLoRA instance, got {type(module)}"
         )
         self.modules[module_name] = module
 
@@ -535,8 +502,7 @@ class LoRAModelManager:
                         module_name,
                         module.w13_input_size,
                         module.w13_output_size,
-                        rank
-                        * module.w13_lora_a_stacked[0].shape[1],  # rank*num_experts
+                        rank * module.w13_lora_a_stacked[0].shape[1],  # rank*num_experts
                         module.w13_lora_a_stacked[0].dtype,
                         "cpu",
                     )
@@ -622,9 +588,7 @@ class LoRAModelManager:
         if len(replacements) <= 1:
             return
         prefix = ".".join(parts[:-1])
-        self.packed_modules[module_full_name] = [
-            prefix + "." + r if prefix else r for r in replacements
-        ]
+        self.packed_modules[module_full_name] = [prefix + "." + r if prefix else r for r in replacements]
 
     def _create_merged_loras_inplace(self, lora_model: LoRAModel) -> None:
         for module_name, new_module_names in self.packed_modules.items():
@@ -650,18 +614,14 @@ class LoRAModelManager:
                     module_name = replaced_module_name
             if module_name.endswith(".experts"):
                 if self._is_non_gated_moe and len(replacement_loras) > 0:
-                    replacement_loras = self._pad_lora_pairs_to_triplets(
-                        replacement_loras
-                    )
+                    replacement_loras = self._pad_lora_pairs_to_triplets(replacement_loras)
                 lora_model.loras[module_name] = PackedLoRALayerWeights.pack_moe(
                     replacement_loras,
                     module_name,
                     is_non_gated_moe=self._is_non_gated_moe,
                 )
             else:
-                lora_model.loras[module_name] = PackedLoRALayerWeights.pack(
-                    replacement_loras
-                )
+                lora_model.loras[module_name] = PackedLoRALayerWeights.pack(replacement_loras)
             # Remove the modules that have been replaced.
             for module in replaced_module:
                 lora_model.loras.pop(module, None)
@@ -699,9 +659,7 @@ class LoRAModelManager:
                     lora.lora_a = lora.lora_a.pin_memory()
                     lora.lora_b = lora.lora_b.pin_memory()
 
-    def _stack_moe_lora_weights(
-        self, lora_model: LoRAModel, module: FusedMoE3DWithLoRA, module_name: str
-    ):
+    def _stack_moe_lora_weights(self, lora_model: LoRAModel, module: FusedMoE3DWithLoRA, module_name: str):
         module_lora = self._get_lora_layer_weights(lora_model, module_name)
 
         # Note (gnovack) - If MOE lora weights are not split into
@@ -709,9 +667,7 @@ class LoRAModelManager:
         if module_lora and torch.is_tensor(module_lora.lora_a):
             # Handle PEFT file format where experts.base_layer is the
             # gate_up_proj and experts is the down_proj
-            gate_up_proj_lora = self._get_lora_layer_weights(
-                lora_model, module_name + ".base_layer"
-            )
+            gate_up_proj_lora = self._get_lora_layer_weights(lora_model, module_name + ".base_layer")
             down_proj_lora = module_lora
             # FIXME Edge case where LoRA is not added to gate_up_proj
             # or down_proj
@@ -724,25 +680,17 @@ class LoRAModelManager:
                 gate_up_proj_lora.lora_a = gate_up_proj_lora.lora_a.reshape(
                     num_experts, -1, gate_up_proj_lora.lora_a.shape[-1]
                 )
-                down_proj_lora.lora_a = down_proj_lora.lora_a.reshape(
-                    num_experts, -1, down_proj_lora.lora_a.shape[-1]
-                )
+                down_proj_lora.lora_a = down_proj_lora.lora_a.reshape(num_experts, -1, down_proj_lora.lora_a.shape[-1])
 
                 # (output_size,rank,num_experts)
                 gate_up_proj_lora.lora_b = gate_up_proj_lora.lora_b.reshape(
                     gate_up_proj_lora.lora_b.shape[0], -1, num_experts
                 )
-                down_proj_lora.lora_b = down_proj_lora.lora_b.reshape(
-                    down_proj_lora.lora_b.shape[0], -1, num_experts
-                )
+                down_proj_lora.lora_b = down_proj_lora.lora_b.reshape(down_proj_lora.lora_b.shape[0], -1, num_experts)
 
                 # (num_experts,output_size,rank)
-                gate_up_proj_lora.lora_b = gate_up_proj_lora.lora_b.permute(
-                    2, 0, 1
-                ).contiguous()
-                down_proj_lora.lora_b = down_proj_lora.lora_b.permute(
-                    2, 0, 1
-                ).contiguous()
+                gate_up_proj_lora.lora_b = gate_up_proj_lora.lora_b.permute(2, 0, 1).contiguous()
+                down_proj_lora.lora_b = down_proj_lora.lora_b.permute(2, 0, 1).contiguous()
 
                 module_lora.lora_a = [
                     gate_up_proj_lora.lora_a,
@@ -760,12 +708,8 @@ class LoRAModelManager:
                 gate_proj_a = gate_up_proj_lora.lora_a.chunk(num_experts, dim=0)
                 up_proj_a = gate_up_proj_lora.lora_a.chunk(num_experts, dim=0)
 
-                gate_proj_b = gate_up_proj_lora.lora_b[::2, ...].chunk(
-                    num_experts, dim=-1
-                )
-                up_proj_b = gate_up_proj_lora.lora_b[1::2, ...].chunk(
-                    num_experts, dim=-1
-                )
+                gate_proj_b = gate_up_proj_lora.lora_b[::2, ...].chunk(num_experts, dim=-1)
+                up_proj_b = gate_up_proj_lora.lora_b[1::2, ...].chunk(num_experts, dim=-1)
 
                 down_proj_a = down_proj_lora.lora_a.chunk(num_experts, dim=0)
                 down_proj_b = down_proj_lora.lora_b.chunk(num_experts, dim=-1)
@@ -784,9 +728,7 @@ class LoRAModelManager:
                 module_lora.lora_a = lora_a
                 module_lora.lora_b = lora_b
 
-    def _get_lora_layer_weights(
-        self, lora_model: LoRAModel, module_name: str
-    ) -> LoRALayerWeights | None:
+    def _get_lora_layer_weights(self, lora_model: LoRAModel, module_name: str) -> LoRALayerWeights | None:
         org_module_name = module_name
         if self.is_pooling_model and not lora_model.check_lora_name(module_name):
             # If it's a pool model, and the layer name is not found,
@@ -795,8 +737,7 @@ class LoRAModelManager:
             if lora_model.check_lora_name(module_name):
                 org_module_name = module_name
                 logger.info_once(
-                    "For the pool model, successfully loaded the LoRA weights "
-                    "after removing the prefix 'model.'."
+                    "For the pool model, successfully loaded the LoRA weights after removing the prefix 'model.'."
                 )
         return lora_model.get_lora(org_module_name)
 
@@ -862,12 +803,8 @@ class LRUCacheLoRAModelManager(LoRAModelManager):
             device,
             aphrodite_config,
         )
-        self._registered_adapters: LoRALRUCache = LoRALRUCache(
-            self.capacity, self.deactivate_adapter
-        )
-        self._active_adapters: LoRALRUCache = LoRALRUCache(
-            self.lora_slots, self._deactivate_adapter
-        )
+        self._registered_adapters: LoRALRUCache = LoRALRUCache(self.capacity, self.deactivate_adapter)
+        self._active_adapters: LoRALRUCache = LoRALRUCache(self.lora_slots, self._deactivate_adapter)
 
     def list_adapters(self) -> dict[int, LoRAModel]:
         """List all registered LoRAModels."""
@@ -889,10 +826,7 @@ class LRUCacheLoRAModelManager(LoRAModelManager):
         self,
         lora_id: int,
     ) -> bool:
-        if (
-            lora_id not in self._active_adapters
-            and len(self._active_adapters) >= self.lora_slots
-        ):
+        if lora_id not in self._active_adapters and len(self._active_adapters) >= self.lora_slots:
             self._active_adapters.remove_oldest()
         result = super().activate_adapter(lora_id)
         # We always touch to update the LRU cache order
@@ -915,9 +849,7 @@ class LRUCacheLoRAModelManager(LoRAModelManager):
         try:
             self._registered_adapters.pin(lora_id)
         except ValueError as err:
-            raise ValueError(
-                f"Pinning failed. LoRA {lora_id} is not registered."
-            ) from err
+            raise ValueError(f"Pinning failed. LoRA {lora_id} is not registered.") from err
 
     def _pin_lora_in_gpu_cache(self, lora_id: int):
         if lora_id not in self._active_adapters:

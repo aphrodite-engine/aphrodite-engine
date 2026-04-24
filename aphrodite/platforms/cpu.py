@@ -51,15 +51,8 @@ class CpuPlatform(Platform):
     def supported_dtypes(self) -> list[torch.dtype]:
         if self.get_cpu_architecture() == CpuArchEnum.POWERPC:
             return [torch.bfloat16, torch.float32]
-        elif self.get_cpu_architecture() == CpuArchEnum.ARM and sys.platform.startswith(
-            "darwin"
-        ):
-            if (
-                subprocess.check_output(
-                    ["sysctl -n hw.optional.arm.FEAT_BF16"], shell=True
-                ).strip()
-                == b"1"
-            ):
+        elif self.get_cpu_architecture() == CpuArchEnum.ARM and sys.platform.startswith("darwin"):
+            if subprocess.check_output(["sysctl -n hw.optional.arm.FEAT_BF16"], shell=True).strip() == b"1":
                 return [torch.bfloat16, torch.float16, torch.float32]
             return [torch.float16, torch.float32]
         elif self.get_cpu_architecture() == CpuArchEnum.RISCV:
@@ -121,8 +114,7 @@ class CpuPlatform(Platform):
 
         if cache_config.block_size % 32 != 0:
             logger.warning(
-                "CPU backend prefers block_size is multiples of 32, "
-                "otherwise the performance is not optimized."
+                "CPU backend prefers block_size is multiples of 32, otherwise the performance is not optimized."
             )
 
         # Lagecy setting
@@ -134,19 +126,15 @@ class CpuPlatform(Platform):
         scheduler_config = aphrodite_config.scheduler_config
         # async scheduling is not required on CPU
         scheduler_config.async_scheduling = False
-        if (
-            scheduler_config.enable_chunked_prefill
-            or cache_config.enable_prefix_caching
-        ) and is_quantized_kv_cache(cache_config.cache_dtype):
+        if (scheduler_config.enable_chunked_prefill or cache_config.enable_prefix_caching) and is_quantized_kv_cache(
+            cache_config.cache_dtype
+        ):
             raise RuntimeError(
-                "Chunked-prefill and prefix-cache on the CPU "
-                "backend is not compatible with FP8 KV cache."
+                "Chunked-prefill and prefix-cache on the CPU backend is not compatible with FP8 KV cache."
             )
 
         if is_quantized_kv_cache(cache_config.cache_dtype):
-            logger.warning(
-                "CPU backend doesn't support KV cache quantization fallback to auto."
-            )
+            logger.warning("CPU backend doesn't support KV cache quantization fallback to auto.")
             cache_config.cache_dtype = "auto"
 
         parallel_config = aphrodite_config.parallel_config
@@ -231,13 +219,8 @@ class CpuPlatform(Platform):
 
         if (
             platform.system() == "Linux"
-            and cpu_architecture
-            in (CpuArchEnum.ARM, CpuArchEnum.POWERPC, CpuArchEnum.X86)
-            and not (
-                "libomp" in ld_preload_str
-                or "libgomp" in ld_preload_str
-                or "libiomp" in ld_preload_str
-            )
+            and cpu_architecture in (CpuArchEnum.ARM, CpuArchEnum.POWERPC, CpuArchEnum.X86)
+            and not ("libomp" in ld_preload_str or "libgomp" in ld_preload_str or "libiomp" in ld_preload_str)
         ):
             # We need to LD_PRELOAD PyTorch's libgomp, otherwise only
             # one core will be properly utilized when we thread-bind
@@ -256,9 +239,7 @@ class CpuPlatform(Platform):
             ]
             pytorch_libgomp_so_candidates = []
             for torch_libs in torch_libs_paths:
-                pytorch_libgomp_so_candidates.extend(
-                    glob.glob(os.path.join(torch_libs, "libgomp*.so*"))
-                )
+                pytorch_libgomp_so_candidates.extend(glob.glob(os.path.join(torch_libs, "libgomp*.so*")))
             if pytorch_libgomp_so_candidates:
                 pytorch_libgomp_so = pytorch_libgomp_so_candidates[0]
                 if ld_preload_str:
@@ -276,9 +257,7 @@ class CpuPlatform(Platform):
             aphrodite_pkg = os.path.dirname(os.path.dirname(__file__))
             tcmalloc_so = None
             for pattern in ("libtcmalloc_minimal*.so*", "libtcmalloc.so*"):
-                tcmalloc_so_candidates = glob.glob(
-                    os.path.join(aphrodite_pkg, "libs", pattern)
-                )
+                tcmalloc_so_candidates = glob.glob(os.path.join(aphrodite_pkg, "libs", pattern))
                 if tcmalloc_so_candidates:
                     tcmalloc_so = tcmalloc_so_candidates[0]
                     break
@@ -290,14 +269,11 @@ class CpuPlatform(Platform):
                     ld_preload_str = tcmalloc_so
                 os.environ["LD_PRELOAD"] = ld_preload_str
 
-        os.environ["LOCAL_WORLD_SIZE"] = str(
-            aphrodite_config.parallel_config.tensor_parallel_size
-        )
+        os.environ["LOCAL_WORLD_SIZE"] = str(aphrodite_config.parallel_config.tensor_parallel_size)
 
         if model_config is not None and model_config.use_mla:
             logger.info(
-                "MLA is enabled on a non-GPU platform; forcing chunked "
-                "prefill and prefix caching to be disabled."
+                "MLA is enabled on a non-GPU platform; forcing chunked prefill and prefix caching to be disabled."
             )
             aphrodite_config.scheduler_config.enable_chunked_prefill = False
             aphrodite_config.scheduler_config.max_num_batched_tokens = max(
@@ -412,9 +388,7 @@ class CpuPlatform(Platform):
                         import aphrodite._C_AVX512  # noqa: F401
                     except ImportError as e:
                         if ignored_msg not in e.msg:
-                            logger.warning(
-                                "Failed to import from aphrodite._C_AVX512: %r", e
-                            )
+                            logger.warning("Failed to import from aphrodite._C_AVX512: %r", e)
             else:
                 try:
                     import aphrodite._C_AVX2  # noqa: F401
@@ -454,10 +428,7 @@ class CpuPlatform(Platform):
         isa = _get_attn_isa(dtype, block_size, head_size)
         block_offsets = torch.arange(block_size, device="cpu", dtype=torch.long)
         num_blocks = len(block_ids)
-        slot_mapping = (
-            block_offsets.reshape(1, block_size)
-            + indices.reshape(num_blocks, 1) * block_size
-        ).flatten()
+        slot_mapping = (block_offsets.reshape(1, block_size) + indices.reshape(num_blocks, 1) * block_size).flatten()
         cpu_attn_reshape_and_cache(
             key,
             value,

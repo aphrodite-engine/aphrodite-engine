@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test deepep dispatch-combine logic
 """
@@ -6,17 +8,17 @@ import dataclasses
 
 import pytest
 import torch.distributed
-from torch.distributed import ProcessGroup
-
-from aphrodite import _custom_ops as ops
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import TritonExperts
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
 from aphrodite.modeling.layers.fused_moe.fused_batched_moe import BatchedTritonExperts
 from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.fp8_utils import per_token_group_quant_fp8
+from torch.distributed import ProcessGroup
+
+from aphrodite import _custom_ops as ops
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
+from aphrodite.platforms import current_platform
 from aphrodite.utils.import_utils import has_deep_ep
 
 from ...utils import multi_gpu_test

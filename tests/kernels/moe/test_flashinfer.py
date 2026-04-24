@@ -1,14 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from dataclasses import dataclass
 
 import pytest
 import torch
-
-from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
 from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
 from aphrodite.modeling.models.llama4 import Llama4MoE
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.flashinfer_utils import (
     apply_flashinfer_per_tensor_scale_fp8,
     flashinfer_cutlass_moe_fp8,
@@ -17,6 +16,9 @@ from aphrodite.quantization.utils.flashinfer_utils import (
     swap_w13_to_w31,
 )
 from aphrodite.quantization.utils.fp8_utils import input_to_float8
+
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
+from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 
 if not has_flashinfer_cutlass_fused_moe() or not current_platform.has_device_capability(100):

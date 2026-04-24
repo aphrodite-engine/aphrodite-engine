@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test model set-up and inference for quantized HF models supported
 on the GPU backend using FPQuant.
 

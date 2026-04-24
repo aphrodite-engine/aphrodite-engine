@@ -23,9 +23,7 @@ from ..base.protocol import (
 logger = init_logger(__name__)
 
 
-class ClassificationCompletionRequest(
-    PoolingBasicRequestMixin, CompletionRequestMixin, ClassifyRequestMixin
-):
+class ClassificationCompletionRequest(PoolingBasicRequestMixin, CompletionRequestMixin, ClassifyRequestMixin):
     def build_tok_params(self, model_config: ModelConfig) -> TokenizeParams:
         encoder_config = model_config.encoder_config or {}
 
@@ -46,9 +44,7 @@ class ClassificationCompletionRequest(
         )
 
 
-class ClassificationChatRequest(
-    PoolingBasicRequestMixin, ChatRequestMixin, ClassifyRequestMixin
-):
+class ClassificationChatRequest(PoolingBasicRequestMixin, ChatRequestMixin, ClassifyRequestMixin):
     def build_tok_params(self, model_config: ModelConfig) -> TokenizeParams:
         encoder_config = model_config.encoder_config or {}
 
@@ -69,9 +65,7 @@ class ClassificationChatRequest(
         )
 
 
-ClassificationRequest: TypeAlias = (
-    ClassificationCompletionRequest | ClassificationChatRequest
-)
+ClassificationRequest: TypeAlias = ClassificationCompletionRequest | ClassificationChatRequest
 
 
 class ClassificationData(OpenAIBaseModel):

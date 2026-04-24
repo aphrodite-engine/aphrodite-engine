@@ -14,9 +14,7 @@ from aphrodite.utils.deep_gemm import get_mk_alignment_for_contiguous_layout
 from aphrodite.utils.math_utils import round_up
 
 
-def expert_num_tokens_round_up_and_sum(
-    expert_num_tokens: torch.Tensor, alignment: int
-) -> int:
+def expert_num_tokens_round_up_and_sum(expert_num_tokens: torch.Tensor, alignment: int) -> int:
     # Round up each element in expert_num_tokens to the nearest multiple of
     # alignment.
     ent = (expert_num_tokens.to(torch.int64) + (alignment - 1)) // alignment * alignment
@@ -30,12 +28,8 @@ def compute_aligned_M(
     alignment: int,
     expert_tokens_meta: mk.ExpertTokensMetadata | None,
 ):
-    if (expert_tokens_meta is not None) and (
-        expert_tokens_meta.expert_num_tokens_cpu is not None
-    ):
-        return expert_num_tokens_round_up_and_sum(
-            expert_tokens_meta.expert_num_tokens_cpu, alignment=alignment
-        )
+    if (expert_tokens_meta is not None) and (expert_tokens_meta.expert_num_tokens_cpu is not None):
+        return expert_num_tokens_round_up_and_sum(expert_tokens_meta.expert_num_tokens_cpu, alignment=alignment)
 
     # expert_num_tokens information is not available on the cpu.
     # compute the max required size.
@@ -79,9 +73,7 @@ def _fwd_kernel_ep_scatter_1(
 
     # Extract this block's offset from the register vector (warp shuffle,
     # no global memory round-trip) then write it once to expert_start_loc.
-    cur_expert_start = tl.sum(
-        tl.where(offset_cumsum == cur_expert, cumsum, tl.zeros_like(cumsum))
-    )
+    cur_expert_start = tl.sum(tl.where(offset_cumsum == cur_expert, cumsum, tl.zeros_like(cumsum)))
     tl.store(expert_start_loc + cur_expert, cur_expert_start)
     cur_expert_token_num = tl.load(num_recv_tokens_per_expert + cur_expert)
 
@@ -142,9 +134,7 @@ def _fwd_kernel_ep_scatter_2(
 
     for token_id in range(start_token_id, total_token_num, grid_num):
         to_copy = tl.load(recv_x + token_id * recv_x_stride0 + offset_in, mask=mask)
-        to_copy_s = tl.load(
-            recv_x_scale + token_id * recv_x_scale_stride0 + offset_in_s, mask=mask_s
-        )
+        to_copy_s = tl.load(recv_x_scale + token_id * recv_x_scale_stride0 + offset_in_s, mask=mask_s)
 
         for topk_index in tl.range(0, topk_num, 1, num_stages=4):
             expert_id = tl.load(recv_topk + token_id * recv_topk_stride0 + topk_index)
@@ -158,12 +148,8 @@ def _fwd_kernel_ep_scatter_2(
                     output_index + token_id * output_index_stride0 + topk_index,
                     dest_token_index,
                 )
-                output_tensor_ptr = (
-                    output_tensor + dest_token_index * output_tensor_stride0
-                )
-                output_tensor_scale_ptr = (
-                    output_tensor_scale + dest_token_index * output_tensor_scale_stride0
-                )
+                output_tensor_ptr = output_tensor + dest_token_index * output_tensor_stride0
+                output_tensor_scale_ptr = output_tensor_scale + dest_token_index * output_tensor_scale_stride0
                 tl.store(output_tensor_ptr + offset_in, to_copy, mask=mask)
                 tl.store(output_tensor_scale_ptr + offset_in_s, to_copy_s, mask=mask_s)
 
@@ -268,33 +254,19 @@ def _fwd_kernel_ep_gather(
         off_d = tl.arange(0, BLOCK_D)
         accumulator = tl.zeros([BLOCK_D], dtype=tl.float32)
         for topk_index in range(0, topk_num):
-            expert_id = tl.load(
-                recv_topk_ids + cur_token * recv_topk_ids_stride0 + topk_index
-            )
+            expert_id = tl.load(recv_topk_ids + cur_token * recv_topk_ids_stride0 + topk_index)
 
             if HAS_EXPERT_MAP:
                 expert_id = apply_expert_map(expert_id, expert_map)
 
             if expert_id >= 0:
-                source_token_index = tl.load(
-                    input_index + cur_token * input_index_stride0 + topk_index
-                )
-                acc_weight = tl.load(
-                    recv_topk_weight + cur_token * recv_topk_weight_stride0 + topk_index
-                )
-                tmp = tl.load(
-                    input_tensor
-                    + source_token_index * input_tensor_stride0
-                    + cur_block * BLOCK_D
-                    + off_d
-                )
+                source_token_index = tl.load(input_index + cur_token * input_index_stride0 + topk_index)
+                acc_weight = tl.load(recv_topk_weight + cur_token * recv_topk_weight_stride0 + topk_index)
+                tmp = tl.load(input_tensor + source_token_index * input_tensor_stride0 + cur_block * BLOCK_D + off_d)
                 accumulator += tmp.to(tl.float32) * acc_weight
 
         tl.store(
-            output_tensor
-            + cur_token * output_tensor_stride0
-            + cur_block * BLOCK_D
-            + off_d,
+            output_tensor + cur_token * output_tensor_stride0 + cur_block * BLOCK_D + off_d,
             accumulator.to(output_tensor.dtype.element_ty),
         )
 
@@ -365,17 +337,13 @@ def deepgemm_moe_permute(
         expert_tokens_meta=expert_tokens_meta,
     )
 
-    expert_start_loc = torch.empty(
-        (local_num_experts), device=device, dtype=torch.int32
-    )
+    expert_start_loc = torch.empty((local_num_experts), device=device, dtype=torch.int32)
 
     assert aq_out is None or aq_out.shape == (M_sum, H)
     if aq_out is None:
         aq_out = torch.empty((M_sum, H), device=device, dtype=aq.dtype)
 
-    aq_scale_out = torch.empty(
-        (M_sum, H // block_k), device=device, dtype=torch.float32
-    )
+    aq_scale_out = torch.empty((M_sum, H // block_k), device=device, dtype=torch.float32)
 
     # DeepGEMM uses negative values in m_indices (here expert_ids) to mark
     # completely invalid / padded blocks that should be skipped. We always
@@ -394,9 +362,7 @@ def deepgemm_moe_permute(
     if expert_tokens_meta is not None:
         expert_num_tokens = expert_tokens_meta.expert_num_tokens
     else:
-        expert_num_tokens = count_expert_num_tokens(
-            topk_ids, local_num_experts, expert_map
-        )
+        expert_num_tokens = count_expert_num_tokens(topk_ids, local_num_experts, expert_map)
 
     ep_scatter(
         recv_x=aq,

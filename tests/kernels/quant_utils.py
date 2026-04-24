@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
+from aphrodite.quantization.utils.quant_utils import group_broadcast
 
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import group_broadcast
 from aphrodite.utils.math_utils import round_up
 
 # Using the default value (240.0) from pytorch will cause accuracy

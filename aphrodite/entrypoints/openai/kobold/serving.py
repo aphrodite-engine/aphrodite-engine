@@ -6,11 +6,11 @@ from collections.abc import AsyncGenerator
 
 from fastapi import Request
 
+from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.logger import RequestLogger
 from aphrodite.entrypoints.openai.engine.serving import OpenAIServing
 from aphrodite.entrypoints.openai.kobold.protocol import KAIGenerationInputSchema
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
-from aphrodite.engine.protocol import EngineClient
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.tokenizers import TokenizerLike
@@ -58,11 +58,7 @@ class OpenAIServingKobold(OpenAIServing):
         try:
             tokenizer = self.renderer.get_tokenizer()
             vocab = tokenizer.get_vocab()
-            bracket_tokens = [
-                token_id
-                for token, token_id in vocab.items()
-                if any(ch in str(token) for ch in "[]")
-            ]
+            bracket_tokens = [token_id for token, token_id in vocab.items() if any(ch in str(token) for ch in "[]")]
             self.badwordsids = bracket_tokens
 
             pad_token_id = getattr(tokenizer, "pad_token_id", None)
@@ -97,7 +93,7 @@ class OpenAIServingKobold(OpenAIServing):
         previous_output = ""
         async for res in results_generator:
             final_res = res
-            new_chunk = res.outputs[0].text[len(previous_output):]
+            new_chunk = res.outputs[0].text[len(previous_output) :]
             previous_output += new_chunk
             if request.genkey:
                 gen_cache[request.genkey] = previous_output
@@ -127,7 +123,7 @@ class OpenAIServingKobold(OpenAIServing):
 
         previous_output = ""
         async for res in results_generator:
-            new_chunk = res.outputs[0].text[len(previous_output):]
+            new_chunk = res.outputs[0].text[len(previous_output) :]
             previous_output += new_chunk
             if request.genkey:
                 gen_cache[request.genkey] = previous_output
@@ -160,10 +156,7 @@ class OpenAIServingKobold(OpenAIServing):
 
         logit_bias = None
         if getattr(kai_payload, "use_default_badwordsids", True) and self.badwordsids:
-            logit_bias = {
-                token_id: _KOBOLD_BADWORD_BIAS
-                for token_id in self.badwordsids
-            }
+            logit_bias = {token_id: _KOBOLD_BADWORD_BIAS for token_id in self.badwordsids}
 
         sampling_params = SamplingParams(
             n=n,
@@ -189,9 +182,7 @@ class OpenAIServingKobold(OpenAIServing):
             skip_clone=True,
         )
 
-        max_input_tokens = max(
-            1, kai_payload.max_context_length - kai_payload.max_length
-        )
+        max_input_tokens = max(1, kai_payload.max_context_length - kai_payload.max_length)
         input_tokens = tokenizer.encode(
             kai_payload.prompt,
             add_special_tokens=False,

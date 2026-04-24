@@ -122,9 +122,7 @@ async def init_weight_transfer_engine(raw_request: Request):
             status_code=HTTPStatus.BAD_REQUEST.value,
             detail="Missing 'init_info' in request body",
         )
-    await engine_client(raw_request).init_weight_transfer_engine(
-        WeightTransferInitRequest(init_info=init_info)
-    )
+    await engine_client(raw_request).init_weight_transfer_engine(WeightTransferInitRequest(init_info=init_info))
     return JSONResponse(content={"message": "Weight transfer initialized"})
 
 
@@ -140,9 +138,7 @@ async def update_weights(raw_request: Request):
             status_code=HTTPStatus.BAD_REQUEST.value,
             detail="Missing 'update_info' in request body",
         )
-    await engine_client(raw_request).update_weights(
-        request=WeightTransferUpdateRequest(update_info=update_info)
-    )
+    await engine_client(raw_request).update_weights(request=WeightTransferUpdateRequest(update_info=update_info))
     return JSONResponse(content={"message": "Weights updated"})
 
 

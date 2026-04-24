@@ -6,9 +6,9 @@ pynvml. However, it should not initialize cuda context.
 
 from __future__ import annotations
 
-import os
 import ctypes
 import ctypes.util
+import os
 from collections.abc import Callable
 from datetime import timedelta
 from functools import cache, lru_cache, wraps
@@ -18,6 +18,12 @@ import torch
 from torch.distributed import PrefixStore, ProcessGroup
 from torch.distributed.distributed_c10d import is_nccl_available
 from typing_extensions import ParamSpec
+
+import aphrodite.envs as envs
+from aphrodite.logger import init_logger
+from aphrodite.utils.import_utils import import_pynvml
+from aphrodite.utils.torch_utils import is_quantized_kv_cache
+from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 
 
 def _preload_cuda_driver() -> None:
@@ -35,14 +41,10 @@ def _preload_cuda_driver() -> None:
 
 _preload_cuda_driver()
 
-# import custom ops, trigger op registration
+# Import custom ops after preloading the CUDA driver so driver symbols such as
+# cuMemAddressFree are globally available during shared library resolution.
 import aphrodite._C  # noqa
 import aphrodite._C_stable_libtorch  # noqa
-import aphrodite.envs as envs
-from aphrodite.logger import init_logger
-from aphrodite.utils.import_utils import import_pynvml
-from aphrodite.utils.torch_utils import is_quantized_kv_cache
-from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 
 from .interface import DeviceCapability, Platform, PlatformEnum
 
@@ -248,16 +250,11 @@ class CudaPlatformBase(Platform):
             and scheduler_config.is_multimodal_model
             and not scheduler_config.disable_chunked_mm_input
         ):
-            logger.warning(
-                "Forcing --disable_chunked_mm_input for models "
-                "with multimodal-bidirectional attention."
-            )
+            logger.warning("Forcing --disable_chunked_mm_input for models with multimodal-bidirectional attention.")
             scheduler_config.disable_chunked_mm_input = True
 
     @classmethod
-    def get_current_memory_usage(
-        cls, device: torch.types.Device | None = None
-    ) -> float:
+    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
         return torch.cuda.max_memory_allocated(device)
@@ -336,20 +333,17 @@ class CudaPlatformBase(Platform):
         reasons_str = (
             "{"
             + ", ".join(
-                f"{backend.name}: [{', '.join(reasons)}]"
-                for backend, (_, reasons) in all_invalid_reasons.items()
+                f"{backend.name}: [{', '.join(reasons)}]" for backend, (_, reasons) in all_invalid_reasons.items()
             )
             + "}"
         )
         config_str = attn_selector_config.__repr__()
         logger.debug_once(
-            f"Some attention backends are not valid for {cls.device_name} with "
-            f"{config_str}. Reasons: {reasons_str}."
+            f"Some attention backends are not valid for {cls.device_name} with {config_str}. Reasons: {reasons_str}."
         )
         if len(valid_backends_priorities) == 0:
             raise ValueError(
-                f"No valid attention backend found for {cls.device_name} "
-                f"with {config_str}. Reasons: {reasons_str}."
+                f"No valid attention backend found for {cls.device_name} with {config_str}. Reasons: {reasons_str}."
             )
 
         # We have found some valid backends. Select the one with the
@@ -368,8 +362,7 @@ class CudaPlatformBase(Platform):
             excluded = [
                 backend
                 for backend, (priority, reasons) in all_invalid_reasons.items()
-                if priority < selected_priority
-                and reasons == ["block_size not supported"]
+                if priority < selected_priority and reasons == ["block_size not supported"]
             ]
             if excluded:
                 names = ", ".join(b.name for b in excluded)
@@ -430,14 +423,11 @@ class CudaPlatformBase(Platform):
                 return vit_attn_backend
             try:
                 backend_class = vit_attn_backend.get_class()
-                is_backend_supported = backend_class.supports_head_size(
-                    head_size
-                ) and backend_class.supports_dtype(dtype)
+                is_backend_supported = backend_class.supports_head_size(head_size) and backend_class.supports_dtype(
+                    dtype
+                )
                 if cc is not None:
-                    is_backend_supported = (
-                        is_backend_supported
-                        and backend_class.supports_compute_capability(cc)
-                    )
+                    is_backend_supported = is_backend_supported and backend_class.supports_compute_capability(cc)
                 if is_backend_supported:
                     logger.info_once(
                         f"Using backend {vit_attn_backend} for vit attention",
@@ -455,9 +445,7 @@ class CudaPlatformBase(Platform):
 
     @classmethod
     def get_device_communicator_cls(cls) -> str:
-        return (
-            "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
-        )
+        return "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
 
     @classmethod
     def supports_fp8(cls) -> bool:
@@ -495,9 +483,7 @@ class CudaPlatformBase(Platform):
         backend_options = ProcessGroupNCCL.Options()
         backend_options._timeout = timeout
 
-        backend_class = ProcessGroupNCCL(
-            prefix_store, group_rank, group_size, backend_options
-        )
+        backend_class = ProcessGroupNCCL(prefix_store, group_rank, group_size, backend_options)
         backend_type = ProcessGroup.BackendType.NCCL
         device = torch.device("cuda")
         pg._set_default_backend(backend_type)
@@ -670,8 +656,7 @@ class NvmlCudaPlatform(CudaPlatformBase):
                             return False
                     except pynvml.NVMLError:
                         logger.exception(
-                            "NVLink detection failed. This is normal if"
-                            " your machine has no NVLink equipped."
+                            "NVLink detection failed. This is normal if your machine has no NVLink equipped."
                         )
                         return False
         return True
@@ -696,8 +681,7 @@ class NvmlCudaPlatform(CudaPlatformBase):
             # is a separate NUMA node with no CPUs.  Fall through to
             # CPU-affinity-based detection to find the nearest CPU node.
             logger.debug(
-                "NUMA node %d for GPU %d has no CPUs (non-CDMM topology), "
-                "falling back to CPU-affinity-based detection",
+                "NUMA node %d for GPU %d has no CPUs (non-CDMM topology), falling back to CPU-affinity-based detection",
                 numa_node,
                 device_id,
             )
@@ -797,8 +781,7 @@ class NvmlCudaPlatform(CudaPlatformBase):
                 numa_node = cls.get_device_numa_node(device_id)
                 if numa_node is None:
                     logger.warning(
-                        "Could not detect NUMA node for GPU %d, "
-                        "disabling automatic NUMA binding",
+                        "Could not detect NUMA node for GPU %d, disabling automatic NUMA binding",
                         device_id,
                     )
                     return None
@@ -814,10 +797,7 @@ class NvmlCudaPlatform(CudaPlatformBase):
         device_ids: int = pynvml.nvmlDeviceGetCount()
         if device_ids > 1:
             device_names = [cls._get_physical_device_name(i) for i in range(device_ids)]
-            if (
-                len(set(device_names)) > 1
-                and os.environ.get("CUDA_DEVICE_ORDER") != "PCI_BUS_ID"
-            ):
+            if len(set(device_names)) > 1 and os.environ.get("CUDA_DEVICE_ORDER") != "PCI_BUS_ID":
                 logger.warning(
                     "Detected different devices in the system: %s. Please"
                     " make sure to set `CUDA_DEVICE_ORDER=PCI_BUS_ID` to "
@@ -845,8 +825,7 @@ class NonNvmlCudaPlatform(CudaPlatformBase):
     @classmethod
     def is_fully_connected(cls, physical_device_ids: list[int]) -> bool:
         logger.exception(
-            "NVLink detection not possible, as context support was"
-            " not found. Assuming no NVLink available."
+            "NVLink detection not possible, as context support was not found. Assuming no NVLink available."
         )
         return False
 

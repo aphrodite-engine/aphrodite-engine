@@ -60,9 +60,7 @@ class PoolingMetadata:
         pooling_params = self.pooling_params
 
         tasks: list[PoolingTask] = [
-            task
-            for pooling_param in pooling_params
-            if (task := pooling_param.task) is not None
+            task for pooling_param in pooling_params if (task := pooling_param.task) is not None
         ]
         assert len(pooling_params) == len(tasks)
 
@@ -71,31 +69,21 @@ class PoolingMetadata:
     def __getitem__(self, indices: slice):
         return PoolingMetadata(
             prompt_lens=self.prompt_lens[indices],
-            prompt_token_ids=None
-            if self.prompt_token_ids is None
-            else self.prompt_token_ids[indices],
-            prompt_token_ids_cpu=None
-            if self.prompt_token_ids_cpu is None
-            else self.prompt_token_ids_cpu[indices],
+            prompt_token_ids=None if self.prompt_token_ids is None else self.prompt_token_ids[indices],
+            prompt_token_ids_cpu=None if self.prompt_token_ids_cpu is None else self.prompt_token_ids_cpu[indices],
             pooling_params=self.pooling_params[indices],
             pooling_states=self.pooling_states[indices],
-            pooling_cursor=None
-            if self.pooling_cursor is None
-            else self.pooling_cursor[indices],
+            pooling_cursor=None if self.pooling_cursor is None else self.pooling_cursor[indices],
         )
 
     def get_prompt_token_ids(self) -> list[torch.Tensor]:
         prompt_token_ids = self.prompt_token_ids
-        assert prompt_token_ids is not None, (
-            "Please set `requires_token_ids=True` in `get_pooling_updates`"
-        )
+        assert prompt_token_ids is not None, "Please set `requires_token_ids=True` in `get_pooling_updates`"
         return [prompt_token_ids[i, :num] for i, num in enumerate(self.prompt_lens)]
 
     def get_prompt_token_ids_cpu(self) -> list[torch.Tensor]:
         prompt_token_ids = self.prompt_token_ids_cpu
-        assert prompt_token_ids is not None, (
-            "Please set `requires_token_ids=True` in `get_pooling_updates`"
-        )
+        assert prompt_token_ids is not None, "Please set `requires_token_ids=True` in `get_pooling_updates`"
         return [prompt_token_ids[i, :num] for i, num in enumerate(self.prompt_lens)]
 
     def get_pooling_cursor(self) -> PoolingCursor:
@@ -118,9 +106,7 @@ class PoolingMetadata:
 
         num_scheduled_tokens_cpu = torch.from_numpy(num_scheduled_tokens_np)
         if query_start_loc_gpu is None:
-            cumsum = torch.zeros(
-                n_seq + 1, dtype=torch.int64, pin_memory=pin_memory, device="cpu"
-            )
+            cumsum = torch.zeros(n_seq + 1, dtype=torch.int64, pin_memory=pin_memory, device="cpu")
             torch.cumsum(num_scheduled_tokens_cpu, dim=0, out=cumsum[1:])
             cumsum = cumsum.to(device, non_blocking=True)
         else:

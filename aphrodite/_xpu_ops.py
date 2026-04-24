@@ -119,15 +119,12 @@ def _xpu_ops_deepseek_scaling_rope_fake(
     return query, key
 
 
-def _xpu_mxfp8_quantize_impl(
-    x: torch.Tensor, dtype: torch.dtype | None = None
-) -> tuple[torch.Tensor, torch.Tensor]:
+def _xpu_mxfp8_quantize_impl(x: torch.Tensor, dtype: torch.dtype | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     MXFP8_BLOCK_SIZE = 32
     assert x.shape[-1] % MXFP8_BLOCK_SIZE == 0
     if dtype is not None:
         assert dtype in (torch.float8_e4m3fn, torch.float8_e5m2), (
-            f"Unsupported dtype for xpu_mxfp8_quantize: {dtype}. "
-            f"Expected torch.float8_e4m3fn or torch.float8_e5m2."
+            f"Unsupported dtype for xpu_mxfp8_quantize: {dtype}. Expected torch.float8_e4m3fn or torch.float8_e5m2."
         )
     else:
         dtype = current_platform.fp8_dtype()
@@ -140,16 +137,12 @@ def _xpu_mxfp8_quantize_impl(
     x_q = torch.empty_like(x, device=x.device, dtype=dtype)
     shape = x.shape[:-1] + (x.shape[-1] // MXFP8_BLOCK_SIZE,)
     x_s = torch.empty(shape, device=x.device, dtype=torch.float32)
-    torch.ops._C.per_token_group_fp8_quant(
-        x, x_q, x_s, MXFP8_BLOCK_SIZE, eps, fp8_min, fp8_max, True
-    )
+    torch.ops._C.per_token_group_fp8_quant(x, x_q, x_s, MXFP8_BLOCK_SIZE, eps, fp8_min, fp8_max, True)
     x_s = x_s.to(torch.float8_e8m0fnu)
     return x_q, x_s
 
 
-def _xpu_mxfp8_quantize_fake(
-    x: torch.Tensor, dtype: torch.dtype | None = None
-) -> tuple[torch.Tensor, torch.Tensor]:
+def _xpu_mxfp8_quantize_fake(x: torch.Tensor, dtype: torch.dtype | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     if dtype is None:
         dtype = current_platform.fp8_dtype()
 
@@ -168,8 +161,7 @@ def _xpu_mxfp4_quantize_impl(
     eps = 1e-10
     assert x.ndim == 2, "input must be 2-D"
     assert x.shape[-1] % MXFP4_BLOCK_SIZE == 0, (
-        f"last dimension {x.shape[-1]} must be divisible by group_size "
-        f"{MXFP4_BLOCK_SIZE}"
+        f"last dimension {x.shape[-1]} must be divisible by group_size {MXFP4_BLOCK_SIZE}"
     )
     assert x.is_contiguous(), "input groups must be contiguous"
 
@@ -208,22 +200,16 @@ _OPS_REGISTERED = False
 class xpu_ops:
     @staticmethod
     @torch.compile
-    def dynamic_per_token_int8_quant_ref(
-        input: torch.Tensor, use_sym_quant: bool, bits: int
-    ):
+    def dynamic_per_token_int8_quant_ref(input: torch.Tensor, use_sym_quant: bool, bits: int):
         original_sizes = input.size()
         # view is not safe in torch.compile if input is not contiguous
-        input = input.reshape(
-            -1, original_sizes[-1]
-        )  # Flatten except for the last dimension
+        input = input.reshape(-1, original_sizes[-1])  # Flatten except for the last dimension
         qmin = -(2 ** (bits - 1)) if use_sym_quant else 0
         qmax = 2 ** (bits - 1) - 1 if use_sym_quant else 2**bits - 1
         min_val = torch.min(input, dim=-1)[0].to(dtype=torch.float32).unsqueeze(-1)
         max_val = torch.max(input, dim=-1)[0].to(dtype=torch.float32).unsqueeze(-1)
         if use_sym_quant:
-            scale = (
-                torch.maximum(torch.abs(min_val), torch.abs(max_val)) / qmax
-            ).clamp(min=1e-5)
+            scale = (torch.maximum(torch.abs(min_val), torch.abs(max_val)) / qmax).clamp(min=1e-5)
             zero_point = torch.zeros_like(scale).to(dtype=torch.int32)
         else:
             scale = ((max_val - min_val) / qmax).clamp(min=1e-5)
@@ -271,15 +257,11 @@ class xpu_ops:
         s_aux: torch.Tensor | None = None,
         return_attn_probs: bool | None = False,
     ):
-        assert cu_seqlens_k is not None or seqused_k is not None, (
-            "cu_seqlens_k or seqused_k must be provided"
-        )
+        assert cu_seqlens_k is not None or seqused_k is not None, "cu_seqlens_k or seqused_k must be provided"
         assert cu_seqlens_k is None or seqused_k is None, (
             "cu_seqlens_k and seqused_k cannot be provided at the same time"
         )
-        assert block_table is None or seqused_k is not None, (
-            "when enable block_table, seqused_k is needed"
-        )
+        assert block_table is None or seqused_k is not None, "when enable block_table, seqused_k is needed"
         assert block_table is not None or cu_seqlens_k is not None, (
             "when block_table is disabled, cu_seqlens_k is needed"
         )
@@ -343,9 +325,7 @@ class xpu_ops:
         pack_gqa=None,  # Can be tuned for speed
         sm_margin=0,  # Can be tuned if some SMs are used for communication
     ) -> None:
-        logger.warning_once(
-            "get_scheduler_metadata is not implemented for xpu_ops, returning None."
-        )
+        logger.warning_once("get_scheduler_metadata is not implemented for xpu_ops, returning None.")
         return None
 
     @staticmethod
@@ -377,8 +357,7 @@ class xpu_ops:
 
             # Validate inputs
             assert x.shape[-1] % group_size == 0, (
-                f"Last dimension {x.shape[-1]} must be divisible by "
-                f"group_size {group_size}"
+                f"Last dimension {x.shape[-1]} must be divisible by group_size {group_size}"
             )
             assert x.stride(-1) == 1, "Input tensor groups must be contiguous"
 
@@ -402,9 +381,7 @@ class xpu_ops:
             # Compute per-group absolute maximum values
             # Shape: (..., num_groups)
             abs_max = torch.amax(torch.abs(x_grouped), dim=-1, keepdim=False)
-            abs_max = torch.maximum(
-                abs_max, torch.tensor(eps, device=x.device, dtype=x.dtype)
-            )
+            abs_max = torch.maximum(abs_max, torch.tensor(eps, device=x.device, dtype=x.dtype))
 
             # Compute scales
             FP8_MAX = torch.finfo(dtype).max
@@ -452,9 +429,7 @@ class xpu_ops:
 
         k_fp8_bytes = k_fp8.view(-1, head_dim).view(torch.uint8)
         scale_bytes = k_scale.view(torch.uint8).view(-1, 4)
-        k = torch.cat(
-            [k_fp8_bytes, scale_bytes], dim=-1
-        )  # [total_tokens, head_dim + 4]
+        k = torch.cat([k_fp8_bytes, scale_bytes], dim=-1)  # [total_tokens, head_dim + 4]
 
         slot_mapping = slot_mapping.flatten()
         # kv_cache: [num_block, block_size, head_dim + 4]
@@ -515,9 +490,7 @@ class xpu_ops:
 
         # Gather K values using advanced indexing
         # Create indices for all elements we need to gather
-        k_indices = src_k_offsets.unsqueeze(1) + torch.arange(
-            head_dim, device=dst_k.device
-        )
+        k_indices = src_k_offsets.unsqueeze(1) + torch.arange(head_dim, device=dst_k.device)
         dst_k[:] = kv_cache_flat[k_indices]
 
         # Calculate source offset for scale values (vectorized)
@@ -526,9 +499,7 @@ class xpu_ops:
         src_scale_offsets = src_block_offsets + head_dim + inblock_offsets * scale_size
 
         # Gather scale values
-        scale_indices = src_scale_offsets.unsqueeze(1) + torch.arange(
-            scale_size, device=dst_scale.device
-        )
+        scale_indices = src_scale_offsets.unsqueeze(1) + torch.arange(scale_size, device=dst_scale.device)
         dst_scale[:] = kv_cache_flat[scale_indices]
 
     @staticmethod
@@ -547,14 +518,10 @@ class xpu_ops:
         topk_indices -= cu_seqlen_ks[:, None]
         mask_lo = topk_indices >= 0
         mask_hi = topk_indices - (cu_seqlen_ke - cu_seqlen_ks)[:, None] < 0
-        mask = torch.full_like(
-            topk_indices, False, dtype=torch.bool, device=topk_indices.device
-        )
+        mask = torch.full_like(topk_indices, False, dtype=torch.bool, device=topk_indices.device)
         mask = mask_lo & mask_hi
         topk_indices.masked_fill_(~mask, -1)
-        raw_topk_indices[: topk_indices.shape[0], : topk_indices.shape[1]] = (
-            topk_indices
-        )
+        raw_topk_indices[: topk_indices.shape[0], : topk_indices.shape[1]] = topk_indices
 
     @staticmethod
     def top_k_per_row_decode(
@@ -571,11 +538,7 @@ class xpu_ops:
         batch_size = seq_lens.size(0)
         # padded query len
         padded_num_tokens = batch_size * next_n
-        positions = (
-            torch.arange(logits.shape[-1], device=device)
-            .unsqueeze(0)
-            .expand(batch_size * next_n, -1)
-        )
+        positions = torch.arange(logits.shape[-1], device=device).unsqueeze(0).expand(batch_size * next_n, -1)
         row_indices = torch.arange(padded_num_tokens, device=device) // next_n
         next_n_offset = torch.arange(padded_num_tokens, device=device) % next_n
         index_end_pos = (seq_lens[row_indices] - next_n + next_n_offset).unsqueeze(1)
@@ -589,9 +552,7 @@ class xpu_ops:
         # that is out of range(masked already)
         # this will happen if context length is shorter than K
         topk_indices[topk_indices > index_end_pos] = -1
-        raw_topk_indices[: topk_indices.shape[0], : topk_indices.shape[1]] = (
-            topk_indices
-        )
+        raw_topk_indices[: topk_indices.shape[0], : topk_indices.shape[1]] = topk_indices
 
     @staticmethod
     def register_ops_once() -> None:

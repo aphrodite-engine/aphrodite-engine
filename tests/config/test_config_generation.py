@@ -1,5 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.quantization.quark.utils import deep_compare
 

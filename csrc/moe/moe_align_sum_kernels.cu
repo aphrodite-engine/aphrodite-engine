@@ -530,7 +530,8 @@ void moe_align_block_size(torch::Tensor topk_ids, int64_t num_experts,
         } else {
           torch::Tensor cumsum_buffer =
               torch::empty({num_experts + 1}, options_int);
-          auto align_kernel = aphrodite::moe::moe_align_block_size_kernel<scalar_t>;
+          auto align_kernel =
+              aphrodite::moe::moe_align_block_size_kernel<scalar_t>;
 
           size_t num_warps = CEILDIV(padded_num_experts, experts_per_warp);
           size_t shared_mem_size =
@@ -609,27 +610,33 @@ void moe_sum(torch::Tensor& input,   // [num_tokens, topk, hidden_size]
 
   switch (topk) {
     case 2:
-      APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "moe_sum_kernel", [&] {
-        aphrodite::moe::moe_sum_kernel<scalar_t, 2><<<grid, block, 0, stream>>>(
-            output.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-            hidden_size);
-      });
+      APHRODITE_DISPATCH_FLOATING_TYPES(
+          input.scalar_type(), "moe_sum_kernel", [&] {
+            aphrodite::moe::moe_sum_kernel<scalar_t, 2>
+                <<<grid, block, 0, stream>>>(output.data_ptr<scalar_t>(),
+                                             input.data_ptr<scalar_t>(),
+                                             hidden_size);
+          });
       break;
 
     case 3:
-      APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "moe_sum_kernel", [&] {
-        aphrodite::moe::moe_sum_kernel<scalar_t, 3><<<grid, block, 0, stream>>>(
-            output.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-            hidden_size);
-      });
+      APHRODITE_DISPATCH_FLOATING_TYPES(
+          input.scalar_type(), "moe_sum_kernel", [&] {
+            aphrodite::moe::moe_sum_kernel<scalar_t, 3>
+                <<<grid, block, 0, stream>>>(output.data_ptr<scalar_t>(),
+                                             input.data_ptr<scalar_t>(),
+                                             hidden_size);
+          });
       break;
 
     case 4:
-      APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "moe_sum_kernel", [&] {
-        aphrodite::moe::moe_sum_kernel<scalar_t, 4><<<grid, block, 0, stream>>>(
-            output.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-            hidden_size);
-      });
+      APHRODITE_DISPATCH_FLOATING_TYPES(
+          input.scalar_type(), "moe_sum_kernel", [&] {
+            aphrodite::moe::moe_sum_kernel<scalar_t, 4>
+                <<<grid, block, 0, stream>>>(output.data_ptr<scalar_t>(),
+                                             input.data_ptr<scalar_t>(),
+                                             hidden_size);
+          });
       break;
 
     default:
@@ -693,11 +700,12 @@ void moe_lora_align_block_size(
           constexpr int32_t fill_threads = 256;
 
           dim3 blockDim(num_thread + fill_threads);
-          auto kernel =
-              aphrodite::moe::moe_lora_align_block_size_small_batch_expert_kernel<
-                  scalar_t, fill_threads>;
-          AT_CUDA_CHECK(APHRODITE_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(
-              (void*)kernel, shared_mem));
+          auto kernel = aphrodite::moe::
+              moe_lora_align_block_size_small_batch_expert_kernel<scalar_t,
+                                                                  fill_threads>;
+          AT_CUDA_CHECK(
+              APHRODITE_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(
+                  (void*)kernel, shared_mem));
           kernel<<<max_loras, blockDim, shared_mem, stream>>>(
               topk_ids.data_ptr<scalar_t>(),
               token_lora_mapping.data_ptr<int32_t>(), block_size,
@@ -746,7 +754,8 @@ void moe_lora_align_block_size(
 
           dim3 gridDims(max_loras, actual_blocks);
           auto sort_kernel =
-              aphrodite::moe::lora_count_and_sort_expert_tokens_kernel<scalar_t>;
+              aphrodite::moe::lora_count_and_sort_expert_tokens_kernel<
+                  scalar_t>;
 
           sort_kernel<<<gridDims, block_threads, 0, stream>>>(
               topk_ids.data_ptr<scalar_t>(),

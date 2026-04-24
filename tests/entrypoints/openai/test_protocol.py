@@ -1,6 +1,7 @@
-from openai_harmony import Message
-
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from aphrodite.endpoints.openai.protocol import serialize_message, serialize_messages
+from openai_harmony import Message
 
 
 def test_serialize_message() -> None:

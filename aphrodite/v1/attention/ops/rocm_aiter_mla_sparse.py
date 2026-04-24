@@ -38,10 +38,7 @@ def _indexer_k_quant_and_cache_kernel(
     tid = tl.program_id(0)
     offset = tl.arange(0, head_dim)
     if LAYOUT == "SHUFFLE":
-        tile_offset = (
-            offset // HEAD_TILE_SIZE * BLOCK_TILE_SIZE * HEAD_TILE_SIZE
-            + offset % HEAD_TILE_SIZE
-        )
+        tile_offset = offset // HEAD_TILE_SIZE * BLOCK_TILE_SIZE * HEAD_TILE_SIZE + offset % HEAD_TILE_SIZE
     else:
         tile_offset = offset
     tile_store_offset = tile_offset
@@ -73,9 +70,7 @@ def _indexer_k_quant_and_cache_kernel(
             + tile_block_offset * HEAD_TILE_SIZE
         )
     else:
-        dst_ptr = (
-            kv_cache_ptr + block_id * kv_cache_value_stride + block_offset * head_dim
-        )
+        dst_ptr = kv_cache_ptr + block_id * kv_cache_value_stride + block_offset * head_dim
     tl.store(dst_ptr + tile_store_offset, fp8_val)
     dst_scale_ptr = kv_cache_scale_ptr + block_id * kv_cache_scale_stride + block_offset
     tl.store(dst_scale_ptr, scale)
@@ -168,10 +163,7 @@ def _cp_gather_indexer_quant_cache_kernel(
     scale_val = tl.load(src_scale_ptr)
     tl.store(k_scale_ptr + tid, scale_val)
     if LAYOUT == "SHUFFLE":
-        tiled_src_offset = (
-            offset // HEAD_TILE_SIZE * HEAD_TILE_SIZE * BLOCK_TILE_SIZE
-            + offset % HEAD_TILE_SIZE
-        )
+        tiled_src_offset = offset // HEAD_TILE_SIZE * HEAD_TILE_SIZE * BLOCK_TILE_SIZE + offset % HEAD_TILE_SIZE
     else:
         tiled_src_offset = offset
     val = tl.load(src_cache_ptr + tiled_src_offset)
@@ -247,23 +239,15 @@ def fp8_paged_mqa_logits_torch(
     for i in range(batch_size):
         context_len = context_lens[i]
         q_offsets = torch.arange(context_len - next_n, context_len, device="cuda")
-        weight_slice = (
-            weights[i * next_n : (i + 1) * next_n, :].transpose(0, 1).contiguous()
-        )
+        weight_slice = weights[i * next_n : (i + 1) * next_n, :].transpose(0, 1).contiguous()
         for block_rk in range(cdiv(context_len, block_size)):
             block_idx = block_tables[i][block_rk]
             qx, kx = q[i], kv_cache[block_idx]
-            k_offsets = torch.arange(
-                block_rk * block_size, (block_rk + 1) * block_size, device="cuda"
-            )
-            mask = (k_offsets[None, :] < context_len) & (
-                k_offsets[None, :] <= q_offsets[:, None]
-            )
+            k_offsets = torch.arange(block_rk * block_size, (block_rk + 1) * block_size, device="cuda")
+            mask = (k_offsets[None, :] < context_len) & (k_offsets[None, :] <= q_offsets[:, None])
             s = torch.where(
                 mask[None, :, :],
-                (qx.transpose(0, 1) @ kx.transpose(0, 1).transpose(1, 2)).to(
-                    logits.dtype
-                ),
+                (qx.transpose(0, 1) @ kx.transpose(0, 1).transpose(1, 2)).to(logits.dtype),
                 float("-inf"),
             )
             s = torch.relu(s) * weight_slice[..., None]
@@ -329,9 +313,7 @@ def rocm_fp8_paged_mqa_logits(
         aiter_paged_mqa_logits_module = paged_mqa_logits_module()
 
     if aiter_paged_mqa_logits_module is not None:
-        deepgemm_fp8_paged_mqa_logits_stage1 = (
-            aiter_paged_mqa_logits_module.deepgemm_fp8_paged_mqa_logits_stage1
-        )
+        deepgemm_fp8_paged_mqa_logits_stage1 = aiter_paged_mqa_logits_module.deepgemm_fp8_paged_mqa_logits_stage1
         batch_size, next_n, heads, _ = q_fp8.shape
         out_qk = torch.full(
             (heads, batch_size * next_n, max_model_len),
@@ -350,9 +332,7 @@ def rocm_fp8_paged_mqa_logits(
         )
         return out_qk.sum(dim=0)
     else:
-        return fp8_paged_mqa_logits_torch(
-            q_fp8, kv_cache_fp8, weights, context_lens, block_tables, max_model_len
-        )
+        return fp8_paged_mqa_logits_torch(q_fp8, kv_cache_fp8, weights, context_lens, block_tables, max_model_len)
 
 
 # Take from https://github.com/deepseek-ai/DeepGEMM/blob/main/tests/test_attention.py#L84
@@ -385,12 +365,8 @@ def fp8_mqa_logits_torch(
     k = k_fp8.to(torch.bfloat16)
     q = q.to(torch.bfloat16)
 
-    mask_lo = (
-        torch.arange(0, seq_len_kv, device="cuda")[None, :] >= cu_seqlen_ks[:, None]
-    )
-    mask_hi = (
-        torch.arange(0, seq_len_kv, device="cuda")[None, :] < cu_seqlen_ke[:, None]
-    )
+    mask_lo = torch.arange(0, seq_len_kv, device="cuda")[None, :] >= cu_seqlen_ks[:, None]
+    mask_hi = torch.arange(0, seq_len_kv, device="cuda")[None, :] < cu_seqlen_ke[:, None]
     mask = mask_lo & mask_hi
 
     score = torch.einsum("mhd,nd->hmn", q, k).float() * scale
@@ -476,9 +452,7 @@ def rocm_aiter_sparse_attn_indexer_fake(
     # profile run
     # NOTE(Chen): create the max possible flattened_kv. So that
     # profile_run can get correct memory usage.
-    _flattened_kv = torch.empty(
-        [total_seq_lens, head_dim + 4], device=k.device, dtype=torch.uint8
-    )
+    _flattened_kv = torch.empty([total_seq_lens, head_dim + 4], device=k.device, dtype=torch.uint8)
     fp8_dtype = current_platform.fp8_dtype()
     _k_fp8 = _flattened_kv[..., :head_dim].view(fp8_dtype).contiguous()
     _k_scale = _flattened_kv[..., head_dim:].view(torch.float32).contiguous()
@@ -578,9 +552,7 @@ def rocm_aiter_sparse_attn_indexer(
             )
             num_rows = logits.shape[0]
             assert topk_tokens == 2048, "top_k_per_row assumes size 2048"
-            topk_indices = topk_indices_buffer[
-                chunk.token_start : chunk.token_end, :topk_tokens
-            ]
+            topk_indices = topk_indices_buffer[chunk.token_start : chunk.token_end, :topk_tokens]
             torch.ops._C.top_k_per_row_prefill(
                 logits,
                 chunk.cu_seqlen_ks,
@@ -604,13 +576,9 @@ def rocm_aiter_sparse_attn_indexer(
             # decode_threshold since we unstrictly split
             # prefill and decode by decode_threshold
             # (currently set to 1 + speculative tokens)
-            padded_q_fp8_decode_tokens = pack_seq_triton(
-                q_fp8[:num_decode_tokens], decode_lens
-            )
+            padded_q_fp8_decode_tokens = pack_seq_triton(q_fp8[:num_decode_tokens], decode_lens)
         else:
-            padded_q_fp8_decode_tokens = q_fp8[:num_decode_tokens].reshape(
-                decode_lens.shape[0], -1, *q_fp8.shape[1:]
-            )
+            padded_q_fp8_decode_tokens = q_fp8[:num_decode_tokens].reshape(decode_lens.shape[0], -1, *q_fp8.shape[1:])
         # TODO: move and optimize below logic with triton kernels
         batch_size = padded_q_fp8_decode_tokens.shape[0]
         next_n = padded_q_fp8_decode_tokens.shape[1]
@@ -648,8 +616,6 @@ def rocm_aiter_sparse_attn_indexer(
                 topk_indices.reshape(batch_size, -1, topk_indices.shape[-1]),
                 decode_lens,
             )
-            topk_indices_buffer[:num_decode_tokens, : topk_indices.shape[-1]] = (
-                topk_indices
-            )
+            topk_indices_buffer[:num_decode_tokens, : topk_indices.shape[-1]] = topk_indices
 
     return topk_indices_buffer

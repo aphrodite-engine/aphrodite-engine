@@ -120,9 +120,7 @@ class MusicFlamingoRotaryEmbedding(nn.Module):
     ) -> tuple["torch.Tensor", float]:
         del seq_len
         base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or (
-            config.hidden_size // config.num_attention_heads
-        )
+        dim = getattr(config, "head_dim", None) or (config.hidden_size // config.num_attention_heads)
         attention_factor = 1.0
 
         inv_freq = 1.0 / (
@@ -181,9 +179,7 @@ class MusicFlamingoFeatureInputs(AudioFlamingo3FeatureInputs):
 
 MusicFlamingoEmbeddingInputs = AudioFlamingo3EmbeddingInputs
 
-MusicFlamingoInputs: TypeAlias = (
-    MusicFlamingoFeatureInputs | MusicFlamingoEmbeddingInputs
-)
+MusicFlamingoInputs: TypeAlias = MusicFlamingoFeatureInputs | MusicFlamingoEmbeddingInputs
 
 
 class MusicFlamingoEncoder(AudioFlamingo3Encoder):
@@ -244,9 +240,7 @@ def _musicflamingo_field_config(hf_inputs: Mapping[str, torch.Tensor]):
     fields = dict(_audioflamingo3_field_config(hf_inputs))
     chunk_counts = hf_inputs.get("chunk_counts")
     if chunk_counts is not None:
-        fields["rote_timestamps"] = MultiModalFieldConfig.flat_from_sizes(
-            "audio", chunk_counts, dim=0
-        )
+        fields["rote_timestamps"] = MultiModalFieldConfig.flat_from_sizes("audio", chunk_counts, dim=0)
     else:
         fields["rote_timestamps"] = MultiModalFieldConfig.batched("audio")
     return fields
@@ -305,9 +299,7 @@ class MusicFlamingoMultiModalProcessor(AudioFlamingo3MultiModalProcessor):
         outputs["chunk_counts"] = torch.tensor(chunk_counts, dtype=torch.long)
 
         if "rote_timestamps" not in outputs:
-            raise KeyError(
-                "MusicFlamingoProcessor output must include `rote_timestamps`."
-            )
+            raise KeyError("MusicFlamingoProcessor output must include `rote_timestamps`.")
 
         return outputs
 
@@ -389,9 +381,7 @@ class MusicFlamingoForConditionalGeneration(AudioFlamingo3ForConditionalGenerati
         self.multi_modal_projector = MusicFlamingoMultiModalProjector(self.config)
         self.pos_emb = MusicFlamingoRotaryEmbedding(self.config)
 
-    def _parse_and_validate_audio_input(
-        self, **kwargs: object
-    ) -> MusicFlamingoInputs | None:
+    def _parse_and_validate_audio_input(self, **kwargs: object) -> MusicFlamingoInputs | None:
         rote_timestamps = kwargs.pop("rote_timestamps", None)
         audio_input = super()._parse_and_validate_audio_input(**kwargs)
         if audio_input is None or audio_input["type"] == "audio_embeds":
@@ -405,17 +395,13 @@ class MusicFlamingoForConditionalGeneration(AudioFlamingo3ForConditionalGenerati
             rote_timestamps=rote_timestamps,
         )
 
-    def _process_audio_input(
-        self, audio_input: MusicFlamingoInputs
-    ) -> torch.Tensor | tuple[torch.Tensor, ...]:
+    def _process_audio_input(self, audio_input: MusicFlamingoInputs) -> torch.Tensor | tuple[torch.Tensor, ...]:
         if audio_input["type"] == "audio_embeds":
             return super()._process_audio_input(audio_input)
 
         rote_timestamps = audio_input["rote_timestamps"]
         if rote_timestamps is None:
-            raise ValueError(
-                "MusicFlamingo audio feature inputs must include `rote_timestamps`."
-            )
+            raise ValueError("MusicFlamingo audio feature inputs must include `rote_timestamps`.")
         if isinstance(rote_timestamps, list):
             rote_timestamps = torch.cat(rote_timestamps, dim=0)
 

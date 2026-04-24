@@ -100,107 +100,109 @@ torch::Tensor ggml_mul_mat_vec_a8(torch::Tensor W,  // quant weight
   cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
   options = torch::TensorOptions().dtype(torch::kInt32).device(W.device());
   at::Tensor quant_X = torch::empty({vecs, padded / 32 * 9}, options);
-  APHRODITE_DISPATCH_FLOATING_TYPES(X.scalar_type(), "ggml_mul_mat_vec_a8", [&] {
-    quantize_row_q8_1_cuda<scalar_t>(
-        (scalar_t*)X.data_ptr(), (void*)quant_X.data_ptr(), col, vecs, stream);
-    switch (type) {
-      case 2:
-        mul_mat_vec_q4_0_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 3:
-        mul_mat_vec_q4_1_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 6:
-        mul_mat_vec_q5_0_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 7:
-        mul_mat_vec_q5_1_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 8:
-        mul_mat_vec_q8_0_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 10:
-        mul_mat_vec_q2_K_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 11:
-        mul_mat_vec_q3_K_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 12:
-        mul_mat_vec_q4_K_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 13:
-        mul_mat_vec_q5_K_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 14:
-        mul_mat_vec_q6_K_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 16:
-        mul_mat_vec_iq2_xxs_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 17:
-        mul_mat_vec_iq2_xs_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 18:
-        mul_mat_vec_iq3_xxs_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 19:
-        mul_mat_vec_iq1_s_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 20:
-        mul_mat_vec_iq4_nl_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 21:
-        mul_mat_vec_iq3_s_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 22:
-        mul_mat_vec_iq2_s_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 23:
-        mul_mat_vec_iq4_xs_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-      case 29:
-        mul_mat_vec_iq1_m_q8_1_cuda<scalar_t>(
-            (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
-            (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
-        break;
-    }
-  });
+  APHRODITE_DISPATCH_FLOATING_TYPES(
+      X.scalar_type(), "ggml_mul_mat_vec_a8", [&] {
+        quantize_row_q8_1_cuda<scalar_t>((scalar_t*)X.data_ptr(),
+                                         (void*)quant_X.data_ptr(), col, vecs,
+                                         stream);
+        switch (type) {
+          case 2:
+            mul_mat_vec_q4_0_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 3:
+            mul_mat_vec_q4_1_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 6:
+            mul_mat_vec_q5_0_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 7:
+            mul_mat_vec_q5_1_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 8:
+            mul_mat_vec_q8_0_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 10:
+            mul_mat_vec_q2_K_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 11:
+            mul_mat_vec_q3_K_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 12:
+            mul_mat_vec_q4_K_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 13:
+            mul_mat_vec_q5_K_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 14:
+            mul_mat_vec_q6_K_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 16:
+            mul_mat_vec_iq2_xxs_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 17:
+            mul_mat_vec_iq2_xs_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 18:
+            mul_mat_vec_iq3_xxs_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 19:
+            mul_mat_vec_iq1_s_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 20:
+            mul_mat_vec_iq4_nl_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 21:
+            mul_mat_vec_iq3_s_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 22:
+            mul_mat_vec_iq2_s_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 23:
+            mul_mat_vec_iq4_xs_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+          case 29:
+            mul_mat_vec_iq1_m_q8_1_cuda<scalar_t>(
+                (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
+                (scalar_t*)Y.data_ptr(), col, row, vecs, stream);
+            break;
+        }
+      });
   return Y;
 }
 

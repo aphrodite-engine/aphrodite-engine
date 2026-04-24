@@ -31,9 +31,7 @@ class Glm47MoeModelToolParser(Glm4MoeModelToolParser):
         # The function name can be followed by a newline, whitespace, or
         # directly by <arg_key> tags (no separator).  The arg section is
         # optional so that zero-argument calls are supported.
-        self.func_detail_regex = re.compile(
-            r"<tool_call>\s*(\S+?)\s*(<arg_key>.*)?</tool_call>", re.DOTALL
-        )
+        self.func_detail_regex = re.compile(r"<tool_call>\s*(\S+?)\s*(<arg_key>.*)?</tool_call>", re.DOTALL)
         self.func_arg_regex = re.compile(
             r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>",
             re.DOTALL,

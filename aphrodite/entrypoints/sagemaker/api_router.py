@@ -42,9 +42,9 @@ def attach_router(
     router = APIRouter()
 
     # NOTE: Construct the TypeAdapters only once
-    INVOCATION_TYPES = get_generate_invocation_types(
+    INVOCATION_TYPES = get_generate_invocation_types(supported_tasks, model_config) + get_pooling_invocation_types(
         supported_tasks, model_config
-    ) + get_pooling_invocation_types(supported_tasks, model_config)
+    )
 
     INVOCATION_VALIDATORS = [
         (pydantic.TypeAdapter(request_type), (get_handler, endpoint))
@@ -95,8 +95,7 @@ def attach_router(
             return await endpoint(request, raw_request)
 
         type_names = [
-            t.__name__ if isinstance(t := validator._type, type) else str(t)
-            for validator, _ in valid_endpoints
+            t.__name__ if isinstance(t := validator._type, type) else str(t) for validator, _ in valid_endpoints
         ]
         msg = f"Cannot find suitable handler for request. Expected one of: {type_names}"
         res = base(raw_request).create_error_response(message=msg)

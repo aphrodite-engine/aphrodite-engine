@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import os
 import signal
@@ -10,11 +12,11 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
+from aphrodite.engine.args_tools import EngineArgs
 from transformers import AutoTokenizer
 
 from aphrodite import SamplingParams
 from aphrodite.distributed.kv_events import BlockStored, KVEventBatch, ZmqEventPublisher
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.torch_utils import set_default_torch_num_threads

@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-
 from aphrodite.lora.models import LoRAModel
-from aphrodite.lora.peft_helper import PEFTHelper
 from aphrodite.modeling.models.baichuan import BaiChuanBaseForCausalLM
 from aphrodite.modeling.models.utils import WeightsMapper
+
+from aphrodite.lora.peft_helper import PEFTHelper
 
 lora_lst = ["baichuan7B", "baichuan7B-zero", "baichuan7B-zero-regex", "chatglm3-6b"]
 BAICHUAN_LORA_MODULES = [

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests whether aphrodite correctly load and run gptq_v2 format checkpoints.
 
 Run `pytest tests/quantization/test_gptq_v2.py --forked`.
@@ -5,10 +7,10 @@ Run `pytest tests/quantization/test_gptq_v2.py --forked`.
 
 import pytest
 import torch
+from aphrodite.quantization.gptq import GPTQLinearMethod
 from transformers import AutoTokenizer
 
 from aphrodite import SamplingParams
-from aphrodite.quantization.gptq import GPTQLinearMethod
 
 # A dummy small model quantized by GPTQModel, stored in GPTQ v2 format
 MODELS = ["XXXXyu/Qwen3-1.7B-w2g64-gptq_v2"]

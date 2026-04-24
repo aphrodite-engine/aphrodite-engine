@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 import textwrap
 import traceback
 from itertools import product
 from typing import Any
 
+import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 import pytest
 import torch
 
-import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe

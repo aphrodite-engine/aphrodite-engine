@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import random
 
 import pytest
 import torch
+from aphrodite.attention.layer import Attention, MultiHeadAttention
 
 from aphrodite import _custom_ops as ops
-from aphrodite.attention.layer import Attention, MultiHeadAttention
 from aphrodite.platforms import current_platform
 from aphrodite.utils.mem_utils import get_max_shared_memory_bytes
 from tests.kernels.allclose_default import get_default_atol, get_default_rtol

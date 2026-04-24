@@ -84,8 +84,7 @@ def register_quantization_config(quantization: str):
     def _wrapper(quant_config_cls):
         if quantization in QUANTIZATION_METHODS:
             logger.warning(
-                "The quantization method '%s' already exists and will be "
-                "overwritten by the quantization config %s.",
+                "The quantization method '%s' already exists and will be overwritten by the quantization config %s.",
                 quantization,
                 quant_config_cls,
             )
@@ -96,9 +95,7 @@ def register_quantization_config(quantization: str):
                 sq.append(quantization)
 
         if not issubclass(quant_config_cls, QuantizationConfig):
-            raise ValueError(
-                "The quantization config must be a subclass of `QuantizationConfig`."
-            )
+            raise ValueError("The quantization config must be a subclass of `QuantizationConfig`.")
         _CUSTOMIZED_METHOD_TO_QUANT_CONFIG[quantization] = quant_config_cls
         return quant_config_cls
 
@@ -120,8 +117,8 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         CompressedTensorsConfig,
     )
     from .cpu_wna16 import CPUAWQConfig
-    from .experts_int8 import ExpertsInt8Config
     from .exl3 import Exl3Config
+    from .experts_int8 import ExpertsInt8Config
     from .fbgemm_fp8 import FBGEMMFp8Config
     from .fp8 import Fp8Config
     from .fp_quant import FPQuantConfig
@@ -174,8 +171,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     # more complicated online quant config object
     for scheme in OnlineQuantScheme:
         assert scheme.value not in method_to_config, (
-            f"Online quant scheme {scheme.value!r} conflicts with an "
-            f"existing quantization method"
+            f"Online quant scheme {scheme.value!r} conflicts with an existing quantization method"
         )
         method_to_config[scheme.value] = OnlineQuantizationConfig
 

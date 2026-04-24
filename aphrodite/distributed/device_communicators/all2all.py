@@ -53,10 +53,7 @@ class AgRsAll2AllManager(All2AllManagerBase):
         router_logits: torch.Tensor,
         is_sequence_parallel: bool = False,
         extra_tensors: list[torch.Tensor] | None = None,
-    ) -> (
-        tuple[torch.Tensor, torch.Tensor]
-        | tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
         """
         Gather hidden_states and router_logits from all dp ranks.
         """
@@ -121,9 +118,7 @@ class AgRsAll2AllManager(All2AllManagerBase):
 
         return hidden_states, topk_weights, topk_ids, gathered_tensors[3:]
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         """
         Reduce-scatter hidden_states across all dp ranks.
         """
@@ -182,9 +177,7 @@ class DeepEPAll2AllManagerBase(All2AllManagerBase):
     ):
         raise NotImplementedError
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         raise NotImplementedError
 
     def destroy(self):
@@ -234,17 +227,14 @@ class DeepEPHTAll2AllManager(DeepEPAll2AllManagerBase):
 
     def get_handle(self, kwargs):
         assert len(kwargs) == 0, (
-            "DeepEPHTAll2AllManager expects no arguments. All the required "
-            "args are computed in the Manager itself."
+            "DeepEPHTAll2AllManager expects no arguments. All the required args are computed in the Manager itself."
         )
 
         import deep_ep  # type: ignore[import-not-found]
 
         buffer_kwargs = self._make_all2all_kwargs()
         logger.debug("DeepEP all2all args %s", buffer_kwargs)
-        handle: deep_ep.Buffer = self.handle_cache.get_or_create(
-            buffer_kwargs, deep_ep.Buffer
-        )
+        handle: deep_ep.Buffer = self.handle_cache.get_or_create(buffer_kwargs, deep_ep.Buffer)
         return handle
 
     def set_num_sms(self, num_sms: int):
@@ -321,9 +311,7 @@ class DeepEPLLAll2AllManager(DeepEPAll2AllManagerBase):
 
         buffer_kwargs = self._make_all2all_kwargs(**kwargs)
         logger.debug("DeepEP all2all args %s", buffer_kwargs)
-        handle: deep_ep.Buffer = self.handle_cache.get_or_create(
-            buffer_kwargs, deep_ep.Buffer
-        )
+        handle: deep_ep.Buffer = self.handle_cache.get_or_create(buffer_kwargs, deep_ep.Buffer)
         return handle
 
     # DeepEP LL uses RDMA so no SMs are used for communication
@@ -361,9 +349,7 @@ class NixlEPAll2AllManager(All2AllManagerBase):
             num_ranks=self.max_num_ep_ranks,
             num_experts=max_num_global_experts,
         )
-        assert NixlEPAll2AllManager._buffer is None, (
-            "NIXL EP buffer already initialized"
-        )
+        assert NixlEPAll2AllManager._buffer is None, "NIXL EP buffer already initialized"
         buffer = Buffer(
             rank=self.rank,
             tcp_store_group=self.tcp_store_group.store,
@@ -393,15 +379,10 @@ class NixlEPAll2AllManager(All2AllManagerBase):
 
     def get_handle(self, kwargs):
         with NixlEPAll2AllManager._lock:
-            if (
-                NixlEPAll2AllManager._buffer is not None
-                and NixlEPAll2AllManager._buffer[1] == self.cpu_group.size()
-            ):
+            if NixlEPAll2AllManager._buffer is not None and NixlEPAll2AllManager._buffer[1] == self.cpu_group.size():
                 return NixlEPAll2AllManager._buffer[0]
 
-            num_experts_per_rank = (
-                kwargs["num_global_experts"] // kwargs["num_ep_ranks"]
-            )
+            num_experts_per_rank = kwargs["num_global_experts"] // kwargs["num_ep_ranks"]
             nixl_kwargs = dict(
                 max_num_tokens_per_dp_rank=kwargs["max_num_tokens_per_dp_rank"],
                 token_hidden_size=kwargs["token_hidden_size"],
@@ -429,9 +410,7 @@ class NixlEPAll2AllManager(All2AllManagerBase):
     ):
         raise NotImplementedError
 
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
+    def combine(self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False) -> torch.Tensor:
         raise NotImplementedError
 
     def destroy(self):
@@ -457,9 +436,7 @@ class FlashInferNVLinkTwoSidedManager(All2AllManagerBase):
     world_size: int
 
     def __init__(self, cpu_group, tcp_store_group=None):
-        assert has_flashinfer_nvlink_two_sided(), (
-            "flashinfer all2all module not found. Please install/check flashinfer"
-        )  # noqa
+        assert has_flashinfer_nvlink_two_sided(), "flashinfer all2all module not found. Please install/check flashinfer"  # noqa
         super().__init__(cpu_group, tcp_store_group)
         logger.debug(
             "Initialize for flashinfer All2All rank=%d, world size=%d",
@@ -499,18 +476,14 @@ class FlashInferNVLinkTwoSidedManager(All2AllManagerBase):
         )
 
         self.workspace_tensor = MnnvlMoe.get_moe_workspaces(self.mapping, dp_config)
-        self.prepare_workspace_tensor = MnnvlMoe.get_moe_prepare_workspace(
-            self.mapping, dp_config
-        )
+        self.prepare_workspace_tensor = MnnvlMoe.get_moe_prepare_workspace(self.mapping, dp_config)
 
         self.world_size = world_size
         self.rank = rank
         self.gpus_per_node = gpus_per_node
         self.initialized = True
 
-        logger.info(
-            "FlashInfer All2All initialized for rank %s, size %s", rank, world_size
-        )
+        logger.info("FlashInfer All2All initialized for rank %s, size %s", rank, world_size)
 
     def ensure_alltoall_workspace_initialized(self):
         """Ensure workspace is initialized"""
@@ -533,11 +506,7 @@ class FlashInferNVLinkTwoSidedManager(All2AllManagerBase):
 
     def cleanup(self):
         """Clean up workspace"""
-        if (
-            self.initialized
-            and self.workspace_tensor is not None
-            and self.prepare_workspace_tensor is not None
-        ):
+        if self.initialized and self.workspace_tensor is not None and self.prepare_workspace_tensor is not None:
             try:
                 del self.workspace_tensor
                 del self.prepare_workspace_tensor
@@ -562,8 +531,7 @@ class FlashInferNVLinkOneSidedManager(All2AllManagerBase):
 
     def __init__(self, cpu_group):
         assert has_flashinfer_nvlink_one_sided(), (
-            "flashinfer trtllm_moe_alltoall module not found. "
-            "Please install/check flashinfer"
+            "flashinfer trtllm_moe_alltoall module not found. Please install/check flashinfer"
         )
         super().__init__(cpu_group)
         logger.debug(
@@ -654,9 +622,7 @@ class FlashInferNVLinkOneSidedManager(All2AllManagerBase):
             try:
                 del self.moe_alltoall
             except Exception as e:
-                logger.warning(
-                    "Failed to cleanup FlashInfer One-sided NVLink workspace: %s", e
-                )
+                logger.warning("Failed to cleanup FlashInfer One-sided NVLink workspace: %s", e)
             finally:
                 self.moe_alltoall = None
                 self.mapping = None
@@ -694,9 +660,7 @@ class MoriAll2AllManager(All2AllManagerBase):
 
         from aphrodite.platforms.rocm import on_gfx942, on_gfx950
 
-        assert on_gfx942() or on_gfx950(), (
-            "mori currently only support arch gfx942 and gfx950"
-        )
+        assert on_gfx942() or on_gfx950(), "mori currently only support arch gfx942 and gfx950"
 
         if not self.internode:
             # single node
@@ -716,9 +680,7 @@ class MoriAll2AllManager(All2AllManagerBase):
                 block_num = 64
                 rdma_block_num = 32
             else:
-                raise NotImplementedError(
-                    "mori currently only support arch gfx942 and gfx950"
-                )
+                raise NotImplementedError("mori currently only support arch gfx942 and gfx950")
 
         return dict(
             rank=rank,
@@ -750,7 +712,5 @@ class MoriAll2AllManager(All2AllManagerBase):
 
         mori_kwargs = self._make_all2all_kwargs(**kwargs)
         logger.debug("MoRI all2all args %s", mori_kwargs)
-        handle: mori.ops.EpDispatchCombineOp = self.handle_cache.get_or_create(
-            mori_kwargs, self._make_handle
-        )
+        handle: mori.ops.EpDispatchCombineOp = self.handle_cache.get_or_create(mori_kwargs, self._make_handle)
         return handle

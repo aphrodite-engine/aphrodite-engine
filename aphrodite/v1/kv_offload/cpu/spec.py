@@ -20,9 +20,7 @@ class CPUOffloadingSpec(OffloadingSpec):
 
         cpu_bytes_to_use = self.extra_config.get("cpu_bytes_to_use")
         if not cpu_bytes_to_use:
-            raise Exception(
-                "cpu_bytes_to_use must be specified in kv_connector_extra_config"
-            )
+            raise Exception("cpu_bytes_to_use must be specified in kv_connector_extra_config")
 
         # calculate kv_bytes_per_offloaded_block
         assert kv_cache_config is not None
@@ -36,9 +34,7 @@ class CPUOffloadingSpec(OffloadingSpec):
 
         kv_bytes_per_offloaded_block = kv_bytes_per_block * self.block_size_factor
         self.num_blocks = (
-            int(cpu_bytes_to_use) // kv_bytes_per_offloaded_block
-            if kv_bytes_per_offloaded_block > 0
-            else 0
+            int(cpu_bytes_to_use) // kv_bytes_per_offloaded_block if kv_bytes_per_offloaded_block > 0 else 0
         )
 
         # scheduler-side
@@ -52,9 +48,7 @@ class CPUOffloadingSpec(OffloadingSpec):
     def get_manager(self) -> OffloadingManager:
         if not self._manager:
             kv_events_config = self.aphrodite_config.kv_events_config
-            enable_events = (
-                kv_events_config is not None and kv_events_config.enable_kv_cache_events
-            )
+            enable_events = kv_events_config is not None and kv_events_config.enable_kv_cache_events
 
             self._manager = CPUOffloadingManager(
                 num_blocks=self.num_blocks,
@@ -67,9 +61,7 @@ class CPUOffloadingSpec(OffloadingSpec):
             # filtering (a threshold of 1 equals no filter; 0 is the default).
             store_threshold = int(self.extra_config.get("store_threshold", 0))
             if store_threshold >= 2:
-                max_tracker_size = int(
-                    self.extra_config.get("max_tracker_size", 64_000)
-                )
+                max_tracker_size = int(self.extra_config.get("max_tracker_size", 64_000))
                 self._manager = FilterReusedOffloadingManager(
                     backing=self._manager,
                     store_threshold=store_threshold,
@@ -82,9 +74,7 @@ class CPUOffloadingSpec(OffloadingSpec):
     ) -> Iterator[tuple[type[LoadStoreSpec], type[LoadStoreSpec], OffloadingHandler]]:
         if not self._handlers:
             if not current_platform.is_cuda_alike():
-                raise Exception(
-                    "CPU Offloading is currently only supported on CUDA-alike GPUs"
-                )
+                raise Exception("CPU Offloading is currently only supported on CUDA-alike GPUs")
 
             self._handlers = CpuGpuOffloadingHandlers(
                 kv_caches=kv_caches,

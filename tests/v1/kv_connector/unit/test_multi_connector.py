@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import filecmp
 import shutil
 import tempfile
@@ -5,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import NixlKVConnectorStats
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.config import KVTransferConfig
@@ -12,7 +15,6 @@ from aphrodite.distributed.kv_transfer.kv_connector.factory import KVConnectorFa
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import KVConnectorBase_V1
 from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import MultiConnector, MultiKVConnectorStats
-from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl_connector import NixlKVConnectorStats
 
 MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
 

@@ -9,7 +9,7 @@ from aphrodite.utils.math_utils import round_up
 if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
-    from aphrodite.config import CacheConfig, ModelConfig, AphroditeConfig
+    from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 
 
 logger = init_logger(__name__)
@@ -114,16 +114,9 @@ class GptOssForCausalLMConfig(VerifyAndUpdateConfig):
         if quant_config is not None and quant_config.get("quant_method") == "mxfp4":
             model_config.hf_config.quantization_config["quant_method"] = "gpt_oss_mxfp4"
 
-        hf_text_quant_config = getattr(
-            model_config.hf_text_config, "quantization_config", None
-        )
-        if (
-            hf_text_quant_config is not None
-            and hf_text_quant_config.get("quant_method") == "mxfp4"
-        ):
-            model_config.hf_text_config.quantization_config["quant_method"] = (
-                "gpt_oss_mxfp4"
-            )
+        hf_text_quant_config = getattr(model_config.hf_text_config, "quantization_config", None)
+        if hf_text_quant_config is not None and hf_text_quant_config.get("quant_method") == "mxfp4":
+            model_config.hf_text_config.quantization_config["quant_method"] = "gpt_oss_mxfp4"
 
     @staticmethod
     def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
@@ -137,14 +130,9 @@ class GptOssForCausalLMConfig(VerifyAndUpdateConfig):
         compilation_config = aphrodite_config.compilation_config
         # Only override when the user has not set either of
         # cudagraph_capture_sizes or max_cudagraph_capture_size.
-        if (
-            compilation_config.cudagraph_capture_sizes is None
-            and compilation_config.max_cudagraph_capture_size is None
-        ):
+        if compilation_config.cudagraph_capture_sizes is None and compilation_config.max_cudagraph_capture_size is None:
             compilation_config.max_cudagraph_capture_size = 1024
-            logger.info(
-                "Overriding max cuda graph capture size to %d for performance.", 1024
-            )
+            logger.info("Overriding max cuda graph capture size to %d for performance.", 1024)
 
 
 class GteNewModelConfig(VerifyAndUpdateConfig):
@@ -325,10 +313,7 @@ class MambaModelConfig(VerifyAndUpdateConfig):
 
         if cache_config.enable_prefix_caching:
             if cache_config.mamba_cache_mode == "none":
-                if (
-                    model_config.supports_mamba_prefix_caching
-                    and aphrodite_config.speculative_config is not None
-                ):
+                if model_config.supports_mamba_prefix_caching and aphrodite_config.speculative_config is not None:
                     cache_config.mamba_cache_mode = "align"
                     logger.warning(
                         "Mamba cache mode is set to 'align' for %s by default "
@@ -336,19 +321,13 @@ class MambaModelConfig(VerifyAndUpdateConfig):
                         model_config.architecture,
                     )
                 else:
-                    cache_config.mamba_cache_mode = (
-                        "all" if model_config.supports_mamba_prefix_caching else "align"
-                    )
+                    cache_config.mamba_cache_mode = "all" if model_config.supports_mamba_prefix_caching else "align"
                     logger.warning(
-                        "Mamba cache mode is set to '%s' for %s by default "
-                        "when prefix caching is enabled",
+                        "Mamba cache mode is set to '%s' for %s by default when prefix caching is enabled",
                         cache_config.mamba_cache_mode,
                         model_config.architecture,
                     )
-            if (
-                cache_config.mamba_cache_mode == "all"
-                and not model_config.supports_mamba_prefix_caching
-            ):
+            if cache_config.mamba_cache_mode == "all" and not model_config.supports_mamba_prefix_caching:
                 cache_config.mamba_cache_mode = "align"
                 logger.warning(
                     "Hybrid or mamba-based model detected without support "
@@ -374,9 +353,7 @@ class MambaModelConfig(VerifyAndUpdateConfig):
         else:
             if cache_config.mamba_cache_mode != "none":
                 cache_config.mamba_cache_mode = "none"
-                logger.warning(
-                    "Mamba cache mode is set to 'none' when prefix caching is disabled"
-                )
+                logger.warning("Mamba cache mode is set to 'none' when prefix caching is disabled")
             if cache_config.mamba_block_size is None:
                 cache_config.mamba_block_size = model_config.max_model_len
 
@@ -386,17 +363,13 @@ class NemotronHForCausalLMConfig(VerifyAndUpdateConfig):
     """Only `float32` is known to have no accuracy issues by default."""
 
     @classmethod
-    def update_mamba_ssm_cache_dtype(
-        cls, *, cache_config: "CacheConfig", hf_config: "PretrainedConfig"
-    ) -> None:
+    def update_mamba_ssm_cache_dtype(cls, *, cache_config: "CacheConfig", hf_config: "PretrainedConfig") -> None:
         """Update mamba_ssm_cache_dtype for NemotronH models when set to 'auto'
         (or not explicitly set), to the value specified in the HF config, or to
         `float32` if not specified.
         """
         if cache_config.mamba_ssm_cache_dtype == "auto":
-            mamba_ssm_cache_dtype = getattr(
-                hf_config, "mamba_ssm_cache_dtype", cls.DEFAULT_MAMBA_SSM_CACHE_DTYPE
-            )
+            mamba_ssm_cache_dtype = getattr(hf_config, "mamba_ssm_cache_dtype", cls.DEFAULT_MAMBA_SSM_CACHE_DTYPE)
             logger.info(
                 "Updating mamba_ssm_cache_dtype to '%s' for NemotronH model",
                 mamba_ssm_cache_dtype,
@@ -434,9 +407,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
 
         assert config.__class__.__name__ == "NomicBertConfig"
         assert config.activation_function in ["swiglu", "gelu"]
-        config.position_embedding_type = getattr(
-            config, "position_embedding_type", "rope"
-        )
+        config.position_embedding_type = getattr(config, "position_embedding_type", "rope")
 
         if config.activation_function == "swiglu":
             config.hidden_act = "silu"
@@ -454,9 +425,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
         config.hidden_size = config.n_embd
         config.num_hidden_layers = config.n_layer
         model_config.model_arch_config.hidden_size = config.hidden_size
-        model_config.model_arch_config.total_num_hidden_layers = (
-            config.num_hidden_layers
-        )
+        model_config.model_arch_config.total_num_hidden_layers = config.num_hidden_layers
 
         head_dim = config.hidden_size // config.num_attention_heads
         max_trained_positions = getattr(config, "max_trained_positions", 2048)
@@ -472,10 +441,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
         # with SentenceTransformer.
         # The context extension uses aphrodite style rope_theta and rope_parameters.
         # See #17785 #18755
-        if (
-            not model_config.hf_overrides
-            and model_config.original_max_model_len is None
-        ):
+        if not model_config.hf_overrides and model_config.original_max_model_len is None:
             # Default
             # Reset max_model_len to max_trained_positions.
             # nomic-embed-text-v2-moe the length is set to 512
@@ -483,9 +449,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
             max_model_len_before = model_config.max_model_len
             max_model_len = min(model_config.max_model_len, max_trained_positions)
 
-            model_config.max_model_len = model_config.get_and_verify_max_len(
-                max_model_len
-            )
+            model_config.max_model_len = model_config.get_and_verify_max_len(max_model_len)
 
             if model_config.max_model_len != max_model_len_before:
                 logger.warning(
@@ -503,9 +467,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
 
             if isinstance(model_config.hf_overrides, dict):
                 # hf_overrides_kw
-                max_model_len = model_config.hf_overrides.get(
-                    "max_model_len", model_config.max_model_len
-                )
+                max_model_len = model_config.hf_overrides.get("max_model_len", model_config.max_model_len)
             else:
                 # hf_overrides_fn
                 # This might be overridden by sentence_bert_config.json.
@@ -529,9 +491,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
             encoder_config.pop("max_seq_length", None)
             model_config.encoder_config = encoder_config
 
-            model_config.max_model_len = model_config.get_and_verify_max_len(
-                max_model_len
-            )
+            model_config.max_model_len = model_config.get_and_verify_max_len(max_model_len)
 
 
 class Qwen2ForProcessRewardModelConfig(VerifyAndUpdateConfig):
@@ -557,9 +517,7 @@ class Qwen3ForSequenceClassificationConfig(VerifyAndUpdateConfig):
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         config = model_config.hf_config
 
-        is_original_qwen3_reranker = getattr(
-            config, "is_original_qwen3_reranker", False
-        )
+        is_original_qwen3_reranker = getattr(config, "is_original_qwen3_reranker", False)
 
         if not is_original_qwen3_reranker:
             return
@@ -592,10 +550,7 @@ class Qwen3_5ForConditionalGenerationConfig(VerifyAndUpdateConfig):
         if cache_config.mamba_ssm_cache_dtype == "auto":
             if mamba_ssm_dtype is not None:
                 cache_config.mamba_ssm_cache_dtype = mamba_ssm_dtype
-        elif (
-            mamba_ssm_dtype is not None
-            and cache_config.mamba_ssm_cache_dtype != mamba_ssm_dtype
-        ):
+        elif mamba_ssm_dtype is not None and cache_config.mamba_ssm_cache_dtype != mamba_ssm_dtype:
             logger.warning(
                 "Qwen3.5 model specifies mamba_ssm_dtype='%s' in its config, "
                 "but --mamba-ssm-cache-dtype='%s' was passed. "

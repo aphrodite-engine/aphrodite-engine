@@ -38,18 +38,14 @@ class MistralReasoningParser(BaseThinkingReasoningParser):
 
         if not self.model_tokenizer:
             raise ValueError(
-                "The model tokenizer must be passed to the ReasoningParser "
-                "constructor during construction."
+                "The model tokenizer must be passed to the ReasoningParser constructor during construction."
             )
 
         self.start_token_id = tokenizer.tokenizer.get_special_token(self.start_token)
         self.end_token_id = tokenizer.tokenizer.get_special_token(self.end_token)
 
         if self.start_token_id is None or self.end_token_id is None:
-            raise RuntimeError(
-                "Mistral reasoning parser could not locate think start/end "
-                "tokens in the tokenizer!"
-            )
+            raise RuntimeError("Mistral reasoning parser could not locate think start/end tokens in the tokenizer!")
 
     @cached_property
     def start_token(self) -> str:
@@ -122,9 +118,7 @@ class MistralReasoningParser(BaseThinkingReasoningParser):
 
         # Check if the start token is present in the model output, remove it
         # if it is present.
-        prev_bot_token, bot_token, post_bot_token = model_output.partition(
-            self.start_token
-        )
+        prev_bot_token, bot_token, post_bot_token = model_output.partition(self.start_token)
 
         has_bot_token = bool(bot_token)
         # Valid EOT tokens should follow BOT token
@@ -147,9 +141,7 @@ class MistralReasoningParser(BaseThinkingReasoningParser):
             # If model is well prompted and trained `has_non_valid_eot_token` should
             # be `False` and the parser outputs all tokens as 'content'
             if has_non_valid_eot_token:
-                prev_eot_token, _, post_eot_token = prev_bot_token.partition(
-                    self.end_token
-                )
+                prev_eot_token, _, post_eot_token = prev_bot_token.partition(self.end_token)
                 return None, prev_eot_token + post_eot_token
             # 3.b neither BOT or EOT have been outputted
             else:

@@ -1,6 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import json
 
 import pytest
+from aphrodite.endpoints.openai.protocol import FunctionCall, ToolCall
+from aphrodite.endpoints.openai.tool_parsers import OpenAIToolParser
 from openai_harmony import (
     Conversation,
     DeveloperContent,
@@ -11,8 +15,6 @@ from openai_harmony import (
     load_harmony_encoding,
 )
 
-from aphrodite.endpoints.openai.protocol import FunctionCall, ToolCall
-from aphrodite.endpoints.openai.tool_parsers import OpenAIToolParser
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 MODEL = "gpt2"

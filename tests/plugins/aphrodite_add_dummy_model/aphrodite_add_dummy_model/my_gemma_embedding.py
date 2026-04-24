@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Iterable
 
 import torch
 import torch.nn as nn
-
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 from aphrodite.modeling.models.gemma2 import Gemma2Model
 from aphrodite.modeling.models.utils import WeightsMapper, maybe_prefix
+
+from aphrodite.config import AphroditeConfig
 
 
 class MyGemma2Embedding(nn.Module):

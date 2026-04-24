@@ -10,7 +10,7 @@ from torch import nn
 from transformers import MambaConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, ModelConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
@@ -159,13 +159,9 @@ class MambaModel(nn.Module):
             residual = intermediate_tensors["residual"]
 
         for layer in islice(self.layers, self.start_layer, self.end_layer):
-            hidden_states, residual = layer(
-                positions=positions, hidden_states=hidden_states, residual=residual
-            )
+            hidden_states, residual = layer(positions=positions, hidden_states=hidden_states, residual=residual)
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm_f(hidden_states, residual)
 
         return hidden_states
@@ -189,9 +185,7 @@ class MambaModel(nn.Module):
         return loaded_params
 
 
-class MambaForCausalLM(
-    nn.Module, HasInnerState, IsAttentionFree, SupportsPP, SupportsMambaPrefixCaching
-):
+class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree, SupportsPP, SupportsMambaPrefixCaching):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         config = aphrodite_config.model_config.hf_config
 
@@ -201,9 +195,7 @@ class MambaForCausalLM(
         self.config = config
         self.aphrodite_config = aphrodite_config
         self.model_config = aphrodite_config.model_config
-        self.backbone = MambaModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "backbone")
-        )
+        self.backbone = MambaModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "backbone"))
 
         if config.tie_word_embeddings:
             self.lm_head = self.backbone.embeddings
@@ -216,9 +208,7 @@ class MambaForCausalLM(
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.backbone.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.backbone.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.backbone.embed_input_ids(input_ids)
@@ -231,9 +221,7 @@ class MambaForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.backbone(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.backbone(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

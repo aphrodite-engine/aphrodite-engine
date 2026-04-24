@@ -21,21 +21,21 @@
 #define APHRODITE_STABLE_DISPATCH_FP8_CASE(enum_type, ...) \
   THO_PRIVATE_CASE_TYPE_USING_HINT(enum_type, fp8_t, __VA_ARGS__)
 
-#define APHRODITE_STABLE_DISPATCH_CASE_FLOATING_TYPES(...)                  \
+#define APHRODITE_STABLE_DISPATCH_CASE_FLOATING_TYPES(...)             \
   THO_DISPATCH_CASE(torch::headeronly::ScalarType::Float, __VA_ARGS__) \
   THO_DISPATCH_CASE(torch::headeronly::ScalarType::Half, __VA_ARGS__)  \
   THO_DISPATCH_CASE(torch::headeronly::ScalarType::BFloat16, __VA_ARGS__)
 
 #define APHRODITE_STABLE_DISPATCH_FLOATING_TYPES(TYPE, NAME, ...) \
-  THO_DISPATCH_SWITCH(TYPE, NAME,                            \
-                      APHRODITE_STABLE_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
+  THO_DISPATCH_SWITCH(                                            \
+      TYPE, NAME, APHRODITE_STABLE_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
 
 // FP8 type dispatch - ROCm uses FNUZ format, CUDA uses OCP format
 #ifdef USE_ROCM
-  #define APHRODITE_STABLE_DISPATCH_CASE_FP8_TYPES(...)                 \
-    APHRODITE_STABLE_DISPATCH_FP8_CASE(                                 \
+  #define APHRODITE_STABLE_DISPATCH_CASE_FP8_TYPES(...)            \
+    APHRODITE_STABLE_DISPATCH_FP8_CASE(                            \
         torch::headeronly::ScalarType::Float8_e4m3fn, __VA_ARGS__) \
-    APHRODITE_STABLE_DISPATCH_FP8_CASE(                                 \
+    APHRODITE_STABLE_DISPATCH_FP8_CASE(                            \
         torch::headeronly::ScalarType::Float8_e4m3fnuz, __VA_ARGS__)
 #else
   #define APHRODITE_STABLE_DISPATCH_CASE_FP8_TYPES(...) \
@@ -46,24 +46,24 @@
 // When using this dispatch macro, the type is 'fp8_t' not 'scalar_t'.
 // See APHRODITE_STABLE_DISPATCH_FP8_CASE above.
 #define APHRODITE_STABLE_DISPATCH_FP8_TYPES(TYPE, NAME, ...) \
-  THO_DISPATCH_SWITCH(TYPE, NAME,                       \
+  THO_DISPATCH_SWITCH(TYPE, NAME,                            \
                       APHRODITE_STABLE_DISPATCH_CASE_FP8_TYPES(__VA_ARGS__))
 
 // Half types dispatch (Half + BFloat16)
-#define APHRODITE_STABLE_DISPATCH_CASE_HALF_TYPES(...)                     \
+#define APHRODITE_STABLE_DISPATCH_CASE_HALF_TYPES(...)                \
   THO_DISPATCH_CASE(torch::headeronly::ScalarType::Half, __VA_ARGS__) \
   THO_DISPATCH_CASE(torch::headeronly::ScalarType::BFloat16, __VA_ARGS__)
 
 #define APHRODITE_STABLE_DISPATCH_HALF_TYPES(TYPE, NAME, ...) \
-  THO_DISPATCH_SWITCH(TYPE, NAME,                        \
+  THO_DISPATCH_SWITCH(TYPE, NAME,                             \
                       APHRODITE_STABLE_DISPATCH_CASE_HALF_TYPES(__VA_ARGS__))
 
 // Boolean dispatch
 #define APHRODITE_STABLE_DISPATCH_BOOL(expr, const_expr, ...) \
-  if (expr) {                                            \
-    constexpr bool const_expr = true;                    \
-    __VA_ARGS__();                                       \
-  } else {                                               \
-    constexpr bool const_expr = false;                   \
-    __VA_ARGS__();                                       \
+  if (expr) {                                                 \
+    constexpr bool const_expr = true;                         \
+    __VA_ARGS__();                                            \
+  } else {                                                    \
+    constexpr bool const_expr = false;                        \
+    __VA_ARGS__();                                            \
   }

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test (piecewise) compilation with a simple model where multiple submodules
 are compiled and graph captured separately.

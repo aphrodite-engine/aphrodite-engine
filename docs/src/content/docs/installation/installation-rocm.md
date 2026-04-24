@@ -11,11 +11,9 @@ Aphrodite supports AMD GPUs using ROCm 6.1.
 - GPU: MI200 (gfx90a), MI300 (gfx942), RX 7900 Series (gfx1100)
 - ROCm 6.1
 
-
 ## Installation with Docker
 
 You can build Aphrodite Engine from source. First, build a docker image from the provided `Dockerfile.rocm`, then launch a container from the image.
-
 
 To build Aphrodite on high-end datacenter GPUs (e.g. MI300X), run this:
 
@@ -45,7 +43,6 @@ docker run -it \
   bash
 ```
 
-
 ## Installation from source
 
 You can also build Aphrodite from source, but it's more complicated, so we recommend Docker.
@@ -55,7 +52,6 @@ You will need the following installed beforehand:
 - [ROCm](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/)
 - [PyTorch](https://pytorch.org/get-started/locally/)
 - [hipBLAS](https://rocm.docs.amd.com/projects/hipBLAS/en/latest/install.html#install)
-
 
 Then install [Triton for ROCm](http://github.com/ROCm/triton). You may also Install [CK Flash Attention](https://github.com/ROCm/flash-attention) if needed.
 

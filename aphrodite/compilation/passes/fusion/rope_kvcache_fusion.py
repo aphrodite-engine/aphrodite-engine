@@ -23,8 +23,8 @@ from aphrodite.utils.torch_utils import (
     direct_register_custom_op,
 )
 
-from ..inductor_pass import enable_fake_mode
 from ..aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
+from ..inductor_pass import enable_fake_mode
 from .matcher_utils import (
     MatcherRotaryEmbedding,
 )
@@ -240,9 +240,7 @@ class RopeKVCacheFusionPass(AphroditePatternMatcherPass):
     def __init__(self, config: AphroditeConfig) -> None:
         super().__init__(config)
 
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="rope_kv_cache_fusion_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="rope_kv_cache_fusion_pass")
 
         cc = config.compilation_config
         self.max_token_num = cc.pass_config.rope_kvcache_fusion_max_token_num

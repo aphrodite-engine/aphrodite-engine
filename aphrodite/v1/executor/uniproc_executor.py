@@ -39,9 +39,7 @@ class UniProcExecutor(Executor):
 
         self.async_output_thread: ThreadPoolExecutor | None = None
         if self.max_concurrent_batches > 1:
-            self.async_output_thread = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="WorkerAsyncOutput"
-            )
+            self.async_output_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="WorkerAsyncOutput")
 
         self.driver_worker.init_worker(all_kwargs=[kwargs])
         self.driver_worker.init_device()
@@ -161,8 +159,7 @@ class ExecutorWithExternalLauncher(UniProcExecutor):
     def _init_executor(self) -> None:
         """Initialize the worker and load the model."""
         assert not envs.APHRODITE_ENABLE_V1_MULTIPROCESSING, (
-            "To get deterministic execution, "
-            "please set APHRODITE_ENABLE_V1_MULTIPROCESSING=0"
+            "To get deterministic execution, please set APHRODITE_ENABLE_V1_MULTIPROCESSING=0"
         )
         super()._init_executor()
 

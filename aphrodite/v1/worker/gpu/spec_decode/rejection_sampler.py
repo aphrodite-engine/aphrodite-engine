@@ -46,9 +46,7 @@ def _strict_rejection_sample_kernel(
                 rejected = True
     if not rejected:
         target_sampled = tl.load(target_sampled_ptr + start_idx + num_tokens - 1)
-        tl.store(
-            sampled_ptr + req_idx * sampled_stride + num_tokens - 1, target_sampled
-        )
+        tl.store(sampled_ptr + req_idx * sampled_stride + num_tokens - 1, target_sampled)
         num_sampled += 1
     tl.store(num_sampled_ptr + req_idx, num_sampled)
 
@@ -108,18 +106,10 @@ class RejectionSampler:
         self.rejection_sample_method = spec_config.rejection_sample_method
         if self.rejection_sample_method == "synthetic":
             synthetic_acceptance_rate = spec_config.synthetic_acceptance_rate
-            if (
-                synthetic_acceptance_rate is None
-                or not 0.0 <= synthetic_acceptance_rate <= 1.0
-            ):
-                raise ValueError(
-                    f"synthetic_acceptance_rate must be in [0, 1], "
-                    f"but got {synthetic_acceptance_rate}"
-                )
-            self.base_acceptance_rate, self.decay_factor = (
-                compute_synthetic_rejection_sampler_params(
-                    synthetic_acceptance_rate, self.num_speculative_steps
-                )
+            if synthetic_acceptance_rate is None or not 0.0 <= synthetic_acceptance_rate <= 1.0:
+                raise ValueError(f"synthetic_acceptance_rate must be in [0, 1], but got {synthetic_acceptance_rate}")
+            self.base_acceptance_rate, self.decay_factor = compute_synthetic_rejection_sampler_params(
+                synthetic_acceptance_rate, self.num_speculative_steps
             )
 
     def _get_logprobs_tensors(
@@ -129,17 +119,13 @@ class RejectionSampler:
         num_sampled: torch.Tensor,
         logits: torch.Tensor,
     ) -> LogprobsTensors | None:
-        max_num_logprobs = self.sampler.sampling_states.max_num_logprobs(
-            input_batch.idx_mapping_np
-        )
+        max_num_logprobs = self.sampler.sampling_states.max_num_logprobs(input_batch.idx_mapping_np)
         if max_num_logprobs == NO_LOGPROBS:
             return None
 
         num_reqs = input_batch.cu_num_logits.shape[0] - 1
         num_logits = logits.shape[0]
-        flat_sampled = torch.zeros(
-            num_logits, dtype=sampled.dtype, device=sampled.device
-        )
+        flat_sampled = torch.zeros(num_logits, dtype=sampled.dtype, device=sampled.device)
         _flatten_sampled_kernel[(num_reqs,)](
             flat_sampled,
             sampled,
@@ -204,9 +190,7 @@ class RejectionSampler:
                 input_batch,
                 sampled,
                 num_sampled,
-                processed_logits
-                if self.sampler.logprobs_mode == "processed_logprobs"
-                else logits,
+                processed_logits if self.sampler.logprobs_mode == "processed_logprobs" else logits,
             )
         elif self.rejection_sample_method == "synthetic":
             sampler_output = self.sampler(logits, input_batch)
@@ -223,9 +207,7 @@ class RejectionSampler:
                 self.num_speculative_steps,
             )
         else:
-            raise ValueError(
-                f"Unknown rejection sample method: {self.rejection_sample_method}"
-            )
+            raise ValueError(f"Unknown rejection sample method: {self.rejection_sample_method}")
 
         return SamplerOutput(
             sampled_token_ids=sampled,

@@ -201,11 +201,7 @@ def set_process_title(
 def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
     """Add colored prefix to file output for log decoration."""
     is_tty = hasattr(file, "isatty") and file.isatty()
-    if (
-        envs.NO_COLOR
-        or envs.APHRODITE_LOGGING_COLOR == "0"
-        or (envs.APHRODITE_LOGGING_COLOR != "1" and not is_tty)
-    ):
+    if envs.NO_COLOR or envs.APHRODITE_LOGGING_COLOR == "0" or (envs.APHRODITE_LOGGING_COLOR != "1" and not is_tty):
         prefix = f"({worker_name} pid={pid}) "
     else:
         prefix = f"{CYAN}({worker_name} pid={pid}){RESET} "
@@ -317,7 +313,5 @@ def find_loaded_library(lib_name: str) -> str | None:
     start = found_line.index("/")
     path = found_line[start:].strip()
     filename = path.split("/")[-1]
-    assert filename.rpartition(".so")[0].startswith(lib_name), (
-        f"Unexpected filename: {filename} for library {lib_name}"
-    )
+    assert filename.rpartition(".so")[0].startswith(lib_name), f"Unexpected filename: {filename} for library {lib_name}"
     return path

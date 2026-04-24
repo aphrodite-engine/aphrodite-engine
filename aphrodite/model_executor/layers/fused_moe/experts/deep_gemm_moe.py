@@ -46,9 +46,7 @@ def _valid_deep_gemm_shape(M: int, N: int, K: int) -> bool:
     return align <= M and N % align == 0 and K % align == 0
 
 
-def _valid_deep_gemm(
-    hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor
-) -> bool:
+def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor) -> bool:
     """
     Check if the given problem size is supported by the DeepGemm grouped
     gemm kernel.  All of M, N, K and the quantization block_shape must be
@@ -95,11 +93,7 @@ def _valid_deep_gemm(
         )
         return False
 
-    if (
-        not hidden_states.is_contiguous()
-        or not w1.is_contiguous()
-        or not w2.is_contiguous()
-    ):
+    if not hidden_states.is_contiguous() or not w1.is_contiguous() or not w2.is_contiguous():
         logger.debug_once(
             "DeepGemm disabled: weights or activations not contiguous. "
             "hidden_states.is_contiguous(): %s, w1.is_contiguous(): %s, "
@@ -153,8 +147,7 @@ class DeepGemmExperts(mk.FusedMoEExpertsModular):
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
         # NOTE(rob): discovered an IMA with this combination. Needs investigation.
         return not (
-            moe_parallel_config.use_fi_nvl_two_sided_kernels
-            or moe_parallel_config.use_fi_nvl_one_sided_kernels
+            moe_parallel_config.use_fi_nvl_two_sided_kernels or moe_parallel_config.use_fi_nvl_one_sided_kernels
         )
 
     def supports_expert_map(self) -> bool:
@@ -176,9 +169,7 @@ class DeepGemmExperts(mk.FusedMoEExpertsModular):
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
         assert self.block_shape is not None
         block_m = self.block_shape[0]
-        M_sum = compute_aligned_M(
-            M, topk, local_num_experts, block_m, expert_tokens_meta
-        )
+        M_sum = compute_aligned_M(M, topk, local_num_experts, block_m, expert_tokens_meta)
         assert M_sum % block_m == 0
 
         activation_out_dim = self.adjust_N_for_activation(N, activation)
@@ -199,9 +190,7 @@ class DeepGemmExperts(mk.FusedMoEExpertsModular):
 
         # 1. DeepGemm UE8M0: use packed per-token-group quant
         if scale_fmt == DeepGemmQuantScaleFMT.UE8M0:
-            act_out = torch.empty(
-                (M_sum, activation_out_dim), dtype=input.dtype, device=input.device
-            )
+            act_out = torch.empty((M_sum, activation_out_dim), dtype=input.dtype, device=input.device)
             self.activation(activation, act_out, input)
             a2q, a2q_scale = per_token_group_quant_fp8_packed_for_deepgemm(
                 act_out,
@@ -220,13 +209,9 @@ class DeepGemmExperts(mk.FusedMoEExpertsModular):
             )
 
         # 3. fallback path for non-SiLU activations in non‑UE8M0 cases.
-        act_out = torch.empty(
-            (M_sum, activation_out_dim), dtype=input.dtype, device=input.device
-        )
+        act_out = torch.empty((M_sum, activation_out_dim), dtype=input.dtype, device=input.device)
         self.activation(activation, act_out, input)
-        return per_token_group_quant_fp8(
-            act_out, block_k, column_major_scales=True, out_q=output
-        )
+        return per_token_group_quant_fp8(act_out, block_k, column_major_scales=True, out_q=output)
 
     def apply(
         self,
@@ -269,9 +254,7 @@ class DeepGemmExperts(mk.FusedMoEExpertsModular):
             expert_tokens_meta=expert_tokens_meta,
         )
 
-        a1q_perm = _resize_cache(
-            workspace13.view(dtype=torch.float8_e4m3fn), (M_sum, K)
-        )
+        a1q_perm = _resize_cache(workspace13.view(dtype=torch.float8_e4m3fn), (M_sum, K))
         a1q, a1q_scale, expert_ids, inv_perm = deepgemm_moe_permute(
             aq=a1q,
             aq_scale=a1q_scale,
@@ -284,22 +267,14 @@ class DeepGemmExperts(mk.FusedMoEExpertsModular):
         assert a1q.size(0) == M_sum
 
         mm1_out = _resize_cache(workspace2, (M_sum, N))
-        m_grouped_fp8_gemm_nt_contiguous(
-            (a1q, a1q_scale), (w1, self.w1_scale), mm1_out, expert_ids
-        )
+        m_grouped_fp8_gemm_nt_contiguous((a1q, a1q_scale), (w1, self.w1_scale), mm1_out, expert_ids)
 
         activation_out_dim = self.adjust_N_for_activation(N, activation)
-        quant_out = _resize_cache(
-            workspace13.view(dtype=torch.float8_e4m3fn), (M_sum, activation_out_dim)
-        )
-        a2q, a2q_scale = self._act_mul_quant(
-            input=mm1_out.view(-1, N), output=quant_out, activation=activation
-        )
+        quant_out = _resize_cache(workspace13.view(dtype=torch.float8_e4m3fn), (M_sum, activation_out_dim))
+        a2q, a2q_scale = self._act_mul_quant(input=mm1_out.view(-1, N), output=quant_out, activation=activation)
 
         mm2_out = _resize_cache(workspace2, (M_sum, K))
-        m_grouped_fp8_gemm_nt_contiguous(
-            (a2q, a2q_scale), (w2, self.w2_scale), mm2_out, expert_ids
-        )
+        m_grouped_fp8_gemm_nt_contiguous((a2q, a2q_scale), (w2, self.w2_scale), mm2_out, expert_ids)
 
         if apply_router_weight_on_input:
             topk_weights = torch.ones_like(topk_weights)

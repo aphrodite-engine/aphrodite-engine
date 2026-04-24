@@ -19,17 +19,12 @@ from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 logger = init_logger(__name__)
 
 
-def _matmul_launch_metadata(
-    grid: Callable[..., Any], kernel: Any, args: dict[str, Any]
-) -> dict[str, Any]:
+def _matmul_launch_metadata(grid: Callable[..., Any], kernel: Any, args: dict[str, Any]) -> dict[str, Any]:
     ret = {}
     m, n, k = args["M"], args["N"], args["K"]
     ret["name"] = f"{kernel.name} [M={m}, N={n}, K={k}]"
     if "tiles_per_update" in args:
-        ret["name"] = (
-            f"{kernel.name} [M={m}, N={n}, K={k}, "
-            f"tiles_per_update={args['tiles_per_update']:02}]"
-        )
+        ret["name"] = f"{kernel.name} [M={m}, N={n}, K={k}, tiles_per_update={args['tiles_per_update']:02}]"
     if "c_ptr" in args:
         bytes_per_elem = args["c_ptr"].element_size()
     else:
@@ -86,9 +81,7 @@ def matmul_kernel_persistent(
     num_pid_in_group = GROUP_SIZE_M * num_pid_n
 
     for tile_id in tl.range(start_pid, num_tiles, NUM_SMS, flatten=True):
-        pid_m, pid_n = _compute_pid(
-            tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS
-        )
+        pid_m, pid_n = _compute_pid(tile_id, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
         start_m = pid_m * BLOCK_SIZE_M
         start_n = pid_n * BLOCK_SIZE_N
         offs_am = start_m + tl.arange(0, BLOCK_SIZE_M)
@@ -108,25 +101,15 @@ def matmul_kernel_persistent(
                 offs_k = ki * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K).to(tl.int64)
             else:
                 offs_k = ki * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
-            a_ptrs = a_ptr + (
-                offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak
-            )
-            b_ptrs = b_ptr + (
-                offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn
-            )
+            a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+            b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
 
-            a = tl.load(
-                a_ptrs, mask=offs_k_for_mask[None, :] < K - ki * BLOCK_SIZE_K, other=0.0
-            )
-            b = tl.load(
-                b_ptrs, mask=offs_k_for_mask[:, None] < K - ki * BLOCK_SIZE_K, other=0.0
-            )
+            a = tl.load(a_ptrs, mask=offs_k_for_mask[None, :] < K - ki * BLOCK_SIZE_K, other=0.0)
+            b = tl.load(b_ptrs, mask=offs_k_for_mask[:, None] < K - ki * BLOCK_SIZE_K, other=0.0)
             accumulator = tl.dot(a, b, accumulator)
 
         tile_id_c += NUM_SMS
-        pid_m, pid_n = _compute_pid(
-            tile_id_c, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS
-        )
+        pid_m, pid_n = _compute_pid(tile_id_c, num_pid_in_group, num_pid_m, GROUP_SIZE_M, NUM_SMS)
         offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
         offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
         if C_LARGE:
@@ -142,15 +125,11 @@ def matmul_kernel_persistent(
         tl.store(c_ptrs, c, mask=c_mask)
 
 
-def matmul_persistent(
-    a: torch.Tensor, b: torch.Tensor, bias: torch.Tensor | None = None
-):
+def matmul_persistent(a: torch.Tensor, b: torch.Tensor, bias: torch.Tensor | None = None):
     # Check constraints.
     assert a.shape[1] == b.shape[0], "Incompatible dimensions"
     assert a.dtype == b.dtype, "Incompatible dtypes"
-    assert bias is None or bias.dim() == 1, (
-        "Currently assuming bias is 1D, let Horace know if you run into this"
-    )
+    assert bias is None or bias.dim() == 1, "Currently assuming bias is 1D, let Horace know if you run into this"
     NUM_SMS = num_compute_units(a.device.index)
     M, K = a.shape
     K, N = b.shape
@@ -163,8 +142,7 @@ def matmul_persistent(
         return (
             min(
                 NUM_SMS,
-                triton.cdiv(M, META["BLOCK_SIZE_M"])
-                * triton.cdiv(N, META["BLOCK_SIZE_N"]),
+                triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
             ),
         )
 
@@ -305,14 +283,10 @@ def bmm_kernel(
 
         # a_ptrs: [BLOCK_SIZE_M, BLOCK_SIZE_K]
         #   element (i, j) points to A[pid_b, offs_m[i], offs_k[j]]
-        a_ptrs = a_batch_ptr + (
-            offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
-        )
+        a_ptrs = a_batch_ptr + (offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak)
         # b_ptrs: [BLOCK_SIZE_K, BLOCK_SIZE_N]
         #   element (i, j) points to B[pid_b, offs_k[i], offs_n[j]]
-        b_ptrs = b_batch_ptr + (
-            offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
-        )
+        b_ptrs = b_batch_ptr + (offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn)
 
         # valid K lanes for this block
         k_valid = offs_k_mask < (K - ki * BLOCK_SIZE_K)
@@ -428,9 +402,7 @@ def log_softmax(input: torch.Tensor, dim: int = -1) -> torch.Tensor:
         Tensor with log_softmax applied along the specified dimension
     """
     if dim != -1 and dim != input.ndim - 1:
-        raise ValueError(
-            "This implementation only supports log_softmax along the last dimension"
-        )
+        raise ValueError("This implementation only supports log_softmax along the last dimension")
 
     # Flatten all dimensions except the last one
     original_shape = input.shape
@@ -495,9 +467,7 @@ def mean_kernel(
         mask = n_offsets < N
 
         # Calculate input indices
-        input_idx = (
-            m_idx * input_stride0 + n_offsets * input_stride1 + k_idx * input_stride2
-        )
+        input_idx = m_idx * input_stride0 + n_offsets * input_stride1 + k_idx * input_stride2
 
         # Load and accumulate
         vals = tl.load(input_ptr + input_idx, mask=mask, other=0.0)
@@ -529,9 +499,7 @@ def mean_dim(
         Tensor with mean values along specified dimension
     """
     # Validate inputs
-    assert -input.ndim <= dim < input.ndim, (
-        f"Invalid dimension {dim} for tensor with {input.ndim} dimensions"
-    )
+    assert -input.ndim <= dim < input.ndim, f"Invalid dimension {dim} for tensor with {input.ndim} dimensions"
 
     # Handle negative dim
     if dim < 0:
@@ -648,28 +616,19 @@ def matmul_batch_invariant(a, b, *, out=None):
         return result
     else:
         raise ValueError(
-            f"matmul_batch_invariant requires both inputs be at least 2D "
-            f"got shapes {a.shape} and {b.shape}"
+            f"matmul_batch_invariant requires both inputs be at least 2D got shapes {a.shape} and {b.shape}"
         )
 
 
 def bmm_batch_invariant(a, b, *, out=None):
     # Batched matrix multiply: (B, M, K) x (B, K, N) -> (B, M, N)
     if not (a.ndim == 3 and b.ndim == 3):
-        raise ValueError(
-            f"bmm_batch_invariant expects 3D tensors, "
-            f"got shapes {a.shape} and {b.shape}"
-        )
+        raise ValueError(f"bmm_batch_invariant expects 3D tensors, got shapes {a.shape} and {b.shape}")
 
     if a.shape[0] != b.shape[0]:
-        raise ValueError(
-            f"Batch dimensions of tensors must match, "
-            f"but got {a.shape[0]} and {b.shape[0]}."
-        )
+        raise ValueError(f"Batch dimensions of tensors must match, but got {a.shape[0]} and {b.shape[0]}.")
     if a.shape[2] != b.shape[1]:
-        raise ValueError(
-            f"Incompatible inner dimensions for matmul: got {a.shape} and {b.shape}."
-        )
+        raise ValueError(f"Incompatible inner dimensions for matmul: got {a.shape} and {b.shape}.")
     if a.dtype != b.dtype:
         raise ValueError(f"Incompatible dtypes: got {a.dtype} and {b.dtype}.")
 
@@ -836,9 +795,7 @@ def _rms_norm_kernel(
         tl.store(output_row_start_ptr + col_idx, output, mask=mask)
 
 
-def rms_norm(
-    input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6
-) -> torch.Tensor:
+def rms_norm(input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """
     Compute RMS normalization using Triton kernel.
 
@@ -855,8 +812,7 @@ def rms_norm(
     """
     assert weight.dim() == 1, "Weight must be 1-dimensional"
     assert input.shape[-1] == weight.shape[0], (
-        f"Input last dimension ({input.shape[-1]}) must match "
-        f"weight dimension ({weight.shape[0]})"
+        f"Input last dimension ({input.shape[-1]}) must match weight dimension ({weight.shape[0]})"
     )
 
     # Flatten all dimensions except the last one
@@ -883,9 +839,7 @@ def rms_norm(
     return output.reshape(original_shape)
 
 
-def rms_norm_batch_invariant(
-    input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6
-) -> torch.Tensor:
+def rms_norm_batch_invariant(input: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """
     Batch-invariant wrapper for RMS normalization.
 
@@ -933,9 +887,7 @@ def enable_batch_invariant_mode():
     _batch_invariant_MODE = True
     _batch_invariant_LIB = torch.library.Library("aten", "IMPL")
 
-    if current_platform.is_device_capability_family(
-        100
-    ) or current_platform.is_device_capability_family(80):
+    if current_platform.is_device_capability_family(100) or current_platform.is_device_capability_family(80):
         # For PyTorch 2.9, B200 uses GEMV for bs=1
         # Requires https://github.com/pytorch/pytorch/pull/166735
         _batch_invariant_LIB.impl("aten::mm", mm_batch_invariant, "CUDA")
@@ -950,15 +902,11 @@ def enable_batch_invariant_mode():
         # Only source of batch invariance for Hopper is split-k, can disable through
         # cuBLAS workspace config
         _original_cublas_workspace_cfg = os.environ.get("CUBLAS_WORKSPACE_CONFIG", None)
-        _original_cublaslt_workspace_size = os.environ.get(
-            "CUBLASLT_WORKSPACE_SIZE", None
-        )
+        _original_cublaslt_workspace_size = os.environ.get("CUBLASLT_WORKSPACE_SIZE", None)
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
         os.environ["CUBLASLT_WORKSPACE_SIZE"] = "1"
 
-    _batch_invariant_LIB.impl(
-        "aten::_log_softmax", _log_softmax_batch_invariant, "CUDA"
-    )
+    _batch_invariant_LIB.impl("aten::_log_softmax", _log_softmax_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::softmax", softmax_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::_softmax", softmax_batch_invariant, "CUDA")
     _batch_invariant_LIB.impl("aten::mean.dim", mean_batch_invariant, "CUDA")
@@ -968,22 +916,12 @@ def enable_batch_invariant_mode():
     _original_torch_bmm = torch.bmm
     torch.bmm = bmm_batch_invariant
 
-    _original_bf16_reduction_precision = (
-        torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
-    )
-    _original_fp16_reduction_precision = (
-        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
-    )
+    _original_bf16_reduction_precision = torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction
+    _original_fp16_reduction_precision = torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction
 
-    reduced_precision_val = (
-        (False, False) if is_torch_equal_or_newer("2.10.0") else False
-    )
-    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = (
-        reduced_precision_val
-    )
-    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = (
-        reduced_precision_val
-    )
+    reduced_precision_val = (False, False) if is_torch_equal_or_newer("2.10.0") else False
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = reduced_precision_val
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = reduced_precision_val
     torch.backends.cuda.preferred_blas_library(backend="cublaslt")
 
 

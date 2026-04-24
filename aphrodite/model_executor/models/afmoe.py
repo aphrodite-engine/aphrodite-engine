@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, AphroditeConfig, get_current_aphrodite_config
+from aphrodite.config import AphroditeConfig, CacheConfig, get_current_aphrodite_config
 from aphrodite.distributed import (
     get_ep_group,
     get_pp_group,
@@ -80,10 +80,7 @@ class AfmoeMoE(nn.Module):
         self.n_shared_experts: int = config.num_shared_experts
 
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
 
         # Router gate
         self.gate = nn.Linear(
@@ -92,9 +89,7 @@ class AfmoeMoE(nn.Module):
             bias=False,
             dtype=torch.float32,
         )
-        self.expert_bias = nn.Parameter(
-            torch.empty(config.num_experts, dtype=torch.float32)
-        )
+        self.expert_bias = nn.Parameter(torch.empty(config.num_experts, dtype=torch.float32))
 
         # Load balancing settings
         aphrodite_config = get_current_aphrodite_config()
@@ -107,9 +102,7 @@ class AfmoeMoE(nn.Module):
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
 
         self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = (
-            self.physical_expert_start + self.n_local_physical_experts
-        )
+        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
 
         self.shared_experts = None
         # Shared experts
@@ -151,9 +144,7 @@ class AfmoeMoE(nn.Module):
 
         router_logits = self.gate(hidden_states.to(dtype=torch.float32))
 
-        final_hidden_states = self.experts(
-            hidden_states=hidden_states, router_logits=router_logits
-        )
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
 
         return final_hidden_states.view(num_tokens, hidden_dim)
 
@@ -266,9 +257,7 @@ class AfmoeAttention(nn.Module):
 
         # Apply Q/K normalization
         q = self.q_norm(q.reshape(-1, self.num_heads, self.head_dim)).reshape(q.shape)
-        k = self.k_norm(k.reshape(-1, self.num_kv_heads, self.head_dim)).reshape(
-            k.shape
-        )
+        k = self.k_norm(k.reshape(-1, self.num_kv_heads, self.head_dim)).reshape(k.shape)
 
         # Apply rotary embeddings only for local attention
         if self.is_local_attention and self.rotary_emb is not None:
@@ -332,9 +321,7 @@ class AfmoeDecoderLayer(nn.Module):
             )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.pre_mlp_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_mlp_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -442,18 +429,12 @@ class AfmoeModel(nn.Module, EagleModelMixin):
             residual = intermediate_tensors["residual"]
 
         aux_hidden_states = self._maybe_add_hidden_state([], 0, hidden_states, residual)
-        for idx, layer in enumerate(
-            islice(self.layers, self.start_layer, self.end_layer)
-        ):
+        for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer)):
             hidden_states, residual = layer(positions, hidden_states, residual)
-            self._maybe_add_hidden_state(
-                aux_hidden_states, idx + 1, hidden_states, residual
-            )
+            self._maybe_add_hidden_state(aux_hidden_states, idx + 1, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
 
@@ -467,12 +448,8 @@ class AfmoeModel(nn.Module, EagleModelMixin):
     ) -> IntermediateTensors:
         return IntermediateTensors(
             {
-                "hidden_states": torch.zeros(
-                    (batch_size, self.config.hidden_size), dtype=dtype, device=device
-                ),
-                "residual": torch.zeros(
-                    (batch_size, self.config.hidden_size), dtype=dtype, device=device
-                ),
+                "hidden_states": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device),
+                "residual": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device),
             }
         )
 
@@ -548,9 +525,7 @@ class AfmoeModel(nn.Module, EagleModelMixin):
                     # We should ask the weight loader to return success or not
                     # here since otherwise we may skip experts with other
                     # available replicas.
-                    weight_loader = typing.cast(
-                        Callable[..., bool], param.weight_loader
-                    )
+                    weight_loader = typing.cast(Callable[..., bool], param.weight_loader)
                     success = weight_loader(
                         param,
                         loaded_weight,
@@ -578,17 +553,13 @@ class AfmoeModel(nn.Module, EagleModelMixin):
                     if name is None:
                         continue
                     if name.endswith(".gate.e_score_correction_bias"):
-                        name = name.replace(
-                            ".gate.e_score_correction_bias", ".expert_bias"
-                        )
+                        name = name.replace(".gate.e_score_correction_bias", ".expert_bias")
 
                     if is_pp_missing_parameter(name, self):
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
 
@@ -622,19 +593,13 @@ class AfmoeForCausalLM(nn.Module, SupportsPP, SupportsEagle3, SupportsLoRA):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.model = AfmoeModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = AfmoeModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:
-            self.lm_head = ParallelLMHead(
-                config.vocab_size, config.hidden_size, quant_config=quant_config
-            )
+            self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size, quant_config=quant_config)
         else:
             self.lm_head = PPMissingLayer()
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
         self.expert_weights = []
 
         # Set MoE hyperparameters
@@ -689,9 +654,7 @@ class AfmoeForCausalLM(nn.Module, SupportsPP, SupportsEagle3, SupportsLoRA):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:

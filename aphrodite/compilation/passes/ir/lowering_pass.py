@@ -144,13 +144,10 @@ class AphroditeIRLoweringPass(AphroditeInductorPass):
         so we include them in the cache key.
         """
         priorities = {name: op.get_priority() for name, op in IrOp.registry.items()}
-        priorities_str = ";".join(
-            f"{name}={','.join(p)}" for name, p in priorities.items()
-        )
+        priorities_str = ";".join(f"{name}={','.join(p)}" for name, p in priorities.items())
 
         impl_uuids_str = ";".join(
-            f"{name}="
-            + ",".join(IrOp.registry[name].impls[provider].uuid() for provider in p)
+            f"{name}=" + ",".join(IrOp.registry[name].impls[provider].uuid() for provider in p)
             for name, p in priorities.items()
         )
 

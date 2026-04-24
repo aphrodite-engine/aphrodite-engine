@@ -65,15 +65,9 @@ class EagleSpeculator:
             max_num_tokens=self.max_num_tokens,
             device=device,
         )
-        self.hidden_states = torch.zeros(
-            self.max_num_tokens, self.hidden_size, dtype=self.dtype, device=device
-        )
-        self.idx_mapping = torch.zeros(
-            self.max_num_reqs, dtype=torch.int32, device=device
-        )
-        self.temperature = torch.zeros(
-            self.max_num_reqs, dtype=torch.float32, device=device
-        )
+        self.hidden_states = torch.zeros(self.max_num_tokens, self.hidden_size, dtype=self.dtype, device=device)
+        self.idx_mapping = torch.zeros(self.max_num_reqs, dtype=torch.int32, device=device)
+        self.temperature = torch.zeros(self.max_num_reqs, dtype=torch.float32, device=device)
         self.seeds = torch.zeros(self.max_num_reqs, dtype=torch.int64, device=device)
         self.draft_tokens = torch.zeros(
             self.max_num_reqs,
@@ -81,17 +75,11 @@ class EagleSpeculator:
             dtype=torch.int64,
             device=device,
         )
-        self.last_token_indices = torch.zeros(
-            self.max_num_reqs, dtype=torch.int64, device=device
-        )
+        self.last_token_indices = torch.zeros(self.max_num_reqs, dtype=torch.int64, device=device)
 
-        self.supports_mm_inputs = MULTIMODAL_REGISTRY.supports_multimodal_inputs(
-            self.draft_model_config
-        )
+        self.supports_mm_inputs = MULTIMODAL_REGISTRY.supports_multimodal_inputs(self.draft_model_config)
         if self.supports_mm_inputs:
-            self.inputs_embeds = torch.zeros(
-                self.max_num_tokens, self.hidden_size, dtype=self.dtype, device=device
-            )
+            self.inputs_embeds = torch.zeros(self.max_num_tokens, self.hidden_size, dtype=self.dtype, device=device)
 
         self.draft_logits: torch.Tensor | None = None
         if self.speculative_config.rejection_sample_method == "probabilistic":
@@ -148,9 +136,7 @@ class EagleSpeculator:
             self.aphrodite_config,
             AttentionLayerBase,  # type: ignore[type-abstract]
         ).keys()
-        self.draft_attn_layer_names = set(all_attn_layers) - set(
-            target_attn_layer_names
-        )
+        self.draft_attn_layer_names = set(all_attn_layers) - set(target_attn_layer_names)
 
     def set_attn(
         self,
@@ -192,9 +178,7 @@ class EagleSpeculator:
             if self.supports_mm_inputs:
                 # Merge multimodal embeddings with input ids.
                 mm_embeds, is_mm_embed = mm_inputs or (None, None)
-                num_input_tokens = (
-                    is_mm_embed.shape[0] if is_mm_embed is not None else num_tokens
-                )
+                num_input_tokens = is_mm_embed.shape[0] if is_mm_embed is not None else num_tokens
                 self.inputs_embeds[:num_input_tokens] = self.model.embed_input_ids(
                     self.input_buffers.input_ids[:num_input_tokens],
                     multimodal_embeddings=mm_embeds,
@@ -249,9 +233,7 @@ class EagleSpeculator:
             self.seeds,
             pos + 1,
             apply_temperature=True,
-            processed_logits_out=self.draft_logits[:, 0]
-            if self.draft_logits is not None
-            else None,
+            processed_logits_out=self.draft_logits[:, 0] if self.draft_logits is not None else None,
         )
         self.hidden_states[:num_reqs] = hidden_states[last_token_indices]
         self.input_buffers.positions[:num_reqs] = pos
@@ -290,9 +272,7 @@ class EagleSpeculator:
                 self.seeds,
                 pos + 1,
                 apply_temperature=True,
-                processed_logits_out=self.draft_logits[:, step]
-                if self.draft_logits is not None
-                else None,
+                processed_logits_out=self.draft_logits[:, step] if self.draft_logits is not None else None,
             )
             self.draft_tokens[:num_reqs, step] = draft_tokens
 
@@ -306,9 +286,7 @@ class EagleSpeculator:
                     self.max_model_len,
                 )
                 if attn_metadata is not None:
-                    self.block_tables.compute_slot_mappings(
-                        idx_mapping, query_start_loc, pos, num_tokens_padded
-                    )
+                    self.block_tables.compute_slot_mappings(idx_mapping, query_start_loc, pos, num_tokens_padded)
 
     def _build_draft_attn_metadata(
         self,
@@ -321,22 +299,15 @@ class EagleSpeculator:
             return None
 
         query_start_loc_cpu = (
-            torch.arange(num_reqs_padded + 1, dtype=torch.int32, device="cpu").clamp_(
-                max=num_reqs
-            )
-            * max_query_len
+            torch.arange(num_reqs_padded + 1, dtype=torch.int32, device="cpu").clamp_(max=num_reqs) * max_query_len
         )
-        block_tables = [
-            x[:num_reqs_padded] for x in self.block_tables.input_block_tables
-        ]
+        block_tables = [x[:num_reqs_padded] for x in self.block_tables.input_block_tables]
         slot_mappings = self.block_tables.slot_mappings[:, :num_tokens_padded]
         attn_metadata = build_attn_metadata(
             attn_groups=self.attn_groups,
             num_reqs=num_reqs_padded,
             num_tokens=num_tokens_padded,
-            query_start_loc_gpu=self.input_buffers.query_start_loc[
-                : num_reqs_padded + 1
-            ],
+            query_start_loc_gpu=self.input_buffers.query_start_loc[: num_reqs_padded + 1],
             query_start_loc_cpu=query_start_loc_cpu,
             max_query_len=max_query_len,
             seq_lens=self.input_buffers.seq_lens[:num_reqs_padded],
@@ -427,9 +398,7 @@ class EagleSpeculator:
         # seq_lens) of the target model.
         if aux_hidden_states:
             assert self.method == "eagle3"
-            hidden_states = self.model.combine_hidden_states(
-                torch.cat(aux_hidden_states, dim=-1)
-            )
+            hidden_states = self.model.combine_hidden_states(torch.cat(aux_hidden_states, dim=-1))
         else:
             hidden_states = last_hidden_states
         self.hidden_states[:num_tokens].copy_(hidden_states)
@@ -535,9 +504,7 @@ class EagleSpeculator:
                 self.input_buffers.positions[:num_reqs],
                 decode_batch_desc.num_tokens,
             )
-            slot_mappings_updated = build_slot_mappings_by_layer(
-                slot_mappings, self.kv_cache_config
-            )
+            slot_mappings_updated = build_slot_mappings_by_layer(slot_mappings, self.kv_cache_config)
             attn_metadata_updated = self._build_draft_attn_metadata(
                 num_reqs=num_reqs,
                 num_reqs_padded=decode_batch_desc.num_reqs or num_reqs,

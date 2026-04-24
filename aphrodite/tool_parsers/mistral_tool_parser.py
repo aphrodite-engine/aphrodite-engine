@@ -64,9 +64,7 @@ class StreamingState(Enum):
     """Enum for tracking the current streaming parsing state."""
 
     WAITING_FOR_TOOL_START = auto()
-    WAITING_FOR_TOOL_KEY = (
-        auto()
-    )  # waiting for the "name" or "arguments" key to be complete
+    WAITING_FOR_TOOL_KEY = auto()  # waiting for the "name" or "arguments" key to be complete
     PARSING_NAME = auto()
     PARSING_NAME_COMPLETED = auto()
     WAITING_FOR_ARGUMENTS_START = auto()
@@ -138,9 +136,7 @@ class MistralToolParser(ToolParser):
         self.current_tool_mistral_id: str | None = None
         self.starting_new_tool = False
         if _is_pre_v11_tokeniser(self.model_tokenizer):
-            self.parse_coro = ijson.parse_coro(
-                self.update_stream_state_pre_v11_tokenizer()
-            )
+            self.parse_coro = ijson.parse_coro(self.update_stream_state_pre_v11_tokenizer())
 
         self.bot_token = "[TOOL_CALLS]"
         self.bot_token_id = self.vocab.get(self.bot_token)
@@ -148,10 +144,7 @@ class MistralToolParser(ToolParser):
         self._is_pre_v11 = _is_pre_v11_tokeniser(self.model_tokenizer)
 
         if self.bot_token_id is None:
-            raise RuntimeError(
-                "Mistral Tool Parser could not locate the tool call token in "
-                "the tokenizer!"
-            )
+            raise RuntimeError("Mistral Tool Parser could not locate the tool call token in the tokenizer!")
 
     def adjust_request(
         self, request: ChatCompletionRequest | ResponsesRequest
@@ -166,8 +159,7 @@ class MistralToolParser(ToolParser):
             "structural_tag",
         ]
         any_so_non_supported_active = request.structured_outputs is not None and any(
-            getattr(request.structured_outputs, attribute) is not None
-            for attribute in so_non_supported_attributes
+            getattr(request.structured_outputs, attribute) is not None for attribute in so_non_supported_attributes
         )
         response_format_non_supported_active = (
             isinstance(request, ResponsesRequest)
@@ -206,10 +198,7 @@ class MistralToolParser(ToolParser):
                     "Unsupported request.structured_outputs for MistralToolParser. "
                     "Only `json` and `json_object` are supported."
                 )
-        elif (
-            request.response_format is not None
-            and request.response_format.type != "text"
-        ):
+        elif request.response_format is not None and request.response_format.type != "text":
             if request.response_format.type == "json_object":
                 json_schema = _DEFAULT_JSON_SCHEMA
             elif request.response_format.type == "json_schema":
@@ -229,17 +218,10 @@ class MistralToolParser(ToolParser):
 
         # TODO: Once unified parser, improve this.
         # The issue is figuring out when a model is a reasoning one or not.
-        template = grammar_factory.select_jinja_template(
-            reasoning=self.model_can_reason
-        )
+        template = grammar_factory.select_jinja_template(reasoning=self.model_can_reason)
 
         mistral_tools = (
-            [
-                MistralTool.model_validate(
-                    adapt_inplace_to_mistral_tool(tool.model_dump())
-                )
-                for tool in request.tools
-            ]
+            [MistralTool.model_validate(adapt_inplace_to_mistral_tool(tool.model_dump())) for tool in request.tools]
             if request.tools is not None
             else None
         )
@@ -262,9 +244,7 @@ class MistralToolParser(ToolParser):
         # Rendering grammar is cached in mistral-common given tools, template and mode.
         match tool_choice, json_schema is not None:
             case MistralToolChoiceEnum.none, True:
-                lark_grammar = grammar_factory.get_lark_for_json_schema(
-                    template=template, json_schema=json_schema
-                )
+                lark_grammar = grammar_factory.get_lark_for_json_schema(template=template, json_schema=json_schema)
             case _, _:
                 lark_grammar = grammar_factory.get_lark_from_jinja(
                     template=template,
@@ -336,10 +316,7 @@ class MistralToolParser(ToolParser):
             # Pre-v15 models may have pre-filled [THINK]...[/THINK] in
             # system prompts, so skip the prompt-level reasoning-end
             # check and wait for the output's own end-of-think.
-            is_pre_v15 = (
-                isinstance(self.model_tokenizer, MistralTokenizer)
-                and self.model_tokenizer.version < 15
-            )
+            is_pre_v15 = isinstance(self.model_tokenizer, MistralTokenizer) and self.model_tokenizer.version < 15
 
             if not is_pre_v15 and prompt_is_reasoning_end:
                 reasoning_ended = True
@@ -353,13 +330,9 @@ class MistralToolParser(ToolParser):
                     current_token_ids,
                     output_token_ids,
                 )
-                if reasoning_parser.is_reasoning_end_streaming(
-                    current_token_ids, output_token_ids
-                ):
+                if reasoning_parser.is_reasoning_end_streaming(current_token_ids, output_token_ids):
                     reasoning_ended = True
-                    current_token_ids = reasoning_parser.extract_content_ids(
-                        list(output_token_ids)
-                    )
+                    current_token_ids = reasoning_parser.extract_content_ids(list(output_token_ids))
                     if delta_message and delta_message.content:
                         current_text = delta_message.content
                         delta_message.content = None
@@ -414,12 +387,7 @@ class MistralToolParser(ToolParser):
         if not tool_calls:
             return []
 
-        return [
-            MistralToolCall(id=tc.id, function=tc)
-            if tc.id
-            else MistralToolCall(function=tc)
-            for tc in tool_calls
-        ]
+        return [MistralToolCall(id=tc.id, function=tc) if tc.id else MistralToolCall(function=tc) for tc in tool_calls]
 
     def extract_tool_calls(
         self,
@@ -447,9 +415,7 @@ class MistralToolParser(ToolParser):
 
         # If the tool call token is not present, return a text response
         if self.bot_token not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         content_and_raw_tool_calls = model_output.split(self.bot_token)
         content = content_and_raw_tool_calls[0]
@@ -473,10 +439,7 @@ class MistralToolParser(ToolParser):
         # < v11: content[BOT] [{tool_call1},{tool_call2}]
         else:
             if len(raw_tool_calls) != 1:
-                raise ValueError(
-                    "Only one BOT token should have been outputted, "
-                    f"but got {model_output}."
-                )
+                raise ValueError(f"Only one BOT token should have been outputted, but got {model_output}.")
             stringified_tool_calls = raw_tool_calls[0].strip()
             try:
                 tool_calls = json.loads(stringified_tool_calls)
@@ -486,9 +449,7 @@ class MistralToolParser(ToolParser):
                 # correctly. It's an easy possible fix so it's included, but
                 # can be brittle for very complex / highly nested tool calls
                 try:
-                    raw_tool_call = self.tool_call_regex.findall(
-                        stringified_tool_calls
-                    )[0]
+                    raw_tool_call = self.tool_call_regex.findall(stringified_tool_calls)[0]
                     tool_calls = json.loads(raw_tool_call)
                 except (IndexError, json.JSONDecodeError):
                     logger.exception("Error in extracting tool call from response.")
@@ -503,9 +464,7 @@ class MistralToolParser(ToolParser):
                 tool_calls = [
                     {
                         "name": tool_call["name"],
-                        "arguments": json.dumps(
-                            tool_call["arguments"], ensure_ascii=False
-                        ),
+                        "arguments": json.dumps(tool_call["arguments"], ensure_ascii=False),
                     }
                     for tool_call in tool_calls
                 ]
@@ -537,9 +496,7 @@ class MistralToolParser(ToolParser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
     ) -> DeltaMessage | None:
-        has_bot_token = (
-            self.bot_token_id in current_token_ids or self.bot_token in current_text
-        )
+        has_bot_token = self.bot_token_id in current_token_ids or self.bot_token in current_text
         if not has_bot_token:
             # if the tool call token is not in the tokens generated so far,
             # append output to contents since it's not a tool
@@ -554,9 +511,7 @@ class MistralToolParser(ToolParser):
                     delta_token_ids=delta_token_ids,
                 )
             else:
-                return self._extract_tool_calls_streaming(
-                    delta_text=delta_text, delta_token_ids=delta_token_ids
-                )
+                return self._extract_tool_calls_streaming(delta_text=delta_text, delta_token_ids=delta_token_ids)
         except Exception:
             logger.exception("Error trying to handle streaming tool call.")
             return None
@@ -578,9 +533,7 @@ class MistralToolParser(ToolParser):
                 return DeltaMessage(content=delta_text)
             if not delta_text.startswith(self.bot_token):
                 additional_content += delta_text.split(self.bot_token)[0]
-                delta_text = self.bot_token + "".join(
-                    delta_text.split(self.bot_token)[1:]
-                )
+                delta_text = self.bot_token + "".join(delta_text.split(self.bot_token)[1:])
 
         delta_tool_calls = self._generate_delta_tool_call(delta_text)
         if not additional_content and len(delta_tool_calls) == 0:
@@ -659,9 +612,9 @@ class MistralToolParser(ToolParser):
                         index=self.current_tool_id,
                         type="function",
                         id=tool_id,
-                        function=DeltaFunctionCall(
-                            name=self.current_tool_name, arguments=delta_arguments
-                        ).model_dump(exclude_none=True),
+                        function=DeltaFunctionCall(name=self.current_tool_name, arguments=delta_arguments).model_dump(
+                            exclude_none=True
+                        ),
                     )
                 ]
                 self.current_tool_name = None
@@ -707,9 +660,7 @@ class MistralToolParser(ToolParser):
         assert self.parse_coro is not None
         content = None
         delta_tool_calls: list[DeltaToolCall] = []
-        current_tool_call: DeltaToolCall = DeltaToolCall(
-            index=self.current_tool_id, type="function"
-        )
+        current_tool_call: DeltaToolCall = DeltaToolCall(index=self.current_tool_id, type="function")
         current_tool_call_modified = False
         if self.bot_token_id in delta_token_ids or self.bot_token in delta_text:
             # this is the first tool call
@@ -833,9 +784,7 @@ class MistralToolParser(ToolParser):
                     current_tool_call.function.arguments += delta_to_be_parsed
                 if streaming_state_before_parse != StreamingState.PARSING_ARGUMENTS:
                     # It's the first chunk of arg. let's lstrip it
-                    current_tool_call.function.arguments = (
-                        current_tool_call.function.arguments.lstrip()
-                    )
+                    current_tool_call.function.arguments = current_tool_call.function.arguments.lstrip()
 
         if current_tool_call_modified:
             if self.current_tool_mistral_id is not None:

@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Iterable
 
 import pytest
 import torch
 import transformers
+from aphrodite.modeling.models.utils import WeightsMapper
 from transformers import AutoConfig, PreTrainedModel
 
 from aphrodite.config import ModelConfig
-from aphrodite.modeling.models.utils import WeightsMapper
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.transformers_utils.config import try_get_safetensors_metadata
 

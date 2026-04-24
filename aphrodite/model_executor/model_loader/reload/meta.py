@@ -131,9 +131,7 @@ class CopyCounter(TorchDispatchMode):
         return func(*args, **kwargs)
 
 
-def get_numel_loaded(
-    weight_loader: Callable, args: inspect.BoundArguments
-) -> tuple[int, object]:
+def get_numel_loaded(weight_loader: Callable, args: inspect.BoundArguments) -> tuple[int, object]:
     """
     Determine how many elements would be loaded by a weight loader call.
 

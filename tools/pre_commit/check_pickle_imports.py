@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import sys
 
 import regex as re
@@ -17,13 +19,17 @@ ALLOWED_FILES = {
     # pickle
     "aphrodite/multimodal/hasher.py",
     "aphrodite/transformers_utils/config.py",
-    "aphrodite/modeling/models/registry.py",
+    "aphrodite/model_executor/models/registry.py",
     "aphrodite/compilation/caching.py",
+    "aphrodite/compilation/piecewise_backend.py",
     "aphrodite/distributed/utils.py",
     "aphrodite/distributed/parallel_state.py",
     "aphrodite/distributed/device_communicators/all_reduce_utils.py",
     "aphrodite/distributed/device_communicators/shm_broadcast.py",
     "aphrodite/distributed/device_communicators/shm_object_storage.py",
+    "aphrodite/distributed/weight_transfer/ipc_engine.py",
+    "aphrodite/env_override.py",
+    "aphrodite/entrypoints/llm.py",
     "aphrodite/utils/hashing.py",
     "tests/utils_/test_hashing.py",
     "tests/tokenization/test_cached_tokenizer.py",

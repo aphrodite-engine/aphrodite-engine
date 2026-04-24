@@ -280,10 +280,7 @@ class AsyncLLM(EngineClient):
     async def add_request(
         self,
         request_id: str,
-        prompt: EngineCoreRequest
-        | PromptType
-        | EngineInput
-        | AsyncGenerator[StreamingInput, None],
+        prompt: EngineCoreRequest | PromptType | EngineInput | AsyncGenerator[StreamingInput, None],
         params: SamplingParams | PoolingParams,
         arrival_time: float | None = None,
         lora_request: LoRARequest | None = None,
@@ -301,11 +298,7 @@ class AsyncLLM(EngineClient):
 
         is_pooling = isinstance(params, PoolingParams)
 
-        if (
-            self.aphrodite_config.cache_config.kv_sharing_fast_prefill
-            and not is_pooling
-            and params.prompt_logprobs
-        ):
+        if self.aphrodite_config.cache_config.kv_sharing_fast_prefill and not is_pooling and params.prompt_logprobs:
             raise ValueError(
                 "--kv-sharing-fast-prefill produces incorrect logprobs for "
                 "prompt tokens, please disable it when the requests need "
@@ -389,9 +382,7 @@ class AsyncLLM(EngineClient):
             child_request = request if idx == parent_params.n - 1 else copy(request)
             child_request.request_id = request_id
             child_request.sampling_params = child_params
-            await self._add_request(
-                child_request, prompt_text, parent_request, idx, queue
-            )
+            await self._add_request(child_request, prompt_text, parent_request, idx, queue)
         return queue
 
     async def _add_request(
@@ -471,12 +462,8 @@ class AsyncLLM(EngineClient):
                     )
                     req.external_req_id = request_id
                     if req.prompt_embeds is not None:
-                        raise ValueError(
-                            "prompt_embeds not supported for streaming inputs"
-                        )
-                    prompt_text, _, _ = extract_prompt_components(
-                        self.model_config, input_chunk.prompt
-                    )
+                        raise ValueError("prompt_embeds not supported for streaming inputs")
+                    prompt_text, _, _ = extract_prompt_components(self.model_config, input_chunk.prompt)
                     await self._add_request(req, prompt_text, None, 0, queue)
             except (asyncio.CancelledError, GeneratorExit):
                 cancelled = True
@@ -520,10 +507,7 @@ class AsyncLLM(EngineClient):
     # re-multiplexed in the API server anyhow.
     async def generate(
         self,
-        prompt: EngineCoreRequest
-        | PromptType
-        | EngineInput
-        | AsyncGenerator[StreamingInput, None],
+        prompt: EngineCoreRequest | PromptType | EngineInput | AsyncGenerator[StreamingInput, None],
         sampling_params: SamplingParams,
         request_id: str,
         *,
@@ -618,11 +602,7 @@ class AsyncLLM(EngineClient):
                 try:
                     s = f"{e.__class__.__name__}: {e}"
                 except Exception as e2:
-                    s = (
-                        f"{e.__class__.__name__}: "
-                        "error during printing an exception of class"
-                        + e2.__class__.__name__
-                    )
+                    s = f"{e.__class__.__name__}: error during printing an exception of class" + e2.__class__.__name__
                 logger.info("Request %s failed due to %s.", request_id, s)
             raise EngineGenerateError() from e
         finally:
@@ -655,9 +635,7 @@ class AsyncLLM(EngineClient):
                     outputs = await engine_core.get_output_async()
                     num_outputs = len(outputs.outputs)
 
-                    iteration_stats = (
-                        IterationStats() if (log_stats and num_outputs) else None
-                    )
+                    iteration_stats = IterationStats() if (log_stats and num_outputs) else None
 
                     # Split outputs into chunks of at most
                     # APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE, so that we don't block the
@@ -679,9 +657,7 @@ class AsyncLLM(EngineClient):
 
                         # 3) Abort any reqs that finished due to stop strings.
                         if processed_outputs.reqs_to_abort:
-                            await engine_core.abort_requests_async(
-                                processed_outputs.reqs_to_abort
-                            )
+                            await engine_core.abort_requests_async(processed_outputs.reqs_to_abort)
 
                     output_processor.update_scheduler_stats(outputs.scheduler_stats)
 
@@ -701,14 +677,10 @@ class AsyncLLM(EngineClient):
 
         self.output_handler = asyncio.create_task(output_handler())
 
-    async def abort(
-        self, request_id: str | Iterable[str], internal: bool = False
-    ) -> None:
+    async def abort(self, request_id: str | Iterable[str], internal: bool = False) -> None:
         """Abort RequestId in OutputProcessor and EngineCore."""
 
-        request_ids = (
-            (request_id,) if isinstance(request_id, str) else as_list(request_id)
-        )
+        request_ids = (request_id,) if isinstance(request_id, str) else as_list(request_id)
         all_request_ids = self.output_processor.abort_requests(request_ids, internal)
         await self.engine_core.abort_requests_async(all_request_ids)
 
@@ -884,12 +856,8 @@ class AsyncLLM(EngineClient):
         await self.renderer.clear_mm_cache_async()
         await self.engine_core.reset_mm_cache_async()
 
-    async def reset_prefix_cache(
-        self, reset_running_requests: bool = False, reset_connector: bool = False
-    ) -> bool:
-        return await self.engine_core.reset_prefix_cache_async(
-            reset_running_requests, reset_connector
-        )
+    async def reset_prefix_cache(self, reset_running_requests: bool = False, reset_connector: bool = False) -> bool:
+        return await self.engine_core.reset_prefix_cache_async(reset_running_requests, reset_connector)
 
     async def reset_encoder_cache(self) -> None:
         await self.engine_core.reset_encoder_cache_async()
@@ -935,9 +903,7 @@ class AsyncLLM(EngineClient):
         """
         Perform a collective RPC call to the given path.
         """
-        return await self.engine_core.collective_rpc_async(
-            method, timeout, args, kwargs
-        )
+        return await self.engine_core.collective_rpc_async(method, timeout, args, kwargs)
 
     async def wait_for_requests_to_drain(self, drain_timeout: int = 300):
         """Wait for all requests to be drained."""
@@ -950,14 +916,9 @@ class AsyncLLM(EngineClient):
             logger.info("Engines are still running, waiting for requests to drain...")
             await asyncio.sleep(1)  # Wait 1 second before checking again
 
-        raise TimeoutError(
-            f"Timeout reached after {drain_timeout} seconds "
-            "waiting for requests to drain."
-        )
+        raise TimeoutError(f"Timeout reached after {drain_timeout} seconds waiting for requests to drain.")
 
-    async def scale_elastic_ep(
-        self, new_data_parallel_size: int, drain_timeout: int = 300
-    ):
+    async def scale_elastic_ep(self, new_data_parallel_size: int, drain_timeout: int = 300):
         """
         Scale up or down the data parallel size by adding or removing
         engine cores.
@@ -975,10 +936,7 @@ class AsyncLLM(EngineClient):
             return
 
         if envs.APHRODITE_ELASTIC_EP_DRAIN_REQUESTS:
-            logger.info(
-                "APHRODITE_ELASTIC_EP_DRAIN_REQUESTS is set, "
-                "waiting for requests to drain before scaling"
-            )
+            logger.info("APHRODITE_ELASTIC_EP_DRAIN_REQUESTS is set, waiting for requests to drain before scaling")
             await self.wait_for_requests_to_drain(drain_timeout)
 
         # recreate stat loggers
@@ -1022,9 +980,7 @@ class AsyncLLM(EngineClient):
     def dead_error(self) -> BaseException:
         return EngineDeadError()
 
-    async def init_weight_transfer_engine(
-        self, request: WeightTransferInitRequest
-    ) -> None:
+    async def init_weight_transfer_engine(self, request: WeightTransferInitRequest) -> None:
         """
         Initialize weight transfer for RL training.
 
@@ -1040,9 +996,7 @@ class AsyncLLM(EngineClient):
         else:
             raise TypeError(f"Expected WeightTransferInitRequest, got {type(request)}")
 
-        await self.collective_rpc(
-            "init_weight_transfer_engine", kwargs={"init_info": init_info_dict}
-        )
+        await self.collective_rpc("init_weight_transfer_engine", kwargs={"init_info": init_info_dict})
 
     async def update_weights(self, request: WeightTransferUpdateRequest) -> None:
         """
@@ -1055,10 +1009,6 @@ class AsyncLLM(EngineClient):
         if isinstance(request, WeightTransferUpdateRequest):
             update_info_dict = request.update_info
         else:
-            raise TypeError(
-                f"Expected WeightTransferUpdateRequest, got {type(request)}"
-            )
+            raise TypeError(f"Expected WeightTransferUpdateRequest, got {type(request)}")
 
-        await self.collective_rpc(
-            "update_weights", kwargs={"update_info": update_info_dict}
-        )
+        await self.collective_rpc("update_weights", kwargs={"update_info": update_info_dict})

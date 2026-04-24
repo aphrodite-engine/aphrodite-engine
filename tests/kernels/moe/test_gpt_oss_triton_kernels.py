@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from dataclasses import dataclass, fields
 
 import pytest
@@ -13,6 +15,9 @@ if not has_triton_kernels():
     )
 
 import triton_kernels.swiglu
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.gpt_oss_triton_kernels_moe import triton_kernel_moe_forward
+from aphrodite.modeling.layers.utils import shuffle_weight
 from triton_kernels.matmul_ogs import FlexCtx, PrecisionConfig
 from triton_kernels.numerics import InFlexData
 from triton_kernels.numerics_details.mxfp import downcast_to_mxfp, upcast_from_mxfp
@@ -20,9 +25,6 @@ from triton_kernels.tensor import FP4, convert_layout, wrap_torch_tensor
 from triton_kernels.tensor_details import layout
 from triton_kernels.testing import assert_close
 
-from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.gpt_oss_triton_kernels_moe import triton_kernel_moe_forward
-from aphrodite.modeling.layers.utils import shuffle_weight
 from aphrodite.utils.math_utils import round_up
 
 

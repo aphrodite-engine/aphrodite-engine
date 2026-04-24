@@ -66,12 +66,8 @@ class GlmOcrMultiTokenPredictorLayer(nn.Module):
         self.eh_proj = nn.Linear(config.hidden_size * 2, config.hidden_size, bias=False)
 
         self.device = current_platform.device_type
-        self.shared_head = SharedHead(
-            config=config, prefix=prefix, quant_config=quant_config
-        )
-        self.mtp_block = Glm4DecoderLayer(
-            aphrodite_config=aphrodite_config, prefix=prefix, config=self.config
-        )
+        self.shared_head = SharedHead(config=config, prefix=prefix, quant_config=quant_config)
+        self.mtp_block = Glm4DecoderLayer(aphrodite_config=aphrodite_config, prefix=prefix, config=self.config)
 
     def forward(
         self,
@@ -88,13 +84,9 @@ class GlmOcrMultiTokenPredictorLayer(nn.Module):
         inputs_embeds = self.enorm(inputs_embeds)
         previous_hidden_states = self.hnorm(previous_hidden_states)
 
-        hidden_states = self.eh_proj(
-            torch.cat([inputs_embeds, previous_hidden_states], dim=-1)
-        )
+        hidden_states = self.eh_proj(torch.cat([inputs_embeds, previous_hidden_states], dim=-1))
 
-        hidden_states, residual = self.mtp_block(
-            positions=positions, hidden_states=hidden_states, residual=None
-        )
+        hidden_states, residual = self.mtp_block(positions=positions, hidden_states=hidden_states, residual=None)
         hidden_states = residual + hidden_states
         return hidden_states
 
@@ -130,9 +122,7 @@ class GlmOcrMTP(nn.Module, SupportsPP):
         self.config = aphrodite_config.model_config.hf_config.text_config
         quant_config = aphrodite_config.quant_config
         self.quant_config = quant_config
-        self.model = GlmOcrMultiTokenPredictor(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = GlmOcrMultiTokenPredictor(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.expert_weights = []
         self.num_layers = self.config.num_nextn_predict_layers
@@ -153,9 +143,7 @@ class GlmOcrMTP(nn.Module, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
-        )
+        hidden_states = self.model(input_ids, positions, hidden_states, inputs_embeds, spec_step_idx)
         return hidden_states
 
     def compute_logits(
@@ -189,15 +177,11 @@ class GlmOcrMTP(nn.Module, SupportsPP):
 
             name = self._rewrite_spec_layer_name(spec_layer, name)
 
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -236,10 +220,7 @@ class GlmOcrMTP(nn.Module, SupportsPP):
 
                 # According to DeepSeek-V3 Technical Report, MTP modules
                 # shares embedding layer. We only load the first weights.
-                if (
-                    spec_layer != self.model.mtp_start_layer_idx
-                    and ".layers" not in name
-                ):
+                if spec_layer != self.model.mtp_start_layer_idx and ".layers" not in name:
                     continue
 
                 if is_pp_missing_parameter(name, self):
@@ -276,9 +257,7 @@ class GlmOcrMTP(nn.Module, SupportsPP):
                 break
         if not spec_layer_weight:
             # treat rest weights as weights for transformer layer block
-            name = name.replace(
-                f"model.layers.{spec_layer}.", f"model.layers.{spec_layer}.mtp_block."
-            )
+            name = name.replace(f"model.layers.{spec_layer}.", f"model.layers.{spec_layer}.mtp_block.")
         elif shared_weight:
             # treat shared weights as top level weights
             name = name.replace(f"model.layers.{spec_layer}.", "model.")

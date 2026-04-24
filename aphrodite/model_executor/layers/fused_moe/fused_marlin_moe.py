@@ -66,9 +66,7 @@ def _fused_marlin_moe(
     expert_ids: torch.Tensor,
     num_tokens_post_padded: torch.Tensor,
     activation: MoEActivation = MoEActivation.SILU,
-    activation_func: Callable[
-        [MoEActivation, torch.Tensor, torch.Tensor], None
-    ] = apply_moe_activation,
+    activation_func: Callable[[MoEActivation, torch.Tensor, torch.Tensor], None] = apply_moe_activation,
     input_global_scale1: torch.Tensor | None = None,
     input_global_scale2: torch.Tensor | None = None,
     global_scale1: torch.Tensor | None = None,
@@ -107,9 +105,7 @@ def _fused_marlin_moe(
             dtype=hidden_states.dtype,
         )
 
-    intermediate_cache1 = _resize_cache(
-        intermediate_cache13, (M * num_topk, w13_num_shards * N)
-    )
+    intermediate_cache1 = _resize_cache(intermediate_cache13, (M * num_topk, w13_num_shards * N))
 
     intermediate_cache3 = _resize_cache(intermediate_cache13, (M * num_topk, K))
 
@@ -166,15 +162,11 @@ def _fused_marlin_moe(
 
     a_scales2 = None
     if input_dtype == torch.int8:
-        intermediate_cache2, a_scales2 = marlin_quant_input(
-            intermediate_cache2, input_dtype
-        )
+        intermediate_cache2, a_scales2 = marlin_quant_input(intermediate_cache2, input_dtype)
         if input_global_scale2 is not None:
             a_scales2 = a_scales2 * input_global_scale2
     elif input_dtype == torch.float8_e4m3fn:
-        intermediate_cache2, a_scales2 = marlin_quant_input(
-            intermediate_cache2, input_dtype
-        )
+        intermediate_cache2, a_scales2 = marlin_quant_input(intermediate_cache2, input_dtype)
 
     output = ops.moe_wna16_marlin_gemm(
         intermediate_cache2,
@@ -222,9 +214,7 @@ def fused_marlin_moe(
     apply_router_weight_on_input: bool = False,
     global_num_experts: int = -1,
     activation: MoEActivation = MoEActivation.SILU,
-    activation_func: Callable[
-        [MoEActivation, torch.Tensor, torch.Tensor], None
-    ] = apply_moe_activation,
+    activation_func: Callable[[MoEActivation, torch.Tensor, torch.Tensor], None] = apply_moe_activation,
     moe_sum: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
     expert_map: torch.Tensor | None = None,
     input_global_scale1: torch.Tensor | None = None,
@@ -426,8 +416,7 @@ def batched_fused_marlin_moe(
     """
 
     assert hidden_states.ndim == 3, (
-        f"hidden states must be batched. e.g. [B, MAX_TOKENS, K]."
-        f"But got {hidden_states.size()}"
+        f"hidden states must be batched. e.g. [B, MAX_TOKENS, K].But got {hidden_states.size()}"
     )
     if inplace:
         assert output is None, "Conflicting request."
@@ -457,8 +446,7 @@ def batched_fused_marlin_moe(
     assert hidden_states.dtype in [torch.float16, torch.bfloat16]
     assert expert_num_tokens.size(0) == E
     assert B == E, (
-        "Batch must be as big as number of experts as the tokens"
-        "are sorted into the batch/expert they belong to"
+        "Batch must be as big as number of experts as the tokensare sorted into the batch/expert they belong to"
     )
     assert w1.size(1) * 16 == K, "Hidden size mismatch w1"
     assert w2.size(2) // (num_bits // 2) == K, "Hidden size mismatch w2"
@@ -485,9 +473,7 @@ def batched_fused_marlin_moe(
 
     # TODO (varun): This can be avoided by plumbing the marlin kernel to
     # ignore topk_weights when topk_weights_ptr is a nullptr.
-    topk_weights = torch.ones(
-        (M, topk), device=hidden_states.device, dtype=torch.float32
-    )
+    topk_weights = torch.ones((M, topk), device=hidden_states.device, dtype=torch.float32)
 
     assert activation is not None
     output = _fused_marlin_moe(
@@ -605,8 +591,7 @@ class MarlinExpertsBase(mk.FusedMoEExpertsModular):
     @staticmethod
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
         return not (
-            moe_parallel_config.use_fi_nvl_two_sided_kernels
-            or moe_parallel_config.use_fi_nvl_one_sided_kernels
+            moe_parallel_config.use_fi_nvl_two_sided_kernels or moe_parallel_config.use_fi_nvl_one_sided_kernels
         )
 
     @property
@@ -615,10 +600,7 @@ class MarlinExpertsBase(mk.FusedMoEExpertsModular):
             return scalar_types.uint4b8.id
         elif self.quant_config.use_mxfp4_w4a16 or self.quant_config.use_nvfp4_w4a16:
             return scalar_types.float4_e2m1f.id
-        elif (
-            self.quant_config.use_fp8_w8a16
-            and current_platform.fp8_dtype() == torch.float8_e4m3fn
-        ):
+        elif self.quant_config.use_fp8_w8a16 and current_platform.fp8_dtype() == torch.float8_e4m3fn:
             return scalar_types.float8_e4m3fn.id
         else:
             raise NotImplementedError("Unsupported quantization type.")

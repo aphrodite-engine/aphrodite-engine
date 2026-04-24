@@ -140,8 +140,7 @@ def map_unquantized_backend(runner_backend: MoEBackend) -> UnquantizedMoeBackend
     if backend := mapping.get(runner_backend):
         return backend
     raise ValueError(
-        f"moe_backend='{runner_backend}' is not supported for unquantized MoE. "
-        f"Expected one of {list(mapping.keys())}."
+        f"moe_backend='{runner_backend}' is not supported for unquantized MoE. Expected one of {list(mapping.keys())}."
     )
 
 
@@ -164,9 +163,7 @@ def select_unquantized_moe_backend(
         return UnquantizedMoeBackend.OOT, None
 
     if moe_config.is_lora_enabled:
-        return UnquantizedMoeBackend.TRITON, backend_to_kernel_cls(
-            UnquantizedMoeBackend.TRITON
-        )
+        return UnquantizedMoeBackend.TRITON, backend_to_kernel_cls(UnquantizedMoeBackend.TRITON)
 
     # NOTE: the kernels are selected in the following order.
     AVAILABLE_BACKENDS = _get_priority_backends(moe_config)
@@ -182,23 +179,14 @@ def select_unquantized_moe_backend(
 
     def _make_log_backend(backend: UnquantizedMoeBackend) -> str:
         available_strs = [b.value for b in AVAILABLE_BACKENDS]
-        return (
-            f"Using {backend.value} Unquantized MoE backend out "
-            f"of potential backends: {available_strs}."
-        )
+        return f"Using {backend.value} Unquantized MoE backend out of potential backends: {available_strs}."
 
-    def _make_log_unsupported(
-        backend: UnquantizedMoeBackend, reason: str | None
-    ) -> str:
+    def _make_log_unsupported(backend: UnquantizedMoeBackend, reason: str | None) -> str:
         if reason:
             return (
-                f"Unquantized MoE backend {backend.value} does not support the "
-                f"deployment configuration since {reason}."
+                f"Unquantized MoE backend {backend.value} does not support the deployment configuration since {reason}."
             )
-        return (
-            f"Unquantized MoE backend '{backend.value}' does not support the "
-            "deployment configuration."
-        )
+        return f"Unquantized MoE backend '{backend.value}' does not support the deployment configuration."
 
     def _return_or_raise(
         backend: UnquantizedMoeBackend,
@@ -206,9 +194,7 @@ def select_unquantized_moe_backend(
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[UnquantizedMoeBackend, type[mk.FusedMoEExperts] | None]:
         k_cls = backend_to_kernel_cls(backend)
-        supported, reason = k_cls.is_supported_config(
-            k_cls, config, None, None, activation_format
-        )
+        supported, reason = k_cls.is_supported_config(k_cls, config, None, None, activation_format)
         if supported:
             logger.info_once(_make_log_backend(backend), scope="local")
             return backend, k_cls
@@ -241,10 +227,7 @@ def select_unquantized_moe_backend(
             elif fi_backend == FlashinferMoeBackend.TENSORRT_LLM:
                 backend = UnquantizedMoeBackend.FLASHINFER_TRTLLM
             else:
-                raise ValueError(
-                    f"FlashInfer MOE backend {fi_backend} "
-                    "does not support unquantized MoE."
-                )
+                raise ValueError(f"FlashInfer MOE backend {fi_backend} does not support unquantized MoE.")
             k_cls = backend_to_kernel_cls(backend)
             return _return_or_raise(backend, moe_config, activation_format)
         else:
@@ -254,16 +237,12 @@ def select_unquantized_moe_backend(
                 UnquantizedMoeBackend.FLASHINFER_CUTLASS,
             ]:
                 k_cls = backend_to_kernel_cls(backend)
-                supported, reason = k_cls.is_supported_config(
-                    k_cls, moe_config, None, None, activation_format
-                )
+                supported, reason = k_cls.is_supported_config(k_cls, moe_config, None, None, activation_format)
                 if supported:
                     logger.info_once(_make_log_backend(backend), scope="local")
                     return backend, k_cls
                 else:
-                    logger.debug_once(
-                        _make_log_unsupported(backend, reason), scope="local"
-                    )
+                    logger.debug_once(_make_log_unsupported(backend, reason), scope="local")
 
             raise NotImplementedError(
                 "Found APHRODITE_USE_FLASHINFER_MOE_FP16=1, but no "
@@ -281,18 +260,14 @@ def select_unquantized_moe_backend(
 
     for backend in AVAILABLE_BACKENDS:
         k_cls = backend_to_kernel_cls(backend)
-        supported, reason = k_cls.is_supported_config(
-            k_cls, moe_config, None, None, activation_format
-        )
+        supported, reason = k_cls.is_supported_config(k_cls, moe_config, None, None, activation_format)
         if supported:
             logger.info_once(_make_log_backend(backend), scope="local")
             return backend, k_cls
 
         logger.debug_once(_make_log_unsupported(backend, reason), scope="local")
 
-    raise NotImplementedError(
-        "No Unquantized MoE backend supports the deployment configuration."
-    )
+    raise NotImplementedError("No Unquantized MoE backend supports the deployment configuration.")
 
 
 def convert_to_unquantized_kernel_format(

@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.modeling.layers.lightning_attn import linear_decode_forward_triton
+
 from aphrodite.platforms import current_platform
 
 NUM_HEADS = [4, 8]

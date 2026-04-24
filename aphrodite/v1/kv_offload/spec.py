@@ -88,8 +88,7 @@ class OffloadingSpec(ABC):
         self.hash_block_size = aphrodite_config.cache_config.block_size
         # gpu block size per group
         self.gpu_block_size: tuple[int, ...] = tuple(
-            kv_cache_group.kv_cache_spec.block_size
-            for kv_cache_group in kv_cache_config.kv_cache_groups
+            kv_cache_group.kv_cache_spec.block_size for kv_cache_group in kv_cache_config.kv_cache_groups
         )
 
         for block_size in self.gpu_block_size:

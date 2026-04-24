@@ -219,11 +219,7 @@ class NixlEplbCommunicator(EplbCommunicator):
             if tensor.dtype not in self._dtypes:
                 self._dtypes.append(tensor.dtype)
 
-        config = (
-            nixl_agent_config(capture_telemetry=False)
-            if nixl_agent_config is not None
-            else None
-        )
+        config = nixl_agent_config(capture_telemetry=False) if nixl_agent_config is not None else None
         self._nixl_wrapper = NixlWrapper(self._make_agent_name(), config)
         self._nixl_memory_type = "VRAM"
         self._registered_desc: object | None = None
@@ -271,43 +267,31 @@ class NixlEplbCommunicator(EplbCommunicator):
 
     def add_send(self, tensor: torch.Tensor, dst_rank: int) -> None:
         assert dst_rank != self._rank, (
-            "EPLB communicator should not enqueue same-rank sends: "
-            f"rank={self._rank}, dst_rank={dst_rank}"
+            f"EPLB communicator should not enqueue same-rank sends: rank={self._rank}, dst_rank={dst_rank}"
         )
-        self._get_peer_buckets(self._send_tensors, tensor.dtype)[dst_rank].append(
-            tensor
-        )
+        self._get_peer_buckets(self._send_tensors, tensor.dtype)[dst_rank].append(tensor)
 
     def add_recv(self, tensor: torch.Tensor, src_rank: int) -> None:
         assert src_rank != self._rank, (
-            "EPLB communicator should not enqueue same-rank recvs: "
-            f"rank={self._rank}, src_rank={src_rank}"
+            f"EPLB communicator should not enqueue same-rank recvs: rank={self._rank}, src_rank={src_rank}"
         )
-        self._get_peer_buckets(self._recv_tensors, tensor.dtype)[src_rank].append(
-            tensor
-        )
+        self._get_peer_buckets(self._recv_tensors, tensor.dtype)[src_rank].append(tensor)
 
     def _init_remote_agents(self) -> None:
         local_metadata = self._nixl_wrapper.get_agent_metadata()
         gathered_metadata: list[bytes | None] = [None] * self._world_size
-        torch.distributed.all_gather_object(
-            gathered_metadata, local_metadata, group=self._cpu_group
-        )
+        torch.distributed.all_gather_object(gathered_metadata, local_metadata, group=self._cpu_group)
         for peer in range(self._world_size):
             if peer == self._rank:
                 continue
             peer_metadata = gathered_metadata[peer]
             assert peer_metadata is not None
-            self._remote_agents[peer] = self._nixl_wrapper.add_remote_agent(
-                peer_metadata
-            )
+            self._remote_agents[peer] = self._nixl_wrapper.add_remote_agent(peer_metadata)
 
     def _init_registered_buffers(self, expert_weights: Sequence[torch.Tensor]) -> None:
         total_max_bytes = 0
         for dtype in self._dtypes:
-            max_numel = max(
-                sum(t.numel() for t in expert_weights if t.dtype == dtype), 1
-            )
+            max_numel = max(sum(t.numel() for t in expert_weights if t.dtype == dtype), 1)
             max_bytes = max_numel * dtype.itemsize
             self._dtype_max_bytes[dtype] = max_bytes
             total_max_bytes += max_bytes
@@ -322,12 +306,8 @@ class NixlEplbCommunicator(EplbCommunicator):
         # communication in multiple steps dealing with the worst case.
         send_total_bytes = self._peer_partition_bytes * self._world_size
 
-        self._send_buffer = torch.empty(
-            send_total_bytes, device=self._device, dtype=torch.uint8
-        )
-        self._recv_buffer = torch.empty(
-            self._peer_partition_bytes, device=self._device, dtype=torch.uint8
-        )
+        self._send_buffer = torch.empty(send_total_bytes, device=self._device, dtype=torch.uint8)
+        self._recv_buffer = torch.empty(self._peer_partition_bytes, device=self._device, dtype=torch.uint8)
 
         descs = self._nixl_wrapper.get_reg_descs([self._send_buffer, self._recv_buffer])
         self._nixl_wrapper.register_memory(descs)
@@ -342,9 +322,7 @@ class NixlEplbCommunicator(EplbCommunicator):
             self._cuda_device_id,
         )
         gathered_meta: list[tuple[int, int, int] | None] = [None] * self._world_size
-        torch.distributed.all_gather_object(
-            gathered_meta, local_meta, group=self._cpu_group
-        )
+        torch.distributed.all_gather_object(gathered_meta, local_meta, group=self._cpu_group)
 
         for peer in self._remote_agents:
             peer_meta = gathered_meta[peer]
@@ -364,9 +342,7 @@ class NixlEplbCommunicator(EplbCommunicator):
             raw = tensor.reshape(-1).view(torch.uint8)
             if raw.numel() == 0:
                 continue
-            send_buffer[byte_offset : byte_offset + raw.numel()].copy_(
-                raw, non_blocking=True
-            )
+            send_buffer[byte_offset : byte_offset + raw.numel()].copy_(raw, non_blocking=True)
             byte_offset += raw.numel()
         return byte_offset
 
@@ -476,12 +452,8 @@ class NixlEplbCommunicator(EplbCommunicator):
                 for dst in range(self._world_size):
                     byte_offset = dst * self._peer_partition_bytes
                     for dtype in self._dtypes:
-                        peer_tensors = self._send_tensors.get(
-                            dtype, [[] for _ in range(self._world_size)]
-                        )[dst]
-                        actual_bytes = sum(
-                            t.numel() * t.element_size() for t in peer_tensors
-                        )
+                        peer_tensors = self._send_tensors.get(dtype, [[] for _ in range(self._world_size)])[dst]
+                        actual_bytes = sum(t.numel() * t.element_size() for t in peer_tensors)
                         if actual_bytes > self._dtype_max_bytes[dtype]:
                             raise RuntimeError(
                                 "NIXL EPLB send overflow for dtype "
@@ -518,19 +490,13 @@ class NixlEplbCommunicator(EplbCommunicator):
                     continue
                 actual_total_bytes = 0
                 for dtype in self._dtypes:
-                    peer_tensors = self._recv_tensors.get(
-                        dtype, [[] for _ in range(self._world_size)]
-                    )[src]
-                    actual_total_bytes += sum(
-                        t.numel() * t.element_size() for t in peer_tensors
-                    )
+                    peer_tensors = self._recv_tensors.get(dtype, [[] for _ in range(self._world_size)])[src]
+                    actual_total_bytes += sum(t.numel() * t.element_size() for t in peer_tensors)
                 if actual_total_bytes == 0:
                     continue
 
                 recv_offsets[src] = recv_offset
-                xfer_handle = self._get_or_create_xfer(
-                    src, actual_total_bytes, recv_offset
-                )
+                xfer_handle = self._get_or_create_xfer(src, actual_total_bytes, recv_offset)
                 self._nixl_wrapper.transfer(xfer_handle)
                 xfer_handles.append(xfer_handle)
                 recv_offset += actual_total_bytes
@@ -542,9 +508,7 @@ class NixlEplbCommunicator(EplbCommunicator):
                 for src, offset in recv_offsets.items():
                     byte_offset = offset
                     for dtype in self._dtypes:
-                        peer_tensors = self._recv_tensors.get(
-                            dtype, [[] for _ in range(self._world_size)]
-                        )[src]
+                        peer_tensors = self._recv_tensors.get(dtype, [[] for _ in range(self._world_size)])[src]
                         byte_offset = self._unpack_recv_buffer(
                             self._recv_buffer,
                             peer_tensors,
@@ -630,24 +594,15 @@ def create_eplb_communicator(
         backend = "torch_nccl"
 
     tensor_device_type = expert_weights[0].device.type if expert_weights else "cpu"
-    torch_group = (
-        group_coordinator.cpu_group
-        if tensor_device_type == "cpu"
-        else group_coordinator.device_group
-    )
+    torch_group = group_coordinator.cpu_group if tensor_device_type == "cpu" else group_coordinator.device_group
 
     def _create_pynccl() -> EplbCommunicator:
         if tensor_device_type == "cpu":
             raise RuntimeError(
-                "EPLB communicator 'pynccl' supports only cuda-like devices "
-                f"(got {tensor_device_type})."
+                f"EPLB communicator 'pynccl' supports only cuda-like devices (got {tensor_device_type})."
             )
         unsupported_dtypes = sorted(
-            {
-                tensor.dtype
-                for tensor in expert_weights
-                if not ncclDataTypeEnum.supports_torch_dtype(tensor.dtype)
-            },
+            {tensor.dtype for tensor in expert_weights if not ncclDataTypeEnum.supports_torch_dtype(tensor.dtype)},
             key=str,
         )
         if unsupported_dtypes:
@@ -658,54 +613,35 @@ def create_eplb_communicator(
             )
 
         device_comm = group_coordinator.device_communicator
-        pynccl_comm = (
-            getattr(device_comm, "pynccl_comm", None)
-            if device_comm is not None
-            else None
-        )
+        pynccl_comm = getattr(device_comm, "pynccl_comm", None) if device_comm is not None else None
         if pynccl_comm is None or pynccl_comm.disabled or not pynccl_comm.available:
             raise RuntimeError("EPLB communicator 'pynccl' requested but unavailable.")
         try:
             return PyNcclEplbCommunicator(pynccl_comm=pynccl_comm)
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to initialize PyNcclEplbCommunicator ({exc})."
-            ) from exc
+            raise RuntimeError(f"Failed to initialize PyNcclEplbCommunicator ({exc}).") from exc
 
     is_stateless = isinstance(group_coordinator, StatelessGroupCoordinator)
     if is_stateless:
         if backend not in ("torch_nccl", "pynccl"):
-            raise ValueError(
-                f"Elastic EP requires 'torch_nccl' or 'pynccl' EPLB communicator "
-                f"(got '{backend}')."
-            )
+            raise ValueError(f"Elastic EP requires 'torch_nccl' or 'pynccl' EPLB communicator (got '{backend}').")
         if backend == "torch_nccl":
-            logger.warning(
-                "Stateless elastic EP requires PyNCCL backend. "
-                "Forcing EPLB communicator to 'pynccl'."
-            )
+            logger.warning("Stateless elastic EP requires PyNCCL backend. Forcing EPLB communicator to 'pynccl'.")
             backend = "pynccl"
         return _create_pynccl()
 
     if backend == "nixl":
         if not has_nixl():
-            raise RuntimeError(
-                "EPLB communicator 'nixl' requested but NIXL is unavailable."
-            )
+            raise RuntimeError("EPLB communicator 'nixl' requested but NIXL is unavailable.")
         if not (current_platform.is_cuda_alike() and tensor_device_type != "cpu"):
-            raise RuntimeError(
-                "EPLB communicator 'nixl' supports only cuda-like devices "
-                f"(got {tensor_device_type})."
-            )
+            raise RuntimeError(f"EPLB communicator 'nixl' supports only cuda-like devices (got {tensor_device_type}).")
         try:
             return NixlEplbCommunicator(
                 cpu_group=group_coordinator.cpu_group,
                 expert_weights=expert_weights,
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to initialize NixlEplbCommunicator ({exc})."
-            ) from exc
+            raise RuntimeError(f"Failed to initialize NixlEplbCommunicator ({exc}).") from exc
     elif backend == "torch_gloo":
         return TorchDistGlooStagedEplbCommunicator(
             cpu_group=group_coordinator.cpu_group,

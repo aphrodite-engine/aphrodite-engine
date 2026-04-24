@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from dataclasses import dataclass
 
 import pytest
 import torch
-
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.fused_batched_moe import invoke_moe_batched_triton_kernel
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
+
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl
 from tests.kernels.moe.utils import batched_moe, make_quantized_test_activations, make_test_weights, naive_batched_moe

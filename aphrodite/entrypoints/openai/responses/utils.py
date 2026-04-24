@@ -127,19 +127,12 @@ def _maybe_combine_reasoning_and_tool_call(
     """Many models treat MCP calls and reasoning as a single message.
     This function checks if the last message is a reasoning message and
     the current message is a tool call"""
-    if not (
-        isinstance(item, ResponseFunctionToolCall)
-        and item.id
-        and item.id.startswith(MCP_PREFIX)
-    ):
+    if not (isinstance(item, ResponseFunctionToolCall) and item.id and item.id.startswith(MCP_PREFIX)):
         return None
     if len(messages) == 0:
         return None
     last_message = messages[-1]
-    if not (
-        last_message.get("role") == "assistant"
-        and last_message.get("reasoning") is not None
-    ):
+    if not (last_message.get("role") == "assistant" and last_message.get("reasoning") is not None):
         return None
 
     last_message["tool_calls"] = [
@@ -261,14 +254,9 @@ def convert_tool_responses_to_completions_format(tool: dict) -> dict:
     }
 
 
-def construct_tool_dicts(
-    tools: list[Tool], tool_choice: ToolChoice
-) -> list[dict[str, Any]] | None:
+def construct_tool_dicts(tools: list[Tool], tool_choice: ToolChoice) -> list[dict[str, Any]] | None:
     if not tools or (tool_choice == "none"):
         tool_dicts = None
     else:
-        tool_dicts = [
-            convert_tool_responses_to_completions_format(tool.model_dump())
-            for tool in tools
-        ]
+        tool_dicts = [convert_tool_responses_to_completions_format(tool.model_dump()) for tool in tools]
     return tool_dicts

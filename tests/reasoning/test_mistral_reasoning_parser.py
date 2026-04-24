@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
-from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 from tests.reasoning.utils import run_reasoning_extraction_mistral
 
 parser_name = "mistral"

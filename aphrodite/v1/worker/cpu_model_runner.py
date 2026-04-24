@@ -38,9 +38,7 @@ class CPUModelRunner(GPUModelRunner):
         def replace_tensor(obj: Any, cpu_attr_name: str, device_attr_name) -> None:
             cpu_tensor = getattr(obj, cpu_attr_name, None)
             device_tensor = getattr(obj, device_attr_name, None)
-            if isinstance(cpu_tensor, torch.Tensor) and isinstance(
-                device_tensor, torch.Tensor
-            ):
+            if isinstance(cpu_tensor, torch.Tensor) and isinstance(device_tensor, torch.Tensor):
                 setattr(obj, device_attr_name, cpu_tensor)
 
         for v in vars(self).values():
@@ -59,44 +57,31 @@ class CPUModelRunner(GPUModelRunner):
     def _postprocess_triton(self) -> None:
         import aphrodite.v1.worker.block_table
 
-        aphrodite.v1.worker.block_table._compute_slot_mapping_kernel = (
-            cpu_tl.compute_slot_mapping_kernel
-        )
+        aphrodite.v1.worker.block_table._compute_slot_mapping_kernel = cpu_tl.compute_slot_mapping_kernel
 
         # Speculative decoding fallbacks
         import aphrodite.v1.sample.rejection_sampler
         import aphrodite.v1.spec_decode.eagle
         import aphrodite.v1.spec_decode.utils
 
-        aphrodite.v1.spec_decode.eagle.eagle_prepare_inputs_padded_kernel = (
-            cpu_tl.eagle_prepare_inputs_padded_kernel
-        )
+        aphrodite.v1.spec_decode.eagle.eagle_prepare_inputs_padded_kernel = cpu_tl.eagle_prepare_inputs_padded_kernel
         aphrodite.v1.spec_decode.eagle.eagle_prepare_next_token_padded_kernel = (
             cpu_tl.eagle_prepare_next_token_padded_kernel
         )
-        aphrodite.v1.spec_decode.eagle.copy_and_expand_eagle_inputs_kernel = (
-            cpu_tl.copy_and_expand_eagle_inputs_kernel
-        )
+        aphrodite.v1.spec_decode.eagle.copy_and_expand_eagle_inputs_kernel = cpu_tl.copy_and_expand_eagle_inputs_kernel
         aphrodite.v1.spec_decode.utils.eagle_step_slot_mapping_metadata_kernel = (
             cpu_tl.eagle_step_slot_mapping_metadata_kernel
         )
-        aphrodite.v1.sample.rejection_sampler.rejection_greedy_sample_kernel = (
-            cpu_tl.rejection_greedy_sample_kernel
-        )
-        aphrodite.v1.sample.rejection_sampler.rejection_random_sample_kernel = (
-            cpu_tl.rejection_random_sample_kernel
-        )
+        aphrodite.v1.sample.rejection_sampler.rejection_greedy_sample_kernel = cpu_tl.rejection_greedy_sample_kernel
+        aphrodite.v1.sample.rejection_sampler.rejection_random_sample_kernel = cpu_tl.rejection_random_sample_kernel
         aphrodite.v1.sample.rejection_sampler.expand_kernel = cpu_tl.expand_kernel
-        aphrodite.v1.sample.rejection_sampler.sample_recovered_tokens_kernel = (
-            cpu_tl.sample_recovered_tokens_kernel
-        )
+        aphrodite.v1.sample.rejection_sampler.sample_recovered_tokens_kernel = cpu_tl.sample_recovered_tokens_kernel
 
     @instrument(span_name="Loading (CPU)")
     def load_model(self, load_dummy_weights: bool = False) -> None:
         if load_dummy_weights:
             raise ValueError(
-                "Loading dummy weights (needed for elastic EP scale-up) "
-                "Is not supported by the CPU Model Runner."
+                "Loading dummy weights (needed for elastic EP scale-up) Is not supported by the CPU Model Runner."
             )
         logger.info("Starting to load model %s...", self.model_config.model)
         self.model = get_model(aphrodite_config=self.aphrodite_config)
@@ -148,13 +133,10 @@ class CPUModelRunner(GPUModelRunner):
     # These methods override GPU-specific implementations that use CUDA streams
     # =========================================================================
 
-    def _copy_draft_token_ids_to_cpu(
-        self, scheduler_output: "SchedulerOutput", zeros_only: bool = False
-    ) -> None:
+    def _copy_draft_token_ids_to_cpu(self, scheduler_output: "SchedulerOutput", zeros_only: bool = False) -> None:
         """CPU-safe version: no async copy needed, tensors already on CPU."""
         if self.use_async_scheduling and not (
-            scheduler_output.has_structured_output_requests
-            or self.input_batch.sampling_metadata.output_token_ids
+            scheduler_output.has_structured_output_requests or self.input_batch.sampling_metadata.output_token_ids
         ):
             return
         self._draft_token_req_ids = self.input_batch.req_ids.copy()

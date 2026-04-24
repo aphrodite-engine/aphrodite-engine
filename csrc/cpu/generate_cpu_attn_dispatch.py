@@ -215,9 +215,7 @@ def generate_header_file() -> str:
 
 
 def main():
-    output_path = os.path.join(
-        os.path.dirname(__file__), "cpu_attn_dispatch_generated.h"
-    )
+    output_path = os.path.join(os.path.dirname(__file__), "cpu_attn_dispatch_generated.h")
 
     with open(output_path, "w") as f:
         f.write(generate_header_file())

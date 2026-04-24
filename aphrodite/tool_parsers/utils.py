@@ -192,10 +192,7 @@ def _get_tool_schema_defs(
         defs = params.pop("$defs", {})
         for def_name, def_schema in defs.items():
             if def_name in all_defs and all_defs[def_name] != def_schema:
-                raise ValueError(
-                    f"Tool definition '{def_name}' has multiple schemas, "
-                    "which is not supported."
-                )
+                raise ValueError(f"Tool definition '{def_name}' has multiple schemas, which is not supported.")
             all_defs[def_name] = def_schema
     return all_defs
 
@@ -225,24 +222,16 @@ def get_json_schema_from_tools(
     if tool_choice in ("none", None) or tools is None:
         return None
     # tool_choice: Forced Function (Responses)
-    if (not isinstance(tool_choice, str)) and isinstance(
-        tool_choice, ToolChoiceFunction
-    ):
+    if (not isinstance(tool_choice, str)) and isinstance(tool_choice, ToolChoiceFunction):
         tool_name = tool_choice.name
         tool_map = {tool.name: tool for tool in tools if isinstance(tool, FunctionTool)}
         if tool_name not in tool_map:
             raise ValueError(f"Tool '{tool_name}' has not been passed in `tools`.")
         return tool_map[tool_name].parameters
     # tool_choice: Forced Function (ChatCompletion)
-    if (not isinstance(tool_choice, str)) and isinstance(
-        tool_choice, ChatCompletionNamedToolChoiceParam
-    ):
+    if (not isinstance(tool_choice, str)) and isinstance(tool_choice, ChatCompletionNamedToolChoiceParam):
         tool_name = tool_choice.function.name
-        tool_map = {
-            tool.function.name: tool
-            for tool in tools
-            if isinstance(tool, ChatCompletionToolsParam)
-        }
+        tool_map = {tool.function.name: tool for tool in tools if isinstance(tool, ChatCompletionToolsParam)}
         if tool_name not in tool_map:
             raise ValueError(f"Tool '{tool_name}' has not been passed in `tools`.")
         return tool_map[tool_name].function.parameters
@@ -390,12 +379,7 @@ def make_valid_python(text: str) -> tuple[str, str] | None:
             return None
     if text.endswith(","):
         text = text[:-1]
-    if (
-        bracket_stack
-        and bracket_stack[-1] == "["
-        and not text.endswith("[")
-        and not text.endswith(")")
-    ):
+    if bracket_stack and bracket_stack[-1] == "[" and not text.endswith("[") and not text.endswith(")"):
         return None
 
     _CLOSING = {"[": "]", "(": ")", "{": "}", "'": "'", '"': '"'}
@@ -422,10 +406,7 @@ def compute_tool_delta(
     new_call_args = new_call.function.arguments
     if withheld_suffix:
         if not new_call_args.endswith(withheld_suffix):
-            msg = (
-                f"Tool call arguments '{new_call_args}' do not end with "
-                f"expected withheld suffix '{withheld_suffix}'"
-            )
+            msg = f"Tool call arguments '{new_call_args}' do not end with expected withheld suffix '{withheld_suffix}'"
             logger.error(msg)
             raise ValueError(msg)
         new_call_args = new_call_args[: -len(withheld_suffix)]

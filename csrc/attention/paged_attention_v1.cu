@@ -23,20 +23,20 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define DIVIDE_ROUND_UP(a, b) (((a) + (b) - 1) / (b))
 
-#define LAUNCH_PAGED_ATTENTION_V1(HEAD_SIZE)                                \
-  APHRODITE_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(                     \
-      ((void*)aphrodite::paged_attention_v1_kernel<T, CACHE_T, HEAD_SIZE,        \
-                                              BLOCK_SIZE, NUM_THREADS,      \
-                                              KV_DTYPE, IS_BLOCK_SPARSE>),  \
-      shared_mem_size);                                                     \
-  aphrodite::paged_attention_v1_kernel<T, CACHE_T, HEAD_SIZE, BLOCK_SIZE,        \
-                                  NUM_THREADS, KV_DTYPE, IS_BLOCK_SPARSE>   \
-      <<<grid, block, shared_mem_size, stream>>>(                           \
-          out_ptr, query_ptr, key_cache_ptr, value_cache_ptr, num_kv_heads, \
-          scale, block_tables_ptr, seq_lens_ptr, max_num_blocks_per_seq,    \
-          alibi_slopes_ptr, q_stride, kv_block_stride, kv_head_stride,      \
-          k_scale_ptr, v_scale_ptr, tp_rank, blocksparse_local_blocks,      \
-          blocksparse_vert_stride, blocksparse_block_size,                  \
+#define LAUNCH_PAGED_ATTENTION_V1(HEAD_SIZE)                                   \
+  APHRODITE_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(                   \
+      ((void*)aphrodite::paged_attention_v1_kernel<                            \
+          T, CACHE_T, HEAD_SIZE, BLOCK_SIZE, NUM_THREADS, KV_DTYPE,            \
+          IS_BLOCK_SPARSE>),                                                   \
+      shared_mem_size);                                                        \
+  aphrodite::paged_attention_v1_kernel<T, CACHE_T, HEAD_SIZE, BLOCK_SIZE,      \
+                                       NUM_THREADS, KV_DTYPE, IS_BLOCK_SPARSE> \
+      <<<grid, block, shared_mem_size, stream>>>(                              \
+          out_ptr, query_ptr, key_cache_ptr, value_cache_ptr, num_kv_heads,    \
+          scale, block_tables_ptr, seq_lens_ptr, max_num_blocks_per_seq,       \
+          alibi_slopes_ptr, q_stride, kv_block_stride, kv_head_stride,         \
+          k_scale_ptr, v_scale_ptr, tp_rank, blocksparse_local_blocks,         \
+          blocksparse_vert_stride, blocksparse_block_size,                     \
           blocksparse_head_sliding_step);
 
 // TODO(woosuk): Tune NUM_THREADS.
@@ -79,8 +79,9 @@ void paged_attention_v1_launcher(
       DIVIDE_ROUND_UP(max_seq_len, BLOCK_SIZE) * BLOCK_SIZE;
   int logits_size = padded_max_seq_len * sizeof(float);
   int outputs_size = (NUM_WARPS / 2) * head_size * sizeof(float);
-  // Python-side check in aphrodite.worker.worker._check_if_can_support_max_seq_len
-  // Keep that in sync with the logic here!
+  // Python-side check in
+  // aphrodite.worker.worker._check_if_can_support_max_seq_len Keep that in sync
+  // with the logic here!
   int shared_mem_size = std::max(logits_size, outputs_size);
 
   dim3 grid(num_heads, num_seqs, 1);

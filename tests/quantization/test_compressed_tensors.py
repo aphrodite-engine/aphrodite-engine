@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Test model set-up and weight loading for llmcompressor-quantized models.
 
 Run `pytest tests/quantization/test_compressed_tensors.py`.
@@ -5,9 +7,6 @@ Run `pytest tests/quantization/test_compressed_tensors.py`.
 
 import pytest
 import torch
-from compressed_tensors.quantization import QuantizationType
-
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.compressed_tensors.compressed_tensors import (  # noqa: E501
     CompressedTensors24,
     CompressedTensorsLinearMethod,
@@ -24,6 +23,9 @@ from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.utils.fp8_utils import W8A8BlockFp8LinearOp
 from aphrodite.quantization.utils.quant_utils import cutlass_fp4_supported
 from aphrodite.quantization.utils.w8a8_utils import sparse_cutlass_supported
+from compressed_tensors.quantization import QuantizationType
+
+from aphrodite.platforms import current_platform
 from tests.models.utils import check_logprobs_close
 
 # AITER only supports per-channel-per-channel INT8 gemm

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 def dummy_platform_plugin() -> str | None:
     return "aphrodite_add_dummy_platform.dummy_platform.DummyPlatform"
 

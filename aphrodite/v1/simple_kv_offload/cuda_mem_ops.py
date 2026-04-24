@@ -127,12 +127,8 @@ def copy_blocks(
     src_ids = np.array(src_block_ids, dtype=np.uint64)
     dst_ids = np.array(dst_block_ids, dtype=np.uint64)
 
-    src_all = (
-        params.src_bases[:, None] + src_ids[None, :] * params.bpb[:, None]
-    ).ravel()
-    dst_all = (
-        params.dst_bases[:, None] + dst_ids[None, :] * params.bpb[:, None]
-    ).ravel()
+    src_all = (params.src_bases[:, None] + src_ids[None, :] * params.bpb[:, None]).ravel()
+    dst_all = (params.dst_bases[:, None] + dst_ids[None, :] * params.bpb[:, None]).ravel()
     sz_all = np.repeat(params.bpb, n)
 
     total = n * params.num_layers
@@ -148,6 +144,4 @@ def copy_blocks(
         params.stream_handle,
     )
     if err != 0:
-        raise RuntimeError(
-            f"cuMemcpyBatchAsync failed: err={err} failIdx={params.fail_idx.value}"
-        )
+        raise RuntimeError(f"cuMemcpyBatchAsync failed: err={err} failIdx={params.fail_idx.value}")

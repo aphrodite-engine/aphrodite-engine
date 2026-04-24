@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 This example shows how to use the multi-LoRA functionality for offline
 inference. Requires HuggingFace credentials for access to Llama2.

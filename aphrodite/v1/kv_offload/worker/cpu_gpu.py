@@ -73,9 +73,7 @@ def compute_sub_block_ptrs(
     sub_block_size = tensor.shape[1] // block_size_factor
     sub_offsets = np.arange(block_size_factor, dtype=np.int64) * sub_block_size
     # (num_blocks, 1) + (1, block_size_factor) -> (num_blocks, block_size_factor)
-    all_ptrs = (
-        base_ptr + block_ids.astype(np.int64)[:, np.newaxis] * row_stride
-    ) + sub_offsets[np.newaxis, :]
+    all_ptrs = (base_ptr + block_ids.astype(np.int64)[:, np.newaxis] * row_stride) + sub_offsets[np.newaxis, :]
     # Flatten and apply skip_count / truncation
     flat = all_ptrs.ravel()
     output[:] = flat[skip_count : skip_count + num_sub_blocks]
@@ -150,12 +148,8 @@ class SingleDirectionOffloadingHandler(OffloadingHandler):
             _, cpu_page_size = cpu_tensor.shape
             assert cpu_page_size == gpu_page_size * block_size_factor
 
-        self.src_tensors: list[torch.Tensor] = (
-            gpu_tensors if gpu_to_cpu else cpu_tensors
-        )
-        self.dst_tensors: list[torch.Tensor] = (
-            cpu_tensors if gpu_to_cpu else gpu_tensors
-        )
+        self.src_tensors: list[torch.Tensor] = gpu_tensors if gpu_to_cpu else cpu_tensors
+        self.dst_tensors: list[torch.Tensor] = cpu_tensors if gpu_to_cpu else gpu_tensors
         self.gpu_to_cpu: bool = gpu_to_cpu
 
         # GPU blocks may be smaller
@@ -164,9 +158,7 @@ class SingleDirectionOffloadingHandler(OffloadingHandler):
         self.dst_block_size_factor = block_size_factor if self.gpu_to_cpu else 1
 
         # per-tensor block size in byte
-        self.tensor_block_size_in_bytes = [
-            gpu_tensor.shape[1] for gpu_tensor in gpu_tensors
-        ]
+        self.tensor_block_size_in_bytes = [gpu_tensor.shape[1] for gpu_tensor in gpu_tensors]
 
         # per-group block size in bytes
         self.group_block_size_in_bytes = []
@@ -175,9 +167,7 @@ class SingleDirectionOffloadingHandler(OffloadingHandler):
             for kv_cache_data_ref in kv_cache_group_data_refs:
                 # TODO(orozery): use kv_cache_data_ref.page_size_bytes
                 # once swap_blocks support it
-                group_block_size_in_bytes += self.tensor_block_size_in_bytes[
-                    kv_cache_data_ref.tensor_idx
-                ]
+                group_block_size_in_bytes += self.tensor_block_size_in_bytes[kv_cache_data_ref.tensor_idx]
             self.group_block_size_in_bytes.append(group_block_size_in_bytes)
 
         self.transfer_type = ("GPU", "CPU") if self.gpu_to_cpu else ("CPU", "GPU")
@@ -191,9 +181,7 @@ class SingleDirectionOffloadingHandler(OffloadingHandler):
         self._event_pool: list[torch.Event] = []
 
         # Pre-compute block sizes for batch copies.
-        self._block_size_in_bytes_arr = np.array(
-            self.tensor_block_size_in_bytes, dtype=np.int64
-        )
+        self._block_size_in_bytes_arr = np.array(self.tensor_block_size_in_bytes, dtype=np.int64)
 
     def transfer_async(self, job_id: int, transfer_spec: TransferSpec) -> bool:
         src_spec, dst_spec = transfer_spec
@@ -242,16 +230,8 @@ class SingleDirectionOffloadingHandler(OffloadingHandler):
         batch_sizes = torch.from_numpy(all_sizes)
 
         stream = self._stream_pool.pop() if self._stream_pool else torch.cuda.Stream()
-        start_event = (
-            self._event_pool.pop()
-            if self._event_pool
-            else torch.Event(enable_timing=True)
-        )
-        end_event = (
-            self._event_pool.pop()
-            if self._event_pool
-            else torch.Event(enable_timing=True)
-        )
+        start_event = self._event_pool.pop() if self._event_pool else torch.Event(enable_timing=True)
+        end_event = self._event_pool.pop() if self._event_pool else torch.Event(enable_timing=True)
 
         if self.gpu_to_cpu:
             # wait for model computation to finish before offloading
@@ -338,9 +318,7 @@ class CpuGpuOffloadingHandlers:
         cpu_tensors: list[torch.Tensor] = []
         for kv_cache_tensor in kv_caches.tensors:
             gpu_page_size_bytes = kv_cache_tensor.page_size_bytes
-            gpu_tensor = kv_cache_tensor.tensor.view(torch.int8).view(
-                (-1, gpu_page_size_bytes)
-            )
+            gpu_tensor = kv_cache_tensor.tensor.view(torch.int8).view((-1, gpu_page_size_bytes))
             cpu_page_size_bytes = gpu_page_size_bytes * block_size_factor
 
             if mmap_region is not None:

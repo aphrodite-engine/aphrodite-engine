@@ -3,6 +3,7 @@
 First, you will need a GPTQ model that satisfies the following conditions:
 
 ### Acquiring a compatible GPTQ model
+
 - `group_size=-1` OR `128`
 - `bits=4`
 - `desc_act=False`
@@ -42,8 +43,8 @@ Replace the `pretrained_model_dir` and `quantized_model_dir` with the appropriat
 ```sh
 CUDA_VISIBLE_DEVICES=0 python quantize.py
 ```
-You may need to install the AutoGPTQ library via `pip install auto-gptq`.
 
+You may need to install the AutoGPTQ library via `pip install auto-gptq`.
 
 Once you have your compatible GPTQ model, follow the steps below to convert it to Marlin format.
 

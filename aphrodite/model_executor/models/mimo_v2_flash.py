@@ -7,8 +7,8 @@ import torch
 from torch import nn
 
 from aphrodite.config import (
-    CacheConfig,
     AphroditeConfig,
+    CacheConfig,
     get_current_aphrodite_config,
     str_dtype_to_torch_dtype,
 )
@@ -85,9 +85,7 @@ class MiMoV2MLP(nn.Module):
             prefix=f"{prefix}.down_proj",
         )
         if hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -121,15 +119,11 @@ class MiMoV2MoE(nn.Module):
 
         if self.tp_size > config.n_routed_experts:
             raise ValueError(
-                f"Tensor parallel size {self.tp_size} is greater than "
-                f"the number of experts {config.n_routed_experts}."
+                f"Tensor parallel size {self.tp_size} is greater than the number of experts {config.n_routed_experts}."
             )
 
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
 
         aphrodite_config = get_current_aphrodite_config()
         eplb_config = aphrodite_config.parallel_config.eplb_config
@@ -141,9 +135,7 @@ class MiMoV2MoE(nn.Module):
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
 
         self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = (
-            self.physical_expert_start + self.n_local_physical_experts
-        )
+        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
 
         dtype = getattr(config, "moe_router_dtype", "float32")
         self.gate_dtype = str_dtype_to_torch_dtype(dtype)
@@ -153,9 +145,7 @@ class MiMoV2MoE(nn.Module):
             bias=False,
             dtype=self.gate_dtype,
         )
-        self.gate.e_score_correction_bias = nn.Parameter(
-            torch.empty(config.n_routed_experts, dtype=self.gate_dtype)
-        )
+        self.gate.e_score_correction_bias = nn.Parameter(torch.empty(config.n_routed_experts, dtype=self.gate_dtype))
 
         self.experts = FusedMoE(
             num_experts=self.n_routed_experts,
@@ -190,14 +180,10 @@ class MiMoV2MoE(nn.Module):
         else:
             gate_input = hidden_states
         router_logits = self.gate(gate_input)
-        final_hidden_states = self.experts(
-            hidden_states=hidden_states, router_logits=router_logits
-        )
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
 
         if self.is_sequence_parallel:
-            final_hidden_states = tensor_model_parallel_all_gather(
-                final_hidden_states, 0
-            )
+            final_hidden_states = tensor_model_parallel_all_gather(final_hidden_states, 0)
             final_hidden_states = final_hidden_states[:num_tokens]
 
         return final_hidden_states.squeeze(0) if is_input_1d else final_hidden_states
@@ -316,9 +302,9 @@ class MiMoV2Attention(nn.Module):
 
         attn_output = self.attn(q, k, v)
 
-        attn_output = attn_output.view(-1, self.num_heads, self.head_dim)[
-            ..., : self.v_head_dim
-        ].reshape(-1, self.num_heads * self.v_head_dim)
+        attn_output = attn_output.view(-1, self.num_heads, self.head_dim)[..., : self.v_head_dim].reshape(
+            -1, self.num_heads * self.v_head_dim
+        )
 
         output, _ = self.o_proj(attn_output)
         return output
@@ -350,9 +336,7 @@ class MiMoV2FlashDecoderLayer(nn.Module):
                 v_scale=v_scale,
                 sliding_window_size=config.sliding_window_size,
                 attention_bias=config.attention_bias,
-                add_swa_attention_sink_bias=getattr(
-                    config, "add_swa_attention_sink_bias", False
-                ),
+                add_swa_attention_sink_bias=getattr(config, "add_swa_attention_sink_bias", False),
                 layer_id=layer_id,
                 rope_theta=getattr(config, "swa_rope_theta", rope_theta),
                 max_position_embeddings=max_position_embeddings,
@@ -394,9 +378,7 @@ class MiMoV2FlashDecoderLayer(nn.Module):
             )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.layernorm_epsilon)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.layernorm_epsilon
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.layernorm_epsilon)
 
     def forward(
         self,
@@ -444,9 +426,7 @@ class MiMoV2Model(nn.Module):
         self.vocab_size = config.vocab_size
         self.num_redundant_experts = eplb_config.num_redundant_experts
 
-        if get_pp_group().is_first_rank or (
-            config.tie_word_embeddings and get_pp_group().is_last_rank
-        ):
+        if get_pp_group().is_first_rank or (config.tie_word_embeddings and get_pp_group().is_last_rank):
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -494,15 +474,11 @@ class MiMoV2Model(nn.Module):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        for idx, layer in enumerate(
-            islice(self.layers, self.start_layer, self.end_layer)
-        ):
+        for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer)):
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
 
@@ -548,9 +524,7 @@ class MiMoV2Model(nn.Module):
                 cache_scale_name = self.quant_config.get_cache_scale(name)
                 if cache_scale_name is not None and cache_scale_name in params_dict:
                     param = params_dict[cache_scale_name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
 
                     kv_scale = loaded_weight
                     if kv_scale.dim() > 0 and kv_scale.numel() > 1:
@@ -601,10 +575,7 @@ class MiMoV2Model(nn.Module):
                     continue
                 name_rewritten = name.replace(weight_name, param_name)
 
-                if (
-                    name_rewritten.endswith(".bias")
-                    and name_rewritten not in params_dict
-                ):
+                if name_rewritten.endswith(".bias") and name_rewritten not in params_dict:
                     continue
 
                 if is_pp_missing_parameter(name_rewritten, self):
@@ -677,9 +648,7 @@ class MiMoV2FlashForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -691,9 +660,7 @@ class MiMoV2FlashForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

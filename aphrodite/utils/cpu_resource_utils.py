@@ -104,9 +104,7 @@ def get_memory_node_info(node_id: int = 0) -> MemoryNodeInfo:
     active_file_memory = meminfo["Active(file)"]
     inactive_file_memory = meminfo["Inactive(file)"]
     reclaimable_memory = meminfo["SReclaimable"]
-    available_memory = (
-        free_memory + active_file_memory + inactive_file_memory + reclaimable_memory
-    )
+    available_memory = free_memory + active_file_memory + inactive_file_memory + reclaimable_memory
 
     return MemoryNodeInfo(
         total_memory=total_memory,
@@ -132,15 +130,9 @@ def get_visible_memory_node() -> list[int]:
     allowed_memory_node_list = get_memory_affinity()
 
     env_key = DEVICE_CONTROL_ENV_VAR
-    if (
-        ("APHRODITE_CPU_SIM_MULTI_NUMA" not in os.environ)
-        and env_key in os.environ
-        and os.environ[env_key] != ""
-    ):
+    if ("APHRODITE_CPU_SIM_MULTI_NUMA" not in os.environ) and env_key in os.environ and os.environ[env_key] != "":
         visible_nodes = [int(s) for s in os.environ[env_key].split(",")]
-        visible_nodes = [
-            node for node in visible_nodes if node in allowed_memory_node_list
-        ]
+        visible_nodes = [node for node in visible_nodes if node in allowed_memory_node_list]
         return visible_nodes
 
     return allowed_memory_node_list
@@ -154,20 +146,14 @@ def _get_cpu_list() -> list[LogicalCPUInfo]:
         assert cpu_count
         return [LogicalCPUInfo(i, i, 0) for i in range(cpu_count)]
 
-    lscpu_output = subprocess.check_output(
-        "lscpu --json --extended=CPU,CORE,NODE --online", shell=True, text=True
-    )
+    lscpu_output = subprocess.check_output("lscpu --json --extended=CPU,CORE,NODE --online", shell=True, text=True)
 
     # For platform without NUMA, replace '-' to '0'
     lscpu_output = re.sub(r'"node":\s*-\s*(,|\n)', r'"node": 0\1', lscpu_output)
 
-    logical_cpu_list: list[LogicalCPUInfo] = json.loads(
-        lscpu_output, object_hook=LogicalCPUInfo.json_decoder
-    )["cpus"]
+    logical_cpu_list: list[LogicalCPUInfo] = json.loads(lscpu_output, object_hook=LogicalCPUInfo.json_decoder)["cpus"]
 
     # Filter CPUs with invalid attributes
-    logical_cpu_list = [
-        x for x in logical_cpu_list if -1 not in (x.id, x.physical_core, x.numa_node)
-    ]
+    logical_cpu_list = [x for x in logical_cpu_list if -1 not in (x.id, x.physical_core, x.numa_node)]
 
     return logical_cpu_list

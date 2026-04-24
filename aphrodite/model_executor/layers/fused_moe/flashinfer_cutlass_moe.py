@@ -33,17 +33,13 @@ from aphrodite.utils.flashinfer import (
 logger = init_logger(__name__)
 
 
-def is_valid_flashinfer_cutlass_fused_moe(
-    hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor
-) -> bool:
+def is_valid_flashinfer_cutlass_fused_moe(hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor) -> bool:
     """
     Check if the given problem size is supported by the FlashInfer CUTLASS MoE
     kernel.
     """
     if not has_flashinfer_cutlass_fused_moe():
-        logger.debug_once(
-            "FlashInferExperts disabled: flashinfer_cutlass_fused_moe not available."
-        )
+        logger.debug_once("FlashInferExperts disabled: flashinfer_cutlass_fused_moe not available.")
         return False
     # Data type checks
     if (
@@ -78,10 +74,7 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
             "nvfp4",
             torch.float8_e4m3fn,
             None,
-        ), (
-            "Only mxfp4, nvfp4, fp8, bfloat16 and"
-            " float16 quantization are currently supported."
-        )
+        ), "Only mxfp4, nvfp4, fp8, bfloat16 and float16 quantization are currently supported."
         self.device = moe_config.device
         self.num_experts = moe_config.num_local_experts
         self.ep_rank = moe_config.moe_parallel_config.ep_rank
@@ -94,22 +87,14 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
         # - pass per-block weight scales to the kernel
         # - skip input activation quantization (kernel applies scaling)
         self.use_deepseek_fp8_block_scale = quant_config.is_block_quantized
-        self.max_capture_size = (
-            get_current_aphrodite_config().compilation_config.max_cudagraph_capture_size
-        )
+        self.max_capture_size = get_current_aphrodite_config().compilation_config.max_cudagraph_capture_size
 
         if quant_config.weight_quant_dtype == "mxfp4":
             # This value is used specifically for gpt-oss,
             # Need to revisit this for other models
-            self.gemm1_alpha = torch.tensor(
-                [1.702] * self.num_experts, dtype=torch.float32, device=self.device
-            )
-            self.gemm1_beta = torch.tensor(
-                [1.0] * self.num_experts, dtype=torch.float32, device=self.device
-            )
-            self.gemm1_clamp_limit = torch.tensor(
-                [7.0] * self.num_experts, dtype=torch.float32, device=self.device
-            )
+            self.gemm1_alpha = torch.tensor([1.702] * self.num_experts, dtype=torch.float32, device=self.device)
+            self.gemm1_beta = torch.tensor([1.0] * self.num_experts, dtype=torch.float32, device=self.device)
+            self.gemm1_clamp_limit = torch.tensor([7.0] * self.num_experts, dtype=torch.float32, device=self.device)
             if quant_config.quant_dtype == "mxfp8":
                 self.fake_input_scale = torch.ones(
                     self.num_experts,
@@ -281,10 +266,7 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
         use_mxfp8_act_scaling = False
         use_w4_group_scaling = False
         # Select quantization metadata based on FP8 format/path
-        if (
-            self.quant_dtype == torch.float8_e4m3fn
-            and not self.use_deepseek_fp8_block_scale
-        ):
+        if self.quant_dtype == torch.float8_e4m3fn and not self.use_deepseek_fp8_block_scale:
             # FP8 per-tensor path: use global alphas/scales; do not pass input_sf
             quant_scales = [
                 self.g1_alphas,  # w13_weight_scale * w13_input_scale

@@ -70,9 +70,7 @@ def generate_execution_code(
                 submod_names.append(target)
             idx = submod_index[target]
             args_str = ", ".join(_node_ref(a) for a in node.args)
-            kwargs_str = ", ".join(
-                f"{k}={_node_ref(v)}" for k, v in node.kwargs.items()
-            )
+            kwargs_str = ", ".join(f"{k}={_node_ref(v)}" for k, v in node.kwargs.items())
             all_args = ", ".join(filter(None, [args_str, kwargs_str]))
             lines.append(f"    {node.name} = __aphrodite_submods__[{idx}]({all_args})")
 
@@ -147,9 +145,5 @@ def _node_ref(arg: Any) -> str:
         items = ", ".join(_node_ref(x) for x in arg)
         return f"({items},)" if len(arg) == 1 else f"({items})"
     if isinstance(arg, dict):
-        return (
-            "{"
-            + ", ".join(f"{_node_ref(k)}: {_node_ref(v)}" for k, v in arg.items())
-            + "}"
-        )
+        return "{" + ", ".join(f"{_node_ref(k)}: {_node_ref(v)}" for k, v in arg.items()) + "}"
     return repr(arg)

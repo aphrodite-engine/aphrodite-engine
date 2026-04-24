@@ -48,9 +48,7 @@ def _select_kernel_cls(
         if supported:
             return cls
         last_reason = reason
-    raise ValueError(
-        f"No supported MXFP8 expert class for {backend.value}: {last_reason}"
-    )
+    raise ValueError(f"No supported MXFP8 expert class for {backend.value}: {last_reason}")
 
 
 def select_mxfp8_moe_backend(

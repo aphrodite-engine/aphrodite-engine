@@ -27,9 +27,7 @@ class EncoderRunner:
         self.dtype = dtype
         self.device = device
 
-        self.inputs_embeds = torch.zeros(
-            max_num_tokens, hidden_size, dtype=dtype, device=device
-        )
+        self.inputs_embeds = torch.zeros(max_num_tokens, hidden_size, dtype=dtype, device=device)
 
     def prepare_mm_inputs(
         self, scheduled_encoder_inputs: dict[str, list[int]]
@@ -74,17 +72,13 @@ class EncoderRunner:
         all_decode = not any(is_prefilling)
         if all_decode:
             # All decode requests, so no need to gather any embeddings.
-            return [], torch.zeros(
-                total_num_scheduled_tokens, dtype=torch.bool, device=self.device
-            )
+            return [], torch.zeros(total_num_scheduled_tokens, dtype=torch.bool, device=self.device)
 
         query_start = computed_prefill_lens.tolist()
         query_end = (computed_prefill_lens + num_scheduled_tokens).tolist()
 
         mm_embeds: list[torch.Tensor] = []
-        is_mm_embed = torch.zeros(
-            total_num_scheduled_tokens, dtype=torch.bool, device="cpu"
-        )
+        is_mm_embed = torch.zeros(total_num_scheduled_tokens, dtype=torch.bool, device="cpu")
         for i, req_id in enumerate(req_ids):
             if not is_prefilling[i]:
                 # OPTIMIZATION: Skip decode requests.
@@ -107,9 +101,7 @@ class EncoderRunner:
                 start_idx = max(query_start[i] - start_pos, 0)
                 end_idx = min(query_end[i] - start_pos, num_encoder_tokens)
                 assert start_idx < end_idx
-                curr_embeds_start, curr_embeds_end = (
-                    pos_info.get_embeds_indices_in_range(start_idx, end_idx)
-                )
+                curr_embeds_start, curr_embeds_end = pos_info.get_embeds_indices_in_range(start_idx, end_idx)
                 # If there are no embeddings in the current range, we skip
                 # gathering the embeddings.
                 if curr_embeds_start == curr_embeds_end:
@@ -140,9 +132,7 @@ class EncoderRunner:
         mm_embeds: list[torch.Tensor],
         is_mm_embed: torch.Tensor,
     ) -> torch.Tensor:
-        x = self.model.embed_input_ids(
-            input_ids, multimodal_embeddings=mm_embeds, is_multimodal=is_mm_embed
-        )
+        x = self.model.embed_input_ids(input_ids, multimodal_embeddings=mm_embeds, is_multimodal=is_mm_embed)
         # Copy to the pre-allocated buffer for CUDA graphs.
         self.inputs_embeds[: x.shape[0]] = x
         return self.inputs_embeds

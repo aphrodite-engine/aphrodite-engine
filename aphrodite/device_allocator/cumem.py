@@ -68,9 +68,7 @@ def get_pluggable_allocator(
     python_free_func: Callable[[int], HandleType],
 ) -> torch.cuda.memory.CUDAPluggableAllocator:
     init_module(python_malloc_fn, python_free_func)
-    new_alloc = torch.cuda.memory.CUDAPluggableAllocator(
-        lib_name, "my_malloc", "my_free"
-    )
+    new_alloc = torch.cuda.memory.CUDAPluggableAllocator(lib_name, "my_malloc", "my_free")
     return new_alloc
 
 
@@ -78,9 +76,7 @@ def get_pluggable_allocator(
 def use_memory_pool_with_allocator(
     python_malloc_fn: Callable[[HandleType], None],
     python_free_func: Callable[[int], HandleType],
-) -> Iterator[
-    tuple[torch.cuda.memory.MemPool, torch.cuda.memory.CUDAPluggableAllocator]
-]:
+) -> Iterator[tuple[torch.cuda.memory.MemPool, torch.cuda.memory.CUDAPluggableAllocator]]:
     new_alloc = get_pluggable_allocator(python_malloc_fn, python_free_func)
     mem_pool = torch.cuda.memory.MemPool(new_alloc._allocator)
     with torch.cuda.memory.use_mem_pool(mem_pool):
@@ -149,9 +145,7 @@ class CuMemAllocator:
         Internal method to store the allocation data
         when memory is allocated in the memory pool."""
         py_d_mem = allocation_handle[2]
-        self.pointer_to_data[py_d_mem] = AllocationData(
-            allocation_handle, self.current_tag
-        )
+        self.pointer_to_data[py_d_mem] = AllocationData(allocation_handle, self.current_tag)
         logger.debug(
             "Allocated %s bytes for %s with address %s from cumem allocator",
             allocation_handle[1],
@@ -242,9 +236,7 @@ class CuMemAllocator:
                 if data.cpu_backup_tensor is not None:
                     cpu_backup_tensor = data.cpu_backup_tensor
                     if cpu_backup_tensor is not None:
-                        size_in_bytes = (
-                            cpu_backup_tensor.numel() * cpu_backup_tensor.element_size()
-                        )
+                        size_in_bytes = cpu_backup_tensor.numel() * cpu_backup_tensor.element_size()
                         cpu_ptr = cpu_backup_tensor.data_ptr()
                         libcudart.cudaMemcpy(ptr, cpu_ptr, size_in_bytes)
                         data.cpu_backup_tensor = None
@@ -266,9 +258,7 @@ class CuMemAllocator:
 
         old_tag = self.current_tag
         self.current_tag = tag
-        with use_memory_pool_with_allocator(
-            self.python_malloc_callback, self.python_free_callback
-        ) as data:
+        with use_memory_pool_with_allocator(self.python_malloc_callback, self.python_free_callback) as data:
             # start to hit another PyTorch bug in PyTorch 2.6,
             # possibly because of gc-related issue w.r.t. the allocator and
             # the memory pool.

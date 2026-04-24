@@ -43,12 +43,7 @@ class KVCacheBlocks:
 
     def __add__(self, other: "KVCacheBlocks") -> "KVCacheBlocks":
         """Adds two KVCacheBlocks instances."""
-        return KVCacheBlocks(
-            tuple(
-                list(itertools.chain(blk1, blk2))
-                for blk1, blk2 in zip(self.blocks, other.blocks)
-            )
-        )
+        return KVCacheBlocks(tuple(list(itertools.chain(blk1, blk2)) for blk1, blk2 in zip(self.blocks, other.blocks)))
 
     @overload
     def get_block_ids(
@@ -88,11 +83,7 @@ class KVCacheBlocks:
         """Get block_ids of unhashed blocks from KVCacheBlocks instance."""
         # Skip padding blocks.
         return [
-            [
-                block.block_id
-                for block in group
-                if block.block_hash is None and not block.is_null
-            ]
+            [block.block_id for block in group if block.block_hash is None and not block.is_null]
             for group in self.blocks
         ]
 
@@ -148,9 +139,7 @@ class KVCacheManager:
         # overhead.
         #
         # We use nested tuples to ensure the empty KVCacheBlocks is immutable.
-        self.empty_kv_cache_blocks = KVCacheBlocks(
-            tuple(() for _ in range(self.num_kv_cache_groups))
-        )
+        self.empty_kv_cache_blocks = KVCacheBlocks(tuple(() for _ in range(self.num_kv_cache_groups)))
 
     @property
     def usage(self) -> float:
@@ -199,10 +188,8 @@ class KVCacheManager:
         # num_computed_tokens to be block-size aligned. Removing this limitation
         # could slightly improve performance in the future.
         max_cache_hit_length = request.num_tokens - 1
-        computed_blocks, num_new_computed_tokens = (
-            self.coordinator.find_longest_cache_hit(
-                request.block_hashes, max_cache_hit_length
-            )
+        computed_blocks, num_new_computed_tokens = self.coordinator.find_longest_cache_hit(
+            request.block_hashes, max_cache_hit_length
         )
 
         if self.log_stats:
@@ -234,9 +221,7 @@ class KVCacheManager:
         else:
             new_computed_block_list = self.empty_kv_cache_blocks.blocks
 
-        num_local_computed_tokens = (
-            request.num_computed_tokens + num_new_computed_tokens
-        )
+        num_local_computed_tokens = request.num_computed_tokens + num_new_computed_tokens
         total_computed_tokens = min(
             num_local_computed_tokens + num_external_computed_tokens,
             self.max_model_len,
@@ -339,10 +324,7 @@ class KVCacheManager:
         # When loading KV data asynchronously, we may have zero new tokens to
         # compute while still allocating slots for externally computed tokens.
         if num_new_tokens == 0 and num_external_computed_tokens == 0:
-            raise ValueError(
-                "num_new_tokens must be greater than 0 when there are no "
-                "external computed tokens"
-            )
+            raise ValueError("num_new_tokens must be greater than 0 when there are no external computed tokens")
 
         if new_computed_blocks is not None:
             new_computed_block_list = new_computed_blocks.blocks
@@ -351,9 +333,7 @@ class KVCacheManager:
 
         # The number of computed tokens is the number of computed tokens plus
         # the new prefix caching hits
-        num_local_computed_tokens = (
-            request.num_computed_tokens + num_new_computed_tokens
-        )
+        num_local_computed_tokens = request.num_computed_tokens + num_new_computed_tokens
         total_computed_tokens = min(
             num_local_computed_tokens + num_external_computed_tokens,
             self.max_model_len,
@@ -370,17 +350,14 @@ class KVCacheManager:
         # insufficient free blocks.
         # Should call this function before allocating new blocks to reduce
         # the number of evicted blocks.
-        self.coordinator.remove_skipped_blocks(
-            request.request_id, total_computed_tokens
-        )
+        self.coordinator.remove_skipped_blocks(request.request_id, total_computed_tokens)
 
         num_blocks_to_allocate = self.coordinator.get_num_blocks_to_allocate(
             request_id=request.request_id,
             num_tokens=num_tokens_need_slot,
             new_computed_blocks=new_computed_block_list,
             num_encoder_tokens=num_encoder_tokens,
-            total_computed_tokens=num_local_computed_tokens
-            + num_external_computed_tokens,
+            total_computed_tokens=num_local_computed_tokens + num_external_computed_tokens,
             num_tokens_main_model=num_tokens_main_model,
         )
 
@@ -388,10 +365,7 @@ class KVCacheManager:
             # Cannot allocate new blocks
             return None
 
-        if (
-            new_computed_block_list is not self.empty_kv_cache_blocks.blocks
-            or num_external_computed_tokens > 0
-        ):
+        if new_computed_block_list is not self.empty_kv_cache_blocks.blocks or num_external_computed_tokens > 0:
             # Append the new computed blocks to the request blocks until now to
             # avoid the case where the new blocks cannot be allocated.
             self.coordinator.allocate_new_computed_blocks(
@@ -436,9 +410,7 @@ class KVCacheManager:
         """
         self.coordinator.free(request.request_id)
 
-    def remove_skipped_blocks(
-        self, request_id: str, total_computed_tokens: int
-    ) -> None:
+    def remove_skipped_blocks(self, request_id: str, total_computed_tokens: int) -> None:
         """Remove the blocks that are no longer needed from `blocks` and replace
         the removed blocks with null_block.
 
@@ -534,9 +506,7 @@ class KVCacheManager:
         if self.enable_caching:
             self.coordinator.cache_blocks(request, num_computed_tokens)
 
-    def create_kv_cache_blocks(
-        self, blocks: tuple[list[KVCacheBlock], ...]
-    ) -> KVCacheBlocks:
+    def create_kv_cache_blocks(self, blocks: tuple[list[KVCacheBlock], ...]) -> KVCacheBlocks:
         # Only create new KVCacheBlocks for non-empty blocks
         return KVCacheBlocks(blocks) if any(blocks) else self.empty_kv_cache_blocks
 

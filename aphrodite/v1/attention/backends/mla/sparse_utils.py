@@ -65,9 +65,7 @@ def _convert_req_index_to_global_index_kernel(
 
     # Override with prefill output if prefill is enabled
     if HAS_PREFILL:
-        workspace_start = tl.load(
-            workspace_starts_ptr + prefill_req_id, mask=is_prefill, other=0
-        )
+        workspace_start = tl.load(workspace_starts_ptr + prefill_req_id, mask=is_prefill, other=0)
         prefill_out = workspace_start + tok
         out_val = tl.where(is_prefill, prefill_out, out_val)
     out_val = tl.where(is_invalid_tok, -1, out_val)
@@ -143,9 +141,7 @@ def triton_convert_req_index_to_global_index(
     # Allocate valid count buffer if needed (must be zero-initialized for atomics)
     valid_counts: torch.Tensor | None = None
     if return_valid_counts:
-        valid_counts = torch.zeros(
-            num_tokens, dtype=torch.int32, device=token_indices.device
-        )
+        valid_counts = torch.zeros(num_tokens, dtype=torch.int32, device=token_indices.device)
 
     # Strides in elements
     bt_stride0, bt_stride1 = block_table_c.stride()

@@ -34,10 +34,7 @@ from aphrodite.logger import init_logger
 from aphrodite.utils.import_utils import has_helion
 
 if not has_helion():
-    raise ImportError(
-        "ConfigManager requires helion to be installed. "
-        "Install it with: pip install helion"
-    )
+    raise ImportError("ConfigManager requires helion to be installed. Install it with: pip install helion")
 
 import helion
 
@@ -131,9 +128,7 @@ class ConfigSet:
 
         return config_set
 
-    def set_config(
-        self, platform: str, config_key: str, config: "helion.Config"
-    ) -> None:
+    def set_config(self, platform: str, config_key: str, config: "helion.Config") -> None:
         platform = platform.lower()
         if platform not in self._configs:
             self._configs[platform] = {}
@@ -193,8 +188,7 @@ class ConfigManager:
     def get_instance(cls) -> "ConfigManager":
         if cls._instance is None:
             raise RuntimeError(
-                "ConfigManager instance has not been created. "
-                "Call ConfigManager(base_dir=...) first to initialize."
+                "ConfigManager instance has not been created. Call ConfigManager(base_dir=...) first to initialize."
             )
         return cls._instance
 
@@ -207,9 +201,7 @@ class ConfigManager:
     def get_kernel_dir(self, kernel_name: str) -> Path:
         return self._base_dir / kernel_name
 
-    def get_config_file_path(
-        self, kernel_name: str, platform: str | None = None
-    ) -> Path:
+    def get_config_file_path(self, kernel_name: str, platform: str | None = None) -> Path:
         if platform is not None:
             return self.get_kernel_dir(kernel_name) / f"{platform}.json"
         return self.get_kernel_dir(kernel_name)
@@ -225,9 +217,7 @@ class ConfigManager:
             test_file.write_text("test")
             test_file.unlink()
         except OSError as e:
-            raise OSError(
-                f"Config directory '{self._base_dir}' is not writable: {e}"
-            ) from e
+            raise OSError(f"Config directory '{self._base_dir}' is not writable: {e}") from e
 
     def _load_platform_file(self, kernel_name: str, platform: str) -> dict[str, Any]:
         config_path = self.get_config_file_path(kernel_name, platform)
@@ -257,18 +247,13 @@ class ConfigManager:
 
         return ConfigSet.from_dict(kernel_name, data)
 
-    def get_platform_configs(
-        self, kernel_name: str, platform: str
-    ) -> dict[str, helion.Config]:
+    def get_platform_configs(self, kernel_name: str, platform: str) -> dict[str, helion.Config]:
         platform_data = self._load_platform_file(kernel_name, platform)
         if not platform_data:
             return {}
         config_set = ConfigSet.from_dict(kernel_name, {platform: platform_data})
         config_keys = config_set.get_config_keys(platform)
-        return {
-            config_key: config_set.get_config(platform, config_key)
-            for config_key in config_keys
-        }
+        return {config_key: config_set.get_config(platform, config_key) for config_key in config_keys}
 
     def save_config_set(self, config_set: ConfigSet) -> Path:
         kernel_dir = self.get_kernel_dir(config_set.kernel_name)

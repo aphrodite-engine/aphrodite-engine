@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import ctypes
 import importlib.util
 import logging
@@ -313,11 +315,7 @@ class cmake_build_ext(build_ext):
         targets = []
 
         def target_name(s: str) -> str:
-            return (
-                s.removeprefix("aphrodite.")
-                .removeprefix("vllm_flash_attn.")
-                .removeprefix("aphrodite_flash_attn.")
-            )
+            return s.removeprefix("aphrodite.").removeprefix("vllm_flash_attn.").removeprefix("aphrodite_flash_attn.")
 
         # Build all the extensions
         for ext in self.extensions:
@@ -368,9 +366,7 @@ class cmake_build_ext(build_ext):
         import shutil
 
         files = glob.glob(
-            os.path.join(
-                self.build_lib, "aphrodite", "vllm_flash_attn", "**", "*.py"
-            ),
+            os.path.join(self.build_lib, "aphrodite", "vllm_flash_attn", "**", "*.py"),
             recursive=True,
         )
         for file in files:
@@ -383,14 +379,9 @@ class cmake_build_ext(build_ext):
             self.copy_file(file, dst_file)
 
         if _is_cuda() or _is_hip():
-            triton_kernels_build = os.path.join(
-                self.build_lib, "aphrodite", "third_party", "triton_kernels"
-            )
+            triton_kernels_build = os.path.join(self.build_lib, "aphrodite", "third_party", "triton_kernels")
             if os.path.exists(triton_kernels_build):
-                print(
-                    "Copying "
-                    f"{triton_kernels_build} to aphrodite/third_party/triton_kernels"
-                )
+                print(f"Copying {triton_kernels_build} to aphrodite/third_party/triton_kernels")
                 shutil.copytree(
                     triton_kernels_build,
                     "aphrodite/third_party/triton_kernels",
@@ -398,13 +389,9 @@ class cmake_build_ext(build_ext):
                 )
 
         if _is_cuda():
-            deep_gemm_build = os.path.join(
-                self.build_lib, "aphrodite", "third_party", "deep_gemm"
-            )
+            deep_gemm_build = os.path.join(self.build_lib, "aphrodite", "third_party", "deep_gemm")
             if os.path.exists(deep_gemm_build):
-                print(
-                    f"Copying {deep_gemm_build} to aphrodite/third_party/deep_gemm"
-                )
+                print(f"Copying {deep_gemm_build} to aphrodite/third_party/deep_gemm")
                 shutil.copytree(
                     deep_gemm_build,
                     "aphrodite/third_party/deep_gemm",
@@ -631,13 +618,9 @@ if _build_custom_ops():
         if not disable_flash_attn:
             ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa2_C", cmake_lists_dir="."))
             if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
-                ext_modules.append(
-                    CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa3_C", cmake_lists_dir=".")
-                )
+                ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa3_C", cmake_lists_dir="."))
             ext_modules.append(
-                CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa4_cutedsl_C",
-                               cmake_lists_dir=".",
-                               optional=True)
+                CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa4_cutedsl_C", cmake_lists_dir=".", optional=True)
             )
 
         if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):

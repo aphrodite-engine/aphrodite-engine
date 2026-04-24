@@ -268,9 +268,7 @@ def kv_spans_from_batches(
     L_expand = torch.repeat_interleave(L, counts)  # [N]
     m_expand = torch.repeat_interleave(counts, counts)  # [N]
     # position within the selected block: 1..counts[b]
-    pos_within = (
-        torch.arange(N, dtype=torch.long) - torch.repeat_interleave(q[:-1], counts) + 1
-    )
+    pos_within = torch.arange(N, dtype=torch.long) - torch.repeat_interleave(q[:-1], counts) + 1
 
     local_pos = L_expand - m_expand + pos_within  # [N], 1-based
     end_location = start_tensor + local_pos  # exclusive end
@@ -321,9 +319,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         sm_count = num_compute_units(self.device.index)
         self.num_sms = sm_count
 
-        self.offsets_buffer = torch.arange(
-            next_n, device=self.device, dtype=torch.int32
-        )
+        self.offsets_buffer = torch.arange(next_n, device=self.device, dtype=torch.int32)
         self.decode_lens_buffer = torch.zeros(
             (scheduler_config.max_num_batched_tokens,),
             dtype=torch.int32,
@@ -363,9 +359,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         )
 
         # See: DeepGMM/csrc/apis/attention.hpp
-        self.scheduler_metadata_buffer = torch.empty(
-            (self.num_sms + 1, 2), dtype=torch.int32, device=self.device
-        )
+        self.scheduler_metadata_buffer = torch.empty((self.num_sms + 1, 2), dtype=torch.int32, device=self.device)
 
     def build_one_prefill_chunk(
         self,
@@ -377,8 +371,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         skip_kv_gather: bool = False,
     ) -> DeepseekV32IndexerPrefillChunkMetadata:
         prefill_query_start_loc = (
-            query_start_loc_cpu[req_slice.start : req_slice.stop + 1]
-            - query_start_loc_cpu[req_slice.start]
+            query_start_loc_cpu[req_slice.start : req_slice.stop + 1] - query_start_loc_cpu[req_slice.start]
         )
         cu_seqlen_ks, cu_seqlen_ke = kv_spans_from_batches(
             prefill_query_start_loc, seq_lens_cpu[req_slice], self.device
@@ -387,9 +380,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         total_seq_lens = seq_lens_cpu[req_slice].sum()
         num_reqs = req_slice.stop - req_slice.start
         seq_idx = torch.arange(0, num_reqs, dtype=torch.int32)
-        token_to_seq = torch.repeat_interleave(seq_idx, seq_lens_cpu[req_slice]).to(
-            self.device
-        )
+        token_to_seq = torch.repeat_interleave(seq_idx, seq_lens_cpu[req_slice]).to(self.device)
         assert total_seq_lens <= self.max_prefill_buffer_size
         cu_seq_lens = (
             torch.cat(
@@ -494,15 +485,11 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
 
                 # Give each of the flattened entries the same block table row as the
                 # original request.
-                self.expanded_block_table_buffer[:actual_expanded] = (
-                    torch.repeat_interleave(
-                        block_table, decode_lens, dim=0, output_size=actual_expanded
-                    )
+                self.expanded_block_table_buffer[:actual_expanded] = torch.repeat_interleave(
+                    block_table, decode_lens, dim=0, output_size=actual_expanded
                 )
                 if actual_expanded < num_decode_tokens:
-                    self.expanded_block_table_buffer[
-                        actual_expanded:num_decode_tokens, 0
-                    ] = 0
+                    self.expanded_block_table_buffer[actual_expanded:num_decode_tokens, 0] = 0
                 block_table = self.expanded_block_table_buffer[:num_decode_tokens]
 
                 # All reqs now have decode_len=1
@@ -521,9 +508,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             if use_native and next_n > 1:
                 assert self.decode_seq_lens_buffer.dim() == 2
                 # (B, next_n): token j attends to L - next_n + j + 1 KV tokens
-                self.decode_seq_lens_buffer[:num_decodes] = (
-                    seq_lens.unsqueeze(1) - next_n + 1 + self.offsets_buffer
-                )
+                self.decode_seq_lens_buffer[:num_decodes] = seq_lens.unsqueeze(1) - next_n + 1 + self.offsets_buffer
                 seq_lens = self.decode_seq_lens_buffer[:num_decodes]
             return seq_lens, block_table, decode_lens, num_decodes, requires_padding
 
@@ -537,12 +522,10 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         num_tokens = common_attn_metadata.num_actual_tokens
 
         query_start_loc_cpu = common_attn_metadata.query_start_loc_cpu
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
-            split_decodes_and_prefills(
-                common_attn_metadata,
-                decode_threshold=self.reorder_batch_threshold,
-                require_uniform=not self.use_flattening,
-            )
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata,
+            decode_threshold=self.reorder_batch_threshold,
+            require_uniform=not self.use_flattening,
         )
 
         assert num_decodes + num_prefills == num_reqs
@@ -550,9 +533,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
 
         prefill_metadata = None
         if num_prefills > 0:
-            prefill_query_lens_cpu = torch.diff(
-                query_start_loc_cpu[num_decodes : num_decodes + num_prefills + 1]
-            )
+            prefill_query_lens_cpu = torch.diff(query_start_loc_cpu[num_decodes : num_decodes + num_prefills + 1])
             max_logits_bytes = envs.APHRODITE_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024
             chunk_specs = split_indexer_prefill_chunks(
                 common_attn_metadata.seq_lens_cpu[num_decodes:],
@@ -583,9 +564,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                 out=self.decode_lens_buffer[:num_decodes],
             )
             decode_lens = self.decode_lens_buffer[:num_decodes]
-            decode_lens_cpu = torch.diff(
-                common_attn_metadata.query_start_loc_cpu[: num_decodes + 1]
-            )
+            decode_lens_cpu = torch.diff(common_attn_metadata.query_start_loc_cpu[: num_decodes + 1])
 
             seq_lens = common_attn_metadata.seq_lens[:num_decodes]
             block_table = common_attn_metadata.block_table_tensor[:num_decodes, ...]
@@ -594,19 +573,17 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             next_n = 1 + self.num_speculative_tokens
             use_native = not self.use_flattening and max_decode_len == next_n
 
-            seq_lens, block_table, decode_lens, batch_size, requires_padding = (
-                self._prepare_decode_tensors(
-                    seq_lens=seq_lens,
-                    block_table=block_table,
-                    decode_lens=decode_lens,
-                    decode_lens_cpu=decode_lens_cpu,
-                    query_start_loc=common_attn_metadata.query_start_loc[:num_decodes],
-                    num_decodes=num_decodes,
-                    num_decode_tokens=num_decode_tokens,
-                    use_native=use_native,
-                    next_n=next_n,
-                    max_decode_len=max_decode_len,
-                )
+            seq_lens, block_table, decode_lens, batch_size, requires_padding = self._prepare_decode_tensors(
+                seq_lens=seq_lens,
+                block_table=block_table,
+                decode_lens=decode_lens,
+                decode_lens_cpu=decode_lens_cpu,
+                query_start_loc=common_attn_metadata.query_start_loc[:num_decodes],
+                num_decodes=num_decodes,
+                num_decode_tokens=num_decode_tokens,
+                use_native=use_native,
+                next_n=next_n,
+                max_decode_len=max_decode_len,
             )
 
             # DeepGEMM is required for the paged MQA logits on CUDA devices

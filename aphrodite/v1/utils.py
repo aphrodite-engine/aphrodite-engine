@@ -152,11 +152,7 @@ def get_engine_client_zmq_addr(local_only: bool, host: str, port: int = 0) -> st
     Otherwise, the provided host and port will be used to construct a TCP
     address (port == 0 means assign an available port)."""
 
-    return (
-        get_open_zmq_ipc_path()
-        if local_only
-        else (get_tcp_uri(host, port or get_open_port()))
-    )
+    return get_open_zmq_ipc_path() if local_only else (get_tcp_uri(host, port or get_open_port()))
 
 
 class APIServerProcessManager:
@@ -199,9 +195,7 @@ class APIServerProcessManager:
         spawn_context = multiprocessing.get_context("spawn")
         self.processes: list[BaseProcess] = []
 
-        for i, in_addr, out_addr in zip(
-            range(num_servers), input_addresses, output_addresses
-        ):
+        for i, in_addr, out_addr in zip(range(num_servers), input_addresses, output_addresses):
             client_config = {
                 "input_address": in_addr,
                 "output_address": out_addr,
@@ -233,9 +227,7 @@ class APIServerProcessManager:
             shutdown(self.processes, timeout=timeout)
 
 
-def run_api_server_worker_proc(
-    listen_address, sock, args, client_config=None, **uvicorn_kwargs
-) -> None:
+def run_api_server_worker_proc(listen_address, sock, args, client_config=None, **uvicorn_kwargs) -> None:
     """Entrypoint for individual API server worker processes."""
 
     from aphrodite.entrypoints.openai.api_server import run_server_worker
@@ -247,15 +239,12 @@ def run_api_server_worker_proc(
     set_process_title("APIServer", str(server_index))
     decorate_logs()
 
-    uvloop.run(
-        run_server_worker(listen_address, sock, args, client_config, **uvicorn_kwargs)
-    )
+    uvloop.run(run_server_worker(listen_address, sock, args, client_config, **uvicorn_kwargs))
 
 
 def wait_for_completion_or_failure(
     api_server_manager: APIServerProcessManager,
-    engine_manager: Union["CoreEngineProcManager", "CoreEngineActorManager"]
-    | None = None,
+    engine_manager: Union["CoreEngineProcManager", "CoreEngineActorManager"] | None = None,
     coordinator: "DPCoordinator | None" = None,
 ) -> None:
     """Wait for all processes to complete or detect if any fail.
@@ -274,9 +263,7 @@ def wait_for_completion_or_failure(
         logger.info("Waiting for API servers to complete ...")
         # Create a mapping of sentinels to their corresponding processes
         # for efficient lookup
-        sentinel_to_proc: dict[Any, BaseProcess] = {
-            proc.sentinel: proc for proc in api_server_manager.processes
-        }
+        sentinel_to_proc: dict[Any, BaseProcess] = {proc.sentinel: proc for proc in api_server_manager.processes}
 
         if coordinator:
             sentinel_to_proc[coordinator.proc.sentinel] = coordinator.proc
@@ -306,15 +293,9 @@ def wait_for_completion_or_failure(
 
                 # Check if process exited with error
                 if proc is not None and proc.exitcode != 0:
-                    raise RuntimeError(
-                        f"Process {proc.name} (PID: {proc.pid}) "
-                        f"died with exit code {proc.exitcode}"
-                    )
+                    raise RuntimeError(f"Process {proc.name} (PID: {proc.pid}) died with exit code {proc.exitcode}")
                 if engine_manager and engine_manager.failed_proc_name is not None:
-                    raise RuntimeError(
-                        f"Engine core process {engine_manager.failed_proc_name} "
-                        "died unexpectedly."
-                    )
+                    raise RuntimeError(f"Engine core process {engine_manager.failed_proc_name} died unexpectedly.")
 
     except KeyboardInterrupt:
         logger.info("Received KeyboardInterrupt, shutting down API servers...")
@@ -357,9 +338,7 @@ def shutdown(procs: list[BaseProcess], timeout: float | None = None) -> None:
             kill_process_tree(pid)
 
 
-def copy_slice(
-    from_tensor: torch.Tensor, to_tensor: torch.Tensor, length: int
-) -> torch.Tensor:
+def copy_slice(from_tensor: torch.Tensor, to_tensor: torch.Tensor, length: int) -> torch.Tensor:
     """
     Copy the first length elements of a tensor into another tensor in a
     non-blocking manner.
@@ -371,9 +350,7 @@ def copy_slice(
     return to_tensor[:length].copy_(from_tensor[:length], non_blocking=True)
 
 
-def report_usage_stats(
-    aphrodite_config, usage_context: UsageContext = UsageContext.ENGINE_CONTEXT
-) -> None:
+def report_usage_stats(aphrodite_config, usage_context: UsageContext = UsageContext.ENGINE_CONTEXT) -> None:
     """Report usage statistics if enabled."""
 
     if not is_usage_stats_enabled():
@@ -487,9 +464,7 @@ def compute_iteration_details(scheduler_output: SchedulerOutput) -> IterationDet
     num_generation_tokens = 0
     new_req_ids = {new_req.req_id for new_req in scheduler_output.scheduled_new_reqs}
     for req_id, num_tokens in scheduler_output.num_scheduled_tokens.items():
-        if scheduler_output.scheduled_cached_reqs.is_context_phase(req_id) or (
-            req_id in new_req_ids
-        ):
+        if scheduler_output.scheduled_cached_reqs.is_context_phase(req_id) or (req_id in new_req_ids):
             num_context_requests += 1
             num_context_tokens += num_tokens
         else:

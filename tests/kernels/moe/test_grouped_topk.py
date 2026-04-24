@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the MoE grouped topk kernel
 
 Run `pytest tests/kernels/moe/test_grouped_topk.py`.
@@ -5,8 +7,8 @@ Run `pytest tests/kernels/moe/test_grouped_topk.py`.
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_grouped_topk, grouped_topk
+
 from aphrodite.platforms import current_platform
 
 

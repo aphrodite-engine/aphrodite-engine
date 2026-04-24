@@ -21,13 +21,13 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
 )
 from aphrodite.platforms import current_platform
 
-from ..inductor_pass import enable_fake_mode
 from ..aphrodite_inductor_pass import (
     AphroditeFusionPatternMatcherPass,
     AphroditeInductorPass,
     AphroditePatternMatcherPass,
     AphroditePatternReplacement,
 )
+from ..inductor_pass import enable_fake_mode
 from .act_quant_fusion import ActivationQuantPattern
 from .matcher_utils import (
     MatcherFusedAddRMSNorm,
@@ -43,17 +43,13 @@ FP8_DTYPE = current_platform.fp8_dtype()
 
 
 class AiterRMSNormQuantPattern:
-    def __init__(
-        self, epsilon: float, key: FusedRMSQuantKey, match_aiter_quant: bool = True
-    ):
+    def __init__(self, epsilon: float, key: FusedRMSQuantKey, match_aiter_quant: bool = True):
         self.epsilon = epsilon
         self.quant_dtype = key.quant.dtype
         self.device = torch.device("cuda")
 
         if key.fused_add:
-            self.rmsnorm_matcher = MatcherFusedAddRMSNorm(
-                epsilon, match_rocm_aiter=True
-            )
+            self.rmsnorm_matcher = MatcherFusedAddRMSNorm(epsilon, match_rocm_aiter=True)
         self.quant_matcher = MatcherQuantFP8(
             key.quant,
             match_rocm_aiter=match_aiter_quant,
@@ -280,9 +276,7 @@ class AiterFusedAddRMSFp8GroupQuantPattern(AiterRMSNormQuantPattern):
             # result, scale, residual
             return at[0], at[1], at[2]
 
-        pm.register_replacement(
-            pattern, replacement, self.rmsnorm_matcher.inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.rmsnorm_matcher.inputs(), pm.fwd_only, pm_pass)
 
 
 class RocmAiterRMSNormQuantFusionPass(AphroditePatternMatcherPass):
@@ -296,29 +290,23 @@ class RocmAiterRMSNormQuantFusionPass(AphroditePatternMatcherPass):
     def __init__(self, config: AphroditeConfig) -> None:
         super().__init__(config)
 
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="rocm_aiter_rms_norm_quant_fusion_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="rocm_aiter_rms_norm_quant_fusion_pass")
 
         # Make sure fused add patterns are before simple rms norm,
         # as the latter is a subset of the former in torch ops
         for epsilon in [1e-5, 1e-6]:
             #  Fuse aiter rms_norm + aiter dynamic group fp8 quant
-            AiterRMSFp8GroupQuantPattern(
-                epsilon, FP8_DTYPE, GroupShape(1, 128)
-            ).register(self.patterns)
+            AiterRMSFp8GroupQuantPattern(epsilon, FP8_DTYPE, GroupShape(1, 128)).register(self.patterns)
 
             # Fuse aiter fused_add_rms_norm + aiter dynamic group fp8 quant
-            AiterFusedAddRMSFp8GroupQuantPattern(
-                epsilon, FP8_DTYPE, GroupShape(1, 128)
-            ).register(self.patterns)
+            AiterFusedAddRMSFp8GroupQuantPattern(epsilon, FP8_DTYPE, GroupShape(1, 128)).register(self.patterns)
 
             for match_aiter_quant in [True, False]:
                 # Fuse aiter rms_norm + (aiter / aphrodite built-in)
                 # dynamic per-token fp8 quant
-                AiterRMSNormDynamicQuantPattern(
-                    epsilon, FP8_DTYPE, match_aiter_quant=match_aiter_quant
-                ).register(self.patterns)
+                AiterRMSNormDynamicQuantPattern(epsilon, FP8_DTYPE, match_aiter_quant=match_aiter_quant).register(
+                    self.patterns
+                )
 
                 # Fuse aiter fused_add_rms_norm + (aiter / aphrodite built-in)
                 # dynamic per-token fp8 quant
@@ -331,9 +319,7 @@ class RocmAiterRMSNormQuantFusionPass(AphroditePatternMatcherPass):
     @AphroditeInductorPass.time_and_log
     def __call__(self, graph: fx.Graph) -> None:
         self.matched_count = self.patterns.apply(graph)
-        logger.debug(
-            "%s Replaced %s patterns", self.__class__.__name__, self.matched_count
-        )
+        logger.debug("%s Replaced %s patterns", self.__class__.__name__, self.matched_count)
 
     def uuid(self) -> str:
         fusion_patterns = [
@@ -355,9 +341,7 @@ class AiterSiluMulFp8GroupQuantPattern(ActivationQuantPattern):
 
     def __init__(self) -> None:
         self.silu_and_mul_matcher = MatcherSiluAndMul()
-        self.quant_matcher = MatcherQuantFP8(
-            quant_key=kFp8Dynamic128Sym, match_rocm_aiter=True
-        )
+        self.quant_matcher = MatcherQuantFP8(quant_key=kFp8Dynamic128Sym, match_rocm_aiter=True)
 
     def get_inputs(self) -> list[torch.Tensor]:
         return [
@@ -378,9 +362,7 @@ class AiterSiluMulFp8GroupQuantPattern(ActivationQuantPattern):
             at = self.FUSED_SILU_MUL_QUANT_OP(x=input, group_size=128)
             return at[0], at[1]
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class RocmAiterSiluMulFp8GroupQuantFusionPass(AphroditePatternMatcherPass):
@@ -451,16 +433,10 @@ class AddAiterRMSNormPadPattern:
             router_weight: torch.Tensor,
             router_bias: torch.Tensor,
         ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-            pad_size = self.x_pad_to_multiple - (
-                self.hidden_size % self.x_pad_to_multiple
-            )
+            pad_size = self.x_pad_to_multiple - (self.hidden_size % self.x_pad_to_multiple)
             result_rms, residual_out = self.rmsnorm_matcher(input, weight, residual)
-            router_logits = torch.ops.aphrodite.rocm_unquantized_gemm(
-                result_rms, router_weight, router_bias
-            )
-            result = torch.nn.functional.pad(
-                result_rms, (0, pad_size), mode="constant", value=0.0
-            )
+            router_logits = torch.ops.aphrodite.rocm_unquantized_gemm(result_rms, router_weight, router_bias)
+            result = torch.nn.functional.pad(result_rms, (0, pad_size), mode="constant", value=0.0)
             return result, residual_out, router_logits
 
         def replacement(
@@ -484,9 +460,7 @@ class AddAiterRMSNormPadPattern:
             residual_out = at[1]
             return result_padded, residual_out, router_logits
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class RocmAiterTritonAddRMSNormPadFusionPass(AphroditePatternMatcherPass):
@@ -506,9 +480,7 @@ class RocmAiterTritonAddRMSNormPadFusionPass(AphroditePatternMatcherPass):
         hidden_size = 2880
         for epsilon in [1e-5, 1e-6]:
             for x_pad_to_multiple in [128, 256]:
-                AddAiterRMSNormPadPattern(
-                    epsilon, hidden_size, x_pad_to_multiple
-                ).register(self.patterns)
+                AddAiterRMSNormPadPattern(epsilon, hidden_size, x_pad_to_multiple).register(self.patterns)
 
         self.dump_patterns(config, self.patterns)
 
@@ -521,9 +493,7 @@ class RocmAiterTritonAddRMSNormPadFusionPass(AphroditePatternMatcherPass):
         return AphroditeInductorPass.hash_source(self, AddAiterRMSNormPadPattern)
 
 
-class MLADualRMSNormPattern(
-    AphroditePatternReplacement[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
-):
+class MLADualRMSNormPattern(AphroditePatternReplacement[..., tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
     """
     Fuse paired q_a_layernorm + kv_a_layernorm in MLA attention into
     AITER's ``fused_qk_rmsnorm`` HIP kernel.

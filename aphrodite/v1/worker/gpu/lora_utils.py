@@ -14,9 +14,7 @@ class LoraState:
         # req_id -> lora_request
         self.lora_requests: dict[str, LoRARequest] = {}
 
-    def add_request(
-        self, req_id: str, req_index: int, lora_request: LoRARequest | None
-    ) -> None:
+    def add_request(self, req_id: str, req_index: int, lora_request: LoRARequest | None) -> None:
         if lora_request is not None:
             self.lora_requests[req_id] = lora_request
             self.lora_ids[req_index] = lora_request.lora_int_id

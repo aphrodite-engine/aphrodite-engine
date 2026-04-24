@@ -65,10 +65,7 @@ _TOOL_NAME_TO_TYPE_MAP = {
 def _map_tool_name_to_tool_type(tool_name: str) -> str:
     if tool_name not in _TOOL_NAME_TO_TYPE_MAP:
         available_tools = ", ".join(_TOOL_NAME_TO_TYPE_MAP.keys())
-        raise ValueError(
-            f"Built-in tool name '{tool_name}' not defined in mapping. "
-            f"Available tools: {available_tools}"
-        )
+        raise ValueError(f"Built-in tool name '{tool_name}' not defined in mapping. Available tools: {available_tools}")
     return _TOOL_NAME_TO_TYPE_MAP[tool_name]
 
 
@@ -140,9 +137,7 @@ class ConversationContext(ABC):
         raise NotImplementedError("Should not be called.")
 
 
-def _create_json_parse_error_messages(
-    last_msg: Message, e: json.JSONDecodeError
-) -> list[Message]:
+def _create_json_parse_error_messages(last_msg: Message, e: json.JSONDecodeError) -> list[Message]:
     """
     Creates an error message when json parse failed.
     """
@@ -414,9 +409,7 @@ class ParsableContext(ConversationContext):
 
         return [message]
 
-    async def call_container_tool(
-        self, tool_session: Union["ClientSession", Tool], last_msg: Message
-    ) -> list[Message]:
+    async def call_container_tool(self, tool_session: Union["ClientSession", Tool], last_msg: Message) -> list[Message]:
         """
         Call container tool. Expect this to be run in a stateful docker
         with command line terminal.
@@ -469,9 +462,7 @@ class ParsableContext(ConversationContext):
         elif last_msg.name == "web_search_preview":
             return await self.call_search_tool(self._tool_sessions["browser"], last_msg)
         elif last_msg.name.startswith("container"):
-            return await self.call_container_tool(
-                self._tool_sessions["container"], last_msg
-            )
+            return await self.call_container_tool(self._tool_sessions["container"], last_msg)
         return []
 
     def render_for_completion(self):
@@ -490,9 +481,7 @@ class ParsableContext(ConversationContext):
                     continue
 
                 tool_type = _map_tool_name_to_tool_type(tool_name)
-                headers = (
-                    mcp_tools[tool_type].headers if tool_type in mcp_tools else None
-                )
+                headers = mcp_tools[tool_type].headers if tool_type in mcp_tools else None
                 tool_session = await exit_stack.enter_async_context(
                     tool_server.new_session(tool_name, request_id, headers)
                 )
@@ -504,18 +493,11 @@ class ParsableContext(ConversationContext):
 
         async def cleanup_tool_session(tool_session):
             if not isinstance(tool_session, Tool):
-                logger.info(
-                    "Cleaning up tool session for %s", tool_session._client_info
-                )
+                logger.info("Cleaning up tool session for %s", tool_session._client_info)
                 with contextlib.suppress(Exception):
                     await tool_session.call_tool("cleanup_session", {})
 
-        await asyncio.gather(
-            *(
-                cleanup_tool_session(self._tool_sessions[tool])
-                for tool in self.called_tools
-            )
-        )
+        await asyncio.gather(*(cleanup_tool_session(self._tool_sessions[tool]) for tool in self.called_tools))
 
 
 class HarmonyContext(ConversationContext):
@@ -617,9 +599,7 @@ class HarmonyContext(ConversationContext):
             # tool tokens = this turn prefill - last turn prefill -
             # last turn decode
             this_turn_tool_tokens = (
-                self.current_turn_metrics.input_tokens
-                - previous_turn.input_tokens
-                - previous_turn.output_tokens
+                self.current_turn_metrics.input_tokens - previous_turn.input_tokens - previous_turn.output_tokens
             )
 
             # Handle negative tool token counts (shouldn't happen in normal
@@ -695,25 +675,17 @@ class HarmonyContext(ConversationContext):
         recipient = last_msg.recipient
         if recipient is not None:
             if recipient.startswith("browser."):
-                return await self.call_search_tool(
-                    self._tool_sessions["browser"], last_msg
-                )
+                return await self.call_search_tool(self._tool_sessions["browser"], last_msg)
             elif recipient.startswith("python"):
-                return await self.call_python_tool(
-                    self._tool_sessions["python"], last_msg
-                )
+                return await self.call_python_tool(self._tool_sessions["python"], last_msg)
             elif recipient.startswith("container."):
-                return await self.call_container_tool(
-                    self._tool_sessions["container"], last_msg
-                )
+                return await self.call_container_tool(self._tool_sessions["container"], last_msg)
         raise ValueError("No tool call found")
 
     def render_for_completion(self) -> list[int]:
         return render_for_completion(self.messages)
 
-    async def call_search_tool(
-        self, tool_session: Union["ClientSession", Tool], last_msg: Message
-    ) -> list[Message]:
+    async def call_search_tool(self, tool_session: Union["ClientSession", Tool], last_msg: Message) -> list[Message]:
         self.called_tools.add("browser")
         if isinstance(tool_session, Tool):
             return await tool_session.get_result(self)
@@ -738,9 +710,7 @@ class HarmonyContext(ConversationContext):
             )
         ]
 
-    async def call_python_tool(
-        self, tool_session: Union["ClientSession", Tool], last_msg: Message
-    ) -> list[Message]:
+    async def call_python_tool(self, tool_session: Union["ClientSession", Tool], last_msg: Message) -> list[Message]:
         self.called_tools.add("python")
         if isinstance(tool_session, Tool):
             return await tool_session.get_result(self)
@@ -773,18 +743,14 @@ class HarmonyContext(ConversationContext):
             for tool_name in self.available_tools:
                 if tool_name not in self._tool_sessions:
                     tool_type = _map_tool_name_to_tool_type(tool_name)
-                    headers = (
-                        mcp_tools[tool_type].headers if tool_type in mcp_tools else None
-                    )
+                    headers = mcp_tools[tool_type].headers if tool_type in mcp_tools else None
                     tool_session = await exit_stack.enter_async_context(
                         tool_server.new_session(tool_name, request_id, headers)
                     )
                     self._tool_sessions[tool_name] = tool_session
                     exit_stack.push_async_exit(self.cleanup_session)
 
-    async def call_container_tool(
-        self, tool_session: Union["ClientSession", Tool], last_msg: Message
-    ) -> list[Message]:
+    async def call_container_tool(self, tool_session: Union["ClientSession", Tool], last_msg: Message) -> list[Message]:
         """
         Call container tool. Expect this to be run in a stateful docker
         with command line terminal.
@@ -830,18 +796,11 @@ class HarmonyContext(ConversationContext):
 
         async def cleanup_tool_session(tool_session):
             if not isinstance(tool_session, Tool):
-                logger.info(
-                    "Cleaning up tool session for %s", tool_session._client_info
-                )
+                logger.info("Cleaning up tool session for %s", tool_session._client_info)
                 with contextlib.suppress(Exception):
                     await tool_session.call_tool("cleanup_session", {})
 
-        await asyncio.gather(
-            *(
-                cleanup_tool_session(self._tool_sessions[tool])
-                for tool in self.called_tools
-            )
-        )
+        await asyncio.gather(*(cleanup_tool_session(self._tool_sessions[tool]) for tool in self.called_tools))
 
 
 class StreamingHarmonyContext(HarmonyContext):
@@ -888,9 +847,7 @@ class StreamingHarmonyContext(HarmonyContext):
         self._update_num_reasoning_tokens()
         self.last_tok = tok
         if len(self._messages) - self.num_init_messages < len(self.parser.messages):
-            self._messages.extend(
-                self.parser.messages[len(self._messages) - self.num_init_messages :]
-            )
+            self._messages.extend(self.parser.messages[len(self._messages) - self.num_init_messages :])
 
     def append_tool_output(self, output: list[Message]) -> None:
         # Handle the case of tool output in direct message format

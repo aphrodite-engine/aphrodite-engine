@@ -14,7 +14,7 @@ import jinja2.nodes
 import jinja2.parser
 import jinja2.sandbox
 
-from aphrodite.config import ModelConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.entrypoints.chat_utils import (
     ChatCompletionMessageParam,
     ChatTemplateContentFormat,
@@ -132,15 +132,12 @@ def resolve_chat_template(
     )
     if path is not None:
         logger.info_once(
-            "Loading chat template fallback for %s as there isn't one "
-            "defined on HF Hub.",
+            "Loading chat template fallback for %s as there isn't one defined on HF Hub.",
             tokenizer.name_or_path,
         )
         chat_template = load_chat_template(path)
     else:
-        logger.debug_once(
-            "There is no chat template fallback for %s", tokenizer.name_or_path
-        )
+        logger.debug_once("There is no chat template fallback for %s", tokenizer.name_or_path)
 
     return chat_template
 
@@ -154,11 +151,7 @@ def _is_var_access(node: jinja2.nodes.Node, varname: str) -> bool:
 
 def _is_attr_access(node: jinja2.nodes.Node, varname: str, key: str) -> bool:
     if isinstance(node, jinja2.nodes.Getitem):
-        return (
-            _is_var_access(node.node, varname)
-            and isinstance(node.arg, jinja2.nodes.Const)
-            and node.arg.value == key
-        )
+        return _is_var_access(node.node, varname) and isinstance(node.arg, jinja2.nodes.Const) and node.arg.value == key
 
     if isinstance(node, jinja2.nodes.Getattr):
         return _is_var_access(node.node, varname) and node.attr == key
@@ -172,15 +165,11 @@ def _is_var_or_elems_access(
     key: str | None = None,
 ) -> bool:
     if isinstance(node, jinja2.nodes.Filter):
-        return node.node is not None and _is_var_or_elems_access(
-            node.node, varname, key
-        )
+        return node.node is not None and _is_var_or_elems_access(node.node, varname, key)
     if isinstance(node, jinja2.nodes.Test):
         return _is_var_or_elems_access(node.node, varname, key)
 
-    if isinstance(node, jinja2.nodes.Getitem) and isinstance(
-        node.arg, jinja2.nodes.Slice
-    ):
+    if isinstance(node, jinja2.nodes.Getitem) and isinstance(node.arg, jinja2.nodes.Slice):
         return _is_var_or_elems_access(node.node, varname, key)
 
     return _is_attr_access(node, varname, key) if key else _is_var_access(node, varname)
@@ -211,9 +200,7 @@ def _iter_nodes_assign_var_or_elems(root: jinja2.nodes.Node, varname: str):
 # NOTE: The proper way to handle this is to build a CFG so that we can handle
 # the scope in which each variable is defined, but that is too complicated
 def _iter_nodes_assign_messages_item(root: jinja2.nodes.Node):
-    messages_varnames = [
-        varname for _, varname in _iter_nodes_assign_var_or_elems(root, "messages")
-    ]
+    messages_varnames = [varname for _, varname in _iter_nodes_assign_var_or_elems(root, "messages")]
 
     # Search for {%- for message in messages -%} loops
     for loop_ast in root.find_all(jinja2.nodes.For):
@@ -228,9 +215,7 @@ def _iter_nodes_assign_messages_item(root: jinja2.nodes.Node):
 
 
 def _iter_nodes_assign_content_item(root: jinja2.nodes.Node):
-    message_varnames = [
-        varname for _, varname in _iter_nodes_assign_messages_item(root)
-    ]
+    message_varnames = [varname for _, varname in _iter_nodes_assign_messages_item(root)]
 
     # Search for {%- for content in message['content'] -%} loops
     for loop_ast in root.find_all(jinja2.nodes.For):
@@ -296,11 +281,7 @@ def _resolve_chat_template_content_format(
         else load_chat_template(chat_template, is_literal=True)
     )
 
-    detected_format = (
-        "string"
-        if jinja_text is None
-        else _detect_content_format(jinja_text, default="string")
-    )
+    detected_format = "string" if jinja_text is None else _detect_content_format(jinja_text, default="string")
 
     return detected_format
 
@@ -399,8 +380,7 @@ def _get_hf_base_chat_template_params() -> frozenset[str]:
     return frozenset(
         p.name
         for p in base_sig.parameters.values()
-        if p.kind
-        not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        if p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
     )
 
 
@@ -413,19 +393,10 @@ def resolve_chat_template_kwargs(
     # We exclude chat_template from kwargs here, because
     # chat template has been already resolved at this stage
     unexpected_vars = {"chat_template", "tokenize"}
-    if raise_on_unexpected and (
-        unexpected_in_kwargs := unexpected_vars & chat_template_kwargs.keys()
-    ):
-        raise ValueError(
-            "Found unexpected chat template kwargs from request: "
-            f"{unexpected_in_kwargs}"
-        )
+    if raise_on_unexpected and (unexpected_in_kwargs := unexpected_vars & chat_template_kwargs.keys()):
+        raise ValueError(f"Found unexpected chat template kwargs from request: {unexpected_in_kwargs}")
 
-    fn_kw = {
-        k
-        for k in chat_template_kwargs
-        if supports_kw(tokenizer.apply_chat_template, k, allow_var_kwargs=False)
-    }
+    fn_kw = {k for k in chat_template_kwargs if supports_kw(tokenizer.apply_chat_template, k, allow_var_kwargs=False)}
     template_vars = _cached_resolve_chat_template_kwargs(chat_template)
 
     # Allow standard HF parameters even if tokenizer uses **kwargs to receive them
@@ -499,9 +470,7 @@ def safe_apply_chat_template(
     except Exception as e:
         # Log and report any library-related exceptions for further
         # investigation.
-        logger.exception(
-            "An error occurred in `transformers` while applying chat template"
-        )
+        logger.exception("An error occurred in `transformers` while applying chat template")
         raise ValueError(str(e)) from e
 
 
@@ -525,13 +494,9 @@ def rebuild_mm_uuids_from_mm_data(
     if vision_chunks is None:
         return mm_uuids
 
-    assert all(isinstance(item, dict) for item in vision_chunks), (
-        "Expected all vision_chunk items to be dicts"
-    )
+    assert all(isinstance(item, dict) for item in vision_chunks), "Expected all vision_chunk items to be dicts"
     vision_chunks = cast(list[dict[str, Any]], vision_chunks)
-    vision_chunk_uuids = [
-        uuid_val for item in vision_chunks if (uuid_val := item.get("uuid")) is not None
-    ]
+    vision_chunk_uuids = [uuid_val for item in vision_chunks if (uuid_val := item.get("uuid")) is not None]
 
     if vision_chunk_uuids:
         mm_uuids = dict(mm_uuids)
@@ -569,10 +534,7 @@ def build_video_prompts_from_mm_data(
             video_prompts_dict[video_idx].append(prompt)
 
     # Build prompts in video order
-    video_prompts = [
-        "".join(video_prompts_dict[video_idx])
-        for video_idx in sorted(video_prompts_dict.keys())
-    ]
+    video_prompts = ["".join(video_prompts_dict[video_idx]) for video_idx in sorted(video_prompts_dict.keys())]
 
     return video_prompts
 
@@ -589,14 +551,11 @@ def replace_vision_chunk_video_placeholder(
         # replace in order
         prompt_raw_parts = prompt_raw.split(video_placeholder)
         if len(prompt_raw_parts) == len(video_prompts) + 1:
-            prompt_raw = "".join(
-                itertools.chain.from_iterable(zip(prompt_raw_parts, video_prompts))
-            )
+            prompt_raw = "".join(itertools.chain.from_iterable(zip(prompt_raw_parts, video_prompts)))
             prompt_raw += prompt_raw_parts[-1]
         else:
             logger.warning(
-                "Number of video placeholders (%d) does not match "
-                "number of videos (%d) in the request.",
+                "Number of video placeholders (%d) does not match number of videos (%d) in the request.",
                 len(prompt_raw_parts) - 1,
                 len(video_prompts),
             )
@@ -611,13 +570,9 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
     ) -> None:
         super().__init__(config, tokenizer)
 
-        self.use_unified_vision_chunk = getattr(
-            config.model_config.hf_config, "use_unified_vision_chunk", False
-        )
+        self.use_unified_vision_chunk = getattr(config.model_config.hf_config, "use_unified_vision_chunk", False)
 
-        self._apply_chat_template_async = make_async(
-            safe_apply_chat_template, executor=self._executor
-        )
+        self._apply_chat_template_async = make_async(safe_apply_chat_template, executor=self._executor)
 
     def render_messages(
         self,
@@ -650,17 +605,11 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
 
         # NOTE: use_unified_vision_chunk is currently specific to Kimi-K2.5
         # model which uses unified vision chunks for both images and videos.
-        if (
-            self.use_unified_vision_chunk
-            and mm_uuids is not None
-            and mm_data is not None
-        ):
+        if self.use_unified_vision_chunk and mm_uuids is not None and mm_data is not None:
             mm_uuids = rebuild_mm_uuids_from_mm_data(mm_uuids, mm_data)
 
             # get video placeholder, replace it with runtime video-chunk prompts
-            video_placeholder = getattr(
-                model_config.hf_config, "video_placeholder", None
-            )
+            video_placeholder = getattr(model_config.hf_config, "video_placeholder", None)
             prompt_raw = cast(
                 list[int],
                 replace_vision_chunk_video_placeholder(
@@ -709,15 +658,9 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
 
         # NOTE: use_unified_vision_chunk is currently specific to Kimi-K2.5
         # model which uses unified vision chunks for both images and videos.
-        if (
-            self.use_unified_vision_chunk
-            and mm_uuids is not None
-            and mm_data is not None
-        ):
+        if self.use_unified_vision_chunk and mm_uuids is not None and mm_data is not None:
             # get video placeholder, replace it with runtime video-chunk prompts
-            video_placeholder = getattr(
-                model_config.hf_config, "video_placeholder", None
-            )
+            video_placeholder = getattr(model_config.hf_config, "video_placeholder", None)
             prompt_raw = cast(
                 list[int],
                 replace_vision_chunk_video_placeholder(

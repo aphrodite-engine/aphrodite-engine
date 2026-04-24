@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.engine.args_tools import EngineArgs
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.v1.core.sched.scheduler import Scheduler
 from aphrodite.v1.engine.llm_engine import LLMEngine
 

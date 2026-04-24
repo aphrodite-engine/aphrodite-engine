@@ -28,9 +28,7 @@ from .ScaledMMLinearKernel import (
 
 class CutlassInt8ScaledMMLinearKernel(Int8ScaledMMLinearKernel):
     @classmethod
-    def is_supported(
-        cls, compute_capability: int | None = None
-    ) -> tuple[bool, str | None]:
+    def is_supported(cls, compute_capability: int | None = None) -> tuple[bool, str | None]:
         if not current_platform.is_cuda():
             return False, "requires CUDA."
         return True, None
@@ -86,15 +84,11 @@ class CutlassInt8ScaledMMLinearKernel(Int8ScaledMMLinearKernel):
                 range_min = (input_scale * (int8_traits.min - azps)).min()
 
                 scale = (range_max - range_min) / (int8_traits.max - int8_traits.min)
-                replace_parameter(
-                    layer, i_s_name, torch.nn.Parameter(scale, requires_grad=False)
-                )
+                replace_parameter(layer, i_s_name, torch.nn.Parameter(scale, requires_grad=False))
 
                 # AZP loaded as int8 but used as int32
                 azp = (int8_traits.min - range_min / scale).to(dtype=torch.int32)
-                replace_parameter(
-                    layer, i_zp_name, torch.nn.Parameter(azp, requires_grad=False)
-                )
+                replace_parameter(layer, i_zp_name, torch.nn.Parameter(azp, requires_grad=False))
 
         # azp_adj is the AZP adjustment term, used to account for weights.
         # It does not depend on scales or azp, so it is the same for
@@ -126,9 +120,7 @@ class CutlassInt8ScaledMMLinearKernel(Int8ScaledMMLinearKernel):
         # * dynamic, i_s is None and x_s computed from x.
         # * static, i_s is scalar and x_s is i_s.
         symmetric = azp_adj is None
-        x_q, x_s, x_zp = ops.scaled_int8_quant(
-            x.contiguous(), i_s, i_zp, symmetric=symmetric
-        )
+        x_q, x_s, x_zp = ops.scaled_int8_quant(x.contiguous(), i_s, i_zp, symmetric=symmetric)
 
         if x_zp is not None:
             # Currently, static is always per-tensor and dynamic is per-token
@@ -144,16 +136,12 @@ class CutlassInt8ScaledMMLinearKernel(Int8ScaledMMLinearKernel):
                 azp=azp,
                 bias=bias,
             )
-        return ops.cutlass_scaled_mm(
-            x_q, w_q, scale_a=x_s, scale_b=w_s, out_dtype=x.dtype, bias=bias
-        )
+        return ops.cutlass_scaled_mm(x_q, w_q, scale_a=x_s, scale_b=w_s, out_dtype=x.dtype, bias=bias)
 
 
 class CutlassFP8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
     @classmethod
-    def is_supported(
-        cls, compute_capability: int | None = None
-    ) -> tuple[bool, str | None]:
+    def is_supported(cls, compute_capability: int | None = None) -> tuple[bool, str | None]:
         if not current_platform.is_cuda():
             return False, "requires CUDA."
         return True, None
@@ -174,9 +162,7 @@ class CutlassFP8ScaledMMLinearKernel(FP8ScaledMMLinearKernel):
         output_shape: list,
     ) -> torch.Tensor:
         # Fused GEMM_DQ
-        output = ops.cutlass_scaled_mm(
-            A, B, out_dtype=out_dtype, scale_a=As, scale_b=Bs, bias=bias
-        )
+        output = ops.cutlass_scaled_mm(A, B, out_dtype=out_dtype, scale_a=As, scale_b=Bs, bias=bias)
         return output.view(*output_shape)
 
 
@@ -199,8 +185,7 @@ class CutlassFp8BlockScaledMMKernel(Fp8BlockScaledMMLinearKernel):
         if not CUTLASS_BLOCK_FP8_SUPPORTED:
             return (
                 False,
-                "The device compute capability of"
-                f"{compute_capability} is not supported.",
+                f"The device compute capability of{compute_capability} is not supported.",
             )
         return True, None
 
@@ -214,8 +199,7 @@ class CutlassFp8BlockScaledMMKernel(Fp8BlockScaledMMLinearKernel):
         if act_quant_desc.group_shape != GroupShape(1, 128):
             return (
                 False,
-                "Supports only dynamic per token group activation "
-                "quantization with group_shape=(1,128).",
+                "Supports only dynamic per token group activation quantization with group_shape=(1,128).",
             )
         return True, None
 
@@ -273,9 +257,7 @@ def _padded_cutlass(
 ) -> torch.Tensor:
     pad_multiple = 4
     dim = qx.shape[0]
-    padded = (
-        dim if dim % pad_multiple == 0 else dim + pad_multiple - (dim % pad_multiple)
-    )
+    padded = dim if dim % pad_multiple == 0 else dim + pad_multiple - (dim % pad_multiple)
 
     has_pad = padded > dim
 
@@ -285,19 +267,13 @@ def _padded_cutlass(
         padded_qx[0 : qx.shape[0], ...].copy_(qx)
 
         padded_x_scale_shape = [*x_scale.shape[1:], padded]
-        padded_x_scale = torch.ones(
-            padded_x_scale_shape, device=x_scale.device, dtype=x_scale.dtype
-        ).permute(-1, -2)
+        padded_x_scale = torch.ones(padded_x_scale_shape, device=x_scale.device, dtype=x_scale.dtype).permute(-1, -2)
         padded_x_scale[0 : x_scale.shape[0], ...].copy_(x_scale)
 
-        output = cutlass_scaled_mm(
-            padded_qx, weight, padded_x_scale, weight_scale, block_size, output_dtype
-        )
+        output = cutlass_scaled_mm(padded_qx, weight, padded_x_scale, weight_scale, block_size, output_dtype)
         return output[0 : qx.shape[0], ...]
     else:
-        return cutlass_scaled_mm(
-            qx, weight, x_scale, weight_scale, block_size, output_dtype
-        )
+        return cutlass_scaled_mm(qx, weight, x_scale, weight_scale, block_size, output_dtype)
 
 
 def _padded_cutlass_fake(
@@ -308,9 +284,7 @@ def _padded_cutlass_fake(
     block_size: list[int],
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    return torch.empty(
-        (qx.size(0), weight.size(0)), dtype=output_dtype, device=qx.device
-    )
+    return torch.empty((qx.size(0), weight.size(0)), dtype=output_dtype, device=qx.device)
 
 
 direct_register_custom_op(

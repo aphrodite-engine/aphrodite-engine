@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from contextlib import nullcontext
 from typing import cast
 
 import numpy as np
 import pytest
+from aphrodite.multimodal.profiling import MultiModalProfiler
 
 from aphrodite.config import ModelConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -18,7 +21,6 @@ from aphrodite.multimodal.processing import (
     iter_token_matches,
     replace_token_matches,
 )
-from aphrodite.multimodal.profiling import MultiModalProfiler
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 from .utils import random_image

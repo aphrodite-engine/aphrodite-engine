@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import os
 
 import pytest
-
 from aphrodite.modeling.layers.pooler import CLSPool, DispatchPooler, MeanPool, PoolingType
 from aphrodite.modeling.models.bert import BertEmbeddingModel
 from aphrodite.modeling.models.roberta import RobertaEmbeddingModel
+
 from aphrodite.platforms import current_platform
 
 MAX_MODEL_LEN = 128

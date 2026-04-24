@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Common utility functions relating to different models that are useful
 for manipulating the input / output of HF & Aphrodite test runners, which are
 typically specific to a small subset of models.

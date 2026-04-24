@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import json
 import os
@@ -24,8 +25,8 @@ from aphrodite.model_executor.layers.quantization.base_config import (
     QuantizationConfig,
     QuantizeMethodBase,
 )
-from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.model_executor.parameter import BaseAphroditeParameter
+from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 
 logger = init_logger(__name__)
@@ -109,9 +110,7 @@ class Exl3Config(QuantizationConfig):
             config = json.load(f)
         self.tensor_storage = config.get("tensor_storage", {})
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> QuantizeMethodBase | None:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
         is_lm_head = layer.__class__.__name__ == "ParallelLMHead"
         if is_lm_head and not prefix:
             prefix = "lm_head"
@@ -162,34 +161,22 @@ class Exl3Config(QuantizationConfig):
 
         if prefix.endswith(".qkv_proj"):
             base = prefix.removesuffix(".qkv_proj")
-            return all(
-                self._is_exl3_prefix(f"{base}.{proj}")
-                for proj in ("q_proj", "k_proj", "v_proj")
-            )
+            return all(self._is_exl3_prefix(f"{base}.{proj}") for proj in ("q_proj", "k_proj", "v_proj"))
 
         if prefix.endswith(".gate_up_proj"):
             base = prefix.removesuffix(".gate_up_proj")
-            return all(
-                self._is_exl3_prefix(f"{base}.{proj}")
-                for proj in ("gate_proj", "up_proj")
-            )
+            return all(self._is_exl3_prefix(f"{base}.{proj}") for proj in ("gate_proj", "up_proj"))
 
         if prefix.endswith(".in_proj_qkvz"):
             base = prefix.removesuffix(".in_proj_qkvz")
-            return all(
-                self._is_exl3_prefix(f"{base}.{proj}")
-                for proj in ("in_proj_qkv", "in_proj_z")
-            )
+            return all(self._is_exl3_prefix(f"{base}.{proj}") for proj in ("in_proj_qkv", "in_proj_z"))
 
         return False
 
     def _moe_prefix_is_exl3(self, prefix: str) -> bool:
         expert_prefixes = (f"{prefix}.0", f"{prefix}.experts.0")
         return any(
-            all(
-                self._is_exl3_prefix(f"{expert_prefix}.{proj}")
-                for proj in ("gate_proj", "up_proj", "down_proj")
-            )
+            all(self._is_exl3_prefix(f"{expert_prefix}.{proj}") for proj in ("gate_proj", "up_proj", "down_proj"))
             for expert_prefix in expert_prefixes
         )
 
@@ -313,9 +300,7 @@ class Exl3LinearMethod(LinearMethodBase):
         for shard_id in layer.exl3_shard_ids:
             if shard_id in layer.mcg.exl3_tensors and shard_id in layer.mul1.exl3_tensors:
                 prefix = getattr(layer, "prefix", layer.__class__.__name__)
-                raise ValueError(
-                    f"EXL3 tensor {prefix}[{shard_id!r}] specifies both mcg and mul1"
-                )
+                raise ValueError(f"EXL3 tensor {prefix}[{shard_id!r}] specifies both mcg and mul1")
 
         device = torch.device("cuda", torch.cuda.current_device())
         for attr in ("suh", "svh", "trellis", "mcg", "mul1"):
@@ -342,10 +327,7 @@ class Exl3LinearMethod(LinearMethodBase):
         if getattr(layer, "exl3_can_mgemm", False) and x_2d.shape[0] <= 32:
             output = self._apply_fused_small_batch(layer, x_2d)
         else:
-            outputs = [
-                self._apply_one(layer, x_2d, shard_id)
-                for shard_id in layer.exl3_shard_ids
-            ]
+            outputs = [self._apply_one(layer, x_2d, shard_id) for shard_id in layer.exl3_shard_ids]
             output = outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=-1)
         if bias is not None:
             output = output + bias
@@ -482,9 +464,7 @@ class Exl3LinearMethod(LinearMethodBase):
         else:
             return
 
-        trellises = [
-            layer.trellis.exl3_tensors[shard_id] for shard_id in mgemm_shard_ids
-        ]
+        trellises = [layer.trellis.exl3_tensors[shard_id] for shard_id in mgemm_shard_ids]
         suhs = [layer.suh.exl3_tensors[shard_id] for shard_id in mgemm_shard_ids]
         svhs = [layer.svh.exl3_tensors[shard_id] for shard_id in mgemm_shard_ids]
 
@@ -499,15 +479,9 @@ class Exl3LinearMethod(LinearMethodBase):
             return
         if any(tensor.shape != first_svh.shape for tensor in svhs[1:]):
             return
-        if any(
-            (shard_id in layer.mcg.exl3_tensors) != mcg
-            for shard_id in mgemm_shard_ids[1:]
-        ):
+        if any((shard_id in layer.mcg.exl3_tensors) != mcg for shard_id in mgemm_shard_ids[1:]):
             return
-        if any(
-            (shard_id in layer.mul1.exl3_tensors) != mul1
-            for shard_id in mgemm_shard_ids[1:]
-        ):
+        if any((shard_id in layer.mul1.exl3_tensors) != mul1 for shard_id in mgemm_shard_ids[1:]):
             return
 
         device = first_trellis.device
@@ -612,15 +586,11 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             for attr in ("suh", "svh", "trellis", "mcg", "mul1"):
                 param = getattr(layer, f"{prefix}_{attr}")
                 for key, tensor in list(param.exl3_tensors.items()):
-                    param.exl3_tensors[key] = tensor.to(
-                        device=device, non_blocking=True
-                    )
+                    param.exl3_tensors[key] = tensor.to(device=device, non_blocking=True)
 
         self._setup_fused_moe_kernel(layer, device)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         del layer
         return None
 
@@ -646,9 +616,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         if layer.expert_map is not None:
             raise NotImplementedError("EXL3 MoE does not support expert maps yet.")
         if layer.apply_router_weight_on_input:
-            raise NotImplementedError(
-                "EXL3 fused MoE does not support applying router weights on input."
-            )
+            raise NotImplementedError("EXL3 fused MoE does not support applying router weights on input.")
 
         original_dtype = x.dtype
         x_2d = x.reshape(-1, x.shape[-1])
@@ -750,9 +718,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 output = output.to(original_dtype)
             return output.reshape(*x.shape[:-1], output.shape[-1])
 
-        needs_fallback = bool(
-            (expert_count[:-1] > _EXL3_MOE_MAX_TOKENS_PER_EXPERT).any().item()
-        )
+        needs_fallback = bool((expert_count[:-1] > _EXL3_MOE_MAX_TOKENS_PER_EXPERT).any().item())
         if not needs_fallback:
             if output.dtype != original_dtype:
                 output = output.to(original_dtype)
@@ -781,9 +747,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             gate = self._apply_exl3(layer, "w13", expert_input, expert_id, "w1")
             up = self._apply_exl3(layer, "w13", expert_input, expert_id, "w3")
             intermediate = torch.nn.functional.silu(gate) * up
-            expert_output = self._apply_exl3(
-                layer, "w2", intermediate, expert_id, "w2"
-            )
+            expert_output = self._apply_exl3(layer, "w2", intermediate, expert_id, "w2")
             expert_output = expert_output * route_weight
             output.index_add_(0, token_pos, expert_output.to(torch.float32))
 
@@ -836,10 +800,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             -1,
             0,
         )
-        layer.exl3_small_interm_a.copy_(
-            torch.nn.functional.silu(layer.exl3_small_interm_g)
-            * layer.exl3_small_interm_u
-        )
+        layer.exl3_small_interm_a.copy_(torch.nn.functional.silu(layer.exl3_small_interm_g) * layer.exl3_small_interm_u)
         ops.exl3_mgemm(
             layer.exl3_small_interm_a,
             layer.exl3_down_ptrs_trellis,
@@ -916,8 +877,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 0,
             )
             layer.exl3_small_interm_a.copy_(
-                torch.nn.functional.silu(layer.exl3_small_interm_g)
-                * layer.exl3_small_interm_u
+                torch.nn.functional.silu(layer.exl3_small_interm_g) * layer.exl3_small_interm_u
             )
             ops.exl3_mgemm(
                 layer.exl3_small_interm_a,
@@ -957,10 +917,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
 
         def ptr_tensor(prefix: str, attr: str, shard_id: str):
             return torch.tensor(
-                [
-                    tensor(prefix, attr, expert_id, shard_id).data_ptr()
-                    for expert_id in range(layer.local_num_experts)
-                ],
+                [tensor(prefix, attr, expert_id, shard_id).data_ptr() for expert_id in range(layer.local_num_experts)],
                 dtype=torch.long,
                 device=device,
             )
@@ -995,21 +952,11 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             layer.local_num_experts // layer.top_k,
             _EXL3_MOE_MAX_EXPERTS_PER_TOKEN,
         )
-        layer.exl3_small_yh = torch.empty(
-            (layer.top_k, 1, layer.hidden_size), dtype=torch.float16, device=device
-        )
-        layer.exl3_small_interm_g = torch.empty(
-            (layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device
-        )
-        layer.exl3_small_interm_u = torch.empty(
-            (layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device
-        )
-        layer.exl3_small_interm_a = torch.empty(
-            (layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device
-        )
-        layer.exl3_small_out_d = torch.empty(
-            (layer.top_k, 1, layer.hidden_size), dtype=torch.float32, device=device
-        )
+        layer.exl3_small_yh = torch.empty((layer.top_k, 1, layer.hidden_size), dtype=torch.float16, device=device)
+        layer.exl3_small_interm_g = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
+        layer.exl3_small_interm_u = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
+        layer.exl3_small_interm_a = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
+        layer.exl3_small_out_d = torch.empty((layer.top_k, 1, layer.hidden_size), dtype=torch.float32, device=device)
 
         concurrency = max(
             1,
@@ -1025,18 +972,10 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             _EXL3_MOE_MAX_TOKENS_PER_EXPERT,
             intermediate_size,
         )
-        layer.exl3_temp_state_g = torch.empty(
-            temp_shape_hidden, dtype=torch.float16, device=device
-        )
-        layer.exl3_temp_state_u = torch.empty(
-            temp_shape_hidden, dtype=torch.float16, device=device
-        )
-        layer.exl3_temp_intermediate_g = torch.empty(
-            temp_shape_intermediate, dtype=torch.float16, device=device
-        )
-        layer.exl3_temp_intermediate_u = torch.empty(
-            temp_shape_intermediate, dtype=torch.float16, device=device
-        )
+        layer.exl3_temp_state_g = torch.empty(temp_shape_hidden, dtype=torch.float16, device=device)
+        layer.exl3_temp_state_u = torch.empty(temp_shape_hidden, dtype=torch.float16, device=device)
+        layer.exl3_temp_intermediate_g = torch.empty(temp_shape_intermediate, dtype=torch.float16, device=device)
+        layer.exl3_temp_intermediate_u = torch.empty(temp_shape_intermediate, dtype=torch.float16, device=device)
 
     @staticmethod
     def _apply_exl3(

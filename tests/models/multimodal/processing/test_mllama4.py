@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for mllama's multimodal preprocessing and profiling."""
 
 import pytest
+from aphrodite.multimodal.profiling import MultiModalProfiler
 from torch import prod
 from transformers import Llama4Config
 
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.profiling import MultiModalProfiler
 
 from ...utils import build_model_context
 

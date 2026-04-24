@@ -78,16 +78,12 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
         """Use drafter's quantization config instead of verifier's."""
         return get_draft_quant_config(aphrodite_config)
 
-    def _norm_before_residual(
-        self, hidden_states: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _norm_before_residual(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         hidden_states = self.hidden_norm(hidden_states)
         residual = hidden_states
         return hidden_states, residual
 
-    def _norm_after_residual(
-        self, hidden_states: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _norm_after_residual(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         residual = hidden_states
         hidden_states = self.hidden_norm(hidden_states)
         return hidden_states, residual
@@ -237,15 +233,11 @@ class LlamaModel(nn.Module):
             if "midlayer." in name:
                 name = name.replace("midlayer.", "layers.0.")
             # Handle kv cache quantization scales
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -279,16 +271,12 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
         if getattr(self.config, "draft_vocab_size", None) is None:
             base_vocab_size = getattr(self.config, "vocab_size", None)
             self.config.draft_vocab_size = base_vocab_size
-        target_layer_num = aphrodite_config.model_config.get_num_layers(
-            aphrodite_config.parallel_config
-        )
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
 
         # Store target layer count in draft config for
         # proper layer_types indexing in draft models
         self.config.target_layer_count = target_layer_num
-        self.model = LlamaModel(
-            aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num
-        )
+        self.model = LlamaModel(aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num)
 
         logit_scale = getattr(self.config, "logit_scale", 1.0)
         self.lm_head = ParallelLMHead(
@@ -297,9 +285,7 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
             quant_config=get_draft_quant_config(aphrodite_config),
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        self.logits_processor = LogitsProcessor(
-            self.config.draft_vocab_size, scale=logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.config.draft_vocab_size, scale=logit_scale)
         self.draft_id_to_target_id = nn.Parameter(
             torch.zeros(self.config.draft_vocab_size, dtype=torch.long),
             requires_grad=False,
@@ -312,8 +298,7 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
                 "mask_hidden",
                 torch.zeros(
                     1,
-                    (3 if self.model.use_aux_hidden_state else 1)
-                    * self.config.hidden_size,
+                    (3 if self.model.use_aux_hidden_state else 1) * self.config.hidden_size,
                 ),
                 persistent=False,
             )
@@ -342,8 +327,7 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
         logits = self.logits_processor(self.lm_head, hidden_states)
         if self.draft_id_to_target_id is None:
             assert logits.shape[1] == self.config.vocab_size, (
-                "Expected logits to have shape "
-                f"(*, {self.config.vocab_size}), but got {logits.shape}"
+                f"Expected logits to have shape (*, {self.config.vocab_size}), but got {logits.shape}"
             )
             return logits
 

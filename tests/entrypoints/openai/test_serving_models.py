@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from http import HTTPStatus
 from unittest.mock import MagicMock
 
 import pytest
-
-from aphrodite.config import ModelConfig
 from aphrodite.endpoints.openai.protocol import ErrorResponse, LoadLoRAAdapterRequest, UnloadLoRAAdapterRequest
 from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
+
+from aphrodite.config import ModelConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.lora.request import LoRARequest
 

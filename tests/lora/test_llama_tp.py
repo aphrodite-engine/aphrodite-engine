@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import subprocess
 import sys
 
 import pytest
+from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 
 import aphrodite
 import aphrodite.config
 from aphrodite import LLM
 from aphrodite.lora.request import LoRARequest
-from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 
 from ..utils import APHRODITE_PATH, create_new_process_for_each_test, multi_gpu_test
 

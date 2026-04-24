@@ -76,16 +76,10 @@ def grouped_topk(
     if e_score_correction_bias is not None:
         original_scores = scores
         scores = scores + e_score_correction_bias.unsqueeze(0)
-        group_scores = (
-            scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
-        )
+        group_scores = scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
     else:
-        group_scores = (
-            scores.view(num_token, num_expert_group, -1).max(dim=-1).values
-        )  # [n, n_group]
-    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[
-        1
-    ]  # [n, top_k_group]
+        group_scores = scores.view(num_token, num_expert_group, -1).max(dim=-1).values  # [n, n_group]
+    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[1]  # [n, top_k_group]
     group_mask = torch.zeros_like(group_scores)  # [n, n_group]
     group_mask.scatter_(1, group_idx, 1)  # [n, n_group]
     score_mask = (
@@ -138,9 +132,7 @@ def select_experts(
         )
     elif custom_routing_function is None:
         assert scoring_func == "softmax"
-        topk_logit_vals, topk_idx = torch.topk(
-            router_logits, k=top_k, dim=-1, sorted=False
-        )
+        topk_logit_vals, topk_idx = torch.topk(router_logits, k=top_k, dim=-1, sorted=False)
         if renormalize:
             topk_vals = torch.softmax(topk_logit_vals, dim=-1)
         else:
@@ -290,12 +282,7 @@ class CPUFusedMOE:
 
         supports_amx = torch.cpu._is_amx_tile_supported()
 
-        if (
-            supports_amx
-            and dtype == torch.bfloat16
-            and w13_input_size % 32 == 0
-            and w2_input_size % 32 == 0
-        ):
+        if supports_amx and dtype == torch.bfloat16 and w13_input_size % 32 == 0 and w2_input_size % 32 == 0:
             return True, "amx"
 
         if supports_amx:
@@ -332,23 +319,15 @@ class CPUFusedMOE:
             if use_onednn_mm:
                 gate_up_handle = ops.create_onednn_mm(layer_w13_weight.t(), 32)
                 layer.gate_up_linear.append(
-                    lambda x, handle=gate_up_handle, bias=layer_w13_bias: ops.onednn_mm(
-                        handle, x, bias
-                    )
+                    lambda x, handle=gate_up_handle, bias=layer_w13_bias: ops.onednn_mm(handle, x, bias)
                 )
                 down_handle = ops.create_onednn_mm(layer_w2_weight.t(), 32)
                 layer.down_linear.append(
-                    lambda x, handle=down_handle, bias=layer_w2_bias: ops.onednn_mm(
-                        handle, x, bias
-                    )
+                    lambda x, handle=down_handle, bias=layer_w2_bias: ops.onednn_mm(handle, x, bias)
                 )
             else:
-                layer.gate_up_linear.append(
-                    lambda x, w=layer_w13_weight, b=layer_w13_bias: F.linear(x, w, b)
-                )
-                layer.down_linear.append(
-                    lambda x, w=layer_w2_weight, b=layer_w2_bias: F.linear(x, w, b)
-                )
+                layer.gate_up_linear.append(lambda x, w=layer_w13_weight, b=layer_w13_bias: F.linear(x, w, b))
+                layer.down_linear.append(lambda x, w=layer_w2_weight, b=layer_w2_bias: F.linear(x, w, b))
 
         if use_onednn_mm:  # remove weight
             layer.w13_weight = torch.nn.Parameter(torch.empty(0), requires_grad=False)
@@ -367,9 +346,7 @@ class CPUFusedMOE:
         skip_weighted: bool = False,
     ) -> torch.Tensor:
         if skip_weighted:
-            assert topk_ids.size(1) == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk_ids.size(1) == 1, "apply_router_weight_on_input is only implemented for topk=1"
             input.mul_(topk_weights.to(input.dtype))
 
         output = cpu_fused_moe(
@@ -397,9 +374,7 @@ class CPUFusedMOE:
         skip_weighted: bool = False,
     ) -> torch.Tensor:
         if skip_weighted:
-            assert topk_ids.size(1) == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk_ids.size(1) == 1, "apply_router_weight_on_input is only implemented for topk=1"
             input.mul_(topk_weights.to(input.dtype))
 
         output = torch.empty_like(input)

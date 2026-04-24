@@ -241,16 +241,12 @@ class LLM:
         hf_overrides: HfOverrides | None = None,
         mm_processor_kwargs: dict[str, Any] | None = None,
         pooler_config: PoolerConfig | None = None,
-        structured_outputs_config: dict[str, Any]
-        | StructuredOutputsConfig
-        | None = None,
+        structured_outputs_config: dict[str, Any] | StructuredOutputsConfig | None = None,
         profiler_config: dict[str, Any] | ProfilerConfig | None = None,
         attention_config: dict[str, Any] | AttentionConfig | None = None,
         kv_cache_memory_bytes: int | None = None,
         compilation_config: int | dict[str, Any] | CompilationConfig | None = None,
-        quantization_config: dict[str, Any]
-        | OnlineQuantizationConfigArgs
-        | None = None,
+        quantization_config: dict[str, Any] | OnlineQuantizationConfigArgs | None = None,
         logits_processors: list[str | type[LogitsProcessor]] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -261,8 +257,7 @@ class LLM:
             import warnings
 
             warnings.warn(
-                "The 'swap_space' parameter is deprecated and ignored. "
-                "It will be removed in a future version.",
+                "The 'swap_space' parameter is deprecated and ignored. It will be removed in a future version.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -277,9 +272,7 @@ class LLM:
             if isinstance(worker_cls, type):
                 kwargs["worker_cls"] = cloudpickle.dumps(worker_cls)
 
-        if "kv_transfer_config" in kwargs and isinstance(
-            kwargs["kv_transfer_config"], dict
-        ):
+        if "kv_transfer_config" in kwargs and isinstance(kwargs["kv_transfer_config"], dict):
             from aphrodite.config.kv_transfer import KVTransferConfig
 
             raw_config_dict = kwargs["kv_transfer_config"]
@@ -287,8 +280,7 @@ class LLM:
                 kwargs["kv_transfer_config"] = KVTransferConfig(**raw_config_dict)
             except ValidationError as e:
                 logger.error(
-                    "Failed to convert 'kv_transfer_config' dict to "
-                    "KVTransferConfig object. Dict: %s. Error: %s",
+                    "Failed to convert 'kv_transfer_config' dict to KVTransferConfig object. Dict: %s. Error: %s",
                     raw_config_dict,
                     e,
                 )
@@ -308,28 +300,18 @@ class LLM:
             return value
 
         if isinstance(compilation_config, int):
-            compilation_config_instance = CompilationConfig(
-                mode=CompilationMode(compilation_config)
-            )
+            compilation_config_instance = CompilationConfig(mode=CompilationMode(compilation_config))
         else:
-            compilation_config_instance = _make_config(
-                compilation_config, CompilationConfig
-            )
+            compilation_config_instance = _make_config(compilation_config, CompilationConfig)
 
-        structured_outputs_instance = _make_config(
-            structured_outputs_config, StructuredOutputsConfig
-        )
+        structured_outputs_instance = _make_config(structured_outputs_config, StructuredOutputsConfig)
         profiler_config_instance = _make_config(profiler_config, ProfilerConfig)
         attention_config_instance = _make_config(attention_config, AttentionConfig)
 
         # warn about single-process data parallel usage.
         _dp_size = int(kwargs.get("data_parallel_size", 1))
         _distributed_executor_backend = kwargs.get("distributed_executor_backend")
-        if (
-            _dp_size > 1
-            and not _distributed_executor_backend == "external_launcher"
-            and not current_platform.is_tpu()
-        ):
+        if _dp_size > 1 and not _distributed_executor_backend == "external_launcher" and not current_platform.is_tpu():
             raise ValueError(
                 f"LLM(data_parallel_size={_dp_size}) is not supported for single-"
                 "process usage and may hang. Please use "
@@ -378,9 +360,7 @@ class LLM:
 
         log_non_default_args(engine_args)
 
-        self.llm_engine = LLMEngine.from_engine_args(
-            engine_args=engine_args, usage_context=UsageContext.LLM_CLASS
-        )
+        self.llm_engine = LLMEngine.from_engine_args(engine_args=engine_args, usage_context=UsageContext.LLM_CLASS)
         self.model_config = self.llm_engine.model_config
         self.engine_class = type(self.llm_engine)
 
@@ -724,10 +704,7 @@ class LLM:
         lora_requests = self._lora_request_to_seq(lora_request, len(engine_inputs))
 
         if use_tqdm and concurrency_limit is not None:
-            logger.warning(
-                "Progress bar is not supported when using concurrency_limit. "
-                "Disabling progress bar."
-            )
+            logger.warning("Progress bar is not supported when using concurrency_limit. Disabling progress bar.")
             use_tqdm = False
 
         if concurrency_limit is None:
@@ -746,9 +723,7 @@ class LLM:
 
         for lora_req, prompt in zip(lora_requests, engine_inputs):
             if prompt["type"] == "embeds":
-                raise NotImplementedError(
-                    "Embedding prompt not supported for beam search"
-                )
+                raise NotImplementedError("Embedding prompt not supported for beam search")
 
             instances.append(
                 BeamSearchInstance(
@@ -763,26 +738,16 @@ class LLM:
 
             token_iter = range(max_tokens)
             if use_tqdm:
-                token_iter = tqdm(
-                    token_iter, desc="Beam search", unit="token", unit_scale=False
-                )
+                token_iter = tqdm(token_iter, desc="Beam search", unit="token", unit_scale=False)
                 logger.warning(
                     "The progress bar shows the upper bound on token steps and "
                     "may finish early due to stopping conditions. It does not "
                     "reflect instance-level progress."
                 )
             for _ in token_iter:
-                all_beams: list[BeamSearchSequence] = list(
-                    sum((instance.beams for instance in instances_batch), [])
-                )
-                pos = [0] + list(
-                    itertools.accumulate(
-                        len(instance.beams) for instance in instances_batch
-                    )
-                )
-                instance_start_and_end: list[tuple[int, int]] = list(
-                    zip(pos[:-1], pos[1:])
-                )
+                all_beams: list[BeamSearchSequence] = list(sum((instance.beams for instance in instances_batch), []))
+                pos = [0] + list(itertools.accumulate(len(instance.beams) for instance in instances_batch))
+                instance_start_and_end: list[tuple[int, int]] = list(zip(pos[:-1], pos[1:]))
 
                 if len(all_beams) == 0:
                     break
@@ -797,9 +762,7 @@ class LLM:
                     use_tqdm=False,
                 )
 
-                for (start, end), instance in zip(
-                    instance_start_and_end, instances_batch
-                ):
+                for (start, end), instance in zip(instance_start_and_end, instances_batch):
                     instance_new_beams = []
                     for i in range(start, end):
                         current_beam = all_beams[i]
@@ -817,25 +780,20 @@ class LLM:
                                     tokens=current_beam.tokens + [token_id],
                                     logprobs=current_beam.logprobs + [logprobs],
                                     lora_request=current_beam.lora_request,
-                                    cum_logprob=current_beam.cum_logprob
-                                    + logprob_obj.logprob,
+                                    cum_logprob=current_beam.cum_logprob + logprob_obj.logprob,
                                 )
 
                                 if token_id == eos_token_id and not ignore_eos:
                                     instance.completed.append(new_beam)
                                 else:
                                     instance_new_beams.append(new_beam)
-                    sorted_beams = sorted(
-                        instance_new_beams, key=sort_beams_key, reverse=True
-                    )
+                    sorted_beams = sorted(instance_new_beams, key=sort_beams_key, reverse=True)
                     instance.beams = sorted_beams[:beam_width]
 
         outputs = []
         for instance in instances:
             instance.completed.extend(instance.beams)
-            sorted_completed = sorted(
-                instance.completed, key=sort_beams_key, reverse=True
-            )
+            sorted_completed = sorted(instance.completed, key=sort_beams_key, reverse=True)
             best_beams = sorted_completed[:beam_width]
 
             for beam in best_beams:
@@ -863,17 +821,9 @@ class LLM:
         renderer = self.renderer
         model_config = self.model_config
 
-        parsed_prompts = [
-            parse_model_prompt(model_config, prompt) for prompt in prompts
-        ]
-        tok_params = renderer.default_cmpl_tok_params.with_kwargs(
-            **(tokenization_kwargs or {})
-        )
-        prompt_extras = (
-            None
-            if mm_processor_kwargs is None
-            else {"mm_processor_kwargs": mm_processor_kwargs}
-        )
+        parsed_prompts = [parse_model_prompt(model_config, prompt) for prompt in prompts]
+        tok_params = renderer.default_cmpl_tok_params.with_kwargs(**(tokenization_kwargs or {}))
+        prompt_extras = None if mm_processor_kwargs is None else {"mm_processor_kwargs": mm_processor_kwargs}
 
         return renderer.render_cmpl(
             parsed_prompts,
@@ -931,14 +881,8 @@ class LLM:
             ),
             mm_processor_kwargs=mm_processor_kwargs,
         )
-        tok_params = renderer.default_chat_tok_params.with_kwargs(
-            **(tokenization_kwargs or {})
-        )
-        prompt_extras = (
-            None
-            if mm_processor_kwargs is None
-            else {"mm_processor_kwargs": mm_processor_kwargs}
-        )
+        tok_params = renderer.default_chat_tok_params.with_kwargs(**(tokenization_kwargs or {}))
+        prompt_extras = None if mm_processor_kwargs is None else {"mm_processor_kwargs": mm_processor_kwargs}
 
         _, engine_inputs = renderer.render_chat(
             conversations,
@@ -977,8 +921,7 @@ class LLM:
 
     def chat(
         self,
-        messages: list[ChatCompletionMessageParam]
-        | Sequence[list[ChatCompletionMessageParam]],
+        messages: list[ChatCompletionMessageParam] | Sequence[list[ChatCompletionMessageParam]],
         sampling_params: SamplingParams | Sequence[SamplingParams] | None = None,
         use_tqdm: bool | Callable[..., tqdm] = True,
         lora_request: Sequence[LoRARequest] | LoRARequest | None = None,
@@ -1106,9 +1049,7 @@ class LLM:
         """
 
         if isinstance(prompts, dict) and "data" in prompts and pooling_task != "plugin":
-            raise ValueError(
-                "The 'data' field is only supported for the 'plugin' pooling task."
-            )
+            raise ValueError("The 'data' field is only supported for the 'plugin' pooling task.")
         self._verify_pooling_task(pooling_task)
         assert pooling_task is not None and pooling_task in self.pooling_io_processors
 
@@ -1151,9 +1092,7 @@ class LLM:
         )
 
         outputs = self._run_engine(use_tqdm=use_tqdm, output_type=PoolingRequestOutput)
-        outputs = io_processor.post_process_offline(
-            ctx=OfflineOutputsContext(outputs=outputs)
-        )
+        outputs = io_processor.post_process_offline(ctx=OfflineOutputsContext(outputs=outputs))
         return outputs
 
     def _verify_pooling_task(self, pooling_task: PoolingTask | None):
@@ -1181,19 +1120,12 @@ class LLM:
                 '  - For multi-vector retrieval, use `pooling_task="token_embed"`'
             )
 
-        if (
-            pooling_task in ("embed", "token_embed")
-            and pooling_task not in self.supported_tasks
-        ):
+        if pooling_task in ("embed", "token_embed") and pooling_task not in self.supported_tasks:
             raise ValueError(
-                "Embedding API is not supported by this model. "
-                "Try converting the model using `--convert embed`."
+                "Embedding API is not supported by this model. Try converting the model using `--convert embed`."
             )
 
-        if (
-            pooling_task in ("classify", "token_classify")
-            and pooling_task not in self.supported_tasks
-        ):
+        if pooling_task in ("classify", "token_classify") and pooling_task not in self.supported_tasks:
             raise ValueError(
                 "Classification API is not supported by this model. "
                 "Try converting the model using `--convert classify`."
@@ -1202,15 +1134,9 @@ class LLM:
         # plugin task uses io_processor.parse_request to verify inputs
         if pooling_task != "plugin" and pooling_task != self.pooling_task:
             if pooling_task not in self.supported_tasks:
-                raise ValueError(
-                    f"Unsupported task: {pooling_task!r} "
-                    f"Supported tasks: {self.supported_tasks}"
-                )
+                raise ValueError(f"Unsupported task: {pooling_task!r} Supported tasks: {self.supported_tasks}")
             else:
-                raise ValueError(
-                    f"Try switching the model's pooling_task "
-                    f'via `PoolerConfig(task="{pooling_task}")`'
-                )
+                raise ValueError(f'Try switching the model\'s pooling_task via `PoolerConfig(task="{pooling_task}")`')
 
         if pooling_task == "plugin" and "plugin" not in self.pooling_io_processors:
             raise ValueError(
@@ -1408,10 +1334,7 @@ class LLM:
             )
 
         score_type: str | None = SCORE_TYPE_MAP.get(self.pooling_task, None)  # type: ignore[arg-type]
-        if (
-            score_type == "cross-encoder"
-            and getattr(self.model_config.hf_config, "num_labels", 0) != 1
-        ):
+        if score_type == "cross-encoder" and getattr(self.model_config.hf_config, "num_labels", 0) != 1:
             raise ValueError("Scoring API is only enabled for num_labels == 1.")
 
         if score_type is None or score_type not in self.pooling_io_processors:
@@ -1477,12 +1400,8 @@ class LLM:
     def stop_profile(self) -> None:
         self.llm_engine.stop_profile()
 
-    def reset_prefix_cache(
-        self, reset_running_requests: bool = False, reset_connector: bool = False
-    ) -> bool:
-        return self.llm_engine.reset_prefix_cache(
-            reset_running_requests, reset_connector
-        )
+    def reset_prefix_cache(self, reset_running_requests: bool = False, reset_connector: bool = False) -> bool:
+        return self.llm_engine.reset_prefix_cache(reset_running_requests, reset_connector)
 
     def sleep(self, level: int = 1, mode: PauseMode = "abort"):
         """
@@ -1544,8 +1463,7 @@ class LLM:
         if isinstance(params, Sequence):
             if len(params) != num_requests:
                 raise ValueError(
-                    f"The lengths of prompts ({num_requests}) "
-                    f"and params ({len(params)}) must be the same."
+                    f"The lengths of prompts ({num_requests}) and params ({len(params)}) must be the same."
                 )
 
             return params
@@ -1560,8 +1478,7 @@ class LLM:
         if isinstance(lora_request, Sequence):
             if len(lora_request) != num_requests:
                 raise ValueError(
-                    f"The lengths of prompts ({num_requests}) "
-                    f"and lora_request ({len(lora_request)}) must be the same."
+                    f"The lengths of prompts ({num_requests}) and lora_request ({len(lora_request)}) must be the same."
                 )
 
             return lora_request
@@ -1576,8 +1493,7 @@ class LLM:
         if priority is not None:
             if len(priority) != num_requests:
                 raise ValueError(
-                    f"The lengths of prompts ({num_requests}) "
-                    f"and priority ({len(priority)}) must be the same."
+                    f"The lengths of prompts ({num_requests}) and priority ({len(priority)}) must be the same."
                 )
 
             return priority
@@ -1587,9 +1503,7 @@ class LLM:
     def _add_completion_requests(
         self,
         prompts: PromptType | Sequence[PromptType],
-        params: SamplingParams
-        | PoolingParams
-        | Sequence[SamplingParams | PoolingParams],
+        params: SamplingParams | PoolingParams | Sequence[SamplingParams | PoolingParams],
         *,
         use_tqdm: bool | Callable[..., tqdm] = True,
         lora_request: Sequence[LoRARequest] | LoRARequest | None = None,
@@ -1623,9 +1537,7 @@ class LLM:
     def _run_completion(
         self,
         prompts: PromptType | Sequence[PromptType],
-        params: SamplingParams
-        | PoolingParams
-        | Sequence[SamplingParams | PoolingParams],
+        params: SamplingParams | PoolingParams | Sequence[SamplingParams | PoolingParams],
         output_type: type[_O],
         *,
         use_tqdm: bool | Callable[..., tqdm] = True,
@@ -1647,11 +1559,8 @@ class LLM:
 
     def _run_chat(
         self,
-        messages: list[ChatCompletionMessageParam]
-        | Sequence[list[ChatCompletionMessageParam]],
-        params: SamplingParams
-        | PoolingParams
-        | Sequence[SamplingParams | PoolingParams],
+        messages: list[ChatCompletionMessageParam] | Sequence[list[ChatCompletionMessageParam]],
+        params: SamplingParams | PoolingParams | Sequence[SamplingParams | PoolingParams],
         output_type: type[_O],
         *,
         use_tqdm: bool | Callable[..., tqdm] = True,
@@ -1674,9 +1583,7 @@ class LLM:
         # <|channel>, <|tool_call>, <|"|>), automatically set
         # skip_special_tokens=False so these tokens are preserved in
         # output.text for downstream parsing.
-        needs_parsing = (
-            chat_template_kwargs and chat_template_kwargs.get("enable_thinking")
-        ) or tools
+        needs_parsing = (chat_template_kwargs and chat_template_kwargs.get("enable_thinking")) or tools
         if needs_parsing:
             self._adjust_params_for_parsing(seq_params)
 
@@ -1705,9 +1612,7 @@ class LLM:
             use_tqdm=use_tqdm,
         )
 
-    def _adjust_params_for_parsing(
-        self, params: Sequence[SamplingParams | PoolingParams]
-    ) -> None:
+    def _adjust_params_for_parsing(self, params: Sequence[SamplingParams | PoolingParams]) -> None:
         """Set ``skip_special_tokens=False`` when the model encodes
         structured output syntax as special tokens.
 
@@ -1742,11 +1647,7 @@ class LLM:
                 "<tool_call|>",  # tool call delimiters
                 '<|"|>',  # string quoting in tool args
             )
-            needs_special = any(
-                vocab.get(tok) in special_ids
-                for tok in structured_tokens
-                if tok in vocab
-            )
+            needs_special = any(vocab.get(tok) in special_ids for tok in structured_tokens if tok in vocab)
             if needs_special:
                 for sp in params:
                     if isinstance(sp, SamplingParams) and sp.skip_special_tokens:
@@ -1865,14 +1766,9 @@ class LLM:
                             assert output.prompt_token_ids is not None
                             total_in_toks += len(output.prompt_token_ids) * n
                             in_spd = total_in_toks / pbar.format_dict["elapsed"]
-                            total_out_toks += sum(
-                                len(stp.token_ids) for stp in output.outputs
-                            )
+                            total_out_toks += sum(len(stp.token_ids) for stp in output.outputs)
                             out_spd = total_out_toks / pbar.format_dict["elapsed"]
-                            pbar.postfix = (
-                                f"est. speed input: {in_spd:.2f} toks/s, "
-                                f"output: {out_spd:.2f} toks/s"
-                            )
+                            pbar.postfix = f"est. speed input: {in_spd:.2f} toks/s, output: {out_spd:.2f} toks/s"
                             pbar.update(n)
                         else:
                             pbar.update(1)
@@ -1886,22 +1782,16 @@ class LLM:
         # its previous requests.
         return sorted(outputs, key=lambda x: int(x.request_id))
 
-    def init_weight_transfer_engine(
-        self, request: WeightTransferInitRequest | dict
-    ) -> None:
+    def init_weight_transfer_engine(self, request: WeightTransferInitRequest | dict) -> None:
         """
         Initialize weight transfer for RL training.
 
         Args:
             request: Weight transfer initialization request with backend-specific info
         """
-        init_info_dict = (
-            request["init_info"] if isinstance(request, dict) else request.init_info
-        )
+        init_info_dict = request["init_info"] if isinstance(request, dict) else request.init_info
 
-        self.llm_engine.collective_rpc(
-            "init_weight_transfer_engine", kwargs={"init_info": init_info_dict}
-        )
+        self.llm_engine.collective_rpc("init_weight_transfer_engine", kwargs={"init_info": init_info_dict})
 
     def update_weights(self, request: WeightTransferUpdateRequest | dict) -> None:
         """
@@ -1910,13 +1800,9 @@ class LLM:
         Args:
             request: Weight update request with backend-specific update info
         """
-        update_info_dict = (
-            request["update_info"] if isinstance(request, dict) else request.update_info
-        )
+        update_info_dict = request["update_info"] if isinstance(request, dict) else request.update_info
 
-        self.llm_engine.collective_rpc(
-            "update_weights", kwargs={"update_info": update_info_dict}
-        )
+        self.llm_engine.collective_rpc("update_weights", kwargs={"update_info": update_info_dict})
 
     def __repr__(self) -> str:
         """Return a transformers-style hierarchical view of the model."""

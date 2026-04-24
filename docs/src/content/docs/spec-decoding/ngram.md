@@ -40,6 +40,7 @@ aphrodite run facebook/opt-6.7b --speculative-model '[ngram]' --num-speculative-
 ## Technical Details
 
 Reference:
+
 - [GitHub](https://github.com/hao-ai-lab/LookaheadDecoding)
 - Blog: [Break the Sequential Dependency of LLM Inference Using Lookahead Decoding](https://lmsys.org/blog/2023-11-21-lookahead-decoding/)
 
@@ -53,12 +54,14 @@ Lookahead decoding is able to generate n-grams each step, as opposed to producin
 - Linearly reduces the number of decoding steps relative to log(FLOPs) per step.
 
 ### Background
+
 The Jacobi iteration method is a classic solver for non-linear systems. In the case of LLM inference, we can also employ it for parallel token generation without a draft model. To see this, let's reconsider the autoregressive decoding process. Traditionally, this process is seen as a sequential generation of tokens, illustrated in Figure 2(Left). With some simple rearrangements of equations, it can be conceptualized as solving a system of non-linear equations, as depicted below.
 
 ![ngram](/ngram_dec.png)
 <p align="center"><small>Autoregressive decoding as a process of solving non-linear systems.</small></p>
 
 An alternative approach based on Jacobi iteration can solve all of this nonlinear system in parallel as follows:
+
 - Start with an initial guess for all variables $y = [y_1, y_2, ..., y_m]$
 - Calculate new $y'$ values for each equation with the previous $y$
 - Update $y$ with the new $y'$ values
@@ -66,15 +69,18 @@ An alternative approach based on Jacobi iteration can solve all of this nonlinea
 
 This process is illustrated below for easier understanding. Jacobi decoding can guarantee solving all variables in at most steps (i.e., the same number of steps as autoregressive decoding) because each step guarantees at least the very first token is correctly decoded. Sometimes, multiple tokens might converge in a single iteration, potentially reducing the overall number of decoding steps. For example, as shown below, Jacobi decoding predicts and accepts two tokens, "computer" and "scientist," in a single step.
 
-Compared to autoregressive decoding, each Jacobi decoding step is slightly more expensive in terms of FLOPs needed because it requires LLM forward computation on >1 token. Fortunately, this usually does not translate into slowdowns, thanks to the parallel processing nature of GPUs. 
+Compared to autoregressive decoding, each Jacobi decoding step is slightly more expensive in terms of FLOPs needed because it requires LLM forward computation on >1 token. Fortunately, this usually does not translate into slowdowns, thanks to the parallel processing nature of GPUs.
 
 ![jacobi](/jacobi-iteration.gif)
 
 ### Lookahead Decoding
+
 Lookahead decoding overcomes the limitations of Jacobi Decoding by leveraging its capability of generating parallel n-grams. In Jacobi decoding, we notice that each new token at a position is decoded based on its historical values from previous iterations. This process creates a trajectory of historical tokens at each token position, forming many n-grams. For instance, by looking back over three Jacobi iterations, a 3-gram can be formed at each token position. Lookahead decoding takes advantage of this by collecting and caching these n-grams from their trajectories. While lookahead decoding performs parallel decoding using Jacobi iterations for future tokens, it also concurrently verifies promising n-grams from the cache. Accepting an N-gram allows us to advance N tokens in one step, significantly accelerating the decoding process.
 
 ### Lookahead Branch
+
 The lookahead branch aims to generate new N-grams. The branch operates with a two-dimensional window defined by two parameters:
+
 - `num_speculative_tokens` $W$: how far ahead we look in future token positions to conduct parallel decoding.
 - `ngram_prompt_lookup_max` $N$: how many steps we look back into the past Jacobi iteration trajectory to retrieve n-grams.
 
@@ -86,11 +92,11 @@ As the decoding progresses, tokens from the earliest step in the trajectory are 
 
 Alongside the lookahead branch, the verification branch of each decoding step aims to identify and confirm promising n-grams, ensuring the progression of the decoding process. In the verification branch, we identify n-grams whose first token matches the last input token. This is determined via a simple string match. Once identified, these n-grams are appended to the current input and subjected to verification via an LLM forward pass through them. As the n-gram cache grows, it becomes increasingly common to find multiple n-grams that start with the same token, which raises the verification cost. To manage the cost, we set a cap of $G$ on the number of candidate n-grams considered in the verification branch. In practice, we often set this cap proportional to $W$ (e.g. $G = W$).
 
-
 ### Scaling Law for Lookahead Decoding
+
 Lookahead decoding can generate $W$ different N-grams and verify $G$ candidates per step. As $W$ (the number of speculative tokens) and $N$ (the N-gram size) increases, so do the computational operations per step. However, this increase also enhances the likelihood of accepting a longer n-gram with a step. In other words, lookahead decoding allows to trade more flops for reducing latency, provided the system is not constrained by computational capacity.
 
-To examine the scaling behavior of lookahead decoding, we analyze the number of decoding steps required for a given number of tokens, varying the values of $N$ and $W$. The findings are illustrated below. Notably, when the n-gram size is sufficiently large (e.g. $N=11$), exponentially increasing the future token guesses ($W$) can linearly reduce the number of decoding steps. We refer to this phenomenon as the **scaling law **of lookahead decoding.
+To examine the scaling behavior of lookahead decoding, we analyze the number of decoding steps required for a given number of tokens, varying the values of $N$ and $W$. The findings are illustrated below. Notably, when the n-gram size is sufficiently large (e.g. $N=11$), exponentially increasing the future token guesses ($W$) can linearly reduce the number of decoding steps. We refer to this phenomenon as the **scaling law**of lookahead decoding.
 
 ![scalinglaw](/scaling_law.png)
 <p align="center"><small>When N is large enough, exponentially increasing window size W can linearly reduce the number of decoding steps. Here we set G = W.</small></p>

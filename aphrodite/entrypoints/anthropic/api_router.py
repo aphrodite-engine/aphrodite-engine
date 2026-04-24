@@ -40,9 +40,7 @@ def translate_error_response(response: ErrorResponse) -> JSONResponse:
             message=response.error.message,
         )
     )
-    return JSONResponse(
-        status_code=response.error.code, content=anthropic_error.model_dump()
-    )
+    return JSONResponse(status_code=response.error.code, content=anthropic_error.model_dump())
 
 
 @router.post(
@@ -61,9 +59,7 @@ async def create_messages(request: AnthropicMessagesRequest, raw_request: Reques
     handler = messages(raw_request)
     if handler is None:
         base_server = raw_request.app.state.openai_serving_tokenization
-        error = base_server.create_error_response(
-            NotImplementedError("The model does not support Messages API")
-        )
+        error = base_server.create_error_response(NotImplementedError("The model does not support Messages API"))
         return translate_error_response(error)
 
     try:
@@ -107,9 +103,7 @@ async def count_tokens(request: AnthropicCountTokensRequest, raw_request: Reques
     handler = messages(raw_request)
     if handler is None:
         base_server = raw_request.app.state.openai_serving_tokenization
-        error = base_server.create_error_response(
-            NotImplementedError("The model does not support Messages API")
-        )
+        error = base_server.create_error_response(NotImplementedError("The model does not support Messages API"))
         return translate_error_response(error)
 
     try:

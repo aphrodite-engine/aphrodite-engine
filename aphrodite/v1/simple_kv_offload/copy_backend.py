@@ -64,9 +64,7 @@ class DmaCopyBackend:
     ) -> None:
         params = self._store_params if is_store else self._load_params
         assert params is not None and self._queue is not None
-        self._queue.put(
-            (src_blocks, dst_blocks, params, is_store, event_idx, events_list)
-        )
+        self._queue.put((src_blocks, dst_blocks, params, is_store, event_idx, events_list))
 
     def shutdown(self) -> None:
         if self._shutdown:

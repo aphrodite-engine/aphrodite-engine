@@ -45,9 +45,7 @@ def _file_lock(lock_file: str, mode: str = "wb+") -> Generator[None, None, None]
             fcntl.flock(fp, fcntl.LOCK_UN)
 
 
-def _create_or_attach_shared_memory(
-    name: str, size: int, lock_file: str
-) -> shared_memory.SharedMemory:
+def _create_or_attach_shared_memory(name: str, size: int, lock_file: str) -> shared_memory.SharedMemory:
     """Create or attach to shared memory with proper locking."""
     # Ensure lock file exists before acquiring lock
     with open(lock_file, "wb"):
@@ -147,9 +145,7 @@ class RoutedExpertsCapturer:
         self._lock_file = f"{_LOCK_FILE_PREFIX}_{instance_id}_{self.dp_rank}.lock"
         shm_name = f"{_BUFFER_PREFIX}_{instance_id}_{self.dp_rank}"
 
-        self._shm = _create_or_attach_shared_memory(
-            shm_name, buffer_size, self._lock_file
-        )
+        self._shm = _create_or_attach_shared_memory(shm_name, buffer_size, self._lock_file)
         self._host_buffer_view = np.ndarray(shape, dtype=np.int32, buffer=self._shm.buf)
         self._host_buffer_view.fill(0)
 
@@ -201,9 +197,7 @@ class RoutedExpertsCapturer:
         if layer_id >= self._device_buffer.shape[1]:
             return
 
-        self._device_buffer[:token_num_per_dp, layer_id, :] = topk_ids[
-            start_loc:end_loc, :
-        ]
+        self._device_buffer[:token_num_per_dp, layer_id, :] = topk_ids[start_loc:end_loc, :]
 
     def clear_buffer(self) -> None:
         """Clear the device buffer."""
@@ -316,9 +310,7 @@ class RoutedExpertsReader:
             ):
                 self._shm = shared_memory.SharedMemory(name=shm_name)
 
-            self._host_buffer_view = np.ndarray(
-                shape, dtype=np.int32, buffer=self._shm.buf
-            )
+            self._host_buffer_view = np.ndarray(shape, dtype=np.int32, buffer=self._shm.buf)
 
     def get_routed_experts(self, indices: np.ndarray) -> np.ndarray:
         """

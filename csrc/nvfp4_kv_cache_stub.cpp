@@ -5,8 +5,7 @@ namespace torch {
 using Tensor = at::Tensor;
 }
 
-void reshape_and_cache_nvfp4_dispatch(torch::Tensor& key,
-                                      torch::Tensor& value,
+void reshape_and_cache_nvfp4_dispatch(torch::Tensor& key, torch::Tensor& value,
                                       torch::Tensor& key_cache,
                                       torch::Tensor& value_cache,
                                       torch::Tensor& slot_mapping,

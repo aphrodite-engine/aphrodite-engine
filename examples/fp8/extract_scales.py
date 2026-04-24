@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import argparse
 import glob
 import json
@@ -7,9 +9,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from safetensors.torch import safe_open
-
 from aphrodite.quantization.schema import QuantParamSchema
+from safetensors.torch import safe_open
 
 
 # Adapted from aphrodite/modeling/model_loader/weight_utils.py

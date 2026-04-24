@@ -4,9 +4,7 @@
 from PIL import Image
 
 
-def rescale_image_size(
-    image: Image.Image, size_factor: float, transpose: int = -1
-) -> Image.Image:
+def rescale_image_size(image: Image.Image, size_factor: float, transpose: int = -1) -> Image.Image:
     """Rescale the dimensions of an image by a constant factor."""
     new_width = int(image.width * size_factor)
     new_height = int(image.height * size_factor)

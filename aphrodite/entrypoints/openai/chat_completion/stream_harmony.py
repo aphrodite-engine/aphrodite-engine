@@ -136,11 +136,7 @@ def extract_harmony_streaming_delta(
                     # If ongoing_tool_index is None here, it means
                     # we're continuing a call but prev_recipient
                     # wasn't a function. Use base_index.
-                    tool_call_index = (
-                        ongoing_tool_index
-                        if ongoing_tool_index is not None
-                        else base_index
-                    )
+                    tool_call_index = ongoing_tool_index if ongoing_tool_index is not None else base_index
                 tool_messages.append(
                     DeltaToolCall(
                         index=tool_call_index,

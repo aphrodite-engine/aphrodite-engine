@@ -80,10 +80,9 @@ class MambaCopyBuffers:
         make_buffer: Callable[..., CpuGpuBuffer],
     ) -> "MambaCopyBuffers":
         mamba_group_ids, mamba_spec = get_mamba_groups(kv_cache_config)
-        entries_per_req = sum(
-            len(kv_cache_config.kv_cache_groups[gid].layer_names)
-            for gid in mamba_group_ids
-        ) * len(copy_funcs)
+        entries_per_req = sum(len(kv_cache_config.kv_cache_groups[gid].layer_names) for gid in mamba_group_ids) * len(
+            copy_funcs
+        )
         n = max_num_reqs * entries_per_req
         return cls(
             src_ptrs=make_buffer(n, dtype=torch.int64),
@@ -121,9 +120,7 @@ def collect_mamba_copy_meta(
             attention = forward_context[layer_name]
             kv_caches: list[torch.Tensor] = attention.kv_cache
             for state, state_copy_func in zip(kv_caches, mamba_state_copy_funcs):
-                copy_spec = state_copy_func(
-                    state, block_ids, src_block_idx, accept_token_bias + 1
-                )
+                copy_spec = state_copy_func(state, block_ids, src_block_idx, accept_token_bias + 1)
 
                 src_ptrs_np[offset] = copy_spec.start_addr
                 dst_ptrs_np[offset] = state[dest_block_id].data_ptr()
@@ -187,8 +184,7 @@ def preprocess_mamba(
 
         num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
         num_blocks: int = (
-            cdiv(req_state.num_computed_tokens + num_scheduled_tokens, block_size)
-            + num_speculative_blocks
+            cdiv(req_state.num_computed_tokens + num_scheduled_tokens, block_size) + num_speculative_blocks
         )
 
         # We always save the current running state at the last
@@ -245,13 +241,9 @@ def postprocess_mamba(
         num_draft_tokens = len(scheduled_spec_decode_tokens_dict.get(req_id, []))
         num_scheduled_tokens = num_scheduled_tokens_dict[req_id]
         num_accepted_tokens = num_accepted_tokens_cpu[i]
-        num_tokens_running_state = (
-            num_computed_tokens + num_scheduled_tokens - num_draft_tokens
-        )
+        num_tokens_running_state = num_computed_tokens + num_scheduled_tokens - num_draft_tokens
         new_num_computed_tokens = num_tokens_running_state + num_accepted_tokens - 1
-        aligned_new_computed_tokens = (
-            new_num_computed_tokens // mamba_spec.block_size * mamba_spec.block_size
-        )
+        aligned_new_computed_tokens = new_num_computed_tokens // mamba_spec.block_size * mamba_spec.block_size
         # TODO: how to ensure all blocks that cache_blocks called are cached here?
         if aligned_new_computed_tokens >= num_tokens_running_state:
             accept_token_bias = aligned_new_computed_tokens - num_tokens_running_state

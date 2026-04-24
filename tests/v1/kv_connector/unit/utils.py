@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import tempfile
 from collections import defaultdict
 from collections.abc import Callable
@@ -5,11 +7,11 @@ from itertools import count
 from typing import Any
 
 import torch
+from aphrodite.distributed.kv_transfer.kv_connector.v1.shared_storage_connector import SharedStorageConnector  # noqa
 
 from aphrodite import SamplingParams
 from aphrodite.config import AphroditeConfig, CacheConfig, DeviceConfig, KVTransferConfig, ModelConfig, SchedulerConfig
 from aphrodite.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
-from aphrodite.distributed.kv_transfer.kv_connector.v1.shared_storage_connector import SharedStorageConnector  # noqa
 from aphrodite.utils.hashing import sha256
 from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
 from aphrodite.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash

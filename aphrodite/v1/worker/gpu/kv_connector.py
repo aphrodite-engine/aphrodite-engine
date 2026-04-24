@@ -33,9 +33,7 @@ class KVConnector:
     def pre_forward(self, scheduler_output: "SchedulerOutput") -> None:
         pass
 
-    def post_forward(
-        self, scheduler_output: "SchedulerOutput", wait_for_save: bool = True
-    ) -> KVConnectorOutput | None:
+    def post_forward(self, scheduler_output: "SchedulerOutput", wait_for_save: bool = True) -> KVConnectorOutput | None:
         return None
 
     def no_forward(self, scheduler_output: "SchedulerOutput") -> ModelRunnerOutput:
@@ -46,9 +44,7 @@ class KVConnector:
 
 
 class ActiveKVConnector(KVConnector):
-    def __init__(
-        self, aphrodite_config: AphroditeConfig, kv_caches_dict: dict[str, torch.Tensor]
-    ):
+    def __init__(self, aphrodite_config: AphroditeConfig, kv_caches_dict: dict[str, torch.Tensor]):
         self.aphrodite_config = aphrodite_config
         self.kv_connector = get_kv_transfer_group()
         # Register kv caches with KV Connector if applicable.
@@ -87,15 +83,13 @@ class ActiveKVConnector(KVConnector):
         output = KVConnectorOutput()
         if wait_for_save:
             self.kv_connector.wait_for_save()
-        output.finished_sending, output.finished_recving = (
-            self.kv_connector.get_finished(scheduler_output.finished_req_ids)
+        output.finished_sending, output.finished_recving = self.kv_connector.get_finished(
+            scheduler_output.finished_req_ids
         )
         output.invalid_block_ids = self.kv_connector.get_block_ids_with_load_errors()
         output.kv_connector_stats = self.kv_connector.get_kv_connector_stats()
         output.kv_cache_events = self.kv_connector.get_kv_connector_kv_cache_events()
-        output.kv_connector_worker_meta = (
-            self.kv_connector.build_connector_worker_meta()
-        )
+        output.kv_connector_worker_meta = self.kv_connector.build_connector_worker_meta()
 
         if clear_metadata:
             self.kv_connector.clear_connector_metadata()
@@ -122,9 +116,7 @@ class ActiveKVConnector(KVConnector):
 NO_OP_KV_CONNECTOR = KVConnector()
 
 
-def get_kv_connector(
-    aphrodite_config: AphroditeConfig, kv_caches_dict: dict[str, torch.Tensor]
-) -> KVConnector:
+def get_kv_connector(aphrodite_config: AphroditeConfig, kv_caches_dict: dict[str, torch.Tensor]) -> KVConnector:
     if not has_kv_transfer_group():
         # No-op connector.
         return NO_OP_KV_CONNECTOR

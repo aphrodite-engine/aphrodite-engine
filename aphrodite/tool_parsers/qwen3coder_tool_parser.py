@@ -54,38 +54,24 @@ class Qwen3CoderToolParser(ToolParser):
         self._reset_streaming_state()
 
         # Regex patterns
-        self.tool_call_complete_regex = re.compile(
-            r"<tool_call>(.*?)</tool_call>", re.DOTALL
-        )
-        self.tool_call_regex = re.compile(
-            r"<tool_call>(.*?)</tool_call>|<tool_call>(.*?)$", re.DOTALL
-        )
-        self.tool_call_function_regex = re.compile(
-            r"<function=(.*?)</function>|<function=(.*)$", re.DOTALL
-        )
+        self.tool_call_complete_regex = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+        self.tool_call_regex = re.compile(r"<tool_call>(.*?)</tool_call>|<tool_call>(.*?)$", re.DOTALL)
+        self.tool_call_function_regex = re.compile(r"<function=(.*?)</function>|<function=(.*)$", re.DOTALL)
         self.tool_call_parameter_regex = re.compile(
             r"<parameter=(.*?)(?:</parameter>|(?=<parameter=)|(?=</function>)|$)",
             re.DOTALL,
         )
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         self.tool_call_start_token_id = self.vocab.get(self.tool_call_start_token)
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
 
         if self.tool_call_start_token_id is None or self.tool_call_end_token_id is None:
-            raise RuntimeError(
-                "Qwen3 XML Tool parser could not locate tool call start/end "
-                "tokens in the tokenizer!"
-            )
+            raise RuntimeError("Qwen3 XML Tool parser could not locate tool call start/end tokens in the tokenizer!")
 
-        logger.debug(
-            "Aphrodite Successfully import tool parser %s !", self.__class__.__name__
-        )
+        logger.debug("Aphrodite Successfully import tool parser %s !", self.__class__.__name__)
 
     def _generate_tool_call_id(self) -> str:
         """Generate a unique tool call ID."""
@@ -110,9 +96,7 @@ class Qwen3CoderToolParser(ToolParser):
         self.accumulated_params = {}
         self.streaming_request = None
 
-    def _convert_param_value(
-        self, param_value: str, param_name: str, param_config: dict, func_name: str
-    ) -> Any:
+    def _convert_param_value(self, param_value: str, param_name: str, param_config: dict, func_name: str) -> Any:
         """Convert parameter value based on its type in the schema."""
         # Handle null value for any type
         if param_value.lower() == "null":
@@ -129,15 +113,9 @@ class Qwen3CoderToolParser(ToolParser):
                 )
             return param_value
 
-        if (
-            isinstance(param_config[param_name], dict)
-            and "type" in param_config[param_name]
-        ):
+        if isinstance(param_config[param_name], dict) and "type" in param_config[param_name]:
             param_type = str(param_config[param_name]["type"]).strip().lower()
-        elif (
-            isinstance(param_config[param_name], dict)
-            and "anyOf" in param_config[param_name]
-        ):
+        elif isinstance(param_config[param_name], dict) and "anyOf" in param_config[param_name]:
             # anyOf has no top-level "type"; treat as object to trigger json.loads.
             param_type = "object"
         else:
@@ -155,8 +133,7 @@ class Qwen3CoderToolParser(ToolParser):
                 return int(param_value)
             except (ValueError, TypeError):
                 logger.debug(
-                    "Parsed value '%s' of parameter '%s' is not an "
-                    "integer in tool '%s', degenerating to string.",
+                    "Parsed value '%s' of parameter '%s' is not an integer in tool '%s', degenerating to string.",
                     param_value,
                     param_name,
                     func_name,
@@ -165,15 +142,10 @@ class Qwen3CoderToolParser(ToolParser):
         elif param_type.startswith("num") or param_type.startswith("float"):
             try:
                 float_param_value = float(param_value)
-                return (
-                    float_param_value
-                    if float_param_value - int(float_param_value) != 0
-                    else int(float_param_value)
-                )
+                return float_param_value if float_param_value - int(float_param_value) != 0 else int(float_param_value)
             except (ValueError, TypeError):
                 logger.debug(
-                    "Parsed value '%s' of parameter '%s' is not a float "
-                    "in tool '%s', degenerating to string.",
+                    "Parsed value '%s' of parameter '%s' is not a float in tool '%s', degenerating to string.",
                     param_value,
                     param_name,
                     func_name,
@@ -242,22 +214,16 @@ class Qwen3CoderToolParser(ToolParser):
             if param_value.endswith("\n"):
                 param_value = param_value[:-1]
 
-            param_dict[param_name] = self._convert_param_value(
-                param_value, param_name, param_config, function_name
-            )
+            param_dict[param_name] = self._convert_param_value(param_value, param_name, param_config, function_name)
         return ToolCall(
             type="function",
-            function=FunctionCall(
-                name=function_name, arguments=json.dumps(param_dict, ensure_ascii=False)
-            ),
+            function=FunctionCall(name=function_name, arguments=json.dumps(param_dict, ensure_ascii=False)),
         )
 
     def _get_function_calls(self, model_output: str) -> list[str]:
         # Find all tool calls
         matched_ranges = self.tool_call_regex.findall(model_output)
-        raw_tool_calls = [
-            match[0] if match[0] else match[1] for match in matched_ranges
-        ]
+        raw_tool_calls = [match[0] if match[0] else match[1] for match in matched_ranges]
 
         # Back-off strategy if no tool_call tags found
         if len(raw_tool_calls) == 0:
@@ -267,9 +233,7 @@ class Qwen3CoderToolParser(ToolParser):
         for tool_call in raw_tool_calls:
             raw_function_calls.extend(self.tool_call_function_regex.findall(tool_call))
 
-        function_calls = [
-            match[0] if match[0] else match[1] for match in raw_function_calls
-        ]
+        function_calls = [match[0] if match[0] else match[1] for match in raw_function_calls]
         return function_calls
 
     def extract_tool_calls(
@@ -279,21 +243,14 @@ class Qwen3CoderToolParser(ToolParser):
     ) -> ExtractedToolCallInformation:
         # Quick check to avoid unnecessary processing
         if self.tool_call_prefix not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             function_calls = self._get_function_calls(model_output)
             if len(function_calls) == 0:
-                return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
-                )
+                return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
-            tool_calls = [
-                self._parse_xml_function_call(function_call_str)
-                for function_call_str in function_calls
-            ]
+            tool_calls = [self._parse_xml_function_call(function_call_str) for function_call_str in function_calls]
             # Populate prev_tool_call_arr for serving layer to set finish_reason
             self.prev_tool_call_arr.clear()  # Clear previous calls
             for tool_call in tool_calls:
@@ -319,9 +276,7 @@ class Qwen3CoderToolParser(ToolParser):
 
         except Exception:
             logger.exception("Error in extracting tool call from response.")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def extract_tool_calls_streaming(
         self,
@@ -345,17 +300,15 @@ class Qwen3CoderToolParser(ToolParser):
             # is False (might have been reset after processing all tools)
             if delta_token_ids and self.tool_call_end_token_id not in delta_token_ids:
                 # Count complete tool calls
-                complete_calls = len(
-                    self.tool_call_complete_regex.findall(current_text)
-                )
+                complete_calls = len(self.tool_call_complete_regex.findall(current_text))
 
                 # If we have completed tool calls and populated
                 # prev_tool_call_arr
                 if complete_calls > 0 and len(self.prev_tool_call_arr) > 0:
                     # Check if all tool calls are closed
-                    open_calls = current_text.count(
-                        self.tool_call_start_token
-                    ) - current_text.count(self.tool_call_end_token)
+                    open_calls = current_text.count(self.tool_call_start_token) - current_text.count(
+                        self.tool_call_end_token
+                    )
                     if open_calls == 0:
                         # Return empty delta for finish_reason processing
                         return DeltaMessage(content="")
@@ -391,25 +344,17 @@ class Qwen3CoderToolParser(ToolParser):
         # Handle normal content before tool calls
         if not self.is_tool_call_started:
             # Check if tool call is starting
-            if (
-                self.tool_call_start_token_id in delta_token_ids
-                or self.tool_call_start_token in delta_text
-            ):
+            if self.tool_call_start_token_id in delta_token_ids or self.tool_call_start_token in delta_text:
                 self.is_tool_call_started = True
                 # Return any content before the tool call
                 if self.tool_call_start_token in delta_text:
-                    content_before = delta_text[
-                        : delta_text.index(self.tool_call_start_token)
-                    ]
+                    content_before = delta_text[: delta_text.index(self.tool_call_start_token)]
                     if content_before:
                         return DeltaMessage(content=content_before)
                 return None
             else:
                 # Check if we're between tool calls - skip whitespace
-                if (
-                    current_text.rstrip().endswith(self.tool_call_end_token)
-                    and delta_text.strip() == ""
-                ):
+                if current_text.rstrip().endswith(self.tool_call_end_token) and delta_text.strip() == "":
                     # We just ended a tool call, skip whitespace
                     return None
                 # Normal content, no tool call
@@ -443,16 +388,12 @@ class Qwen3CoderToolParser(ToolParser):
         if tool_end_idx == -1:
             tool_text = current_text[tool_start_idx:]
         else:
-            tool_text = current_text[
-                tool_start_idx : tool_end_idx + len(self.tool_call_end_token)
-            ]
+            tool_text = current_text[tool_start_idx : tool_end_idx + len(self.tool_call_end_token)]
 
         # Looking for function header
         if not self.header_sent:
             if self.tool_call_prefix in tool_text:
-                func_start = tool_text.find(self.tool_call_prefix) + len(
-                    self.tool_call_prefix
-                )
+                func_start = tool_text.find(self.tool_call_prefix) + len(self.tool_call_prefix)
                 func_end = tool_text.find(">", func_start)
 
                 if func_end != -1:
@@ -485,9 +426,7 @@ class Qwen3CoderToolParser(ToolParser):
                             DeltaToolCall(
                                 index=self.current_tool_index,
                                 id=self.current_tool_id,
-                                function=DeltaFunctionCall(
-                                    name=self.current_function_name, arguments=""
-                                ),
+                                function=DeltaFunctionCall(name=self.current_function_name, arguments=""),
                                 type="function",
                             )
                         ]
@@ -552,9 +491,7 @@ class Qwen3CoderToolParser(ToolParser):
                     next_param_idx = value_text.find(self.parameter_prefix)
                     func_end_idx = value_text.find(self.function_end_token)
 
-                    if next_param_idx != -1 and (
-                        func_end_idx == -1 or next_param_idx < func_end_idx
-                    ):
+                    if next_param_idx != -1 and (func_end_idx == -1 or next_param_idx < func_end_idx):
                         param_end_idx = next_param_idx
                     elif func_end_idx != -1:
                         param_end_idx = func_end_idx
@@ -582,9 +519,7 @@ class Qwen3CoderToolParser(ToolParser):
                 self.current_param_name = current_param_name
                 self.accumulated_params[current_param_name] = param_value
 
-                param_config = find_tool_properties(
-                    self.tools, self.current_function_name or ""
-                )
+                param_config = find_tool_properties(self.tools, self.current_function_name or "")
 
                 converted_value = self._convert_param_value(
                     param_value,
@@ -633,9 +568,7 @@ class Qwen3CoderToolParser(ToolParser):
             if not self.json_closed and self.function_end_token in tool_text:
                 self.json_closed = True
 
-                func_start = tool_text.find(self.tool_call_prefix) + len(
-                    self.tool_call_prefix
-                )
+                func_start = tool_text.find(self.tool_call_prefix) + len(self.tool_call_prefix)
                 func_content_end = tool_text.find(self.function_end_token, func_start)
                 if func_content_end != -1:
                     func_content = tool_text[func_start:func_content_end]
@@ -643,12 +576,10 @@ class Qwen3CoderToolParser(ToolParser):
                         parsed_tool = self._parse_xml_function_call(
                             func_content,
                         )
-                        if parsed_tool and self.current_tool_index < len(
-                            self.prev_tool_call_arr
-                        ):
-                            self.prev_tool_call_arr[self.current_tool_index][
-                                "arguments"
-                            ] = parsed_tool.function.arguments
+                        if parsed_tool and self.current_tool_index < len(self.prev_tool_call_arr):
+                            self.prev_tool_call_arr[self.current_tool_index]["arguments"] = (
+                                parsed_tool.function.arguments
+                            )
                     except Exception:
                         logger.debug(
                             "Failed to parse tool call during streaming: %s",

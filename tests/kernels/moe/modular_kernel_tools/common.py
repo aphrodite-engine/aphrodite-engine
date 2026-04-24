@@ -1,15 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from dataclasses import dataclass
 from typing import Any
 
+import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 import torch
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEParallelConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 
 import aphrodite._custom_ops as ops
-import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_dp_group, get_tensor_model_parallel_world_size
 from aphrodite.forward_context import set_forward_context
-from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEParallelConfig, FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 from aphrodite.utils.import_utils import has_deep_ep, has_deep_gemm, has_pplx
 from tests.kernels.moe.utils import make_test_weights, per_token_cast_to_fp8
 from tests.kernels.quantization.nvfp4_utils import FLOAT4_E2M1_MAX, FLOAT8_E4M3_MAX, dequantize_nvfp4_to_dtype

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """A basic performance regression test for TPUs
 
 Run `pytest tests/v1/tpu/test_perf.py`.

@@ -58,8 +58,7 @@ def get_kv_cache_layout():
     if _KV_CACHE_LAYOUT_OVERRIDE is not None:
         cache_layout = _KV_CACHE_LAYOUT_OVERRIDE
         logger.info_once(
-            "`_KV_CACHE_LAYOUT_OVERRIDE` variable detected. "
-            "Setting KV cache layout to %s.",
+            "`_KV_CACHE_LAYOUT_OVERRIDE` variable detected. Setting KV cache layout to %s.",
             cache_layout,
         )
         return cache_layout
@@ -72,8 +71,7 @@ def get_kv_cache_layout():
     else:
         assert is_valid_kv_cache_layout(cache_layout)
         logger.info_once(
-            "`APHRODITE_KV_CACHE_LAYOUT` environment variable "
-            "detected. Setting KV cache layout to %s.",
+            "`APHRODITE_KV_CACHE_LAYOUT` environment variable detected. Setting KV cache layout to %s.",
             cache_layout,
         )
     return cache_layout
@@ -129,9 +127,7 @@ def get_per_layer_parameters(
         sm_scale = impl.scale
         has_sinks = getattr(impl, "sinks", None) is not None
 
-        per_layer_params[key] = PerLayerParameters(
-            window_left, logits_soft_cap, sm_scale, has_sinks
-        )
+        per_layer_params[key] = PerLayerParameters(window_left, logits_soft_cap, sm_scale, has_sinks)
 
     return per_layer_params
 
@@ -156,12 +152,8 @@ def infer_global_hyperparameters(
     param_sets = list(per_layer_params.values())
     global_params = param_sets[0]
 
-    global_params.has_same_window_lefts = all(
-        params.window_left == global_params.window_left for params in param_sets
-    )
-    global_params.has_same_all_params = all(
-        params == global_params for params in param_sets
-    )
+    global_params.has_same_window_lefts = all(params.window_left == global_params.window_left for params in param_sets)
+    global_params.has_same_all_params = all(params == global_params for params in param_sets)
 
     return global_params
 
@@ -271,9 +263,9 @@ def make_local_attention_virtual_batches(
     # set the first block since this may be a partial block
     seqlens_q_local[arange == 0] = q_tokens_in_first_block
     # set the remaining blocks
-    seqlens_q_local[arange > 0] = np.minimum(
-        seqlens_q_local - attn_chunk_size * (arange - 1), attn_chunk_size
-    )[arange > 0]
+    seqlens_q_local[arange > 0] = np.minimum(seqlens_q_local - attn_chunk_size * (arange - 1), attn_chunk_size)[
+        arange > 0
+    ]
 
     # convert from q_seqlens to cu_seqlens_q
     cu_seqlens_q_local = np.empty(virtual_batches + 1, dtype=np.int32)
@@ -319,9 +311,7 @@ def make_local_attention_virtual_batches(
     #     [ 22, 23 ], < local-batch 6, (batch 2, starting from k[4])
     #     [ 24, 25 ], < local-batch 7, (batch 2, starting from k[8])
     #   ]
-    block_indices = block_starts[:, None] + np.arange(
-        pages_per_local_batch, dtype=np.int32
-    )
+    block_indices = block_starts[:, None] + np.arange(pages_per_local_batch, dtype=np.int32)
     block_indices = block_indices.reshape(-1).clip(max=block_table.shape[1] - 1)
     batch_indices = np.repeat(
         np.arange(actual_batch_size, dtype=np.int32),
@@ -336,9 +326,9 @@ def make_local_attention_virtual_batches(
     block_indices_torch = torch.from_numpy(block_indices)
 
     # Save as a lambda so we can return this for update_block_table
-    make_block_table = lambda block_table: block_table[
-        batch_indices_torch, block_indices_torch
-    ].view(virtual_batches, -1)
+    make_block_table = lambda block_table: block_table[batch_indices_torch, block_indices_torch].view(
+        virtual_batches, -1
+    )
     block_table_local = make_block_table(block_table)
 
     query_start_loc_cpu = torch.from_numpy(cu_seqlens_q_local)
@@ -394,9 +384,7 @@ def make_kv_sharing_fast_prefill_common_attn_metadata(
 
     # Calculate new query_start_loc with tokens in generation_indices
     # decode_query_start_loc: [0, 1, 3, 4]
-    decode_query_start_loc = torch.empty(
-        num_reqs + 1, device=query_start_loc.device, dtype=query_start_loc.dtype
-    )
+    decode_query_start_loc = torch.empty(num_reqs + 1, device=query_start_loc.device, dtype=query_start_loc.dtype)
 
     decode_query_start_loc[0] = 0
     decode_query_start_loc[1:] = torch.cumsum(num_decode_tokens, dim=0)
@@ -605,9 +593,7 @@ def reorder_batch_to_split_decodes_and_prefills(
         True if the batch was modified, False otherwise.
     """
     num_reqs = len(input_batch.req_ids)
-    num_scheduled_tokens = [
-        scheduler_output.num_scheduled_tokens[id] for id in input_batch.req_ids
-    ]
+    num_scheduled_tokens = [scheduler_output.num_scheduled_tokens[id] for id in input_batch.req_ids]
     num_scheduled_tokens_np = np.array(num_scheduled_tokens)
     num_computed_tokens_np = input_batch.num_computed_tokens_cpu[:num_reqs]
     num_prompt_tokens_np = input_batch.num_prompt_tokens[:num_reqs]
@@ -675,9 +661,7 @@ def reshape_query_for_spec_decode(query: torch.Tensor, batch_size: int) -> torch
     total_tokens = query.shape[0]
     num_heads = query.shape[1]
     head_dim = query.shape[2]
-    assert total_tokens % batch_size == 0, (
-        f"{total_tokens=} is not divisible by {batch_size=}"
-    )
+    assert total_tokens % batch_size == 0, f"{total_tokens=} is not divisible by {batch_size=}"
     seq_len = total_tokens // batch_size
     return query.view(batch_size, seq_len, num_heads, head_dim)
 
@@ -727,12 +711,8 @@ def create_fast_prefill_custom_backend(
             common_attn_metadata: CommonAttentionMetadata,
             fast_build: bool = False,
         ) -> AttentionMetadata:
-            new_common_attn_metadata = (
-                make_kv_sharing_fast_prefill_common_attn_metadata(common_attn_metadata)
-            )
-            metadata = super().build(
-                common_prefix_len, new_common_attn_metadata, fast_build
-            )
+            new_common_attn_metadata = make_kv_sharing_fast_prefill_common_attn_metadata(common_attn_metadata)
+            metadata = super().build(common_prefix_len, new_common_attn_metadata, fast_build)
 
             class KVSharingFastPrefillAttentionMetadata(
                 metadata.__class__,  #  type: ignore
@@ -743,9 +723,7 @@ def create_fast_prefill_custom_backend(
                     for _field in fields(metadata.__class__):
                         setattr(self, _field.name, getattr(metadata, _field.name))
 
-                    self.logits_indices_padded = (
-                        common_attn_metadata.logits_indices_padded
-                    )
+                    self.logits_indices_padded = common_attn_metadata.logits_indices_padded
                     self.num_logits_indices = common_attn_metadata.num_logits_indices
 
             return KVSharingFastPrefillAttentionMetadata(metadata, common_attn_metadata)
@@ -788,12 +766,8 @@ def compute_causal_conv1d_metadata(
 
         if batch_ptr is None:
             # Update default value after class definition
-            batch_ptr = torch.full(
-                (MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device
-            )
-            token_chunk_offset_ptr = torch.full(
-                (MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device
-            )
+            batch_ptr = torch.full((MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device)
+            token_chunk_offset_ptr = torch.full((MAX_NUM_PROGRAMS,), PAD_SLOT_ID, dtype=torch.int32, device=device)
         else:
             if batch_ptr.nelement() < MAX_NUM_PROGRAMS:
                 batch_ptr.resize_(MAX_NUM_PROGRAMS).fill_(PAD_SLOT_ID)
@@ -824,23 +798,12 @@ def get_dcp_local_seq_lens(
     num_requests = seq_lens.size(0)
     if dcp_rank is None:
         rank_offsets = (
-            torch.arange(dcp_size, dtype=torch.int32, device=seq_lens.device)
-            .unsqueeze(0)
-            .repeat(num_requests, 1)
+            torch.arange(dcp_size, dtype=torch.int32, device=seq_lens.device).unsqueeze(0).repeat(num_requests, 1)
         )
     else:
-        rank_offsets = torch.tensor(
-            [[dcp_rank]], dtype=torch.int32, device=seq_lens.device
-        )
-    seq_lens_tiled = (
-        seq_lens.to(torch.int32).unsqueeze(-1).repeat(1, rank_offsets.shape[1])
-    )
-    base = (
-        seq_lens_tiled
-        // cp_kv_cache_interleave_size
-        // dcp_size
-        * cp_kv_cache_interleave_size
-    )
+        rank_offsets = torch.tensor([[dcp_rank]], dtype=torch.int32, device=seq_lens.device)
+    seq_lens_tiled = seq_lens.to(torch.int32).unsqueeze(-1).repeat(1, rank_offsets.shape[1])
+    base = seq_lens_tiled // cp_kv_cache_interleave_size // dcp_size * cp_kv_cache_interleave_size
     remainder = seq_lens_tiled - base * dcp_size
     remainder = torch.clip(
         remainder - rank_offsets * cp_kv_cache_interleave_size,

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Unit tests for the FlashMLA sparse backend utilities."""
 
 import math
@@ -6,10 +8,10 @@ from types import MethodType, SimpleNamespace
 import numpy as np
 import pytest
 import torch
-
-from aphrodite import _custom_ops as ops
 from aphrodite.attention.ops import flashmla
 from aphrodite.modeling.layers.linear import ColumnParallelLinear
+
+from aphrodite import _custom_ops as ops
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.v1.attention.backends.mla.flashmla_sparse import FlashMLASparseBackend
 from aphrodite.v1.attention.backends.mla.indexer import split_prefill_chunks

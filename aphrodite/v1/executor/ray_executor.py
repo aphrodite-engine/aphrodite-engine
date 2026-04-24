@@ -90,8 +90,7 @@ class RayDistributedExecutor(Executor):
         self.has_connector = self.aphrodite_config.kv_transfer_config is not None
 
         self.uses_sampler = self.aphrodite_config.model_config.runner_type != "pooling" and (
-            self.aphrodite_config.ec_transfer_config is None
-            or self.aphrodite_config.ec_transfer_config.is_ec_consumer
+            self.aphrodite_config.ec_transfer_config is None or self.aphrodite_config.ec_transfer_config.is_ec_consumer
         )
 
         self.scheduler_output: SchedulerOutput | None = None
@@ -139,9 +138,7 @@ class RayDistributedExecutor(Executor):
     def _update_noset_device_env_vars(self, ray_remote_kwargs):
         runtime_env = ray_remote_kwargs.setdefault("runtime_env", {})
         env_vars = runtime_env.setdefault("env_vars", {})
-        env_vars.update(
-            {env_var: "1" for env_var in current_platform.ray_noset_device_env_vars}
-        )
+        env_vars.update({env_var: "1" for env_var in current_platform.ray_noset_device_env_vars})
         return ray_remote_kwargs
 
     # child class could overwrite this to return actual env vars.
@@ -163,9 +160,7 @@ class RayDistributedExecutor(Executor):
         self.pp_tp_workers: list[list[RayWorkerWrapper]] = []
 
         if self.parallel_config.ray_workers_use_nsight:
-            ray_remote_kwargs = self._configure_ray_workers_use_nsight(
-                ray_remote_kwargs
-            )
+            ray_remote_kwargs = self._configure_ray_workers_use_nsight(ray_remote_kwargs)
 
         # The way ray actors are setup in aphrodite is that the visible devices are
         # not set by actors, they are left unset by ray. Internally we index
@@ -183,8 +178,7 @@ class RayDistributedExecutor(Executor):
                 f"and {self.parallel_config.world_size=}"
             )
             assert len(set(bundle_indices)) == len(bundle_indices), (
-                "APHRODITE_RAY_BUNDLE_INDICES cannot have duplicate values,"
-                f" but got {bundle_indices=}"
+                f"APHRODITE_RAY_BUNDLE_INDICES cannot have duplicate values, but got {bundle_indices=}"
             )
         else:
             # use the first N bundles that have GPU resources.
@@ -255,15 +249,11 @@ class RayDistributedExecutor(Executor):
         # After sorting, the workers on the same node will be
         # close to each other, and the workers on the driver
         # node will be placed first.
-        sorted_worker_metadata = sorted(
-            worker_metadata, key=sort_by_driver_then_worker_ip
-        )
+        sorted_worker_metadata = sorted(worker_metadata, key=sort_by_driver_then_worker_ip)
         for i, item in enumerate(sorted_worker_metadata):
             item.adjusted_rank = i
         self.workers = [item.worker for item in sorted_worker_metadata]
-        rerank_mapping = {
-            item.created_rank: item.adjusted_rank for item in sorted_worker_metadata
-        }
+        rerank_mapping = {item.created_rank: item.adjusted_rank for item in sorted_worker_metadata}
         self.collective_rpc("adjust_rank", args=(rerank_mapping,))
 
         # Get the set of GPU IDs used on each node.
@@ -317,9 +307,7 @@ class RayDistributedExecutor(Executor):
         # Each worker will use local_rank to index into the visible devices.
         all_args_to_update_environment_variables = [
             {
-                current_platform.device_control_env_var: ",".join(
-                    map(str, node_gpus[node_id])
-                ),
+                current_platform.device_control_env_var: ",".join(map(str, node_gpus[node_id])),
             }
             for (node_id, _) in worker_node_and_gpu_ids
         ]
@@ -340,9 +328,7 @@ class RayDistributedExecutor(Executor):
 
         self._env_vars_for_all_workers = all_args_to_update_environment_variables
 
-        self.collective_rpc(
-            "update_environment_variables", args=(self._get_env_vars_to_be_updated(),)
-        )
+        self.collective_rpc("update_environment_variables", args=(self._get_env_vars_to_be_updated(),))
 
         if len(node_gpus) == 1:
             # in single node case, we don't need to get the IP address.
@@ -354,9 +340,7 @@ class RayDistributedExecutor(Executor):
             # solves this issue, as it always works for communication inside
             # the node.
             driver_ip = "127.0.0.1"
-        distributed_init_method = get_distributed_init_method(
-            driver_ip, get_open_port()
-        )
+        distributed_init_method = get_distributed_init_method(driver_ip, get_open_port())
 
         # Initialize the actual workers inside worker wrapper.
         all_kwargs = []
@@ -367,8 +351,7 @@ class RayDistributedExecutor(Executor):
                 local_rank=local_rank,
                 rank=rank,
                 distributed_init_method=distributed_init_method,
-                is_driver_worker=(not self.parallel_config)
-                or (rank % self.parallel_config.tensor_parallel_size == 0),
+                is_driver_worker=(not self.parallel_config) or (rank % self.parallel_config.tensor_parallel_size == 0),
             )
             all_kwargs.append(kwargs)
         self.collective_rpc("init_worker", args=(all_kwargs,))
@@ -394,14 +377,9 @@ class RayDistributedExecutor(Executor):
                 assert pp_rank < len(self.pp_tp_workers)
                 self.pp_tp_workers[pp_rank].append(self.workers[rank])
 
-    def reinitialize_distributed(
-        self, reconfig_request: ReconfigureDistributedRequest
-    ) -> None:
+    def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> None:
         self.collective_rpc("reinitialize_distributed", args=(reconfig_request,))
-        if (
-            reconfig_request.new_data_parallel_rank
-            == ReconfigureRankType.SHUTDOWN_CURRENT_RANK
-        ):
+        if reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
             self.shutdown()
 
     def execute_model(  # type: ignore[override]
@@ -410,10 +388,7 @@ class RayDistributedExecutor(Executor):
         non_block: bool = False,
     ) -> ModelRunnerOutput | None | Future[ModelRunnerOutput | None]:
         if self.scheduler_output is not None:
-            raise RuntimeError(
-                "State error: sample_tokens() must be called "
-                "after execute_model() returns None."
-            )
+            raise RuntimeError("State error: sample_tokens() must be called after execute_model() returns None.")
 
         if not self.uses_sampler or not scheduler_output.total_num_scheduled_tokens:
             # Model will not execute, call model runner immediately.
@@ -519,19 +494,13 @@ class RayDistributedExecutor(Executor):
         required_version = version.parse("2.43.0")
         current_version = version.parse(importlib.metadata.version("ray"))
         if current_version < required_version:
-            raise ValueError(
-                f"Ray version {required_version} is "
-                f"required, but found {current_version}"
-            )
+            raise ValueError(f"Ray version {required_version} is required, but found {current_version}")
 
         import importlib.util
 
         cgraph_spec = importlib.util.find_spec("ray.experimental.compiled_dag_ref")
         if cgraph_spec is None:
-            raise ValueError(
-                "Ray Compiled Graph is not installed. "
-                "Run `pip install ray[cgraph]` to install it."
-            )
+            raise ValueError("Ray Compiled Graph is not installed. Run `pip install ray[cgraph]` to install it.")
 
         cupy_spec = importlib.util.find_spec("cupy")
         if cupy_spec is None and envs.APHRODITE_USE_RAY_COMPILED_DAG_CHANNEL_TYPE == "nccl":
@@ -594,18 +563,12 @@ class RayDistributedExecutor(Executor):
                 ]
 
                 last_pp_rank = len(self.pp_tp_workers) - 1
-                if (
-                    pp_rank < last_pp_rank
-                    and envs.APHRODITE_USE_RAY_COMPILED_DAG_CHANNEL_TYPE != "shm"
-                ):
+                if pp_rank < last_pp_rank and envs.APHRODITE_USE_RAY_COMPILED_DAG_CHANNEL_TYPE != "shm":
                     # Specify how intermediate tensors should be passed
                     # between pp stages, no need to specify for the last
                     # pp stage or when using shared memory (the default).
                     transport = envs.APHRODITE_USE_RAY_COMPILED_DAG_CHANNEL_TYPE
-                    outputs = [
-                        output.with_tensor_transport(transport=transport)
-                        for output in outputs
-                    ]
+                    outputs = [output.with_tensor_transport(transport=transport) for output in outputs]
 
             forward_dag = MultiOutputNode(outputs)
 
@@ -618,18 +581,14 @@ class RayDistributedExecutor(Executor):
                 RayPPCommunicator,
             )
 
-            register_accelerator_context(
-                torch_module_name="cuda", communicator_cls=RayPPCommunicator
-            )
+            register_accelerator_context(torch_module_name="cuda", communicator_cls=RayPPCommunicator)
             logger.info(
                 "Using RayPPCommunicator "
                 "(which wraps Aphrodite _PP GroupCoordinator) "
                 "for Ray Compiled Graph communication."
             )
         else:
-            logger.info(
-                "Using Ray's NCCL communicator for Ray Compiled Graph communication."
-            )
+            logger.info("Using Ray's NCCL communicator for Ray Compiled Graph communication.")
 
         return forward_dag.experimental_compile(
             enable_asyncio=enable_asyncio,

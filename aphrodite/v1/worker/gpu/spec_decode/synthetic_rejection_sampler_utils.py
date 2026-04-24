@@ -55,9 +55,7 @@ def _synthetic_rejection_sample_kernel(
             acceptance_rate *= decay_factor
     if not rejected:
         target_sampled = tl.load(target_sampled_ptr + start_idx + num_tokens - 1)
-        tl.store(
-            sampled_ptr + req_idx * sampled_stride + num_tokens - 1, target_sampled
-        )
+        tl.store(sampled_ptr + req_idx * sampled_stride + num_tokens - 1, target_sampled)
         num_sampled += 1
     tl.store(num_sampled_ptr + req_idx, num_sampled)
 
@@ -99,9 +97,7 @@ def synthetic_rejection_sample(
     return sampled, num_sampled
 
 
-def compute_synthetic_rejection_sampler_params(
-    p_avg: float, n: int, tol: float = 1e-9
-) -> tuple[float, float]:
+def compute_synthetic_rejection_sampler_params(p_avg: float, n: int, tol: float = 1e-9) -> tuple[float, float]:
     def mean_joint_prob(a_0: float, gamma: float, n: int):
         total = 0.0
         for i in range(n):
@@ -123,9 +119,7 @@ def compute_synthetic_rejection_sampler_params(
                 low = mid
         return high
 
-    def compute_base_acceptance_rate(
-        p_avg: float, gamma: float, n: int, tol: float = 1e-9
-    ) -> float:
+    def compute_base_acceptance_rate(p_avg: float, gamma: float, n: int, tol: float = 1e-9) -> float:
         if p_avg <= 0.0:
             return 0.0
         if p_avg >= 1.0:

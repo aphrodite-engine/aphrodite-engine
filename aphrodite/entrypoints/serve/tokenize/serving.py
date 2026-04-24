@@ -66,11 +66,7 @@ class OpenAIServingTokenization(OpenAIServing):
         lora_request = self._maybe_get_adapters(request)
 
         if isinstance(request, TokenizeChatRequest):
-            tool_dicts = (
-                None
-                if request.tools is None
-                else [tool.model_dump() for tool in request.tools]
-            )
+            tool_dicts = None if request.tools is None else [tool.model_dump() for tool in request.tools]
             error_check_ret = self.openai_serving_render.validate_chat_template(
                 request_chat_template=request.chat_template,
                 chat_template_kwargs=request.chat_template_kwargs,

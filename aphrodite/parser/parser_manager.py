@@ -65,9 +65,7 @@ class ParserManager:
             mod = importlib.import_module(module_path)
             parser_cls = getattr(mod, class_name)
             if not issubclass(parser_cls, Parser):
-                raise TypeError(
-                    f"{class_name} in {module_path} is not a Parser subclass."
-                )
+                raise TypeError(f"{class_name} in {module_path} is not a Parser subclass.")
             cls.parsers[name] = parser_cls  # cache
             return parser_cls
         except Exception as e:
@@ -90,9 +88,7 @@ class ParserManager:
         from aphrodite.parser.abstract_parser import Parser
 
         if not issubclass(module, Parser):
-            raise TypeError(
-                f"module must be subclass of Parser, but got {type(module)}"
-            )
+            raise TypeError(f"module must be subclass of Parser, but got {type(module)}")
 
         if module_name is None:
             module_names = [module.__name__]
@@ -182,9 +178,7 @@ class ParserManager:
         try:
             import_from_path(module_name, plugin_path)
         except Exception:
-            logger.exception(
-                "Failed to load module '%s' from %s.", module_name, plugin_path
-            )
+            logger.exception("Failed to load module '%s' from %s.", module_name, plugin_path)
 
     @classmethod
     def get_tool_parser(
@@ -202,14 +196,8 @@ class ParserManager:
         logger.info_once('"auto" tool choice has been enabled.')
 
         try:
-            if (
-                tool_parser_name == "pythonic"
-                and model_name
-                and model_name.startswith("meta-llama/Llama-3.2")
-            ):
-                logger.warning(
-                    "Llama3.2 models may struggle to emit valid pythonic tool calls"
-                )
+            if tool_parser_name == "pythonic" and model_name and model_name.startswith("meta-llama/Llama-3.2"):
+                logger.warning("Llama3.2 models may struggle to emit valid pythonic tool calls")
             parser = ToolParserManager.get_tool_parser(tool_parser_name)
         except Exception as e:
             raise TypeError(
@@ -294,9 +282,7 @@ class ParserManager:
 
         # Strategy 3: Create a DelegatingParser with the individual parser classes
         reasoning_parser_cls = cls.get_reasoning_parser(reasoning_parser_name)
-        tool_parser_cls = cls.get_tool_parser(
-            tool_parser_name, enable_auto_tools, model_name
-        )
+        tool_parser_cls = cls.get_tool_parser(tool_parser_name, enable_auto_tools, model_name)
 
         if reasoning_parser_cls is None and tool_parser_cls is None:
             return None

@@ -86,9 +86,7 @@ def _convert_awq_to_standard_format(
     pack_factor = 32 // size_bits
     mask = (1 << size_bits) - 1
     device = getattr(layer, w_q_name).device
-    reverse_order = torch.tensor(
-        _REVERSE_AWQ_PACK_ORDER, dtype=torch.long, device=device
-    )
+    reverse_order = torch.tensor(_REVERSE_AWQ_PACK_ORDER, dtype=torch.long, device=device)
     shifts = torch.arange(0, 32, size_bits, dtype=torch.int32, device=device)
 
     # --- Convert qweight: (K, N // pack) packed_dim=1 → (K // pack, N) packed_dim=0
@@ -103,9 +101,7 @@ def _convert_awq_to_standard_format(
 
     # Repack along input dim (dim 0)
     unpacked = unpacked.reshape(K // pack_factor, pack_factor, N)
-    new_qw = (unpacked.to(torch.int32) << shifts[None, :, None]).sum(
-        dim=1, dtype=torch.int32
-    )
+    new_qw = (unpacked.to(torch.int32) << shifts[None, :, None]).sum(dim=1, dtype=torch.int32)
 
     def _noop_loader(*args, **kwargs):
         pass
@@ -134,9 +130,7 @@ def _convert_awq_to_standard_format(
     # Transpose and repack along dim 0 (output dim)
     unpacked_zp = unpacked_zp.T  # (N, G)
     unpacked_zp = unpacked_zp.reshape(N // pack_factor, pack_factor, G)
-    new_qz = (unpacked_zp.to(torch.int32) << shifts[None, :, None]).sum(
-        dim=1, dtype=torch.int32
-    )
+    new_qz = (unpacked_zp.to(torch.int32) << shifts[None, :, None]).sum(dim=1, dtype=torch.int32)
 
     new_zp_param = PackedAphroditeParameter(
         data=new_qz.contiguous(),
@@ -176,16 +170,11 @@ class AWQMarlinConfig(QuantizationConfig):
         self.full_config = full_config
 
         if self.weight_bits not in self.TYPE_MAP:
-            raise ValueError(
-                f"Unsupported num_bits = {self.weight_bits}. "
-                f"Supported num_bits = {self.TYPE_MAP.keys()}"
-            )
+            raise ValueError(f"Unsupported num_bits = {self.weight_bits}. Supported num_bits = {self.TYPE_MAP.keys()}")
 
         self.quant_type = self.TYPE_MAP[self.weight_bits]
 
-        verify_marlin_supported(
-            self.quant_type, group_size=self.group_size, has_zp=self.zero_point
-        )
+        verify_marlin_supported(self.quant_type, group_size=self.group_size, has_zp=self.zero_point)
 
     def __repr__(self) -> str:
         return (
@@ -218,9 +207,7 @@ class AWQMarlinConfig(QuantizationConfig):
         group_size = cls.get_from_keys(config, ["group_size"])
         zero_point = cls.get_from_keys(config, ["zero_point"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        modules_to_not_convert = cls.get_from_keys_or(
-            config, ["modules_to_not_convert"], None
-        )
+        modules_to_not_convert = cls.get_from_keys_or(config, ["modules_to_not_convert"], None)
         return cls(
             weight_bits,
             group_size,
@@ -231,23 +218,18 @@ class AWQMarlinConfig(QuantizationConfig):
         )
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant, hf_config=None
-    ) -> "QuantizationMethods | None":
+    def override_quantization_method(cls, hf_quant_cfg, user_quant, hf_config=None) -> "QuantizationMethods | None":
         # Skip override to marlin kernels, as they are not
         # batch invariant
         if envs.APHRODITE_BATCH_INVARIANT:
             return None
 
         can_convert = cls.is_awq_marlin_compatible(hf_quant_cfg)
-        is_valid_user_quant = (
-            user_quant is None or user_quant == "marlin" or user_quant == "awq_marlin"
-        )
+        is_valid_user_quant = user_quant is None or user_quant == "marlin" or user_quant == "awq_marlin"
 
         if can_convert and is_valid_user_quant:
-            msg = (
-                "The model is convertible to {} during runtime."
-                " Using {} kernel.".format(cls.get_name(), cls.get_name())
+            msg = "The model is convertible to {} during runtime. Using {} kernel.".format(
+                cls.get_name(), cls.get_name()
             )
             logger.info(msg)
             return cls.get_name()
@@ -261,12 +243,8 @@ class AWQMarlinConfig(QuantizationConfig):
             )
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> "QuantizeMethodBase | None":
-        if isinstance(layer, LinearBase) or (
-            isinstance(layer, ParallelLMHead) and self.lm_head_quantized
-        ):
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> "QuantizeMethodBase | None":
+        if isinstance(layer, LinearBase) or (isinstance(layer, ParallelLMHead) and self.lm_head_quantized):
             if is_layer_skipped(
                 prefix,
                 self.modules_to_not_convert,
@@ -280,9 +258,7 @@ class AWQMarlinConfig(QuantizationConfig):
                     "Layer '%s' is not supported by AWQMarlin. Falling back to unoptimized AWQ kernels.",  # noqa: E501
                     prefix,
                 )
-                return AWQConfig.from_config(self.full_config).get_quant_method(
-                    layer, prefix
-                )
+                return AWQConfig.from_config(self.full_config).get_quant_method(layer, prefix)
             quant_method = AWQMarlinLinearMethod(self)
             quant_method.input_dtype = get_marlin_input_dtype(prefix)
             return quant_method
@@ -297,12 +273,9 @@ class AWQMarlinConfig(QuantizationConfig):
                 return UnquantizedFusedMoEMethod(layer.moe_config)
             if not check_moe_marlin_supports_layer(layer, self.group_size):
                 logger.warning_once(
-                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels."
+                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. Falling back to Moe WNA16 kernels."
                 )
-                return MoeWNA16Config.from_config(self.full_config).get_quant_method(
-                    layer, prefix
-                )
+                return MoeWNA16Config.from_config(self.full_config).get_quant_method(layer, prefix)
             moe_quant_method = AWQMarlinMoEMethod(self, layer.moe_config)
             moe_quant_method.input_dtype = get_marlin_input_dtype(prefix)
             return moe_quant_method
@@ -329,15 +302,11 @@ class AWQMarlinConfig(QuantizationConfig):
         if num_bits not in cls.TYPE_MAP:
             return False
 
-        return check_marlin_supported(
-            quant_type=cls.TYPE_MAP[num_bits], group_size=group_size, has_zp=zero_point
-        )
+        return check_marlin_supported(quant_type=cls.TYPE_MAP[num_bits], group_size=group_size, has_zp=zero_point)
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.modules_to_not_convert:
-            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(
-                self.modules_to_not_convert
-            )
+            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(self.modules_to_not_convert)
 
     def maybe_update_config(
         self,
@@ -354,8 +323,7 @@ class AWQMarlinConfig(QuantizationConfig):
         quant_layers: set[str] = {
             param_name.rsplit(".", 1)[0]
             for param_name, info in metadata.items()
-            if (dtype := info.get("dtype", None))
-            and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
+            if (dtype := info.get("dtype", None)) and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
         }
         self.modules_to_not_convert = list(layers - quant_layers)
 
@@ -477,9 +445,7 @@ class AWQMarlinLinearMethod(LinearMethodBase):
         # along the output dimension. Convert to the standard format
         # (GPTQ-like: standard bit order, qweight packed along input dim)
         # before handing off to the kernel.
-        _convert_awq_to_standard_format(
-            layer, "qweight", "qzeros", self.quant_config.quant_type.size_bits
-        )
+        _convert_awq_to_standard_format(layer, "qweight", "qzeros", self.quant_config.quant_type.size_bits)
         self.kernel.process_weights_after_loading(layer)
 
     def apply(
@@ -522,9 +488,7 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
             }
         )
 
-        intermediate_size_full = extra_weight_attrs.pop(
-            "intermediate_size_full", intermediate_size_per_partition
-        )
+        intermediate_size_full = extra_weight_attrs.pop("intermediate_size_full", intermediate_size_per_partition)
         self.is_k_full = intermediate_size_per_partition == intermediate_size_full
 
         w13_qweight = Parameter(
@@ -670,9 +634,7 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
             is_a_8bit=is_a_8bit,
         )
         if self.input_dtype == torch.int8 and layer.num_groups_w13 > 1:
-            marlin_w13_scales, w13_input_global_scale = marlin_act_int8_process_scales(
-                marlin_w13_scales
-            )
+            marlin_w13_scales, w13_input_global_scale = marlin_act_int8_process_scales(marlin_w13_scales)
             layer.register_parameter(
                 "w13_input_global_scale",
                 Parameter(w13_input_global_scale, requires_grad=False),
@@ -688,9 +650,7 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
             is_a_8bit=is_a_8bit,
         )
         if self.input_dtype == torch.int8 and layer.num_groups_w2 > 1:
-            marlin_w2_scales, w2_input_global_scale = marlin_act_int8_process_scales(
-                marlin_w2_scales
-            )
+            marlin_w2_scales, w2_input_global_scale = marlin_act_int8_process_scales(marlin_w2_scales)
             layer.register_parameter(
                 "w2_input_global_scale",
                 Parameter(w2_input_global_scale, requires_grad=False),
@@ -722,9 +682,7 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
         if hasattr(layer, "w2_bias") and layer.w2_bias is not None:
             layer.w2_bias.data = marlin_permute_bias(layer.w2_bias)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         from aphrodite.model_executor.layers.fused_moe.config import (
             awq_marlin_moe_quant_config,
         )
@@ -734,12 +692,8 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
             w2_scale=layer.w2_scales,
             weight_bits=self.quant_config.weight_bits,
             group_size=self.quant_config.group_size,
-            w1_zp=getattr(layer, "w13_qzeros", None)
-            if self.quant_config.zero_point
-            else None,
-            w2_zp=getattr(layer, "w2_qzeros", None)
-            if self.quant_config.zero_point
-            else None,
+            w1_zp=getattr(layer, "w13_qzeros", None) if self.quant_config.zero_point else None,
+            w2_zp=getattr(layer, "w2_qzeros", None) if self.quant_config.zero_point else None,
             w1_bias=getattr(layer, "w13_bias", None),
             w2_bias=getattr(layer, "w2_bias", None),
         )
@@ -770,9 +724,7 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
         )
 
         # Ensure quant config is initialized
-        assert self.moe_quant_config is not None, (
-            "moe_quant_config must be initialized before select_gemm_impl"
-        )
+        assert self.moe_quant_config is not None, "moe_quant_config must be initialized before select_gemm_impl"
 
         w13_g_idx = getattr(layer, "w13_g_idx", None)
         w2_g_idx = getattr(layer, "w2_g_idx", None)
@@ -780,10 +732,7 @@ class AWQMarlinMoEMethod(FusedMoEMethodBase):
         w2_g_idx_sort_indices = getattr(layer, "w2_g_idx_sort_indices", None)
 
         # Check if using batched expert format (for Expert Parallelism)
-        if (
-            prepare_finalize.activation_format
-            == mk.FusedMoEActivationFormat.BatchedExperts
-        ):
+        if prepare_finalize.activation_format == mk.FusedMoEActivationFormat.BatchedExperts:
             # For batched format, use BatchedMarlinExperts
             max_num_tokens_per_rank = prepare_finalize.max_num_tokens_per_rank()
             assert max_num_tokens_per_rank is not None

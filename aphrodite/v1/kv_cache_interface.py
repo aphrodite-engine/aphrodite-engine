@@ -115,9 +115,7 @@ class KVCacheSpec:
         """
         Merge a list of KVCacheSpec objects into a single KVCacheSpec object.
         """
-        assert all(spec == specs[0] for spec in specs[1:]), (
-            "All layers in the same KV cache group must be the same."
-        )
+        assert all(spec == specs[0] for spec in specs[1:]), "All layers in the same KV cache group must be the same."
         return copy.deepcopy(specs[0])
 
 
@@ -136,9 +134,7 @@ class AttentionSpec(KVCacheSpec):
         # by the attention backend, but the memory is carved from the
         # raw KV cache allocation so it must be budgeted here.
         if self.kv_quant_mode.is_per_token_head:
-            real_page_size += (
-                2 * self.block_size * self.num_kv_heads * get_dtype_size(torch.float32)
-            )
+            real_page_size += 2 * self.block_size * self.num_kv_heads * get_dtype_size(torch.float32)
         if self.page_size_padded is not None:
             assert self.page_size_padded >= real_page_size
             return self.page_size_padded
@@ -146,13 +142,7 @@ class AttentionSpec(KVCacheSpec):
 
     @property
     def real_page_size_bytes(self) -> int:
-        return (
-            2
-            * self.block_size
-            * self.num_kv_heads
-            * self.head_size
-            * get_dtype_size(self.dtype)
-        )
+        return 2 * self.block_size * self.num_kv_heads * self.head_size * get_dtype_size(self.dtype)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -195,10 +185,7 @@ class FullAttentionSpec(AttentionSpec):
         elif len(window_sizes) == 1:
             return window_sizes.pop()
         else:
-            raise ValueError(
-                "All attention layers in the same KV cache group must have the "
-                "same window size."
-            )
+            raise ValueError("All attention layers in the same KV cache group must have the same window size.")
 
     @classmethod
     def merge(cls, specs: list[Self]) -> Self:
@@ -210,14 +197,8 @@ class FullAttentionSpec(AttentionSpec):
             "All attention layers in the same KV cache group must be FullAttentionSpec."
         )
 
-        sliding_window = set(
-            spec.sliding_window for spec in specs if spec.sliding_window is not None
-        )
-        attention_chunk_size = set(
-            spec.attention_chunk_size
-            for spec in specs
-            if spec.attention_chunk_size is not None
-        )
+        sliding_window = set(spec.sliding_window for spec in specs if spec.sliding_window is not None)
+        attention_chunk_size = set(spec.attention_chunk_size for spec in specs if spec.attention_chunk_size is not None)
         assert not any(isinstance(spec, MLAAttentionSpec) for spec in specs), (
             "MLAAttentionSpec should be merged in MLAAttentionSpec.merge"
         )
@@ -235,14 +216,10 @@ class FullAttentionSpec(AttentionSpec):
         for spec in specs:
             for f in fields(AttentionSpec):
                 assert getattr(spec, f.name) == getattr(merged_spec, f.name), (
-                    "All attention layers in the same KV cache group must have "
-                    "the same attention spec."
+                    "All attention layers in the same KV cache group must have the same attention spec."
                 )
-        assert (merged_spec.sliding_window is not None) + (
-            merged_spec.attention_chunk_size is not None
-        ) <= 1, (
-            "Model with both sliding window layers and chunked local attention "
-            "layers is not supported."
+        assert (merged_spec.sliding_window is not None) + (merged_spec.attention_chunk_size is not None) <= 1, (
+            "Model with both sliding window layers and chunked local attention layers is not supported."
         )
         return merged_spec
 
@@ -252,21 +229,9 @@ class FullAttentionSpec(AttentionSpec):
             # Packed layout per head: fp4 data + fp8 block scales.
             # fp4 data: head_size//2 bytes (2 fp4 values per byte)
             # fp8 block scale: head_size//16 bytes (1 scale per 16 elements)
-            last_dim = nvfp4_kv_cache_full_dim(
-                self.head_size
-            ) + nvfp4_kv_cache_full_dim(self.head_size_v)
-            return (
-                self.block_size
-                * self.num_kv_heads
-                * last_dim
-                * get_dtype_size(self.dtype)
-            )
-        return (
-            self.block_size
-            * self.num_kv_heads
-            * (self.head_size + self.head_size_v)
-            * get_dtype_size(self.dtype)
-        )
+            last_dim = nvfp4_kv_cache_full_dim(self.head_size) + nvfp4_kv_cache_full_dim(self.head_size_v)
+            return self.block_size * self.num_kv_heads * last_dim * get_dtype_size(self.dtype)
+        return self.block_size * self.num_kv_heads * (self.head_size + self.head_size_v) * get_dtype_size(self.dtype)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -306,12 +271,7 @@ class MLAAttentionSpec(FullAttentionSpec):
             # See `aphrodite/v1/attention/backends/mla/flashmla_sparse.py`
             #  for details.
             return self.block_size * 656
-        return (
-            self.block_size
-            * self.num_kv_heads
-            * self.head_size
-            * get_dtype_size(self.dtype)
-        )
+        return self.block_size * self.num_kv_heads * self.head_size * get_dtype_size(self.dtype)
 
     @classmethod
     def merge(cls, specs: list[Self]) -> Self:
@@ -320,8 +280,7 @@ class MLAAttentionSpec(FullAttentionSpec):
         )
         cache_dtype_str_set = set(spec.cache_dtype_str for spec in specs)
         assert len(cache_dtype_str_set) == 1, (
-            "All attention layers in the same KV cache group must use the same "
-            "quantization method."
+            "All attention layers in the same KV cache group must use the same quantization method."
         )
         return cls(
             block_size=specs[0].block_size,
@@ -346,9 +305,7 @@ class ChunkedLocalAttentionSpec(AttentionSpec):
         # `self.attention_chunk_size` computed tokens plus the newly scheduled
         # tokens. And we won't allocate KV cache for more than `max_model_len`
         # tokens.
-        num_tokens = min(
-            self.attention_chunk_size + max_num_batched_tokens, max_model_len
-        )
+        num_tokens = min(self.attention_chunk_size + max_num_batched_tokens, max_model_len)
 
         return cdiv(num_tokens, self.block_size) * self.page_size_bytes
 
@@ -358,9 +315,7 @@ class SlidingWindowSpec(AttentionSpec):
     sliding_window: int
 
     def max_memory_usage_bytes(self, aphrodite_config: AphroditeConfig) -> int:
-        assert aphrodite_config.parallel_config.decode_context_parallel_size == 1, (
-            "DCP not support sliding window."
-        )
+        assert aphrodite_config.parallel_config.decode_context_parallel_size == 1, "DCP not support sliding window."
         max_model_len = aphrodite_config.model_config.max_model_len
         max_num_batched_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
 
@@ -368,9 +323,7 @@ class SlidingWindowSpec(AttentionSpec):
         # `self.sliding_window-1` computed tokens plus the newly scheduled
         # tokens. And we won't allocate KV cache for more than `max_model_len`
         # tokens.
-        num_tokens = min(
-            self.sliding_window - 1 + max_num_batched_tokens, max_model_len
-        )
+        num_tokens = min(self.sliding_window - 1 + max_num_batched_tokens, max_model_len)
 
         # +1 here because the sliding window may not start from the beginning
         # of the block. For example, if the block size is 4 and num_token
@@ -390,10 +343,7 @@ class MambaSpec(KVCacheSpec):
 
     @property
     def page_size_bytes(self) -> int:
-        page_size = sum(
-            prod(shape) * get_dtype_size(dtype)
-            for (shape, dtype) in zip(self.shapes, self.dtypes)
-        )
+        page_size = sum(prod(shape) * get_dtype_size(dtype) for (shape, dtype) in zip(self.shapes, self.dtypes))
         if self.page_size_padded is not None:
             assert self.page_size_padded >= page_size
             return self.page_size_padded
@@ -443,14 +393,8 @@ class SinkFullAttentionSpec(FullAttentionSpec):
             "All attention layers in the same KV cache group must be FullAttentionSpec."
         )
 
-        sliding_window = set(
-            spec.sliding_window for spec in specs if spec.sliding_window is not None
-        )
-        attention_chunk_size = set(
-            spec.attention_chunk_size
-            for spec in specs
-            if spec.attention_chunk_size is not None
-        )
+        sliding_window = set(spec.sliding_window for spec in specs if spec.sliding_window is not None)
+        attention_chunk_size = set(spec.attention_chunk_size for spec in specs if spec.attention_chunk_size is not None)
         assert not any(isinstance(spec, MLAAttentionSpec) for spec in specs), (
             "MLAAttentionSpec should be merged in MLAAttentionSpec.merge"
         )
@@ -469,14 +413,10 @@ class SinkFullAttentionSpec(FullAttentionSpec):
         for spec in specs:
             for f in fields(AttentionSpec):
                 assert getattr(spec, f.name) == getattr(merged_spec, f.name), (
-                    "All attention layers in the same KV cache group must have "
-                    "the same attention spec."
+                    "All attention layers in the same KV cache group must have the same attention spec."
                 )
-        assert (merged_spec.sliding_window is not None) + (
-            merged_spec.attention_chunk_size is not None
-        ) <= 1, (
-            "Model with both sliding window layers and chunked local attention "
-            "layers is not supported."
+        assert (merged_spec.sliding_window is not None) + (merged_spec.attention_chunk_size is not None) <= 1, (
+            "Model with both sliding window layers and chunked local attention layers is not supported."
         )
         return merged_spec
 
@@ -514,17 +454,12 @@ class UniformTypeKVCacheSpecs(KVCacheSpec):
             return False
         one_spec = next(iter(kv_cache_specs.values()))
         if isinstance(one_spec, FullAttentionSpec):
-            return all(
-                isinstance(spec, FullAttentionSpec) for spec in kv_cache_specs.values()
-            )
+            return all(isinstance(spec, FullAttentionSpec) for spec in kv_cache_specs.values())
         elif isinstance(one_spec, CrossAttentionSpec):
-            return all(
-                isinstance(spec, CrossAttentionSpec) for spec in kv_cache_specs.values()
-            )
+            return all(isinstance(spec, CrossAttentionSpec) for spec in kv_cache_specs.values())
         elif isinstance(one_spec, SlidingWindowSpec):
             return all(
-                isinstance(spec, SlidingWindowSpec)
-                and spec.sliding_window == one_spec.sliding_window
+                isinstance(spec, SlidingWindowSpec) and spec.sliding_window == one_spec.sliding_window
                 for spec in kv_cache_specs.values()
             )
         elif isinstance(one_spec, ChunkedLocalAttentionSpec):
@@ -535,15 +470,12 @@ class UniformTypeKVCacheSpecs(KVCacheSpec):
             )
         elif isinstance(one_spec, MambaSpec):
             return all(
-                isinstance(spec, MambaSpec)
-                and spec.num_speculative_blocks == one_spec.num_speculative_blocks
+                isinstance(spec, MambaSpec) and spec.num_speculative_blocks == one_spec.num_speculative_blocks
                 for spec in kv_cache_specs.values()
             )
         else:
             # NOTE(Chen): Please add new branches for new KV cache spec types.
-            raise NotImplementedError(
-                f"Unsupported KV cache spec type: {type(one_spec)}"
-            )
+            raise NotImplementedError(f"Unsupported KV cache spec type: {type(one_spec)}")
 
     @classmethod
     def from_specs(cls, kv_cache_specs: dict[str, KVCacheSpec]) -> Self | None:

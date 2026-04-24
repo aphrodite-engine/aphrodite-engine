@@ -46,19 +46,10 @@ cvt.rs.f16x2.f32 $0, $2, $1, $3;
 @triton.heuristics({"HAS_DT_BIAS": lambda args: args["dt_bias_ptr"] is not None})
 @triton.heuristics({"HAS_D": lambda args: args["D_ptr"] is not None})
 @triton.heuristics({"HAS_Z": lambda args: args["z_ptr"] is not None})
-@triton.heuristics(
-    {
-        "HAS_STATE_BATCH_INDICES": lambda args: args["state_batch_indices_ptr"]
-        is not None
-    }
-)
-@triton.heuristics(
-    {"IS_SPEC_DECODING": lambda args: args["num_accepted_tokens_ptr"] is not None}
-)
+@triton.heuristics({"HAS_STATE_BATCH_INDICES": lambda args: args["state_batch_indices_ptr"] is not None})
+@triton.heuristics({"IS_SPEC_DECODING": lambda args: args["num_accepted_tokens_ptr"] is not None})
 @triton.heuristics({"IS_VARLEN": lambda args: args["cu_seqlens_ptr"] is not None})
-@triton.heuristics(
-    {"BLOCK_SIZE_DSTATE": lambda args: triton.next_power_of_2(args["dstate"])}
-)
+@triton.heuristics({"BLOCK_SIZE_DSTATE": lambda args: triton.next_power_of_2(args["dstate"])})
 @triton.jit(do_not_specialize=["N"])
 def _selective_scan_update_kernel(
     # Pointers to matrices
@@ -161,23 +152,16 @@ def _selective_scan_update_kernel(
 
         dst_state_batch_indices_ptr += pid_b * stride_dst_state_indices_batch
         if not IS_SPEC_DECODING:
-            dst_state_batch_idx = tl.load(
-                dst_state_batch_indices_ptr
-                + init_token_idx * stride_dst_state_indices_T
-            ).to(tl.int64)
-            dst_state_ptr = state_ptr + (
-                dst_state_batch_idx * stride_state_batch + pid_h * stride_state_head
+            dst_state_batch_idx = tl.load(dst_state_batch_indices_ptr + init_token_idx * stride_dst_state_indices_T).to(
+                tl.int64
             )
+            dst_state_ptr = state_ptr + (dst_state_batch_idx * stride_state_batch + pid_h * stride_state_head)
 
-        state_batch_indices_ptr += (
-            pid_b * stride_state_indices_batch + init_token_idx * stride_state_indices_T
-        )
+        state_batch_indices_ptr += pid_b * stride_state_indices_batch + init_token_idx * stride_state_indices_T
         state_batch_idx = tl.load(state_batch_indices_ptr).to(tl.int64)
         state_ptr += state_batch_idx * stride_state_batch + pid_h * stride_state_head
     else:
-        dst_state_ptr = (
-            state_ptr + pid_b * stride_state_batch + pid_h * stride_state_head
-        )
+        dst_state_ptr = state_ptr + pid_b * stride_state_batch + pid_h * stride_state_head
         state_ptr += pid_b * stride_state_batch + pid_h * stride_state_head
 
     x_ptr += bos * stride_x_batch + pid_h * stride_x_head
@@ -193,13 +177,9 @@ def _selective_scan_update_kernel(
 
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = tl.arange(0, BLOCK_SIZE_DSTATE)
-    state_ptrs = state_ptr + (
-        offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate
-    )
+    state_ptrs = state_ptr + (offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate)
     if not IS_SPEC_DECODING:
-        dst_state_ptrs = dst_state_ptr + (
-            offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate
-        )
+        dst_state_ptrs = dst_state_ptr + (offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate)
 
     mask = (offs_m[:, None] < dim) & (offs_n[None, :] < dstate)
     if HAS_STATE_BATCH_INDICES:
@@ -265,9 +245,7 @@ def _selective_scan_update_kernel(
                     + offs_m[:, None] * stride_state_dim
                     + offs_n[None, :] * stride_state_dstate
                 )
-                tl.store(
-                    token_dst_ptrs, state.to(token_dst_ptrs.dtype.element_ty), mask=mask
-                )
+                tl.store(token_dst_ptrs, state.to(token_dst_ptrs.dtype.element_ty), mask=mask)
 
         out = tl.sum(state * C[None, :], axis=1)
         if HAS_D:
@@ -290,15 +268,10 @@ def _selective_scan_update_kernel(
             rand_seed = tl.load(rand_seed_ptr)
             # Generate random offsets for each element in state
             if HAS_STATE_BATCH_INDICES:
-                rand_offsets = (
-                    state_batch_idx * stride_state_batch + pid_h * stride_state_head
-                )
+                rand_offsets = state_batch_idx * stride_state_batch + pid_h * stride_state_head
             else:
                 rand_offsets = pid_b * stride_state_batch + pid_h * stride_state_head
-            rand_offsets += (
-                offs_m[:, None] * stride_state_dim
-                + offs_n[None, :] * stride_state_dstate
-            )
+            rand_offsets += offs_m[:, None] * stride_state_dim + offs_n[None, :] * stride_state_dstate
             # Generate random 32-bits for each element in state
             if PHILOX_ROUNDS > 0:
                 rand = tl.randint(rand_seed, rand_offsets, PHILOX_ROUNDS)
@@ -396,9 +369,7 @@ def selective_state_update(
         N = len(cu_seqlens) - 1
         # Only used to verify the shape of
         # state_batch_indices and dst_state_batch_indices
-        max_seqlen = (
-            state_batch_indices.size(-1) if state_batch_indices is not None else 1
-        )
+        max_seqlen = state_batch_indices.size(-1) if state_batch_indices is not None else 1
     else:
         N = batch
         max_seqlen = 1
@@ -430,9 +401,7 @@ def selective_state_update(
     grid = lambda META: (triton.cdiv(dim, META["BLOCK_SIZE_M"]), N, nheads)
     z_strides = (z.stride(0), z.stride(1), z.stride(2)) if z is not None else (0, 0, 0)
     state_batch_indices_strides = (
-        (state_batch_indices.stride(0), state_batch_indices.stride(1))
-        if state_batch_indices is not None
-        else (0, 0)
+        (state_batch_indices.stride(0), state_batch_indices.stride(1)) if state_batch_indices is not None else (0, 0)
     )
     dst_state_batch_indices_strides = (
         (dst_state_batch_indices.stride(0), dst_state_batch_indices.stride(1))
@@ -459,17 +428,8 @@ def selective_state_update(
         elif dstate <= 128:
             BLOCK_SIZE_M, num_warps = 4, 4
 
-    tie_hdim = (
-        A.stride(-1) == 0
-        and A.stride(-2) == 0
-        and dt.stride(-1) == 0
-        and dt_bias.stride(-1) == 0
-    )
-    rand_seed = (
-        torch.randint(0, 2**32, (1,), device=state.device)
-        if enable_stochastic_rounding
-        else None
-    )
+    tie_hdim = A.stride(-1) == 0 and A.stride(-2) == 0 and dt.stride(-1) == 0 and dt_bias.stride(-1) == 0
+    rand_seed = torch.randint(0, 2**32, (1,), device=state.device) if enable_stochastic_rounding else None
 
     with torch.accelerator.device_index(x.device.index):
         _selective_scan_update_kernel[grid](

@@ -22,9 +22,7 @@ class CutlassNvFp4LinearKernel(NvFp4LinearKernel):
     """NVFP4 GEMM via the Aphrodite CUTLASS kernel."""
 
     @classmethod
-    def is_supported(
-        cls, compute_capability: int | None = None
-    ) -> tuple[bool, str | None]:
+    def is_supported(cls, compute_capability: int | None = None) -> tuple[bool, str | None]:
         if cutlass_fp4_supported():
             return True, None
         return False, "CUTLASS FP4 kernels not available"
@@ -34,12 +32,8 @@ class CutlassNvFp4LinearKernel(NvFp4LinearKernel):
         return True, None
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        layer.weight_scale = torch.nn.Parameter(
-            swizzle_blockscale(layer.weight_scale.data), requires_grad=False
-        )
-        padded_weight, weights_padding_cols = pad_nvfp4_weight_for_cutlass(
-            layer.weight.data
-        )
+        layer.weight_scale = torch.nn.Parameter(swizzle_blockscale(layer.weight_scale.data), requires_grad=False)
+        padded_weight, weights_padding_cols = pad_nvfp4_weight_for_cutlass(layer.weight.data)
         layer.weight = torch.nn.Parameter(padded_weight, requires_grad=False)
         layer.weights_padding_cols = weights_padding_cols
 
@@ -60,9 +54,7 @@ class CutlassNvFp4LinearKernel(NvFp4LinearKernel):
             backend="cutlass",
         )
 
-        x_fp4 = pad_nvfp4_activation_for_cutlass(
-            x_fp4, getattr(layer, "weights_padding_cols", 0)
-        )
+        x_fp4 = pad_nvfp4_activation_for_cutlass(x_fp4, getattr(layer, "weights_padding_cols", 0))
 
         out = cutlass_scaled_fp4_mm(
             x_fp4,

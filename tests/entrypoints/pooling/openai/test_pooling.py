@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import base64
 import json
 
@@ -5,8 +7,8 @@ import numpy as np
 import pytest
 import requests
 import torch
-
 from aphrodite.endpoints.openai.protocol import PoolingResponse
+
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.utils.serial_utils import (
     EMBED_DTYPE_TO_TORCH_DTYPE,

@@ -39,9 +39,7 @@ class ErnieEmbedding(BertEmbedding):
         super().__init__(config)
 
         task_type_vocab_size = max(1, getattr(config, "task_type_vocab_size", 1))
-        self.task_type_embeddings = VocabParallelEmbedding(
-            task_type_vocab_size, config.hidden_size
-        )
+        self.task_type_embeddings = VocabParallelEmbedding(task_type_vocab_size, config.hidden_size)
 
     def forward(
         self,
@@ -59,12 +57,7 @@ class ErnieEmbedding(BertEmbedding):
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         task_type_embeddings = self.task_type_embeddings(task_type_ids)
 
-        embeddings = (
-            inputs_embeds
-            + token_type_embeddings
-            + task_type_embeddings
-            + position_embeddings
-        )
+        embeddings = inputs_embeds + token_type_embeddings + task_type_embeddings + position_embeddings
         embeddings = self.LayerNorm(embeddings)
         return embeddings
 
@@ -195,9 +188,7 @@ class ErnieForTokenClassification(nn.Module):
             aphrodite_config=aphrodite_config,
             prefix=maybe_prefix(prefix, "ernie"),
         )
-        self.classifier = nn.Linear(
-            config.hidden_size, config.num_labels, dtype=self.head_dtype
-        )
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels, dtype=self.head_dtype)
 
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None

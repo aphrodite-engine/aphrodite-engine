@@ -47,9 +47,7 @@ class IrOpPriorityConfig:
 
         assert "_impls" not in factors
         factors["_impls"] = {
-            name: {
-                provider: IrOp.registry[name].impls[provider].uuid() for provider in p
-            }
+            name: {provider: IrOp.registry[name].impls[provider].uuid() for provider in p}
             for name, p in asdict(self).items()
         }
 
@@ -79,21 +77,15 @@ class IrOpPriorityConfig:
         with contextlib.ExitStack() as stack:
             for field in fields(self):
                 op_priority = getattr(self, field.name)
-                assert op_priority is not None, (
-                    f"IR op priority for {field.name} must be set"
-                )
-                logger.debug(
-                    "Setting IR op priority for %s to %s", field.name, op_priority
-                )
+                assert op_priority is not None, f"IR op priority for {field.name} must be set"
+                logger.debug("Setting IR op priority for %s to %s", field.name, op_priority)
                 ir_op = IrOp.registry[field.name]
                 stack.enter_context(ir_op.set_priority(op_priority))
 
             yield
 
     @classmethod
-    def with_default(
-        cls, default: list[str], /, **kwargs: list[str]
-    ) -> "IrOpPriorityConfig":
+    def with_default(cls, default: list[str], /, **kwargs: list[str]) -> "IrOpPriorityConfig":
         """
         A helper to create an IrOpPriorityConfig where fields not specified in kwargs
         use the given default list.
@@ -191,9 +183,7 @@ class KernelConfig:
                 # Append platform-specific priorities
                 # Must be idempotent because aphrodite_config.set_platform_defaults() may be
                 # called multiple times (due to AphroditeConfig.__post_init__ manual call).
-                unique_op_priority = [
-                    op for op in op_priority if op not in current_op_priority
-                ]
+                unique_op_priority = [op for op in op_priority if op not in current_op_priority]
                 current_op_priority.extend(unique_op_priority)
 
         logger.info(

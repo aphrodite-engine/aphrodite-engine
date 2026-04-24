@@ -8,7 +8,6 @@ This page assumes you've already installed Aphrodite and know how to launch the 
 This page is quite large and extensive; please use the table of contents ("On this page" to the top left) to navigate.
 :::
 
-
 ## API Reference
 
 Please see  the [OpenAI API Reference](https://platform.openai.com/docs/api-reference) for more information on the API scheme, as we support all parameters, except:
@@ -21,6 +20,7 @@ Otherwise, we support everything, plus many other parameters.
 Aphrodite also provides experimental support for the OpenAI Vision API.
 
 ## Extra Parameters
+
 If using the `openai` python library, you cannot pass extra parameters such as `min_p`, `guided_choice`, etc. Thankfully, the library allows you to extend the body as needed:
 
 ```py
@@ -34,7 +34,6 @@ completion = client.chat.completions.create(
     }
 )
 ```
-
 
 ## Extra Parameters for Chat API
 
@@ -147,7 +146,6 @@ guided_whitespace_pattern: Optional[str] = Field(
         "for guided json decoding."))
 ```
 
-
 ## Extra Parameters for Text Completions API
 
 Aphrodite supports the following extra parameters that are not supported by OpenAI:
@@ -219,14 +217,13 @@ guided_whitespace_pattern: Optional[str] = Field(
         "for guided json decoding."))
 ```
 
-
 ## Chat Template
+
 In order for the LLM to support chat completions protocol, Aphrodite requires the model to include a chat template in its tokenizer config. The chat template is Jinja2 template file that specifies how roles, messages, and other chat-specific tokens are encoded in the input.
 
 Most modern LLMs provide this if they're an Instruct/Chat finetune, but sometimes they may not. For those models, you can manually specify their chat template in the `--chat-template` (or `- chat_template` in the YAML) with the path being the URL or local disk path. You may also provide it as in-line string to the argument. Without a chat template, the server will only launch text completions.
 
 Aphrodite provides a set of chat templates, which you can view [here](https://github.com/PygmalionAI/aphrodite-engine/tree/main/examples/chat_templates).
-
 
 ## Command-line arguments for the server
 
@@ -547,12 +544,13 @@ options:
 ## Tool Calling in the chat completions API
 
 ### Named Function Calling
+
 Aphrodite supports only named function calling in the chat completion API by default. It does so using Outlines, so this is enabled by default, and will work with any supported model. You are guaranteed a validly-parsable function call - not a high-quality one.
 
 To use a named function, you need to define the functions in the `tools` parameter of the chat completions request, and specify the `name` of one of the tools in the `tool_choice` parameter of the chat completion request.
 
-
 ### Automatic Function Calling
+
 To enable this feature, you should set the following flags:
 
 - `--enable-auto-tool-choice` (Required): This tells Aphrodite that you want to allow the model to generate its own tool calls when it deems appropriate.
@@ -560,8 +558,8 @@ To enable this feature, you should set the following flags:
 - `--tool-parser-plugin`: The tool parser plugin to use. See above.
 - `--chat-template`: The chat template to handle `tool`-role messages and `assistant`-role messages that contain previously generated tool calls. We provide these for `hermes`, `mistral`, `llama3_json`, and `internlm` in the examples/chat_templates directory.
 
-
 ### Hermes Models
+
 All NousResearch Hermes-series models newer than Hermes 2 Pro are supported:
 
 - `NousResearch/Hermes-2-Pro-*`
@@ -574,8 +572,8 @@ Hermes 2 Theta models are known to have degraded tool call quality due to the me
 
 Enable with `--tool-call-parser hermes --chat-template examples/chat_templates/hermes_tool.jinja`
 
-
 ### Mistral Models
+
 Supported models:
 
 - `mistralai/Mistral-7B-Instruct-v0.3`
@@ -591,7 +589,6 @@ Known issues:
 
 Enable with `--tool-call-parser mistral --chat-template examples/chat_templates/mistral_tool.jinja`
 
-
 ### Llama Models
 
 Supported models:
@@ -604,6 +601,7 @@ Supported models:
 The tool calling supported is the [JSON based tool calling](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1/#json-based-tool-calling). Other tool calling formats like the built-in python tool calling or custom tool calling are not supported.
 
 Known issues:
+
 1. Parallel tool calls are not supported.
 2. The model can generate parameters with a wrong format, such as generating an array serialized as string instead of an array.
 
@@ -611,23 +609,24 @@ We provide two chat templates: `examples/chat_templates/llama_3.1_json_tool.jinj
 
 Enable with: `--tool-call-parser llama3_json --chat-template examples/chat_templates/llama_3.2_json_tool.jinja`
 
-
 ### InternLM Models
+
 Supported models:
 
 - `internlm/internlm2_5-7b-chat`
 - Additional models that support function calling are supported as well.
 
 Known issues:
+
 - This implementation technically supports InternLM2 as well, but they're not that stable.
 
 Enable with: `--tool-call-parser internlm --chat-template examples/chat_templates/internlm2_tools.jinja`
 
-
 #### Jamba Models
-AI21's Jamba-1.5 models are supported.
-* `ai21labs/AI21-Jamba-1.6-Mini`
-* `ai21labs/AI21-Jamba-1.6-Large`
 
+AI21's Jamba-1.5 models are supported.
+
+- `ai21labs/AI21-Jamba-1.6-Mini`
+- `ai21labs/AI21-Jamba-1.6-Large`
 
 Flags: `--tool-call-parser jamba`

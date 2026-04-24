@@ -1,6 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.modeling.models.glm4_1v import Glm4vImageEmbeddingInputs
 from aphrodite.modeling.models.granite_speech import GraniteSpeechAudioInputs
 from aphrodite.modeling.models.hyperclovax_vision import HCXVisionVideoPixelInputs

@@ -27,9 +27,7 @@ def should_pin_memory() -> bool:
     On unified-memory systems (e.g. GH200) pinned memory eats into GPU
     memory, so users can disable it via APHRODITE_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY.
     """
-    return (
-        is_pin_memory_available() and not envs.APHRODITE_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY
-    )
+    return is_pin_memory_available() and not envs.APHRODITE_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY
 
 
 """
@@ -118,9 +116,7 @@ def set_offloader(instance: BaseOffloader) -> None:
     global _instance
     _instance = instance
     if isinstance(instance, NoopOffloader):
-        logger.debug_once(
-            "Offloader set to NoopOffloader (no offloading).", scope="local"
-        )
+        logger.debug_once("Offloader set to NoopOffloader (no offloading).", scope="local")
     else:
         logger.info_once("Offloader set to %s", type(instance).__name__, scope="local")
 

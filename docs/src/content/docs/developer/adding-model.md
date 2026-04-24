@@ -13,8 +13,8 @@ If you're having problems implementing the model, feel free to open an issue on 
 :::
 
 ## Step 0: Fork the Aphrodite Repository
-Start by forking our [GitHub repository](https://github.com/PygmalionAI/aphrodite-engine) and the build it from source. This gives you the ability to modify the source code and test your model.
 
+Start by forking our [GitHub repository](https://github.com/PygmalionAI/aphrodite-engine) and the build it from source. This gives you the ability to modify the source code and test your model.
 
 ## 1. Bring your model code
 
@@ -38,7 +38,6 @@ All Aphrodite modules within the model must include a `prefix` argument in their
 - Non-uniform quantization support: A quantized checkpoint can selectively quantize certain layers while keeping others in full precision. By providing the `prefix` during initialization, Aphrodite can match the current layer's `prefix` with the quantization configuration to determine if the layer should be initialized in quantized mode.
 
 The initialization code should look like this:
-
 
 ```python
 from torch import nn
@@ -169,7 +168,6 @@ def register():
 
 ## 6. Multimodal support
 
-
 This section walks you through the steps to extend a basic model so that it accepts multi-modal inputs.
 
 ### 1. Update the base Aphrodite model
@@ -205,7 +203,6 @@ class YourModelForImage2Seq(nn.Module):
   More conveniently, you can simply pass `**kwargs` to the [forward][torch.nn.Module.forward] method and retrieve the keyword parameters for multimodal inputs from it.
 
 - Implement `get_multimodal_embeddings` (`aphrodite.modeling.models.interfaces.SupportsMultiModal.get_multimodal_embeddings`) that returns the embeddings from running the multimodal inputs through the multimodal tokenizer of the model. Below we provide a boilerplate of a typical implementation pattern, but feel free to adjust it to your own needs.
-
 
 ```python
 class YourModelForImage2Seq(nn.Module):
@@ -376,7 +373,6 @@ encoder_outputs = self.encoder(
 ```
 
 To find the sequence length, we turn to the code of `CLIPVisionEmbeddings`:
-
 
 ```python
 # https://github.com/huggingface/transformers/blob/v4.47.1/src/transformers/models/clip/modeling_clip.py#L247-L257
@@ -629,7 +625,6 @@ def get_dummy_mm_data(
 Afterwards, create a subclass of `BaseMultiModalProcessor` (`aphrodite.multimodal.processing.BaseMultiModalProcessor`)
 to fill in the missing details about HF processing.
 
-
 ### Multi-modal fields
 
 Override `_get_mm_fields_config` (`aphrodite.multimodal.processing.BaseMultiModalProcessor._get_mm_fields_config`) to
@@ -639,7 +634,6 @@ return a schema of the tensors outputted by the HF processor that are related to
 
 The output of `CLIPImageProcessor` is a simple tensor with shape
 `(num_images, num_channels, image_height, image_width)`:
-
 
 ```python
 # https://github.com/huggingface/transformers/blob/v4.47.1/src/transformers/models/clip/image_processing_clip.py#L339-L345
@@ -860,7 +854,6 @@ def get_replacement(item_idx: int):
 However, this is not entirely correct. After `FuyuImageProcessor.preprocess_with_tokenizer_info` is called,
 a BOS token (`<s>`) is also added to the promopt:
 
-
 ```python
 # https://github.com/huggingface/transformers/blob/v4.48.3/src/transformers/models/fuyu/processing_fuyu.py#L417-L435
 model_image_input = self.image_processor.preprocess_with_tokenizer_info(
@@ -1000,7 +993,6 @@ Examples:
 - DeepSeek-VL2: <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/aphrodite/modeling/models/deepseek_vl2.py>
 - InternVL: <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/aphrodite/modeling/models/internvl.py>
 - Qwen-VL: <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/aphrodite/modeling/models/qwen_vl.py>
-
 
 ## Transcription Models
 
@@ -1269,11 +1261,12 @@ Once your model implements `SupportsTranscription`, you can test the endpoints (
 Or check out more examples in <https://github.com/aphrodite-engine/aphrodite-engine/tree/main/examples/online_serving>.
 
 :::note
+
 - If your model handles chunking internally (e.g., via its processor or encoder), set `min_energy_split_window_size=None` in the returned `SpeechToTextConfig` to disable server-side chunking.
 - Implementing `get_num_audio_tokens` improves accuracy of streaming usage metrics (`prompt_tokens`) without an extra forward pass.
 - For multilingual behavior, keep `supported_languages` aligned with actual model capabilities.
-:::
 
+:::
 
 ## Frequently Asked Questions
 

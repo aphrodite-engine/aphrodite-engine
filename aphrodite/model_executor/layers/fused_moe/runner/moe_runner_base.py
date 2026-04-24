@@ -211,8 +211,7 @@ class MoERunnerBase(MoERunner):
         self.quant_method = quant_method
         self.enable_dbo = enable_dbo
         self._fused_output_is_reduced = (
-            self.quant_method.moe_kernel is not None
-            and self.quant_method.moe_kernel.output_is_reduced()
+            self.quant_method.moe_kernel is not None and self.quant_method.moe_kernel.output_is_reduced()
         )
 
         self._shared_experts: SharedExperts | None = None
@@ -242,9 +241,7 @@ class MoERunnerBase(MoERunner):
             return _moe_forward if self._shared_experts is None else _moe_forward_shared
 
         return (
-            torch.ops.aphrodite.moe_forward
-            if self._shared_experts is None
-            else torch.ops.aphrodite.moe_forward_shared
+            torch.ops.aphrodite.moe_forward if self._shared_experts is None else torch.ops.aphrodite.moe_forward_shared
         )
 
     @property
@@ -260,9 +257,7 @@ class MoERunnerBase(MoERunner):
     def is_internal_router(self) -> bool:
         return self.gate is not None
 
-    def apply_routed_input_transform(
-        self, hidden_states: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+    def apply_routed_input_transform(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Apply transform for routed experts (e.g., latent projection).
 
         This is called by FusedMoE.forward_native. The original hidden_states
@@ -363,10 +358,7 @@ class MoERunnerBase(MoERunner):
         if _USE_LAYERNAME:
             return LayerName(self.layer_name)
         # Can be unavailable or None in unittests
-        if (
-            is_forward_context_available()
-            and get_forward_context().all_moe_layers is not None
-        ):
+        if is_forward_context_available() and get_forward_context().all_moe_layers is not None:
             return "from_forward_context"
         return self.layer_name
 
@@ -383,14 +375,9 @@ class MoERunnerBase(MoERunner):
         fused MoE kernel. The returned trunc_size is used by
         _maybe_reduce_final_output to strip the padding from the result.
         """
-        shared_experts_hidden_dim = (
-            shared_experts_input.shape[-1] if shared_experts_input is not None else 0
-        )
+        shared_experts_hidden_dim = shared_experts_input.shape[-1] if shared_experts_input is not None else 0
         transformed_hidden_dim = hidden_states.shape[-1]
-        if (
-            not self.quant_method.skip_forward_padding
-            and self.moe_config.hidden_dim != transformed_hidden_dim
-        ):
+        if not self.quant_method.skip_forward_padding and self.moe_config.hidden_dim != transformed_hidden_dim:
             hidden_states = F.pad(
                 hidden_states,
                 (0, self.moe_config.hidden_dim - transformed_hidden_dim),
@@ -427,9 +414,7 @@ class MoERunnerBase(MoERunner):
         via the router, and the actual fused MoE computation. Returns
         (shared_expert_output, fused_expert_output).
         """
-        self._maybe_apply_shared_experts(
-            shared_experts_input, SharedExpertsOrder.NO_OVERLAP
-        )
+        self._maybe_apply_shared_experts(shared_experts_input, SharedExpertsOrder.NO_OVERLAP)
 
         if self.quant_method.is_monolithic:
             fused_out = self.quant_method.apply_monolithic(
@@ -472,11 +457,7 @@ class MoERunnerBase(MoERunner):
         returns a no-op context.
         """
         ctx = get_forward_context()
-        return (
-            ctx.dp_metadata.sp_local_sizes(self.moe_config.sp_size)
-            if ctx.dp_metadata
-            else nullcontext()
-        )
+        return ctx.dp_metadata.sp_local_sizes(self.moe_config.sp_size) if ctx.dp_metadata else nullcontext()
 
     def _maybe_sync_shared_experts_stream(
         self,
@@ -540,9 +521,7 @@ class MoERunnerBase(MoERunner):
 
         # Apply transform for routed experts (e.g., latent projection
         # for latent MoE)
-        hidden_states, shared_experts_input = self.apply_routed_input_transform(
-            hidden_states
-        )
+        hidden_states, shared_experts_input = self.apply_routed_input_transform(hidden_states)
 
         hidden_states, og_hidden_dim = self._maybe_pad_hidden_states(
             shared_experts_input,
@@ -572,9 +551,7 @@ class MoERunnerBase(MoERunner):
         # See note above re: the two all-reduce points.
         shared_output = self._maybe_reduce_shared_expert_output(shared_output)
 
-        shared_output, fused_output = self._maybe_apply_routed_scale_to_output(
-            shared_output, fused_output
-        )
+        shared_output, fused_output = self._maybe_apply_routed_scale_to_output(shared_output, fused_output)
 
         # Apply output transform (e.g. latent -> full dim)
         fused_output = self.apply_routed_output_transform(fused_output)

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # https://github.com/vllm-project/vllm/blob/6d1479ca4b5a3904b6c5b4a1d741dda43efdc289/use_existing_torch.py
 
 import glob

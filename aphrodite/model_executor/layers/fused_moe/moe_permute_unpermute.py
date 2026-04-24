@@ -38,9 +38,7 @@ def moe_permute(
     """
     n_token, n_hidden = hidden_states.size()
     topk = topk_ids.size(1)
-    assert (n_hidden * hidden_states.element_size()) % 16 == 0, (
-        "permue kernel need hidden dim align to 16B"
-    )
+    assert (n_hidden * hidden_states.element_size()) % 16 == 0, "permue kernel need hidden dim align to 16B"
     permuted_row_size = n_token * topk
     if n_local_expert == -1:
         n_local_expert = n_expert
@@ -51,26 +49,21 @@ def moe_permute(
             device=hidden_states.device,
         )
     assert permuted_hidden_states.size() == (permuted_row_size, n_hidden), (
-        f"Expected permuted hidden states to be {(permuted_row_size, n_hidden)}"
-        f" but got {permuted_hidden_states.size()}"
+        f"Expected permuted hidden states to be {(permuted_row_size, n_hidden)} but got {permuted_hidden_states.size()}"
     )
 
-    token_expert_indices = torch.arange(
-        0, n_token * topk, dtype=torch.int32, device=hidden_states.device
-    ).reshape((n_token, topk))
-
-    expert_first_token_offset = torch.empty(
-        n_local_expert + 1, dtype=torch.int64, device=hidden_states.device
+    token_expert_indices = torch.arange(0, n_token * topk, dtype=torch.int32, device=hidden_states.device).reshape(
+        (n_token, topk)
     )
+
+    expert_first_token_offset = torch.empty(n_local_expert + 1, dtype=torch.int64, device=hidden_states.device)
     permuted_idx = torch.full(
         (permuted_row_size,),
         n_token * topk,
         dtype=torch.int32,
         device=hidden_states.device,
     )
-    inv_permuted_idx = torch.empty(
-        (n_token, topk), dtype=torch.int32, device=hidden_states.device
-    )
+    inv_permuted_idx = torch.empty((n_token, topk), dtype=torch.int32, device=hidden_states.device)
     topk_ids = topk_ids.to(torch.int32)
     torch.ops._moe_C.moe_permute(
         hidden_states,
@@ -120,9 +113,7 @@ def moe_unpermute(
     """
     topk = topk_weights.size(1)
     n_hidden = permuted_hidden_states.size(-1)
-    assert (n_hidden * permuted_hidden_states.element_size()) % 16 == 0, (
-        "unpermue kernel need hidden dim align to 16B"
-    )
+    assert (n_hidden * permuted_hidden_states.element_size()) % 16 == 0, "unpermue kernel need hidden dim align to 16B"
 
     torch.ops._moe_C.moe_unpermute(
         permuted_hidden_states,

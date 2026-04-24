@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 import json
 
 import pytest
+from aphrodite.endpoints.openai.tool_parsers.mistral_tool_parser import MistralToolCall, MistralToolParser
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.endpoints.openai.tool_parsers.mistral_tool_parser import MistralToolCall, MistralToolParser
 from aphrodite.transformers_utils.tokenizer import MistralTokenizer
 
 from ...utils import check_logprobs_close

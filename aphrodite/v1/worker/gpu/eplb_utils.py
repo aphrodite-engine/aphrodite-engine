@@ -67,9 +67,7 @@ class EPLBController:
         if not is_mixture_of_experts(draft_model):
             return False
 
-        assert not self.parallel_config.enable_elastic_ep, (
-            "Elastic EP is not supported with draft model."
-        )
+        assert not self.parallel_config.enable_elastic_ep, "Elastic EP is not supported with draft model."
         assert speculative_config is not None
         assert speculative_config.draft_model_config is not None
         assert self.state is not None
@@ -92,9 +90,7 @@ class EPLBController:
         if not is_mixture_of_experts(model):
             return False
 
-        logger.info_once(
-            "EPLB is enabled for model %s.", model_config.model, scope="local"
-        )
+        logger.info_once("EPLB is enabled for model %s.", model_config.model, scope="local")
         assert self.state is not None
         self.state.add_model(model, model_config)
         self._has_registered_models = True

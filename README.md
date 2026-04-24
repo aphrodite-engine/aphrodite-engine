@@ -2,7 +2,6 @@
 Breathing Life into Language
 </h1>
 
-
 ![aphrodite](https://raw.githubusercontent.com/PygmalionAI/aphrodite-engine/main/assets/aphrodite.png)
 
 Aphrodite is an inference engine that optimizes the serving of HuggingFace-compatible models at scale. Built on vLLM's Paged Attention technology, it delivers high-performance model inference for multiple concurrent users. Developed through a collaboration between [PygmalionAI](https://pygmalion.chat) and [Ruliad](https://ruliad.co), Aphrodite serves as the backend engine powering both organizations' chat platforms and API infrastructure.
@@ -23,10 +22,10 @@ Aphrodite builds upon and integrates the exceptional work from [various projects
 - Multimodal support
 - Multi-LoRA support
 
-
 ## Quickstart
 
 Install the engine:
+
 ```sh
 pip install -U aphrodite-engine
 ```
@@ -73,13 +72,11 @@ This will pull the Aphrodite Engine image, and launch the engine with the Llama-
 - Operating System: Linux, Windows (WSL2)
 - Python: 3.9 to 3.12
 
-#### Build Requirements:
+#### Build Requirements
+
 - CUDA >= 12
 
 For supported devices, see [here](https://aphrodite.pygmalion.chat/pages/quantization/support-matrix.html). Generally speaking, all semi-modern GPUs are supported - down to Pascal (GTX 10xx, P40, etc.) We also support AMD GPUs, Intel CPUs and GPUs, Google TPU, and AWS Inferentia.
-
-
-
 
 ### Notes
 
@@ -88,7 +85,9 @@ For supported devices, see [here](https://aphrodite.pygmalion.chat/pages/quantiz
 2. You can view the full list of commands by running `aphrodite run --help`.
 
 ## Acknowledgements
+
 Aphrodite Engine would have not been possible without the phenomenal work of other open-source projects. A (non-exhaustive) list:
+
 - [vLLM](https://github.com/vllm-project/vllm)
 - [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
 - [xFormers](https://github.com/facebookresearch/xformers)
@@ -106,6 +105,7 @@ Aphrodite Engine would have not been possible without the phenomenal work of oth
 - [Ray](https://github.com/ray-project/ray)
 
 ### Sponsors
+
 Past and present, in alphabetical order:
 
 - [Arc Compute](https://www.arccompute.io/)
@@ -114,6 +114,6 @@ Past and present, in alphabetical order:
 - [PygmalionAI](https://pygmalion.chat)
 - [Ruliad AI](https://ruliad.ai)
 
-
 ## Contributing
+
 Everyone is welcome to contribute. You can support the project by opening Pull Requests for new features, fixes, or general UX improvements.

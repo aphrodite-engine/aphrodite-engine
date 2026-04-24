@@ -34,8 +34,7 @@ def get_conv_state_layout() -> ConvStateLayoutType:
     layout: ConvStateLayoutType | None = envs.APHRODITE_SSM_CONV_STATE_LAYOUT
     if layout is not None:
         logger.info_once(
-            "APHRODITE_SSM_CONV_STATE_LAYOUT env detected. "
-            "Setting SSM conv state layout to %s.",
+            "APHRODITE_SSM_CONV_STATE_LAYOUT env detected. Setting SSM conv state layout to %s.",
             layout,
         )
         return layout
@@ -68,9 +67,7 @@ class MambaStateDtypeCalculator:
         mamba_cache_dtype: MambaDType,
         mamba_ssm_cache_dtype: MambaDType,
     ) -> tuple[torch.dtype, ...]:
-        return cls._mamba_state_dtype(
-            model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype
-        )
+        return cls._mamba_state_dtype(model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype)
 
     @classmethod
     def mamba2_state_dtype(
@@ -79,9 +76,7 @@ class MambaStateDtypeCalculator:
         mamba_cache_dtype: MambaDType,
         mamba_ssm_cache_dtype: MambaDType,
     ) -> tuple[torch.dtype, ...]:
-        return cls._mamba_state_dtype(
-            model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype
-        )
+        return cls._mamba_state_dtype(model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype)
 
     @classmethod
     def _mamba_state_dtype(
@@ -114,9 +109,7 @@ class MambaStateDtypeCalculator:
         mamba_cache_dtype: MambaDType,
         mamba_ssm_cache_dtype: MambaDType = "auto",
     ) -> tuple[torch.dtype, torch.dtype]:
-        return cls._mamba_state_dtype(
-            model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype
-        )
+        return cls._mamba_state_dtype(model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype)
 
     @classmethod
     def kda_state_dtype(
@@ -179,9 +172,7 @@ class MambaStateShapeCalculator:
         # heads and n_groups are TP-ed
         conv_dim = intermediate_size + 2 * n_groups * state_size
 
-        conv_state_shape = cls._orient_conv_shape(
-            divide(conv_dim, tp_world_size), conv_kernel - 1 + num_spec
-        )
+        conv_state_shape = cls._orient_conv_shape(divide(conv_dim, tp_world_size), conv_kernel - 1 + num_spec)
 
         # These are not TP-ed as they depend on A, dt_bias, D
         # - they are typically small
@@ -255,12 +246,8 @@ class MambaStateShapeCalculator:
         proj_size = num_heads * head_dim
         proj_k_size = num_k_heads * head_k_dim
 
-        conv_state_shape = cls._orient_conv_shape(
-            divide(proj_size, tp_world_size), conv_kernel_size - 1
-        )
-        conv_state_k_shape = cls._orient_conv_shape(
-            divide(proj_k_size, tp_world_size), conv_kernel_size - 1
-        )
+        conv_state_shape = cls._orient_conv_shape(divide(proj_size, tp_world_size), conv_kernel_size - 1)
+        conv_state_k_shape = cls._orient_conv_shape(divide(proj_k_size, tp_world_size), conv_kernel_size - 1)
         recurrent_state_shape = (divide(num_heads, tp_world_size), head_dim, head_dim)
         return (
             conv_state_shape,
@@ -285,9 +272,7 @@ class MambaCopySpec:
     num_elements: int
 
 
-MambaStateCopyFunc: TypeAlias = Callable[
-    [torch.Tensor, list[int], int, int], MambaCopySpec
-]
+MambaStateCopyFunc: TypeAlias = Callable[[torch.Tensor, list[int], int, int], MambaCopySpec]
 """
 Type alias for a function that computes a MambaCopySpec for copying state slices.
 Parameters:
@@ -326,9 +311,7 @@ def get_conv_copy_spec(
     else:
         # SD layout: (num_blocks, state_len, dim) — dim contiguous.
         src_state = state[src_block_id, offset:]
-    return MambaCopySpec(
-        start_addr=src_state.data_ptr(), num_elements=src_state.numel()
-    )
+    return MambaCopySpec(start_addr=src_state.data_ptr(), num_elements=src_state.numel())
 
 
 def get_temporal_copy_spec(
@@ -340,9 +323,7 @@ def get_temporal_copy_spec(
     """Return a MambaCopySpec for copying a temporal state slice."""
     src_block_id = block_ids[cur_block_idx + num_accepted_tokens - 1]
     src_state = state[src_block_id]
-    return MambaCopySpec(
-        start_addr=src_state.data_ptr(), num_elements=src_state.numel()
-    )
+    return MambaCopySpec(start_addr=src_state.data_ptr(), num_elements=src_state.numel())
 
 
 class MambaStateCopyFuncCalculator:

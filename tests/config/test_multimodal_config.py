@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-
 from aphrodite.attention.backends.registry import _Backend
+
 from aphrodite.config.multimodal import MultiModalConfig
 
 

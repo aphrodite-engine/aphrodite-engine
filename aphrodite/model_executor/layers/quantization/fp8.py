@@ -113,10 +113,7 @@ class Fp8Config(QuantizationConfig):
         self.ignored_layers = ignored_layers or []
         if weight_block_size is not None:
             if not is_checkpoint_fp8_serialized:
-                raise ValueError(
-                    "The block-wise quantization only supports fp8-serialized "
-                    "checkpoint for now."
-                )
+                raise ValueError("The block-wise quantization only supports fp8-serialized checkpoint for now.")
             if len(weight_block_size) != 2:
                 raise ValueError(
                     "The quantization block size of weight must have 2 "
@@ -159,9 +156,7 @@ class Fp8Config(QuantizationConfig):
         ignored_layers = cls.get_from_keys_or(config, ["ignored_layers"], None)
         weight_block_size = cls.get_from_keys_or(config, ["weight_block_size"], None)
         if not ignored_layers:
-            ignored_layers = cls.get_from_keys_or(
-                config, ["modules_to_not_convert"], None
-            )
+            ignored_layers = cls.get_from_keys_or(config, ["modules_to_not_convert"], None)
         return cls(
             is_checkpoint_fp8_serialized=is_checkpoint_fp8_serialized,
             activation_scheme=activation_scheme,
@@ -169,9 +164,7 @@ class Fp8Config(QuantizationConfig):
             weight_block_size=weight_block_size,
         )
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> "QuantizeMethodBase | None":
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> "QuantizeMethodBase | None":
         if isinstance(layer, LinearBase):
             if is_layer_skipped(
                 prefix=prefix,
@@ -295,9 +288,7 @@ class Fp8LinearMethod(LinearMethodBase):
                 static=self.act_q_static,
                 group_shape=GroupShape(1, self.weight_block_size[0]),
             )
-            self.weight_quant_key = create_fp8_quant_key(
-                static=True, group_shape=GroupShape(*self.weight_block_size)
-            )
+            self.weight_quant_key = create_fp8_quant_key(static=True, group_shape=GroupShape(*self.weight_block_size))
         else:
             self.weight_quant_key = kFp8StaticTensorSym
             # Use per-token quantization for better perf if dynamic and cutlass
@@ -338,9 +329,7 @@ class Fp8LinearMethod(LinearMethodBase):
                 self.weight_block_size,
             )
 
-        weight = create_fp8_weight_parameter(
-            output_size_per_partition, input_size_per_partition, weight_loader
-        )
+        weight = create_fp8_weight_parameter(output_size_per_partition, input_size_per_partition, weight_loader)
         layer.register_parameter("weight", weight)
 
         # WEIGHT SCALE
@@ -457,10 +446,7 @@ class Fp8LinearMethod(LinearMethodBase):
                     # weight is [K, N], scale could be [num_logical_weights]
                     # Need to figure out how to broadcast - for now just try
                     # direct multiplication
-                    if (
-                        weight_scale.dim() == 1
-                        and weight_scale.shape[0] == weight_fp8.shape[0]
-                    ):
+                    if weight_scale.dim() == 1 and weight_scale.shape[0] == weight_fp8.shape[0]:
                         # Per-row scaling
                         weight_bf16 = weight_fp8 * weight_scale.unsqueeze(1)
                     else:
@@ -571,9 +557,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         self.quant_config = quant_config
         self.weight_block_size = self.quant_config.weight_block_size
         self.block_quant: bool = self.weight_block_size is not None
-        self.weight_scale_name = (
-            "weight_scale_inv" if self.block_quant else "weight_scale"
-        )
+        self.weight_scale_name = "weight_scale_inv" if self.block_quant else "weight_scale"
 
         # Set weight key and activation key for kernel compatibility
         if self.block_quant:
@@ -582,9 +566,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         else:
             weight_key = kFp8StaticTensorSym
             activation_key = (
-                kFp8StaticTensorSym
-                if self.quant_config.activation_scheme == "static"
-                else kFp8DynamicTensorSym
+                kFp8StaticTensorSym if self.quant_config.activation_scheme == "static" else kFp8DynamicTensorSym
             )
 
         # Select Fp8 MoE backend
@@ -719,15 +701,11 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         # INPUT_SCALES
         if self.quant_config.activation_scheme == "static":
             assert not self.block_quant
-            w13_input_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w13_input_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w13_input_scale", w13_input_scale)
             set_weight_attrs(w13_input_scale, extra_weight_attrs)
 
-            w2_input_scale = torch.nn.Parameter(
-                torch.ones(num_experts, dtype=torch.float32), requires_grad=False
-            )
+            w2_input_scale = torch.nn.Parameter(torch.ones(num_experts, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("w2_input_scale", w2_input_scale)
             set_weight_attrs(w2_input_scale, extra_weight_attrs)
 
@@ -802,9 +780,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         if self.quant_config.activation_scheme == "static":
             assert not self.block_quant
             assert w13_input_scale is not None and w2_input_scale is not None
-            w13_input_scale, w2_input_scale = process_fp8_input_tensor_strategy_moe(
-                w13_input_scale, w2_input_scale
-            )
+            w13_input_scale, w2_input_scale = process_fp8_input_tensor_strategy_moe(w13_input_scale, w2_input_scale)
             replace_parameter(layer, "w13_input_scale", w13_input_scale)
             replace_parameter(layer, "w2_input_scale", w2_input_scale)
 
@@ -812,14 +788,10 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         # on disk there is a scale for w1 and w3. Use the max to requantize.
         if not self.block_quant:
             shard_size = layer.intermediate_size_per_partition
-            w13, w13_scale = process_fp8_weight_tensor_strategy_moe(
-                w13, w13_scale, shard_size, layer.local_num_experts
-            )
+            w13, w13_scale = process_fp8_weight_tensor_strategy_moe(w13, w13_scale, shard_size, layer.local_num_experts)
 
         # Shuffle weights to runtime format and setup kernel.
-        self._setup_kernel(
-            layer, w13, w2, w13_scale, w2_scale, w13_input_scale, w2_input_scale
-        )
+        self._setup_kernel(layer, w13, w2, w13_scale, w2_scale, w13_input_scale, w2_input_scale)
 
     def maybe_make_prepare_finalize(
         self,
@@ -1004,20 +976,14 @@ class Fp8OnlineMoEMethod(Fp8MoEMethod):
         fp8_dtype = current_platform.fp8_dtype()
         w13 = torch.empty_like(layer.w13_weight, dtype=fp8_dtype)
         w2 = torch.empty_like(layer.w2_weight, dtype=fp8_dtype)
-        w13_scale = torch.ones(
-            layer.num_experts, device=w13.device, dtype=torch.float32
-        )
+        w13_scale = torch.ones(layer.num_experts, device=w13.device, dtype=torch.float32)
         w2_scale = torch.ones(layer.num_experts, device=w2.device, dtype=torch.float32)
         layer.w13_input_scale = None
         layer.w2_input_scale = None
 
         for expert in range(layer.local_num_experts):
-            w13[expert, :, :], w13_scale[expert] = ops.scaled_fp8_quant(
-                layer.w13_weight[expert, :, :]
-            )
-            w2[expert, :, :], w2_scale[expert] = ops.scaled_fp8_quant(
-                layer.w2_weight[expert, :, :]
-            )
+            w13[expert, :, :], w13_scale[expert] = ops.scaled_fp8_quant(layer.w13_weight[expert, :, :])
+            w2[expert, :, :], w2_scale[expert] = ops.scaled_fp8_quant(layer.w2_weight[expert, :, :])
 
         # Shuffle weights to runtime format and setup kernel.
         self._setup_kernel(

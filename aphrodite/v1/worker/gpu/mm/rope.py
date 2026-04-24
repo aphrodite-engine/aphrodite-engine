@@ -52,9 +52,7 @@ class RopeState:
             device=device,
             uva_instead_of_gpu=True,
         )
-        self.positions = torch.zeros(
-            (num_dims, max_num_tokens + 1), dtype=torch.int64, device=device
-        )
+        self.positions = torch.zeros((num_dims, max_num_tokens + 1), dtype=torch.int64, device=device)
 
         # Delta is non-zero for M-RoPE, always 0 for XD-RoPE.
         self.prefill_delta = UvaBackedTensor(max_num_reqs, dtype=torch.int32)
@@ -68,15 +66,11 @@ class RopeState:
     ) -> None:
         if self.has_delta:
             mrope_model = cast(SupportsMRoPE, model)
-            prefill_positions, delta = mrope_model.get_mrope_input_positions(
-                prefill_token_ids, mm_features
-            )
+            prefill_positions, delta = mrope_model.get_mrope_input_positions(prefill_token_ids, mm_features)
             self.prefill_delta.np[req_idx] = delta
         else:
             xdrope_model = cast(SupportsXDRoPE, model)
-            prefill_positions = xdrope_model.get_xdrope_input_positions(
-                prefill_token_ids, mm_features
-            )
+            prefill_positions = xdrope_model.get_xdrope_input_positions(prefill_token_ids, mm_features)
 
         for i in range(self.num_dims):
             pos = prefill_positions[i].tolist()

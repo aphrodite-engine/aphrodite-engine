@@ -44,9 +44,7 @@ def with_retry(
             if attempt == max_retries - 1:
                 logger.error("%s: %s", log_msg, e)
                 raise
-            logger.error(
-                "%s: %s, retrying %d of %d", log_msg, e, attempt + 1, max_retries
-            )
+            logger.error("%s: %s, retrying %d of %d", log_msg, e, attempt + 1, max_retries)
             time.sleep(retry_delay)
             retry_delay *= 2
 
@@ -65,11 +63,7 @@ def list_repo_files(
     def lookup_files() -> list[str]:
         # directly list files if model is local
         if (local_path := Path(repo_id)).exists():
-            return [
-                str(file.relative_to(local_path))
-                for file in local_path.rglob("*")
-                if file.is_file()
-            ]
+            return [str(file.relative_to(local_path)) for file in local_path.rglob("*") if file.is_file()]
         # if model is remote, use hf_hub api to list files
         try:
             if envs.APHRODITE_USE_MODELSCOPE:
@@ -80,9 +74,7 @@ def list_repo_files(
                     revision=revision,
                     token=os.getenv("MODELSCOPE_API_TOKEN", None),
                 )
-            return hf_list_repo_files(
-                repo_id, revision=revision, repo_type=repo_type, token=token
-            )
+            return hf_list_repo_files(repo_id, revision=revision, repo_type=repo_type, token=token)
         except huggingface_hub.errors.OfflineModeIsEnabled:
             # Don't raise in offline mode,
             # all we know is that we don't have this
@@ -117,13 +109,7 @@ def list_filtered_repo_files(
     file_list = []
     # Filter patterns on filenames
     for pattern in allow_patterns:
-        file_list.extend(
-            [
-                file
-                for file in all_files
-                if fnmatch.fnmatch(os.path.basename(file), pattern)
-            ]
-        )
+        file_list.extend([file for file in all_files if fnmatch.fnmatch(os.path.basename(file), pattern)])
     return file_list
 
 
@@ -173,23 +159,17 @@ def file_exists(
 ) -> bool:
     # `list_repo_files` is cached and retried on error, so this is more efficient than
     # huggingface_hub.file_exists default implementation when looking for multiple files
-    file_list = list_repo_files(
-        repo_id, repo_type=repo_type, revision=revision, token=token
-    )
+    file_list = list_repo_files(repo_id, repo_type=repo_type, revision=revision, token=token)
     return file_name in file_list
 
 
 # In offline mode the result can be a false negative
-def file_or_path_exists(
-    model: str | Path, config_name: str, revision: str | None
-) -> bool:
+def file_or_path_exists(model: str | Path, config_name: str, revision: str | None) -> bool:
     if (local_path := Path(model)).exists():
         return (local_path / config_name).is_file()
 
     # Offline mode support: Check if config file is cached already
-    cached_filepath = try_to_load_from_cache(
-        repo_id=model, filename=config_name, revision=revision
-    )
+    cached_filepath = try_to_load_from_cache(repo_id=model, filename=config_name, revision=revision)
     if isinstance(cached_filepath, str):
         # The config file exists in cache - we can continue trying to load
         return True
@@ -220,9 +200,7 @@ def get_model_path(model: str | Path, revision: str | None = None):
     return snapshot_download(repo_id=model, **common_kwargs)
 
 
-def _try_download_from_hf_hub(
-    model: str | Path, file_name: str, revision: str | None
-) -> Path | None:
+def _try_download_from_hf_hub(model: str | Path, file_name: str, revision: str | None) -> Path | None:
     """Try to download a file from HuggingFace Hub.
 
     Returns the local path on success, None on failure.
@@ -251,9 +229,7 @@ def _try_download_from_hf_hub(
         return None
 
 
-def get_hf_file_bytes(
-    file_name: str, model: str | Path, revision: str | None = "main"
-) -> bytes | None:
+def get_hf_file_bytes(file_name: str, model: str | Path, revision: str | None = "main") -> bytes | None:
     """Get file contents from HuggingFace repository as bytes."""
     file_path = try_get_local_file(model=model, file_name=file_name, revision=revision)
 
@@ -267,17 +243,13 @@ def get_hf_file_bytes(
     return None
 
 
-def try_get_local_file(
-    model: str | Path, file_name: str, revision: str | None = "main"
-) -> Path | None:
+def try_get_local_file(model: str | Path, file_name: str, revision: str | None = "main") -> Path | None:
     file_path = Path(model) / file_name
     if file_path.is_file():
         return file_path
     else:
         try:
-            cached_filepath = try_to_load_from_cache(
-                repo_id=model, filename=file_name, revision=revision
-            )
+            cached_filepath = try_to_load_from_cache(repo_id=model, filename=file_name, revision=revision)
             if isinstance(cached_filepath, str):
                 return Path(cached_filepath)
         except ValueError:
@@ -285,9 +257,7 @@ def try_get_local_file(
     return None
 
 
-def get_hf_file_to_dict(
-    file_name: str, model: str | Path, revision: str | None = "main"
-):
+def get_hf_file_to_dict(file_name: str, model: str | Path, revision: str | None = "main"):
     """
     Downloads a file from the Hugging Face Hub and returns
     its contents as a dictionary.

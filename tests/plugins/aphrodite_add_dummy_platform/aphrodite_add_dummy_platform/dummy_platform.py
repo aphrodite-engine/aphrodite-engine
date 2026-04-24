@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from typing import TYPE_CHECKING
 
 from aphrodite.platforms.interface import Platform, PlatformEnum

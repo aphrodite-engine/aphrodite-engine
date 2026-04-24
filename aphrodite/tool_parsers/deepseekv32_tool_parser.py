@@ -58,9 +58,7 @@ class DeepSeekV32ToolParser(ToolParser):
         self.current_tool_index: int = 0
 
         # Regex patterns for complete parsing
-        self.tool_call_complete_regex = re.compile(
-            r"<｜DSML｜function_calls>(.*?)</｜DSML｜function_calls>", re.DOTALL
-        )
+        self.tool_call_complete_regex = re.compile(r"<｜DSML｜function_calls>(.*?)</｜DSML｜function_calls>", re.DOTALL)
         self.invoke_complete_regex = re.compile(
             r'<｜DSML｜invoke\s+name="([^"]+)"\s*>(.*?)</｜DSML｜invoke>', re.DOTALL
         )
@@ -70,14 +68,9 @@ class DeepSeekV32ToolParser(ToolParser):
         )
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
-        logger.debug(
-            "Aphrodite Successfully import tool parser %s !", self.__class__.__name__
-        )
+        logger.debug("Aphrodite Successfully import tool parser %s !", self.__class__.__name__)
 
     def adjust_request(
         self, request: ChatCompletionRequest | ResponsesRequest
@@ -173,9 +166,7 @@ class DeepSeekV32ToolParser(ToolParser):
         """Extract tool calls from complete model output (non-streaming)."""
         # Quick check
         if self.tool_call_start_token not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             tool_calls = []
@@ -183,9 +174,7 @@ class DeepSeekV32ToolParser(ToolParser):
             # Find all complete tool_call blocks
             for tool_call_match in self.tool_call_complete_regex.findall(model_output):
                 # Find all invokes within this tool_call
-                for invoke_name, invoke_content in self.invoke_complete_regex.findall(
-                    tool_call_match
-                ):
+                for invoke_name, invoke_content in self.invoke_complete_regex.findall(tool_call_match):
                     param_dict = self._parse_invoke_params(invoke_content)
                     tool_calls.append(
                         ToolCall(
@@ -198,23 +187,17 @@ class DeepSeekV32ToolParser(ToolParser):
                     )
 
             if not tool_calls:
-                return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
-                )
+                return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
             # Extract content before first tool call
             first_tool_idx = model_output.find(self.tool_call_start_token)
             content = model_output[:first_tool_idx] if first_tool_idx > 0 else None
 
-            return ExtractedToolCallInformation(
-                tools_called=True, tool_calls=tool_calls, content=content
-            )
+            return ExtractedToolCallInformation(tools_called=True, tool_calls=tool_calls, content=content)
 
         except Exception:
             logger.exception("Error extracting tool calls")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def _reset_streaming_state(self):
         """Reset all streaming state."""
@@ -245,9 +228,7 @@ class DeepSeekV32ToolParser(ToolParser):
             idx = self.current_tool_index
             self.current_tool_index += 1
 
-            self.prev_tool_call_arr.append(
-                {"name": invoke_name, "arguments": converted}
-            )
+            self.prev_tool_call_arr.append({"name": invoke_name, "arguments": converted})
             self.streamed_args_for_tool.append(args_json)
 
             delta_tool_calls.append(

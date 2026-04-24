@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import requests
 import torch
 import torch.nn.functional as F
-
 from aphrodite.endpoints.openai.protocol import PoolingResponse, RerankResponse
+
 from tests.utils import RemoteOpenAIServer
 
 MODEL_NAME = "BAAI/bge-reranker-base"

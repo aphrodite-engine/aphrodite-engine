@@ -168,9 +168,7 @@ class MLAAttnFp8StaticQuantPattern(AphroditePatternReplacement[..., torch.Tensor
         return inputs
 
 
-class MLAAttnNvfp4QuantPattern(
-    AphroditePatternReplacement[..., tuple[torch.Tensor, torch.Tensor]]
-):
+class MLAAttnNvfp4QuantPattern(AphroditePatternReplacement[..., tuple[torch.Tensor, torch.Tensor]]):
     """
     Fusion for MLA Attention+Nvfp4Quant.
 
@@ -234,9 +232,7 @@ class MLAAttnNvfp4QuantPattern(
 
             return _pattern_with_ln
 
-        def _pattern(
-            q, kv_c_normed, k_pe, output_attn, input_scale, kv_cache_dummy_dep
-        ):
+        def _pattern(q, kv_c_normed, k_pe, output_attn, input_scale, kv_cache_dummy_dep):
             at1 = auto_functionalized(
                 MLA_ATTN_OP,
                 q=q,
@@ -289,9 +285,7 @@ class MLAAttnNvfp4QuantPattern(
                     dtype=FP4_DTYPE,
                     device=q.device,
                 )
-                output_scale = create_fp4_output_tensors(
-                    q.shape[0], self._output_dim, q.device, True
-                )[1]
+                output_scale = create_fp4_output_tensors(q.shape[0], self._output_dim, q.device, True)[1]
                 output_scale_view = torch.ops.aten.view.dtype(output_scale, FP8_DTYPE)
                 at2 = auto_functionalized(
                     MLA_ATTN_OP,
@@ -308,9 +302,7 @@ class MLAAttnNvfp4QuantPattern(
 
             return _replacement_with_ln
 
-        def _replacement(
-            q, kv_c_normed, k_pe, output_attn, input_scale, kv_cache_dummy_dep
-        ):
+        def _replacement(q, kv_c_normed, k_pe, output_attn, input_scale, kv_cache_dummy_dep):
             # MLA output in quant_dtype (FP4 packed as uint8)
             output_attn = torch.empty(
                 [q.shape[0], self._output_dim // 2],
@@ -318,9 +310,7 @@ class MLAAttnNvfp4QuantPattern(
                 device=q.device,
             )
             # attention output block scale
-            output_scale = create_fp4_output_tensors(
-                q.shape[0], self._output_dim, q.device, True
-            )[1]
+            output_scale = create_fp4_output_tensors(q.shape[0], self._output_dim, q.device, True)[1]
             output_scale_view = torch.ops.aten.view.dtype(output_scale, FP8_DTYPE)
             at2 = auto_functionalized(
                 MLA_ATTN_OP,

@@ -26,8 +26,7 @@ if has_triton_kernels():
         from triton_kernels.matmul_ogs import PrecisionConfig
     except (ImportError, AttributeError) as e:
         logger.error(
-            "Failed to import Triton kernels. Please make sure your triton "
-            "version is compatible. Error: %s",
+            "Failed to import Triton kernels. Please make sure your triton version is compatible. Error: %s",
             e,
         )
 
@@ -230,9 +229,7 @@ class FusedMoEQuantConfig:
     is_nvfp4_scale_swizzled: bool = True
 
     def __post_init__(self):
-        assert not self.per_act_token_quant or self.block_shape is None, (
-            "illegal quantization"
-        )
+        assert not self.per_act_token_quant or self.block_shape is None, "illegal quantization"
 
     #
     # Convenience accessors for various properties.
@@ -375,9 +372,7 @@ class FusedMoEQuantConfig:
             ):
                 self._ocp_mx_scheme = None
             else:
-                ocp_mx_scheme = OCP_MX_Scheme.from_quant_dtype(
-                    self._a1.dtype, self._w1.dtype
-                )
+                ocp_mx_scheme = OCP_MX_Scheme.from_quant_dtype(self._a1.dtype, self._w1.dtype)
 
                 if ocp_mx_scheme is not None:
                     ocp_mx_scheme = ocp_mx_scheme.value
@@ -526,18 +521,12 @@ class FusedMoEQuantConfig:
         if weight_dtype is None:
             weight_dtype = quant_dtype
 
-        a_shape, w_shape = _quant_flags_to_group_shape(
-            quant_dtype, per_act_token_quant, per_out_ch_quant, block_shape
-        )
+        a_shape, w_shape = _quant_flags_to_group_shape(quant_dtype, per_act_token_quant, per_out_ch_quant, block_shape)
         quant_config = FusedMoEQuantConfig(
             _a1=FusedMoEQuantDesc(quant_dtype, a_shape, a1_scale, a1_gscale),
             _a2=FusedMoEQuantDesc(quant_dtype, a_shape, a2_scale, a2_gscale),
-            _w1=FusedMoEQuantDesc(
-                weight_dtype, w_shape, w1_scale, g1_alphas, w1_zp, w1_bias
-            ),
-            _w2=FusedMoEQuantDesc(
-                weight_dtype, w_shape, w2_scale, g2_alphas, w2_zp, w2_bias
-            ),
+            _w1=FusedMoEQuantDesc(weight_dtype, w_shape, w1_scale, g1_alphas, w1_zp, w1_bias),
+            _w2=FusedMoEQuantDesc(weight_dtype, w_shape, w2_scale, g2_alphas, w2_zp, w2_bias),
             is_nvfp4_scale_swizzled=is_nvfp4_scale_swizzled,
         )
         assert quant_config.per_act_token_quant == per_act_token_quant
@@ -831,12 +820,8 @@ def fp8_w8a16_moe_quant_config(
     return FusedMoEQuantConfig(
         _a1=FusedMoEQuantDesc(),
         _a2=FusedMoEQuantDesc(),
-        _w1=FusedMoEQuantDesc(
-            current_platform.fp8_dtype(), group_shape, w1_scale, None, None
-        ),
-        _w2=FusedMoEQuantDesc(
-            current_platform.fp8_dtype(), group_shape, w2_scale, None, None
-        ),
+        _w1=FusedMoEQuantDesc(current_platform.fp8_dtype(), group_shape, w1_scale, None, None),
+        _w2=FusedMoEQuantDesc(current_platform.fp8_dtype(), group_shape, w2_scale, None, None),
     )
 
 
@@ -965,10 +950,7 @@ class FusedMoEParallelConfig:
 
     @property
     def use_deepep_ht_kernels(self):
-        return (
-            self.use_all2all_kernels
-            and self.all2all_backend == "deepep_high_throughput"
-        )
+        return self.use_all2all_kernels and self.all2all_backend == "deepep_high_throughput"
 
     @property
     def use_deepep_ll_kernels(self):
@@ -977,16 +959,12 @@ class FusedMoEParallelConfig:
     @property
     def use_fi_nvl_two_sided_kernels(self):
         return self.use_all2all_kernels and (
-            self.all2all_backend == "flashinfer_all2allv"
-            or self.all2all_backend == "flashinfer_nvlink_two_sided"
+            self.all2all_backend == "flashinfer_all2allv" or self.all2all_backend == "flashinfer_nvlink_two_sided"
         )
 
     @property
     def use_fi_nvl_one_sided_kernels(self):
-        return (
-            self.use_all2all_kernels
-            and self.all2all_backend == "flashinfer_nvlink_one_sided"
-        )
+        return self.use_all2all_kernels and self.all2all_backend == "flashinfer_nvlink_one_sided"
 
     @property
     def use_batched_activation_format(self):
@@ -994,10 +972,7 @@ class FusedMoEParallelConfig:
 
     @property
     def use_ag_rs_all2all_kernels(self):
-        return (
-            self.use_all2all_kernels
-            and self.all2all_backend == "allgather_reducescatter"
-        )
+        return self.use_all2all_kernels and self.all2all_backend == "allgather_reducescatter"
 
     @property
     def use_mori_kernels(self):
@@ -1099,10 +1074,7 @@ class FusedMoEParallelConfig:
             - Comment: There are 2 engine instances and the experts are split
                 between the 4 devices.
         """
-        use_ep = (
-            dp_size_ * pcp_size_ * tp_size_ > 1
-            and aphrodite_parallel_config.enable_expert_parallel
-        )
+        use_ep = dp_size_ * pcp_size_ * tp_size_ > 1 and aphrodite_parallel_config.enable_expert_parallel
 
         dp_size = dp_size_
         dp_rank = get_dp_group().rank_in_group if dp_size > 1 else 0
@@ -1206,9 +1178,7 @@ class FusedMoEConfig:
 
     def __post_init__(self):
         if self.dp_size > 1:
-            logger.debug_once(
-                "Using FusedMoEConfig::max_num_tokens=%d", self.max_num_tokens
-            )
+            logger.debug_once("Using FusedMoEConfig::max_num_tokens=%d", self.max_num_tokens)
 
         assert self.max_num_tokens > 0
 
@@ -1218,9 +1188,7 @@ class FusedMoEConfig:
         if self.hidden_dim_unpadded is None:
             self.hidden_dim_unpadded = self.hidden_dim
         if self.intermediate_size_per_partition_unpadded is None:
-            self.intermediate_size_per_partition_unpadded = (
-                self.intermediate_size_per_partition
-            )
+            self.intermediate_size_per_partition_unpadded = self.intermediate_size_per_partition
 
     @property
     def tp_size(self):

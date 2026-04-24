@@ -1,13 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from typing import Any
 
 import pytest
-from mistral_common.exceptions import InvalidMessageStructureException
-from mistral_common.tokens.tokenizers.base import SpecialTokenPolicy
-
 from aphrodite.transformers_utils.tokenizers.mistral import (
     MistralTokenizer,
     _prepare_apply_chat_template_tools_and_messages,
 )
+from mistral_common.exceptions import InvalidMessageStructureException
+from mistral_common.tokens.tokenizers.base import SpecialTokenPolicy
 
 
 @pytest.mark.parametrize(

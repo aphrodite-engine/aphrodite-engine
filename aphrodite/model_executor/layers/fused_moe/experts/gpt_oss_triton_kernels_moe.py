@@ -61,8 +61,7 @@ if has_triton_kernels():
                 raise
     except (AttributeError, ImportError) as e:
         logger.error(
-            "Failed to import Triton kernels. Please make sure your triton "
-            "version is compatible. Error: %s",
+            "Failed to import Triton kernels. Please make sure your triton version is compatible. Error: %s",
             e,
         )
 
@@ -130,16 +129,10 @@ def triton_kernel_moe_forward(
     unpadded_N_w2=None,
     unpadded_K_w2=None,
 ) -> torch.Tensor:
-    if (
-        quant_config is not None
-        and quant_config.use_mxfp4_w4a8
-        and rocm_aiter_ops.is_enabled()
-    ):
+    if quant_config is not None and quant_config.use_mxfp4_w4a8 and rocm_aiter_ops.is_enabled():
         from aiter.ops.triton.moe_routing.routing import routing as aiter_routing
 
-        routing_data, gather_idx, scatter_idx = aiter_routing(
-            gating_output, topk, sm_first=not renormalize
-        )
+        routing_data, gather_idx, scatter_idx = aiter_routing(gating_output, topk, sm_first=not renormalize)
         return triton_kernel_fused_mxfp4_w4a8_experts(
             None,
             hidden_states,
@@ -178,24 +171,18 @@ def triton_kernel_moe_forward(
         # topk_ids_raw contains global expert IDs - remap to local.
         topk_ids = expert_map[topk_ids_raw.to(torch.long)]
         local_num_experts = w1.shape[0]
-        routing_data, gather_idx, scatter_idx = make_routing_data(
-            topk_ids, topk_weights, local_num_experts
-        )
+        routing_data, gather_idx, scatter_idx = make_routing_data(topk_ids, topk_weights, local_num_experts)
         # expert_map already applied; pass None downstream.
         effective_expert_map = None
         effective_global_num_experts = local_num_experts
     else:
         topk_ids = topk_ids_raw.to(torch.long)
-        routing_data, gather_idx, scatter_idx = make_routing_data(
-            topk_ids, topk_weights, gating_output.shape[-1]
-        )
+        routing_data, gather_idx, scatter_idx = make_routing_data(topk_ids, topk_weights, gating_output.shape[-1])
         effective_expert_map = expert_map
         effective_global_num_experts = global_num_experts
 
     output = torch.empty_like(hidden_states)
-    effective_quant_config = (
-        quant_config if quant_config is not None else FUSED_MOE_UNQUANTIZED_CONFIG
-    )
+    effective_quant_config = quant_config if quant_config is not None else FUSED_MOE_UNQUANTIZED_CONFIG
 
     return triton_kernel_fused_experts(
         output,
@@ -235,9 +222,7 @@ def triton_kernel_fused_experts(
     a1q_scale: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Triton implementation of fused expert computation using OAI kernels."""
-    assert activation == MoEActivation.SWIGLUOAI, (
-        "Only SWIGLUOAI activation is supported"
-    )
+    assert activation == MoEActivation.SWIGLUOAI, "Only SWIGLUOAI activation is supported"
     assert quant_config is not None
 
     # type check, uint8 means mxfp4
@@ -265,9 +250,7 @@ def triton_kernel_fused_experts(
         )
 
     # Add batch_dim to output buffer because matmul_ogs expects 3D output
-    intermediate_cache = _resize_cache(
-        intermediate_cache, (batch_dim, M * topk, N // 2)
-    )
+    intermediate_cache = _resize_cache(intermediate_cache, (batch_dim, M * topk, N // 2))
     output_tensor = _resize_cache(output_tensor, (batch_dim, M, K))
 
     act = (
@@ -358,16 +341,10 @@ def triton_kernel_fused_mxfp4_w4a8_experts(
     from aiter.ops.triton.moe_op_gemm_a8w4 import moe_gemm_a8w4
     from aiter.ops.triton.quant_moe import downcast_to_static_fp8
 
-    assert quant_config.w1_precision is not None, (
-        "w1_precision in quant config can't be None"
-    )
-    assert quant_config.w2_precision is not None, (
-        "w2_precision in quant config can't be None"
-    )
+    assert quant_config.w1_precision is not None, "w1_precision in quant config can't be None"
+    assert quant_config.w2_precision is not None, "w2_precision in quant config can't be None"
 
-    hidden_states = downcast_to_static_fp8(
-        hidden_states, quant_config.w1_precision.flex_ctx.lhs_data.scale
-    )
+    hidden_states = downcast_to_static_fp8(hidden_states, quant_config.w1_precision.flex_ctx.lhs_data.scale)
 
     intermediate_cache1 = moe_gemm_a8w4(
         hidden_states,
@@ -422,9 +399,7 @@ def make_routing_data(
     BLOCK_SIZE_K = 32
 
     bm_cols = triton.cdiv(num_local_experts, BLOCK_SIZE_K)  # n_bitpacks
-    bitmatrix = torch.zeros(
-        (n_rows, bm_cols), dtype=torch.uint32, device=topk_ids.device
-    )
+    bitmatrix = torch.zeros((n_rows, bm_cols), dtype=torch.uint32, device=topk_ids.device)
 
     grid = (triton.cdiv(n_rows, BLOCK_SIZE_M),)
     pack_bitmatrix[grid](
@@ -440,9 +415,7 @@ def make_routing_data(
     bitmatrix_shape = [n_rows, bm_cols * 32]
     bitmatrix_shape_max = [n_rows, None]
     bitmatrix = (
-        Bitmatrix(
-            bitmatrix, dtype=BIT, shape=bitmatrix_shape, shape_max=bitmatrix_shape_max
-        )
+        Bitmatrix(bitmatrix, dtype=BIT, shape=bitmatrix_shape, shape_max=bitmatrix_shape_max)
         if not use_legacy_triton_kernels
         else Bitmatrix(
             bitmatrix,
@@ -458,9 +431,7 @@ def make_routing_data(
     if use_legacy_triton_kernels:
         from triton_kernels.routing import routing_from_bitmatrix
 
-        return routing_from_bitmatrix(
-            bitmatrix, topk_weights, topk_ids, num_local_experts, num_topk
-        )
+        return routing_from_bitmatrix(bitmatrix, topk_weights, topk_ids, num_local_experts, num_topk)
 
     sparse_logits = SparseMatrix(indx=topk_ids, vals=topk_weights, mask=bitmatrix)
     dispatch_indx = sparse_logits.mask_metadata.row_sorted_indx
@@ -630,9 +601,7 @@ class OAITritonExperts(BaseOAITritonExperts):
         if global_num_experts == -1:
             global_num_experts = local_num_experts
 
-        routing_data, gather_indx, scatter_indx = self._make_routing_data(
-            topk_ids, topk_weights, local_num_experts
-        )
+        routing_data, gather_indx, scatter_indx = self._make_routing_data(topk_ids, topk_weights, local_num_experts)
 
         topk = topk_ids.size(1)
         triton_kernel_fused_experts(
@@ -728,20 +697,14 @@ class UnfusedOAITritonExperts(BaseOAITritonExperts):
         if global_num_experts == -1:
             global_num_experts = local_num_experts
 
-        routing_data, gather_indx, scatter_indx = self._make_routing_data(
-            topk_ids, topk_weights, local_num_experts
-        )
+        routing_data, gather_indx, scatter_indx = self._make_routing_data(topk_ids, topk_weights, local_num_experts)
 
         topk = topk_ids.size(1)
 
         # type check, uint8 means mxfp4
         assert hidden_states.dtype == torch.bfloat16
-        assert (
-            quant_config.w1_bias is None or quant_config.w1_bias.dtype == torch.float32
-        )
-        assert (
-            quant_config.w2_bias is None or quant_config.w2_bias.dtype == torch.float32
-        )
+        assert quant_config.w1_bias is None or quant_config.w1_bias.dtype == torch.float32
+        assert quant_config.w2_bias is None or quant_config.w2_bias.dtype == torch.float32
 
         # Shape check, only check non-mxfp4
         assert hidden_states.ndim == 2

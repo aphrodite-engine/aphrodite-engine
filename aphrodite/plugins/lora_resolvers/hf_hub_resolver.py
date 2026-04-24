@@ -27,9 +27,7 @@ class HfHubResolver(FilesystemResolver):
         self.repo_list: list[str] = repo_list
         self.adapter_dirs: dict[str, set[str]] = {}
 
-    async def resolve_lora(
-        self, base_model_name: str, lora_name: str
-    ) -> LoRARequest | None:
+    async def resolve_lora(self, base_model_name: str, lora_name: str) -> LoRARequest | None:
         """Resolves potential LoRA requests in a remote repo on HF Hub.
         This is effectively the same behavior as the filesystem resolver, but
         with a snapshot_download on dirs containing an adapter config prior
@@ -55,9 +53,7 @@ class HfHubResolver(FilesystemResolver):
         )
 
         lora_path = os.path.join(repo_path, maybe_subpath)
-        maybe_lora_request = await self._get_lora_req_from_path(
-            lora_name, lora_path, base_model_name
-        )
+        maybe_lora_request = await self._get_lora_req_from_path(lora_name, lora_path, base_model_name)
         return maybe_lora_request
 
     async def _resolve_repo(self, lora_name: str) -> str | None:
@@ -71,15 +67,12 @@ class HfHubResolver(FilesystemResolver):
         """
         for potential_repo in self.repo_list:
             if lora_name.startswith(potential_repo) and (
-                len(lora_name) == len(potential_repo)
-                or lora_name[len(potential_repo)] == "/"
+                len(lora_name) == len(potential_repo) or lora_name[len(potential_repo)] == "/"
             ):
                 return potential_repo
         return None
 
-    async def _resolve_repo_subpath(
-        self, lora_name: str, maybe_repo: str | None
-    ) -> str | None:
+    async def _resolve_repo_subpath(self, lora_name: str, maybe_repo: str | None) -> str | None:
         """Given the fully qualified path of the LoRA with respect to the HF
         Repo, get the subpath to download from assuming it's actually got an
         adapter in it.
@@ -91,9 +84,7 @@ class HfHubResolver(FilesystemResolver):
         if maybe_repo is None:
             return None
         repo_len = len(maybe_repo)
-        if lora_name == maybe_repo or (
-            len(lora_name) == repo_len + 1 and lora_name[-1] == "/"
-        ):
+        if lora_name == maybe_repo or (len(lora_name) == repo_len + 1 and lora_name[-1] == "/"):
             # Resolves to the root of the directory
             adapter_dir = "."
         else:
@@ -111,11 +102,7 @@ class HfHubResolver(FilesystemResolver):
             repo_name: Name of the HF hub repo to inspect.
         """
         repo_files = await asyncio.to_thread(HfApi().list_repo_files, repo_id=repo_name)
-        adapter_dirs = {
-            os.path.dirname(name)
-            for name in repo_files
-            if name.endswith("adapter_config.json")
-        }
+        adapter_dirs = {os.path.dirname(name) for name in repo_files if name.endswith("adapter_config.json")}
         if "adapter_config.json" in repo_files:
             adapter_dirs.add(".")
         return adapter_dirs
@@ -125,9 +112,7 @@ def register_hf_hub_resolver():
     """Register the Hf hub LoRA Resolver with Aphrodite"""
 
     hf_repo_list = envs.APHRODITE_LORA_RESOLVER_HF_REPO_LIST
-    is_enabled = (
-        envs.APHRODITE_PLUGINS is not None and "lora_hf_hub_resolver" in envs.APHRODITE_PLUGINS
-    )
+    is_enabled = envs.APHRODITE_PLUGINS is not None and "lora_hf_hub_resolver" in envs.APHRODITE_PLUGINS
     if hf_repo_list:
         if not is_enabled:
             logger.warning(

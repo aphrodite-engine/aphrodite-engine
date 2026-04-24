@@ -63,34 +63,22 @@ class INCConfig(QuantizationConfig):
     ) -> None:
         super().__init__()
         if weight_bits not in self.SUPPORTED_BITS:
-            raise ValueError(
-                f"Unsupported weight_bits: {weight_bits}, "
-                f"currently only support {self.SUPPORTED_BITS}."
-            )
+            raise ValueError(f"Unsupported weight_bits: {weight_bits}, currently only support {self.SUPPORTED_BITS}.")
         if data_type not in self.SUPPORTED_DTYPES:
-            raise ValueError(
-                f"Unsupported data_type: {data_type},"
-                f" currently only support  {self.SUPPORTED_DTYPES}."
-            )
+            raise ValueError(f"Unsupported data_type: {data_type}, currently only support  {self.SUPPORTED_DTYPES}.")
         if packing_format not in self.SUPPORTED_FORMATS:
             raise ValueError(
-                f"Unsupported packing_format: {packing_format}, "
-                f"currently only support {self.SUPPORTED_FORMATS}."
+                f"Unsupported packing_format: {packing_format}, currently only support {self.SUPPORTED_FORMATS}."
             )
         if backend not in self.SUPPORTED_BACKENDS:
-            raise ValueError(
-                f"Unsupported backend: {backend},  "
-                f"currently only support {self.SUPPORTED_BACKENDS}."
-            )
+            raise ValueError(f"Unsupported backend: {backend},  currently only support {self.SUPPORTED_BACKENDS}.")
 
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.sym = sym
         self.packing_format = packing_format
         self.block_name_to_quantize = (
-            block_name_to_quantize.split(",")
-            if isinstance(block_name_to_quantize, str)
-            else block_name_to_quantize
+            block_name_to_quantize.split(",") if isinstance(block_name_to_quantize, str) else block_name_to_quantize
         )
         self.extra_config = extra_config
         self.data_type = data_type
@@ -98,10 +86,7 @@ class INCConfig(QuantizationConfig):
         self.pack_factor = Fraction(32, weight_bits)
 
     def __repr__(self) -> str:
-        return (
-            f"INCConfig(weight_bits={self.weight_bits}, "
-            f"group_size={self.group_size}, sym={self.sym})"
-        )
+        return f"INCConfig(weight_bits={self.weight_bits}, group_size={self.group_size}, sym={self.sym})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -125,9 +110,7 @@ class INCConfig(QuantizationConfig):
             weight_bits=cls.get_from_keys(config, ["bits"]),
             group_size=cls.get_from_keys(config, ["group_size"]),
             sym=cls.get_from_keys(config, ["sym"]),
-            packing_format=cls.get_from_keys_or(
-                config, ["packing_format"], "auto_round:auto_gptq"
-            ),
+            packing_format=cls.get_from_keys_or(config, ["packing_format"], "auto_round:auto_gptq"),
             block_name_to_quantize=cls.get_from_keys_or(
                 config, ["block_name_to_quantize", "to_quant_block_names"], None
             ),
@@ -156,9 +139,7 @@ class INCConfig(QuantizationConfig):
 
             REGEX_SPECIAL_CHARS = set(r"*+?^$()[]{}|\\")
             for pattern, cfg in self.extra_config.items():
-                if not isinstance(pattern, str) or not any(
-                    c in REGEX_SPECIAL_CHARS for c in pattern
-                ):
+                if not isinstance(pattern, str) or not any(c in REGEX_SPECIAL_CHARS for c in pattern):
                     continue
 
                 try:
@@ -185,39 +166,25 @@ class INCConfig(QuantizationConfig):
         # 2. Determine whether layer should be quantized
         quantized = not isinstance(layer, ParallelLMHead)
         if self.block_name_to_quantize:
-            quantized = any(
-                layer_name.startswith(name) for name in self.block_name_to_quantize
-            )
+            quantized = any(layer_name.startswith(name) for name in self.block_name_to_quantize)
 
         # 3. Handle fused MoE
         if self.extra_config and "fusedmoe" in layer.__class__.__name__.lower():
-            moe_configs = [
-                get_config(name, quantized)
-                for name in self.extra_config
-                if name.startswith(layer_name)
-            ]
+            moe_configs = [get_config(name, quantized) for name in self.extra_config if name.startswith(layer_name)]
             if moe_configs:
                 if len(set(moe_configs)) == 1:
                     return moe_configs[0]
-                raise ValueError(
-                    f"Fused MoE layer '{layer_name}' requires "
-                    f"consistent quant config for all sub-layers"
-                )
+                raise ValueError(f"Fused MoE layer '{layer_name}' requires consistent quant config for all sub-layers")
 
         # 4. Handle fused QKV or other patterns
         if self.extra_config:
             for fusion_key, sub_keys in self.packed_modules_mapping.items():
                 if fusion_key in layer_name and layer_name.count(fusion_key) == 1:
-                    sub_names = [
-                        layer_name.replace(fusion_key, sub_key) for sub_key in sub_keys
-                    ]
+                    sub_names = [layer_name.replace(fusion_key, sub_key) for sub_key in sub_keys]
                     sub_configs = [get_config(name, quantized) for name in sub_names]
                     if len(set(sub_configs)) == 1:
                         return sub_configs[0]
-                    raise ValueError(
-                        f"Fused module '{layer_name}' requires "
-                        f"consistent quant config for {sub_names}"
-                    )
+                    raise ValueError(f"Fused module '{layer_name}' requires consistent quant config for {sub_names}")
 
         # 5. Fallback or try a regular expression match
         return get_config(layer_name, quantized)
@@ -227,9 +194,7 @@ class INCConfig(QuantizationConfig):
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.block_name_to_quantize is not None:
-            self.block_name_to_quantize = hf_to_aphrodite_mapper.apply_list(
-                self.block_name_to_quantize
-            )
+            self.block_name_to_quantize = hf_to_aphrodite_mapper.apply_list(self.block_name_to_quantize)
         if self.extra_config is not None:
             self.extra_config = hf_to_aphrodite_mapper.apply_dict(self.extra_config)
 
@@ -265,9 +230,7 @@ class INCConfig(QuantizationConfig):
             )
 
             if isinstance(layer, FusedMoE):
-                use_marlin = use_marlin and check_moe_marlin_supports_layer(
-                    layer, group_size
-                )
+                use_marlin = use_marlin and check_moe_marlin_supports_layer(layer, group_size)
 
         else:
             use_marlin = False
@@ -350,9 +313,7 @@ class INCConfig(QuantizationConfig):
                 GPTQ_TYPE_MAP[(weight_bits, sym)], group_size, has_zp=not sym
             )
             if isinstance(layer, FusedMoE):
-                use_marlin = use_marlin and check_moe_marlin_supports_layer(
-                    layer, group_size
-                )
+                use_marlin = use_marlin and check_moe_marlin_supports_layer(layer, group_size)
         else:
             use_marlin = False
         if use_marlin:
@@ -400,9 +361,7 @@ class INCConfig(QuantizationConfig):
                     "sym": sym,
                     "lm_head": False,
                 }
-                return MoeWNA16Config.from_config(config).get_quant_method(
-                    layer, prefix
-                )
+                return MoeWNA16Config.from_config(config).get_quant_method(layer, prefix)
 
         if isinstance(layer, (LinearBase, ParallelLMHead)):
             if use_marlin:
@@ -422,14 +381,9 @@ class INCConfig(QuantizationConfig):
                 return None
 
         if weight_bits != 4:
-            raise NotImplementedError(
-                f"INC on XPU only supports 4-bit quantization, "
-                f"got weight_bits={weight_bits}."
-            )
+            raise NotImplementedError(f"INC on XPU only supports 4-bit quantization, got weight_bits={weight_bits}.")
         if not sym:
-            raise NotImplementedError(
-                "INC W4A16 on XPU only supports symmetric quantization for now."
-            )
+            raise NotImplementedError("INC W4A16 on XPU only supports symmetric quantization for now.")
         if isinstance(layer, (LinearBase, ParallelLMHead)):
             return INCXPULinearMethod(
                 weight_bits=weight_bits,
@@ -447,14 +401,9 @@ class INCConfig(QuantizationConfig):
                 return None
 
         if weight_bits != 4:
-            raise NotImplementedError(
-                f"INC on CPU only supports 4-bit quantization, "
-                f"got weight_bits={weight_bits}."
-            )
+            raise NotImplementedError(f"INC on CPU only supports 4-bit quantization, got weight_bits={weight_bits}.")
         if not sym:
-            raise NotImplementedError(
-                "INC W4A16 on CPU only supports symmetric quantization for now."
-            )
+            raise NotImplementedError("INC W4A16 on CPU only supports symmetric quantization for now.")
         if isinstance(layer, (LinearBase, ParallelLMHead)):
             return self.apply_gptq_quant_layer(layer, prefix)
         return None
@@ -462,9 +411,9 @@ class INCConfig(QuantizationConfig):
     def get_quant_method(self, layer: torch.nn.Module, prefix: str):
         if prefix and self.extra_config:
             for layer_name in self.extra_config:
-                if (
-                    layer_name == prefix or layer_name == f"model.{prefix}"
-                ) and self.extra_config[layer_name].get("bits", 16) >= 16:
+                if (layer_name == prefix or layer_name == f"model.{prefix}") and self.extra_config[layer_name].get(
+                    "bits", 16
+                ) >= 16:
                     return UnquantizedLinearMethod()
         if current_platform.is_xpu():
             return self.apply_xpu_w4a16_quant_layer(layer, prefix)
@@ -484,9 +433,7 @@ class INCConfig(QuantizationConfig):
         )
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant, hf_config=None
-    ) -> "QuantizationMethods | None":
+    def override_quantization_method(cls, hf_quant_cfg, user_quant, hf_config=None) -> "QuantizationMethods | None":
         """Override the `auto-round` method to `inc`."""
         is_auto_round_format = hf_quant_cfg.get("quant_method", None) == "auto-round"
         if is_auto_round_format:

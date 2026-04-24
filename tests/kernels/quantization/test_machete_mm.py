@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the machete kernel.
 
 Run `pytest tests/kernels/quantization/test_machete_mm.py`.
@@ -8,11 +10,11 @@ from dataclasses import dataclass, fields
 
 import pytest
 import torch
+from aphrodite.quantization.utils.machete_utils import query_machete_supported_group_sizes
+from aphrodite.quantization.utils.quant_utils import pack_rows, quantize_weights
 
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.machete_utils import query_machete_supported_group_sizes
-from aphrodite.quantization.utils.quant_utils import pack_rows, quantize_weights
 from aphrodite.scalar_type import ScalarType, scalar_types
 from tests.kernels.utils import opcheck
 

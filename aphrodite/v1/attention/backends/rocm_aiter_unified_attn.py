@@ -30,9 +30,7 @@ class RocmAiterUnifiedAttentionBackend(RocmAttentionBackend):
 
     @classmethod
     def get_preferred_block_size(cls, default_block_size: int) -> int:
-        logger.warning_once(
-            "[ROCM_AITER_UNIFIED_ATTN]: Setting kv cache block size to 64."
-        )
+        logger.warning_once("[ROCM_AITER_UNIFIED_ATTN]: Setting kv cache block size to 64.")
         return 64
 
     @classmethod
@@ -125,9 +123,7 @@ class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
             kv_sharing_target_layer_name,
             sinks,
         )
-        logger.info_once(
-            "Using aiter unified attention for RocmAiterUnifiedAttentionImpl"
-        )
+        logger.info_once("Using aiter unified attention for RocmAiterUnifiedAttentionImpl")
         from aiter.ops.triton.unified_attention import unified_attention
 
         self.unified_attention = unified_attention
@@ -159,8 +155,7 @@ class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
         """
         if output_block_scale is not None:
             raise NotImplementedError(
-                "fused block_scale output quantization is not yet supported"
-                " for RocmAttentionImpl"
+                "fused block_scale output quantization is not yet supported for RocmAttentionImpl"
             )
 
         if attn_metadata is None:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the AWQ Triton kernel.
 
 Run `pytest tests/kernels/quantization/test_awq_triton.py`.
@@ -5,9 +7,9 @@ Run `pytest tests/kernels/quantization/test_awq_triton.py`.
 
 import pytest
 import torch
+from aphrodite.quantization.awq_triton import AWQ_TRITON_SUPPORTED_GROUP_SIZES, awq_dequantize_triton, awq_gemm_triton
 
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.awq_triton import AWQ_TRITON_SUPPORTED_GROUP_SIZES, awq_dequantize_triton, awq_gemm_triton
 
 device = "cuda"
 

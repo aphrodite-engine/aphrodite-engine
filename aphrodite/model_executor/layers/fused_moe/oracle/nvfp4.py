@@ -134,8 +134,7 @@ def map_nvfp4_backend(runner_backend: MoEBackend) -> NvFp4MoeBackend:
     if backend := mapping.get(runner_backend):
         return backend
     raise ValueError(
-        f"moe_backend='{runner_backend}' is not supported for NvFP4 MoE. "
-        f"Expected one of {list(mapping.keys())}."
+        f"moe_backend='{runner_backend}' is not supported for NvFP4 MoE. Expected one of {list(mapping.keys())}."
     )
 
 
@@ -164,29 +163,18 @@ def select_nvfp4_moe_backend(
     # the batched or standard expert format.
     use_batched = config.moe_parallel_config.use_deepep_ll_kernels
     activation_format = (
-        mk.FusedMoEActivationFormat.BatchedExperts
-        if use_batched
-        else mk.FusedMoEActivationFormat.Standard
+        mk.FusedMoEActivationFormat.BatchedExperts if use_batched else mk.FusedMoEActivationFormat.Standard
     )
 
     def _make_log_backend(backend: NvFp4MoeBackend):
         available_backend_strs = [b.value for b in AVAILABLE_BACKENDS]
-        return (
-            f"Using '{backend.value}' NvFp4 MoE backend out "
-            f"of potential backends: {available_backend_strs}."
-        )
+        return f"Using '{backend.value}' NvFp4 MoE backend out of potential backends: {available_backend_strs}."
 
     def _make_log_unsupported(backend: NvFp4MoeBackend, reason: str | None) -> str:
         if reason:
-            return (
-                f"NvFp4 MoE backend '{backend.value}' does not support the "
-                f"deployment configuration since {reason}."
-            )
+            return f"NvFp4 MoE backend '{backend.value}' does not support the deployment configuration since {reason}."
         else:
-            return (
-                f"NvFp4 MoE backend '{backend.value}' does not support the "
-                "deployment configuration."
-            )
+            return f"NvFp4 MoE backend '{backend.value}' does not support the deployment configuration."
 
     def _return_or_raise(
         backend: NvFp4MoeBackend,
@@ -196,9 +184,7 @@ def select_nvfp4_moe_backend(
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[NvFp4MoeBackend, type[mk.FusedMoEExperts]]:
         for k_cls in backend_to_kernel_cls(backend):
-            supported, reason = k_cls.is_supported_config(
-                k_cls, config, weight_key, activation_key, activation_format
-            )
+            supported, reason = k_cls.is_supported_config(k_cls, config, weight_key, activation_key, activation_format)
             if supported:
                 logger.info_once(_make_log_backend(backend))
                 return backend, k_cls
@@ -215,9 +201,7 @@ def select_nvfp4_moe_backend(
             and requested_backend == NvFp4MoeBackend.FLASHINFER_CUTEDSL
         ):
             requested_backend = NvFp4MoeBackend.FLASHINFER_CUTEDSL_BATCHED
-        return _return_or_raise(
-            requested_backend, config, weight_key, activation_key, activation_format
-        )
+        return _return_or_raise(requested_backend, config, weight_key, activation_key, activation_format)
 
     if envs.is_set("APHRODITE_USE_FLASHINFER_MOE_FP4"):
         if not envs.APHRODITE_USE_FLASHINFER_MOE_FP4:
@@ -228,9 +212,7 @@ def select_nvfp4_moe_backend(
         elif envs.is_set("APHRODITE_FLASHINFER_MOE_BACKEND"):
             # If user is explicit about backend, validate it.
             backend = fi_2_aphrodite_backend_map[get_flashinfer_moe_backend()]
-            return _return_or_raise(
-                backend, config, weight_key, activation_key, activation_format
-            )
+            return _return_or_raise(backend, config, weight_key, activation_key, activation_format)
         else:
             # If the user is not explicit about the backend, try each.
             for backend in FLASHINFER_NVFP4_MOE_BACKENDS:
@@ -246,9 +228,7 @@ def select_nvfp4_moe_backend(
                         logger.info_once(_make_log_backend(backend), scope="local")
                         return backend, k_cls
                     else:
-                        logger.debug_once(
-                            _make_log_unsupported(backend, reason), scope="local"
-                        )
+                        logger.debug_once(_make_log_unsupported(backend, reason), scope="local")
 
             raise NotImplementedError(
                 "Found APHRODITE_USE_FLASHINFER_MOE_FP4=1, but no "
@@ -257,9 +237,7 @@ def select_nvfp4_moe_backend(
 
     if envs.APHRODITE_TEST_FORCE_FP8_MARLIN:
         backend = NvFp4MoeBackend.MARLIN
-        return _return_or_raise(
-            backend, config, weight_key, activation_key, activation_format
-        )
+        return _return_or_raise(backend, config, weight_key, activation_key, activation_format)
 
     # Select kernels in order of backend.
     for backend in AVAILABLE_BACKENDS:
@@ -278,9 +256,7 @@ def select_nvfp4_moe_backend(
             else:
                 logger.debug_once(_make_log_unsupported(backend, reason), scope="local")
 
-    raise NotImplementedError(
-        "No NvFp4 MoE backend supports the deployment configuration."
-    )
+    raise NotImplementedError("No NvFp4 MoE backend supports the deployment configuration.")
 
 
 def convert_to_nvfp4_moe_kernel_format(
@@ -326,10 +302,7 @@ def convert_to_nvfp4_moe_kernel_format(
             w2_scale_2=w2_scale_2,
             a2_scale=a2_scale,
         )
-    elif (
-        nvfp4_backend in FLASHINFER_NVFP4_MOE_BACKENDS
-        or nvfp4_backend == NvFp4MoeBackend.APHRODITE_CUTLASS
-    ):
+    elif nvfp4_backend in FLASHINFER_NVFP4_MOE_BACKENDS or nvfp4_backend == NvFp4MoeBackend.APHRODITE_CUTLASS:
         (
             w13,
             w13_scale,

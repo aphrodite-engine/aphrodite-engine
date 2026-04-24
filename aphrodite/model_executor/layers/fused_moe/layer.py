@@ -115,17 +115,11 @@ def determine_expert_map(
     # Create an expert map for the local experts
     if expert_placement_strategy == "linear":
         start_idx = ep_rank * base_experts + min(ep_rank, remainder)
-        expert_map[start_idx : start_idx + local_num_experts] = torch.arange(
-            0, local_num_experts, dtype=torch.int32
-        )
+        expert_map[start_idx : start_idx + local_num_experts] = torch.arange(0, local_num_experts, dtype=torch.int32)
     elif expert_placement_strategy == "round_robin":
-        local_log_experts = torch.arange(
-            ep_rank, global_num_experts, ep_size, dtype=torch.int32
-        )
+        local_log_experts = torch.arange(ep_rank, global_num_experts, ep_size, dtype=torch.int32)
 
-        expert_map[local_log_experts] = torch.arange(
-            0, local_num_experts, dtype=torch.int32
-        )
+        expert_map[local_log_experts] = torch.arange(0, local_num_experts, dtype=torch.int32)
     else:
         raise ValueError(
             "Unsupported expert placement strategy "
@@ -135,9 +129,7 @@ def determine_expert_map(
 
     expert_mask = None
     if return_expert_mask:
-        expert_mask = torch.ones(
-            (global_num_experts + num_fused_shared_experts + 1,), dtype=torch.int32
-        )
+        expert_mask = torch.ones((global_num_experts + num_fused_shared_experts + 1,), dtype=torch.int32)
         expert_mask[-1] = 0
         expert_mask[:global_num_experts] = expert_map > -1
         expert_map = torch.cat(
@@ -163,9 +155,7 @@ def determine_expert_placement_strategy(
 ) -> ExpertPlacementStrategy:
     if expert_placement_strategy == "round_robin":
         round_robin_supported = (
-            (num_expert_group is not None and num_expert_group > 1)
-            and num_redundant_experts == 0
-            and not enable_eplb
+            (num_expert_group is not None and num_expert_group > 1) and num_redundant_experts == 0 and not enable_eplb
         )
 
         if not round_robin_supported:
@@ -303,9 +293,7 @@ class FusedMoE(PluggableLayer):
             # since model_config is not set in the pytest test.
             moe_in_dtype = params_dtype
 
-        tp_size_ = (
-            tp_size if tp_size is not None else get_tensor_model_parallel_world_size()
-        )
+        tp_size_ = tp_size if tp_size is not None else get_tensor_model_parallel_world_size()
         dp_size_ = dp_size if dp_size is not None else get_dp_group().world_size
         pcp_size_ = pcp_size if pcp_size is not None else get_pcp_group().world_size
 
@@ -346,22 +334,13 @@ class FusedMoE(PluggableLayer):
         # ROCm aiter shared experts fusion
         # AITER only supports gated activations (silu/gelu), so disable it
         # for non-gated MoE (is_act_and_mul=False)
-        self.rocm_aiter_fmoe_enabled = (
-            rocm_aiter_ops.is_fused_moe_enabled() and is_act_and_mul
-        )
-        self.aiter_fmoe_shared_expert_enabled = (
-            rocm_aiter_ops.is_fusion_moe_shared_experts_enabled() and is_act_and_mul
-        )
+        self.rocm_aiter_fmoe_enabled = rocm_aiter_ops.is_fused_moe_enabled() and is_act_and_mul
+        self.aiter_fmoe_shared_expert_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled() and is_act_and_mul
 
         self.num_fused_shared_experts = (
-            n_shared_experts
-            if n_shared_experts is not None and self.aiter_fmoe_shared_expert_enabled
-            else 0
+            n_shared_experts if n_shared_experts is not None and self.aiter_fmoe_shared_expert_enabled else 0
         )
-        if (
-            not self.aiter_fmoe_shared_expert_enabled
-            and self.num_fused_shared_experts != 0
-        ):
+        if not self.aiter_fmoe_shared_expert_enabled and self.num_fused_shared_experts != 0:
             raise ValueError(
                 "n_shared_experts is only supported on ROCm aiter when "
                 "APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS is enabled"
@@ -371,13 +350,10 @@ class FusedMoE(PluggableLayer):
         if self.use_ep:
             if self.enable_eplb:
                 assert self.global_num_experts % self.ep_size == 0, (
-                    "EPLB currently only supports even distribution of "
-                    "experts across ranks."
+                    "EPLB currently only supports even distribution of experts across ranks."
                 )
             else:
-                assert num_redundant_experts == 0, (
-                    "Redundant experts are only supported with EPLB."
-                )
+                assert num_redundant_experts == 0, "Redundant experts are only supported with EPLB."
 
             self.expert_placement_strategy = determine_expert_placement_strategy(
                 expert_placement_strategy=self.expert_placement_strategy,
@@ -421,13 +397,11 @@ class FusedMoE(PluggableLayer):
 
         self.top_k = top_k
 
-        self._init_aiter_shared_experts_topK_buffer(
-            aphrodite_config=aphrodite_config, dp_size=dp_size_
-        )
+        self._init_aiter_shared_experts_topK_buffer(aphrodite_config=aphrodite_config, dp_size=dp_size_)
         if self.use_ep and self.rocm_aiter_fmoe_enabled:
-            assert self.expert_mask is None or torch.all(
-                (expert_mask == 0) | (expert_mask == 1)
-            ), "Aiter Fused MoE kernel only supports expert_map with 0 and 1s."
+            assert self.expert_mask is None or torch.all((expert_mask == 0) | (expert_mask == 1)), (
+                "Aiter Fused MoE kernel only supports expert_map with 0 and 1s."
+            )
 
         assert intermediate_size % self.tp_size == 0
         intermediate_size_per_partition = intermediate_size // self.tp_size
@@ -447,9 +421,7 @@ class FusedMoE(PluggableLayer):
         # by the runner in this case.
         # The member variable must be set in the same way as the router since
         # some quantization methods can access it.
-        self.routed_scaling_factor = (
-            routed_scaling_factor if not apply_routed_scale_to_output else 1.0
-        )
+        self.routed_scaling_factor = routed_scaling_factor if not apply_routed_scale_to_output else 1.0
         self.e_score_correction_bias = e_score_correction_bias
         # TODO(bnell): end attributes
 
@@ -504,9 +476,7 @@ class FusedMoE(PluggableLayer):
             disable_inplace=disable_inplace() or shared_experts is not None,
         )
         if self.moe_config.use_mori_kernels:
-            assert self.rocm_aiter_fmoe_enabled, (
-                "Mori needs to be used with aiter fused_moe for now."
-            )
+            assert self.rocm_aiter_fmoe_enabled, "Mori needs to be used with aiter fused_moe for now."
             assert not self.aiter_fmoe_shared_expert_enabled, (
                 "Mori does not support fusion shared expert now. "
                 "Turn it off by setting APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS=0"
@@ -532,9 +502,7 @@ class FusedMoE(PluggableLayer):
         self.quant_method: FusedMoEMethodBase = _get_quant_method()
 
         if not self.moe_config.is_act_and_mul and not current_platform.is_cuda_alike():
-            raise NotImplementedError(
-                "is_act_and_mul=False is supported only for CUDA and ROCm for now"
-            )
+            raise NotImplementedError("is_act_and_mul=False is supported only for CUDA and ROCm for now")
 
         if self.enable_eplb and not self.quant_method.supports_eplb:
             # TODO: Add support for additional quantization methods.
@@ -544,23 +512,17 @@ class FusedMoE(PluggableLayer):
             # quantization methods, so I'm leaving it for now.
             # If you plan to add support for more quantization methods,
             # please refer to the implementation in `Fp8MoEMethod`.
-            raise NotImplementedError(
-                f"EPLB is not supported {self.quant_method.__class__.__name__}."
-            )
+            raise NotImplementedError(f"EPLB is not supported {self.quant_method.__class__.__name__}.")
 
         # Round up hidden size and update moe_config.
-        hidden_size, intermediate_size_per_partition = (
-            self.quant_method.maybe_roundup_sizes(
-                hidden_size,
-                intermediate_size_per_partition,
-                moe_in_dtype,
-                self.moe_parallel_config,
-            )
+        hidden_size, intermediate_size_per_partition = self.quant_method.maybe_roundup_sizes(
+            hidden_size,
+            intermediate_size_per_partition,
+            moe_in_dtype,
+            self.moe_parallel_config,
         )
         self.moe_config.hidden_dim = hidden_size
-        self.moe_config.intermediate_size_per_partition = (
-            intermediate_size_per_partition
-        )
+        self.moe_config.intermediate_size_per_partition = intermediate_size_per_partition
 
         moe_quant_params = {
             "num_experts": self.local_num_experts,
@@ -599,9 +561,7 @@ class FusedMoE(PluggableLayer):
             # When apply_routed_scale_to_output is True, we allow
             # the scaling factor to be passed to the runner, otherwise
             # we pass 1.0 so it ends up being a nop.
-            routed_scaling_factor=routed_scaling_factor
-            if apply_routed_scale_to_output
-            else 1.0,
+            routed_scaling_factor=routed_scaling_factor if apply_routed_scale_to_output else 1.0,
         )
 
     # TODO(bnell): This method is provided as a hook so aphrodite/lora/layers/fused_moe.py
@@ -625,13 +585,9 @@ class FusedMoE(PluggableLayer):
         # routing_tables only needed for round-robin expert placement with
         # DeepEP all2all backend.
         routing_tables = self._maybe_init_expert_routing_tables()
-        prepare_finalize = self.base_quant_method.maybe_make_prepare_finalize(
-            routing_tables=routing_tables
-        )
+        prepare_finalize = self.base_quant_method.maybe_make_prepare_finalize(routing_tables=routing_tables)
         if prepare_finalize is not None:
-            logger.debug(
-                "%s for %s(%s)", prepare_finalize.__class__.__name__, self, id(self)
-            )
+            logger.debug("%s for %s(%s)", prepare_finalize.__class__.__name__, self, id(self))
             self._replace_quant_method(
                 FusedMoEModularMethod.make(
                     self,
@@ -684,8 +640,7 @@ class FusedMoE(PluggableLayer):
         # Currently routing_tables only needed for round-robin expert placement
         # with DeepEP-ll or NIXL EP all2all backends.
         if self.expert_placement_strategy != "round_robin" or (
-            not self.moe_parallel_config.use_deepep_ll_kernels
-            and not self.moe_parallel_config.use_nixl_ep_kernels
+            not self.moe_parallel_config.use_deepep_ll_kernels and not self.moe_parallel_config.use_nixl_ep_kernels
         ):
             return None
 
@@ -726,18 +681,14 @@ class FusedMoE(PluggableLayer):
         device: torch.device | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         device_kwargs = {"device": device} if device is not None else {}
-        global_indices = torch.arange(
-            global_num_experts, dtype=torch.long, **device_kwargs
-        )
+        global_indices = torch.arange(global_num_experts, dtype=torch.long, **device_kwargs)
         owner = torch.remainder(global_indices, ep_size)
         local_index = torch.div(global_indices, ep_size, rounding_mode="floor")
         base = global_num_experts // ep_size
         remainder = global_num_experts % ep_size
         physical_offset = owner * base
         if remainder > 0:
-            remainder_tensor = torch.tensor(
-                remainder, dtype=torch.long, **device_kwargs
-            )
+            remainder_tensor = torch.tensor(remainder, dtype=torch.long, **device_kwargs)
             physical_offset = physical_offset + torch.minimum(owner, remainder_tensor)
 
         global_to_physical = physical_offset + local_index
@@ -808,9 +759,7 @@ class FusedMoE(PluggableLayer):
         scales are stored in the same loaded_weight tensor.
         """
         shard_size = param.shape[shard_dim]
-        loaded_weight = loaded_weight.narrow(
-            shard_dim, shard_size * tp_rank, shard_size
-        )
+        loaded_weight = loaded_weight.narrow(shard_dim, shard_size * tp_rank, shard_size)
         param.copy_(loaded_weight)
 
     def _load_model_weight_or_group_weight_scale(
@@ -896,8 +845,7 @@ class FusedMoE(PluggableLayer):
         if shard_dim == dim_b:
             return dim_a
         raise ValueError(
-            f"shard_dim={shard_dim} is not a valid data dimension "
-            f"for a {ndim}D tensor (expected {dim_a} or {dim_b})"
+            f"shard_dim={shard_dim} is not a valid data dimension for a {ndim}D tensor (expected {dim_a} or {dim_b})"
         )
 
     @staticmethod
@@ -1016,9 +964,7 @@ class FusedMoE(PluggableLayer):
         )
         expert_data.copy_(loaded_weight)
 
-    def _load_single_value(
-        self, param: torch.nn.Parameter, loaded_weight: torch.Tensor, expert_id: int
-    ):
+    def _load_single_value(self, param: torch.nn.Parameter, loaded_weight: torch.Tensor, expert_id: int):
         param_data = param.data
 
         # Input scales can be loaded directly and should be equal.
@@ -1048,9 +994,7 @@ class FusedMoE(PluggableLayer):
             return expert_id
         return self._expert_map[expert_id].item()
 
-    def _init_aiter_shared_experts_topK_buffer(
-        self, aphrodite_config: AphroditeConfig, dp_size: int
-    ):
+    def _init_aiter_shared_experts_topK_buffer(self, aphrodite_config: AphroditeConfig, dp_size: int):
         if self.num_fused_shared_experts > 0:
             init_aiter_topK_meta_data(
                 n_routed_experts=self.global_num_experts,
@@ -1059,8 +1003,7 @@ class FusedMoE(PluggableLayer):
                 tp_rank=self.ep_rank if self.use_ep else self.tp_rank,
                 tp_size=self.ep_size if self.use_ep else self.tp_size,
                 shared_experts_score=1.0,
-                max_num_tokens=aphrodite_config.scheduler_config.max_num_batched_tokens
-                * dp_size,
+                max_num_tokens=aphrodite_config.scheduler_config.max_num_batched_tokens * dp_size,
                 is_EP=self.use_ep,
             )
         self.local_num_experts += self.num_fused_shared_experts
@@ -1111,10 +1054,7 @@ class FusedMoE(PluggableLayer):
         global_expert_id = expert_id
         expert_id = self._map_global_expert_id_to_local_expert_id(global_expert_id)
 
-        use_global_sf = (
-            getattr(self.quant_method, "use_global_sf", False)
-            and "input_scale" in weight_name
-        )
+        use_global_sf = getattr(self.quant_method, "use_global_sf", False) and "input_scale" in weight_name
 
         if expert_id == -1 and not use_global_sf:
             # Failed to load this param since it's not local to this rank
@@ -1262,13 +1202,10 @@ class FusedMoE(PluggableLayer):
             # tensors (quant_method=BLOCK), so those must not be treated
             # as per-tensor scalars here.
             is_block_weight_scale = (
-                "weight_scale" in weight_name
-                and quant_method == FusedMoeWeightScaleSupported.BLOCK.value
+                "weight_scale" in weight_name and quant_method == FusedMoeWeightScaleSupported.BLOCK.value
             )
             is_per_tensor = (
-                "weight_scale_2" in weight_name
-                if uses_weight_scale_2
-                else "weight_scale" in weight_name
+                "weight_scale_2" in weight_name if uses_weight_scale_2 else "weight_scale" in weight_name
             ) or "input_scale" in weight_name
             is_per_tensor = is_per_tensor and not is_block_weight_scale
             if is_per_tensor:
@@ -1346,17 +1283,13 @@ class FusedMoE(PluggableLayer):
                 )
             else:
                 WEIGHT_SCALE_SUPPORTED = [e.value for e in FusedMoeWeightScaleSupported]
-                raise ValueError(
-                    f"quant method must be one of {WEIGHT_SCALE_SUPPORTED}"
-                )
+                raise ValueError(f"quant method must be one of {WEIGHT_SCALE_SUPPORTED}")
             return True if return_success else None
 
         # Case weight_shape
         if "weight_shape" in weight_name:
             # only required by compressed-tensors
-            self._load_single_value(
-                param=param, loaded_weight=loaded_weight, expert_id=expert_id
-            )
+            self._load_single_value(param=param, loaded_weight=loaded_weight, expert_id=expert_id)
             return True if return_success else None
 
         # Case model weights
@@ -1372,14 +1305,9 @@ class FusedMoE(PluggableLayer):
 
         return False if return_success else None
 
-    def load_weights(
-        self, weights: Iterable[tuple[str, torch.Tensor]]
-    ) -> Iterable[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> Iterable[str]:
         if (expert_mapping := self.expert_mapping) is None:
-            raise ValueError(
-                "`self.expert_mapping` must be provided to "
-                "load weights using `self.load_weights`."
-            )
+            raise ValueError("`self.expert_mapping` must be provided to load weights using `self.load_weights`.")
         for expert_name, loaded_weight in weights:
             qual_name = f"{self.layer_name}.{expert_name}"
             for param_name, weight_name, expert_id, shard_id in expert_mapping:
@@ -1425,9 +1353,7 @@ class FusedMoE(PluggableLayer):
                         yield param_name
 
     def get_expert_weights(self) -> Iterable[torch.Tensor]:
-        def _maybe_make_contiguous(
-            name: str, p: torch.nn.Parameter
-        ) -> torch.nn.Parameter:
+        def _maybe_make_contiguous(name: str, p: torch.nn.Parameter) -> torch.nn.Parameter:
             """
             In some cases, the last 2 dimensions (the non-expert dimensions)
             of the weight scale tensor are transposed. This function
@@ -1460,9 +1386,7 @@ class FusedMoE(PluggableLayer):
             # expect the parameter's tensor to the same shape / stride. Instead,
             # make a new torch.nn.Parameter that is used just in the context of
             # EPLB.
-            return torch.nn.Parameter(
-                torch.transpose(p.data, 1, 2), requires_grad=False
-            )
+            return torch.nn.Parameter(torch.transpose(p.data, 1, 2), requires_grad=False)
 
         weights = list(self.named_parameters())
         weights = [(name, _maybe_make_contiguous(name, p)) for name, p in weights]
@@ -1523,9 +1447,7 @@ class FusedMoE(PluggableLayer):
         if self.quant_method.moe_quant_config is None:
             # Note: the moe_quant_config can't be constructed until after
             # weight loading post processing.
-            self.quant_method.moe_quant_config = (
-                self.quant_method.get_fused_moe_quant_config(self)
-            )
+            self.quant_method.moe_quant_config = self.quant_method.get_fused_moe_quant_config(self)
 
     @property
     def moe_quant_config(self) -> FusedMoEQuantConfig | None:
@@ -1544,9 +1466,7 @@ class FusedMoE(PluggableLayer):
 
     @property
     def expert_map(self) -> torch.Tensor | None:
-        return (
-            self._expert_map if not self.rocm_aiter_fmoe_enabled else self.expert_mask
-        )
+        return self._expert_map if not self.rocm_aiter_fmoe_enabled else self.expert_mask
 
     @classmethod
     def make_expert_params_mapping(
@@ -1564,17 +1484,11 @@ class FusedMoE(PluggableLayer):
         # - `expert_id` is the physical expert id
         # - `weight_name` contains the weight name of the logical expert
         # So that we should map the expert id to logical in `weight_name`
-        physical_to_logical_map = (
-            EplbState.build_initial_global_physical_to_logical_map(
-                num_experts, num_redundant_experts
-            )
+        physical_to_logical_map = EplbState.build_initial_global_physical_to_logical_map(
+            num_experts, num_redundant_experts
         )
 
-        base_layer = (
-            "base_layer."
-            if any(".base_layer." in name for name, _ in model.named_parameters())
-            else ""
-        )
+        base_layer = "base_layer." if any(".base_layer." in name for name, _ in model.named_parameters()) else ""
 
         return [
             # (param_name, weight_name, expert_id, shard_id)

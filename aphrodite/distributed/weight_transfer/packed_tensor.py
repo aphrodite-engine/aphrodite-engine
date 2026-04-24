@@ -43,9 +43,7 @@ def packed_broadcast_producer(
 
     packing_tensor_list: list[list[torch.Tensor]] = [[] for _ in range(num_buffers)]
     packing_tensor_sizes: list[int] = [0 for _ in range(num_buffers)]
-    packed_tensors: list[torch.Tensor] = [
-        torch.empty(0, dtype=torch.uint8, device="cuda") for _ in range(num_buffers)
-    ]
+    packed_tensors: list[torch.Tensor] = [torch.empty(0, dtype=torch.uint8, device="cuda") for _ in range(num_buffers)]
 
     while True:
         # Synchronize the current stream
@@ -59,29 +57,20 @@ def packed_broadcast_producer(
                 # Pack the tensors
                 while True:
                     # Apply post processing and convert to linearized uint8 tensor
-                    tensor = (
-                        post_iter_func(next(iterator))
-                        .contiguous()
-                        .view(torch.uint8)
-                        .view(-1)
-                    )
+                    tensor = post_iter_func(next(iterator)).contiguous().view(torch.uint8).view(-1)
                     packing_tensor_list[buffer_idx].append(tensor)
                     packing_tensor_sizes[buffer_idx] += tensor.numel()
                     if packing_tensor_sizes[buffer_idx] > target_packed_tensor_size:
                         break
                 # Pack the tensors and call broadcast collective
-                packed_tensors[buffer_idx] = torch.cat(
-                    packing_tensor_list[buffer_idx], dim=0
-                )
+                packed_tensors[buffer_idx] = torch.cat(packing_tensor_list[buffer_idx], dim=0)
                 group.broadcast(packed_tensors[buffer_idx], src=src)
                 # Move to the next buffer
                 buffer_idx = (buffer_idx + 1) % num_buffers
             except StopIteration:
                 # Do the last broadcast if there are remaining tensors
                 if len(packing_tensor_list[buffer_idx]) > 0:
-                    packed_tensors[buffer_idx] = torch.cat(
-                        packing_tensor_list[buffer_idx], dim=0
-                    )
+                    packed_tensors[buffer_idx] = torch.cat(packing_tensor_list[buffer_idx], dim=0)
                     group.broadcast(packed_tensors[buffer_idx], src=src)
                 break
 
@@ -132,9 +121,7 @@ def packed_broadcast_consumer(
 
         unpacked_list = [
             (name, tensor.contiguous().view(dtype).view(*shape))
-            for name, shape, dtype, tensor in zip(
-                names, shapes, dtypes, unpacked_tensors
-            )
+            for name, shape, dtype, tensor in zip(names, shapes, dtypes, unpacked_tensors)
         ]
 
         return unpacked_list
@@ -144,13 +131,9 @@ def packed_broadcast_consumer(
     streams = [torch.cuda.Stream() for _ in range(num_buffers)]
     buffer_idx = 0
 
-    packing_tensor_meta_data: list[list[tuple[str, list[int], torch.dtype, int]]] = [
-        [] for _ in range(num_buffers)
-    ]
+    packing_tensor_meta_data: list[list[tuple[str, list[int], torch.dtype, int]]] = [[] for _ in range(num_buffers)]
     packing_tensor_sizes: list[int] = [0 for _ in range(num_buffers)]
-    packed_tensors: list[torch.Tensor] = [
-        torch.empty(0, dtype=torch.uint8, device="cuda") for _ in range(num_buffers)
-    ]
+    packed_tensors: list[torch.Tensor] = [torch.empty(0, dtype=torch.uint8, device="cuda") for _ in range(num_buffers)]
 
     while True:
         # Synchronize the current stream
@@ -164,9 +147,7 @@ def packed_broadcast_consumer(
                 while True:
                     name, (shape, dtype) = next(iterator)
                     tensor_size = math.prod(shape) * dtype.itemsize
-                    packing_tensor_meta_data[buffer_idx].append(
-                        (name, shape, dtype, tensor_size)
-                    )
+                    packing_tensor_meta_data[buffer_idx].append((name, shape, dtype, tensor_size))
                     packing_tensor_sizes[buffer_idx] += tensor_size
                     if packing_tensor_sizes[buffer_idx] > target_packed_tensor_size:
                         break
@@ -176,9 +157,7 @@ def packed_broadcast_consumer(
                 )
                 group.broadcast(packed_tensors[buffer_idx], src=src)
                 # Load the packed tensor into the model
-                names, shapes, dtypes, tensor_sizes = zip(
-                    *packing_tensor_meta_data[buffer_idx]
-                )
+                names, shapes, dtypes, tensor_sizes = zip(*packing_tensor_meta_data[buffer_idx])
                 post_unpack_func(
                     unpack_tensor(
                         packed_tensors[buffer_idx],
@@ -201,9 +180,7 @@ def packed_broadcast_consumer(
                     )
                     group.broadcast(packed_tensors[buffer_idx], src=src)
                     # Load the packed tensor into the model
-                    names, shapes, dtypes, tensor_sizes = zip(
-                        *packing_tensor_meta_data[buffer_idx]
-                    )
+                    names, shapes, dtypes, tensor_sizes = zip(*packing_tensor_meta_data[buffer_idx])
                     post_unpack_func(
                         unpack_tensor(
                             packed_tensors[buffer_idx],

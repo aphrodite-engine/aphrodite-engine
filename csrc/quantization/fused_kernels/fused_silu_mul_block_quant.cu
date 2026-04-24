@@ -100,8 +100,8 @@ __global__ void silu_and_mul_per_block_quant_kernel(
   float group_scale = shared_max[0];
 
   // Step 4: Quantize and write output
-  token_output[tid] =
-      aphrodite::ScaledQuant<scalar_out_t, false>::quant_fn(result, group_scale);
+  token_output[tid] = aphrodite::ScaledQuant<scalar_out_t, false>::quant_fn(
+      result, group_scale);
 }
 
 }  // namespace aphrodite
@@ -152,17 +152,18 @@ void silu_and_mul_per_block_quant(torch::Tensor& out,
               using scalar_out_t = scalar_t;
 
               APHRODITE_DISPATCH_GROUP_SIZE(group_size, gs, [&] {
-                APHRODITE_DISPATCH_BOOL(is_scale_transposed, transpose_scale, [&] {
-                  aphrodite::silu_and_mul_per_block_quant_kernel<
-                      scalar_in_t, scalar_out_t, transpose_scale, gs>
-                      <<<grid, block, 0, stream>>>(
-                          out.data_ptr<scalar_out_t>(),
-                          scales.data_ptr<float>(),
-                          input.data_ptr<scalar_in_t>(),
-                          scale_ub.has_value() ? scale_ub->data_ptr<float>()
-                                               : nullptr,
-                          hidden_size);
-                });
+                APHRODITE_DISPATCH_BOOL(
+                    is_scale_transposed, transpose_scale, [&] {
+                      aphrodite::silu_and_mul_per_block_quant_kernel<
+                          scalar_in_t, scalar_out_t, transpose_scale, gs>
+                          <<<grid, block, 0, stream>>>(
+                              out.data_ptr<scalar_out_t>(),
+                              scales.data_ptr<float>(),
+                              input.data_ptr<scalar_in_t>(),
+                              scale_ub.has_value() ? scale_ub->data_ptr<float>()
+                                                   : nullptr,
+                              hidden_size);
+                    });
               });
             });
       });

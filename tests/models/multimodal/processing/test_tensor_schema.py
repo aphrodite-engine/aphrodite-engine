@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import tempfile
 from collections.abc import Iterable
 from contextlib import contextmanager
@@ -7,12 +9,12 @@ from typing import Any, TypeAlias
 import numpy as np
 import pytest
 import torch.nn as nn
+from aphrodite.modeling.models.interfaces import SupportsMultiModal, supports_multimodal
 from PIL import Image
 
 from aphrodite.config import AphroditeConfig, ModelConfig, set_current_aphrodite_config
 from aphrodite.config.multimodal import AudioDummyOptions, BaseDummyOptions, ImageDummyOptions, VideoDummyOptions
 from aphrodite.distributed import cleanup_dist_env_and_memory, init_distributed_environment, initialize_model_parallel
-from aphrodite.modeling.models.interfaces import SupportsMultiModal, supports_multimodal
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, BatchedTensorInputs
 from aphrodite.multimodal.processing import BaseMultiModalProcessor, InputProcessingContext
 from aphrodite.multimodal.utils import group_mm_kwargs_by_modality

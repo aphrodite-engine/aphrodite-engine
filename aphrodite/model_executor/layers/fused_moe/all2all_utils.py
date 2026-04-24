@@ -69,19 +69,13 @@ def maybe_roundup_layer_hidden_size(
         Original hidden size otherwise.
     """
     if moe_parallel_config.use_deepep_ht_kernels:
-        hidden_size = DeepEPHTPrepareAndFinalize.maybe_roundup_layer_hidden_size(
-            hidden_size, act_dtype
-        )
+        hidden_size = DeepEPHTPrepareAndFinalize.maybe_roundup_layer_hidden_size(hidden_size, act_dtype)
 
     if moe_parallel_config.use_deepep_ll_kernels:
-        hidden_size = DeepEPLLPrepareAndFinalize.maybe_roundup_layer_hidden_size(
-            hidden_size
-        )
+        hidden_size = DeepEPLLPrepareAndFinalize.maybe_roundup_layer_hidden_size(hidden_size)
 
     if moe_parallel_config.use_nixl_ep_kernels:
-        hidden_size = NixlEPPrepareAndFinalize.maybe_roundup_layer_hidden_size(
-            hidden_size
-        )
+        hidden_size = NixlEPPrepareAndFinalize.maybe_roundup_layer_hidden_size(hidden_size)
 
     return hidden_size
 
@@ -119,9 +113,7 @@ def maybe_make_prepare_finalize(
             )
             return make_moe_prepare_and_finalize_naive_dp_ep(
                 is_sequence_parallel=moe.moe_parallel_config.is_sequence_parallel,
-                num_dispatchers=(
-                    get_ep_group().device_communicator.all2all_manager.world_size
-                ),
+                num_dispatchers=(get_ep_group().device_communicator.all2all_manager.world_size),
                 use_monolithic=use_monolithic,
             )
         else:
@@ -183,9 +175,7 @@ def maybe_make_prepare_finalize(
 
         # Note: We may want to use FP8 dispatch just to reduce
         # data movement.
-        use_fp8_dispatch = (
-            quant_config.is_per_act_token or quant_config.is_block_quantized
-        )
+        use_fp8_dispatch = quant_config.is_per_act_token or quant_config.is_block_quantized
         if use_fp8_dispatch:
             # For PTPC (per token per channel) quant, scale dim is 1
             # For 1x128 quant, scale dim is hidden_dim // 128
@@ -233,9 +223,7 @@ def maybe_make_prepare_finalize(
                 "all2all backend (e.g. 'flashinfer_nvlink_two_sided' or "
                 "'allgather_reducescatter') for non-nvfp4 models."
             )
-        max_num_tokens = (
-            get_current_aphrodite_config().scheduler_config.max_num_batched_tokens
-        )
+        max_num_tokens = get_current_aphrodite_config().scheduler_config.max_num_batched_tokens
         prepare_finalize = FlashInferNVLinkOneSidedPrepareAndFinalize(
             max_num_tokens=max_num_tokens,
             top_k=moe.experts_per_token,

@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from https://github.com/sgl-project/sglang/blob/main/test/srt/test_int8_kernel.py
 import itertools
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.int8_utils import per_token_quant_int8
+
+from aphrodite.platforms import current_platform
 
 if current_platform.get_device_capability() < (7, 0):
     pytest.skip("INT8 Triton requires CUDA 7.0 or higher", allow_module_level=True)

@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.modeling.layers.layernorm import RMSNorm
 
 import aphrodite._custom_ops as ops
-from aphrodite.modeling.layers.layernorm import RMSNorm
 from tests.kernels.utils import opcheck
 
 DTYPES = [torch.bfloat16, torch.float]

@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 from contextlib import ExitStack
 from unittest.mock import MagicMock
 
 import pytest
+from aphrodite.engine.args_tools import AsyncEngineArgs
 
 from aphrodite import SamplingParams
 from aphrodite.assets.image import ImageAsset
 from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.config import AphroditeConfig
-from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.inputs import PromptType
 from aphrodite.outputs import RequestOutput
 from aphrodite.platforms import current_platform

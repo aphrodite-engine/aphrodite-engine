@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import random
 import time
 
 import torch
-from tabulate import tabulate
-
-from aphrodite import _custom_ops as ops
 from aphrodite.attention.ops.triton_reshape_and_cache_flash import (
     triton_reshape_and_cache_flash,
 )
+from tabulate import tabulate
+
+from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser

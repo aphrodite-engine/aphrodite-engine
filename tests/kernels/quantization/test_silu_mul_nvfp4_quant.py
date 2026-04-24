@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
+from aphrodite.modeling.layers.activation import SiluAndMul
 
 from aphrodite._custom_ops import scaled_fp4_quant
-from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.platforms import current_platform
 from tests.kernels.quantization.nvfp4_utils import FLOAT4_E2M1_MAX, FLOAT8_E4M3_MAX, dequantize_nvfp4_to_dtype
 

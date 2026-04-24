@@ -22,14 +22,10 @@ class InputBuffers:
 
         self.input_ids = torch.zeros(max_num_tokens, dtype=torch.int32, device=device)
         self.positions = torch.zeros(max_num_tokens, dtype=torch.int64, device=device)
-        self.query_start_loc = torch.zeros(
-            max_num_reqs + 1, dtype=torch.int32, device=device
-        )
+        self.query_start_loc = torch.zeros(max_num_reqs + 1, dtype=torch.int32, device=device)
         self.seq_lens = torch.zeros(max_num_reqs, dtype=torch.int32, device=device)
         # DCP: per-request local seq_lens buffer
-        self.dcp_local_seq_lens = torch.zeros(
-            max_num_reqs, dtype=torch.int32, device=device
-        )
+        self.dcp_local_seq_lens = torch.zeros(max_num_reqs, dtype=torch.int32, device=device)
 
 
 @dataclass
@@ -108,9 +104,7 @@ class InputBatch:
         query_start_loc_np[0] = 0
         np.cumsum(num_scheduled_tokens, out=query_start_loc_np[1:])
         input_buffers.query_start_loc[:1] = 0
-        torch.cumsum(
-            seq_lens, dim=0, out=input_buffers.query_start_loc[1 : num_reqs + 1]
-        )
+        torch.cumsum(seq_lens, dim=0, out=input_buffers.query_start_loc[1 : num_reqs + 1])
         # Pad for full CUDA graph mode.
         input_buffers.query_start_loc[num_reqs + 1 :] = num_tokens
         query_start_loc = input_buffers.query_start_loc[: num_reqs + 1]
@@ -430,9 +424,7 @@ def _post_update_kernel(
     total_len = tl.load(total_len_ptr + req_state_idx)
     num_sampled = tl.load(num_sampled_ptr + req_id)
     if num_sampled > 0:
-        token_id = tl.load(
-            sampled_tokens_ptr + req_id * sampled_tokens_stride + num_sampled - 1
-        )
+        token_id = tl.load(sampled_tokens_ptr + req_id * sampled_tokens_stride + num_sampled - 1)
         tl.store(last_sampled_tokens_ptr + req_state_idx, token_id)
         tl.store(total_len_ptr + req_state_idx, total_len + num_sampled)
 
@@ -444,11 +436,7 @@ def _post_update_kernel(
         )
 
         if output_bin_counts_ptr is not None:
-            token_ptr = (
-                output_bin_counts_ptr
-                + req_state_idx * output_bin_counts_stride
-                + token_id
-            )
+            token_ptr = output_bin_counts_ptr + req_state_idx * output_bin_counts_stride + token_id
             count = tl.load(token_ptr)
             tl.store(token_ptr, count + 1)
 
@@ -563,9 +551,7 @@ def expand_idx_mapping(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     num_reqs = idx_mapping.shape[0]
     expanded_idx_mapping = idx_mapping.new_empty(total_num_logits)
-    expanded_local_pos = torch.empty(
-        total_num_logits, dtype=torch.int32, device=idx_mapping.device
-    )
+    expanded_local_pos = torch.empty(total_num_logits, dtype=torch.int32, device=idx_mapping.device)
     _expand_idx_mapping_kernel[(num_reqs,)](
         idx_mapping,
         expanded_idx_mapping,

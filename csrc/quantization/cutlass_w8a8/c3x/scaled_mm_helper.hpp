@@ -73,7 +73,8 @@ void dispatch_scaled_mm(torch::Tensor& c, torch::Tensor const& a,
     if constexpr (!std::is_same_v<BlockwiseFunc, std::nullptr_t>) {
       blockwise_func(c, a, b, a_scales, b_scales);
     } else {
-      TORCH_CHECK(false, "Blockwise FP8 scaled_mm not supported for this build");
+      TORCH_CHECK(false,
+                  "Blockwise FP8 scaled_mm not supported for this build");
     }
   }
 }

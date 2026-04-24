@@ -52,10 +52,7 @@ def _is_compatible(
     # desc.uniform_token_count=None (PIECEWISE) can handle any uniform_token_count
     # desc.num_reqs=None means no request padding needed (PIECEWISE)
     return (
-        (
-            desc.uniform_token_count is None
-            or desc.uniform_token_count == uniform_token_count
-        )
+        (desc.uniform_token_count is None or desc.uniform_token_count == uniform_token_count)
         and (desc.num_reqs is None or desc.num_reqs >= num_reqs)
         and desc.num_tokens >= num_tokens
     )
@@ -70,9 +67,7 @@ def get_uniform_token_count(
     Return the uniform token count if batch is uniform, else None.
     A batch is uniform if all requests have the same number of tokens.
     """
-    if (max_query_len == num_tokens // num_reqs) and (
-        num_tokens == max_query_len * num_reqs
-    ):
+    if (max_query_len == num_tokens // num_reqs) and (num_tokens == max_query_len * num_reqs):
         return max_query_len
     return None
 
@@ -123,11 +118,7 @@ class CudaGraphManager:
         for num_tokens in capture_sizes:
             # Capture uniform decode specfifc graphs if required
             #  (i.e. separate decode routine)
-            if (
-                separate_decode_routine
-                and decode_mode
-                and self.decode_query_len <= num_tokens <= max_decode_tokens
-            ):
+            if separate_decode_routine and decode_mode and self.decode_query_len <= num_tokens <= max_decode_tokens:
                 desc = BatchExecutionDescriptor(
                     cg_mode=decode_mode,
                     num_tokens=num_tokens,
@@ -141,11 +132,7 @@ class CudaGraphManager:
                 # for PIECEWISE graphs there is no limit on requests when replaying
                 # i.e. no request padding is needed
                 # so we leave it as None
-                num_reqs = (
-                    min(num_tokens, self.max_num_reqs)
-                    if mixed_mode == CUDAGraphMode.FULL
-                    else None
-                )
+                num_reqs = min(num_tokens, self.max_num_reqs) if mixed_mode == CUDAGraphMode.FULL else None
                 desc = BatchExecutionDescriptor(
                     cg_mode=mixed_mode,
                     num_tokens=num_tokens,
@@ -176,9 +163,7 @@ class CudaGraphManager:
     @torch.inference_mode()
     def capture(
         self,
-        create_forward_fn: Callable[
-            [BatchExecutionDescriptor], Callable[[CUDAGraphMode], None]
-        ],
+        create_forward_fn: Callable[[BatchExecutionDescriptor], Callable[[CUDAGraphMode], None]],
         progress_bar_desc: str = "Capturing CUDA graphs",
     ) -> None:
         """Capture CUDA graphs.
@@ -206,15 +191,11 @@ class CudaGraphManager:
                     forward_fn(CUDAGraphMode.NONE)
 
                     # Capture
-                    logger.debug(
-                        "CG Capture: mode=%s, batch_desc=%s", desc.cg_mode.name, desc
-                    )
+                    logger.debug("CG Capture: mode=%s, batch_desc=%s", desc.cg_mode.name, desc)
                     if desc.cg_mode == CUDAGraphMode.PIECEWISE:
                         forward_fn(CUDAGraphMode.PIECEWISE)
                     else:
-                        assert desc not in self.graphs, (
-                            f"Graph already captured for {desc}"
-                        )
+                        assert desc not in self.graphs, f"Graph already captured for {desc}"
                         graph = torch.cuda.CUDAGraph()
                         # Sync offloader's copy stream before capture.
                         # Ensure any pre-capture prefetches from offloader are complete.
@@ -240,15 +221,11 @@ class CudaGraphManager:
             for desc in self._candidates[num_tokens]:
                 if _is_compatible(desc, num_reqs, num_tokens, uniform_token_count):
                     return desc
-        return BatchExecutionDescriptor(
-            cg_mode=CUDAGraphMode.NONE, num_tokens=num_tokens, num_reqs=num_reqs
-        )
+        return BatchExecutionDescriptor(cg_mode=CUDAGraphMode.NONE, num_tokens=num_tokens, num_reqs=num_reqs)
 
     def run_fullgraph(self, desc: BatchExecutionDescriptor):
         """Replay a captured FULL cudagraph."""
-        assert desc.cg_mode == CUDAGraphMode.FULL, (
-            f"Expected FULL mode, got {desc.cg_mode}"
-        )
+        assert desc.cg_mode == CUDAGraphMode.FULL, f"Expected FULL mode, got {desc.cg_mode}"
         assert desc in self.graphs, f"No cudagraph for {desc}"
         # Sync offloader before replay - needed when transitioning from
         # eager/piecewise to full cudagraph (e.g., prefill → decode).
@@ -299,9 +276,7 @@ class ModelCudaGraphManager(CudaGraphManager):
             num_tokens = desc.num_tokens
             num_reqs = desc.num_reqs or min(num_tokens, self.max_num_reqs)
             num_tokens_across_dp = (
-                torch.full((self.dp_size,), num_tokens, dtype=torch.int32, device="cpu")
-                if self.dp_size > 1
-                else None
+                torch.full((self.dp_size,), num_tokens, dtype=torch.int32, device="cpu") if self.dp_size > 1 else None
             )
 
             model_inputs = {
@@ -328,9 +303,7 @@ class ModelCudaGraphManager(CudaGraphManager):
 
             def forward_fn(cg_mode: CUDAGraphMode) -> None:
                 batch_descriptor = (
-                    BatchDescriptor(num_tokens=num_tokens)
-                    if cg_mode == CUDAGraphMode.PIECEWISE
-                    else None
+                    BatchDescriptor(num_tokens=num_tokens) if cg_mode == CUDAGraphMode.PIECEWISE else None
                 )
                 with set_forward_context(
                     attn_metadata if cg_mode != CUDAGraphMode.PIECEWISE else None,
@@ -359,9 +332,7 @@ class ModelCudaGraphManager(CudaGraphManager):
                         self.hidden_states = torch.empty_like(hidden_states)
                     self.hidden_states[:num_tokens] = hidden_states
                     if self.use_aux_hidden_state_outputs and not self.aux_hidden_states:
-                        self.aux_hidden_states = [
-                            torch.empty_like(x) for x in aux_hidden_states
-                        ]
+                        self.aux_hidden_states = [torch.empty_like(x) for x in aux_hidden_states]
                     for i, aux in enumerate(aux_hidden_states):
                         self.aux_hidden_states[i][:num_tokens] = aux
                 else:
@@ -369,9 +340,7 @@ class ModelCudaGraphManager(CudaGraphManager):
                     assert isinstance(model_output, IntermediateTensors)
                     intermediate_tensors = model_output
                     if self.intermediate_tensors is None:
-                        self.intermediate_tensors = IntermediateTensors.empty_like(
-                            intermediate_tensors
-                        )
+                        self.intermediate_tensors = IntermediateTensors.empty_like(intermediate_tensors)
                     for k, v in intermediate_tensors.tensors.items():
                         self.intermediate_tensors[k][:num_tokens] = v
 
@@ -407,9 +376,7 @@ def prepare_inputs_to_capture(
     input_batch = InputBatch.make_dummy(num_reqs, num_tokens, input_buffers)
     input_block_tables = block_tables.get_dummy_block_tables(num_reqs)
     slot_mappings = block_tables.get_dummy_slot_mappings(num_tokens)
-    slot_mappings_by_layer = build_slot_mappings_by_layer(
-        slot_mappings, kv_cache_config
-    )
+    slot_mappings_by_layer = build_slot_mappings_by_layer(slot_mappings, kv_cache_config)
 
     # HACK(woosuk): Special handling for DCP.
     if block_tables.cp_size > 1:

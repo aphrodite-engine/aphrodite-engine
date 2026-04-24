@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from collections.abc import Callable
 
 import pytest
+from aphrodite.modeling.model_loader import tensorizer as tensorizer_mod
+from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 
 from aphrodite import LLM, EngineArgs
 from aphrodite.distributed import cleanup_dist_env_and_memory
-from aphrodite.modeling.model_loader import tensorizer as tensorizer_mod
-from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 from aphrodite.utils.network_utils import get_distributed_init_method, get_ip, get_open_port
 from aphrodite.v1.executor import UniProcExecutor
 from aphrodite.v1.worker.worker_base import WorkerWrapperBase

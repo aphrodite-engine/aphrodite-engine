@@ -45,9 +45,7 @@ async def generate(kai_payload: KAIGenerationInputSchema, raw_request: Request):
             message="The model does not support KoboldAI API",
             status_code=HTTPStatus.BAD_REQUEST,
         )
-        return JSONResponse(
-            content=err.model_dump(), status_code=err.error.code
-        )
+        return JSONResponse(content=err.model_dump(), status_code=err.error.code)
 
     result = await handler.create_kobold_response(kai_payload, raw_request)
     return JSONResponse(result)
@@ -68,9 +66,7 @@ async def generate_stream(kai_payload: KAIGenerationInputSchema, raw_request: Re
             message="The model does not support KoboldAI streaming API",
             status_code=HTTPStatus.BAD_REQUEST,
         )
-        return JSONResponse(
-            content=err.model_dump(), status_code=err.error.code
-        )
+        return JSONResponse(content=err.model_dump(), status_code=err.error.code)
 
     generator = handler.create_kobold_stream(kai_payload, raw_request)
     return StreamingResponse(
@@ -142,11 +138,7 @@ async def get_version():
 @router.get("/api/v1/model")
 async def get_model(raw_request: Request):
     handler = kobold(raw_request)
-    model_name = (
-        handler.models.base_model_paths[0].name
-        if handler is not None
-        else raw_request.app.state.args.model
-    )
+    model_name = handler.models.base_model_paths[0].name if handler is not None else raw_request.app.state.args.model
     return JSONResponse({"result": f"aphrodite/{model_name}"})
 
 

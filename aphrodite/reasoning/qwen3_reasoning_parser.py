@@ -74,9 +74,7 @@ class Qwen3ReasoningParser(BaseThinkingReasoningParser):
 
         # Strip <think> if present in the generated output.
         model_output_parts = model_output.partition(self.start_token)
-        model_output = (
-            model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
-        )
+        model_output = model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
 
         if self.end_token not in model_output:
             if not self.thinking_enabled:

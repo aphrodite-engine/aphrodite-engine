@@ -79,10 +79,7 @@ class FlashAttentionBackend(AttentionBackend):
         if (
             model_config
             and model_config.is_hybrid
-            and (
-                cache_config.mamba_ssm_cache_dtype == "float32"
-                or cache_config.mamba_cache_dtype == "float32"
-            )
+            and (cache_config.mamba_ssm_cache_dtype == "float32" or cache_config.mamba_cache_dtype == "float32")
         ):
             # NOTE(tdoublep): while in principle, FA supports
             # MultipleOf(16), these are the block sizes that do not
@@ -284,9 +281,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
     # TODO(luka, lucas): audit FA2 as part of:
     #  https://github.com/vllm-project/vllm/issues/22945
     _cudagraph_support = (
-        AttentionCGSupport.ALWAYS
-        if get_flash_attn_version() == 3
-        else AttentionCGSupport.UNIFORM_BATCH
+        AttentionCGSupport.ALWAYS if get_flash_attn_version() == 3 else AttentionCGSupport.UNIFORM_BATCH
     )
     supports_update_block_table: bool = True
 
@@ -312,9 +307,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
         self.compilation_config = aphrodite_config.compilation_config
         self.attention_config = aphrodite_config.attention_config
 
-        self.num_heads_q = self.model_config.get_num_attention_heads(
-            self.parallel_config
-        )
+        self.num_heads_q = self.model_config.get_num_attention_heads(self.parallel_config)
         self.num_heads_kv = self.model_config.get_num_kv_heads(self.parallel_config)
         self.kv_cache_dtype = kv_cache_spec.dtype
         self.headdim = self.model_config.get_head_size()
@@ -333,13 +326,9 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
             self.dcp_world_size = 1
             self.dcp_rank = 0
 
-        self.cp_kv_cache_interleave_size = (
-            self.parallel_config.cp_kv_cache_interleave_size
-        )
+        self.cp_kv_cache_interleave_size = self.parallel_config.cp_kv_cache_interleave_size
 
-        self.use_full_cuda_graph = (
-            self.compilation_config.cudagraph_mode.has_full_cudagraphs()
-        )
+        self.use_full_cuda_graph = self.compilation_config.cudagraph_mode.has_full_cudagraphs()
         self.max_cudagraph_size = self.compilation_config.max_cudagraph_capture_size
 
         if self.use_full_cuda_graph and self.aot_schedule:
@@ -360,9 +349,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
             # When using cuda graph, we need to set the upper bound of the
             # number of splits so that large enough intermediate buffers are
             # pre-allocated during capture.
-            self.max_num_splits = (
-                self.attention_config.flash_attn_max_num_splits_for_cuda_graph
-            )
+            self.max_num_splits = self.attention_config.flash_attn_max_num_splits_for_cuda_graph
 
         if self.dcp_world_size > 1:
             max_num_reqs = aphrodite_config.scheduler_config.max_num_seqs
@@ -398,9 +385,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
 
         # Disable AOT schedule for spec-decode proposer (not worth the overhead)
         # and for batch invariance (schedule varies with max_seqlen_q/k).
-        aot_schedule = (
-            self.aot_schedule and not fast_build and not envs.APHRODITE_BATCH_INVARIANT
-        )
+        aot_schedule = self.aot_schedule and not fast_build and not envs.APHRODITE_BATCH_INVARIANT
 
         if self.aot_sliding_window is None:
             self.aot_sliding_window = (-1, -1)
@@ -433,14 +418,10 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
         if envs.APHRODITE_BATCH_INVARIANT:
             max_num_splits = 1
 
-        def schedule(
-            batch_size, cu_query_lens, max_query_len, seqlens, max_seq_len, causal
-        ):
+        def schedule(batch_size, cu_query_lens, max_query_len, seqlens, max_seq_len, causal):
             cache_dtype = self.cache_config.cache_dtype
             if is_quantized_kv_cache(cache_dtype):
-                qkv_dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(
-                    cache_dtype
-                )
+                qkv_dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(cache_dtype)
             else:
                 qkv_dtype = self.kv_cache_dtype
             if aot_schedule:
@@ -501,12 +482,8 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
                 causal=False,
             )
         elif use_cascade:
-            cu_prefix_query_lens = torch.tensor(
-                [0, num_actual_tokens], dtype=torch.int32, device=self.device
-            )
-            prefix_kv_lens = torch.tensor(
-                [common_prefix_len], dtype=torch.int32, device=self.device
-            )
+            cu_prefix_query_lens = torch.tensor([0, num_actual_tokens], dtype=torch.int32, device=self.device)
+            prefix_kv_lens = torch.tensor([common_prefix_len], dtype=torch.int32, device=self.device)
             # Use GPU tensor directly - no CPU sync needed
             suffix_kv_lens = seq_lens[:num_reqs] - common_prefix_len
             prefix_scheduler_metadata = schedule(
@@ -643,18 +620,13 @@ class FlashAttentionImpl(AttentionImpl):
         self.batch_invariant_enabled = envs.APHRODITE_BATCH_INVARIANT
 
         if is_quantized_kv_cache(self.kv_cache_dtype) and not flash_attn_supports_fp8():
-            raise NotImplementedError(
-                "FlashAttention does not support fp8 kv-cache on this device."
-            )
+            raise NotImplementedError("FlashAttention does not support fp8 kv-cache on this device.")
 
         self.sinks = sinks
         if self.sinks is not None:
-            assert flash_attn_supports_sinks(), (
-                "Sinks are only supported in FlashAttention 3"
-            )
+            assert flash_attn_supports_sinks(), "Sinks are only supported in FlashAttention 3"
             assert self.sinks.shape[0] == num_heads, (
-                "Sinks must have the same number of heads as the number of "
-                "heads in the layer"
+                "Sinks must have the same number of heads as the number of heads in the layer"
             )
 
         self.supports_quant_query_input = flash_attn_supports_quant_query_input()
@@ -698,14 +670,10 @@ class FlashAttentionImpl(AttentionImpl):
               {q,k,v}_descale to be (num_sequences, num_kv_heads).
               We use torch's .expand() to avoid duplicating values
         """
-        assert self.aphrodite_flash_attn_version is not None, (
-            "FlashAttention version not detected."
-        )
+        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for FlashAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for FlashAttentionImpl")
 
         if attn_metadata is None:
             # Profiling run.
@@ -742,9 +710,7 @@ class FlashAttentionImpl(AttentionImpl):
 
         if is_quantized_kv_cache(self.kv_cache_dtype):
             # queries are quantized in the attention layer
-            dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(
-                self.kv_cache_dtype
-            )
+            dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(self.kv_cache_dtype)
             key_cache = key_cache.view(dtype)
             value_cache = value_cache.view(dtype)
 
@@ -758,11 +724,7 @@ class FlashAttentionImpl(AttentionImpl):
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, self.num_kv_heads)
 
-            q_descale = (
-                layer._q_scale.expand(descale_shape)
-                if self.supports_quant_query_input
-                else None
-            )
+            q_descale = layer._q_scale.expand(descale_shape) if self.supports_quant_query_input else None
             k_descale = layer._k_scale.expand(descale_shape)
             v_descale = layer._v_scale.expand(descale_shape)
 
@@ -781,11 +743,7 @@ class FlashAttentionImpl(AttentionImpl):
                 )
                 return output
             else:
-                sliding_window_size = (
-                    list(self.sliding_window)
-                    if self.sliding_window is not None
-                    else None
-                )
+                sliding_window_size = list(self.sliding_window) if self.sliding_window is not None else None
                 flash_attn_varlen_func(
                     q=query[:num_actual_tokens],
                     k=key_cache,
@@ -886,9 +844,7 @@ class FlashAttentionImpl(AttentionImpl):
         k_descale: torch.Tensor | None = None,
         v_descale: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        assert self.aphrodite_flash_attn_version is not None, (
-            "FlashAttention version not detected."
-        )
+        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
 
         cu_seqlens_q = attn_metadata.query_start_loc
         max_seqlen_q = attn_metadata.max_query_len
@@ -896,9 +852,7 @@ class FlashAttentionImpl(AttentionImpl):
 
         query = query.contiguous()
         query_across_dcp = get_dcp_group().all_gather(query, dim=1)
-        sliding_window_size = (
-            list(self.sliding_window) if self.sliding_window is not None else None
-        )
+        sliding_window_size = list(self.sliding_window) if self.sliding_window is not None else None
         n = query_across_dcp.shape[0]
         (dcp_context_out,) = current_workspace_manager().get_simultaneous(
             (
@@ -991,15 +945,11 @@ class FlashAttentionImpl(AttentionImpl):
             attn_metadata: Encoder attention metadata
             layer: The attention layer
         """
-        assert self.aphrodite_flash_attn_version is not None, (
-            "FlashAttention version not detected."
-        )
+        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
 
         # For encoder attention, process FP8 quantization if needed
         if is_quantized_kv_cache(self.kv_cache_dtype):
-            raise NotImplementedError(
-                "quantization is not supported for encoder attention"
-            )
+            raise NotImplementedError("quantization is not supported for encoder attention")
 
         # Use encoder-specific metadata for sequence information
         cu_seqlens_q = attn_metadata.query_start_loc
@@ -1013,9 +963,7 @@ class FlashAttentionImpl(AttentionImpl):
         )
 
         # Call flash attention directly on Q, K, V tensors
-        sliding_window_size = (
-            list(self.sliding_window) if self.sliding_window is not None else None
-        )
+        sliding_window_size = list(self.sliding_window) if self.sliding_window is not None else None
         flash_attn_varlen_func(
             q=query,
             k=key,
@@ -1031,9 +979,7 @@ class FlashAttentionImpl(AttentionImpl):
             window_size=sliding_window_size,
             softcap=self.logits_soft_cap,
             fa_version=self.aphrodite_flash_attn_version,
-            q_descale=layer._q_scale.expand(descale_shape)
-            if self.supports_quant_query_input
-            else None,
+            q_descale=layer._q_scale.expand(descale_shape) if self.supports_quant_query_input else None,
             k_descale=layer._k_scale.expand(descale_shape),
             v_descale=layer._v_scale.expand(descale_shape),
             num_splits=1 if self.batch_invariant_enabled else 0,
@@ -1083,12 +1029,7 @@ def use_cascade_attention(
     num_queries_per_kv = num_query_heads // num_kv_heads
     # The criteria for using FlashDecoding can be found in the following link:
     # https://github.com/vllm-project/flash-attention/blob/96266b1111111f3d11aabefaf3bacbab6a89d03c/csrc/flash_attn/flash_api.cpp#L535
-    use_flash_decoding = (
-        num_queries_per_kv > 1
-        and not use_sliding_window
-        and not use_alibi
-        and np.all(query_lens == 1)
-    )
+    use_flash_decoding = num_queries_per_kv > 1 and not use_sliding_window and not use_alibi and np.all(query_lens == 1)
     if not use_flash_decoding:
         # Use cascade attention.
         return True
@@ -1110,9 +1051,7 @@ def use_cascade_attention(
     cascade_waves = cdiv(cascade_ctas, num_sms)
     cascade_time = cascade_waves * num_prefix_tiles
 
-    flash_decoding_ctas = (
-        num_reqs * num_kv_heads * cdiv(num_queries_per_kv, q_tile_size)
-    )
+    flash_decoding_ctas = num_reqs * num_kv_heads * cdiv(num_queries_per_kv, q_tile_size)
     flash_decoding_ctas *= num_prefix_tiles
     flash_decoding_time = cdiv(flash_decoding_ctas, num_sms)
 
@@ -1148,9 +1087,7 @@ def cascade_attention(
 ) -> torch.Tensor:
     assert alibi_slopes is None, "Cascade attention does not support ALiBi."
     # TODO: Support sliding window.
-    assert sliding_window == (-1, -1), (
-        "Cascade attention does not support sliding window."
-    )
+    assert sliding_window == (-1, -1), "Cascade attention does not support sliding window."
 
     num_tokens = query.shape[0]
     block_size = key_cache.shape[-3]

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Test:
 
@@ -9,9 +11,9 @@ import torch
 import torch_xla
 import torch_xla.core
 import torch_xla.core.xla_model
-
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.attention.selector import _cached_get_attn_backend
+
 from aphrodite.platforms import current_platform
 
 

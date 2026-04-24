@@ -22,7 +22,4 @@ def is_mistral_tokenizer(obj: TokenizerLike | None) -> TypeGuard[mt.MistralToken
     # Check for special class attribute, this avoids importing the class to
     # do an isinstance() check.  If the attribute is True, do an isinstance
     # check to be sure we have the correct type.
-    return bool(
-        getattr(cls, "IS_MISTRAL_TOKENIZER", False)
-        and isinstance(obj, mt.MistralTokenizer)
-    )
+    return bool(getattr(cls, "IS_MISTRAL_TOKENIZER", False) and isinstance(obj, mt.MistralTokenizer))

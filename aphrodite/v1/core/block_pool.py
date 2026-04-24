@@ -55,9 +55,7 @@ class BlockHashToBlockMap:
     """
 
     def __init__(self):
-        self._cache: dict[
-            BlockHashWithGroupId, KVCacheBlock | dict[int, KVCacheBlock]
-        ] = {}
+        self._cache: dict[BlockHashWithGroupId, KVCacheBlock | dict[int, KVCacheBlock]] = {}
 
     def get_one_block(self, key: BlockHashWithGroupId) -> KVCacheBlock | None:
         """
@@ -159,9 +157,7 @@ class BlockPool:
         self.enable_caching = enable_caching
         self.hash_block_size = hash_block_size
         # All kv-cache blocks.
-        self.blocks: list[KVCacheBlock] = [
-            KVCacheBlock(idx) for idx in range(num_gpu_blocks)
-        ]
+        self.blocks: list[KVCacheBlock] = [KVCacheBlock(idx) for idx in range(num_gpu_blocks)]
         # Free block queue that constructs and manipulates a doubly linked
         # list of free blocks (including eviction candidates when caching is
         # enabled).
@@ -181,9 +177,7 @@ class BlockPool:
 
         self.metrics_collector = metrics_collector
 
-    def get_cached_block(
-        self, block_hash: BlockHash, kv_cache_group_ids: list[int]
-    ) -> list[KVCacheBlock] | None:
+    def get_cached_block(self, block_hash: BlockHash, kv_cache_group_ids: list[int]) -> list[KVCacheBlock] | None:
         """Get the cached block by the block hash for each group in
         `kv_cache_group_ids`, or None if cache miss for any group.
         If there are duplicated blocks, we return the first block in the cache.
@@ -197,12 +191,8 @@ class BlockPool:
         """
         cached_blocks = []
         for group_id in kv_cache_group_ids:
-            block_hash_with_group_id = make_block_hash_with_group_id(
-                block_hash, group_id
-            )
-            block = self.cached_block_hash_to_block.get_one_block(
-                block_hash_with_group_id
-            )
+            block_hash_with_group_id = make_block_hash_with_group_id(block_hash, group_id)
+            block = self.cached_block_hash_to_block.get_one_block(block_hash_with_group_id)
             if not block:
                 return None
             cached_blocks.append(block)
@@ -247,14 +237,10 @@ class BlockPool:
             assert block_size % self.hash_block_size == 0
             # Recalculate block_hashes at the granularity of block_size, using
             # the original block_hashes (at the granularity of hash_block_size).
-            block_hashes = BlockHashListWithBlockSize(
-                request.block_hashes, self.hash_block_size, block_size
-            )
+            block_hashes = BlockHashListWithBlockSize(request.block_hashes, self.hash_block_size, block_size)
 
         new_block_hashes = block_hashes[num_cached_blocks:]
-        new_hashes: list[ExternalBlockHash] | None = (
-            [] if self.enable_kv_cache_events else None
-        )
+        new_hashes: list[ExternalBlockHash] | None = [] if self.enable_kv_cache_events else None
         for i, blk in enumerate(new_full_blocks):
             # Some blocks may be null blocks when enabling sparse attention like
             # sliding window attention, or Mamba models with prefix-caching in
@@ -265,9 +251,7 @@ class BlockPool:
             block_hash = new_block_hashes[i]
 
             # Update and added the full block to the cache.
-            block_hash_with_group_id = make_block_hash_with_group_id(
-                block_hash, kv_cache_group_id
-            )
+            block_hash_with_group_id = make_block_hash_with_group_id(block_hash, kv_cache_group_id)
             blk.block_hash = block_hash_with_group_id
             self.cached_block_hash_to_block.insert(block_hash_with_group_id, blk)
             if new_hashes is not None:
@@ -277,9 +261,7 @@ class BlockPool:
             if num_cached_blocks == 0:
                 parent_block_hash: ExternalBlockHash | None = None
             else:
-                parent_block_hash = maybe_convert_block_hash(
-                    block_hashes[num_cached_blocks - 1]
-                )
+                parent_block_hash = maybe_convert_block_hash(block_hashes[num_cached_blocks - 1])
 
             # Calculate token range for the blocks being cached
             start_token_idx = num_cached_blocks * block_size
@@ -296,9 +278,7 @@ class BlockPool:
                     continue
                 block_start = i * block_size
                 block_end = block_start + block_size
-                extra_keys, curr_mm_idx = generate_block_hash_extra_keys(
-                    request, block_start, block_end, curr_mm_idx
-                )
+                extra_keys, curr_mm_idx = generate_block_hash_extra_keys(request, block_start, block_end, curr_mm_idx)
                 extra_keys_list.append(extra_keys)
 
             self.kv_event_queue.append(
@@ -307,13 +287,9 @@ class BlockPool:
                     parent_block_hash=parent_block_hash,
                     token_ids=request.all_token_ids[start_token_idx:end_token_idx],
                     block_size=block_size,
-                    lora_id=request.lora_request.adapter_id
-                    if request.lora_request
-                    else None,
+                    lora_id=request.lora_request.adapter_id if request.lora_request else None,
                     medium=MEDIUM_GPU,
-                    lora_name=request.lora_request.name
-                    if request.lora_request
-                    else None,
+                    lora_name=request.lora_request.name if request.lora_request else None,
                     extra_keys=extra_keys_list if extra_keys_list else None,
                     group_idx=kv_cache_group_id,
                 )
@@ -417,9 +393,7 @@ class BlockPool:
         blocks_list = list(ordered_blocks)
         for block in blocks_list:
             block.ref_cnt -= 1
-        self.free_block_queue.append_n(
-            [block for block in blocks_list if block.ref_cnt == 0 and not block.is_null]
-        )
+        self.free_block_queue.append_n([block for block in blocks_list if block.ref_cnt == 0 and not block.is_null])
 
     def evict_blocks(self, block_ids: set[int]) -> None:
         """evict blocks from the prefix cache by their block IDs.
@@ -452,8 +426,7 @@ class BlockPool:
         num_used_blocks = self.num_gpu_blocks - self.get_num_free_blocks()
         if num_used_blocks != 1:  # The null block is always marked as used
             logger.warning(
-                "Failed to reset prefix cache because some "
-                "blocks (%d) are not freed yet",
+                "Failed to reset prefix cache because some blocks (%d) are not freed yet",
                 num_used_blocks - 1,
             )
             return False

@@ -126,9 +126,7 @@ class EmbedsPrompt(_PromptOptions):
     """The prompt text corresponding to the token embeddings, if available."""
 
 
-DecoderOnlyPrompt: TypeAlias = (
-    str | TextPrompt | list[int] | TokensPrompt | EmbedsPrompt
-)
+DecoderOnlyPrompt: TypeAlias = str | TextPrompt | list[int] | TokensPrompt | EmbedsPrompt
 """
 Schema of a prompt for a decoder-only model:
 

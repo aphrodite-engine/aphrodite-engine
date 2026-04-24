@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from argparse import ArgumentError
 
 import pytest
+from aphrodite.engine.args_tools import EngineArgs
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

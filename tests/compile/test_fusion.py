@@ -1,17 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
-import aphrodite.plugins
 from aphrodite.compilation.fusion import FUSED_OPS, FusedRMSQuantKey, RMSNormQuantFusionPass
 from aphrodite.compilation.fx_utils import find_op_nodes
 from aphrodite.compilation.matcher_utils import QUANT_OPS
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
-from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, ModelConfig, PassConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.quant_utils import GroupShape, QuantKey, ScaleDesc
 from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, cutlass_fp8_supported, maybe_create_device_identity
+
+import aphrodite.plugins
+from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, ModelConfig, PassConfig
+from aphrodite.platforms import current_platform
 
 from ..utils import override_cutlass_fp8_supported
 from .backend import TestBackend

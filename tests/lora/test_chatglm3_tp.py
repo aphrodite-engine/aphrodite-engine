@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import aphrodite
 import aphrodite.config
 from aphrodite.lora.request import LoRARequest

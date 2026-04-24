@@ -79,24 +79,18 @@ def fused_topk_bias(
     indices_type: torch.dtype | None = None,
 ):
     if not rocm_aiter_ops.is_fused_moe_enabled():
-        assert hidden_states.size(0) == gating_output.size(0), (
-            "Number of tokens mismatch"
-        )
+        assert hidden_states.size(0) == gating_output.size(0), "Number of tokens mismatch"
 
         M, _ = hidden_states.size()
 
-        topk_weights = torch.empty(
-            M, topk, dtype=torch.float32, device=hidden_states.device
-        )
+        topk_weights = torch.empty(M, topk, dtype=torch.float32, device=hidden_states.device)
         topk_ids = torch.empty(
             M,
             topk,
             dtype=torch.int32 if indices_type is None else indices_type,
             device=hidden_states.device,
         )
-        token_expert_indices = torch.empty(
-            M, topk, dtype=torch.int32, device=hidden_states.device
-        )
+        token_expert_indices = torch.empty(M, topk, dtype=torch.int32, device=hidden_states.device)
 
         if scoring_func == "softmax":
             topk_weights, topk_ids = aphrodite_topk_softmax(
@@ -125,9 +119,7 @@ def fused_topk_bias(
         num_experts = gating_output.shape[-1]
         num_expert_group = _aiter_get_num_expert_group(num_experts)
         if topk >= num_expert_group:
-            topk_weights = torch.empty(
-                M, topk, dtype=torch.float32, device=hidden_states.device
-            )
+            topk_weights = torch.empty(M, topk, dtype=torch.float32, device=hidden_states.device)
             topk_ids = torch.empty(
                 M,
                 topk,
@@ -153,9 +145,7 @@ def fused_topk_bias(
     else:
         raise ValueError(f"Unsupported scoring function: {scoring_func}")
 
-    scores_for_choice = scores.view(
-        -1, n_routed_experts
-    ) + e_score_correction_bias.unsqueeze(0)
+    scores_for_choice = scores.view(-1, n_routed_experts) + e_score_correction_bias.unsqueeze(0)
 
     # For batch invariance, use sorted=True to ensure deterministic expert selection
     use_sorted = envs.APHRODITE_BATCH_INVARIANT
@@ -163,9 +153,7 @@ def fused_topk_bias(
     topk_weights = scores.gather(1, topk_indices)
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
-    return topk_weights.to(torch.float32), topk_indices.to(
-        torch.int32 if indices_type is None else indices_type
-    )
+    return topk_weights.to(torch.float32), topk_indices.to(torch.int32 if indices_type is None else indices_type)
 
 
 class FusedTopKBiasRouter(BaseRouter):

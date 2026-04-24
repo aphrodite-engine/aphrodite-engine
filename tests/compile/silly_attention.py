@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Shared PyTorch custom silly attention for compilation tests.
 Centralizes custom operation definitions to avoid duplicate registrations.

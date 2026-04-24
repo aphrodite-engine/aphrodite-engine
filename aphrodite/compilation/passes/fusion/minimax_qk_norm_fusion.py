@@ -41,8 +41,8 @@ from aphrodite.distributed.parallel_state import (
 from aphrodite.logger import init_logger
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
-from ..inductor_pass import enable_fake_mode
 from ..aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
+from ..inductor_pass import enable_fake_mode
 
 logger = init_logger(__name__)
 
@@ -193,9 +193,7 @@ class MiniMaxQKNormPattern:
             _, _, v = qkv.split([q_size, kv_size, kv_size], dim=-1)
             return q_out, k_out, v
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
         # Second pattern: three separate split_with_sizes nodes (one per output),
         # each with _users=1. This occurs when the QKV projection uses a
@@ -220,9 +218,7 @@ class MiniMaxQKNormPattern:
             k_out = (k_fp32 * torch.rsqrt(k_var + eps) * k_weight).to(dtype)
             return q_out, k_out, v
 
-        pm.register_replacement(
-            pattern_split3, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern_split3, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class MiniMaxQKNormPass(AphroditePatternMatcherPass):
@@ -236,9 +232,7 @@ class MiniMaxQKNormPass(AphroditePatternMatcherPass):
         self.disabled = True
 
         if _MINIMAX_QK_NORM_FUSED_OP is None:
-            logger.warning_once(
-                "minimax_allreduce_rms_qk op not found, MiniMaxQKNormPass disabled."
-            )
+            logger.warning_once("minimax_allreduce_rms_qk op not found, MiniMaxQKNormPass disabled.")
             return
 
         tp_world = get_tensor_model_parallel_world_size()
@@ -262,15 +256,8 @@ class MiniMaxQKNormPass(AphroditePatternMatcherPass):
         head_dim = getattr(hf_cfg, "head_dim", 0)
         eps: float = getattr(hf_cfg, "rms_norm_eps", 1e-6)
 
-        if (
-            num_attention_heads != 48
-            or num_key_value_heads != 8
-            or hidden_size != 3072
-            or head_dim != 128
-        ):
-            logger.warning_once(
-                "MiniMaxQKNormPass disabled: cannot infer model info from hf_config."
-            )
+        if num_attention_heads != 48 or num_key_value_heads != 8 or hidden_size != 3072 or head_dim != 128:
+            logger.warning_once("MiniMaxQKNormPass disabled: cannot infer model info from hf_config.")
             return
 
         num_heads_per_rank = num_attention_heads // tp_world
@@ -278,9 +265,7 @@ class MiniMaxQKNormPass(AphroditePatternMatcherPass):
         q_size = num_heads_per_rank * head_dim
         kv_size = num_kv_heads_per_rank * head_dim
 
-        self.max_token_num = min(
-            MAX_TOKEN_NUM, config.scheduler_config.max_num_batched_tokens
-        )
+        self.max_token_num = min(MAX_TOKEN_NUM, config.scheduler_config.max_num_batched_tokens)
 
         tp_rank = get_tensor_model_parallel_rank()
         # Allocate Lamport workspace first.
@@ -296,9 +281,7 @@ class MiniMaxQKNormPass(AphroditePatternMatcherPass):
             process_group=get_tp_group().cpu_group,
         )
 
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="minimax_qk_norm_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="minimax_qk_norm_pass")
         self._register_patterns(q_size, kv_size, eps, tp_world, tp_rank)
         self.dump_patterns(config, self.patterns)
         self.disabled = False

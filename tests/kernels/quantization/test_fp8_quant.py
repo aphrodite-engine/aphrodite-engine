@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
 
@@ -44,9 +46,9 @@ def test_dynamic_per_token_fp8_quant(
 
     x = torch.rand(num_tokens, hidden_size, dtype=dtype, device="cuda") + 1e-6  # avoid nans
 
-    scale_ub = torch.mean(x).to(dtype=torch.float32, device="cuda") if scale_ub else None
-    ref_out, ref_scales = ref_dynamic_per_token_quant(x, FP8_DTYPE, scale_ub)
-    ops_out, ops_scales = ops.scaled_fp8_quant(x, scale_ub=scale_ub, use_per_token_if_dynamic=True)
+    scale_ub_tensor = torch.mean(x).to(dtype=torch.float32, device="cuda") if scale_ub else None
+    ref_out, ref_scales = ref_dynamic_per_token_quant(x, FP8_DTYPE, scale_ub_tensor)
+    ops_out, ops_scales = ops.scaled_fp8_quant(x, scale_ub=scale_ub_tensor, use_per_token_if_dynamic=True)
 
     torch.testing.assert_close(ref_scales, ops_scales)
     torch.testing.assert_close(ref_out.to(dtype=torch.float32), ops_out.to(dtype=torch.float32))

@@ -63,9 +63,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         super().__init__(moe)
         self.weight_quant = weight_quant
         self.input_quant = input_quant
-        assert weight_quant.symmetric, (
-            "Only symmetric quantization is supported for MoE"
-        )
+        assert weight_quant.symmetric, "Only symmetric quantization is supported for MoE"
         # Extract properties from weight_quant
         self.num_bits = weight_quant.num_bits
         self.packed_factor = 32 // weight_quant.num_bits
@@ -77,13 +75,9 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
 
         self.marlin_input_dtype = get_marlin_input_dtype(layer_name)
         self.use_flashinfer_mxint4_moe = (
-            is_flashinfer_mxint4_moe_available()
-            and self.group_size == 32
-            and weight_quant.num_bits == 4
+            is_flashinfer_mxint4_moe_available() and self.group_size == 32 and weight_quant.num_bits == 4
         )
-        self.kernel_backend = (
-            "Flashinfer" if self.use_flashinfer_mxint4_moe else "Marlin"
-        )
+        self.kernel_backend = "Flashinfer" if self.use_flashinfer_mxint4_moe else "Marlin"
         logger.info_once(
             f"Using {self.kernel_backend} backend for WNA16 MoE "
             f"(group_size={self.group_size}, num_bits={self.num_bits})",
@@ -106,13 +100,9 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         for weight scales.
         """
         if weight_name == "w13_scale":
-            assert num_groups_w13 is not None, (
-                "num_groups_w13 must be provided for weight scales"
-            )
+            assert num_groups_w13 is not None, "num_groups_w13 must be provided for weight scales"
         if weight_name == "w2_scale":
-            assert num_groups_w2 is not None, (
-                "num_groups_w2 must be provided for weight scales"
-            )
+            assert num_groups_w2 is not None, "num_groups_w2 must be provided for weight scales"
         w13_num_shards = 2 if self.moe.is_act_and_mul else 1
         shape_map = {
             "w13_weight": {
@@ -173,9 +163,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         # intermediate and hidden dim sizes. Will
         # shard for TP along the transposed dims
         is_transposed = self.kernel_backend != "Flashinfer"
-        extra_weight_attrs.update(
-            {"is_transposed": is_transposed, "quant_method": self.strategy}
-        )
+        extra_weight_attrs.update({"is_transposed": is_transposed, "quant_method": self.strategy})
 
         w13_weight = torch.nn.Parameter(
             torch.empty(
@@ -210,13 +198,9 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         # In the case where we have actorder/g_idx,
         # we do not partition the w2 scales
         load_full_w2 = self.actorder and self.group_size != -1
-        w2_scales_size = (
-            intermediate_size_full if load_full_w2 else intermediate_size_per_partition
-        )
+        w2_scales_size = intermediate_size_full if load_full_w2 else intermediate_size_per_partition
 
-        self.is_k_full = (not self.actorder) or (
-            intermediate_size_per_partition == intermediate_size_full
-        )
+        self.is_k_full = (not self.actorder) or (intermediate_size_per_partition == intermediate_size_full)
 
         if self.strategy == "channel":
             num_groups_w2 = num_groups_w13 = 1
@@ -261,14 +245,10 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         set_weight_attrs(w2_scale, extra_weight_attrs)
         set_weight_attrs(w2_scale, {"load_full_w2": load_full_w2})
 
-        w2_weight_shape = torch.nn.Parameter(
-            torch.empty(num_experts, 2), requires_grad=False
-        )
+        w2_weight_shape = torch.nn.Parameter(torch.empty(num_experts, 2), requires_grad=False)
         layer.register_parameter("w2_weight_shape", w2_weight_shape)
         set_weight_attrs(w2_weight_shape, extra_weight_attrs)
-        w13_weight_shape = torch.nn.Parameter(
-            torch.empty(num_experts, 2), requires_grad=False
-        )
+        w13_weight_shape = torch.nn.Parameter(torch.empty(num_experts, 2), requires_grad=False)
 
         layer.register_parameter("w13_weight_shape", w13_weight_shape)
         set_weight_attrs(w13_weight_shape, extra_weight_attrs)
@@ -331,24 +311,13 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
                 layer.w2_weight_packed,
                 layer.w2_weight_scale,
             )
-            replace_parameter(
-                layer, "w13_weight_packed", dict_weights_mxint4["gemm1_weights"]
-            )
-            replace_parameter(
-                layer, "w13_weight_scale", dict_weights_mxint4["gemm1_scales"]
-            )
-            replace_parameter(
-                layer, "w2_weight_packed", dict_weights_mxint4["gemm2_weights"]
-            )
-            replace_parameter(
-                layer, "w2_weight_scale", dict_weights_mxint4["gemm2_scales"]
-            )
+            replace_parameter(layer, "w13_weight_packed", dict_weights_mxint4["gemm1_weights"])
+            replace_parameter(layer, "w13_weight_scale", dict_weights_mxint4["gemm1_scales"])
+            replace_parameter(layer, "w2_weight_packed", dict_weights_mxint4["gemm2_weights"])
+            replace_parameter(layer, "w2_weight_scale", dict_weights_mxint4["gemm2_scales"])
             return None
 
-        is_a_8bit = (
-            self.marlin_input_dtype is not None
-            and self.marlin_input_dtype.itemsize == 1
-        )
+        is_a_8bit = self.marlin_input_dtype is not None and self.marlin_input_dtype.itemsize == 1
 
         if self.marlin_input_dtype == torch.float8_e4m3fn:
             # NOTE: for non-zp quantization format only
@@ -366,15 +335,9 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
             w2_sorted_g_idx = torch.empty_like(layer.w2_weight_g_idx)
 
             for e in range(num_experts):
-                w13_g_idx_sort_indices[e] = torch.argsort(layer.w13_weight_g_idx[e]).to(
-                    torch.int32
-                )
-                w2_g_idx_sort_indices[e] = torch.argsort(layer.w2_weight_g_idx[e]).to(
-                    torch.int32
-                )
-                w13_sorted_g_idx[e] = layer.w13_weight_g_idx[e][
-                    w13_g_idx_sort_indices[e]
-                ]
+                w13_g_idx_sort_indices[e] = torch.argsort(layer.w13_weight_g_idx[e]).to(torch.int32)
+                w2_g_idx_sort_indices[e] = torch.argsort(layer.w2_weight_g_idx[e]).to(torch.int32)
+                w13_sorted_g_idx[e] = layer.w13_weight_g_idx[e][w13_g_idx_sort_indices[e]]
                 w2_sorted_g_idx[e] = layer.w2_weight_g_idx[e][w2_g_idx_sort_indices[e]]
 
             replace_parameter(layer, "w13_weight_g_idx", w13_sorted_g_idx)
@@ -429,9 +392,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
             is_a_8bit=is_a_8bit,
         )
         if self.marlin_input_dtype == torch.int8 and layer.num_groups_w13 > 1:
-            marlin_w13_scales, w13_input_global_scale = marlin_act_int8_process_scales(
-                marlin_w13_scales
-            )
+            marlin_w13_scales, w13_input_global_scale = marlin_act_int8_process_scales(marlin_w13_scales)
             layer.register_parameter(
                 "w13_input_global_scale",
                 torch.nn.Parameter(w13_input_global_scale, requires_grad=False),
@@ -440,16 +401,13 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
 
         marlin_w2_scales = marlin_moe_permute_scales(
             s=layer.w2_weight_scale,
-            size_k=layer.w2_weight_scale.shape[1]
-            * (self.group_size if self.group_size != -1 else self.packed_factor),
+            size_k=layer.w2_weight_scale.shape[1] * (self.group_size if self.group_size != -1 else self.packed_factor),
             size_n=layer.w2_weight_scale.shape[2],
             group_size=self.group_size,
             is_a_8bit=is_a_8bit,
         )
         if self.marlin_input_dtype == torch.int8 and layer.num_groups_w2 > 1:
-            marlin_w2_scales, w2_input_global_scale = marlin_act_int8_process_scales(
-                marlin_w2_scales
-            )
+            marlin_w2_scales, w2_input_global_scale = marlin_act_int8_process_scales(marlin_w2_scales)
             layer.register_parameter(
                 "w2_input_global_scale",
                 torch.nn.Parameter(w2_input_global_scale, requires_grad=False),
@@ -458,9 +416,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
 
         layer.workspace = marlin_make_workspace_new(device, 4)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         if self.num_bits != 4:
             return None
         return int4_w4a16_moe_quant_config(
@@ -481,10 +437,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         layer.w2_weight = layer.w2_weight_packed
         assert all([w is not None for w in [layer.w13_weight, layer.w2_weight]])
         assert self.moe_quant_config is not None
-        if (
-            prepare_finalize.activation_format
-            == mk.FusedMoEActivationFormat.BatchedExperts
-        ):
+        if prepare_finalize.activation_format == mk.FusedMoEActivationFormat.BatchedExperts:
             max_num_tokens_per_rank = prepare_finalize.max_num_tokens_per_rank()
             assert max_num_tokens_per_rank is not None
             return BatchedMarlinExperts(

@@ -62,9 +62,7 @@ def fetch_id_to_ragged_kernel(
     tl.store(out_tensor_ptr + out_tensor_offset, in_tensor_val, mask=out_tensor_mask)
 
 
-def fetch_id_to_ragged_triton(
-    in_tensor: torch.Tensor, cumsum: torch.Tensor, out_tensor: torch.Tensor, topk
-):
+def fetch_id_to_ragged_triton(in_tensor: torch.Tensor, cumsum: torch.Tensor, out_tensor: torch.Tensor, topk):
     num_tokens = in_tensor.size(0)
     block_size = 64
     num_block_per_row = triton.cdiv(topk, block_size)
@@ -72,9 +70,7 @@ def fetch_id_to_ragged_triton(
         num_tokens,
         num_block_per_row,
     )
-    fetch_id_to_ragged_kernel[grid](
-        in_tensor, cumsum, out_tensor, in_tensor.stride(0), topk, num_tokens, block_size
-    )
+    fetch_id_to_ragged_kernel[grid](in_tensor, cumsum, out_tensor, in_tensor.stride(0), topk, num_tokens, block_size)
 
 
 class ROCMAiterMLASparseBackend(AttentionBackend):
@@ -148,12 +144,8 @@ class ROCMAiterMLASparseMetadata(AttentionMetadata):
 
 
 @dataclass
-class ROCMAiterMLASparseMetadataBuilder(
-    AttentionMetadataBuilder[ROCMAiterMLASparseMetadata]
-):
-    _cudagraph_support: ClassVar[AttentionCGSupport] = (
-        AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
-    )
+class ROCMAiterMLASparseMetadataBuilder(AttentionMetadataBuilder[ROCMAiterMLASparseMetadata]):
+    _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
 
     def __init__(
         self,
@@ -171,28 +163,18 @@ class ROCMAiterMLASparseMetadataBuilder(
         self.num_heads = self.model_config.get_num_attention_heads(parallel_config)
         self.mla_dims = get_mla_dims(self.model_config)
         self.topk_tokens = aphrodite_config.model_config.hf_config.index_topk
-        self.topk_tokens_tensor = torch.tensor(
-            [self.topk_tokens], device=device, dtype=torch.int32
-        )
-        self.max_model_len_tensor = torch.tensor(
-            [self.model_config.max_model_len], device=device, dtype=torch.int32
-        )
+        self.topk_tokens_tensor = torch.tensor([self.topk_tokens], device=device, dtype=torch.int32)
+        self.max_model_len_tensor = torch.tensor([self.model_config.max_model_len], device=device, dtype=torch.int32)
         # this is ignored by `flash_mla_with_kvcache` if indices not None
-        self.dummy_block_table = torch.empty(
-            (1, 1), dtype=torch.int32, device=self.device
-        )
+        self.dummy_block_table = torch.empty((1, 1), dtype=torch.int32, device=self.device)
 
         self.req_id_per_token_buffer = torch.empty(
             (aphrodite_config.scheduler_config.max_num_batched_tokens,),
             dtype=torch.int32,
             device=device,
         )
-        self.qo_indptr = torch.arange(
-            0, max_num_batched_tokens + 1, dtype=torch.int32, device=device
-        )
-        self.paged_kv_last_page_len = torch.ones(
-            max_num_batched_tokens, dtype=torch.int32, device=device
-        )
+        self.qo_indptr = torch.arange(0, max_num_batched_tokens + 1, dtype=torch.int32, device=device)
+        self.paged_kv_last_page_len = torch.ones(max_num_batched_tokens, dtype=torch.int32, device=device)
 
         # These two needs to be calculated in runtime,
         # but we still needs to prepare the buffer
@@ -201,9 +183,7 @@ class ROCMAiterMLASparseMetadataBuilder(
             dtype=torch.int32,
             device=device,
         )
-        self.paged_kv_indptr = torch.zeros(
-            [max_num_batched_tokens + 1], dtype=torch.int32, device=device
-        )
+        self.paged_kv_indptr = torch.zeros([max_num_batched_tokens + 1], dtype=torch.int32, device=device)
 
     def build(
         self,
@@ -214,9 +194,7 @@ class ROCMAiterMLASparseMetadataBuilder(
         num_tokens = common_attn_metadata.num_actual_tokens
         starts = np.asarray(common_attn_metadata.query_start_loc_cpu, dtype=np.int32)
         seg_lengths = np.diff(starts)
-        req_id_per_token = np.repeat(
-            np.arange(seg_lengths.shape[0], dtype=np.int32), seg_lengths
-        )
+        req_id_per_token = np.repeat(np.arange(seg_lengths.shape[0], dtype=np.int32), seg_lengths)
         # Zero-fill for cudagraphs
         self.req_id_per_token_buffer.fill_(0)
         self.req_id_per_token_buffer[: req_id_per_token.shape[0]].copy_(
@@ -374,8 +352,6 @@ class ROCMAiterMLASparseImpl(SparseMLAAttentionImpl[ROCMAiterMLASparseMetadata])
             NUM_TOPK_TOKENS=attn_metadata.topk_tokens,
         )
 
-        attn_out = self._forward_bf16_kv(
-            q, kv_c_and_k_pe_cache, topk_indices_global, attn_metadata
-        )
+        attn_out = self._forward_bf16_kv(q, kv_c_and_k_pe_cache, topk_indices_global, attn_metadata)
 
         return attn_out, None

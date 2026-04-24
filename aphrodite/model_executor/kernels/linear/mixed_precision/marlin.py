@@ -42,8 +42,7 @@ class MarlinLinearKernel(MPLinearKernel):
         if c.weight_type not in quant_types:
             return (
                 False,
-                f"Quant type ({c.weight_type}) not supported by"
-                f"  Marlin, supported types are: {quant_types}",
+                f"Quant type ({c.weight_type}) not supported by  Marlin, supported types are: {quant_types}",
             )
 
         if c.group_size not in MARLIN_SUPPORTED_GROUP_SIZES:
@@ -70,15 +69,11 @@ class MarlinLinearKernel(MPLinearKernel):
         is_a_8bit = c.act_type is not None and c.act_type.itemsize == 1
 
         if is_a_8bit:
-            assert c.weight_type == scalar_types.uint4b8, (
-                "W8A8 is not supported by marlin kernel."
-            )
+            assert c.weight_type == scalar_types.uint4b8, "W8A8 is not supported by marlin kernel."
 
         if c.act_type == torch.float8_e4m3fn:
             ops.marlin_int4_fp8_preprocess(getattr(layer, self.w_q_name), inplace=True)
-            getattr(layer, self.w_s_name).data = (
-                getattr(layer, self.w_s_name).data * 512
-            )
+            getattr(layer, self.w_s_name).data = getattr(layer, self.w_s_name).data * 512
 
         row_parallel = c.partition_weight_shape[0] != c.full_weight_shape[0]
         self.is_k_full = marlin_is_k_full(c.has_g_idx, row_parallel)
@@ -133,9 +128,7 @@ class MarlinLinearKernel(MPLinearKernel):
             return x
 
         if c.has_g_idx:
-            g_idx, g_idx_sort_indices = marlin_sort_g_idx(
-                getattr(layer, self.w_gidx_name)
-            )
+            g_idx, g_idx_sort_indices = marlin_sort_g_idx(getattr(layer, self.w_gidx_name))
             self._transform_param(layer, self.w_gidx_name, lambda _: g_idx)
             layer.g_idx_sort_indices = g_idx_sort_indices
         else:
@@ -143,9 +136,7 @@ class MarlinLinearKernel(MPLinearKernel):
             layer.g_idx_sort_indices = marlin_make_empty_g_idx(device)
 
         if c.zero_points:
-            grouped_k = (
-                c.partition_weight_shape[0] // c.group_size if c.group_size != -1 else 1
-            )
+            grouped_k = c.partition_weight_shape[0] // c.group_size if c.group_size != -1 else 1
             self._transform_param(
                 layer,
                 self.w_zp_name,

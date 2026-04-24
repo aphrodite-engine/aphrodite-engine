@@ -32,10 +32,10 @@ from transformers.activations import ACT2FN
 
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import (
+    AphroditeConfig,
     CacheConfig,
     ModelConfig,
     SpeculativeConfig,
-    AphroditeConfig,
     get_current_aphrodite_config,
 )
 from aphrodite.distributed import (
@@ -182,9 +182,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
         self.activation = config.hidden_act
         self.act = ACT2FN[config.hidden_act]
         self.layer_norm_epsilon = config.rms_norm_eps
-        assert getattr(config, "linear_use_gate", True), (
-            "OlmoHybridGatedDeltaNet requires linear_use_gate=True"
-        )
+        assert getattr(config, "linear_use_gate", True), "OlmoHybridGatedDeltaNet requires linear_use_gate=True"
         self.allow_neg_eigval = getattr(config, "linear_allow_neg_eigval", False)
         self.prefix = prefix
 
@@ -193,11 +191,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
         self.cache_config = cache_config
         self.quant_config = quant_config
         self.speculative_config = speculative_config
-        self.num_spec = (
-            self.speculative_config.num_speculative_tokens
-            if self.speculative_config
-            else 0
-        )
+        self.num_spec = self.speculative_config.num_speculative_tokens if self.speculative_config else 0
 
         # Fused QKVG projection: 1 matmul instead of 4
         self.in_proj_qkvg = MergedColumnParallelLinear(
@@ -394,9 +388,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
         core_attn_out_flat = core_attn_out.reshape(-1, core_attn_out.shape[-1])
         gate_flat = gate.reshape(-1, gate.shape[-1])
         core_attn_out_normed = self.o_norm(core_attn_out_flat, gate_flat)
-        core_attn_out = core_attn_out_normed.view(
-            num_tokens, self.num_v_heads // self.tp_size, self.head_v_dim
-        )
+        core_attn_out = core_attn_out_normed.view(num_tokens, self.num_v_heads // self.tp_size, self.head_v_dim)
 
         core_attn_out = rearrange(core_attn_out, "l h d -> l (h d)")
         output[:num_tokens], _ = self.o_proj(core_attn_out)
@@ -432,11 +424,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
         self_kv_cache = self.kv_cache
         # conv_state must be (..., dim, width-1) for the conv kernels.
         # DS layout stores it that way directly; SD layout needs a transpose.
-        conv_state = (
-            self_kv_cache[0]
-            if is_conv_state_dim_first()
-            else self_kv_cache[0].transpose(-1, -2)
-        )
+        conv_state = self_kv_cache[0] if is_conv_state_dim_first() else self_kv_cache[0].transpose(-1, -2)
         ssm_state = self_kv_cache[1]
         num_actual_tokens = attn_metadata.num_actual_tokens
         num_accepted_tokens = attn_metadata.num_accepted_tokens
@@ -445,9 +433,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
         b = b[:num_actual_tokens]
         a = a[:num_actual_tokens]
 
-        conv_weights = self.conv1d.weight.view(
-            self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-        )
+        conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
 
         if spec_sequence_masks is not None:
             if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
@@ -467,9 +453,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
                 conv_weights,
                 None,  # no bias
                 self.activation,
-                conv_state_indices=spec_state_indices_tensor[:, 0][
-                    : attn_metadata.num_spec_decodes
-                ],
+                conv_state_indices=spec_state_indices_tensor[:, 0][: attn_metadata.num_spec_decodes],
                 num_accepted_tokens=num_accepted_tokens,
                 query_start_loc=spec_query_start_loc,
                 max_query_len=spec_state_indices_tensor.size(-1),
@@ -496,22 +480,16 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
                 conv_weights,
                 None,
                 self.activation,
-                conv_state_indices=non_spec_state_indices_tensor[
-                    : attn_metadata.num_decodes
-                ],
+                conv_state_indices=non_spec_state_indices_tensor[: attn_metadata.num_decodes],
                 validate_data=True,
             )
         else:
             mixed_qkv_non_spec = None
 
         query_spec, key_spec, value_spec = self.rearrange_mixed_qkv(mixed_qkv_spec)
-        query_non_spec, key_non_spec, value_non_spec = self.rearrange_mixed_qkv(
-            mixed_qkv_non_spec
-        )
+        query_non_spec, key_non_spec, value_non_spec = self.rearrange_mixed_qkv(mixed_qkv_non_spec)
 
-        g, beta = fused_olmo_hybrid_gdn_gating(
-            self.A_log, a, b, self.dt_bias, self.allow_neg_eigval
-        )
+        g, beta = fused_olmo_hybrid_gdn_gating(self.A_log, a, b, self.dt_bias, self.allow_neg_eigval)
 
         if spec_sequence_masks is not None:
             if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
@@ -564,25 +542,19 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
                 cu_seqlens=non_spec_query_start_loc,
                 use_qk_l2norm_in_kernel=True,
             )
-            ssm_state[non_spec_state_indices_tensor] = last_recurrent_state.to(
-                ssm_state.dtype
-            )
+            ssm_state[non_spec_state_indices_tensor] = last_recurrent_state.to(ssm_state.dtype)
         elif attn_metadata.num_decodes > 0:
-            core_attn_out_non_spec, last_recurrent_state = (
-                fused_recurrent_gated_delta_rule(
-                    q=query_non_spec,
-                    k=key_non_spec,
-                    v=value_non_spec,
-                    g=g_non_spec,
-                    beta=beta_non_spec,
-                    initial_state=ssm_state,
-                    inplace_final_state=True,
-                    cu_seqlens=non_spec_query_start_loc[
-                        : attn_metadata.num_decodes + 1
-                    ],
-                    ssm_state_indices=non_spec_state_indices_tensor,
-                    use_qk_l2norm_in_kernel=True,
-                )
+            core_attn_out_non_spec, last_recurrent_state = fused_recurrent_gated_delta_rule(
+                q=query_non_spec,
+                k=key_non_spec,
+                v=value_non_spec,
+                g=g_non_spec,
+                beta=beta_non_spec,
+                initial_state=ssm_state,
+                inplace_final_state=True,
+                cu_seqlens=non_spec_query_start_loc[: attn_metadata.num_decodes + 1],
+                ssm_state_indices=non_spec_state_indices_tensor,
+                use_qk_l2norm_in_kernel=True,
             )
         else:
             core_attn_out_non_spec, last_recurrent_state = None, None
@@ -615,9 +587,7 @@ class OlmoHybridAttention(nn.Module):
         assert self.total_num_heads % self.tp_size == 0
 
         self.num_heads = self.total_num_heads // self.tp_size
-        self.total_num_kv_heads = (
-            self.config.num_key_value_heads or self.total_num_heads
-        )
+        self.total_num_kv_heads = self.config.num_key_value_heads or self.total_num_heads
         if self.total_num_kv_heads >= self.tp_size:
             assert self.total_num_kv_heads % self.tp_size == 0
         else:
@@ -663,9 +633,7 @@ class OlmoHybridAttention(nn.Module):
         )
 
         rope_parameters = getattr(self.config, "rope_parameters", None)
-        self._use_rope = (rope_parameters is not None) and (
-            rope_parameters["rope_theta"] is not None
-        )
+        self._use_rope = (rope_parameters is not None) and (rope_parameters["rope_theta"] is not None)
 
         if self._use_rope:
             self.rotary_emb = get_rope(
@@ -684,9 +652,7 @@ class OlmoHybridAttention(nn.Module):
             prefix=f"{prefix}.o_proj",
         )
 
-    def _apply_qk_norm(
-        self, q: torch.Tensor, k: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _apply_qk_norm(self, q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         if self.tp_size > 1:
             q = tensor_model_parallel_all_gather(q.contiguous())
             k = tensor_model_parallel_all_gather(k.contiguous())
@@ -842,9 +808,7 @@ class OlmoHybridModel(nn.Module):
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             self.config.num_hidden_layers,
-            lambda prefix: OlmoHybridDecoderLayer(
-                aphrodite_config=aphrodite_config, prefix=prefix
-            ),
+            lambda prefix: OlmoHybridDecoderLayer(aphrodite_config=aphrodite_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
 
@@ -923,9 +887,7 @@ class OlmoHybridModel(nn.Module):
                     if weight_name not in name:
                         continue
                     mapped_name = name.replace(weight_name, param_name)
-                    if mapped_name.endswith(".bias") and (
-                        mapped_name not in params_dict
-                    ):
+                    if mapped_name.endswith(".bias") and (mapped_name not in params_dict):
                         continue
                     if mapped_name not in params_dict:
                         continue
@@ -962,9 +924,7 @@ class OlmoHybridModel(nn.Module):
         return loaded_params
 
 
-class OlmoHybridForCausalLM(
-    nn.Module, HasInnerState, SupportsPP, SupportsLoRA, IsHybrid
-):
+class OlmoHybridForCausalLM(nn.Module, HasInnerState, SupportsPP, SupportsLoRA, IsHybrid):
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -978,9 +938,7 @@ class OlmoHybridForCausalLM(
         self.aphrodite_config = aphrodite_config
         self.model_config = aphrodite_config.model_config
 
-        self.model = OlmoHybridModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = OlmoHybridModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if config.tie_word_embeddings:
             self.lm_head = self.model.embed_tokens
@@ -993,9 +951,7 @@ class OlmoHybridForCausalLM(
             )
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
@@ -1041,9 +997,7 @@ class OlmoHybridForCausalLM(
         hf_config = aphrodite_config.model_config.hf_config
         tp_size = parallel_config.tensor_parallel_size
         num_spec = (
-            aphrodite_config.speculative_config.num_speculative_tokens
-            if aphrodite_config.speculative_config
-            else 0
+            aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
         )
         return MambaStateShapeCalculator.gated_delta_net_state_shape(
             tp_size,
@@ -1062,9 +1016,7 @@ class OlmoHybridForCausalLM(
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(
-                ["lm_head.weight"] if self.config.tie_word_embeddings else None
-            ),
+            skip_prefixes=(["lm_head.weight"] if self.config.tie_word_embeddings else None),
         )
         return loader.load_weights(weights)
 
@@ -1131,9 +1083,7 @@ def fused_olmo_hybrid_gdn_gating_kernel(
 
     # g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
     x = blk_a.to(tl.float32) + blk_bias.to(tl.float32)
-    softplus_x = tl.where(
-        beta * x <= threshold, (1 / beta) * tl.log(1 + tl.exp(beta * x)), x
-    )
+    softplus_x = tl.where(beta * x <= threshold, (1 / beta) * tl.log(1 + tl.exp(beta * x)), x)
     blk_g = -tl.exp(blk_A_log.to(tl.float32)) * softplus_x
     tl.store(g + off, blk_g.to(g.dtype.element_ty), mask=mask)
 
@@ -1142,9 +1092,7 @@ def fused_olmo_hybrid_gdn_gating_kernel(
     blk_beta_output = tl.sigmoid(blk_b.to(tl.float32))
     if allow_neg_eigval:
         blk_beta_output = blk_beta_output * 2.0
-    tl.store(
-        beta_output + off, blk_beta_output.to(beta_output.dtype.element_ty), mask=mask
-    )
+    tl.store(beta_output + off, blk_beta_output.to(beta_output.dtype.element_ty), mask=mask)
 
 
 def fused_olmo_hybrid_gdn_gating(

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import io
 from unittest.mock import Mock
 
@@ -7,9 +9,9 @@ import pybase64
 import pytest
 import regex as re
 import torch
+from aphrodite.endpoints.renderer import CompletionRenderer
 
 from aphrodite.config import ModelConfig
-from aphrodite.endpoints.renderer import CompletionRenderer
 
 from ...utils import RemoteOpenAIServer
 

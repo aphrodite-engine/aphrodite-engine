@@ -28,6 +28,7 @@ The table below shows the hardware support matrix for Aphrodite. Google TPU does
 | Experts-INT8          | ❌    | ❌     | ✅     | ✅  | ✅     | ✅      | ❌        | ❌      | ❌             | ❌         |
 
 ## Notes
+
 - Volta refers to SM 7.0, Turing to SM 7.5, Ampere to SM 8.0/8.6, Ada to SM 8.9, and Hopper to SM 9.0. Blackwell is not supported as of v0.6.7.
 - ✅ indicates that the hardware supports the quantization method.
 - ❌ indicates that the hardware does not support the quantization method.

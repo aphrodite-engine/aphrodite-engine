@@ -47,18 +47,14 @@ class BlockTables:
                 device=device,
             )
             self.block_tables.append(block_table)
-        self.block_table_ptrs = self._make_ptr_tensor(
-            [b.gpu for b in self.block_tables]
-        )
+        self.block_table_ptrs = self._make_ptr_tensor([b.gpu for b in self.block_tables])
         self.block_table_strides = torch.tensor(
             [b.gpu.stride(0) for b in self.block_tables],
             dtype=torch.int64,
             device=self.device,
         )
 
-        self.block_sizes_tensor = torch.tensor(
-            self.block_sizes, dtype=torch.int32, device=self.device
-        )
+        self.block_sizes_tensor = torch.tensor(self.block_sizes, dtype=torch.int32, device=self.device)
         self.num_blocks = UvaBackedTensor(
             (self.num_kv_cache_groups, self.max_num_reqs),
             dtype=torch.int32,
@@ -66,9 +62,7 @@ class BlockTables:
 
         # Block tables used for model's forward pass.
         # num_kv_cache_groups x [max_num_reqs, max_num_blocks]
-        self.input_block_tables: list[torch.Tensor] = [
-            torch.zeros_like(b.gpu) for b in self.block_tables
-        ]
+        self.input_block_tables: list[torch.Tensor] = [torch.zeros_like(b.gpu) for b in self.block_tables]
         self.input_block_table_ptrs = self._make_ptr_tensor(self.input_block_tables)
 
         self.slot_mappings = torch.zeros(
@@ -80,9 +74,7 @@ class BlockTables:
 
     def _make_ptr_tensor(self, x: Iterable[torch.Tensor]) -> torch.Tensor:
         # NOTE(woosuk): Use uint64 instead of int64 to cover all possible addresses.
-        return torch.tensor(
-            [t.data_ptr() for t in x], dtype=torch.uint64, device=self.device
-        )
+        return torch.tensor([t.data_ptr() for t in x], dtype=torch.uint64, device=self.device)
 
     def append_block_ids(
         self,
@@ -255,9 +247,7 @@ def _compute_slot_mappings_kernel(
 
         block_indices = positions // (block_size * CP_SIZE)
         block_offsets = positions % (block_size * CP_SIZE)
-        block_numbers = tl.load(
-            block_table_ptr + req_state_idx * block_table_stride + block_indices
-        )
+        block_numbers = tl.load(block_table_ptr + req_state_idx * block_table_stride + block_indices)
 
         if CP_SIZE == 1:
             # Common case: Context parallelism is not used.

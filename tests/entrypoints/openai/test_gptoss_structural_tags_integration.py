@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Integration tests for GPT-OSS structural tags functionality (PR #25515)."""
 
 import json
 from unittest.mock import Mock
 
 import pytest
-
 from aphrodite.endpoints.openai.protocol import StructuredOutputsParams
 from aphrodite.endpoints.tool_server import ToolServer
+
 from aphrodite.reasoning.gptoss_reasoning_parser import GptOssReasoningParser
 
 

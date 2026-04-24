@@ -37,8 +37,7 @@ class CPUWNA16LinearKernel(MPLinearKernel):
         if c.group_size != -1 and c.group_size % 2 != 0:
             return (
                 False,
-                f"Group size ({c.group_size}) not supported by "
-                "CPUWNA16, supported group sizes are multiples of 2",
+                f"Group size ({c.group_size}) not supported by CPUWNA16, supported group sizes are multiples of 2",
             )
 
         if c.partition_weight_shape[0] % 32 != 0:
@@ -78,9 +77,7 @@ class CPUWNA16LinearKernel(MPLinearKernel):
         layer.isa_hint = isa_hint
 
         # convert input dim packed to output dim packed
-        weight = unpack_quantized_values_into_int32(
-            packed_weight, self.config.weight_type, 0
-        )
+        weight = unpack_quantized_values_into_int32(packed_weight, self.config.weight_type, 0)
         weight = pack_quantized_values_into_int32(weight, self.config.weight_type, 1)
         # make 16 output channel as a block and transpose to the make
         # the block contiguous

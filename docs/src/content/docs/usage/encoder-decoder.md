@@ -5,6 +5,7 @@ title: Encoder-Decoder Model Support in Aphrodite
 Aphrodite now supports encoder-decoder language models (only available if built from source for now), such as [BART](https://huggingface.co/facebook/bart-large-cnn), in addition to decoder-only models. This document will guide you through using encoder-decoder models with Aphrodite.
 
 ## Introduction
+
 Encoder-decoder models, like BART, consist of two main components: an encoder that processes the input sequence, and a decoder that generates the output sequence. Aphrodite's support for these models allows you to leverage their capabilities for tasks such as summarization, translation, and more.
 
 ## Setting up an Encoder-Decoder Model
@@ -22,6 +23,7 @@ Keep in mind that it's recommended to use float (FP32) data type for BART models
 The `LLM` class automatically detects whether the model is encoder-decoder or a decoder-only model and sets up the appropriate internal configurations.
 
 ## Input Types
+
 We support various input types for encoder-decoder models. The main types are defined in the `aphrodite.inputs.data` module:
 
 ```py
@@ -54,6 +56,7 @@ We support various input types for encoder-decoder models. The main types are de
 For encoder-decoder models, you can use these input types in different combinations:
 
 ### Single Input (Implicit Encoder Input)
+
 You can provide a single input, which will be treated as the encoder input. The decoder input will be assumed to be empty (None).
 
 ```py
@@ -63,6 +66,7 @@ single_tokens_prompt = TokensPrompt(prompt_token_ids=tokenizer.encode("The capit
 ```
 
 ### Explicit Encoder and Decoder Inputs
+
 For more control, you can explicitly specify both encoder and decoder inputs using the `ExplicitEncoderDecoderPrompt` class:
 
 ```py
@@ -97,6 +101,7 @@ enc_dec_prompt = ExplicitEncoderDecoderPrompt(
 ```
 
 ## Generating Text
+
 To generate text with an encoder-decoder model, use the `generate` method of the `LLM` instance. You can pass a single prompt, or a list of prompts, along with sampling parameters:
 
 ```py
@@ -115,7 +120,9 @@ outputs = llm.generate(prompts, sampling_params)
 The `generate` method returns a list of `RequestOutput` objects containing the generated text and other information.
 
 ## Advanced Usage
+
 ### Mixing Input Types
+
 You can mix different input types in a single generation request:
 
 ```py
@@ -132,6 +139,7 @@ outputs = llm.generate(prompts, sampling_params)
 ```
 
 ### Batching Encoder and Decoder Prompts
+
 For efficient processing of multiple encoder-decoder pairs, use the `zip_enc_dec_prompt_lists` helper function:
 
 ```py
@@ -144,6 +152,7 @@ zipped_prompt_list = zip_enc_dec_prompt_lists(
 ```
 
 ### Accessing Generated Text
+
 After generation, you can access the generated text and other information from the `RequestOutput` objects:
 
 ```py
@@ -157,7 +166,9 @@ for output in outputs:
 ```
 
 ## API Reference
+
 ### LLM Class
+
 The `LLM` class in the `aphrodite.endpoints.llm` module is the main interface for working with both decoder-only and encoder-decoder models.
 
 Key methods:
@@ -166,11 +177,13 @@ Key methods:
 - `generate(self, prompts: Union[PromptInputs, Sequence[PromptInputs]], ...)`: Generate text based on the given prompts and sampling parameters.
 
 ### Input Types
+
 - `TextPrompt`: Represents a text prompt.
 - `TokensPrompt`: Represents a tokenized prompt.
 - `ExplicitEncoderDecoderPrompt`: Represents an explicit encoder-decoder prompt pair.
 
 ### RequestOutput
+
 The `RequestOutput` class in the `aphrodite.outputs` module contains the results of a generation request.
 
 Key attributes:

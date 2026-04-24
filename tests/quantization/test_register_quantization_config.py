@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests register custom quantization config.
 
 See https://github.com/vllm-project/vllm/issues/11926 for more details.
@@ -10,7 +12,6 @@ from typing import Any
 import pytest
 import torch
 import torch.nn.functional as F
-
 from aphrodite.modeling.layers.linear import (
     LinearBase,  # noqa: E501
     UnquantizedLinearMethod,

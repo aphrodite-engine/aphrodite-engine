@@ -14,7 +14,9 @@ from aphrodite.utils.serial_utils import tensor2base64
 from ..image import convert_image_mode, rgba_to_rgb
 from .base import MediaIO, MediaWithBytes
 
-MAGIC_NUMPY_PREFIX = b"\x93NUMPY"  # https://numpy.org/devdocs/reference/generated/numpy.lib.format.html#format-version-1-0
+MAGIC_NUMPY_PREFIX = (
+    b"\x93NUMPY"  # https://numpy.org/devdocs/reference/generated/numpy.lib.format.html#format-version-1-0
+)
 
 
 class ImageMediaIO(MediaIO[Image.Image]):
@@ -48,15 +50,10 @@ class ImageMediaIO(MediaIO[Image.Image]):
             and len(rgba_bg) == 3
             and all(isinstance(c, int) and 0 <= c <= 255 for c in rgba_bg)
         ):
-            raise ValueError(
-                "rgba_background_color must be a list or tuple of 3 integers "
-                "in the range [0, 255]."
-            )
+            raise ValueError("rgba_background_color must be a list or tuple of 3 integers in the range [0, 255].")
         self.rgba_background_color = rgba_bg
 
-    def _convert_image_mode(
-        self, image: Image.Image | MediaWithBytes[Image.Image]
-    ) -> Image.Image:
+    def _convert_image_mode(self, image: Image.Image | MediaWithBytes[Image.Image]) -> Image.Image:
         """Convert image mode with custom background color."""
         if isinstance(image, MediaWithBytes):
             image = image.media

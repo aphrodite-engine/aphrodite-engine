@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import torch
-
 from aphrodite.modeling.models.llava import (
     LlavaDummyInputsBuilder,
     LlavaForConditionalGeneration,
     LlavaMultiModalProcessor,
     LlavaProcessingInfo,
 )
+
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
 

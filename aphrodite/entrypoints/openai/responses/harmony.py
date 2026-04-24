@@ -163,10 +163,7 @@ def response_input_to_harmony(
         call_id = response_msg["call_id"]
         call_response: ResponseFunctionToolCall | None = None
         for prev_response in reversed(prev_responses):
-            if (
-                isinstance(prev_response, ResponseFunctionToolCall)
-                and prev_response.call_id == call_id
-            ):
+            if isinstance(prev_response, ResponseFunctionToolCall) and prev_response.call_id == call_id:
                 call_response = prev_response
                 break
         if call_response is None:
@@ -255,9 +252,7 @@ def _parse_browser_tool_call(message: Message, recipient: str) -> ResponseOutput
             "Invalid JSON in browser tool call, using error placeholder: %s",
             content.text,
         )
-        json_retry_output_message = (
-            f"Invalid JSON args, caught and retried: {content.text}"
-        )
+        json_retry_output_message = f"Invalid JSON args, caught and retried: {content.text}"
         browser_call = {
             "query": json_retry_output_message,
             "url": json_retry_output_message,
@@ -266,13 +261,9 @@ def _parse_browser_tool_call(message: Message, recipient: str) -> ResponseOutput
 
     # Create appropriate action based on recipient
     if recipient == "browser.search":
-        action = ActionSearch(
-            query=f"cursor:{browser_call.get('query', '')}", type="search"
-        )
+        action = ActionSearch(query=f"cursor:{browser_call.get('query', '')}", type="search")
     elif recipient == "browser.open":
-        action = ActionOpenPage(
-            url=f"cursor:{browser_call.get('url', '')}", type="open_page"
-        )
+        action = ActionOpenPage(url=f"cursor:{browser_call.get('url', '')}", type="open_page")
     elif recipient == "browser.find":
         action = ActionFind(
             pattern=browser_call.get("pattern", ""),
@@ -315,9 +306,7 @@ def _parse_reasoning(message: Message) -> list[ResponseOutputItem]:
             id=f"rs_{random_uuid()}",
             summary=[],
             type="reasoning",
-            content=[
-                ResponseReasoningTextContent(text=content.text, type="reasoning_text")
-            ],
+            content=[ResponseReasoningTextContent(text=content.text, type="reasoning_text")],
             status=None,
         )
         output_items.append(reasoning_item)
@@ -482,11 +471,7 @@ def parser_state_to_response_output(
                     id=f"rs_{random_uuid()}",
                     summary=[],
                     type="reasoning",
-                    content=[
-                        ResponseReasoningTextContent(
-                            text=parser.current_content, type="reasoning_text"
-                        )
-                    ],
+                    content=[ResponseReasoningTextContent(text=parser.current_content, type="reasoning_text")],
                     status=None,
                 )
             ]
@@ -530,11 +515,7 @@ def parser_state_to_response_output(
                 id=f"rs_{random_uuid()}",
                 summary=[],
                 type="reasoning",
-                content=[
-                    ResponseReasoningTextContent(
-                        text=parser.current_content, type="reasoning_text"
-                    )
-                ],
+                content=[ResponseReasoningTextContent(text=parser.current_content, type="reasoning_text")],
                 status=None,
             )
         ]

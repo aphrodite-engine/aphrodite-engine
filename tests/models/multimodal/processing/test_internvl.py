@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for InternVL's multimodal preprocessing kwargs."""
 
 from collections.abc import Mapping

@@ -124,9 +124,7 @@ class CPUAttentionMetadataBuilder(AttentionMetadataBuilder[CPUAttentionMetadata]
 
         parallel_config = aphrodite_config.parallel_config
         self.num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(parallel_config)
-        self.num_heads = aphrodite_config.model_config.get_num_attention_heads(
-            parallel_config
-        )
+        self.num_heads = aphrodite_config.model_config.get_num_attention_heads(parallel_config)
         self.head_dim = kv_cache_spec.head_size
         self.dtype = aphrodite_config.model_config.dtype
         self.window_size = getattr(kv_cache_spec, "sliding_window", -1)
@@ -157,12 +155,10 @@ class CPUAttentionMetadataBuilder(AttentionMetadataBuilder[CPUAttentionMetadata]
         if self.use_sdpa_prefill and causal:
             # Decoder, need reorder and truncate
             assert self.reorder_batch_threshold
-            (num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens) = (
-                split_decodes_and_prefills(
-                    common_attn_metadata,
-                    decode_threshold=self.reorder_batch_threshold,
-                    require_uniform=True,
-                )
+            (num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens) = split_decodes_and_prefills(
+                common_attn_metadata,
+                decode_threshold=self.reorder_batch_threshold,
+                require_uniform=True,
             )
             num_reqs = num_decodes
             sdpa_start_loc = sdpa_start_loc[num_decodes:] - num_decode_tokens
@@ -227,8 +223,7 @@ class CPUAttentionBackendImpl(AttentionImpl):
             AttentionType.ENCODER_ONLY,
         ):
             logger.warning_once(
-                "CPU_ATTN does not support logits softcap for"
-                " ENCODER and ENCODER_ONLY, outputs may be slightly off"
+                "CPU_ATTN does not support logits softcap for ENCODER and ENCODER_ONLY, outputs may be slightly off"
             )
         if logits_soft_cap is None:
             logits_soft_cap = 0
@@ -254,8 +249,7 @@ class CPUAttentionBackendImpl(AttentionImpl):
         self.sinks = sinks
         if self.sinks is not None:
             assert self.sinks.shape[0] == num_heads, (
-                "Sinks must have the same number of heads as the number of "
-                "heads in the layer"
+                "Sinks must have the same number of heads as the number of heads in the layer"
             )
 
     def forward(
@@ -283,10 +277,7 @@ class CPUAttentionBackendImpl(AttentionImpl):
             shape = [num_tokens, num_heads * head_size]
         """
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported"
-                " for CPUAttentionBackendImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for CPUAttentionBackendImpl")
 
         # For warming-up
         if attn_metadata is None:
@@ -313,11 +304,7 @@ class CPUAttentionBackendImpl(AttentionImpl):
         # key and value may be None in the case of cross attention. They are
         # calculated once based on the output from the encoder and then cached
         # in KV cache.
-        if (
-            self.kv_sharing_target_layer_name is None
-            and key is not None
-            and value is not None
-        ):
+        if self.kv_sharing_target_layer_name is None and key is not None and value is not None:
             ops.cpu_attn_reshape_and_cache(
                 key,
                 value,
@@ -476,9 +463,7 @@ def _make_sliding_window_bias(
     return attn_biases
 
 
-def _get_attn_isa(
-    dtype: torch.dtype, block_size: int, head_size: int | None = None
-) -> str:
+def _get_attn_isa(dtype: torch.dtype, block_size: int, head_size: int | None = None) -> str:
     if head_size is not None and head_size % 32 != 0 and head_size % 16 == 0:
         return "vec16"
     supports_amx = torch.cpu._is_amx_tile_supported()

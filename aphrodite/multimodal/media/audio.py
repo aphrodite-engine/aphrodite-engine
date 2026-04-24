@@ -79,11 +79,7 @@ def load_audio_pyav(
                 rel_tol=0.0,
                 abs_tol=1e-6,
             )
-            resampler = (
-                av.AudioResampler(format="fltp", layout="mono", rate=sr)
-                if needs_resampling
-                else None
-            )
+            resampler = av.AudioResampler(format="fltp", layout="mono", rate=sr) if needs_resampling else None
             for frame in container.decode(stream):
                 if needs_resampling:
                     assert resampler is not None

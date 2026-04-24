@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import types
 
 import pytest
 import torch
 import torch.nn as nn
-
 from aphrodite.modeling.models.bert import BertMLMHead, SPLADESparsePooler
 
 # ---------------------------------------------------------------------

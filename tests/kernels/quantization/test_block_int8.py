@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from https://github.com/sgl-project/sglang/blob/main/test/srt/test_block_int8.py
 import itertools
 
 import pytest
 import torch
+from aphrodite.quantization.utils.int8_utils import w8a8_block_int8_matmul
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.int8_utils import w8a8_block_int8_matmul
 from tests.kernels.quant_utils import native_w8a8_block_matmul
 
 if current_platform.get_device_capability() < (7, 0):

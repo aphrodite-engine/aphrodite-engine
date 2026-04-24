@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from aphrodite.entrypoints.cli.serve import (
-    DESCRIPTION,
     ServeSubcommand,
 )
 

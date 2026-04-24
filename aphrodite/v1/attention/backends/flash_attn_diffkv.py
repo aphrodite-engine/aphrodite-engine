@@ -147,14 +147,10 @@ class FlashAttentionDiffKVImpl(FlashAttentionImpl):
               {q,k,v}_descale to be (num_sequences, num_kv_heads).
               We use torch's .expand() to avoid duplicating values
         """
-        assert self.aphrodite_flash_attn_version is not None, (
-            "FlashAttention version not detected."
-        )
+        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for FlashAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for FlashAttentionImpl")
 
         if attn_metadata is None:
             # Profiling run.
@@ -193,9 +189,7 @@ class FlashAttentionDiffKVImpl(FlashAttentionImpl):
 
         if is_quantized_kv_cache(self.kv_cache_dtype):
             # queries are quantized in the attention layer
-            dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(
-                self.kv_cache_dtype
-            )
+            dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(self.kv_cache_dtype)
             key_cache = key_cache.view(dtype)
             value_cache = value_cache.view(dtype)
 
@@ -224,11 +218,7 @@ class FlashAttentionDiffKVImpl(FlashAttentionImpl):
                 )
                 return output
             else:
-                sliding_window_size = (
-                    list(self.sliding_window)
-                    if self.sliding_window is not None
-                    else None
-                )
+                sliding_window_size = list(self.sliding_window) if self.sliding_window is not None else None
                 flash_attn_varlen_func(
                     q=query[:num_actual_tokens],
                     k=key_cache,

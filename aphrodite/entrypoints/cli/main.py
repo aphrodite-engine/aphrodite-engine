@@ -48,9 +48,7 @@ def main():
             from aphrodite.platforms.cpu import CpuPlatform
 
             platforms.current_platform = CpuPlatform()
-            logger.info(
-                "Unspecified platform detected, switching to CPU Platform instead."
-            )
+            logger.info("Unspecified platform detected, switching to CPU Platform instead.")
 
     parser = FlexibleArgumentParser(
         description="Aphrodite CLI",

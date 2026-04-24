@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import time
 from unittest.mock import Mock
 
 import pytest
-
-from aphrodite.config import ModelConfig
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
+
+from aphrodite.config import ModelConfig
 
 
 @pytest.fixture()

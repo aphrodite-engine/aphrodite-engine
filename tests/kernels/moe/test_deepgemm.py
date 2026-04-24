@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Unit-test DeepGEMM FP8 kernels (no DeepEP).
 Compare DeepGEMM path against the Triton fallback inside Aphrodite's fused_experts.
@@ -8,12 +10,12 @@ import math
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 
 # Aphrodite fused-expert reference (Triton fallback + DeepGEMM option)
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
 from aphrodite.quantization.utils.fp8_utils import per_token_group_quant_fp8
+
 from aphrodite.utils.deep_gemm import calc_diff, is_deep_gemm_supported, per_block_cast_to_fp8
 
 BLOCK_SIZE = [128, 128]

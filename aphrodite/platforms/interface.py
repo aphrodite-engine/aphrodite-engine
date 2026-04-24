@@ -221,10 +221,7 @@ class Platform:
         # Treat empty device control env var as unset. This is a valid
         # configuration in Ray setups where the engine is launched in
         # a CPU-only placement group located on a GPU node.
-        if (
-            cls.device_control_env_var in os.environ
-            and os.environ[cls.device_control_env_var] != ""
-        ):
+        if cls.device_control_env_var in os.environ and os.environ[cls.device_control_env_var] != "":
             device_ids = os.environ[cls.device_control_env_var].split(",")
             physical_device_id = device_ids[device_id]
             return int(physical_device_id)
@@ -283,9 +280,7 @@ class Platform:
             logger.info_once(f"Using backend {backend} for vit attention")
             return backend
 
-        logger.info_once(
-            f"Using default backend {AttentionBackendEnum.TORCH_SDPA} for vit attention"
-        )
+        logger.info_once(f"Using default backend {AttentionBackendEnum.TORCH_SDPA} for vit attention")
         return AttentionBackendEnum.TORCH_SDPA
 
     @classmethod
@@ -397,9 +392,7 @@ class Platform:
         raise NotImplementedError
 
     @classmethod
-    def pre_register_and_update(
-        cls, parser: FlexibleArgumentParser | None = None
-    ) -> None:
+    def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         """
         Do some pre-registration or update action for the current platform.
 
@@ -440,9 +433,7 @@ class Platform:
         pass
 
     @classmethod
-    def _find_non_ssm_backend(
-        cls, aphrodite_config: "AphroditeConfig"
-    ) -> "type[AttentionBackend] | None":
+    def _find_non_ssm_backend(cls, aphrodite_config: "AphroditeConfig") -> "type[AttentionBackend] | None":
         """Find the first non-SSM attention backend from model layers."""
         from aphrodite.config.aphrodite import get_layers_from_aphrodite_config
         from aphrodite.model_executor.layers.attention_layer_base import (
@@ -465,8 +456,8 @@ class Platform:
         Ensure block_size is compatible with the attention backend.
         For hybrid models, also aligns block_size with mamba page sizes.
         """
-        from aphrodite.config.cache import CacheConfig
         from aphrodite.config.aphrodite import set_current_aphrodite_config
+        from aphrodite.config.cache import CacheConfig
 
         cache_config = aphrodite_config.cache_config
         model_config = aphrodite_config.model_config
@@ -482,9 +473,7 @@ class Platform:
         # Phase 1: Pick block size from backend (skip if user set --block-size)
         if not cache_config.user_specified_block_size:
             with set_current_aphrodite_config(aphrodite_config):
-                preferred = backend_cls.get_preferred_block_size(
-                    CacheConfig.DEFAULT_BLOCK_SIZE
-                )
+                preferred = backend_cls.get_preferred_block_size(CacheConfig.DEFAULT_BLOCK_SIZE)
             if preferred != CacheConfig.DEFAULT_BLOCK_SIZE:
                 logger.info(
                     "Setting kv cache block size to %d for %s backend.",
@@ -566,19 +555,12 @@ class Platform:
             return
 
         # mamba_block_size here should either be user specified value or None
-        mamba_block_size = (
-            cache_config.mamba_block_size
-            if cache_config.user_specified_mamba_block_size
-            else None
-        )
+        mamba_block_size = cache_config.mamba_block_size if cache_config.user_specified_mamba_block_size else None
 
         # Get kernel block alignment from the backend's supported sizes
         with set_current_aphrodite_config(aphrodite_config):
             kernel_block_alignment_size = max(
-                min(
-                    s.base if isinstance(s, MultipleOf) else s
-                    for s in backend_cls.get_supported_kernel_block_sizes()
-                ),
+                min(s.base if isinstance(s, MultipleOf) else s for s in backend_cls.get_supported_kernel_block_sizes()),
                 cache_config.block_size,
             )
 
@@ -604,8 +586,7 @@ class Platform:
         if cache_config.block_size < attn_block_size:
             cache_config.block_size = attn_block_size
             logger.info_once(
-                "Setting attention block size to %d tokens "
-                "to ensure that attention page size is >= mamba page size.",
+                "Setting attention block size to %d tokens to ensure that attention page size is >= mamba page size.",
                 attn_block_size,
             )
 
@@ -619,14 +600,9 @@ class Platform:
         if attn_page_size == mamba_page_size:
             return
 
-        if (
-            cache_config.mamba_page_size_padded is None
-            or cache_config.mamba_page_size_padded != attn_page_size
-        ):
+        if cache_config.mamba_page_size_padded is None or cache_config.mamba_page_size_padded != attn_page_size:
             cache_config.mamba_page_size_padded = attn_page_size
-            mamba_padding_pct = (
-                100 * (attn_page_size - mamba_page_size) / mamba_page_size
-            )
+            mamba_padding_pct = 100 * (attn_page_size - mamba_page_size) / mamba_page_size
             logger.info_once(
                 "Padding mamba page size by %.2f%% to ensure "
                 "that mamba page size and attention page size are "
@@ -652,9 +628,7 @@ class Platform:
         Verify whether the quantization is supported by the current platform.
         """
         if cls.supported_quantization and quant not in cls.supported_quantization:
-            raise ValueError(
-                f"{quant} quantization is currently not supported in {cls.device_name}."
-            )
+            raise ValueError(f"{quant} quantization is currently not supported in {cls.device_name}.")
 
     @classmethod
     def get_cpu_architecture(cls) -> CpuArchEnum:
@@ -683,17 +657,12 @@ class Platform:
         if in_wsl():
             # Pinning memory in WSL is not supported.
             # https://docs.nvidia.com/cuda/wsl-user-guide/index.html#known-limitations-for-linux-cuda-applications
-            logger.warning(
-                "Using 'pin_memory=False' as WSL is detected. "
-                "This may slow down the performance."
-            )
+            logger.warning("Using 'pin_memory=False' as WSL is detected. This may slow down the performance.")
             return False
         return True
 
     @classmethod
-    def get_current_memory_usage(
-        cls, device: torch.types.Device | None = None
-    ) -> float:
+    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
         """
         Return the memory usage in bytes.
         """
@@ -959,14 +928,10 @@ class Platform:
         Get the number of compute units for the current platform.
         (NVIDIA SM / AMD CU / Intel EU)
         """
-        raise NotImplementedError(
-            "num_compute_units is not implemented for the current platform."
-        )
+        raise NotImplementedError("num_compute_units is not implemented for the current platform.")
 
     @classmethod
-    def get_default_ir_op_priority(
-        cls, aphrodite_config: "AphroditeConfig"
-    ) -> "IrOpPriorityConfig":
+    def get_default_ir_op_priority(cls, aphrodite_config: "AphroditeConfig") -> "IrOpPriorityConfig":
         """Get the default IR op priority for the current platform."""
         from aphrodite.config.kernel import IrOpPriorityConfig
 

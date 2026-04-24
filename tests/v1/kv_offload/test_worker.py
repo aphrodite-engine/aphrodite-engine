@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from aphrodite.v1.kv_offload.abstract import LoadStoreSpec
 from aphrodite.v1.kv_offload.worker.worker import OffloadingHandler, OffloadingWorker, TransferResult, TransferSpec
 

@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
-
 from aphrodite.lora.models import LoRAModel
+from aphrodite.modeling.models.llama import LlamaForCausalLM
+
 from aphrodite.lora.peft_helper import PEFTHelper
 from aphrodite.lora.utils import get_adapter_absolute_path
-from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 # Provide absolute path and huggingface lora ids
 lora_fixture_name = ["sql_lora_files", "sql_lora_huggingface_id"]

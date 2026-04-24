@@ -5,12 +5,11 @@ import contextlib
 import os
 from typing import TYPE_CHECKING
 
-import torch
-
 # import custom ops, trigger op registration
 import aphrodite_xpu_kernels._C  # noqa
 import aphrodite_xpu_kernels._moe_C  # noqa
 import aphrodite_xpu_kernels._xpu_C  # noqa
+import torch
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
@@ -57,8 +56,7 @@ class XPUPlatform(Platform):
 
         set_kv_cache_layout("NHD")
         logger.info(
-            "Setting APHRODITE_KV_CACHE_LAYOUT to 'NHD' for XPU; "
-            "only NHD layout is supported by XPU attention kernels."
+            "Setting APHRODITE_KV_CACHE_LAYOUT to 'NHD' for XPU; only NHD layout is supported by XPU attention kernels."
         )
 
         # TurboQuant KV cache: route directly to TQ backend
@@ -79,8 +77,7 @@ class XPUPlatform(Platform):
             return AttentionBackendEnum.TRITON_ATTN.get_path()
         elif dtype == torch.float32:
             logger.warning_once(
-                "Flash Attention on XPU does not support float32 dtype. "
-                "Falling back to Triton Attention backend."
+                "Flash Attention on XPU does not support float32 dtype. Falling back to Triton Attention backend."
             )
             return AttentionBackendEnum.TRITON_ATTN.get_path()
         elif selected_backend == AttentionBackendEnum.FLASH_ATTN:
@@ -88,8 +85,7 @@ class XPUPlatform(Platform):
             return AttentionBackendEnum.FLASH_ATTN.get_path()
         elif selected_backend:
             raise ValueError(
-                f"Invalid attention backend for {cls.device_name}, "
-                f"with use_mla: {attn_selector_config.use_mla}"
+                f"Invalid attention backend for {cls.device_name}, with use_mla: {attn_selector_config.use_mla}"
             )
 
         logger.info("Using Flash Attention backend.")
@@ -119,9 +115,7 @@ class XPUPlatform(Platform):
             logger.info_once(f"Using backend {backend} for vit attention")
             return backend
 
-        logger.info_once(
-            f"Using backend {AttentionBackendEnum.FLASH_ATTN} for vit attention"
-        )
+        logger.info_once(f"Using backend {AttentionBackendEnum.FLASH_ATTN} for vit attention")
         return AttentionBackendEnum.FLASH_ATTN
 
     @classmethod
@@ -185,10 +179,7 @@ class XPUPlatform(Platform):
             attention_config.backend = AttentionBackendEnum.FLASH_ATTN
         if not supports_xpu_graph():
             compilation_config.cudagraph_mode = CUDAGraphMode.NONE
-            logger.warning(
-                "XPU Graph is not supported in the current PyTorch version, "
-                "disabling cudagraph_mode."
-            )
+            logger.warning("XPU Graph is not supported in the current PyTorch version, disabling cudagraph_mode.")
         elif not envs.APHRODITE_XPU_ENABLE_XPU_GRAPH:
             compilation_config.cudagraph_mode = CUDAGraphMode.NONE
             logger.warning(
@@ -197,15 +188,11 @@ class XPUPlatform(Platform):
             )
         elif parallel_config.world_size_across_dp > 1:
             compilation_config.cudagraph_mode = CUDAGraphMode.NONE
-            logger.warning(
-                "XPU Graph doesn't support capture communication ops, "
-                "disabling cudagraph_mode."
-            )
+            logger.warning("XPU Graph doesn't support capture communication ops, disabling cudagraph_mode.")
         else:
             if (
                 attention_config.backend == AttentionBackendEnum.FLASH_ATTN
-                and compilation_config.cudagraph_mode
-                not in {CUDAGraphMode.NONE, CUDAGraphMode.PIECEWISE}
+                and compilation_config.cudagraph_mode not in {CUDAGraphMode.NONE, CUDAGraphMode.PIECEWISE}
             ):
                 compilation_config.cudagraph_mode = CUDAGraphMode.PIECEWISE
                 logger.warning(
@@ -257,9 +244,7 @@ class XPUPlatform(Platform):
 
         if kernel_block_size is None:
             return
-        new_block_size = (
-            cdiv(cache_config.block_size, kernel_block_size) * kernel_block_size
-        )
+        new_block_size = cdiv(cache_config.block_size, kernel_block_size) * kernel_block_size
         if new_block_size == cache_config.block_size:
             return
 
@@ -267,12 +252,8 @@ class XPUPlatform(Platform):
             cache_config.mamba_block_size = new_block_size
         original_mamba_page_size_padded = cache_config.mamba_page_size_padded
         if cache_config.mamba_page_size_padded is not None:
-            attn_page_size_1_token = (
-                cache_config.mamba_page_size_padded // cache_config.block_size
-            )
-            cache_config.mamba_page_size_padded = (
-                new_block_size * attn_page_size_1_token
-            )
+            attn_page_size_1_token = cache_config.mamba_page_size_padded // cache_config.block_size
+            cache_config.mamba_page_size_padded = new_block_size * attn_page_size_1_token
         cache_config.block_size = new_block_size
         logger.info(
             "[XPU]Setting attention block size to %d tokens to ensure multiple of %d, "
@@ -296,9 +277,7 @@ class XPUPlatform(Platform):
         return True
 
     @classmethod
-    def get_current_memory_usage(
-        cls, device: torch.types.Device | None = None
-    ) -> float:
+    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
         torch.xpu.empty_cache()
         torch.xpu.reset_peak_memory_stats(device)
         return torch.xpu.max_memory_allocated(device)
@@ -317,16 +296,11 @@ class XPUPlatform(Platform):
         from aphrodite.utils.torch_utils import supports_xccl
 
         if not supports_xccl():
-            logger.warning(
-                "xccl is not enabled in this torch build, communication"
-                " is not available."
-            )
+            logger.warning("xccl is not enabled in this torch build, communication is not available.")
         return "aphrodite.distributed.device_communicators.xpu_communicator.XpuCommunicator"  # noqa
 
     @classmethod
-    def get_default_ir_op_priority(
-        cls, aphrodite_config: "AphroditeConfig"
-    ) -> "IrOpPriorityConfig":
+    def get_default_ir_op_priority(cls, aphrodite_config: "AphroditeConfig") -> "IrOpPriorityConfig":
         from aphrodite.config.compilation import CompilationMode
         from aphrodite.config.kernel import IrOpPriorityConfig
 

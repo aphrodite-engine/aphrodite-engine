@@ -79,9 +79,7 @@ class UvaBufferPool:
 
 
 class UvaBackedTensor:
-    def __init__(
-        self, size: int | Sequence[int], dtype: torch.dtype, max_concurrency: int = 2
-    ):
+    def __init__(self, size: int | Sequence[int], dtype: torch.dtype, max_concurrency: int = 2):
         self.dtype = dtype
 
         # Source of truth
@@ -109,9 +107,7 @@ class StagedWriteTensor:
     ):
         supported_dtypes = [torch.int32, torch.int64, torch.float32]
         if dtype not in supported_dtypes:
-            raise ValueError(
-                f"Unsupported dtype {dtype}: should be one of {supported_dtypes}"
-            )
+            raise ValueError(f"Unsupported dtype {dtype}: should be one of {supported_dtypes}")
         self.num_rows = size if isinstance(size, int) else size[0]
         self.dtype = dtype
         self.device = device
@@ -137,9 +133,7 @@ class StagedWriteTensor:
         self.write_starts = new_buffer(self.num_rows, dtype=torch.int32)
         self.write_cu_lens = new_buffer(self.num_rows, dtype=torch.int32)
 
-    def stage_write(
-        self, index: int, start: int, x: Iterable[int] | Iterable[float]
-    ) -> None:
+    def stage_write(self, index: int, start: int, x: Iterable[int] | Iterable[float]) -> None:
         assert index >= 0
         assert start >= 0
         if not x:
@@ -166,9 +160,7 @@ class StagedWriteTensor:
         cu_lens_uva = self.write_cu_lens.copy_to_uva(self._staged_write_cu_lens)
 
         # Special handling for write_contents
-        write_contents = async_tensor_h2d(
-            self._staged_write_contents, self.dtype, self.device, pin_memory=True
-        )
+        write_contents = async_tensor_h2d(self._staged_write_contents, self.dtype, self.device, pin_memory=True)
 
         # Write diffs to the GPU buffer
         _apply_write_kernel[(n,)](
@@ -212,6 +204,4 @@ def _apply_write_kernel(
         block = i + tl.arange(0, BLOCK_SIZE)
         mask = block < content_len
         content = tl.load(write_contents_ptr + cu_start + block, mask=mask)
-        tl.store(
-            output_ptr + row_idx * output_stride + start_idx + block, content, mask=mask
-        )
+        tl.store(output_ptr + row_idx * output_stride + start_idx + block, content, mask=mask)

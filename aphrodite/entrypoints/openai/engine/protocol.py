@@ -141,9 +141,7 @@ class StructuralTagResponseFormat(OpenAIBaseModel):
     format: Any
 
 
-AnyStructuralTagResponseFormat: TypeAlias = (
-    LegacyStructuralTagResponseFormat | StructuralTagResponseFormat
-)
+AnyStructuralTagResponseFormat: TypeAlias = LegacyStructuralTagResponseFormat | StructuralTagResponseFormat
 
 
 class ResponseFormat(OpenAIBaseModel):
@@ -152,9 +150,7 @@ class ResponseFormat(OpenAIBaseModel):
     json_schema: JsonSchemaResponseFormat | None = None
 
 
-AnyResponseFormat: TypeAlias = (
-    ResponseFormat | StructuralTagResponseFormat | LegacyStructuralTagResponseFormat
-)
+AnyResponseFormat: TypeAlias = ResponseFormat | StructuralTagResponseFormat | LegacyStructuralTagResponseFormat
 
 
 class StreamOptions(OpenAIBaseModel):
@@ -181,9 +177,7 @@ class LogitsProcessorConstructor(BaseModel):
 LogitsProcessors = list[str | LogitsProcessorConstructor]
 
 
-def get_logits_processors(
-    processors: LogitsProcessors | None, pattern: str | None
-) -> list[Any] | None:
+def get_logits_processors(processors: LogitsProcessors | None, pattern: str | None) -> list[Any] | None:
     if processors and pattern:
         logits_processors = []
         for processor in processors:
@@ -197,13 +191,9 @@ def get_logits_processors(
             try:
                 logits_processor = resolve_obj_by_qualname(qualname)
             except Exception as e:
-                raise ValueError(
-                    f"Logits processor '{qualname}' could not be resolved: {e}"
-                ) from e
+                raise ValueError(f"Logits processor '{qualname}' could not be resolved: {e}") from e
             if isinstance(processor, LogitsProcessorConstructor):
-                logits_processor = logits_processor(
-                    *processor.args or [], **processor.kwargs or {}
-                )
+                logits_processor = logits_processor(*processor.args or [], **processor.kwargs or {})
             logits_processors.append(logits_processor)
         return logits_processors
     elif processors:

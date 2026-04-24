@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Tests for miscellaneous utilities
 """
 
 import pytest
 import torch
-
 from aphrodite.modeling.layers.rotary_embedding import RotaryEmbedding
+
 from tests.kernels.utils import opcheck
 
 

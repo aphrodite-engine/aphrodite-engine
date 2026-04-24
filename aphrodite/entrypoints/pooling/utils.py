@@ -131,9 +131,7 @@ def get_json_response_cls() -> type[JSONResponse]:
         from fastapi.responses import ORJSONResponse
 
         return ORJSONResponse
-    logger.warning_once(
-        "To make v1/embeddings API fast, please install orjson by `pip install orjson`"
-    )
+    logger.warning_once("To make v1/embeddings API fast, please install orjson by `pip install orjson`")
     return JSONResponse
 
 

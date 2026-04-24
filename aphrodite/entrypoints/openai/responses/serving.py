@@ -230,17 +230,12 @@ class OpenAIServingResponses(OpenAIServing):
 
         self.use_harmony = self.model_config.hf_config.model_type == "gpt_oss"
         if self.use_harmony:
-            logger.warning(
-                "For gpt-oss, we ignore --enable-auto-tool-choice "
-                "and always enable tool use."
-            )
+            logger.warning("For gpt-oss, we ignore --enable-auto-tool-choice and always enable tool use.")
             # OpenAI models have two EOS-like tokens: <|return|> and <|call|>.
             # We need to add them to the stop token ids.
             if "stop_token_ids" not in self.default_sampling_params:
                 self.default_sampling_params["stop_token_ids"] = []
-            self.default_sampling_params["stop_token_ids"].extend(
-                get_stop_tokens_for_assistant_actions()
-            )
+            self.default_sampling_params["stop_token_ids"].extend(get_stop_tokens_for_assistant_actions())
 
         self.tool_call_id_type = get_tool_call_id_type(self.model_config)
 
@@ -259,9 +254,7 @@ class OpenAIServingResponses(OpenAIServing):
         # HACK(wuhang): This is a hack. We should use a better store.
         # FIXME: If enable_store=True, this may cause a memory leak since we
         # never remove events from the store.
-        self.event_store: dict[
-            str, tuple[deque[StreamingResponsesResponse], asyncio.Event]
-        ] = {}
+        self.event_store: dict[str, tuple[deque[StreamingResponsesResponse], asyncio.Event]] = {}
 
         self.background_tasks: dict[str, asyncio.Task] = {}
 
@@ -290,9 +283,7 @@ class OpenAIServingResponses(OpenAIServing):
 
         return None
 
-    def _validate_create_responses_input(
-        self, request: ResponsesRequest
-    ) -> ErrorResponse | None:
+    def _validate_create_responses_input(self, request: ResponsesRequest) -> ErrorResponse | None:
         if self.use_harmony and request.is_include_output_logprobs():
             return self.create_error_response(
                 err_type="invalid_request_error",
@@ -316,8 +307,7 @@ class OpenAIServingResponses(OpenAIServing):
         if request.previous_input_messages and request.previous_response_id:
             return self.create_error_response(
                 err_type="invalid_request_error",
-                message="Only one of `previous_input_messages` and "
-                "`previous_response_id` can be set.",
+                message="Only one of `previous_input_messages` and `previous_response_id` can be set.",
                 status_code=HTTPStatus.BAD_REQUEST,
                 param="previous_response_id",
             )
@@ -327,11 +317,7 @@ class OpenAIServingResponses(OpenAIServing):
         self,
         request: ResponsesRequest,
         raw_request: Request | None = None,
-    ) -> (
-        AsyncGenerator[StreamingResponsesResponse, None]
-        | ResponsesResponse
-        | ErrorResponse
-    ):
+    ) -> AsyncGenerator[StreamingResponsesResponse, None] | ResponsesResponse | ErrorResponse:
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             logger.error("Error with model %s", error_check_ret)
@@ -369,9 +355,7 @@ class OpenAIServingResponses(OpenAIServing):
         model_name = self.models.model_name(lora_request)
 
         if self.use_harmony:
-            messages, engine_inputs = self._make_request_with_harmony(
-                request, prev_response
-            )
+            messages, engine_inputs = self._make_request_with_harmony(request, prev_response)
         else:
             messages, engine_inputs = await self._make_request(request, prev_response)
 
@@ -390,20 +374,11 @@ class OpenAIServingResponses(OpenAIServing):
         requested_tool_types = extract_tool_types(request.tools)
         builtin_tool_list: list[str] = []
         if self.tool_server is not None:
-            if (
-                self.tool_server.has_tool("browser")
-                and "web_search_preview" in requested_tool_types
-            ):
+            if self.tool_server.has_tool("browser") and "web_search_preview" in requested_tool_types:
                 builtin_tool_list.append("browser")
-            if (
-                self.tool_server.has_tool("python")
-                and "code_interpreter" in requested_tool_types
-            ):
+            if self.tool_server.has_tool("python") and "code_interpreter" in requested_tool_types:
                 builtin_tool_list.append("python")
-            if (
-                self.tool_server.has_tool("container")
-                and "container" in requested_tool_types
-            ):
+            if self.tool_server.has_tool("container") and "container" in requested_tool_types:
                 builtin_tool_list.append("container")
 
         if self.tool_server is not None:
@@ -426,15 +401,9 @@ class OpenAIServingResponses(OpenAIServing):
                 self.override_max_tokens,
             )
 
-            sampling_params = request.to_sampling_params(
-                default_max_tokens, self.default_sampling_params
-            )
+            sampling_params = request.to_sampling_params(default_max_tokens, self.default_sampling_params)
 
-            trace_headers = (
-                None
-                if raw_request is None
-                else await self._get_trace_headers(raw_request.headers)
-            )
+            trace_headers = None if raw_request is None else await self._get_trace_headers(raw_request.headers)
 
             context: ConversationContext
             if self.use_harmony:
@@ -449,13 +418,9 @@ class OpenAIServingResponses(OpenAIServing):
                     context = ParsableContext(
                         response_messages=messages,
                         tokenizer=tokenizer,
-                        reasoning_parser_cls=self.parser.reasoning_parser_cls
-                        if self.parser
-                        else None,
+                        reasoning_parser_cls=self.parser.reasoning_parser_cls if self.parser else None,
                         request=request,
-                        tool_parser_cls=self.parser.tool_parser_cls
-                        if self.parser
-                        else None,
+                        tool_parser_cls=self.parser.tool_parser_cls if self.parser else None,
                         available_tools=available_tools,
                         chat_template=self.chat_template,
                         chat_template_content_format=self.chat_template_content_format,
@@ -543,9 +508,7 @@ class OpenAIServingResponses(OpenAIServing):
             # For cleanup.
             response_id = response.id
             self.background_tasks[response_id] = task
-            task.add_done_callback(
-                lambda _: self.background_tasks.pop(response_id, None)
-            )
+            task.add_done_callback(lambda _: self.background_tasks.pop(response_id, None))
 
             if request.stream:
                 return self.responses_background_stream_generator(request.request_id)
@@ -708,9 +671,7 @@ class OpenAIServingResponses(OpenAIServing):
         prev_response: ResponsesResponse | None,
     ):
         if request.tool_choice != "auto":
-            raise NotImplementedError(
-                "Only 'auto' tool_choice is supported in response API with Harmony"
-            )
+            raise NotImplementedError("Only 'auto' tool_choice is supported in response API with Harmony")
 
         arrival_time = time.time()
         messages = self._construct_input_messages_with_harmony(request, prev_response)
@@ -729,12 +690,8 @@ class OpenAIServingResponses(OpenAIServing):
         # we should only initialize the tool session if the request needs tools
         if len(request.tools) == 0:
             return
-        mcp_tools = {
-            tool.server_label: tool for tool in request.tools if tool.type == "mcp"
-        }
-        await context.init_tool_sessions(
-            self.tool_server, exit_stack, request.request_id, mcp_tools
-        )
+        mcp_tools = {tool.server_label: tool for tool in request.tools if tool.type == "mcp"}
+        await context.init_tool_sessions(self.tool_server, exit_stack, request.request_id, mcp_tools)
 
     async def responses_full_generator(
         self,
@@ -845,22 +802,14 @@ class OpenAIServingResponses(OpenAIServing):
             total_tokens=num_prompt_tokens + num_generated_tokens,
             input_tokens_details=InputTokensDetails(
                 cached_tokens=num_cached_tokens,
-                input_tokens_per_turn=[
-                    turn.input_tokens for turn in context.all_turn_metrics
-                ],
-                cached_tokens_per_turn=[
-                    turn.cached_input_tokens for turn in context.all_turn_metrics
-                ],
+                input_tokens_per_turn=[turn.input_tokens for turn in context.all_turn_metrics],
+                cached_tokens_per_turn=[turn.cached_input_tokens for turn in context.all_turn_metrics],
             ),
             output_tokens_details=OutputTokensDetails(
                 reasoning_tokens=num_reasoning_tokens,
                 tool_output_tokens=num_tool_output_tokens,
-                output_tokens_per_turn=[
-                    turn.output_tokens for turn in context.all_turn_metrics
-                ],
-                tool_output_tokens_per_turn=[
-                    turn.tool_output_tokens for turn in context.all_turn_metrics
-                ],
+                output_tokens_per_turn=[turn.output_tokens for turn in context.all_turn_metrics],
+                tool_output_tokens_per_turn=[turn.tool_output_tokens for turn in context.all_turn_metrics],
             ),
         )
         response = ResponsesResponse.from_request(
@@ -918,9 +867,7 @@ class OpenAIServingResponses(OpenAIServing):
         top_logprobs: int | None = None,
     ) -> list[Logprob]:
         assert logprobs is not None, "logprobs must be provided"
-        assert len(token_ids) == len(logprobs), (
-            "token_ids and logprobs.token_ids must have the same length"
-        )
+        assert len(token_ids) == len(logprobs), "token_ids and logprobs.token_ids must have the same length"
         out = []
         for i, token_id in enumerate(token_ids):
             logprob = logprobs[i]
@@ -937,9 +884,7 @@ class OpenAIServingResponses(OpenAIServing):
                     logprob=max(token_logprob.logprob, -9999.0),
                     bytes=list(text.encode("utf-8", errors="replace")),
                     top_logprobs=(
-                        self._topk_logprobs(
-                            logprob, top_logprobs=top_logprobs, tokenizer=tokenizer
-                        )
+                        self._topk_logprobs(logprob, top_logprobs=top_logprobs, tokenizer=tokenizer)
                         if top_logprobs
                         else []
                     ),
@@ -965,9 +910,7 @@ class OpenAIServingResponses(OpenAIServing):
                 token=lg.token,
                 logprob=lg.logprob,
                 top_logprobs=[
-                    response_text_delta_event.LogprobTopLogprob(
-                        token=tl.token, logprob=tl.logprob
-                    )
+                    response_text_delta_event.LogprobTopLogprob(token=tl.token, logprob=tl.logprob)
                     for tl in lg.top_logprobs
                 ],
             )
@@ -1047,25 +990,17 @@ class OpenAIServingResponses(OpenAIServing):
             output_items.extend(last_items)
         return output_items
 
-    def _extract_system_message_from_request(
-        self, request: ResponsesRequest
-    ) -> str | None:
+    def _extract_system_message_from_request(self, request: ResponsesRequest) -> str | None:
         system_msg = None
         if not isinstance(request.input, str):
             for response_msg in request.input:
-                if (
-                    isinstance(response_msg, dict)
-                    and response_msg.get("role") == "system"
-                ):
+                if isinstance(response_msg, dict) and response_msg.get("role") == "system":
                     content = response_msg.get("content")
                     if isinstance(content, str):
                         system_msg = content
                     elif isinstance(content, list):
                         for param in content:
-                            if (
-                                isinstance(param, dict)
-                                and param.get("type") == "input_text"
-                            ):
+                            if isinstance(param, dict) and param.get("type") == "input_text":
                                 system_msg = param.get("text")
                                 break
                     break
@@ -1084,30 +1019,20 @@ class OpenAIServingResponses(OpenAIServing):
         # Get filtered tool descriptions first.
         # If get_tool_description returns None (due to filtering), the tool is disabled.
         browser_description = (
-            self.tool_server.get_tool_description(
-                "browser", allowed_tools_map.get("web_search_preview")
-            )
+            self.tool_server.get_tool_description("browser", allowed_tools_map.get("web_search_preview"))
             if "web_search_preview" in tool_types
             and self.tool_server is not None
             and self.tool_server.has_tool("browser")
             else None
         )
         python_description = (
-            self.tool_server.get_tool_description(
-                "python", allowed_tools_map.get("code_interpreter")
-            )
-            if "code_interpreter" in tool_types
-            and self.tool_server is not None
-            and self.tool_server.has_tool("python")
+            self.tool_server.get_tool_description("python", allowed_tools_map.get("code_interpreter"))
+            if "code_interpreter" in tool_types and self.tool_server is not None and self.tool_server.has_tool("python")
             else None
         )
         container_description = (
-            self.tool_server.get_tool_description(
-                "container", allowed_tools_map.get("container")
-            )
-            if "container" in tool_types
-            and self.tool_server is not None
-            and self.tool_server.has_tool("container")
+            self.tool_server.get_tool_description("container", allowed_tools_map.get("container"))
+            if "container" in tool_types and self.tool_server is not None and self.tool_server.has_tool("container")
             else None
         )
 
@@ -1133,14 +1058,10 @@ class OpenAIServingResponses(OpenAIServing):
             tool_types = extract_tool_types(request.tools)
             with_custom_tools = has_custom_tools(tool_types)
 
-            sys_msg = self._construct_harmony_system_input_message(
-                request, with_custom_tools, tool_types
-            )
+            sys_msg = self._construct_harmony_system_input_message(request, with_custom_tools, tool_types)
             messages.append(sys_msg)
             if with_custom_tools:
-                dev_msg = get_developer_message(
-                    instructions=request.instructions, tools=request.tools
-                )
+                dev_msg = get_developer_message(instructions=request.instructions, tools=request.tools)
                 messages.append(dev_msg)
             messages += construct_harmony_previous_input_messages(request)
 
@@ -1269,11 +1190,7 @@ class OpenAIServingResponses(OpenAIServing):
         response_id: str,
         starting_after: int | None,
         stream: bool | None,
-    ) -> (
-        ErrorResponse
-        | ResponsesResponse
-        | AsyncGenerator[StreamingResponsesResponse, None]
-    ):
+    ) -> ErrorResponse | ResponsesResponse | AsyncGenerator[StreamingResponsesResponse, None]:
         async with self.response_store_lock:
             response = self.response_store.get(response_id)
 
@@ -1334,9 +1251,7 @@ class OpenAIServingResponses(OpenAIServing):
         tokenizer: TokenizerLike,
         request_metadata: RequestResponseMetadata,
         created_time: int,
-        _increment_sequence_number_and_return: Callable[
-            [StreamingResponsesResponse], StreamingResponsesResponse
-        ],
+        _increment_sequence_number_and_return: Callable[[StreamingResponsesResponse], StreamingResponsesResponse],
     ) -> AsyncGenerator[StreamingResponsesResponse, None]:
         current_content_index = 0
         current_output_index = 0
@@ -1374,18 +1289,14 @@ class OpenAIServingResponses(OpenAIServing):
                     current_item_id = random_uuid()
                     if delta_message.tool_calls:
                         current_tool_call_id = f"call_{random_uuid()}"
-                        assert len(delta_message.tool_calls) == 1, (
-                            "Multiple tool calls in one delta is not supported"
-                        )
+                        assert len(delta_message.tool_calls) == 1, "Multiple tool calls in one delta is not supported"
                         assert delta_message.tool_calls[0].function is not None, (
                             "Tool call without function is not supported"
                         )
                         assert delta_message.tool_calls[0].function.name is not None, (
                             "Tool call without function name is not supported"
                         )
-                        current_tool_call_name = delta_message.tool_calls[
-                            0
-                        ].function.name
+                        current_tool_call_name = delta_message.tool_calls[0].function.name
                         current_tool_call_index = delta_message.tool_calls[0].index
                         yield _increment_sequence_number_and_return(
                             ResponseOutputItemAddedEvent(
@@ -1471,11 +1382,7 @@ class OpenAIServingResponses(OpenAIServing):
                 ):
                     # from reasoning to normal content, send done
                     # event for reasoning
-                    reason_content = "".join(
-                        pm.reasoning
-                        for pm in previous_delta_messages
-                        if pm.reasoning is not None
-                    )
+                    reason_content = "".join(pm.reasoning for pm in previous_delta_messages if pm.reasoning is not None)
 
                     # delta message could have both reasoning and
                     # content. Include current delta's reasoning in the
@@ -1590,9 +1497,7 @@ class OpenAIServingResponses(OpenAIServing):
                             if pm.tool_calls:
                                 previous_tool_call = pm.tool_calls[0]
                                 if previous_tool_call.function is not None:
-                                    parts.append(
-                                        previous_tool_call.function.arguments or ""
-                                    )
+                                    parts.append(previous_tool_call.function.arguments or "")
 
                         tool_call_arguments = "".join(parts)
                         yield _increment_sequence_number_and_return(
@@ -1658,10 +1563,7 @@ class OpenAIServingResponses(OpenAIServing):
                             )
                         )
                     # tool call initiated with no arguments
-                    elif (
-                        delta_message.tool_calls[0].function.name
-                        and not tool_call_item_started
-                    ):
+                    elif delta_message.tool_calls[0].function.name and not tool_call_item_started:
                         # send done with current content part
                         # and add new function call item
                         yield _increment_sequence_number_and_return(
@@ -1706,9 +1608,7 @@ class OpenAIServingResponses(OpenAIServing):
                         )
                         current_output_index += 1
                         current_item_id = random_uuid()
-                        current_tool_call_name = delta_message.tool_calls[
-                            0
-                        ].function.name
+                        current_tool_call_name = delta_message.tool_calls[0].function.name
                         current_tool_call_id = f"call_{random_uuid()}"
                         current_tool_call_index = delta_message.tool_calls[0].index
                         yield _increment_sequence_number_and_return(
@@ -1768,12 +1668,8 @@ class OpenAIServingResponses(OpenAIServing):
             parts = []
             for pm in previous_delta_messages:
                 if pm.tool_calls:
-                    assert len(pm.tool_calls) == 1, (
-                        "Multiple tool calls in one delta is not supported"
-                    )
-                    assert pm.tool_calls[0].function is not None, (
-                        "Tool call without function is not supported"
-                    )
+                    assert len(pm.tool_calls) == 1, "Multiple tool calls in one delta is not supported"
+                    assert pm.tool_calls[0].function is not None, "Tool call without function is not supported"
                     parts.append(pm.tool_calls[0].function.arguments or "")
 
             tool_call_arguments = "".join(parts)
@@ -1807,11 +1703,7 @@ class OpenAIServingResponses(OpenAIServing):
                 )
 
             elif previous_delta_messages[-1].reasoning is not None:
-                reason_content = "".join(
-                    pm.reasoning
-                    for pm in previous_delta_messages
-                    if pm.reasoning is not None
-                )
+                reason_content = "".join(pm.reasoning for pm in previous_delta_messages if pm.reasoning is not None)
                 yield _increment_sequence_number_and_return(
                     ResponseReasoningTextDoneEvent(
                         type="response.reasoning_text.done",
@@ -1856,9 +1748,7 @@ class OpenAIServingResponses(OpenAIServing):
                     )
                 )
             elif previous_delta_messages[-1].content:
-                final_content = "".join(
-                    pm.content for pm in previous_delta_messages if pm.content
-                )
+                final_content = "".join(pm.content for pm in previous_delta_messages if pm.content)
                 yield _increment_sequence_number_and_return(
                     ResponseTextDoneEvent(
                         type="response.output_text.done",
@@ -1914,9 +1804,7 @@ class OpenAIServingResponses(OpenAIServing):
         tokenizer: TokenizerLike,
         request_metadata: RequestResponseMetadata,
         created_time: int,
-        _increment_sequence_number_and_return: Callable[
-            [StreamingResponsesResponse], StreamingResponsesResponse
-        ],
+        _increment_sequence_number_and_return: Callable[[StreamingResponsesResponse], StreamingResponsesResponse],
     ) -> AsyncGenerator[StreamingResponsesResponse, None]:
         state = StreamingState()
 

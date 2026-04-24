@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the MOE permute/unpermute kernel
 
 Run `pytest tests/kernels/test_moe_permute_unpermute.py`.
@@ -6,7 +8,6 @@ Run `pytest tests/kernels/test_moe_permute_unpermute.py`.
 import numpy as np
 import pytest
 import torch
-
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 from aphrodite.modeling.layers.fused_moe.layer import determine_expert_map
 from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
@@ -14,6 +15,7 @@ from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
     moe_permute_unpermute_supported,
     moe_unpermute,
 )
+
 from aphrodite.platforms import current_platform
 
 NUM_EXPERTS = [16, 64, 256]

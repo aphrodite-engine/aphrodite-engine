@@ -51,9 +51,7 @@ class PoolingCompletionRequest(
         )
 
 
-class PoolingChatRequest(
-    PoolingBasicRequestMixin, ChatRequestMixin, EmbedRequestMixin, ClassifyRequestMixin
-):
+class PoolingChatRequest(PoolingBasicRequestMixin, ChatRequestMixin, EmbedRequestMixin, ClassifyRequestMixin):
     task: PoolingTask | None = None
 
     def build_tok_params(self, model_config: ModelConfig) -> TokenizeParams:
@@ -117,9 +115,7 @@ class IOProcessorResponse(OpenAIBaseModel, Generic[T]):
     """
 
 
-PoolingRequest: TypeAlias = (
-    PoolingCompletionRequest | PoolingChatRequest | IOProcessorRequest
-)
+PoolingRequest: TypeAlias = PoolingCompletionRequest | PoolingChatRequest | IOProcessorRequest
 
 
 class PoolingResponseData(OpenAIBaseModel):

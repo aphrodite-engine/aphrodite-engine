@@ -52,10 +52,7 @@ class CpuGpuEvent:
         Should only be called by the main thread.
         """
         if self._recorded.is_set():
-            raise RuntimeError(
-                "CpuGpuEvent.record() called before the previous event was "
-                "consumed by wait()"
-            )
+            raise RuntimeError("CpuGpuEvent.record() called before the previous event was consumed by wait()")
         self._event = torch.cuda.Event()
         self._event.record(stream)
         self._recorded.set()
@@ -94,13 +91,7 @@ def override_envs_for_eplb(parallel_config: ParallelConfig) -> None:
     # Limiting NCCL occupancy via NCCL_MAX_CTAS leaves space for the DeepEP
     # cooperative kernel to launch and complete, breaking the deadlock.
     # See: https://github.com/deepseek-ai/DeepEP/issues/496
-    if (
-        is_data_parallel
-        and is_eplb_enabled
-        and is_deepep_ll
-        and async_eplb
-        and is_nccl_based_eplb_communicator
-    ):
+    if is_data_parallel and is_eplb_enabled and is_deepep_ll and async_eplb and is_nccl_based_eplb_communicator:
         current_value_str = os.getenv("NCCL_MAX_CTAS")
 
         if current_value_str and current_value_str.isdigit():

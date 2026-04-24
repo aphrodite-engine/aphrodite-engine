@@ -26,9 +26,7 @@ logger = init_logger(__name__)
 def resize_video(frames: npt.NDArray, size: tuple[int, int]) -> npt.NDArray:
     num_frames, _, _, channels = frames.shape
     new_height, new_width = size
-    resized_frames = np.empty(
-        (num_frames, new_height, new_width, channels), dtype=frames.dtype
-    )
+    resized_frames = np.empty((num_frames, new_height, new_width, channels), dtype=frames.dtype)
 
     for i, frame in enumerate(frames):
         resized_frame = cv2.resize(frame, (new_width, new_height))
@@ -187,9 +185,7 @@ class OpenCVVideoBackendMixin:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        assert width > 0 and height > 0, (
-            f"Invalid video frame size: width={width}, height={height}"
-        )
+        assert width > 0 and height > 0, f"Invalid video frame size: width={width}, height={height}"
 
         frame_idx_set = set(frame_indices)
         max_frame_idx = frame_indices[-1] if frame_indices else 0
@@ -222,9 +218,7 @@ class OpenCVVideoBackendMixin:
                 continue
 
             # Check if we should retrieve: target frame OR can recover a failed one
-            can_recover = cls._can_use_for_recovery(
-                idx, failed_frames_idx, next_target_map, total_frames
-            )
+            can_recover = cls._can_use_for_recovery(idx, failed_frames_idx, next_target_map, total_frames)
 
             if is_target_frame or can_recover:
                 ret, frame = cap.retrieve()
@@ -286,8 +280,7 @@ class OpenCVVideoBackendMixin:
                 # Frame is broken/unreadable, log warning
                 if idx in frame_indices:
                     logger.warning(
-                        "Failed to grab frame %d during video loading. "
-                        "This frame will be skipped.",
+                        "Failed to grab frame %d during video loading. This frame will be skipped.",
                         idx,
                     )
                 continue
@@ -300,8 +293,7 @@ class OpenCVVideoBackendMixin:
                 else:
                     # retrieve() failed even though grab() succeeded
                     logger.warning(
-                        "Failed to retrieve frame %d during video loading. "
-                        "This frame will be skipped.",
+                        "Failed to retrieve frame %d during video loading. This frame will be skipped.",
                         idx,
                     )
 
@@ -340,9 +332,7 @@ class OpenCVVideoBackendMixin:
         else:
             frame_idx_set = set(frame_idx)
             num_frames_to_sample = len(frame_idx_set)
-            frames, valid_frame_indices = cls._read_frames_no_recovery(
-                cap, frame_idx_set, max(frame_idx)
-            )
+            frames, valid_frame_indices = cls._read_frames_no_recovery(cap, frame_idx_set, max(frame_idx))
         valid_num_frames = len(valid_frame_indices)
         if valid_num_frames < num_frames_to_sample:
             logger.warning(
@@ -381,9 +371,7 @@ class OpenCVVideoBackend(VideoLoader, OpenCVVideoBackendMixin):
         if num_frames_to_sample == total_frames_num:
             frame_idx = list(range(0, num_frames_to_sample))
         else:
-            uniform_sampled_frames = np.linspace(
-                0, total_frames_num - 1, num_frames_to_sample, dtype=int
-            )
+            uniform_sampled_frames = np.linspace(0, total_frames_num - 1, num_frames_to_sample, dtype=int)
             frame_idx = uniform_sampled_frames.tolist()
         return frame_idx
 
@@ -463,12 +451,7 @@ class OpenCVDynamicVideoBackend(VideoLoader, OpenCVVideoBackendMixin):
         frame_indices_list: list[int]
         if duration <= max_duration:
             n = int(math.floor(duration * fps))
-            frame_indices_list = sorted(
-                {
-                    min(max_frame_idx, int(math.ceil(i * original_fps / fps)))
-                    for i in range(n)
-                }
-            )
+            frame_indices_list = sorted({min(max_frame_idx, int(math.ceil(i * original_fps / fps))) for i in range(n)})
         else:
             num_samples = int(max_duration * fps)
             if num_samples >= total_frames_num:
@@ -476,10 +459,7 @@ class OpenCVDynamicVideoBackend(VideoLoader, OpenCVVideoBackendMixin):
             else:
                 target_seconds = np.linspace(0, duration, num_samples, endpoint=True)
                 frame_indices_list = sorted(
-                    {
-                        min(max_frame_idx, int(math.ceil(t * original_fps)))
-                        for t in target_seconds
-                    }
+                    {min(max_frame_idx, int(math.ceil(t * original_fps))) for t in target_seconds}
                 )
         return frame_indices_list
 
@@ -510,9 +490,7 @@ class OpenCVDynamicVideoBackend(VideoLoader, OpenCVVideoBackendMixin):
 
         orig_source = OpenCVVideoBackendMixin.get_video_metadata(cap)
         max_frame_idx = orig_source.total_frames_num - 1
-        duration = (
-            orig_source.duration or round(max_frame_idx / orig_source.original_fps) + 1
-        )
+        duration = orig_source.duration or round(max_frame_idx / orig_source.original_fps) + 1
 
         # recompute source metadata with adjusted duration to ensure correct
         # sampling indices computation
@@ -581,14 +559,9 @@ class Molmo2VideoBackend(VideoLoader, OpenCVVideoBackendMixin):
         if sampling_fps is None:
             raise ValueError("sampling_fps must be provided")
         if video_fps <= 0 or sampling_fps <= 0:
-            raise ValueError(
-                "video_fps and sampling_fps must be positive "
-                f"(got {video_fps}, {sampling_fps})"
-            )
+            raise ValueError(f"video_fps and sampling_fps must be positive (got {video_fps}, {sampling_fps})")
         if video_fps % sampling_fps != 0:
-            raise ValueError(
-                f"sampling_fps={sampling_fps} must divide video_fps={video_fps}."
-            )
+            raise ValueError(f"sampling_fps={sampling_fps} must divide video_fps={video_fps}.")
 
         candidates = []
         for candidate in range(sampling_fps, video_fps + 1, sampling_fps):
@@ -617,10 +590,7 @@ class Molmo2VideoBackend(VideoLoader, OpenCVVideoBackendMixin):
             step_size = max(int(video_fps / target_fps), 1)
             num_frames_sampled_at_fps = int(total_frames / step_size)
             if num_frames_sampled == 0:
-                if (
-                    "uniform" in frame_sample_mode
-                    and num_frames_sampled_at_fps > max_frames
-                ):
+                if "uniform" in frame_sample_mode and num_frames_sampled_at_fps > max_frames:
                     break
                 selected_target_fps = target_fps
                 num_frames_sampled = num_frames_sampled_at_fps
@@ -648,9 +618,7 @@ class Molmo2VideoBackend(VideoLoader, OpenCVVideoBackendMixin):
         video_fps: float,
     ) -> tuple[float | None, npt.NDArray]:
         if selected_target_fps is None:
-            frame_indices = np.linspace(
-                0, total_frames, max_frames, endpoint=False, dtype=int
-            )
+            frame_indices = np.linspace(0, total_frames, max_frames, endpoint=False, dtype=int)
         else:
             step_size = max(int(video_fps / selected_target_fps), 1)
             frame_indices = np.arange(0, total_frames, step_size)
@@ -681,21 +649,15 @@ class Molmo2VideoBackend(VideoLoader, OpenCVVideoBackendMixin):
             return times
         elif frame_sample_mode == "uniform_last_frame":
             if max_fps is not None:
-                max_duration = (
-                    max_frames - 1
-                ) / max_fps  # -1 to include the last frame
+                max_duration = (max_frames - 1) / max_fps  # -1 to include the last frame
                 if max_duration < duration:
-                    times = np.linspace(
-                        0, duration, num=max_frames, endpoint=True, dtype=np.float64
-                    )
+                    times = np.linspace(0, duration, num=max_frames, endpoint=True, dtype=np.float64)
                 else:
                     times = np.arange(0.0, stop=duration, step=1 / max_fps)
                     times = np.concatenate([times, [duration]], axis=0)
                     assert len(times) <= max_frames
             else:
-                times = np.linspace(
-                    0, duration, num=max_frames, endpoint=True, dtype=np.float64
-                )
+                times = np.linspace(0, duration, num=max_frames, endpoint=True, dtype=np.float64)
             return times
         else:
             raise NotImplementedError(frame_sample_mode)
@@ -713,9 +675,7 @@ class Molmo2VideoBackend(VideoLoader, OpenCVVideoBackendMixin):
             return list(range(0, source.total_frames_num))
 
         if frame_sample_mode not in {"uniform_last_frame", "fps"}:
-            raise NotImplementedError(
-                f"Unsupported frame_sample_mode: {frame_sample_mode}"
-            )
+            raise NotImplementedError(f"Unsupported frame_sample_mode: {frame_sample_mode}")
 
         duration = source.duration
         video_fps = source.original_fps
@@ -741,9 +701,7 @@ class Molmo2VideoBackend(VideoLoader, OpenCVVideoBackendMixin):
                     step=float(video_fps / max_fps),
                 )
                 if np.round(float_indices[-1]) != total_num_frames - 1:
-                    float_indices = np.concatenate(
-                        [float_indices, [total_num_frames - 1]], axis=0
-                    )
+                    float_indices = np.concatenate([float_indices, [total_num_frames - 1]], axis=0)
                 indices = np.round(float_indices).astype(int)
                 assert indices[-1] < total_num_frames
                 assert len(float_indices) <= num_frames
@@ -892,17 +850,10 @@ class OpenCVDynamicOpenPanguVideoBackend(VideoLoader, OpenCVVideoBackendMixin):
                 # cannot be calculated for frame 0.
                 total_duration = min(total_duration, (num_frames - 1) / fps)
         elif fps != -1:
-            raise ValueError(
-                f"requires dataset fps is -1 or greater than 0 but got {fps}"
-            )
+            raise ValueError(f"requires dataset fps is -1 or greater than 0 but got {fps}")
 
-        sample_frame_timestamps = np.linspace(
-            0, total_duration, num_frames, dtype=float
-        )
-        frames_indices = [
-            min(total_frames_num - 1, round(t * original_fps))
-            for t in sample_frame_timestamps
-        ]
+        sample_frame_timestamps = np.linspace(0, total_duration, num_frames, dtype=float)
+        frames_indices = [min(total_frames_num - 1, round(t * original_fps)) for t in sample_frame_timestamps]
         return frames_indices
 
     @classmethod

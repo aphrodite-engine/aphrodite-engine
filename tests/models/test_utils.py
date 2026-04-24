@@ -1,6 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
 import torch
-
 from aphrodite.modeling.models.utils import AutoWeightsLoader
 
 pytestmark = pytest.mark.cpu_test

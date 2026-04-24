@@ -1,11 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import random
 from dataclasses import dataclass
 from typing import TypeAlias
 
 import torch
+from aphrodite.engine.args_tools import EngineArgs
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.v1.engine import EngineCoreOutput, FinishReason
 from aphrodite.v1.outputs import LogprobsLists, LogprobsTensors
 

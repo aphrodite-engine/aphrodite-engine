@@ -18,9 +18,7 @@ class DraftTokensHandler:
         self.draft_tokens_np: np.ndarray | None = None
         self.num_draft_tokens: int = 0
 
-    def set_draft_tokens(
-        self, input_batch: InputBatch, draft_tokens: torch.Tensor
-    ) -> None:
+    def set_draft_tokens(self, input_batch: InputBatch, draft_tokens: torch.Tensor) -> None:
         self.req_ids = input_batch.req_ids
         self.num_draft_tokens = draft_tokens.shape[1]
         if not input_batch.has_structured_output_reqs:

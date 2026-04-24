@@ -15,7 +15,6 @@ There are a few steps you'd have to follow:
 
 Here's a breakdown of how to do this in practice. Following the guide in [Extending TorchScript with Custom C++ Classes](https://pytorch.org/tutorials/advanced/torch_script_custom_classes.html), we can create a  [thread-safe tensor queue](https://github.com/pytorch/pytorch/blob/24f69eef6add3a5446d1d4f0651e401c2220d95d/test/cpp/jit/test_custom_class_registrations.cpp#L130) (copied from fbgemm) and build it.
 
-
 ```cpp
 // Thread-safe Tensor Queue
 struct TensorQueue : torch::CustomClassHolder {
@@ -50,6 +49,7 @@ TORCH_LIBRARY(MyCustomClass, m) {
 ```
 
 **Step 1**: Add an `__obj_flatten__` method to the C++ Custom Class implementation:
+
 ```cpp
 // Thread-safe Tensor Queue
 struct TensorQueue : torch::CustomClassHolder {
@@ -91,7 +91,7 @@ class FakeTensorQueue:
         return self.init_tensor_
     
     def size(self) -> int:  # [!code highlight]
-	 return len(self.queue)
+  return len(self.queue)
 ```
 
 **Step 2b**: Implement an `__obj_unflatten__` classmethod in Python:
@@ -216,7 +216,6 @@ Currently, `aot_autograd` can't functionalize the script object's methods due to
 
 This causes the current PyTorch support to have the limitation that once a tensor is passed into the script object method or returned from a script object method, **it's not safe to do in-place mutation** to the tensor in the python program anymore. See this example:
 
-
 ```py
 tq.push(a)
 a.sin_()
@@ -265,18 +264,19 @@ def graph(tq, x):
 ```
 
 ## How do things work under the hood
+
 1. Fakify custom object (`dynamo` and `aot_autograd`)
 Before tracing, when receiving a torch bind object, we’ll:
-  1. Call `__obj_flatten__` on the torchbind object to get a `flattend_obj`.
-  2. If we’re in dynamo, install guards on `flattened_obj`. Specifically, we guard the `flattened_obj` directly as if it’s the input.
-  3. Fakify the tensors in `flattened_obj`. 
-  4. Retrieve the fake class registered with `register_fake_class`. 
-  5. Call `fake_class.__obj_unflatten__` to create the fake object.
-  6. If we’re in dynamo, we additionally create `TorchScriptObjectVariable` that’s backed by the `FakeScriptObject` to simulate the behavior of torchbind object.
+1. Call `__obj_flatten__` on the torchbind object to get a `flattend_obj`.
+1. If we’re in dynamo, install guards on `flattened_obj`. Specifically, we guard the `flattened_obj` directly as if it’s the input.
+1. Fakify the tensors in `flattened_obj`.
+1. Retrieve the fake class registered with `register_fake_class`.
+1. Call `fake_class.__obj_unflatten__` to create the fake object.
+1. If we’re in dynamo, we additionally create `TorchScriptObjectVariable` that’s backed by the `FakeScriptObject` to simulate the behavior of torchbind object.
 
 During tracing, method calls will use the fake methods to create example values for downstream to use. Custom ops that take torch bind object inputs will call the python fake implementation and call the methods of fake script object.
- 
-2. Method Calls are turned into Operators
+
+1. Method Calls are turned into Operators
 
 Each method call of a custom object potentially mutates its states. Therefore, we need to record all the methods of the custom object into the graph. The way we do it is to turn method calls into a higher order operator `call_torchbind`. The signature of the operator looks like:
 
@@ -285,6 +285,7 @@ call_torchbind(custom_obj: torch.ScriptObject, method_name: str, args: Tuple[Arg
 ```
 
 For the above example on `Mod`, dynamo will record a graph that looks like the following:
+
 ```py
 def graph(tq, a, b):
   call_torchbind(tq, "push", (a,), {})
@@ -299,7 +300,7 @@ In **dynamo**, this is done by constructing a `TorchScriptObjectVariable` and tu
 
 In **aot_autograd**, this is done by intercepting the `ScriptMethod.__call__`.
 
-3. Functionalize `call_torchbind` and `torchbind` operators:
+1. Functionalize `call_torchbind` and `torchbind` operators:
 As custom objects carry state, it is possible for operations on these custom objects to mutate the underlying states. In order to prevent downstream optimization passes from accidentally reordering or deleting these method calls (e.g. when the method doesn’t have output), we make use of **effect tokens** to thread data dependency explicitly in the graph. A token is passed as an input to the graph, and  between each operator call which uses a custom class through the `with_effects` higher order operator, and outputted as a result of the graph. The schema of the `with_effects` operator is:
 
 ```py
@@ -307,6 +308,7 @@ with_effects(token, operator, *args, **kwargs)
 ```
 
 For the above example on `Mod`, the functionalized `AOTAutograph` graph will look like the following:
+
 ```py
 def graph(token, tq, a, b):
   token1 = with_effects(token, call_torchbind, tq, "push", a)
@@ -319,7 +321,7 @@ def graph(token, tq, a, b):
 
 Custom classes' methods have schemas but these schemas are auto-generated and don’t have mutation or aliasing information attached to it. We can leverage the `auto_functionalize` infra built for custom ops to auto functionalize the method calls, where we assume all the inputs can be mutated and rely on the backend’s (e.g. inductor's) re-replacing pass to remove the data copies.
 
-4. Inductor
+1. Inductor
 Once we get to the Inductor IR, `with_effects` calls are converted to an `EffectfulKernel`. During scheduling, we will create a `StarDep` between each `EffectfulKernel` so that they don’t get reordered. The buffers look something like this:
 
 ```py

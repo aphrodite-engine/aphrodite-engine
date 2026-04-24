@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import inspect
 import json
 import os
@@ -6,9 +8,9 @@ from argparse import RawTextHelpFormatter
 from dataclasses import asdict, dataclass
 
 import torch
+from aphrodite.engine.args_tools import EngineArgs
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.profiler import layerwise_profile
 from aphrodite.utils import FlexibleArgumentParser
 

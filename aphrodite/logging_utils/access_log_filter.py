@@ -95,14 +95,11 @@ def create_uvicorn_log_config(
     if envs.APHRODITE_LOGGING_VERBOSE:
         date_format = "%m-%d %H:%M:%S"
         default_format = (
-            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
-            "[%(name)-15s:%(lineno)4d] %(message)s"
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s [%(name)-15s:%(lineno)4d] %(message)s"
         )
     else:
         date_format = "%H:%M:%S"
-        default_format = (
-            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
-        )
+        default_format = f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
 
     config = {
         "version": 1,

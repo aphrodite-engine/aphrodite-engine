@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the MOE layers.
 
 Run `pytest tests/kernels/test_moe.py`.
@@ -8,17 +10,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import aphrodite.modeling.layers.fused_moe  # noqa
 import pytest
 import torch
-from torch.nn import Parameter
-from torch.nn import functional as F
-from transformers import MixtralConfig
-from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
-
-import aphrodite.modeling.layers.fused_moe  # noqa
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.distributed.parallel_state import init_distributed_environment
-from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.layers.fused_moe.config import (
     FUSED_MOE_UNQUANTIZED_CONFIG,
     int4_w4a16_moe_quant_config,
@@ -28,12 +22,20 @@ from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import batched_fused_m
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk, modular_triton_fused_moe
 from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import fused_moe as iterative_moe
 from aphrodite.modeling.models.mixtral import MixtralMoE
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.marlin_utils import marlin_permute_bias
 from aphrodite.quantization.utils.marlin_utils_fp4 import rand_marlin_weight_mxfp4_like, rand_marlin_weight_nvfp4_like
 from aphrodite.quantization.utils.marlin_utils_fp8 import marlin_quant_fp8_torch
 from aphrodite.quantization.utils.marlin_utils_test import awq_marlin_quantize, marlin_quantize
 from aphrodite.quantization.utils.quant_utils import quantize_weights
+from torch.nn import Parameter
+from torch.nn import functional as F
+from transformers import MixtralConfig
+from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
+
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
+from aphrodite.distributed.parallel_state import init_distributed_environment
+from aphrodite.forward_context import set_forward_context
+from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import ScalarType, scalar_types
 from tests.kernels.moe.utils import fused_moe
 from tests.kernels.utils import opcheck, stack_and_dev, torch_moe

@@ -51,9 +51,7 @@ class WhisperModelState(ModelState):
             "max_source_positions",
             self.max_model_len,
         )
-        self.encoder_seq_lens_gpu = torch.zeros(
-            self.max_num_reqs, dtype=torch.int32, device=self.device
-        )
+        self.encoder_seq_lens_gpu = torch.zeros(self.max_num_reqs, dtype=torch.int32, device=self.device)
 
         self.encoder_outputs: list[torch.Tensor] = []
 
@@ -85,9 +83,7 @@ class WhisperModelState(ModelState):
             self.encoder_outputs = []
         return None
 
-    def prepare_inputs(
-        self, input_batch: InputBatch, req_states: RequestState
-    ) -> dict[str, Any]:
+    def prepare_inputs(self, input_batch: InputBatch, req_states: RequestState) -> dict[str, Any]:
         model_inputs = {"encoder_outputs": self.encoder_outputs}
         self.encoder_outputs = []
         return model_inputs
@@ -111,9 +107,7 @@ class WhisperModelState(ModelState):
         else:
             num_reqs = input_batch.num_reqs
             num_tokens = input_batch.num_tokens
-        encoder_seq_lens = self._get_encoder_seq_lens(
-            input_batch.req_ids, attn_groups, for_capture
-        )
+        encoder_seq_lens = self._get_encoder_seq_lens(input_batch.req_ids, attn_groups, for_capture)
 
         query_start_loc_cpu = torch.from_numpy(input_batch.query_start_loc_np)
         max_query_len = input_batch.num_scheduled_tokens.max().item()
@@ -146,26 +140,19 @@ class WhisperModelState(ModelState):
             # During normal execution, use actual encoder lengths.
             for i, req_id in enumerate(req_ids):
                 mm_features = self.encoder_cache.mm_features.get(req_id, [])
-                encoder_seq_lens_np[i] = sum(
-                    feature.mm_position.get_num_embeds() for feature in mm_features
-                )
+                encoder_seq_lens_np[i] = sum(feature.mm_position.get_num_embeds() for feature in mm_features)
         else:
             # During CUDA graph capture, use max encoder length so max_seqlen_k
             # is captured with the correct value for cross-attention.
             encoder_seq_lens_np[:] = self.max_encoder_len
 
-        self.encoder_seq_lens_gpu[:num_reqs].copy_(
-            torch.from_numpy(encoder_seq_lens_np), non_blocking=True
-        )
+        self.encoder_seq_lens_gpu[:num_reqs].copy_(torch.from_numpy(encoder_seq_lens_np), non_blocking=True)
         self.encoder_seq_lens_gpu[num_reqs:].fill_(0)
         encoder_seq_lens_gpu = self.encoder_seq_lens_gpu[:num_reqs]
 
         seq_lens_by_group: dict[int, tuple[torch.Tensor, np.ndarray]] = {}
         for kv_cache_group_idx, groups in enumerate(attn_groups):
-            has_cross_attn = any(
-                isinstance(attn_group.kv_cache_spec, CrossAttentionSpec)
-                for attn_group in groups
-            )
+            has_cross_attn = any(isinstance(attn_group.kv_cache_spec, CrossAttentionSpec) for attn_group in groups)
             if has_cross_attn:
                 seq_lens_by_group[kv_cache_group_idx] = (
                     encoder_seq_lens_gpu,

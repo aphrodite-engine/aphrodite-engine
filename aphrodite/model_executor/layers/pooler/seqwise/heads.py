@@ -78,10 +78,7 @@ class EmbeddingPoolerHead(SequencePoolerHead):
                 d = dimensions_list[0]
                 embeddings = embeddings[..., :d]
             else:
-                embeddings = [
-                    vecs if d is None else vecs[..., :d]
-                    for vecs, d in zip(embeddings, dimensions_list)
-                ]
+                embeddings = [vecs if d is None else vecs[..., :d] for vecs, d in zip(embeddings, dimensions_list)]
 
         # for normalize
         if self.activation is not None:
@@ -90,10 +87,7 @@ class EmbeddingPoolerHead(SequencePoolerHead):
                 if flags[0]:
                     embeddings = self.activation(embeddings)
             else:
-                embeddings = [
-                    self.activation(vecs) if f else vecs
-                    for vecs, f in zip(embeddings, flags)
-                ]
+                embeddings = [self.activation(vecs) if f else vecs for vecs, f in zip(embeddings, flags)]
 
         # embeddings shape: [batchsize, embedding_size]
         return embeddings
@@ -151,10 +145,7 @@ class ClassifierPoolerHead(SequencePoolerHead):
             if len(set(flags)) == 1:
                 logits = self.activation(logits) if flags[0] else logits
             else:
-                logits = [
-                    self.activation(vecs) if f else vecs
-                    for vecs, f in zip(logits, flags)
-                ]
+                logits = [self.activation(vecs) if f else vecs for vecs, f in zip(logits, flags)]
 
         # logits shape: [batchsize, num_labels]
         return logits

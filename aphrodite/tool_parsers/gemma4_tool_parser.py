@@ -316,10 +316,7 @@ class Gemma4ToolParser(ToolParser):
         super().__init__(tokenizer, tools)
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         # Token strings
         self.tool_call_start_token = TOOL_CALL_START
@@ -331,8 +328,7 @@ class Gemma4ToolParser(ToolParser):
 
         if self.tool_call_start_token_id is None:
             raise RuntimeError(
-                "Gemma4 ToolParser could not locate the tool call start "
-                f"token '{TOOL_CALL_START}' in the tokenizer!"
+                f"Gemma4 ToolParser could not locate the tool call start token '{TOOL_CALL_START}' in the tokenizer!"
             )
 
         # Regex for non-streaming: extract complete tool calls.
@@ -412,16 +408,12 @@ class Gemma4ToolParser(ToolParser):
         request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
         if self.tool_call_start_token not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             matches = self.tool_call_regex.findall(model_output)
             if not matches:
-                return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
-                )
+                return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
             tool_calls: list[ToolCall] = []
             for func_name, args_str in matches:
@@ -448,9 +440,7 @@ class Gemma4ToolParser(ToolParser):
 
         except Exception:
             logger.exception("Error extracting tool calls from Gemma4 response")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     # ------------------------------------------------------------------
     # Streaming extraction — accumulate-then-parse-then-diff
@@ -509,11 +499,7 @@ class Gemma4ToolParser(ToolParser):
         prev_end_count = previous_text.count(self.tool_call_end_token)
 
         # Case 1: Not inside any tool call — emit as content
-        if (
-            start_count == end_count
-            and prev_end_count == end_count
-            and self.tool_call_end_token not in delta_text
-        ):
+        if start_count == end_count and prev_end_count == end_count and self.tool_call_end_token not in delta_text:
             if delta_text:
                 return DeltaMessage(content=delta_text)
             return None
@@ -627,9 +613,7 @@ class Gemma4ToolParser(ToolParser):
         Performs a final parse of the complete tool call and flushes
         any remaining un-streamed argument fragments.
         """
-        if self.current_tool_id < 0 or self.current_tool_id >= len(
-            self.prev_tool_call_arr
-        ):
+        if self.current_tool_id < 0 or self.current_tool_id >= len(self.prev_tool_call_arr):
             logger.debug(
                 "Tool call end detected but no active tool call (current_tool_id=%d)",
                 self.current_tool_id,
@@ -653,9 +637,7 @@ class Gemma4ToolParser(ToolParser):
                     tool_calls=[
                         DeltaToolCall(
                             index=self.current_tool_id,
-                            function=DeltaFunctionCall(arguments=diff).model_dump(
-                                exclude_none=True
-                            ),
+                            function=DeltaFunctionCall(arguments=diff).model_dump(exclude_none=True),
                         )
                     ]
                 )
@@ -749,9 +731,7 @@ class Gemma4ToolParser(ToolParser):
                 tool_calls=[
                     DeltaToolCall(
                         index=self.current_tool_id,
-                        function=DeltaFunctionCall(arguments=diff).model_dump(
-                            exclude_none=True
-                        ),
+                        function=DeltaFunctionCall(arguments=diff).model_dump(exclude_none=True),
                     )
                 ]
             )

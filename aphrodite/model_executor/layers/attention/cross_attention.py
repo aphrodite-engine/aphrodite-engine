@@ -6,7 +6,7 @@ from copy import copy
 import numpy as np
 import torch
 
-from aphrodite.config import CacheConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.utils.math_utils import cdiv
@@ -90,25 +90,19 @@ def create_cross_attention_backend(
             max_encoder_len = int(new_metadata.encoder_seq_lens_cpu.max())
             new_metadata.max_seq_len = max_encoder_len
             # Any computed tokens indicated decode step>1 (no chunked prefill)
-            num_cache_decodes = (
-                (common_attn_metadata.num_computed_tokens_cpu > 0).sum().item()
-            )
+            num_cache_decodes = (common_attn_metadata.num_computed_tokens_cpu > 0).sum().item()
             if num_cache_decodes > 0:
                 # CrossAttn KV cache has already been populated on first decoder step,
                 # skip slot_mapping calculation for requests that do not need
                 # reshape_and_cache.
                 num_tokens = common_attn_metadata.num_computed_tokens_cpu.numpy()
-                new_metadata.encoder_seq_lens_cpu = np.where(
-                    num_tokens > 0, 0, new_metadata.encoder_seq_lens_cpu
-                )
+                new_metadata.encoder_seq_lens_cpu = np.where(num_tokens > 0, 0, new_metadata.encoder_seq_lens_cpu)
 
             # seq_lens is provided by model runner: initial encoder input length is
             # needed here to know how many tokens to attend to from the cached
             # cross-attention KV cache.
             new_metadata.seq_lens = common_attn_metadata.encoder_seq_lens
-            new_metadata._seq_lens_cpu = torch.from_numpy(
-                common_attn_metadata.encoder_seq_lens_cpu
-            )
+            new_metadata._seq_lens_cpu = torch.from_numpy(common_attn_metadata.encoder_seq_lens_cpu)
 
             # NOTE (NickLucche) use `new_metadata` instead of `common_*` (initial) here
             slot_mapping = _get_cross_slot_mapping(
@@ -144,9 +138,7 @@ def create_cross_attention_backend(
                 and key is not None
                 and value is not None
             ):
-                self.do_kv_cache_update(
-                    layer, key, value, kv_cache, attn_metadata.slot_mapping
-                )
+                self.do_kv_cache_update(layer, key, value, kv_cache, attn_metadata.slot_mapping)
 
             return super().forward(
                 layer,

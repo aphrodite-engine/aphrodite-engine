@@ -17,7 +17,8 @@
   // riscv implementation
   #include "cpu_types_riscv.hpp"
 #else
-  #warning "unsupported Aphrodite cpu implementation, Aphrodite will compile with scalar"
+  #warning \
+      "unsupported Aphrodite cpu implementation, Aphrodite will compile with scalar"
   #include "cpu_types_scalar.hpp"
 #endif
 

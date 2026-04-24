@@ -34,9 +34,7 @@ class AsyncScheduler(Scheduler):
             # We will update the actual spec token ids in the worker process.
             request.spec_token_ids = self._spec_token_placeholders
 
-    def _update_request_with_output(
-        self, request: Request, new_token_ids: list[int]
-    ) -> tuple[list[int], bool]:
+    def _update_request_with_output(self, request: Request, new_token_ids: list[int]) -> tuple[list[int], bool]:
         if request.discard_latest_async_tokens:
             # If the request is force preempted in reset_prefix_cache, we
             # should discard the latest async token.
@@ -44,9 +42,7 @@ class AsyncScheduler(Scheduler):
             return [], False
 
         status_before_update = request.status
-        new_token_ids, stopped = super()._update_request_with_output(
-            request, new_token_ids
-        )
+        new_token_ids, stopped = super()._update_request_with_output(request, new_token_ids)
 
         # Update the number of output placeholders.
         request.num_output_placeholders -= len(new_token_ids)
@@ -54,7 +50,5 @@ class AsyncScheduler(Scheduler):
 
         # Cache the new tokens. Preempted requests should be skipped.
         if status_before_update == RequestStatus.RUNNING:
-            self.kv_cache_manager.cache_blocks(
-                request, request.num_computed_tokens - request.num_output_placeholders
-            )
+            self.kv_cache_manager.cache_blocks(request, request.num_computed_tokens - request.num_output_placeholders)
         return new_token_ids, stopped

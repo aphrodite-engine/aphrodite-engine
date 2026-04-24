@@ -1,15 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from contextlib import AsyncExitStack
 from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
-from openai.types.responses.tool import CodeInterpreterContainerCodeInterpreterToolAuto, LocalShell, Mcp, Tool
-
 from aphrodite.endpoints.context import ConversationContext
 from aphrodite.endpoints.openai.protocol import ErrorResponse, ResponsesRequest
 from aphrodite.endpoints.openai.serving_responses import OpenAIServingResponses, extract_tool_types
 from aphrodite.endpoints.tool_server import ToolServer
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
+from openai.types.responses.tool import CodeInterpreterContainerCodeInterpreterToolAuto, LocalShell, Mcp, Tool
 
 
 class MockConversationContext(ConversationContext):

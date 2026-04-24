@@ -41,18 +41,14 @@ from aphrodite.v1.kv_cache_interface import AttentionSpec
 logger = init_logger(__name__)
 
 torch._dynamo.config.recompile_limit = 16
-create_block_mask_compiled = torch.compile(
-    create_block_mask, fullgraph=True, mode="reduce-overhead"
-)
+create_block_mask_compiled = torch.compile(create_block_mask, fullgraph=True, mode="reduce-overhead")
 flex_attention_compiled = torch.compile(flex_attention, fullgraph=True)
 
 
 def _offsets_to_doc_ids_tensor(offsets: torch.Tensor) -> torch.Tensor:
     device = offsets.device
     counts = offsets[1:] - offsets[:-1]
-    return torch.repeat_interleave(
-        torch.arange(len(counts), device=device, dtype=torch.int32), counts
-    )
+    return torch.repeat_interleave(torch.arange(len(counts), device=device, dtype=torch.int32), counts)
 
 
 def pad_to_multiple(x: torch.Tensor, multiple: int, dim: int):
@@ -212,25 +208,16 @@ def physical_to_logical_mapping(
     max_reqs, max_num_blocks = block_table.shape
     device = block_table.device
 
-    physical_to_logical = torch.full(
-        (max_reqs, total_blocks), -1, dtype=torch.long, device=device
-    )
+    physical_to_logical = torch.full((max_reqs, total_blocks), -1, dtype=torch.long, device=device)
 
     # Only process valid blocks to avoid garbage values
     num_blocks_per_seq: torch.Tensor = cdiv(seq_lens, block_size)
-    mask = (
-        torch.arange(max_num_blocks, device=device)[None, :]
-        < num_blocks_per_seq[:, None]
-    )
+    mask = torch.arange(max_num_blocks, device=device)[None, :] < num_blocks_per_seq[:, None]
 
     valid_block_table = torch.where(mask, block_table, 0)
-    valid_logical_indices = torch.where(
-        mask, torch.arange(max_num_blocks, device=device)[None, :], 0
-    )
+    valid_logical_indices = torch.where(mask, torch.arange(max_num_blocks, device=device)[None, :], 0)
 
-    physical_to_logical.scatter_reduce_(
-        -1, valid_block_table.to(torch.int64), valid_logical_indices, reduce="amax"
-    )
+    physical_to_logical.scatter_reduce_(-1, valid_block_table.to(torch.int64), valid_logical_indices, reduce="amax")
     # NB - Seems like block 0 is always empty so we reset it manually
     physical_to_logical[:, 0] = -1
     return physical_to_logical
@@ -288,16 +275,12 @@ def unique_static_unsorted(
     return packed
 
 
-def causal_mask_mod(
-    b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor
-):
+def causal_mask_mod(b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor):
     return q_idx >= kv_idx
 
 
 # Type alias for the block sparsity hint callable signature.
-_block_sparsity_hint_signature = Callable[
-    [torch.Tensor, torch.Tensor, int], torch.Tensor
-]
+_block_sparsity_hint_signature = Callable[[torch.Tensor, torch.Tensor, int], torch.Tensor]
 
 
 class BlockSparsityHint(NamedTuple):
@@ -320,8 +303,7 @@ def copy_to_persistent(dst, src):
         dst = dst.as_strided(src.shape, src.stride())
     except RuntimeError as e:
         raise RuntimeError(
-            f"Fail to re-stride a persistent tensor of shape {dst.shape} "
-            f"for a tensor of shape {src.shape}"
+            f"Fail to re-stride a persistent tensor of shape {dst.shape} for a tensor of shape {src.shape}"
         ) from e
     dst.copy_(src)
     return dst
@@ -435,8 +417,8 @@ class FlexAttentionMetadata:
             q_idx: torch.Tensor,
             physical_kv_idx: torch.Tensor,
         ) -> torch.Tensor:
-            (is_valid, logical_q_idx, logical_kv_idx) = (
-                self._convert_physical_to_logical(self.doc_ids, q_idx, physical_kv_idx)
+            (is_valid, logical_q_idx, logical_kv_idx) = self._convert_physical_to_logical(
+                self.doc_ids, q_idx, physical_kv_idx
             )
             # Apply mask modification only for valid indices
             return torch.where(
@@ -477,9 +459,7 @@ class FlexAttentionMetadata:
         if self.sliding_window is None:
             raise ValueError("sliding_window must be set for sliding window attention")
 
-        def sliding_window_mask_mod(
-            b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor
-        ):
+        def sliding_window_mask_mod(b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor):
             return torch.abs(q_idx - kv_idx) < self.sliding_window
 
         def final_mask_mod(
@@ -488,8 +468,8 @@ class FlexAttentionMetadata:
             q_idx: torch.Tensor,
             physical_kv_idx: torch.Tensor,
         ) -> torch.Tensor:
-            (is_valid, logical_q_idx, logical_kv_idx) = (
-                self._convert_physical_to_logical(self.doc_ids, q_idx, physical_kv_idx)
+            (is_valid, logical_q_idx, logical_kv_idx) = self._convert_physical_to_logical(
+                self.doc_ids, q_idx, physical_kv_idx
             )
             return torch.where(
                 is_valid,
@@ -527,8 +507,8 @@ class FlexAttentionMetadata:
             q_idx: torch.Tensor,
             physical_kv_idx: torch.Tensor,
         ) -> torch.Tensor:
-            (is_valid, logical_q_idx, logical_kv_idx) = (
-                self._convert_physical_to_logical(self.doc_ids, q_idx, physical_kv_idx)
+            (is_valid, logical_q_idx, logical_kv_idx) = self._convert_physical_to_logical(
+                self.doc_ids, q_idx, physical_kv_idx
             )
             return torch.where(
                 is_valid,
@@ -578,17 +558,13 @@ class FlexAttentionMetadata:
             q_idx: torch.Tensor,
             physical_kv_idx: torch.Tensor,
         ) -> torch.Tensor:
-            (is_valid, logical_q_idx, logical_kv_idx) = (
-                self._convert_physical_to_logical(
-                    request_lookup, q_idx, physical_kv_idx
-                )
+            (is_valid, logical_q_idx, logical_kv_idx) = self._convert_physical_to_logical(
+                request_lookup, q_idx, physical_kv_idx
             )
 
             return torch.where(
                 is_valid,
-                user_score_mod(
-                    score, b, h, logical_q_idx, logical_kv_idx, physical_q=q_idx
-                ),
+                user_score_mod(score, b, h, logical_q_idx, logical_kv_idx, physical_q=q_idx),
                 -float("inf"),
             )
 
@@ -625,29 +601,19 @@ class FlexAttentionMetadata:
                 f"configuration."
             )
 
-        used_pages = self.block_table[
-            self.doc_ids, : cdiv(self.max_seq_len, self.block_size)
-        ]
+        used_pages = self.block_table[self.doc_ids, : cdiv(self.max_seq_len, self.block_size)]
 
         custom_hint = self.block_sparsity_hint is not None
 
         if self.sliding_window or custom_hint:
             device = used_pages.device
             assert self.doc_ids is not None
-            token_indices = torch.arange(
-                self.doc_ids.shape[0], device=device, dtype=torch.long
-            )
-            logical_q_idx = (
-                token_indices
-                - self.query_start_loc[self.doc_ids]
-                + self.decode_offset[self.doc_ids]
-            )
+            token_indices = torch.arange(self.doc_ids.shape[0], device=device, dtype=torch.long)
+            logical_q_idx = token_indices - self.query_start_loc[self.doc_ids] + self.decode_offset[self.doc_ids]
 
             if self.sliding_window:
                 assert self.sliding_window is not None
-                min_kv_idx = torch.clamp(
-                    logical_q_idx - (self.sliding_window - 1), min=0
-                )
+                min_kv_idx = torch.clamp(logical_q_idx - (self.sliding_window - 1), min=0)
                 min_block_idx = min_kv_idx // self.block_size
                 sliding_mask = self.logical_block_ids >= min_block_idx[:, None]
                 used_pages.masked_fill_(~sliding_mask, 0)
@@ -661,16 +627,10 @@ class FlexAttentionMetadata:
                 )
                 used_pages.masked_fill_(~hint_mask, 0)
 
-        used_pages_padded = pad_to_multiple(
-            used_pages, multiple=self.q_block_size, dim=0
-        )
-        used_pages_padded = used_pages_padded.reshape(
-            used_pages_padded.shape[0] // self.q_block_size, -1
-        )
+        used_pages_padded = pad_to_multiple(used_pages, multiple=self.q_block_size, dim=0)
+        used_pages_padded = used_pages_padded.reshape(used_pages_padded.shape[0] // self.q_block_size, -1)
         used_pages_padded = used_pages_padded // page_to_block_ratio
-        kv_indices = unique_static_unsorted(
-            (used_pages_padded.long()), M=self.num_blocks
-        ).to(torch.int32)
+        kv_indices = unique_static_unsorted((used_pages_padded.long()), M=self.num_blocks).to(torch.int32)
         kv_indices = copy_to_persistent(self.persistent_kv_indices, kv_indices)
 
         kv_num_blocks = (kv_indices >= 0).sum(dim=-1).to(torch.int32)
@@ -735,9 +695,7 @@ class FlexAttentionMetadataBuilder(AttentionMetadataBuilder[FlexAttentionMetadat
         self.parallel_config = aphrodite_config.parallel_config
         self.cache_config = aphrodite_config.cache_config
 
-        self.num_heads_q = self.model_config.get_num_attention_heads(
-            self.parallel_config
-        )
+        self.num_heads_q = self.model_config.get_num_attention_heads(self.parallel_config)
         self.num_heads_kv = self.model_config.get_num_kv_heads(self.parallel_config)
         self.headdim = self.model_config.get_head_size()
         self.block_size = kv_cache_spec.block_size
@@ -753,31 +711,19 @@ class FlexAttentionMetadataBuilder(AttentionMetadataBuilder[FlexAttentionMetadat
         self.max_num_query_groups = cdiv(max_num_batched_tokens, self.q_block_size)
         max_num_pages_per_seq = cdiv(self.max_model_len, self.block_size)
         self.max_num_kv_indices = self.q_block_size * max_num_pages_per_seq
-        self.persistent_kv_num_blocks = torch.empty(
-            self.max_num_query_groups, dtype=torch.int32, device=device
-        )
-        self.persistent_offset_tensor = torch.empty(
-            max_num_seqs, dtype=torch.int32, device=device
-        )
-        self.persistent_doc_ids = torch.empty(
-            max_num_batched_tokens, dtype=torch.int32, device=device
-        )
+        self.persistent_kv_num_blocks = torch.empty(self.max_num_query_groups, dtype=torch.int32, device=device)
+        self.persistent_offset_tensor = torch.empty(max_num_seqs, dtype=torch.int32, device=device)
+        self.persistent_doc_ids = torch.empty(max_num_batched_tokens, dtype=torch.int32, device=device)
 
         # initialize later when we can access block_table
         self.persistent_physical_to_logical = None
         self.persistent_kv_indices = None
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ) -> FlexAttentionMetadata:
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata) -> FlexAttentionMetadata:
         # Use actual max_seq_len instead of max_model_len to avoid
         # torch.compile recompilation during CUDA graph capture.
-        common_attn_metadata.max_seq_len = (
-            common_attn_metadata.seq_lens_cpu.max().item()
-        )
-        return self.build(
-            common_prefix_len=0, common_attn_metadata=common_attn_metadata
-        )
+        common_attn_metadata.max_seq_len = common_attn_metadata.seq_lens_cpu.max().item()
+        return self.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)
 
     def build(
         self,
@@ -801,23 +747,16 @@ class FlexAttentionMetadataBuilder(AttentionMetadataBuilder[FlexAttentionMetadat
         prefix_kv_lens = None
         suffix_kv_lens = None
         if use_cascade:
-            raise NotImplementedError(
-                "Cascade prefix attention is not yet implemented "
-                "for FlexAttention backend"
-            )
+            raise NotImplementedError("Cascade prefix attention is not yet implemented for FlexAttention backend")
 
         block_size = self.kv_cache_spec.block_size
         max_possible_seq_len = self.model_config.max_model_len
         num_gpu_blocks = self.cache_config.num_gpu_blocks
 
-        assert num_gpu_blocks is not None, (
-            "FlexAttention requires num_gpu_blocks to be set"
-        )
+        assert num_gpu_blocks is not None, "FlexAttention requires num_gpu_blocks to be set"
         total_cache_tokens = num_gpu_blocks * block_size
 
-        inverse_block_table = physical_to_logical_mapping(
-            block_table_tensor, seq_lens, block_size, num_gpu_blocks
-        )
+        inverse_block_table = physical_to_logical_mapping(block_table_tensor, seq_lens, block_size, num_gpu_blocks)
         if self.persistent_physical_to_logical is None:
             max_num_seqs = self.aphrodite_config.scheduler_config.max_num_seqs
             self.persistent_physical_to_logical = torch.empty(
@@ -835,9 +774,7 @@ class FlexAttentionMetadataBuilder(AttentionMetadataBuilder[FlexAttentionMetadat
                 device=self.device,
             )
 
-        inverse_block_table = copy_to_persistent(
-            self.persistent_physical_to_logical, inverse_block_table
-        )
+        inverse_block_table = copy_to_persistent(self.persistent_physical_to_logical, inverse_block_table)
 
         offset_tensor = common_attn_metadata.compute_num_computed_tokens()
         offset_tensor = copy_to_persistent(self.persistent_offset_tensor, offset_tensor)
@@ -918,14 +855,10 @@ class FlexAttentionImpl(AttentionImpl):
         self.attn_type = attn_type
 
         if attn_type not in (AttentionType.ENCODER_ONLY, AttentionType.DECODER):
-            raise NotImplementedError(
-                f"FlexAttention does not support {attn_type} attention"
-            )
+            raise NotImplementedError(f"FlexAttention does not support {attn_type} attention")
 
         if alibi_slopes is not None:
-            raise NotImplementedError(
-                "FlexAttention does not support alibi slopes yet."
-            )
+            raise NotImplementedError("FlexAttention does not support alibi slopes yet.")
         else:
             self.alibi_slopes = None
 
@@ -934,9 +867,7 @@ class FlexAttentionImpl(AttentionImpl):
         self.kv_cache_dtype = kv_cache_dtype
         self.logits_soft_cap = logits_soft_cap
         if self.logits_soft_cap is not None:
-            raise NotImplementedError(
-                "FlexAttention does not support logits soft cap yet."
-            )
+            raise NotImplementedError("FlexAttention does not support logits soft cap yet.")
 
         assert self.num_heads % self.num_kv_heads == 0
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
@@ -945,9 +876,7 @@ class FlexAttentionImpl(AttentionImpl):
             raise NotImplementedError("FlexAttention does not support kv sharing yet.")
 
         if is_quantized_kv_cache(self.kv_cache_dtype):
-            raise NotImplementedError(
-                "FlexAttention does not support quantized kv-cache. Yet"
-            )
+            raise NotImplementedError("FlexAttention does not support quantized kv-cache. Yet")
 
     @staticmethod
     def view_as_4d(tensor: torch.Tensor) -> torch.Tensor:
@@ -1005,9 +934,7 @@ class FlexAttentionImpl(AttentionImpl):
             shape = [num_tokens, num_heads * head_size]
         """
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for FlexAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for FlexAttentionImpl")
 
         enable_gqa = self.num_kv_heads != self.num_heads
 
@@ -1033,19 +960,13 @@ class FlexAttentionImpl(AttentionImpl):
             needs_rebuild_block_mask = True
 
         layer_mask_mod = getattr(layer, "logical_mask_mod", None)
-        if (
-            layer_mask_mod is not None
-            and attn_metadata.logical_mask_mod is not layer_mask_mod
-        ):
+        if layer_mask_mod is not None and attn_metadata.logical_mask_mod is not layer_mask_mod:
             attn_metadata.logical_mask_mod = layer_mask_mod
             attn_metadata.mask_mod = attn_metadata.get_mask_mod()
             needs_rebuild_block_mask = True
 
         layer_hint = getattr(layer, "block_sparsity_hint", None)
-        if (
-            layer_hint is not None
-            and attn_metadata.block_sparsity_hint is not layer_hint
-        ):
+        if layer_hint is not None and attn_metadata.block_sparsity_hint is not layer_hint:
             attn_metadata.block_sparsity_hint = layer_hint
             needs_rebuild_block_mask = True
 
@@ -1064,9 +985,7 @@ class FlexAttentionImpl(AttentionImpl):
             )
 
             query = query[:, :, :num_actual_tokens, :]
-            if (key_tensor.size(-2) > num_actual_tokens) or (
-                value_tensor.size(-2) > num_actual_tokens
-            ):
+            if (key_tensor.size(-2) > num_actual_tokens) or (value_tensor.size(-2) > num_actual_tokens):
                 # In the encoder-only model with torch.compile,
                 # qkv might be padded, which might cause exception.
                 # see: https://github.com/vllm-project/vllm/pull/24872#discussion_r2353252290
@@ -1093,9 +1012,7 @@ class FlexAttentionImpl(AttentionImpl):
         assert attn_metadata.block_mask is not None
         block_m, block_n = attn_metadata.block_mask.BLOCK_SIZE
 
-        kernel_options = get_kernel_options(
-            query, block_m, block_n, attn_metadata.direct_build
-        )
+        kernel_options = get_kernel_options(query, block_m, block_n, attn_metadata.direct_build)
         out = flex_attention_compiled(
             query,
             key_tensor,
@@ -1113,9 +1030,7 @@ class FlexAttentionImpl(AttentionImpl):
         return output
 
 
-def get_kernel_options(
-    query, block_m, block_n, use_direct_build: bool
-) -> dict[str, int | bool]:
+def get_kernel_options(query, block_m, block_n, use_direct_build: bool) -> dict[str, int | bool]:
     kernel_options: dict[str, int | bool] = {
         "FORCE_USE_FLEX_ATTENTION": True,
     }
@@ -1161,17 +1076,11 @@ def get_kernel_options(
                 # ROCm fallback: use 64KB
                 max_shared_memory = 65536
             else:
-                raise RuntimeError(
-                    "Unable to determine shared memory size on this hardware."
-                )
+                raise RuntimeError("Unable to determine shared memory size on this hardware.")
 
             if max_shared_memory < 144 * 1024:
-                block_m_candidate = ensure_divisible(
-                    max(1, block_m_candidate // 2), block_m
-                )
-                block_n_candidate = ensure_divisible(
-                    max(1, block_n_candidate // 2), block_n
-                )
+                block_m_candidate = ensure_divisible(max(1, block_m_candidate // 2), block_m)
+                block_n_candidate = ensure_divisible(max(1, block_n_candidate // 2), block_n)
 
         block_m_candidate = max(block_m_candidate, block_lower_bound)
         block_n_candidate = max(block_n_candidate, block_lower_bound)

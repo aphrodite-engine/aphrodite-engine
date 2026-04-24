@@ -206,9 +206,7 @@ class MultiModalConfig:
 
     @field_validator("mm_encoder_attn_backend", mode="before")
     @classmethod
-    def _validate_mm_encoder_attn_backend(
-        cls, value: str | AttentionBackendEnum | None
-    ) -> AttentionBackendEnum | None:
+    def _validate_mm_encoder_attn_backend(cls, value: str | AttentionBackendEnum | None) -> AttentionBackendEnum | None:
         if isinstance(value, str) and value.upper() == "XFORMERS":
             raise ValueError(
                 "Attention backend 'XFORMERS' has been removed (See PR #29262 for "
@@ -218,20 +216,16 @@ class MultiModalConfig:
         if value is None or isinstance(value, AttentionBackendEnum):
             return value
 
-        assert isinstance(value, str), (
-            "mm_encoder_attn_backend must be a string or an AttentionBackendEnum."
-        )
+        assert isinstance(value, str), "mm_encoder_attn_backend must be a string or an AttentionBackendEnum."
         return AttentionBackendEnum[value.upper()]
 
     @model_validator(mode="after")
     def _validate_multimodal_config(self):
         if self.mm_processor_cache_type != "shm" and (
-            self.mm_shm_cache_max_object_size_mb
-            != MultiModalConfig.mm_shm_cache_max_object_size_mb
+            self.mm_shm_cache_max_object_size_mb != MultiModalConfig.mm_shm_cache_max_object_size_mb
         ):
             raise ValueError(
-                "'mm_shm_cache_max_object_size_mb' should only be set when "
-                "'mm_processor_cache_type' is 'shm'."
+                "'mm_shm_cache_max_object_size_mb' should only be set when 'mm_processor_cache_type' is 'shm'."
             )
         return self
 
@@ -248,9 +242,7 @@ class MultiModalConfig:
         the final hidden states.
         """
         factors: list[Any] = [
-            self.mm_encoder_attn_backend.name
-            if self.mm_encoder_attn_backend is not None
-            else None,
+            self.mm_encoder_attn_backend.name if self.mm_encoder_attn_backend is not None else None,
             self.mm_encoder_tp_mode,
         ]
         hash_str = safe_hash(str(factors).encode(), usedforsecurity=False).hexdigest()

@@ -22,7 +22,7 @@ from collections.abc import Iterable
 import torch
 from torch import nn
 
-from aphrodite.config import PoolerConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, PoolerConfig
 from aphrodite.model_executor.layers.pooler import Pooler
 from aphrodite.model_executor.layers.pooler.tokwise import pooler_for_token_embed
 
@@ -232,9 +232,7 @@ class ColBERTModel(ColBERTMixin, BertEmbeddingModel):
             # Handle different checkpoint naming conventions
             if stripped in ("linear.weight", "colbert_linear.weight"):
                 colbert_side.append(("colbert_linear.weight", weight))
-            elif stripped.startswith("linear.") or stripped.startswith(
-                "colbert_linear."
-            ):
+            elif stripped.startswith("linear.") or stripped.startswith("colbert_linear."):
                 new_name = stripped.replace("linear.", "colbert_linear.")
                 colbert_side.append((new_name, weight))
             else:
@@ -310,10 +308,7 @@ class ColBERTModernBertModel(ColBERTMixin, nn.Module):
         other_weights, colbert_loaded = self._load_colbert_weights(weights)
 
         # Strip "model." prefix added by the embedding adapter
-        model_weights = [
-            (n[len("model.") :] if n.startswith("model.") else n, w)
-            for n, w in other_weights
-        ]
+        model_weights = [(n[len("model.") :] if n.startswith("model.") else n, w) for n, w in other_weights]
 
         loaded_model = self.model.load_weights(model_weights)
         loaded = {"model." + n for n in loaded_model} | colbert_loaded
@@ -492,10 +487,7 @@ class ColBERTLfm2Model(ColBERTMixin, nn.Module, HasInnerState, IsHybrid):
         other_weights, colbert_loaded = self._load_colbert_weights(weights)
 
         # Strip "model." prefix added by the embedding adapter
-        model_weights = [
-            (n[len("model.") :] if n.startswith("model.") else n, w)
-            for n, w in other_weights
-        ]
+        model_weights = [(n[len("model.") :] if n.startswith("model.") else n, w) for n, w in other_weights]
         loaded_model = self.model.load_weights(model_weights)
         loaded = {f"model.{name}" for name in loaded_model} | colbert_loaded
 

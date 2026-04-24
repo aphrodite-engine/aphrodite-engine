@@ -102,9 +102,7 @@ class FusedMoEMethodBase(QuantizeMethodBase):
     ) -> FusedMoEPrepareAndFinalizeModular | None:
         from .all2all_utils import maybe_make_prepare_finalize
 
-        pf = maybe_make_prepare_finalize(
-            self.moe, self.moe_quant_config, routing_tables
-        )
+        pf = maybe_make_prepare_finalize(self.moe, self.moe_quant_config, routing_tables)
         assert pf is None or isinstance(pf, FusedMoEPrepareAndFinalizeModular)
         return pf
 
@@ -121,9 +119,7 @@ class FusedMoEMethodBase(QuantizeMethodBase):
         )
 
     @abstractmethod
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         raise NotImplementedError
 
     @property

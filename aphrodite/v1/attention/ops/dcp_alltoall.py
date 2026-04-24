@@ -206,9 +206,7 @@ def _dcp_lse_combine_kernel(
         acc += out_vals.to(tl.float32) * weight
 
     # Store result
-    final_offsets = (
-        batch_idx * o_stride_B + head_idx * o_stride_H + d_offsets * o_stride_D
-    )
+    final_offsets = batch_idx * o_stride_B + head_idx * o_stride_H + d_offsets * o_stride_D
     tl.store(out_ptr + final_offsets, acc)
 
     if RETURN_LSE:
@@ -236,14 +234,10 @@ def dcp_lse_combine_triton(
     """
     N, B, H_local, D = recv_output.shape
 
-    out = torch.empty(
-        (B, H_local, D), device=recv_output.device, dtype=recv_output.dtype
-    )
+    out = torch.empty((B, H_local, D), device=recv_output.device, dtype=recv_output.dtype)
 
     if return_lse:
-        out_lse = torch.empty(
-            (B, H_local), device=recv_lse.device, dtype=recv_lse.dtype
-        )
+        out_lse = torch.empty((B, H_local), device=recv_lse.device, dtype=recv_lse.dtype)
     else:
         out_lse = torch.empty(1, device=recv_lse.device, dtype=recv_lse.dtype)
 
@@ -329,9 +323,7 @@ def dcp_a2a_lse_reduce(
 
     # Reshape for All-to-All: [B, H, D] -> [N, B, H/N, D]
     # Split heads into N chunks, each destined for a different rank
-    send_output = (
-        local_output.view(B, world_size, H_per_rank, D).permute(1, 0, 2, 3).contiguous()
-    )
+    send_output = local_output.view(B, world_size, H_per_rank, D).permute(1, 0, 2, 3).contiguous()
     recv_output = torch.empty_like(send_output)
 
     # Same for LSE: [B, H] -> [N, B, H/N]

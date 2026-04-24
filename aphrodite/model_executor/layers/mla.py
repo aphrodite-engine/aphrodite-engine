@@ -120,15 +120,9 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
         kv_lora = None
 
         if self.q_lora_rank is not None:
-            assert self.fused_qkv_a_proj is not None, (
-                "fused_qkv_a_proj is required when q_lora_rank is not None"
-            )
-            assert self.q_a_layernorm is not None, (
-                "q_a_layernorm is required when q_lora_rank is not None"
-            )
-            assert self.q_b_proj is not None, (
-                "q_b_proj is required when q_lora_rank is not None"
-            )
+            assert self.fused_qkv_a_proj is not None, "fused_qkv_a_proj is required when q_lora_rank is not None"
+            assert self.q_a_layernorm is not None, "q_a_layernorm is required when q_lora_rank is not None"
+            assert self.q_b_proj is not None, "q_b_proj is required when q_lora_rank is not None"
 
             qkv_lora = self.fused_qkv_a_proj(hidden_states)[0]
             q_c, kv_lora = qkv_lora.split(
@@ -138,12 +132,8 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
             q_c = self.q_a_layernorm(q_c)
             q = self.q_b_proj(q_c)[0]
         else:
-            assert self.kv_a_proj_with_mqa is not None, (
-                "kv_a_proj_with_mqa is required when q_lora_rank is None"
-            )
-            assert self.q_proj is not None, (
-                "q_proj is required when q_lora_rank is None"
-            )
+            assert self.kv_a_proj_with_mqa is not None, "kv_a_proj_with_mqa is required when q_lora_rank is None"
+            assert self.q_proj is not None, "q_proj is required when q_lora_rank is None"
             kv_lora = self.kv_a_proj_with_mqa(hidden_states)[0]
             q = self.q_proj(hidden_states)[0]
 
@@ -155,14 +145,10 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
         k_pe = k_pe.unsqueeze(1)
 
         if self.rotary_emb is not None:
-            q[..., self.qk_nope_head_dim :], k_pe = self.rotary_emb(
-                positions, q[..., self.qk_nope_head_dim :], k_pe
-            )
+            q[..., self.qk_nope_head_dim :], k_pe = self.rotary_emb(positions, q[..., self.qk_nope_head_dim :], k_pe)
 
         if self.indexer and self.is_sparse:
-            _topk_indices = self.indexer(
-                hidden_states, q_c, positions, self.indexer_rope_emb
-            )
+            _topk_indices = self.indexer(hidden_states, q_c, positions, self.indexer_rope_emb)
 
         if llama_4_scaling is not None:
             q *= llama_4_scaling

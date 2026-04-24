@@ -190,9 +190,7 @@ class TurboQuantMetadataBuilder(AttentionMetadataBuilder[TurboQuantMetadata]):
         super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
         self._init_reorder_batch_threshold(1, supports_spec_as_decode=False)
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ) -> TurboQuantMetadata:
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata) -> TurboQuantMetadata:
         attn_metadata = self.build(0, common_attn_metadata)
         # Set seq_lens to 1 so CUDA graph capture is fast
         # (real seq_lens are filled at replay time).
@@ -263,20 +261,14 @@ class TurboQuantAttentionImpl(AttentionImpl["TurboQuantMetadata"]):
 
         # Pre-compute kernel constants from config (avoid repeated arithmetic)
         cfg = self.tq_config
-        self._mse_bytes = (
-            math.ceil(head_size * cfg.key_mse_bits / 8)
-            if not cfg.key_fp8
-            else head_size
-        )
+        self._mse_bytes = math.ceil(head_size * cfg.key_mse_bits / 8) if not cfg.key_fp8 else head_size
         self._val_data_bytes = math.ceil(head_size * cfg.effective_value_quant_bits / 8)
         self._n_centroids = cfg.n_centroids if not cfg.key_fp8 else 1
 
         # Fixed NUM_KV_SPLITS (grid dims must be constant for cudagraph,
         # and benchmarks show no regression vs dynamic in eager mode).
         aphrodite_config = get_current_aphrodite_config()
-        self.max_num_kv_splits = (
-            aphrodite_config.attention_config.tq_max_kv_splits_for_cuda_graph
-        )
+        self.max_num_kv_splits = aphrodite_config.attention_config.tq_max_kv_splits_for_cuda_graph
 
     def _ensure_on_device(self, layer, device):
         """One-time derivation of TQ buffers (rotation matrix, midpoints).
@@ -374,9 +366,7 @@ class TurboQuantAttentionImpl(AttentionImpl["TurboQuantMetadata"]):
 
         if not attn_metadata.is_prefill:
             # Pure decode batch — fast path
-            attn_out = self._decode_attention(
-                q, kv_cache, attn_metadata, Pi, centroids, PiT, layer
-            )
+            attn_out = self._decode_attention(q, kv_cache, attn_metadata, Pi, centroids, PiT, layer)
         elif num_decodes == 0:
             # Pure prefill batch
             k = key[:N].view(N, self.num_kv_heads, self.head_size)
@@ -394,9 +384,7 @@ class TurboQuantAttentionImpl(AttentionImpl["TurboQuantMetadata"]):
             )
         else:
             # Mixed batch: decodes first (guaranteed by reorder_batch).
-            attn_out = torch.zeros(
-                N, self.num_heads, self.head_size, device=device, dtype=q.dtype
-            )
+            attn_out = torch.zeros(N, self.num_heads, self.head_size, device=device, dtype=q.dtype)
 
             # --- Decode portion (first num_decodes requests) ---
             # Use full-batch max_seq_len as safe upper bound (no GPU sync).
@@ -422,9 +410,7 @@ class TurboQuantAttentionImpl(AttentionImpl["TurboQuantMetadata"]):
             prefill_seq_lens = attn_metadata.seq_lens[num_decodes:]
             # Use CPU-side max to avoid GPU→CPU sync from .item()
             prefill_max_seq = max(attn_metadata.seq_lens[num_decodes:].tolist())
-            prefill_qsl = (
-                attn_metadata.query_start_loc[num_decodes:] - num_decode_tokens
-            )
+            prefill_qsl = attn_metadata.query_start_loc[num_decodes:] - num_decode_tokens
             prefill_meta = TurboQuantMetadata(
                 seq_lens=prefill_seq_lens,
                 slot_mapping=attn_metadata.slot_mapping[num_decode_tokens:N],
@@ -705,17 +691,11 @@ class TurboQuantAttentionImpl(AttentionImpl["TurboQuantMetadata"]):
         if not self.tq_config.key_fp8:
             k_flat = k_cached[0, :, :cached_len, :].reshape(-1, D).float()
             k_flat = k_flat @ Pi
-            k_cached_trim = (
-                k_flat.to(torch.float16).reshape(Hk, cached_len, D).transpose(0, 1)
-            )  # (cached_len, Hk, D)
+            k_cached_trim = k_flat.to(torch.float16).reshape(Hk, cached_len, D).transpose(0, 1)  # (cached_len, Hk, D)
         else:
-            k_cached_trim = (
-                k_cached[0, :, :cached_len, :].transpose(0, 1).contiguous()
-            )  # (cached_len, Hk, D)
+            k_cached_trim = k_cached[0, :, :cached_len, :].transpose(0, 1).contiguous()  # (cached_len, Hk, D)
 
-        v_cached_trim = (
-            v_cached[0, :, :cached_len, :].transpose(0, 1).contiguous()
-        )  # (cached_len, Hk, D)
+        v_cached_trim = v_cached[0, :, :cached_len, :].transpose(0, 1).contiguous()  # (cached_len, Hk, D)
 
         # Concatenate cached + current chunk K/V (match query dtype)
         qdtype = query.dtype

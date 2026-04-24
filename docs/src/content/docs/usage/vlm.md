@@ -15,6 +15,7 @@ We are continuously improving user & developer experience. If you have any feedb
 :::
 
 ## Offline Batched Inference
+
 To initialize a VLM, the aforementioned arguments must be passed to the `LLM` class for instantiating the engine.
 
 ```py
@@ -65,6 +66,7 @@ for o in outputs:
 ```
 
 ## Online OpenAI Vision API Inference
+
 You can serve vision language models with Aphrodite's OpenAI server.
 
 :::tip
@@ -117,6 +119,7 @@ By default, the timeout for fetching images through http url is `10` seconds. Yo
 ```bash
 export APHRODITE_IMAGE_FETCH_TIMEOUT=<timeout>
 ```
+
 :::
 
 :::tip

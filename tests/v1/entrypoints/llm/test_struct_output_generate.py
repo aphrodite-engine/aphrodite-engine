@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # ruff: noqa: E501
 import json
 from dataclasses import fields
@@ -8,12 +10,12 @@ import jsonschema
 import pytest
 import regex as re
 import torch
+from aphrodite.endpoints.llm import LLM
 from pydantic import BaseModel
 
 from aphrodite.common.sampling_params import GuidedDecodingParams, SamplingParams, StructuredOutputsParams
 from aphrodite.config import StructuredOutputsConfig
 from aphrodite.distributed import cleanup_dist_env_and_memory
-from aphrodite.endpoints.llm import LLM
 from aphrodite.outputs import RequestOutput
 from aphrodite.platforms import current_platform
 from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParserManager

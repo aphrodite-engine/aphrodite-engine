@@ -59,9 +59,7 @@ def get_captured_lora_counts(max_loras: int, specialize: bool) -> list[int]:
     if not specialize:
         return [max_loras + 1]
 
-    return [
-        n for n in range(1, max_loras + 2) if (n & (n - 1)) == 0 or n == max_loras + 1
-    ]
+    return [n for n in range(1, max_loras + 2) if (n & (n - 1)) == 0 or n == max_loras + 1]
 
 
 _GLOBAL_LORA_ID = 0
@@ -140,9 +138,7 @@ def from_layer_logits_processor(
     return ret
 
 
-def replace_submodule(
-    model: nn.Module, module_name: str, new_module: nn.Module
-) -> nn.Module:
+def replace_submodule(model: nn.Module, module_name: str, new_module: nn.Module) -> nn.Module:
     """Replace a submodule in a model with a new module."""
     parent = model.get_submodule(".".join(module_name.split(".")[:-1]))
     target_name = module_name.split(".")[-1]
@@ -150,9 +146,7 @@ def replace_submodule(
     return new_module
 
 
-def parse_fine_tuned_lora_name(
-    name: str, weights_mapper: "WeightsMapper | None" = None
-) -> tuple[str, bool]:
+def parse_fine_tuned_lora_name(name: str, weights_mapper: "WeightsMapper | None" = None) -> tuple[str, bool]:
     """Parse the name of lora weights.
 
     args:
@@ -348,16 +342,11 @@ def process_packed_modules_mapping(model: nn.Module) -> dict[str, list[str]]:
                 # ckpt_up_proj_name which results in weight_name containing ".."
                 # (e.g., "experts.0.." instead of "experts.0.layer_name.")
                 packed_modules_mapping["experts"] = [
-                    weight_name.rstrip(".")
-                    for _, weight_name, _, _ in moe_packed_mapping
-                    if ".." not in weight_name
+                    weight_name.rstrip(".") for _, weight_name, _, _ in moe_packed_mapping if ".." not in weight_name
                 ]
 
             return packed_modules_mapping
         else:
-            raise AttributeError(
-                "To support LoRA for MoE model, "
-                "'get_expert_mapping' must be implemented"
-            )
+            raise AttributeError("To support LoRA for MoE model, 'get_expert_mapping' must be implemented")
     else:
         return get_packed_modules_mapping(model)

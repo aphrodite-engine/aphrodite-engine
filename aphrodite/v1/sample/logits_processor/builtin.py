@@ -20,9 +20,7 @@ T = TypeVar("T")
 
 
 class MinPLogitsProcessor(LogitsProcessor):
-    def __init__(
-        self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool
-    ):
+    def __init__(self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool):
         max_num_reqs = aphrodite_config.scheduler_config.max_num_seqs
         self.min_p_count: int = 0
 
@@ -35,9 +33,7 @@ class MinPLogitsProcessor(LogitsProcessor):
 
         if self.use_double_tensor:
             # Pre-allocated device tensor
-            self.min_p_device: torch.Tensor = torch.empty(
-                (max_num_reqs,), dtype=torch.float32, device=device
-            )
+            self.min_p_device: torch.Tensor = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
         else:
             self.min_p_device = self.min_p_cpu_tensor
         # Current slice of the device tensor
@@ -133,9 +129,7 @@ class LogitBiasLogitsProcessor(LogitsProcessor):
         return False
 
     def update_state(self, batch_update: BatchUpdate | None):
-        needs_update = process_dict_updates(
-            self.biases, batch_update, lambda params, _, __: params.logit_bias or None
-        )
+        needs_update = process_dict_updates(self.biases, batch_update, lambda params, _, __: params.logit_bias or None)
 
         # Update tensors if needed.
         if needs_update:
@@ -154,9 +148,9 @@ class LogitBiasLogitsProcessor(LogitsProcessor):
             )
 
     def _device_tensor(self, data: list, dtype: torch.dtype) -> torch.Tensor:
-        return torch.tensor(
-            data, device="cpu", dtype=dtype, pin_memory=self.pin_memory
-        ).to(device=self.device, non_blocking=True)
+        return torch.tensor(data, device="cpu", dtype=dtype, pin_memory=self.pin_memory).to(
+            device=self.device, non_blocking=True
+        )
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if self.biases:
@@ -165,9 +159,7 @@ class LogitBiasLogitsProcessor(LogitsProcessor):
 
 
 class MinTokensLogitsProcessor(LogitsProcessor):
-    def __init__(
-        self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool
-    ):
+    def __init__(self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool):
         # index -> (min_toks, output_token_ids, stop_token_ids)
         self.device = device
         self.pin_memory = is_pin_memory
@@ -179,9 +171,7 @@ class MinTokensLogitsProcessor(LogitsProcessor):
             self._device_tensor([], torch.int32),
         )
 
-        self.neg_inf_tensor = torch.tensor(
-            -float("inf"), dtype=torch.float32, device=self.device
-        )
+        self.neg_inf_tensor = torch.tensor(-float("inf"), dtype=torch.float32, device=self.device)
 
     def is_argmax_invariant(self) -> bool:
         """By censoring stop tokens, min-tokens can change the outcome
@@ -198,15 +188,11 @@ class MinTokensLogitsProcessor(LogitsProcessor):
         return min_tokens, output_tok_ids, params.all_stop_token_ids
 
     def update_state(self, batch_update: BatchUpdate | None):
-        needs_update = process_dict_updates(
-            self.min_toks, batch_update, self.add_request
-        )
+        needs_update = process_dict_updates(self.min_toks, batch_update, self.add_request)
         if self.min_toks:
             # Check for any requests that have attained their min tokens.
             to_remove = tuple(
-                index
-                for index, (min_toks, out_tok_ids, _) in self.min_toks.items()
-                if len(out_tok_ids) >= min_toks
+                index for index, (min_toks, out_tok_ids, _) in self.min_toks.items() if len(out_tok_ids) >= min_toks
             )
             if to_remove:
                 needs_update = True
@@ -227,9 +213,9 @@ class MinTokensLogitsProcessor(LogitsProcessor):
             )
 
     def _device_tensor(self, data: list, dtype: torch.dtype) -> torch.Tensor:
-        return torch.tensor(
-            data, device="cpu", dtype=dtype, pin_memory=self.pin_memory
-        ).to(device=self.device, non_blocking=True)
+        return torch.tensor(data, device="cpu", dtype=dtype, pin_memory=self.pin_memory).to(
+            device=self.device, non_blocking=True
+        )
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if self.min_toks:
@@ -294,21 +280,15 @@ class MinTokensLogitsProcessor(LogitsProcessor):
 class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
     """Limits the number of tokens allowed inside a 'thinking' section."""
 
-    def __init__(
-        self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool
-    ):
+    def __init__(self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool):
         reasoning_config = aphrodite_config.reasoning_config
         max_num_reqs = aphrodite_config.scheduler_config.max_num_seqs
 
         # Check if thinking is enabled
         self.is_enabled = reasoning_config is not None and reasoning_config.enabled
 
-        self.reasoning_start_token_ids = getattr(
-            reasoning_config, "reasoning_start_token_ids", []
-        )
-        self.reasoning_end_token_ids = getattr(
-            reasoning_config, "reasoning_end_token_ids", []
-        )
+        self.reasoning_start_token_ids = getattr(reasoning_config, "reasoning_start_token_ids", [])
+        self.reasoning_end_token_ids = getattr(reasoning_config, "reasoning_end_token_ids", [])
 
         self.pin_memory = is_pin_memory
         self.device = device
@@ -328,9 +308,7 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
 
         # Preallocate reusable tensors
         self.mask = torch.zeros(max_num_reqs, dtype=torch.bool, device=device)
-        self.force_token_ids = torch.full(
-            (max_num_reqs,), -1, dtype=torch.long, device=device
-        )
+        self.force_token_ids = torch.full((max_num_reqs,), -1, dtype=torch.long, device=device)
 
     @staticmethod
     def _find_last_sequence_index(target_list: list[int], token_ids: list[int]) -> int:
@@ -348,9 +326,7 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
                 return i
         return -1
 
-    def _init_state_entry(
-        self, prompt_tok_ids: list[int] | None, thinking_token_budget: int
-    ) -> dict[str, Any]:
+    def _init_state_entry(self, prompt_tok_ids: list[int] | None, thinking_token_budget: int) -> dict[str, Any]:
         """Initializes the tracking state for a given sequence index."""
         if prompt_tok_ids is None:
             last_start = -1
@@ -358,17 +334,11 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
             in_think = False
             think_count = 0
         else:
-            last_start = self._find_last_sequence_index(
-                prompt_tok_ids, self.reasoning_start_token_ids
-            )
-            last_end = self._find_last_sequence_index(
-                prompt_tok_ids, self.reasoning_end_token_ids
-            )
+            last_start = self._find_last_sequence_index(prompt_tok_ids, self.reasoning_start_token_ids)
+            last_end = self._find_last_sequence_index(prompt_tok_ids, self.reasoning_end_token_ids)
             in_think = last_start > last_end
             if in_think:
-                think_count = len(prompt_tok_ids) - (
-                    last_start + len(self.reasoning_start_token_ids)
-                )
+                think_count = len(prompt_tok_ids) - (last_start + len(self.reasoning_start_token_ids))
             else:
                 think_count = 0
 
@@ -416,12 +386,8 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
         recent_tokens = output[check_start_idx:]
 
         # Find any think start/end sequences in recent tokens
-        recent_start_pos = self._find_last_sequence_index(
-            recent_tokens, self.reasoning_start_token_ids
-        )
-        recent_end_pos = self._find_last_sequence_index(
-            recent_tokens, self.reasoning_end_token_ids
-        )
+        recent_start_pos = self._find_last_sequence_index(recent_tokens, self.reasoning_start_token_ids)
+        recent_end_pos = self._find_last_sequence_index(recent_tokens, self.reasoning_end_token_ids)
 
         # Update state based on recent sequences
         if not state["in_end"]:
@@ -452,18 +418,13 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
 
             # Set countdown based on current state
             if state["in_think"]:
-                remaining_budget = max(
-                    0, state["thinking_token_budget"] - state["think_count"]
-                )
+                remaining_budget = max(0, state["thinking_token_budget"] - state["think_count"])
                 state["check_count_down"] = max(0, remaining_budget - 1)
             else:
                 state["check_count_down"] = state["thinking_token_budget"]
 
             # Check if need to transition to end mode
-            if (
-                state["in_think"]
-                and state["think_count"] >= state["thinking_token_budget"]
-            ):
+            if state["in_think"] and state["think_count"] >= state["thinking_token_budget"]:
                 state["in_think"] = False
                 state["in_end"] = True
                 state["end_count"] = 0
@@ -494,9 +455,7 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
                 thinking_token_budget = params.thinking_token_budget
 
                 if thinking_token_budget is not None:
-                    self._state[index] = self._init_state_entry(
-                        prompt_tok_ids, thinking_token_budget
-                    )
+                    self._state[index] = self._init_state_entry(prompt_tok_ids, thinking_token_budget)
                     self._state[index]["output_tok_ids"] = output_tok_ids
                 else:
                     # Remove state if no thinking budget
@@ -532,14 +491,10 @@ class ThinkingTokenBudgetLogitsProcessor(LogitsProcessor):
             state = self._state.get(i)
             if state and state["in_end"]:
                 self.mask[i] = True
-                self.force_token_ids[i] = self.reasoning_end_token_ids[
-                    state["end_count"]
-                ]
+                self.force_token_ids[i] = self.reasoning_end_token_ids[state["end_count"]]
 
         # Check in CPU first not to sync with GPU
-        has_active_thinking = any(
-            state.get("in_end", False) for state in self._state.values()
-        )
+        has_active_thinking = any(state.get("in_end", False) for state in self._state.values())
 
         if has_active_thinking:
             current_mask = self.mask[:batch_size]

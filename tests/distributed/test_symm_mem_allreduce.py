@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import queue
 import random
 import typing
@@ -6,6 +8,8 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from aphrodite.engine.aphrodite_engine import AphroditeEngine
+from aphrodite.engine.args_tools import EngineArgs
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
@@ -13,8 +17,6 @@ from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.distributed.communication_op import tensor_model_parallel_all_reduce
 from aphrodite.distributed.device_communicators.cuda_communicator import CudaCommunicator
 from aphrodite.distributed.parallel_state import get_tp_group, init_distributed_environment, initialize_model_parallel
-from aphrodite.engine.aphrodite_engine import AphroditeEngine
-from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import update_environment_variables
 

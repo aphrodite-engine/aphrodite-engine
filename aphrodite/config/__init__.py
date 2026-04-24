@@ -50,15 +50,10 @@ from aphrodite.config.utils import (
 )
 from aphrodite.config.aphrodite import (
     AphroditeConfig,
-    AphroditeConfig,
-    get_current_aphrodite_config,
-    get_current_aphrodite_config_or_none,
-    get_layers_from_aphrodite_config,
     get_cached_compilation_config,
     get_current_aphrodite_config,
     get_current_aphrodite_config_or_none,
     get_layers_from_aphrodite_config,
-    set_current_aphrodite_config,
     set_current_aphrodite_config,
 )
 from aphrodite.config.weight_transfer import WeightTransferConfig

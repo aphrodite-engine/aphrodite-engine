@@ -1,13 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from https://github.com/sgl-project/sglang/blob/main/test/srt/test_triton_moe_channel_fp8_kernel.py
 import itertools
 
 import pytest
 import torch
+from aphrodite.modeling.layers.activation import SiluAndMul
+from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 
 from aphrodite import _custom_ops as ops
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.modeling.layers.activation import SiluAndMul
-from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.platforms import current_platform
 from tests.kernels.moe.utils import fused_moe
 

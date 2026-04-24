@@ -73,9 +73,7 @@ class TimingContext:
             self.stage_secs[stage] += elapsed
 
     def get_stats_dict(self):
-        stats_dict = {
-            f"{stage}_secs": time_s for stage, time_s in self.stage_secs.items()
-        }
+        stats_dict = {f"{stage}_secs": time_s for stage, time_s in self.stage_secs.items()}
         stats_dict["preprocessor_total_secs"] = self.total_secs
 
         return stats_dict
@@ -101,9 +99,7 @@ class InputProcessingContext:
 
     def get_tokenizer(self) -> TokenizerLike:
         if self.tokenizer is None:
-            raise ValueError(
-                "You cannot pass text prompts when `skip_tokenizer_init=True`"
-            )
+            raise ValueError("You cannot pass text prompts when `skip_tokenizer_init=True`")
 
         return self.tokenizer
 
@@ -138,9 +134,7 @@ class InputProcessingContext:
         hf_config = self.model_config.hf_config
         if not isinstance(hf_config, typ):
             raise TypeError(
-                "Invalid type of HuggingFace config. "
-                f"Expected type: {typ}, but "
-                f"found type: {type(hf_config)}"
+                f"Invalid type of HuggingFace config. Expected type: {typ}, but found type: {type(hf_config)}"
             )
 
         return hf_config
@@ -269,15 +263,9 @@ class InputProcessingContext:
             output = hf_processor(**data, **allowed_kwargs)
         except Exception as exc:
             # See https://github.com/huggingface/tokenizers/issues/537
-            if (
-                isinstance(exc, RuntimeError)
-                and exc
-                and exc.args[0] == "Already borrowed"
-                and num_tries < max_tries
-            ):
+            if isinstance(exc, RuntimeError) and exc and exc.args[0] == "Already borrowed" and num_tries < max_tries:
                 logger.warning(
-                    "Failed to acquire tokenizer in current thread. "
-                    "Retrying (%d/%d)...",
+                    "Failed to acquire tokenizer in current thread. Retrying (%d/%d)...",
                     num_tries,
                     max_tries,
                 )
@@ -290,10 +278,7 @@ class InputProcessingContext:
                     max_tries=max_tries,
                 )
 
-            msg = (
-                f"Failed to apply {type(hf_processor).__name__} "
-                f"on data={data} with kwargs={allowed_kwargs}"
-            )
+            msg = f"Failed to apply {type(hf_processor).__name__} on data={data} with kwargs={allowed_kwargs}"
 
             raise ValueError(msg) from exc
 
@@ -419,11 +404,7 @@ class BaseProcessingInfo:
         for modality, supported_limit in self.supported_mm_limits.items():
             user_limit = mm_config.get_limit_per_prompt(modality)
 
-            allowed_limits[modality] = (
-                user_limit
-                if supported_limit is None
-                else min(user_limit, supported_limit)
-            )
+            allowed_limits[modality] = user_limit if supported_limit is None else min(user_limit, supported_limit)
 
         return allowed_limits
 
@@ -468,14 +449,10 @@ class BaseProcessingInfo:
             for modality, items in mm_items.items():
                 if isinstance(items, (EmbeddingItems, DictEmbeddingItems)):
                     if not mm_config.enable_mm_embeds:
-                        raise ValueError(
-                            f"You must set `--enable-mm-embeds` to input "
-                            f"`{modality}_embeds`"
-                        )
+                        raise ValueError(f"You must set `--enable-mm-embeds` to input `{modality}_embeds`")
                     if mm_config.get_limit_per_prompt(modality) == 0:
                         logger.debug(
-                            "Skipping count validation for modality "
-                            "'%s' (embeddings with limit=0)",
+                            "Skipping count validation for modality '%s' (embeddings with limit=0)",
                             modality,
                         )
                         continue

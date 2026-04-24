@@ -72,23 +72,18 @@ class IPCWeightTransferUpdateInfo(WeightTransferUpdateInfo):
     def __post_init__(self):
         if self.ipc_handles_pickled is not None:
             if self.ipc_handles is not None:
-                raise ValueError(
-                    "Cannot specify both `ipc_handles` and `ipc_handles_pickled`"
-                )
+                raise ValueError("Cannot specify both `ipc_handles` and `ipc_handles_pickled`")
 
             if not envs.APHRODITE_ALLOW_INSECURE_SERIALIZATION:
                 raise ValueError(
-                    "Refusing to deserialize `ipc_handles_pickled` without "
-                    "APHRODITE_ALLOW_INSECURE_SERIALIZATION=1"
+                    "Refusing to deserialize `ipc_handles_pickled` without APHRODITE_ALLOW_INSECURE_SERIALIZATION=1"
                 )
 
             self.ipc_handles = pickle.loads(base64.b64decode(self.ipc_handles_pickled))
             self.ipc_handles_pickled = None
 
         if self.ipc_handles is None:
-            raise ValueError(
-                "Either `ipc_handles` or `ipc_handles_pickled` must be provided"
-            )
+            raise ValueError("Either `ipc_handles` or `ipc_handles_pickled` must be provided")
 
         num_params = len(self.names)
         if len(self.dtype_names) != num_params:
@@ -98,8 +93,7 @@ class IPCWeightTransferUpdateInfo(WeightTransferUpdateInfo):
             )
         if len(self.shapes) != num_params:
             raise ValueError(
-                f"`shapes` should be of the same size as `names`: "
-                f"got {len(self.shapes)} and {len(self.names)}"
+                f"`shapes` should be of the same size as `names`: got {len(self.shapes)} and {len(self.names)}"
             )
         if len(self.ipc_handles) != num_params:
             raise ValueError(
@@ -108,9 +102,7 @@ class IPCWeightTransferUpdateInfo(WeightTransferUpdateInfo):
             )
 
 
-class IPCWeightTransferEngine(
-    WeightTransferEngine[IPCWeightTransferInitInfo, IPCWeightTransferUpdateInfo]
-):
+class IPCWeightTransferEngine(WeightTransferEngine[IPCWeightTransferInitInfo, IPCWeightTransferUpdateInfo]):
     """
     Weight transfer engine using CUDA IPC for communication between trainer and workers.
 
@@ -123,9 +115,7 @@ class IPCWeightTransferEngine(
     init_info_cls = IPCWeightTransferInitInfo
     update_info_cls = IPCWeightTransferUpdateInfo
 
-    def __init__(
-        self, config: WeightTransferConfig, parallel_config: ParallelConfig
-    ) -> None:
+    def __init__(self, config: WeightTransferConfig, parallel_config: ParallelConfig) -> None:
         """
         Initialize the IPC weight transfer engine.
 
@@ -175,8 +165,7 @@ class IPCWeightTransferEngine(
 
             if physical_gpu_id not in ipc_handle:
                 raise ValueError(
-                    f"IPC handle not found for GPU UUID {physical_gpu_id}. "
-                    f"Available UUIDs: {list(ipc_handle.keys())}"
+                    f"IPC handle not found for GPU UUID {physical_gpu_id}. Available UUIDs: {list(ipc_handle.keys())}"
                 )
 
             handle = ipc_handle[physical_gpu_id]
@@ -230,9 +219,7 @@ class IPCWeightTransferEngine(
             >>> IPCWeightTransferEngine.trainer_send_weights(param_iter, asdict(args))
 
         Example (HTTP mode):
-            >>> args = IPCTrainerSendWeightsArgs(
-            ...     mode="http", url="http://localhost:8000"
-            ... )
+            >>> args = IPCTrainerSendWeightsArgs(mode="http", url="http://localhost:8000")
             >>> IPCWeightTransferEngine.trainer_send_weights(param_iter, asdict(args))
         """
         # Parse trainer args - accept either dict or dataclass instance
@@ -276,15 +263,11 @@ class IPCWeightTransferEngine(
                     ipc_handles=ipc_handles,
                 )
             )
-            ray.get(
-                args.llm_handle.update_weights.remote(dict(update_info=update_info))
-            )
+            ray.get(args.llm_handle.update_weights.remote(dict(update_info=update_info)))
         elif args.mode == "http":
             # HTTP mode: send via HTTP POST with pickled handles
             # Pickle and base64 encode IPC handles for HTTP transmission
-            pickled_handles = base64.b64encode(pickle.dumps(ipc_handles)).decode(
-                "utf-8"
-            )
+            pickled_handles = base64.b64encode(pickle.dumps(ipc_handles)).decode("utf-8")
 
             url = f"{args.url}/update_weights"
             payload = {

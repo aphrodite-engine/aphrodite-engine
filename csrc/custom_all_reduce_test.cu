@@ -147,11 +147,11 @@ void run(int myRank, int nRanks, ncclComm_t& comm, int threads, int block_limit,
       (void**)&buffer, 2 * data_size * sizeof(T) + sizeof(aphrodite::Signal),
       hipDeviceMallocUncached));
 #else
-  CUDACHECK(
-      cudaMalloc(&buffer, 2 * data_size * sizeof(T) + sizeof(aphrodite::Signal)));
+  CUDACHECK(cudaMalloc(&buffer,
+                       2 * data_size * sizeof(T) + sizeof(aphrodite::Signal)));
 #endif
-  CUDACHECK(
-      cudaMemset(buffer, 0, 2 * data_size * sizeof(T) + sizeof(aphrodite::Signal)));
+  CUDACHECK(cudaMemset(buffer, 0,
+                       2 * data_size * sizeof(T) + sizeof(aphrodite::Signal)));
   CUDACHECK(cudaMalloc(&self_data_copy, data_size * sizeof(T)));
   CUDACHECK(cudaIpcGetMemHandle(&self_data_handle, buffer));
 
@@ -170,7 +170,8 @@ void run(int myRank, int nRanks, ncclComm_t& comm, int threads, int block_limit,
       CUDACHECK(cudaIpcOpenMemHandle((void**)&ipc_ptrs[i], data_handles[i],
                                      cudaIpcMemLazyEnablePeerAccess));
   }
-  aphrodite::CustomAllreduce fa(ipc_ptrs, rank_data, rank_data_sz, myRank, nRanks);
+  aphrodite::CustomAllreduce fa(ipc_ptrs, rank_data, rank_data_sz, myRank,
+                                nRanks);
   auto* self_data =
       reinterpret_cast<T*>(reinterpret_cast<char*>(buffer) +
                            sizeof(aphrodite::Signal) + data_size * sizeof(T));
@@ -178,8 +179,8 @@ void run(int myRank, int nRanks, ncclComm_t& comm, int threads, int block_limit,
   {
     void* data[8];
     for (int i = 0; i < nRanks; i++) {
-      data[i] =
-          ((char*)ipc_ptrs[i]) + sizeof(aphrodite::Signal) + data_size * sizeof(T);
+      data[i] = ((char*)ipc_ptrs[i]) + sizeof(aphrodite::Signal) +
+                data_size * sizeof(T);
     }
     fa.register_buffer(data);
   }

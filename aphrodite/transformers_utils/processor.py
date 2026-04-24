@@ -174,14 +174,8 @@ def get_processor(
         revision = "main"
     try:
         processor_name = convert_model_repo_to_path(processor_name)
-        registered_cls_name = get_processor_cls_name_from_config(
-            processor_name, revision=revision
-        )
-        registered_processor_cls = (
-            getattr(processors, registered_cls_name, None)
-            if registered_cls_name
-            else None
-        )
+        registered_cls_name = get_processor_cls_name_from_config(processor_name, revision=revision)
+        registered_processor_cls = getattr(processors, registered_cls_name, None) if registered_cls_name else None
         registered_processor_cls = cast(type[_P] | None, registered_processor_cls)
         # Use registered processor class when it's available
         # and explicit processor_cls is not set.
@@ -223,9 +217,7 @@ def get_processor(
 
     if not isinstance(processor, processor_cls):
         raise TypeError(
-            "Invalid type of HuggingFace processor. "
-            f"Expected type: {processor_cls}, but "
-            f"found type: {type(processor)}"
+            f"Invalid type of HuggingFace processor. Expected type: {processor_cls}, but found type: {type(processor)}"
         )
 
     return processor
@@ -343,8 +335,7 @@ def cached_processor_from_config(
 ) -> _P:
     if is_gguf(model_config.model):
         assert not is_gguf(model_config.tokenizer), (
-            "For multimodal GGUF models, the original tokenizer "
-            "should be used to correctly load processor."
+            "For multimodal GGUF models, the original tokenizer should be used to correctly load processor."
         )
         model = model_config.tokenizer
         revision = model_config.tokenizer_revision
@@ -457,8 +448,7 @@ def cached_image_processor_from_config(
 ):
     if is_gguf(model_config.model):
         assert not is_gguf(model_config.tokenizer), (
-            "For multimodal GGUF models, the original tokenizer "
-            "should be used to correctly load image processor."
+            "For multimodal GGUF models, the original tokenizer should be used to correctly load image processor."
         )
         model = model_config.tokenizer
         revision = model_config.tokenizer_revision
@@ -540,24 +530,18 @@ def call_hf_processor_mm_only(
         **kwargs,
     )
 
-    if audio is not None and (
-        feature_extractor := getattr(processor, "feature_extractor", None)
-    ):
+    if audio is not None and (feature_extractor := getattr(processor, "feature_extractor", None)):
         audio_inputs = feature_extractor(audio, **output_kwargs["audio_kwargs"])
         audio_inputs["feature_attention_mask"] = audio_inputs.pop("attention_mask")
     else:
         audio_inputs = {}
 
-    if images is not None and (
-        image_processor := getattr(processor, "image_processor", None)
-    ):
+    if images is not None and (image_processor := getattr(processor, "image_processor", None)):
         images_inputs = image_processor(images=images, **output_kwargs["images_kwargs"])
     else:
         images_inputs = {}
 
-    if videos is not None and (
-        video_processor := getattr(processor, "video_processor", None)
-    ):
+    if videos is not None and (video_processor := getattr(processor, "video_processor", None)):
         videos_inputs = video_processor(videos=videos, **output_kwargs["videos_kwargs"])
     else:
         videos_inputs = {}

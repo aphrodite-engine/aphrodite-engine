@@ -90,9 +90,7 @@ class CPUAWQConfig(QuantizationConfig):
         group_size = cls.get_from_keys(config, ["group_size"])
         zero_point = cls.get_from_keys(config, ["zero_point"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        modules_to_not_convert = cls.get_from_keys_or(
-            config, ["modules_to_not_convert"], None
-        )
+        modules_to_not_convert = cls.get_from_keys_or(config, ["modules_to_not_convert"], None)
         return cls(
             weight_bits,
             group_size,
@@ -103,20 +101,14 @@ class CPUAWQConfig(QuantizationConfig):
         )
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant, hf_config=None
-    ) -> "QuantizationMethods | None":
+    def override_quantization_method(cls, hf_quant_cfg, user_quant, hf_config=None) -> "QuantizationMethods | None":
         quant_method = hf_quant_cfg.get("quant_method", "").lower()
         if current_platform.is_cpu() and (quant_method == "awq"):
             return cls.get_name()
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> "QuantizeMethodBase | None":
-        if isinstance(layer, LinearBase) or (
-            isinstance(layer, ParallelLMHead) and self.lm_head_quantized
-        ):
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> "QuantizeMethodBase | None":
+        if isinstance(layer, LinearBase) or (isinstance(layer, ParallelLMHead) and self.lm_head_quantized):
             if is_layer_skipped(
                 prefix,
                 self.modules_to_not_convert,
@@ -129,9 +121,7 @@ class CPUAWQConfig(QuantizationConfig):
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.modules_to_not_convert:
-            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(
-                self.modules_to_not_convert
-            )
+            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(self.modules_to_not_convert)
 
     def maybe_update_config(
         self,
@@ -148,8 +138,7 @@ class CPUAWQConfig(QuantizationConfig):
         quant_layers: set[str] = {
             param_name.rsplit(".", 1)[0]
             for param_name, info in metadata.items()
-            if (dtype := info.get("dtype", None))
-            and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
+            if (dtype := info.get("dtype", None)) and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
         }
         self.modules_to_not_convert = list(layers - quant_layers)
 
@@ -261,14 +250,10 @@ class CPUAWQLinearMethod(LinearMethodBase):
             output_size,
         )
         weight = (
-            weight.view(input_size, -1, pack_factor)[:, :, interleave_map]
-            .reshape(input_size, output_size)
-            .contiguous()
+            weight.view(input_size, -1, pack_factor)[:, :, interleave_map].reshape(input_size, output_size).contiguous()
         )
         zeros = (
-            zeros.view(group_num, -1, pack_factor)[:, :, interleave_map]
-            .reshape(group_num, output_size)
-            .contiguous()
+            zeros.view(group_num, -1, pack_factor)[:, :, interleave_map].reshape(group_num, output_size).contiguous()
         )
 
         zeros = pack_cols(zeros, bits, group_num, output_size).contiguous()

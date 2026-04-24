@@ -14,8 +14,8 @@ from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import set_env_var
 
-from .ir.lowering_pass import AphroditeIRLoweringPass
 from .aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
+from .ir.lowering_pass import AphroditeIRLoweringPass
 
 if rocm_aiter_ops.is_enabled():
     from .fusion.rocm_aiter_fusion import (

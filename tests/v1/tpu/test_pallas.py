@@ -1,7 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from unittest.mock import ANY, patch
 
 import torch
-
 from aphrodite.attention.backends.abstract import AttentionType
 from aphrodite.v1.attention.backends.pallas import PallasAttentionBackendImpl, PallasMetadata
 

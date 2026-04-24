@@ -83,9 +83,7 @@ class ModelArchConfigConvertorBase:
         # For non-grouped-query attention models, the number of KV heads is
         # equal to the number of attention heads.
         default_factory = self.get_total_num_attention_heads
-        return getattr_iter(
-            self.hf_text_config, attributes, default_factory=default_factory
-        )
+        return getattr_iter(self.hf_text_config, attributes, default_factory=default_factory)
 
     def get_num_experts_from_block_configs(self) -> int:
         """Check block_configs for heterogeneous models (e.g., NemotronH).
@@ -102,9 +100,7 @@ class ModelArchConfigConvertorBase:
                         max_experts = max(max_experts, block.get("n_routed_experts", 0))
                 else:
                     if getattr(block, "block_type", "") == "moe":
-                        max_experts = max(
-                            max_experts, getattr(block, "n_routed_experts", 0)
-                        )
+                        max_experts = max(max_experts, getattr(block, "n_routed_experts", 0))
         return max_experts
 
     def get_num_experts(self) -> int:
@@ -156,8 +152,7 @@ class ModelArchConfigConvertorBase:
                 param_dtypes: set[torch.dtype] = {
                     _SAFETENSORS_TO_TORCH_DTYPE[dtype]
                     for info in param_mt.values()
-                    if (dtype := info.get("dtype", None))
-                    and dtype in _SAFETENSORS_TO_TORCH_DTYPE
+                    if (dtype := info.get("dtype", None)) and dtype in _SAFETENSORS_TO_TORCH_DTYPE
                 }
 
                 if param_dtypes:
@@ -197,9 +192,7 @@ class ModelArchConfigConvertorBase:
             quant_method = quant_cfg.get("quant_method", "").lower()
 
             # Normalize library names
-            quant_method = quant_method.replace(
-                "compressed_tensors", "compressed-tensors"
-            )
+            quant_method = quant_method.replace("compressed_tensors", "compressed-tensors")
 
             quant_cfg["quant_method"] = quant_method
 
@@ -207,9 +200,7 @@ class ModelArchConfigConvertorBase:
 
     def get_quantization_config(self):
         quant_cfg = self._normalize_quantization_config(self.hf_config)
-        if quant_cfg is None and (
-            text_config := getattr(self.hf_config, "text_config", None)
-        ):
+        if quant_cfg is None and (text_config := getattr(self.hf_config, "text_config", None)):
             # Check the text config as well for multi-modal models.
             quant_cfg = self._normalize_quantization_config(text_config)
         return quant_cfg
@@ -311,19 +302,13 @@ class CohereAsrModelArchConfigConvertor(ModelArchConfigConvertorBase):
 
     def get_head_size(self) -> int:
         hidden_size = self.hf_text_config.transf_decoder["config_dict"]["hidden_size"]
-        num_attention_heads = self.hf_text_config.transf_decoder["config_dict"][
-            "num_attention_heads"
-        ]
+        num_attention_heads = self.hf_text_config.transf_decoder["config_dict"]["num_attention_heads"]
         return hidden_size // num_attention_heads
 
     def get_total_num_kv_heads(self) -> int:
         enc_num_kv_heads = self.hf_text_config.encoder["n_heads"]
-        dec_num_kv_heads = self.hf_text_config.transf_decoder["config_dict"][
-            "num_attention_heads"
-        ]
-        assert enc_num_kv_heads == dec_num_kv_heads, (
-            "Encoder and decoder must have the same number of kv heads"
-        )
+        dec_num_kv_heads = self.hf_text_config.transf_decoder["config_dict"]["num_attention_heads"]
+        assert enc_num_kv_heads == dec_num_kv_heads, "Encoder and decoder must have the same number of kv heads"
         return enc_num_kv_heads
 
 
@@ -361,13 +346,9 @@ class FalconModelArchConfigConvertor(ModelArchConfigConvertorBase):
         # NOTE: for falcon, when new_decoder_architecture is True, the
         # multi_query flag is ignored and we use n_head_kv for the number of
         # KV heads.
-        new_decoder_arch_falcon = getattr(
-            self.hf_text_config, "new_decoder_architecture", False
-        )
+        new_decoder_arch_falcon = getattr(self.hf_text_config, "new_decoder_architecture", False)
 
-        if not new_decoder_arch_falcon and getattr(
-            self.hf_text_config, "multi_query", False
-        ):
+        if not new_decoder_arch_falcon and getattr(self.hf_text_config, "multi_query", False):
             # Multi-query attention, only one KV head.
             return 1
 
@@ -395,10 +376,7 @@ class NemotronNasModelArchConfigConvertor(ModelArchConfigConvertorBase):
     def get_total_num_kv_heads(self) -> int:
         for block in self.hf_text_config.block_configs:
             if not block.attention.no_op:
-                return (
-                    self.hf_text_config.num_attention_heads
-                    // block.attention.n_heads_in_group
-                )
+                return self.hf_text_config.num_attention_heads // block.attention.n_heads_in_group
         raise RuntimeError(
             "Could not determine the number of key-value attention heads "
             "from model configuration. "

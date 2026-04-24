@@ -1,20 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Kernel test utils"""
 
 import itertools
 import random
 import unittest
+import unittest.mock
 from collections.abc import Sequence
 from numbers import Number
 from typing import Any, NamedTuple
 
 import pytest
 import torch
-from torch._prims_common import TensorLikeType
-
 from aphrodite.attention import AttentionBackend, AttentionMetadata, AttentionType
 from aphrodite.attention.backends.registry import _Backend
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input
+from torch._prims_common import TensorLikeType
+
 from aphrodite.utils import STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL, STR_XFORMERS_ATTN_VAL
 from aphrodite.utils.torch_utils import make_tensor_with_pad
 from tests.kernels.quant_utils import native_w8a8_block_matmul

@@ -95,9 +95,7 @@ class StepPool(AllPool):
         pooling_params = pooling_metadata.pooling_params
 
         pooled_data = list[torch.Tensor | None]()
-        for data, token_id, pooling_param in zip(
-            pooled_data_lst, prompt_token_ids, pooling_params
-        ):
+        for data, token_id, pooling_param in zip(pooled_data_lst, prompt_token_ids, pooling_params):
             # for unfinished chunked prefill
             if data is None:
                 pooled_data.append(None)

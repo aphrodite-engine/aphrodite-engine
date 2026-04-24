@@ -61,8 +61,7 @@ class Siglip2VisionEmbeddings(nn.Module):
             (1, total_tokens, embed_dim) packed embeddings.
         """
         assert spatial_shapes.device.type == "cpu", (
-            "Expected `spatial_shapes` on CPU to avoid device-to-host sync in "
-            "variable-length packing."
+            "Expected `spatial_shapes` on CPU to avoid device-to-host sync in variable-length packing."
         )
 
         if pixel_values_packed.dim() == 3:
@@ -208,20 +207,12 @@ class Siglip2Attention(nn.Module):
         cu_seqlens: torch.Tensor,
         max_seqlen: int | torch.Tensor,
     ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(
-            hidden_states
-        )  # batch_size, q_len, 3 * num_heads_per_partition * head_dim
+        qkv, _ = self.qkv_proj(hidden_states)  # batch_size, q_len, 3 * num_heads_per_partition * head_dim
         bsz, q_len, _ = qkv.shape
         query_states, key_states, value_states = qkv.chunk(3, dim=-1)
-        query_states = query_states.view(
-            bsz, q_len, self.num_heads_per_partition, self.head_dim
-        )
-        key_states = key_states.view(
-            bsz, q_len, self.num_heads_per_partition, self.head_dim
-        )
-        value_states = value_states.view(
-            bsz, q_len, self.num_heads_per_partition, self.head_dim
-        )
+        query_states = query_states.view(bsz, q_len, self.num_heads_per_partition, self.head_dim)
+        key_states = key_states.view(bsz, q_len, self.num_heads_per_partition, self.head_dim)
+        value_states = value_states.view(bsz, q_len, self.num_heads_per_partition, self.head_dim)
 
         # Use unified MultiHeadAttention implementation
         out = self.attn(
@@ -512,10 +503,7 @@ class Siglip2Model(torch.nn.Module):
 
         for name, loaded_weight in weights:
             # post_layernorm is optional in Siglip2Model
-            if (
-                name.startswith("vision_model.post_layernorm")
-                and self.vision_model.post_layernorm is None
-            ):
+            if name.startswith("vision_model.post_layernorm") and self.vision_model.post_layernorm is None:
                 continue
 
             # omit layers when num_hidden_layers_override is set

@@ -7,6 +7,7 @@ Similar to [LoRA](/adapters/lora), soft prompts are another way to adapt the beh
 Please refer to this [PEFT documentation](https://huggingface.co/docs/peft/main/en/conceptual_guides/prompting) for more info.
 
 ## Python Usage
+
 Unlike LoRA, loading directly from Hugging Face has not been tested yet, so it's recommended to download your soft prompts to disk beforehand. You can use them like this:
 
 ```py
@@ -38,6 +39,7 @@ outputs = llm.generate(
 ```
 
 ## Serving with OpenAI API server
+
 Soft prompts can be served with our OpenAI-compatible API server. To do so, specify `--prompt-adapters {name}={path} {name}={path} ...` in the CLI.
 
 ```sh
@@ -48,6 +50,7 @@ aphrodite run meta-llama/Llama-2-7b-hf \
 ```
 
 YAML config:
+
 ```yaml
 model: meta-llama/Llama-2-7b-hf
 enable_prompt_adapter: true

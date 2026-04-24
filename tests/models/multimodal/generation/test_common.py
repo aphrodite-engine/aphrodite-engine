@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Common tests for testing .generate() functionality for single / multiple
 image, embedding, and video support for different VLMs in Aphrodite.
 """

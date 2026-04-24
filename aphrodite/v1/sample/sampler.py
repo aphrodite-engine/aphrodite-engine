@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """A layer that samples the next tokens from the model's outputs."""
 
 from dataclasses import replace
@@ -279,7 +281,8 @@ class Sampler(nn.Module):
 
             elif sampler_id == SamplerID.QUADRATIC and sampling_metadata.quadratic_smoothing_factor is not None:
                 logger.debug(
-                    "Applying Quadratic with smoothing_factor: %s", sampling_metadata.quadratic_smoothing_factor
+                    "Applying Quadratic with smoothing_factor: %s",
+                    sampling_metadata.quadratic_smoothing_factor,
                 )
                 logits = self.sampling_ops.apply_quadratic(logits, sampling_metadata)
 
@@ -294,7 +297,9 @@ class Sampler(nn.Module):
         sampling_metadata: SamplingMetadata,
         indices: list[int],
     ) -> SamplingMetadata:
-        index_tensor = torch.tensor(indices, device=sampling_metadata.temperature.device if sampling_metadata.temperature is not None else None)
+        index_tensor = torch.tensor(
+            indices, device=sampling_metadata.temperature.device if sampling_metadata.temperature is not None else None
+        )
 
         def maybe_index_tensor(tensor: torch.Tensor | None) -> torch.Tensor | None:
             if tensor is None:
@@ -306,29 +311,17 @@ class Sampler(nn.Module):
         ) -> dict[int, list[int]] | None:
             if mapping is None:
                 return None
-            return {
-                new_i: mapping[old_i]
-                for new_i, old_i in enumerate(indices)
-                if old_i in mapping
-            }
+            return {new_i: mapping[old_i] for new_i, old_i in enumerate(indices) if old_i in mapping}
 
         def reindex_dict_nested_list(
             mapping: dict[int, list[list[int]]],
         ) -> dict[int, list[list[int]]]:
-            return {
-                new_i: mapping[old_i]
-                for new_i, old_i in enumerate(indices)
-                if old_i in mapping
-            }
+            return {new_i: mapping[old_i] for new_i, old_i in enumerate(indices) if old_i in mapping}
 
         def reindex_dict_float_map(
             mapping: dict[int, dict[int, float]],
         ) -> dict[int, dict[int, float]]:
-            return {
-                new_i: mapping[old_i]
-                for new_i, old_i in enumerate(indices)
-                if old_i in mapping
-            }
+            return {new_i: mapping[old_i] for new_i, old_i in enumerate(indices) if old_i in mapping}
 
         return replace(
             sampling_metadata,
@@ -374,14 +367,11 @@ class Sampler(nn.Module):
             if sampling_metadata.temperature_last is not None
             else None,
             persistent_data={
-                new_i: sampling_metadata.persistent_data.get(old_i, {}).copy()
-                for new_i, old_i in enumerate(indices)
+                new_i: sampling_metadata.persistent_data.get(old_i, {}).copy() for new_i, old_i in enumerate(indices)
             },
             spec_token_ids=(
                 [
-                    sampling_metadata.spec_token_ids[i]
-                    if i < len(sampling_metadata.spec_token_ids)
-                    else []
+                    sampling_metadata.spec_token_ids[i] if i < len(sampling_metadata.spec_token_ids) else []
                     for i in indices
                 ]
                 if sampling_metadata.spec_token_ids is not None

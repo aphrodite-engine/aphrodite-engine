@@ -167,9 +167,7 @@ class KVCacheCoordinator(ABC):
         return tuple(
             manager.allocate_new_blocks(
                 request_id,
-                num_encoder_tokens
-                if isinstance(manager, CrossAttentionManager)
-                else num_tokens,
+                num_encoder_tokens if isinstance(manager, CrossAttentionManager) else num_tokens,
                 num_tokens_main_model,
             )
             for manager in self.single_type_managers
@@ -210,14 +208,9 @@ class KVCacheCoordinator(ABC):
         Returns:
             list[int]: The number of common prefix blocks for each kv cache group.
         """
-        return [
-            manager.get_num_common_prefix_blocks(running_request_id)
-            for manager in self.single_type_managers
-        ]
+        return [manager.get_num_common_prefix_blocks(running_request_id) for manager in self.single_type_managers]
 
-    def remove_skipped_blocks(
-        self, request_id: str, total_computed_tokens: int
-    ) -> None:
+    def remove_skipped_blocks(self, request_id: str, total_computed_tokens: int) -> None:
         """
         Remove the blocks that are no longer needed from `blocks` and replace
         the removed blocks with null_block.
@@ -234,10 +227,7 @@ class KVCacheCoordinator(ABC):
         """
         Get the blocks for the request.
         """
-        return tuple(
-            manager.req_to_blocks.get(request_id) or []
-            for manager in self.single_type_managers
-        )
+        return tuple(manager.req_to_blocks.get(request_id) or [] for manager in self.single_type_managers)
 
     @abstractmethod
     def find_longest_cache_hit(
@@ -293,9 +283,7 @@ class KVCacheCoordinatorNoPrefixCache(KVCacheCoordinator):
         block_hashes: list[BlockHash],
         max_cache_hit_length: int,
     ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
-        blocks: tuple[list[KVCacheBlock], ...] = tuple(
-            [] for _ in range(self.num_single_type_manager)
-        )
+        blocks: tuple[list[KVCacheBlock], ...] = tuple([] for _ in range(self.num_single_type_manager))
         return blocks, 0
 
 
@@ -399,10 +387,9 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
         # different KV cache groups have different block sizes, the actual block size
         # can be a multiple of hash_block_size.
         self.hash_block_size = hash_block_size
-        assert all(
-            g.kv_cache_spec.block_size % hash_block_size == 0
-            for g in kv_cache_config.kv_cache_groups
-        ), "block_size must be divisible by hash_block_size"
+        assert all(g.kv_cache_spec.block_size % hash_block_size == 0 for g in kv_cache_config.kv_cache_groups), (
+            "block_size must be divisible by hash_block_size"
+        )
         assert dcp_world_size == 1, "DCP not support hybrid attn now."
         assert pcp_world_size == 1, "PCP not support hybrid attn now."
         self.verify_and_split_kv_cache_groups()
@@ -412,9 +399,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
         Groups KV cache groups by their spec type for efficient batch processing
         during cache hit lookup.
         """
-        attention_groups: list[
-            tuple[KVCacheSpec, list[int], type[SingleTypeKVCacheManager]]
-        ] = []
+        attention_groups: list[tuple[KVCacheSpec, list[int], type[SingleTypeKVCacheManager]]] = []
 
         for i, g in enumerate(self.kv_cache_config.kv_cache_groups):
             manager_cls = self.single_type_managers[i].__class__
@@ -423,17 +408,13 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
             # Try to find an existing group with the same spec
             for existing_spec, group_ids, existing_cls in attention_groups:
                 if existing_spec == spec:
-                    assert manager_cls is existing_cls, (
-                        "Expected same manager class for identical KV cache specs."
-                    )
+                    assert manager_cls is existing_cls, "Expected same manager class for identical KV cache specs."
                     group_ids.append(i)
                     break
             else:
                 attention_groups.append((spec, [i], manager_cls))
 
-        assert len(attention_groups) > 1, (
-            "HybridKVCacheCoordinator requires at least two attention groups."
-        )
+        assert len(attention_groups) > 1, "HybridKVCacheCoordinator requires at least two attention groups."
 
         # Put full attention first: its efficient left-to-right scan provides
         # a tighter initial bound, reducing work for subsequent groups.
@@ -476,9 +457,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
         def _get_block_hashes(kv_cache_spec: KVCacheSpec) -> BlockHashList:
             if kv_cache_spec.block_size == self.hash_block_size:
                 return block_hashes
-            return BlockHashListWithBlockSize(
-                block_hashes, self.hash_block_size, kv_cache_spec.block_size
-            )
+            return BlockHashListWithBlockSize(block_hashes, self.hash_block_size, kv_cache_spec.block_size)
 
         num_groups = len(self.kv_cache_config.kv_cache_groups)
         hit_length = max_cache_hit_length
@@ -539,9 +518,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                 if (blks := hit_blocks_by_group[group_id]) is not None:
                     del blks[num_blocks:]
 
-        return tuple(
-            blocks if blocks is not None else [] for blocks in hit_blocks_by_group
-        ), hit_length
+        return tuple(blocks if blocks is not None else [] for blocks in hit_blocks_by_group), hit_length
 
 
 def get_kv_cache_coordinator(

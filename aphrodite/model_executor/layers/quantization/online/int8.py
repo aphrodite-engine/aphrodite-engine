@@ -98,9 +98,7 @@ class Int8OnlineMoEMethod(OnlineMoEMethodBase):
             shared_experts=layer.shared_experts,
         )
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> "FusedMoEQuantConfig | None":
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> "FusedMoEQuantConfig | None":
         quant_config = make_int8_moe_quant_config(
             w1_scale=layer.w13_scale,
             w2_scale=layer.w2_scale,

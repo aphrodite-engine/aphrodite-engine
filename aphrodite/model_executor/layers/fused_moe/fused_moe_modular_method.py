@@ -28,9 +28,7 @@ logger = init_logger(__name__)
 class FusedMoEModularMethod(FusedMoEMethodBase, CustomOp):
     # --8<-- [end:modular_fused_moe]
 
-    def __init__(
-        self, old_quant_method: FusedMoEMethodBase, moe_kernel: FusedMoEKernel
-    ):
+    def __init__(self, old_quant_method: FusedMoEMethodBase, moe_kernel: FusedMoEKernel):
         super().__init__(old_quant_method.moe)
         self.moe_quant_config = old_quant_method.moe_quant_config
         self.moe_kernel = moe_kernel
@@ -79,9 +77,7 @@ class FusedMoEModularMethod(FusedMoEMethodBase, CustomOp):
     ):
         raise NotImplementedError
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return self.moe_quant_config
 
     def apply(

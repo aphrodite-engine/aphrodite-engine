@@ -69,9 +69,7 @@ class SharedExperts:
         # custom ops are globally disabled for torch.compile, that activation
         # may try to compile its native fallback during CUDA graph capture.
         act_fn = getattr(self._layer, "act_fn", None)
-        if isinstance(act_fn, SiluAndMul) and not getattr(
-            act_fn, "_enforce_enable", False
-        ):
+        if isinstance(act_fn, SiluAndMul) and not getattr(act_fn, "_enforce_enable", False):
             self._layer.act_fn = SiluAndMul(enforce_enable=True)
 
         # Allow disabling of the separate shared experts stream for
@@ -86,9 +84,7 @@ class SharedExperts:
             # aux_stream() returns None on non-cuda-alike platforms.
             self._stream = aux_stream()
             if self._stream is not None:
-                logger.debug_once(
-                    "Enabled separate cuda stream for MoE shared_experts", scope="local"
-                )
+                logger.debug_once("Enabled separate cuda stream for MoE shared_experts", scope="local")
 
     @property
     def _disable_shared_experts_overlap(self) -> bool:
@@ -97,17 +93,14 @@ class SharedExperts:
         #   - we are using flashinfer with DP, since there nothing to gain
         parallel_config = self._moe_config.moe_parallel_config
         return (
-            parallel_config.enable_eplb
-            and parallel_config.all2all_backend != "allgather_reducescatter"
+            parallel_config.enable_eplb and parallel_config.all2all_backend != "allgather_reducescatter"
         ) or parallel_config.use_fi_nvl_two_sided_kernels
 
     def _determine_shared_experts_order(
         self,
         hidden_states: torch.Tensor,
     ) -> SharedExpertsOrder:
-        is_capturing = (
-            current_platform.is_cuda() and torch.cuda.is_current_stream_capturing()
-        )
+        is_capturing = current_platform.is_cuda() and torch.cuda.is_current_stream_capturing()
         if (
             self._disable_shared_experts_overlap
             or not self._quant_method.supports_shared_expert_overlap
@@ -122,8 +115,7 @@ class SharedExperts:
         should_run_shared_in_aux_stream = (
             current_platform.is_cuda()
             and self._stream is not None
-            and hidden_states.shape[0]
-            <= envs.APHRODITE_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD
+            and hidden_states.shape[0] <= envs.APHRODITE_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD
         )
 
         if should_run_shared_in_aux_stream:
@@ -189,9 +181,7 @@ class SharedExperts:
         assert self._output[self._output_idx] is None
 
         if order == SharedExpertsOrder.MULTI_STREAM_OVERLAPPED:
-            self._output[self._output_idx] = self._run_in_aux_stream(
-                shared_experts_input
-            )
+            self._output[self._output_idx] = self._run_in_aux_stream(shared_experts_input)
         else:
             self._output[self._output_idx] = self._layer(shared_experts_input)
 

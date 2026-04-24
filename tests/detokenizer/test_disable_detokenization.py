@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.endpoints.llm import LLM
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.endpoints.llm import LLM
 
 
 @pytest.mark.skip_v1

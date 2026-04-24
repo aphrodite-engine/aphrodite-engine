@@ -31,8 +31,8 @@ from aphrodite.utils.torch_utils import (
     direct_register_custom_op,
 )
 
-from ..inductor_pass import enable_fake_mode
 from ..aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
+from ..inductor_pass import enable_fake_mode
 from .matcher_utils import MatcherFusedAddRMSNorm, MatcherQuantFP8
 
 FP8_DTYPE = current_platform.fp8_dtype()
@@ -140,9 +140,7 @@ if flashinfer_comm is not None:
             {},
         ).get(world_size, None)
         # Use one shot if no max size is specified
-        use_oneshot = (
-            max_one_shot_size is None or current_tensor_size <= max_one_shot_size * MiB
-        )
+        use_oneshot = max_one_shot_size is None or current_tensor_size <= max_one_shot_size * MiB
 
         # Select workspace based on pattern: quant patterns use the
         # trtllm quant workspace, non-quant patterns use the primary workspace.
@@ -150,9 +148,7 @@ if flashinfer_comm is not None:
             ar_fusion_patterns.kARResidualRMSNormFP8Quant,
             ar_fusion_patterns.kARResidualRMSNormFP4Quant,
         )
-        get_workspace_fn = (
-            get_fi_ar_quant_workspace if is_quant_pattern else get_fi_ar_workspace
-        )
+        get_workspace_fn = get_fi_ar_quant_workspace if is_quant_pattern else get_fi_ar_workspace
         workspace = get_workspace_fn(
             world_size=world_size,
             rank=get_tensor_model_parallel_rank(),
@@ -161,9 +157,7 @@ if flashinfer_comm is not None:
             dtype=allreduce_in.dtype,
             group=get_tp_group().device_group,
         )
-        assert workspace is not None, (
-            "Flashinfer allreduce workspace must be initialized when using flashinfer"
-        )
+        assert workspace is not None, "Flashinfer allreduce workspace must be initialized when using flashinfer"
         assert flashinfer_comm is not None
         if norm_out is None:
             norm_out = allreduce_in
@@ -228,9 +222,7 @@ if flashinfer_comm is not None:
         ],
         fake_impl=call_trtllm_fused_allreduce_norm_fake,
     )
-    flashinfer_trtllm_fused_allreduce_norm = (
-        torch.ops.aphrodite.flashinfer_trtllm_fused_allreduce_norm.default
-    )
+    flashinfer_trtllm_fused_allreduce_norm = torch.ops.aphrodite.flashinfer_trtllm_fused_allreduce_norm.default
 
 
 class FlashInferFusedAllReduceParams:
@@ -293,17 +285,13 @@ class AllReduceRMSNormPattern(BasePattern):
         return [self.empty(5, 16), self.empty(16)]
 
     def register(self, pm_pass: PatternMatcherPass) -> None:
-        def pattern(
-            input: torch.Tensor, weight: torch.Tensor
-        ) -> tuple[torch.Tensor, torch.Tensor]:
+        def pattern(input: torch.Tensor, weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             allreduce_output = tensor_model_parallel_all_reduce(input)
             rms = aphrodite.ir.ops.rms_norm(allreduce_output, weight, self.epsilon)
 
             return rms, allreduce_output
 
-        def replacement(
-            input: torch.Tensor, weight: torch.Tensor
-        ) -> tuple[torch.Tensor, torch.Tensor]:
+        def replacement(input: torch.Tensor, weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             residual = torch.zeros_like(input)
             rms_result = torch.empty_like(input)
             assert flashinfer_comm is not None, "FlashInfer must be enabled"
@@ -384,9 +372,7 @@ class AllReduceFusedAddRMSNormPattern(BasePattern):
             # allreduce_in, residual
             return allreduce[1], allreduce[2]
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
         # Same pattern, but only return the output and not residual
         # (helpful for end of graph where residual is not used again)
@@ -456,9 +442,7 @@ class AllReduceFusedRMSNormStaticQuantFP8Pattern(BasePattern):
                 rms_gamma=weight,
                 rms_eps=self.epsilon,
                 # We don't use norm_out afterwards
-                pattern_code=(
-                    flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP8Quant
-                ),
+                pattern_code=(flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP8Quant),
                 scale_factor=scale,
                 **self.allreduce_params.get_trtllm_fused_allreduce_kwargs(),
             )
@@ -537,18 +521,14 @@ class AllReduceFusedAddRMSNormStaticQuantFP8Pattern(BasePattern):
                 rms_gamma=weight,
                 rms_eps=self.epsilon,
                 # We don't use norm_out afterwards
-                pattern_code=(
-                    flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP8Quant
-                ),
+                pattern_code=(flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP8Quant),
                 scale_factor=scale,
                 **self.allreduce_params.get_trtllm_fused_allreduce_kwargs(),
             )
             # quant_out, rms_norm_residual
             return allreduce[4], allreduce[2]
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class AllReduceFusedRMSNormStaticQuantNVFP4Pattern(BasePattern):
@@ -573,9 +553,7 @@ class AllReduceFusedRMSNormStaticQuantNVFP4Pattern(BasePattern):
     def get_inputs(self) -> list[torch.Tensor]:
         input = torch.empty([1, 16, 16], device=self.device, dtype=self.dtype)
         quant_result = torch.empty((16, 8), device=self.device, dtype=torch.uint8)
-        input_global_scale = torch.empty(
-            [1, 1], device=self.device, dtype=torch.float32
-        )
+        input_global_scale = torch.empty([1, 1], device=self.device, dtype=torch.float32)
         weight = torch.empty([16], device=self.device, dtype=self.dtype)
         output_scale = torch.empty([128, 4], device=self.device, dtype=torch.int32)
 
@@ -623,9 +601,7 @@ class AllReduceFusedRMSNormStaticQuantNVFP4Pattern(BasePattern):
                 rms_gamma=weight,
                 rms_eps=self.epsilon,
                 # We don't use norm_out afterwards
-                pattern_code=(
-                    flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP4Quant
-                ),
+                pattern_code=(flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP4Quant),
                 scale_factor=input_global_scale,
                 **self.allreduce_params.get_trtllm_fused_allreduce_kwargs(),
             )
@@ -669,9 +645,7 @@ class AllReduceFusedAddRMSNormStaticQuantNVFP4Pattern(BasePattern):
         residual = torch.empty([16, 16], device=self.device, dtype=self.dtype)
         weight = torch.empty([16, 16], device=self.device, dtype=self.dtype)
         quant_result = torch.empty((16, 8), device=self.device, dtype=torch.uint8)
-        input_global_scale = torch.empty(
-            [1, 1], device=self.device, dtype=torch.float32
-        )
+        input_global_scale = torch.empty([1, 1], device=self.device, dtype=torch.float32)
         output_scale = torch.empty([128, 4], device=self.device, dtype=torch.int32)
 
         return [
@@ -725,18 +699,14 @@ class AllReduceFusedAddRMSNormStaticQuantNVFP4Pattern(BasePattern):
                 rms_gamma=weight,
                 rms_eps=self.epsilon,
                 # We don't use norm_out afterwards
-                pattern_code=(
-                    flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP4Quant
-                ),
+                pattern_code=(flashinfer_comm.AllReduceFusionPattern.kARResidualRMSNormFP4Quant),
                 scale_factor=input_global_scale,
                 **self.allreduce_params.get_trtllm_fused_allreduce_kwargs(),
             )
             # quant_out, rms_norm_residual, output_scale
             return allreduce[4], allreduce[2], allreduce[5]
 
-        pm.register_replacement(
-            pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass
-        )
+        pm.register_replacement(pattern, replacement, self.get_inputs(), pm.fwd_only, pm_pass)
 
 
 class AllReduceFusionPass(AphroditePatternMatcherPass):
@@ -747,31 +717,21 @@ class AllReduceFusionPass(AphroditePatternMatcherPass):
         if self.tp_size <= 1:
             logger.warning_once("AllReduce fusion pass is disabled for tp_size <= 1.")
             return
-        self.patterns: PatternMatcherPass = PatternMatcherPass(
-            pass_name="all_reduce_fusion_pass"
-        )
+        self.patterns: PatternMatcherPass = PatternMatcherPass(pass_name="all_reduce_fusion_pass")
         if config.model_config is None:
-            logger.warning_once(
-                "AllReduce fusion pass is disabled for missing model_config."
-            )
+            logger.warning_once("AllReduce fusion pass is disabled for missing model_config.")
             return
         self.hidden_dim = config.model_config.get_hidden_size()
         self.group = get_tp_group().device_group
         rank = get_tensor_model_parallel_rank()
         if flashinfer_comm is None:
-            logger.warning(
-                "Flashinfer is not installed or comm module not found, "
-                "skipping allreduce fusion pass"
-            )
+            logger.warning("Flashinfer is not installed or comm module not found, skipping allreduce fusion pass")
             return
-        max_size = config.compilation_config.pass_config.flashinfer_max_size(
-            self.tp_size
-        )
+        max_size = config.compilation_config.pass_config.flashinfer_max_size(self.tp_size)
         if max_size is None:
             # Flashinfer doesn't support current world size
             logger.warning(
-                "Flashinfer allreduce fusion is not supported for world size %s"
-                " or max size is not provided",
+                "Flashinfer allreduce fusion is not supported for world size %s or max size is not provided",
                 self.tp_size,
             )
             return
@@ -779,9 +739,7 @@ class AllReduceFusionPass(AphroditePatternMatcherPass):
         self.max_token_num = max_size // (self.hidden_dim * element_size)
         # take the min to save workspace size and we'll never use more
         # than max_num_batched_tokens anyways
-        self.max_token_num = min(
-            self.max_token_num, config.scheduler_config.max_num_batched_tokens
-        )
+        self.max_token_num = min(self.max_token_num, config.scheduler_config.max_num_batched_tokens)
         logger.debug_once(
             f"Flashinfer max size: {max_size // (1024 * 1024)} MB,"
             "Maximal number of tokens used by "
@@ -804,9 +762,7 @@ class AllReduceFusionPass(AphroditePatternMatcherPass):
             )
             return
 
-        self.supports_quant_fusion = (
-            get_fi_ar_quant_workspace(**workspace_kwargs) is not None
-        )
+        self.supports_quant_fusion = get_fi_ar_quant_workspace(**workspace_kwargs) is not None
         if not self.supports_quant_fusion:
             logger.warning_once(
                 "Failed to initialize Flashinfer allreduce workspace. "

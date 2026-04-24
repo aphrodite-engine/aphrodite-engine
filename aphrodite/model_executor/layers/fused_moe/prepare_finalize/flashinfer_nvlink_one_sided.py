@@ -69,16 +69,12 @@ class FlashInferNVLinkOneSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
     ) -> mk.PrepareResultType:
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
-            assert topk == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
             a1.mul_(topk_weights.to(a1.dtype))
 
         global_num_tokens_cpu = get_local_sizes()
         self.runtime_max_tokens_per_rank = (
-            max(global_num_tokens_cpu)
-            if global_num_tokens_cpu is not None
-            else a1.shape[0]
+            max(global_num_tokens_cpu) if global_num_tokens_cpu is not None else a1.shape[0]
         )
 
         a1q, a1q_scale = moe_kernel_quantize_input(
@@ -105,10 +101,7 @@ class FlashInferNVLinkOneSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         if a1q_scale is not None:
             a1q_recv, a1q_scale_recv, topk_ids_recv, topk_weights_recv = recv_payloads
             # Apply scale interleaving only for CUTLASS (not TRT-LLM)
-            if (
-                quant_config.quant_dtype == "nvfp4"
-                and quant_config.is_nvfp4_scale_swizzled
-            ):
+            if quant_config.quant_dtype == "nvfp4" and quant_config.is_nvfp4_scale_swizzled:
                 a1q_scale_recv = a1q_scale_recv.view(-1, a1q_scale_recv.shape[-1])
                 a1q_scale_recv = a1q_scale_recv.view(torch.uint8)
                 a1q_scale_recv = nvfp4_block_scale_interleave(a1q_scale_recv)
@@ -135,9 +128,7 @@ class FlashInferNVLinkOneSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
 
         ep_size = self.all2all_manager.world_size
         hidden_size = fused_expert_output.shape[-1]
-        fused_expert_output = fused_expert_output.view(
-            ep_size, self.runtime_max_tokens_per_rank, hidden_size
-        )
+        fused_expert_output = fused_expert_output.view(ep_size, self.runtime_max_tokens_per_rank, hidden_size)
 
         combined_output = self.all2all_manager.moe_alltoall.combine(
             payload=fused_expert_output,

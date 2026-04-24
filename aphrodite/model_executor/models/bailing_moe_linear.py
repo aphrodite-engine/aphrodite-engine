@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from transformers.configuration_utils import PretrainedConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import CacheConfig, ModelConfig, AphroditeConfig, get_current_aphrodite_config
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, get_current_aphrodite_config
 from aphrodite.distributed import (
     get_pp_group,
     get_tensor_model_parallel_rank,
@@ -86,9 +86,7 @@ def _build_rope_parameters(config: PretrainedConfig) -> dict | None:
     rope_parameters = copy.deepcopy(getattr(config, "rope_parameters", None)) or {}
     if "rope_theta" not in rope_parameters and hasattr(config, "rope_theta"):
         rope_parameters["rope_theta"] = config.rope_theta
-    if "partial_rotary_factor" not in rope_parameters and hasattr(
-        config, "partial_rotary_factor"
-    ):
+    if "partial_rotary_factor" not in rope_parameters and hasattr(config, "partial_rotary_factor"):
         rope_parameters["partial_rotary_factor"] = config.partial_rotary_factor
 
     rope_scaling = getattr(config, "rope_scaling", None)
@@ -276,9 +274,7 @@ class BailingMoEGate(nn.Module):
             self.expert_bias = None
 
     def forward(self, hidden_states):
-        logits = F.linear(hidden_states.to(self.weight.dtype), self.weight, None).to(
-            hidden_states.dtype
-        )
+        logits = F.linear(hidden_states.to(self.weight.dtype), self.weight, None).to(hidden_states.dtype)
         return logits
 
 
@@ -323,16 +319,11 @@ class BailingMoeV25(nn.Module):
             params_dtype=self.router_dtype,
             prefix=f"{prefix}.gate",
         )
-        correction_bias = (
-            self.gate.expert_bias if self.gate.expert_bias is not None else None
-        )
+        correction_bias = self.gate.expert_bias if self.gate.expert_bias is not None else None
         if self.score_function is not None:
             assert (self.score_function == "softmax" and correction_bias is None) or (
                 self.score_function == "sigmoid" and correction_bias is not None
-            ), (
-                "score_function and correction_bias should be "
-                "(softmax, None) or (sigmoid, not None)"
-            )
+            ), "score_function and correction_bias should be (softmax, None) or (sigmoid, not None)"
 
         # Shared experts (using BailingMLP)
         if self.num_shared_experts > 0:
@@ -380,9 +371,7 @@ class BailingMoeV25(nn.Module):
         router_logits = self.gate(hidden_states.to(self.router_dtype))
         router_logits = router_logits.to(hidden_states.dtype)
 
-        final_hidden_states = self.experts(
-            hidden_states=hidden_states, router_logits=router_logits
-        )
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
 
         return final_hidden_states.view(num_tokens, hidden_size)
 
@@ -476,11 +465,7 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
         self.cache_config = cache_config
         self.prefix = prefix
 
-        self.head_dim = (
-            config.head_dim
-            if hasattr(config, "head_dim")
-            else config.hidden_size // self.total_num_heads
-        )
+        self.head_dim = config.head_dim if hasattr(config, "head_dim") else config.hidden_size // self.total_num_heads
 
         self.hidden_inner_size = self.head_dim * self.total_num_heads
         self.scaling = self.head_dim**-0.5
@@ -541,12 +526,8 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
 
         self.group_norm_size = getattr(config, "group_norm_size", 1)
         self.rms_norm_eps = float(getattr(config, "rms_norm_eps", 1e-5))
-        assert self.tp_size <= self.group_norm_size, (
-            "tp_size must be <= group_norm_size for local rms norm"
-        )
-        assert self.group_norm_size % self.tp_size == 0, (
-            "group_norm_size must be divisible by tp_size"
-        )
+        assert self.tp_size <= self.group_norm_size, "tp_size must be <= group_norm_size for local rms norm"
+        assert self.group_norm_size % self.tp_size == 0, "group_norm_size must be divisible by tp_size"
 
         # When group_norm_size == 1, group_size equals hidden_size // tp_size
         self.g_norm = BailingGroupRMSNormGate(
@@ -572,18 +553,12 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
 
         # Build slope tensor for linear attention decay
         num_hidden_layers = config.num_hidden_layers
-        slope_rate = MiniMaxText01LinearAttention._build_slope_tensor(
-            self.total_num_heads
-        )
+        slope_rate = MiniMaxText01LinearAttention._build_slope_tensor(self.total_num_heads)
         if num_hidden_layers <= 1:
             self.slope_rate = slope_rate * (1 + 1e-5)
         else:
-            self.slope_rate = slope_rate * (
-                1 - layer_id / (num_hidden_layers - 1) + 1e-5
-            )
-        self.tp_slope = self.slope_rate[
-            self.tp_rank * self.tp_heads : (self.tp_rank + 1) * self.tp_heads
-        ].contiguous()
+            self.slope_rate = slope_rate * (1 - layer_id / (num_hidden_layers - 1) + 1e-5)
+        self.tp_slope = self.slope_rate[self.tp_rank * self.tp_heads : (self.tp_rank + 1) * self.tp_heads].contiguous()
 
         # Register for compilation
         compilation_config = get_current_aphrodite_config().compilation_config
@@ -605,9 +580,7 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
             weight_loader(param, loaded_weight)
         else:
             # Fall back to direct copy for standard tensors
-            assert param.size() == loaded_weight.size(), (
-                f"Shape mismatch: {param.shape} vs {loaded_weight.shape}"
-            )
+            assert param.size() == loaded_weight.size(), f"Shape mismatch: {param.shape} vs {loaded_weight.shape}"
             param.data.copy_(loaded_weight)
 
     def forward(
@@ -637,9 +610,7 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
             assert isinstance(attn_metadata, dict)
             attn_metadata = attn_metadata[self.prefix]
             assert isinstance(attn_metadata, LinearAttentionMetadata)
-            num_actual_tokens = (
-                attn_metadata.num_prefill_tokens + attn_metadata.num_decode_tokens
-            )
+            num_actual_tokens = attn_metadata.num_prefill_tokens + attn_metadata.num_decode_tokens
         else:
             num_actual_tokens = hidden_states.shape[0]
 
@@ -696,25 +667,17 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
         if attn_metadata is not None:
             kv_cache = self.kv_cache[0]
             state_indices_tensor = attn_metadata.state_indices_tensor
-            clear_linear_attention_cache_for_new_sequences(
-                kv_cache, state_indices_tensor, attn_metadata
-            )
+            clear_linear_attention_cache_for_new_sequences(kv_cache, state_indices_tensor, attn_metadata)
 
         # Compute attention
         decode_only = getattr(attn_metadata, "num_prefills", 0) == 0
         if attn_metadata is None:
-            hidden = torch.empty(
-                (q.shape[0], q.shape[1] * q.shape[2]), device=q.device, dtype=q.dtype
-            )
+            hidden = torch.empty((q.shape[0], q.shape[1] * q.shape[2]), device=q.device, dtype=q.dtype)
         else:
             if not decode_only:
-                hidden = self._prefill_and_mix_infer(
-                    q, k, v, kv_cache, state_indices_tensor, attn_metadata
-                )
+                hidden = self._prefill_and_mix_infer(q, k, v, kv_cache, state_indices_tensor, attn_metadata)
             else:
-                hidden = self._decode_infer(
-                    q, k, v, kv_cache, state_indices_tensor, attn_metadata
-                )
+                hidden = self._decode_infer(q, k, v, kv_cache, state_indices_tensor, attn_metadata)
 
         # Apply group norm and gate (matching SGLang behavior)
         gate, _ = self.g_proj(hidden_states[:num_actual_tokens])
@@ -731,9 +694,7 @@ class BailingMoELinearAttention(nn.Module, MambaBase):
         dense_out, _ = self.dense(hidden)
         output[:num_actual_tokens] = dense_out
 
-    def _prefill_and_mix_infer(
-        self, q, k, v, kv_cache, state_indices_tensor, attn_metadata
-    ):
+    def _prefill_and_mix_infer(self, q, k, v, kv_cache, state_indices_tensor, attn_metadata):
         """Handle prefill (mixed with decode if any)."""
         return linear_attention_prefill_and_mix(
             q=q,
@@ -807,9 +768,7 @@ class BailingMoeV25DecoderLayer(nn.Module):
             )
 
         # MLP/MoE
-        is_moe_layer = config.num_experts > 1 and layer_id >= getattr(
-            config, "first_k_dense_replace", 0
-        )
+        is_moe_layer = config.num_experts > 1 and layer_id >= getattr(config, "first_k_dense_replace", 0)
 
         if is_moe_layer:
             self.mlp = BailingMoeV25(
@@ -859,9 +818,7 @@ class BailingMoeV25DecoderLayer(nn.Module):
             # Full attention
             self_attention_output = self.self_attn(hidden_states, positions)
 
-        hidden_states, residual = self.post_attention_layernorm(
-            self_attention_output, residual
-        )
+        hidden_states, residual = self.post_attention_layernorm(self_attention_output, residual)
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
@@ -899,8 +856,7 @@ class BailingMoeV25Model(nn.Module):
 
         # decoder_attention_types: 0 = linear, 1 = full
         self.decoder_attention_types = [
-            0 if is_linear_layer(i, self.layer_group_size) else 1
-            for i in range(self.num_layers)
+            0 if is_linear_layer(i, self.layer_group_size) else 1 for i in range(self.num_layers)
         ]
 
         # Embeddings
@@ -978,9 +934,7 @@ class BailingMoeV25Model(nn.Module):
             )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         else:
             if residual is not None:
                 hidden_states, _ = self.norm(hidden_states, residual)
@@ -1032,9 +986,7 @@ class BailingMoeV25Model(nn.Module):
                 weight_loader(param, tensor, shard_id)
             else:
                 # Expert param: (expert_id, shard_id)
-                weight_loader(
-                    param, tensor, name, expert_id=shard_id[0], shard_id=shard_id[1]
-                )
+                weight_loader(param, tensor, name, expert_id=shard_id[0], shard_id=shard_id[1])
 
             loaded_params.add(name)
             return True
@@ -1049,11 +1001,7 @@ class BailingMoeV25Model(nn.Module):
             name = name.removeprefix("model.")
             # Map attention.dense based on layer type
             if "attention.dense" in name:
-                layer_idx = (
-                    int(name.split("layers.")[1].split(".")[0])
-                    if "layers." in name
-                    else 0
-                )
+                layer_idx = int(name.split("layers.")[1].split(".")[0]) if "layers." in name else 0
                 attn_name = (
                     "self_attn.dense"
                     if is_linear_layer(layer_idx, self.config.layer_group_size)
@@ -1063,9 +1011,7 @@ class BailingMoeV25Model(nn.Module):
 
             # Standard mappings
             name = name.replace("attention.", "self_attn.")
-            name = name.replace(
-                "mlp.gate.e_score_correction_bias", "mlp.gate.expert_bias"
-            )
+            name = name.replace("mlp.gate.e_score_correction_bias", "mlp.gate.expert_bias")
 
             return maybe_remap_kv_scale_name(name, params_dict)
 
@@ -1079,9 +1025,7 @@ class BailingMoeV25Model(nn.Module):
             for param_suf, weight_suf, shard_id in stacked_mappings:
                 if weight_suf not in norm_name:
                     continue
-                mapped = norm_name.replace(weight_suf, param_suf).replace(
-                    "attention.", "self_attn."
-                )
+                mapped = norm_name.replace(weight_suf, param_suf).replace("attention.", "self_attn.")
                 if load_param(mapped, weight, shard_id):
                     loaded = True
                     break
@@ -1091,13 +1035,10 @@ class BailingMoeV25Model(nn.Module):
             # Handle expert weights
             if "mlp.experts" in norm_name:
                 # Expert bias
-                if (
-                    "mlp.experts.e_score_correction_bias" in norm_name
-                    or "mlp.experts.expert_bias" in norm_name
-                ):
-                    alt = norm_name.replace(
-                        "mlp.experts.e_score_correction_bias", "mlp.gate.expert_bias"
-                    ).replace("mlp.experts.expert_bias", "mlp.gate.expert_bias")
+                if "mlp.experts.e_score_correction_bias" in norm_name or "mlp.experts.expert_bias" in norm_name:
+                    alt = norm_name.replace("mlp.experts.e_score_correction_bias", "mlp.gate.expert_bias").replace(
+                        "mlp.experts.expert_bias", "mlp.gate.expert_bias"
+                    )
                     if load_param(alt, weight) or load_param(norm_name, weight):
                         continue
 
@@ -1180,12 +1121,8 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
     ) -> IntermediateTensors:
         return IntermediateTensors(
             {
-                "hidden_states": torch.zeros(
-                    (batch_size, self.config.hidden_size), dtype=dtype, device=device
-                ),
-                "residual": torch.zeros(
-                    (batch_size, self.config.hidden_size), dtype=dtype, device=device
-                ),
+                "hidden_states": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device),
+                "residual": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device),
             }
         )
 
@@ -1198,9 +1135,7 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
         config = aphrodite_config.model_config.hf_config
         tp_size = aphrodite_config.parallel_config.tensor_parallel_size
 
-        head_dim = getattr(
-            config, "head_dim", config.hidden_size // config.num_attention_heads
-        )
+        head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
         # Return base state shape from linear attention (no padding)
         return MambaStateShapeCalculator.linear_attention_state_shape(

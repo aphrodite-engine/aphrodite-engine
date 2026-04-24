@@ -185,9 +185,7 @@ def pixel_shuffle(input_tensor, shuffle_ratio):
     input_tensor = input_tensor.view(batch_size, patch_size, patch_size, -1)
     batch_size, height, width, channels = input_tensor.size()
 
-    reshaped_tensor = input_tensor.view(
-        batch_size, height, int(width * shuffle_ratio), int(channels / shuffle_ratio)
-    )
+    reshaped_tensor = input_tensor.view(batch_size, height, int(width * shuffle_ratio), int(channels / shuffle_ratio))
     reshaped_tensor = reshaped_tensor.permute(0, 2, 1, 3).contiguous()
 
     reshaped_tensor = reshaped_tensor.view(
@@ -211,9 +209,7 @@ class Llama4VisionPixelShuffleMLP(nn.Module):
     ):
         super().__init__()
         self.pixel_shuffle_ratio = config.pixel_shuffle_ratio
-        self.inner_dim = int(
-            config.projector_input_dim // (self.pixel_shuffle_ratio**2)
-        )
+        self.inner_dim = int(config.projector_input_dim // (self.pixel_shuffle_ratio**2))
         self.output_dim = config.projector_output_dim
         self.mlp = Llama4VisionMLP(
             input_size=config.intermediate_size,
@@ -240,9 +236,7 @@ class Llama4VisionAttention(nn.Module):
         super().__init__()
         self.config = config
         use_data_parallel = is_vit_use_data_parallel()
-        self.tp_size = (
-            1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        )
+        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
         self.embed_dim = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.head_dim = config.hidden_size // self.num_heads
@@ -481,9 +475,7 @@ class Llama4VisionModel(nn.Module):
         )
 
         self.class_embedding = nn.Parameter(self.scale * torch.randn(self.hidden_size))
-        self.positional_embedding_vlm = nn.Parameter(
-            self.scale * torch.randn(self.num_patches, self.hidden_size)
-        )
+        self.positional_embedding_vlm = nn.Parameter(self.scale * torch.randn(self.num_patches, self.hidden_size))
 
         # layer norms
         self.layernorm_pre = nn.LayerNorm(self.hidden_size, eps=1e-5)
@@ -511,9 +503,7 @@ class Llama4VisionModel(nn.Module):
         num_tiles, num_patches, hidden_dim = hidden_state.shape
 
         # Add cls token
-        class_embedding = self.class_embedding.expand(
-            hidden_state.shape[0], 1, hidden_state.shape[-1]
-        )
+        class_embedding = self.class_embedding.expand(hidden_state.shape[0], 1, hidden_state.shape[-1])
         hidden_state = torch.cat([hidden_state, class_embedding], dim=1)
         num_patches += 1
 
@@ -524,9 +514,7 @@ class Llama4VisionModel(nn.Module):
             num_patches,
             hidden_dim,
         )
-        positional_embedding = self.positional_embedding_vlm.to(
-            dtype=hidden_state.dtype, device=hidden_state.device
-        )
+        positional_embedding = self.positional_embedding_vlm.to(dtype=hidden_state.dtype, device=hidden_state.device)
         hidden_state = hidden_state + positional_embedding
         hidden_state = self.layernorm_pre(hidden_state)
         hidden_state = hidden_state.view(num_tiles, -1, hidden_dim)
@@ -549,9 +537,7 @@ class Mllama4ProcessingInfo(BaseProcessingInfo):
         return self.ctx.get_hf_config(Llama4Config)
 
     def get_hf_processor(self, **kwargs: object) -> Llama4Processor:
-        return self.ctx.get_hf_processor(
-            Llama4Processor, use_fast=kwargs.pop("use_fast", True), **kwargs
-        )
+        return self.ctx.get_hf_processor(Llama4Processor, use_fast=kwargs.pop("use_fast", True), **kwargs)
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         # Although Aphrodite can support more images from an infra capability
@@ -563,9 +549,7 @@ class Mllama4ProcessingInfo(BaseProcessingInfo):
         image_size = vision_config.image_size
         patch_size = vision_config.patch_size
 
-        assert image_size % patch_size == 0, (
-            f"chunk size {image_size} should be multiple of "
-        )
+        assert image_size % patch_size == 0, f"chunk size {image_size} should be multiple of "
         f"patch_size {patch_size}"
 
         ds_ratio = int(round(1.0 / (vision_config.pixel_shuffle_ratio**2)))
@@ -602,9 +586,7 @@ class Mllama4MultiModalProcessor(BaseMultiModalProcessor[Mllama4ProcessingInfo])
         vision_config = self.info.get_hf_config().vision_config
 
         if processed_outputs.get("pixel_values") is not None:
-            assert "images" in mm_data, (
-                "images expected to be in mm_data when pixel_values is present"
-            )
+            assert "images" in mm_data, "images expected to be in mm_data when pixel_values is present"
 
             images = mm_data["images"]
             mm_items = self.info.parse_mm_data({"image": images}, validate=False)
@@ -624,13 +606,8 @@ class Mllama4MultiModalProcessor(BaseMultiModalProcessor[Mllama4ProcessingInfo])
                 for image in parsed_images
             ]
             # TODO tile height/width do not necessarily need to match
-            aspect_ratios = [
-                (image_size[0] // tile_size, image_size[1] // tile_size)
-                for image_size in best_fit_sizes
-            ]
-            patches_per_image = [
-                1 if r_h * r_w == 1 else 1 + r_h * r_w for (r_h, r_w) in aspect_ratios
-            ]
+            aspect_ratios = [(image_size[0] // tile_size, image_size[1] // tile_size) for image_size in best_fit_sizes]
+            patches_per_image = [1 if r_h * r_w == 1 else 1 + r_h * r_w for (r_h, r_w) in aspect_ratios]
 
             processed_outputs["aspect_ratios"] = torch.tensor(aspect_ratios)
             processed_outputs["patches_per_image"] = torch.tensor(patches_per_image)
@@ -644,9 +621,7 @@ class Mllama4MultiModalProcessor(BaseMultiModalProcessor[Mllama4ProcessingInfo])
     ) -> Mapping[str, MultiModalFieldConfig]:
         patches_per_image = hf_inputs.get("patches_per_image", torch.empty(0))
         return dict(
-            pixel_values=MultiModalFieldConfig.flat_from_sizes(
-                "image", patches_per_image
-            ),
+            pixel_values=MultiModalFieldConfig.flat_from_sizes("image", patches_per_image),
             patches_per_image=MultiModalFieldConfig.batched("image"),
             aspect_ratios=MultiModalFieldConfig.batched("image"),
         )
@@ -771,16 +746,12 @@ class Llama4ForConditionalGeneration(
 
         with self._mark_language_model(aphrodite_config):
             self.language_model = initialize_model(
-                aphrodite_config=aphrodite_config.with_hf_config(
-                    config.text_config, ["LlamaForCausalLM"]
-                ),
+                aphrodite_config=aphrodite_config.with_hf_config(config.text_config, ["LlamaForCausalLM"]),
                 prefix=maybe_prefix(prefix, "language_model"),
                 model_class=Llama4ForCausalLM,
             )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
         # Set MoE hyperparameters
         self.num_expert_groups = 1
@@ -800,9 +771,7 @@ class Llama4ForConditionalGeneration(
 
     def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
         # Delegate to underlying language model (Llama4ForCausalLM)
-        assert hasattr(
-            self.language_model, "get_eagle3_default_aux_hidden_state_layers"
-        )
+        assert hasattr(self.language_model, "get_eagle3_default_aux_hidden_state_layers")
         return self.language_model.get_eagle3_default_aux_hidden_state_layers()
 
     def set_eplb_state(
@@ -811,21 +780,13 @@ class Llama4ForConditionalGeneration(
         logical_to_physical_map: torch.Tensor,
         logical_replica_count: torch.Tensor,
     ):
-        self.language_model.set_eplb_state(
-            expert_load_view, logical_to_physical_map, logical_replica_count
-        )
+        self.language_model.set_eplb_state(expert_load_view, logical_to_physical_map, logical_replica_count)
         self.expert_weights = self.language_model.expert_weights
 
-    def update_physical_experts_metadata(
-        self, num_physical_experts: int, num_local_physical_experts: int
-    ):
-        self.language_model.update_physical_experts_metadata(
-            num_physical_experts, num_local_physical_experts
-        )
+    def update_physical_experts_metadata(self, num_physical_experts: int, num_local_physical_experts: int):
+        self.language_model.update_physical_experts_metadata(num_physical_experts, num_local_physical_experts)
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> Llama4ImagePatchInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> Llama4ImagePatchInputs | None:
         # num_images, 1, num_chunks, channel, image_size, image_size
         pixel_values = kwargs.pop("pixel_values", None)
         if pixel_values is None:
@@ -841,27 +802,20 @@ class Llama4ForConditionalGeneration(
             aspect_ratios=aspect_ratios,
         )
 
-    def _process_image_input(
-        self, image_input: Llama4ImagePatchInputs
-    ) -> MultiModalEmbeddings:
+    def _process_image_input(self, image_input: Llama4ImagePatchInputs) -> MultiModalEmbeddings:
         assert self.vision_model and self.multi_modal_projector
         pixel_values = image_input["pixel_values"]
         patches_per_image = image_input["patches_per_image"].tolist()
 
         # shard image input
         if self.use_data_parallel:
-            vision_embeddings_flat = run_dp_sharded_vision_model(
-                pixel_values, self.vision_model
-            )
+            vision_embeddings_flat = run_dp_sharded_vision_model(pixel_values, self.vision_model)
         else:
             vision_embeddings_flat = self.vision_model(pixel_values)
 
         vision_embeddings_flat = self.multi_modal_projector(vision_embeddings_flat)
 
-        return [
-            img.flatten(0, 1)
-            for img in vision_embeddings_flat.split(patches_per_image, dim=0)
-        ]
+        return [img.flatten(0, 1) for img in vision_embeddings_flat.split(patches_per_image, dim=0)]
 
     def embed_multimodal(self, **kwargs) -> MultiModalEmbeddings:
         image_input = self._parse_and_validate_image_input(**kwargs)
@@ -881,9 +835,7 @@ class Llama4ForConditionalGeneration(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        return self.language_model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        return self.language_model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
     def compute_logits(
         self,
@@ -938,28 +890,18 @@ class Llama4ForConditionalGeneration(
         """Rename weights from ModelOpt llama4 fp8 checkpoints to Aphrodite
         format."""
         if name.startswith("model.") or name.startswith("language_model.model."):
-            renamed = (
-                name.replace("model.", "language_model.model.", 1)
-                if name.startswith("model.")
-                else name
-            )
+            renamed = name.replace("model.", "language_model.model.", 1) if name.startswith("model.") else name
             # Handle expert scale parameters with flat naming
-            if "feed_forward.experts." in name and (
-                "_input_scale" in name or "_weight_scale" in name
-            ):
+            if "feed_forward.experts." in name and ("_input_scale" in name or "_weight_scale" in name):
                 # Map checkpoint naming to Aphrodite's expected naming
                 if "down_proj_input_scale" in renamed:
                     return renamed.replace("down_proj_input_scale", "w2_input_scale")
                 elif "down_proj_weight_scale" in renamed:
                     return renamed.replace("down_proj_weight_scale", "w2_weight_scale")
                 elif "gate_up_proj_input_scale" in renamed:
-                    return renamed.replace(
-                        "gate_up_proj_input_scale", "w13_input_scale"
-                    )
+                    return renamed.replace("gate_up_proj_input_scale", "w13_input_scale")
                 elif "gate_up_proj_weight_scale" in renamed:
-                    return renamed.replace(
-                        "gate_up_proj_weight_scale", "w13_weight_scale"
-                    )
+                    return renamed.replace("gate_up_proj_weight_scale", "w13_weight_scale")
                 return renamed
 
             # Handle attention scale parameters
@@ -1014,18 +956,10 @@ class Llama4ForConditionalGeneration(
 
         for name, weight in weights:
             # Check if this is an expert scale parameter that needs broadcasting
-            if (
-                "feed_forward.experts." in name
-                and "scale" in name
-                and ".shared_expert" not in name
-            ):
+            if "feed_forward.experts." in name and "scale" in name and ".shared_expert" not in name:
                 if name in params_dict:
                     param = params_dict[name]
-                    if (
-                        hasattr(param, "data")
-                        and param.data.numel() > 1
-                        and weight.numel() == 1
-                    ):
+                    if hasattr(param, "data") and param.data.numel() > 1 and weight.numel() == 1:
                         # Broadcast single value to all experts
                         param.data.fill_(weight.item())
                         updated_params.add(name)
@@ -1098,13 +1032,11 @@ class Llama4ForConditionalGeneration(
         updated_params: set[str] = set()
 
         # Separate and rename weights
-        language_model_weights, other_weights = self._separate_and_rename_weights(
-            weights
-        )
+        language_model_weights, other_weights = self._separate_and_rename_weights(weights)
 
         # Handle expert scale parameters
-        regular_weights, expert_scale_weights, updated_params_from_experts = (
-            self._handle_expert_scale_broadcasting(language_model_weights, params_dict)
+        regular_weights, expert_scale_weights, updated_params_from_experts = self._handle_expert_scale_broadcasting(
+            language_model_weights, params_dict
         )
         updated_params.update(updated_params_from_experts)
 
@@ -1118,9 +1050,7 @@ class Llama4ForConditionalGeneration(
             if loaded_expert_scale_params:
                 updated_params.update(loaded_expert_scale_params)
 
-        updated_params.update(
-            self._load_other_weights(other_weights, params_dict, stacked_params_mapping)
-        )
+        updated_params.update(self._load_other_weights(other_weights, params_dict, stacked_params_mapping))
 
         return updated_params
 

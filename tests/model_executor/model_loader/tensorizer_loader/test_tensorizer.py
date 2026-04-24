@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import gc
 import json
@@ -7,11 +9,9 @@ import subprocess
 import sys
 from typing import Any
 
+import aphrodite.modeling.model_loader.tensorizer
 import pytest
 import torch
-
-import aphrodite.modeling.model_loader.tensorizer
-from aphrodite import LLM, SamplingParams
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.model_loader.tensorizer import (
     TensorizerConfig,
@@ -21,6 +21,8 @@ from aphrodite.modeling.model_loader.tensorizer import (
     tensorize_aphrodite_model,
 )
 from aphrodite.modeling.model_loader.tensorizer_loader import BLACKLISTED_TENSORIZER_ARGS
+
+from aphrodite import LLM, SamplingParams
 from aphrodite.utils.import_utils import PlaceholderModule
 from tests.utils import APHRODITE_PATH, RemoteOpenAIServer
 

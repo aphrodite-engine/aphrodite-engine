@@ -55,9 +55,7 @@ class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         """Apply router weight on input if needed."""
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
-            assert topk == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
             a1.mul_(topk_weights.to(a1.dtype))
 
     def prepare(
@@ -71,25 +69,21 @@ class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
-        self._apply_router_weight_on_input(
-            a1, topk_weights, topk_ids, apply_router_weight_on_input
-        )
+        self._apply_router_weight_on_input(a1, topk_weights, topk_ids, apply_router_weight_on_input)
         global_num_tokens_cpu = get_local_sizes()
         top_k = topk_ids.size(1)
 
-        (self.alltoall_info, topk_ids, topk_weights, a1q, a1q_scale) = (
-            flashinfer_alltoall_dispatch(
-                self.all2all_manager,
-                global_num_tokens_cpu,
-                a1,
-                quant_config.a1_gscale,
-                topk_ids,
-                topk_weights,
-                top_k,
-                num_experts,
-                quant_config,
-                defer_input_quant=defer_input_quant,
-            )
+        (self.alltoall_info, topk_ids, topk_weights, a1q, a1q_scale) = flashinfer_alltoall_dispatch(
+            self.all2all_manager,
+            global_num_tokens_cpu,
+            a1,
+            quant_config.a1_gscale,
+            topk_ids,
+            topk_weights,
+            top_k,
+            num_experts,
+            quant_config,
+            defer_input_quant=defer_input_quant,
         )
 
         return a1q, a1q_scale, None, topk_ids, topk_weights
@@ -129,29 +123,23 @@ def flashinfer_alltoall_dispatch(
 ):
     from flashinfer.comm.trtllm_alltoall import MnnvlMoe
 
-    assert all2all_manager.ensure_alltoall_workspace_initialized(), (
-        "FlashInfer AllToAll workspace not available"
-    )
+    assert all2all_manager.ensure_alltoall_workspace_initialized(), "FlashInfer AllToAll workspace not available"
 
     ep_rank = all2all_manager.rank
     ep_size = all2all_manager.world_size
-    max_num_token = (
-        max(global_num_tokens_cpu) if global_num_tokens_cpu is not None else x.shape[0]
-    )
+    max_num_token = max(global_num_tokens_cpu) if global_num_tokens_cpu is not None else x.shape[0]
     orig_topk_weights_dtype = topk_weights.dtype
-    alltoall_info, topk_ids, topk_weights, _ = (
-        MnnvlMoe.mnnvl_moe_alltoallv_prepare_without_allgather(
-            topk_ids,
-            topk_weights,
-            None,
-            all2all_manager.prepare_workspace_tensor,
-            max_num_token,
-            ep_rank,
-            ep_size,
-            num_experts,
-            num_experts,
-            top_k,
-        )
+    alltoall_info, topk_ids, topk_weights, _ = MnnvlMoe.mnnvl_moe_alltoallv_prepare_without_allgather(
+        topk_ids,
+        topk_weights,
+        None,
+        all2all_manager.prepare_workspace_tensor,
+        max_num_token,
+        ep_rank,
+        ep_size,
+        num_experts,
+        num_experts,
+        top_k,
     )
     topk_weights = topk_weights.view(dtype=orig_topk_weights_dtype)
 
@@ -212,9 +200,7 @@ def flashinfer_alltoall_combine(
 ):
     from flashinfer.comm.trtllm_alltoall import MnnvlMoe
 
-    assert all2all_manager.ensure_alltoall_workspace_initialized(), (
-        "FlashInfer AllToAll workspace not available"
-    )
+    assert all2all_manager.ensure_alltoall_workspace_initialized(), "FlashInfer AllToAll workspace not available"
     return MnnvlMoe.mnnvl_moe_alltoallv_combine(
         output,
         alltoall_info,

@@ -238,9 +238,7 @@ class OlmoHybridConfig(PretrainedConfig):
 
             layer_type_validation(layer_types, num_hidden_layers)
         if "linear_attention" not in layer_types:
-            raise ValueError(
-                "OLMoHybrid expects at least one 'linear_attention' layer."
-            )
+            raise ValueError("OLMoHybrid expects at least one 'linear_attention' layer.")
         if all(t == "linear_attention" for t in layer_types):
             raise ValueError("OLMoHybrid expects at least one attention layer.")
 

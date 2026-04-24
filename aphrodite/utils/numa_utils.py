@@ -48,9 +48,7 @@ def _can_set_mempolicy() -> bool:
         if libnuma is None or libnuma.numa_available() < 0:
             return False
         mode = ctypes.c_int()
-        ret = libnuma.get_mempolicy(
-            ctypes.byref(mode), None, ctypes.c_ulong(0), None, ctypes.c_ulong(0)
-        )
+        ret = libnuma.get_mempolicy(ctypes.byref(mode), None, ctypes.c_ulong(0), None, ctypes.c_ulong(0))
         return ret == 0
     except Exception:
         return False
@@ -112,9 +110,7 @@ def get_auto_numa_nodes() -> list[int] | None:
     return numa_nodes
 
 
-def _get_gpu_index(
-    parallel_config, local_rank: int, dp_local_rank: int | None = None
-) -> int:
+def _get_gpu_index(parallel_config, local_rank: int, dp_local_rank: int | None = None) -> int:
     """Compute the physical GPU index used for NUMA lookup."""
     if (
         parallel_config.distributed_executor_backend not in ("ray", "external_launcher")
@@ -126,10 +122,7 @@ def _get_gpu_index(
             if dp_local_rank is None:
                 dp_local_rank = parallel_config.data_parallel_index
 
-        tp_pp_world_size = (
-            parallel_config.pipeline_parallel_size
-            * parallel_config.tensor_parallel_size
-        )
+        tp_pp_world_size = parallel_config.pipeline_parallel_size * parallel_config.tensor_parallel_size
         return local_rank + dp_local_rank * tp_pp_world_size
 
     return local_rank
@@ -242,9 +235,7 @@ def configure_subprocess(
     process_kind: str = "worker",
 ):
     """Temporarily replace the multiprocessing executable with a numactl wrapper."""
-    numactl_args = _get_numactl_args(
-        aphrodite_config, local_rank, dp_local_rank, process_kind
-    )
+    numactl_args = _get_numactl_args(aphrodite_config, local_rank, dp_local_rank, process_kind)
     if numactl_args is None:
         yield
         return
@@ -263,10 +254,7 @@ def _get_numactl_executable() -> tuple[str, str]:
     from shutil import which
 
     if which("numactl") is None:
-        raise RuntimeError(
-            "numactl is required for NUMA binding but is not installed or "
-            "not available on PATH."
-        )
+        raise RuntimeError("numactl is required for NUMA binding but is not installed or not available on PATH.")
 
     script_path = Path(__file__).with_name("numa_wrapper.sh")
     return str(script_path), f"{script_path} via {_NUMACTL_ARGS_ENV}"

@@ -79,11 +79,7 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
         # missing from hf_quant_config.json exclude_modules. Force unquantized.
         # Ref: https://github.com/vllm-project/vllm/pull/38650
         # Ref: https://github.com/NVIDIA/Model-Optimizer/pull/1124
-        fc_quant = (
-            None
-            if (quant_config and quant_config.get_name() == "modelopt_fp4")
-            else quant_config
-        )
+        fc_quant = None if (quant_config and quant_config.get_name() == "modelopt_fp4") else quant_config
         self.fc = ColumnParallelLinear(
             self.config.hidden_size * 2,
             self.config.hidden_size,
@@ -108,12 +104,8 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
         )
 
         self.norm = Qwen3_5RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.pre_fc_norm_hidden = Qwen3_5RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
-        self.pre_fc_norm_embedding = Qwen3_5RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.pre_fc_norm_hidden = Qwen3_5RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pre_fc_norm_embedding = Qwen3_5RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -149,9 +141,7 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
         )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
@@ -199,24 +189,18 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",
             ckpt_up_proj_name="up_proj",
-            num_experts=self.config.num_experts
-            if hasattr(self.config, "num_experts")
-            else 0,
+            num_experts=self.config.num_experts if hasattr(self.config, "num_experts") else 0,
         )
 
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
         is_fused_expert = False
-        base_layer = (
-            "base_layer." if any(".base_layer." in name for name in params_dict) else ""
-        )
+        base_layer = "base_layer." if any(".base_layer." in name for name in params_dict) else ""
         fused_expert_params_mapping = [
             (f"experts.{base_layer}w13_weight", "experts.gate_up_proj", 0, "w1"),
             (f"experts.{base_layer}w2_weight", "experts.down_proj", 0, "w2"),
         ]
-        num_experts = (
-            self.config.num_experts if hasattr(self.config, "num_experts") else 0
-        )
+        num_experts = self.config.num_experts if hasattr(self.config, "num_experts") else 0
         for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
                 continue
@@ -291,8 +275,7 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
                     else:
                         # Skip loading extra bias for GPTQ models.
                         if (
-                            name_mapped.endswith(".bias")
-                            or name_mapped.endswith("_bias")
+                            name_mapped.endswith(".bias") or name_mapped.endswith("_bias")
                         ) and name_mapped not in params_dict:
                             continue
                         param = params_dict[name_mapped]
@@ -320,14 +303,10 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
                     if is_pp_missing_parameter(name, self):
                         continue
                     if name not in params_dict:
-                        logger.warning_once(
-                            f"Parameter {name} not found in params_dict, skip loading"
-                        )
+                        logger.warning_once(f"Parameter {name} not found in params_dict, skip loading")
                         continue
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -368,9 +347,7 @@ class Qwen3_5MTP(nn.Module, SupportsMultiModal):
 
         super().__init__()
         self.config = config
-        self.model = Qwen3_5MultiTokenPredictor(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "mtp")
-        )
+        self.model = Qwen3_5MultiTokenPredictor(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "mtp"))
 
         if get_pp_group().is_last_rank:
             if config.tie_word_embeddings:
@@ -421,9 +398,7 @@ class Qwen3_5MTP(nn.Module, SupportsMultiModal):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ):
-        hidden_states = self.model(
-            input_ids, positions, hidden_states, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, hidden_states, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

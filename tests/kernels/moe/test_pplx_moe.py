@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Tests for the MOE layers.
 
 Run `pytest tests/kernels/test_pplx_moe.py`.
@@ -25,13 +27,14 @@ try:
 except ImportError:
     has_pplx = False
 
-from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe import fused_topk, override_config
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
 from aphrodite.modeling.layers.fused_moe.fused_batched_moe import BatchedTritonExperts
 from aphrodite.modeling.layers.fused_moe.fused_moe import get_default_config
 from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceDelegate
+
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import round_up
 from tests.kernels.moe.modular_kernel_tools.parallel_utils import _set_aphrodite_config

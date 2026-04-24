@@ -129,9 +129,7 @@ class ECConnectorBase(ABC):
         return
 
     @abstractmethod
-    def start_load_caches(
-        self, encoder_cache: dict[str, torch.Tensor], **kwargs
-    ) -> None:
+    def start_load_caches(self, encoder_cache: dict[str, torch.Tensor], **kwargs) -> None:
         """
         Start loading the cache from the connector into Aphrodite's encoder cache.
 
@@ -147,9 +145,7 @@ class ECConnectorBase(ABC):
         pass
 
     @abstractmethod
-    def save_caches(
-        self, encoder_cache: dict[str, torch.Tensor], mm_hash: str, **kwargs
-    ) -> None:
+    def save_caches(self, encoder_cache: dict[str, torch.Tensor], mm_hash: str, **kwargs) -> None:
         """
         Save the encoder cache to the connector.
 
@@ -164,9 +160,7 @@ class ECConnectorBase(ABC):
         """
         pass
 
-    def get_finished(
-        self, finished_req_ids: set[str]
-    ) -> tuple[set[str] | None, set[str] | None]:
+    def get_finished(self, finished_req_ids: set[str]) -> tuple[set[str] | None, set[str] | None]:
         """
         Notifies worker-side connector ids of requests that have
         finished generating tokens on the worker.
@@ -214,9 +208,7 @@ class ECConnectorBase(ABC):
         pass
 
     @abstractmethod
-    def build_connector_meta(
-        self, scheduler_output: SchedulerOutput
-    ) -> ECConnectorMetadata:
+    def build_connector_meta(self, scheduler_output: SchedulerOutput) -> ECConnectorMetadata:
         """
         Build the connector metadata for this step.
 
@@ -238,9 +230,7 @@ class ECConnectorBase(ABC):
         """
         return
 
-    def request_finished(
-        self, request: "Request"
-    ) -> tuple[bool, dict[str, Any] | None]:
+    def request_finished(self, request: "Request") -> tuple[bool, dict[str, Any] | None]:
         """
         Called when a request has finished, before its encoder cache is freed.
 

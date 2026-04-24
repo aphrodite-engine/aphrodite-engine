@@ -29,13 +29,8 @@ def maybe_filter_parallel_tool_calls(
 
     if isinstance(choice, ChatCompletionResponseChoice) and choice.message.tool_calls:
         choice.message.tool_calls = choice.message.tool_calls[:1]
-    elif (
-        isinstance(choice, ChatCompletionResponseStreamChoice)
-        and choice.delta.tool_calls
-    ):
-        choice.delta.tool_calls = [
-            tool_call for tool_call in choice.delta.tool_calls if tool_call.index == 0
-        ]
+    elif isinstance(choice, ChatCompletionResponseStreamChoice) and choice.delta.tool_calls:
+        choice.delta.tool_calls = [tool_call for tool_call in choice.delta.tool_calls if tool_call.index == 0]
 
     return choice
 
@@ -44,6 +39,4 @@ async def validate_json_request(raw_request: Request):
     content_type = raw_request.headers.get("content-type", "").lower()
     media_type = content_type.split(";", maxsplit=1)[0]
     if media_type != "application/json":
-        raise RequestValidationError(
-            errors=["Unsupported Media Type: Only 'application/json' is allowed"]
-        )
+        raise RequestValidationError(errors=["Unsupported Media Type: Only 'application/json' is allowed"])

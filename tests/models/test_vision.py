@@ -1,17 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import math
 
 import pytest
 import torch
 import torch.multiprocessing as mp
-
-from aphrodite.distributed import get_tensor_model_parallel_world_size
-from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from aphrodite.modeling.models.vision import (
     get_load_balance_assignment,
     resolve_visual_encoder_outputs,
     run_dp_sharded_mrope_vision_model,
     run_dp_sharded_vision_model,
 )
+
+from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from aphrodite.platforms import current_platform
 from aphrodite.utils.network_utils import get_open_port
 from aphrodite.utils.system_utils import update_environment_variables

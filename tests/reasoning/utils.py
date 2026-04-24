@@ -1,6 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
-from aphrodite.reasoning import ReasoningParser
 from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
+
+from aphrodite.reasoning import ReasoningParser
 
 
 class StreamingReasoningReconstructor:

@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import pytest
+from aphrodite.inputs.parse import parse_raw_prompts
 
 from aphrodite.config import ModelConfig
 from aphrodite.inputs import zip_enc_dec_prompts
-from aphrodite.inputs.parse import parse_raw_prompts
 from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.transformers_utils.tokenizer import init_tokenizer_from_configs
 
