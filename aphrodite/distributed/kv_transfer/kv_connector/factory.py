@@ -49,9 +49,7 @@ class KVConnectorFactory:
         kv_transfer_config = config.kv_transfer_config
         if kv_transfer_config is None:
             raise ValueError("kv_transfer_config must be set to create a connector")
-        connector_cls, compat_sig = cls._get_connector_class_with_compat(
-            kv_transfer_config
-        )
+        connector_cls, compat_sig = cls._get_connector_class_with_compat(kv_transfer_config)
 
         # check if the connector supports HMA
         hma_enabled = not config.scheduler_config.disable_hybrid_kv_cache_manager
@@ -82,9 +80,7 @@ class KVConnectorFactory:
             return connector_cls(config, role, kv_cache_config)
 
     @classmethod
-    def get_connector_class_by_name(
-        cls, connector_name: str
-    ) -> type[KVConnectorBaseType]:
+    def get_connector_class_by_name(cls, connector_name: str) -> type[KVConnectorBaseType]:
         """Get a registered connector class by name.
 
         Raises ValueError if the connector is not registered.
@@ -116,9 +112,7 @@ class KVConnectorFactory:
             try:
                 connector_cls = getattr(connector_module, connector_name)
             except AttributeError as e:
-                raise AttributeError(
-                    f"Class {connector_name} not found in {connector_module_path}"
-                ) from e
+                raise AttributeError(f"Class {connector_name} not found in {connector_module_path}") from e
             connector_cls = cast(type[KVConnectorBaseType], connector_cls)
             if not supports_kw(connector_cls, "kv_cache_config"):
                 compat_sig = True
@@ -134,9 +128,7 @@ class KVConnectorFactory:
         return connector_cls, compat_sig
 
     @classmethod
-    def get_connector_class(
-        cls, kv_transfer_config: "KVTransferConfig"
-    ) -> type[KVConnectorBaseType]:
+    def get_connector_class(cls, kv_transfer_config: "KVTransferConfig") -> type[KVConnectorBaseType]:
         """Get the connector class by name."""
         connector_cls, _ = cls._get_connector_class_with_compat(kv_transfer_config)
         return connector_cls

@@ -65,10 +65,7 @@ class ReqMeta:
         block_ids_tensor = torch.tensor(block_ids)
         num_blocks = block_ids_tensor.shape[0]
         block_offsets = torch.arange(0, block_size)
-        slot_mapping = (
-            block_offsets.reshape((1, block_size))
-            + block_ids_tensor.reshape((num_blocks, 1)) * block_size
-        )
+        slot_mapping = block_offsets.reshape((1, block_size)) + block_ids_tensor.reshape((num_blocks, 1)) * block_size
         slot_mapping = slot_mapping.flatten()
         return ReqMeta(
             req_id=req_id,
@@ -92,11 +89,7 @@ class ExampleHiddenStatesConnectorMetadata(KVConnectorMetadata):
         block_size: int,
         new_req: bool = True,
     ) -> None:
-        self.requests.append(
-            ReqMeta.make_meta(
-                req_id, filename, token_ids, block_ids, block_size, new_req
-            )
-        )
+        self.requests.append(ReqMeta.make_meta(req_id, filename, token_ids, block_ids, block_size, new_req))
 
 
 class ExampleHiddenStatesConnector(KVConnectorBase_V1):
@@ -128,21 +121,16 @@ class ExampleHiddenStatesConnector(KVConnectorBase_V1):
             kv_cache_config=kv_cache_config,
         )
         self._block_size = aphrodite_config.cache_config.block_size
-        self._storage_path = self._kv_transfer_config.get_from_extra_config(
-            "shared_storage_path", "/tmp"
-        )
+        self._storage_path = self._kv_transfer_config.get_from_extra_config("shared_storage_path", "/tmp")
         self.cache_layers: list[str] = []  # set by self.register_kv_caches
         logger.info(self._kv_transfer_config)
         logger.info("Shared storage path is %s", self._storage_path)
 
         assert self._aphrodite_config.speculative_config is not None, (
-            "ExampleHiddenStatesConnector only works when using "
-            "'extract_hidden_states' speculative method"
+            "ExampleHiddenStatesConnector only works when using 'extract_hidden_states' speculative method"
         )
         spec_config = self._aphrodite_config.speculative_config.draft_model_config.hf_config
-        self.num_hidden_states = len(
-            getattr(spec_config, "eagle_aux_hidden_state_layer_ids", [])
-        )
+        self.num_hidden_states = len(getattr(spec_config, "eagle_aux_hidden_state_layer_ids", []))
 
         self._request_filenames: dict[str, str] = {}
         self._active_requests: dict[str, NewRequestData] = {}
@@ -170,9 +158,7 @@ class ExampleHiddenStatesConnector(KVConnectorBase_V1):
             self._aphrodite_config, CacheOnlyAttentionLayer, list(kv_caches.keys())
         )
         self.cache_layers = list(layers.keys())
-        assert len(self.cache_layers) == 1, (
-            f"Expected 1 CacheOnlyAttentionLayer, got {len(self.cache_layers)}"
-        )
+        assert len(self.cache_layers) == 1, f"Expected 1 CacheOnlyAttentionLayer, got {len(self.cache_layers)}"
 
     def save_kv_layer(
         self,
@@ -207,9 +193,7 @@ class ExampleHiddenStatesConnector(KVConnectorBase_V1):
 
         os.makedirs(self._storage_path, exist_ok=True)
         for request in connector_metadata.requests:
-            hidden_states = extract_from_kv_cache(
-                kv_layer, request.slot_mapping, request.token_ids.shape[0]
-            )
+            hidden_states = extract_from_kv_cache(kv_layer, request.slot_mapping, request.token_ids.shape[0])
             tensors = {
                 "hidden_states": hidden_states.detach().cpu(),
                 "token_ids": request.token_ids.detach().cpu(),
@@ -241,9 +225,7 @@ class ExampleHiddenStatesConnector(KVConnectorBase_V1):
         # This connector is store-only, so we don't need to load any tokens
         return 0, False
 
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         # Usually used to handle allocation of new blocks for requests that are loading
         # tokens from connector's external kv cache. We never load from external cache
         # so this is a no-op.
@@ -344,10 +326,7 @@ class ExampleHiddenStatesConnector(KVConnectorBase_V1):
         """
 
         if cls is KVConnectorBase_V1:
-            raise TypeError(
-                "get_required_kvcache_layout should not be called "
-                "on the abstract base class"
-            )
+            raise TypeError("get_required_kvcache_layout should not be called on the abstract base class")
         # NHD means we have (num_tokens, num_heads)
         # HND means we have (num_heads, num_tokens)
         # For now, we only support NHD layout since this keeps the

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import torch
 from torch import nn
@@ -263,7 +263,7 @@ class MambaMixer(MambaBase, PluggableLayer):
         attn_metadata: Mamba1AttentionMetadata | None = None
         if attn_metadata_raw is not None:
             assert isinstance(attn_metadata_raw, dict)
-            attn_metadata = attn_metadata_raw[self.prefix]
+            attn_metadata = cast(Mamba1AttentionMetadata, attn_metadata_raw[self.prefix])
             assert isinstance(attn_metadata, Mamba1AttentionMetadata)
             query_start_loc_p = attn_metadata.query_start_loc_p
             state_indices_tensor_p = attn_metadata.state_indices_tensor_p

@@ -1400,4 +1400,7 @@ class CompilationConfig:
         if self.compile_ranges_endpoints is None:
             return []
         endpoints = sorted(set(self.compile_ranges_endpoints))
-        return [Range(s + 1, e) for s, e in zip([0] + endpoints[:-1], endpoints)]
+        return [
+            Range(s + 1, e)  # type: ignore[call-arg]
+            for s, e in zip([0] + endpoints[:-1], endpoints)
+        ]

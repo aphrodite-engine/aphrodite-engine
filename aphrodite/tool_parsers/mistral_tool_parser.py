@@ -262,7 +262,9 @@ class MistralToolParser(ToolParser):
                     json_only=False,
                 )
 
-        request.structured_outputs = StructuredOutputsParams(grammar=lark_grammar)
+        request.structured_outputs = StructuredOutputsParams(  # type: ignore[call-arg]
+            grammar=lark_grammar
+        )
         request._grammar_from_tool_parser = True
         return request
 

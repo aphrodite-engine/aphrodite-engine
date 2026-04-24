@@ -3,6 +3,7 @@
 
 import math
 from collections.abc import Callable
+from typing import cast
 
 import torch
 import torch.nn.functional as F
@@ -382,7 +383,7 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
         attn_metadata: LinearAttentionMetadata | None = None
         if attn_metadata_raw is not None:
             assert isinstance(attn_metadata_raw, dict)
-            attn_metadata = attn_metadata_raw[self.prefix]
+            attn_metadata = cast(LinearAttentionMetadata, attn_metadata_raw[self.prefix])
             assert isinstance(attn_metadata, LinearAttentionMetadata)
             num_actual_tokens = attn_metadata.num_prefill_tokens + attn_metadata.num_decode_tokens
         else:

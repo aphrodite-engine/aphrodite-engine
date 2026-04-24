@@ -79,6 +79,7 @@ class OpenAIServingKobold(OpenAIServing):
     ) -> dict[str, list[dict[str, str]]]:
         tokenizer = self.renderer.get_tokenizer()
         sampling_params, input_tokens = self._prepare_engine_payload(request, tokenizer)
+        request_id = request.genkey or f"kai-{random_uuid()}"
 
         results_generator = self.engine_client.generate(
             {
@@ -86,7 +87,7 @@ class OpenAIServingKobold(OpenAIServing):
                 "prompt_token_ids": input_tokens,
             },
             sampling_params,
-            request.genkey,
+            request_id,
         )
 
         final_res = None
@@ -111,6 +112,7 @@ class OpenAIServingKobold(OpenAIServing):
     ) -> AsyncGenerator[str, None]:
         tokenizer = self.renderer.get_tokenizer()
         sampling_params, input_tokens = self._prepare_engine_payload(request, tokenizer)
+        request_id = request.genkey or f"kai-{random_uuid()}"
 
         results_generator = self.engine_client.generate(
             {
@@ -118,7 +120,7 @@ class OpenAIServingKobold(OpenAIServing):
                 "prompt_token_ids": input_tokens,
             },
             sampling_params,
-            request.genkey,
+            request_id,
         )
 
         previous_output = ""

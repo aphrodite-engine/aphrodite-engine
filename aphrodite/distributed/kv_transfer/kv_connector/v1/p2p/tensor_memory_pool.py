@@ -90,9 +90,7 @@ class TensorMemoryPool:
             size //= 2
 
     def _allocate_pinned_memory(self):
-        self.base_tensor = torch.empty(
-            self.max_block_size // 4, dtype=torch.float32, pin_memory=True
-        )
+        self.base_tensor = torch.empty(self.max_block_size // 4, dtype=torch.float32, pin_memory=True)
         self.base_address = self.base_tensor.data_ptr()
         initial_block = MemoryBlock(size=self.max_block_size, addr=self.base_address)
         self.free_lists[self.max_block_size][initial_block.addr] = initial_block
@@ -163,11 +161,7 @@ class TensorMemoryPool:
         depth = 0
 
         while depth < MAX_MERGE_DEPTH:
-            buddy_offset = (
-                block.size
-                if (block.addr - self.base_address) % (2 * block.size) == 0
-                else -block.size
-            )
+            buddy_offset = block.size if (block.addr - self.base_address) % (2 * block.size) == 0 else -block.size
             buddy_addr = block.addr + buddy_offset
             buddy = self.free_lists[block.size].get(buddy_addr)
             if buddy:
@@ -201,16 +195,11 @@ class TensorMemoryPool:
 
         if block.size < size:
             self.free(addr)
-            raise ValueError(
-                f"Allocated block size {block.size} is smaller than "
-                f"required size {size}"
-            )
+            raise ValueError(f"Allocated block size {block.size} is smaller than required size {size}")
 
         try:
             buffer = (ctypes.c_byte * block.size).from_address(block.addr)
-            cpu_tensor = torch.frombuffer(
-                buffer, dtype=tensor.dtype, count=tensor.numel()
-            ).reshape(tensor.shape)
+            cpu_tensor = torch.frombuffer(buffer, dtype=tensor.dtype, count=tensor.numel()).reshape(tensor.shape)
         except ValueError as err:
             self.free(addr)
             raise ValueError(f"Failed to create tensor view: {err}") from err
@@ -252,9 +241,7 @@ class TensorMemoryPool:
             raise ValueError("Requested tensor size exceeds block size")
 
         buffer = (ctypes.c_byte * block.size).from_address(block.addr)
-        cpu_tensor = torch.frombuffer(buffer, dtype=dtype, count=num_elements).reshape(
-            shape
-        )
+        cpu_tensor = torch.frombuffer(buffer, dtype=dtype, count=num_elements).reshape(shape)
 
         cuda_tensor = torch.empty(shape, dtype=dtype, device=device)
 

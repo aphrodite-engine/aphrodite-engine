@@ -41,9 +41,7 @@ def get_kv_connector_cache_layout():
         required_kvcache_layout = connector_cls.get_required_kvcache_layout(aphrodite_config)
         if required_kvcache_layout is not None:
             return required_kvcache_layout
-        logger.info_once(
-            "Connectors do not specify a kv cache layout, defaulting to NHD."
-        )
+        logger.info_once("Connectors do not specify a kv cache layout, defaulting to NHD.")
     return "NHD"
 
 
@@ -62,9 +60,7 @@ class KVOutputAggregator:
     def from_connector(cls, connector: "KVConnectorBase", world_size: int):
         return cls(connector.get_finished_count() or world_size)
 
-    def aggregate(
-        self, outputs: list[ModelRunnerOutput | None], output_rank: int = 0
-    ) -> ModelRunnerOutput | None:
+    def aggregate(self, outputs: list[ModelRunnerOutput | None], output_rank: int = 0) -> ModelRunnerOutput | None:
         if not outputs[output_rank]:
             return None
 
@@ -76,9 +72,7 @@ class KVOutputAggregator:
             finished_set: set[str],
         ) -> None:
             for req_id in req_ids or ():
-                remaining_count = remaining_count_dict.get(
-                    req_id, self._expected_finished_count
-                )
+                remaining_count = remaining_count_dict.get(req_id, self._expected_finished_count)
                 remaining_count_dict[req_id] = remaining_count - 1
                 if remaining_count_dict[req_id] == 0:
                     finished_set.add(req_id)
@@ -108,12 +102,8 @@ class KVOutputAggregator:
                 )
                 self._expected_finished_count = kv_output.expected_finished_count
 
-            update_finished_set(
-                kv_output.finished_sending, self._send_remaining_count, finished_sending
-            )
-            update_finished_set(
-                kv_output.finished_recving, self._recv_remaining_count, finished_recving
-            )
+            update_finished_set(kv_output.finished_sending, self._send_remaining_count, finished_sending)
+            update_finished_set(kv_output.finished_recving, self._recv_remaining_count, finished_recving)
 
             # Aggregate kv_connector_stats from all workers.
             if aggregated_kv_connector_stats is None:
@@ -123,22 +113,16 @@ class KVOutputAggregator:
                 if aggregated_kv_connector_stats is None:
                     aggregated_kv_connector_stats = kv_connector_stats
                 else:
-                    assert isinstance(
-                        aggregated_kv_connector_stats, type(kv_connector_stats)
-                    )
-                    aggregated_kv_connector_stats = (
-                        aggregated_kv_connector_stats.aggregate(kv_connector_stats)
-                    )
+                    assert isinstance(aggregated_kv_connector_stats, type(kv_connector_stats))
+                    aggregated_kv_connector_stats = aggregated_kv_connector_stats.aggregate(kv_connector_stats)
 
             # Aggregate kv_connector_worker_meta from all workers.
             if aggregated_kv_connector_worker_meta is None:
                 # Use the first worker's kv_connector_worker_meta as accumulator.
                 aggregated_kv_connector_worker_meta = kv_output.kv_connector_worker_meta
             elif kv_connector_worker_meta := kv_output.kv_connector_worker_meta:
-                aggregated_kv_connector_worker_meta = (
-                    aggregated_kv_connector_worker_meta.aggregate(
-                        kv_connector_worker_meta
-                    )
+                aggregated_kv_connector_worker_meta = aggregated_kv_connector_worker_meta.aggregate(
+                    kv_connector_worker_meta
                 )
 
             # Combine kv_cache_events from all workers.
@@ -342,9 +326,7 @@ def get_current_attn_backends(
         return list(seen.values())
 
     # Fallback for tests, when static_forward_context is empty.
-    logger.debug(
-        "No layers found in the Aphrodite config. Falling back to default attention backend."
-    )
+    logger.debug("No layers found in the Aphrodite config. Falling back to default attention backend.")
     from aphrodite.v1.attention.selector import get_attn_backend
 
     return [
@@ -457,15 +439,11 @@ class TransferTopology:
         # Non-MLA backends caches have 5 dims [2, num_blocks, H,N,D],
         # we just mock num_blocks to 1 for the dimension check below.
         # Hybrid SSM models assume a single blocks_first layout
-        self._is_kv_layout_blocks_first = self.is_mamba or (
-            len(kv_cache_shape) == 5 and kv_cache_shape[0] == 1
-        )
+        self._is_kv_layout_blocks_first = self.is_mamba or (len(kv_cache_shape) == 5 and kv_cache_shape[0] == 1)
 
         self._cross_layers_blocks = False
         if self.tensor_shape is not None:
-            self._cross_layers_blocks = (
-                len(self.tensor_shape) == len(kv_cache_shape) + 1
-            )
+            self._cross_layers_blocks = len(self.tensor_shape) == len(kv_cache_shape) + 1
 
         if self._cross_layers_blocks:
             logger.debug("Using cross-layer KV cache")
@@ -507,8 +485,7 @@ class TransferTopology:
                 Required for Mamba models to compute ``fa_descriptor_bytes``.
         """
         assert remote_engine_id != self.engine_id, (
-            f"Cannot register local engine {self.engine_id} as remote. "
-            f"Local identity is set via __init__ params."
+            f"Cannot register local engine {self.engine_id} as remote. Local identity is set via __init__ params."
         )
         if remote_engine_id in self._engines:
             return self._engines[remote_engine_id]
@@ -522,12 +499,8 @@ class TransferTopology:
                 local_block_len=local_block_len,
             )
             assert isinstance(info, MambaEngineTransferInfo)
-            self._fa_source_sets[remote_engine_id] = frozenset(
-                info.remote_fa_source_ranks
-            )
-            self._fa_source_indices[remote_engine_id] = {
-                r: i for i, r in enumerate(info.remote_fa_source_ranks)
-            }
+            self._fa_source_sets[remote_engine_id] = frozenset(info.remote_fa_source_ranks)
+            self._fa_source_indices[remote_engine_id] = {r: i for i, r in enumerate(info.remote_fa_source_ranks)}
         else:
             info = EngineTransferInfo(
                 remote_tp_size=remote_tp_size,
@@ -556,9 +529,7 @@ class TransferTopology:
     @property
     def split_k_and_v(self) -> bool:
         # Whether to register regions for K and V separately (when present).
-        return not (
-            self._cross_layers_blocks or self.is_mla or self.is_kv_layout_blocks_first
-        )
+        return not (self._cross_layers_blocks or self.is_mla or self.is_kv_layout_blocks_first)
 
     # ============================================================
     # Common methods
@@ -691,9 +662,7 @@ class TransferTopology:
                 return fa_index[target]
         return 0
 
-    def fa_rank_offset(
-        self, remote_engine_id: EngineId, remote_kv_block_len: int
-    ) -> int:
+    def fa_rank_offset(self, remote_engine_id: EngineId, remote_kv_block_len: int) -> int:
         """Byte offset into remote FA block for this local rank.
 
         When local TP is replicated (local_tp > K), multiple local ranks
@@ -724,11 +693,7 @@ class TransferTopology:
         mamba_info = self._engines[remote_engine_id]
         assert isinstance(mamba_info, MambaEngineTransferInfo)
         tp_ratio = self.tp_ratio(mamba_info.remote_tp_size)
-        return (
-            tp_ratio < 0
-            and not self.is_mla
-            and len(mamba_info.remote_all_source_ranks) > 1
-        )
+        return tp_ratio < 0 and not self.is_mla and len(mamba_info.remote_all_source_ranks) > 1
 
     def compute_split_handle_data(
         self,
@@ -779,12 +744,8 @@ class TransferTopology:
         if not self.should_skip_fa(remote_engine_id, remote_rank):
             return local_ids, remote_ids
         num_groups = len(local_ids)
-        filtered_local: list[list[int]] = [
-            [] if not is_mamba_group[g] else local_ids[g] for g in range(num_groups)
-        ]
-        filtered_remote: list[list[int]] = [
-            [] if not is_mamba_group[g] else remote_ids[g] for g in range(num_groups)
-        ]
+        filtered_local: list[list[int]] = [[] if not is_mamba_group[g] else local_ids[g] for g in range(num_groups)]
+        filtered_remote: list[list[int]] = [[] if not is_mamba_group[g] else remote_ids[g] for g in range(num_groups)]
         return filtered_local, filtered_remote
 
     def describe(self, remote_engine_id: EngineId) -> str:
@@ -879,15 +840,11 @@ class TransferTopology:
         if self.is_mla or tp_ratio >= 0:
             num_fa_reads = 1
             fa_source_ranks: list[int] = (
-                [0]
-                if self.is_mla
-                else [local_rank // tp_ratio if tp_ratio > 0 else local_rank]
+                [0] if self.is_mla else [local_rank // tp_ratio if tp_ratio > 0 else local_rank]
             )
         else:
             local_needs = self._physical_head_range(local_tp, K, local_rank)
-            search_range = (
-                mamba_range if mamba_range is not None else range(remote_tp_size)
-            )
+            search_range = mamba_range if mamba_range is not None else range(remote_tp_size)
             seen: set[tuple[int, int]] = set()
             fa_source_ranks = []
             for p in search_range:
@@ -947,8 +904,7 @@ class TransferTopology:
             expected = local_k_half // num_fa_reads
             if expected != remote_k_half:
                 logger.warning(
-                    "FA size mismatch: local_k_half=%d / reads=%d = %d, "
-                    "but remote_k_half=%d.",
+                    "FA size mismatch: local_k_half=%d / reads=%d = %d, but remote_k_half=%d.",
                     local_k_half,
                     num_fa_reads,
                     expected,

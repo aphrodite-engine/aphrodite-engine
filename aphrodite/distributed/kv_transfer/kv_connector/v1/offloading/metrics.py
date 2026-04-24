@@ -132,20 +132,14 @@ class OffloadPromMetrics(KVConnectorPromMetrics):
         for transfer_type, ops in transfer_stats_data.items():
             # Cache:
             if (engine_idx, transfer_type) not in self.histogram_transfer_size:
-                self.histogram_transfer_size[(engine_idx, transfer_type)] = (
-                    self._histogram_transfer_size.labels(
-                        *(self.per_engine_labelvalues[engine_idx] + [transfer_type])
-                    )
+                self.histogram_transfer_size[(engine_idx, transfer_type)] = self._histogram_transfer_size.labels(
+                    *(self.per_engine_labelvalues[engine_idx] + [transfer_type])
                 )
-                self.counter_kv_bytes[(engine_idx, transfer_type)] = (
-                    self._counter_kv_bytes.labels(
-                        *(self.per_engine_labelvalues[engine_idx] + [transfer_type])
-                    )
+                self.counter_kv_bytes[(engine_idx, transfer_type)] = self._counter_kv_bytes.labels(
+                    *(self.per_engine_labelvalues[engine_idx] + [transfer_type])
                 )
-                self.counter_kv_transfer_time[(engine_idx, transfer_type)] = (
-                    self._counter_kv_transfer_time.labels(
-                        *(self.per_engine_labelvalues[engine_idx] + [transfer_type])
-                    )
+                self.counter_kv_transfer_time[(engine_idx, transfer_type)] = self._counter_kv_transfer_time.labels(
+                    *(self.per_engine_labelvalues[engine_idx] + [transfer_type])
                 )
 
             # Process ops:
@@ -153,13 +147,9 @@ class OffloadPromMetrics(KVConnectorPromMetrics):
             for op in ops:  # ops is a list of serialized OffloadingOperationMetrics
                 assert isinstance(op, dict)
                 # Observe size histogram
-                self.histogram_transfer_size[(engine_idx, transfer_type)].observe(
-                    op["op_size"]
-                )
+                self.histogram_transfer_size[(engine_idx, transfer_type)].observe(op["op_size"])
 
                 # Increment byte and time counters
                 self.counter_kv_bytes[(engine_idx, transfer_type)].inc(op["op_size"])
 
-                self.counter_kv_transfer_time[(engine_idx, transfer_type)].inc(
-                    op["op_time"]
-                )
+                self.counter_kv_transfer_time[(engine_idx, transfer_type)].inc(op["op_time"])

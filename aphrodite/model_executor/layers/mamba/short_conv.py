@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 
+from typing import cast
+
 import torch
 
 from aphrodite.config import CacheConfig, ModelConfig, get_current_aphrodite_config
@@ -116,7 +118,7 @@ class ShortConv(MambaBase, CustomOp):
         attn_metadata: ShortConvAttentionMetadata | None = None
         if attn_metadata_raw is not None:
             assert isinstance(attn_metadata_raw, dict)
-            attn_metadata = attn_metadata_raw[self.prefix]
+            attn_metadata = cast(ShortConvAttentionMetadata, attn_metadata_raw[self.prefix])
             assert isinstance(attn_metadata, ShortConvAttentionMetadata)
             conv_state = self.kv_cache[0] if is_conv_state_dim_first() else self.kv_cache[0].transpose(-1, -2)
             state_indices_tensor_p = attn_metadata.state_indices_tensor_p

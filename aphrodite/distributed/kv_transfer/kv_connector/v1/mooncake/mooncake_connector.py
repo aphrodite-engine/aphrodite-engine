@@ -93,8 +93,7 @@ def _get_tp_ratio(local_tp_size: int, remote_tp_size: int) -> int:
         return local_tp_size // remote_tp_size
 
     assert remote_tp_size % local_tp_size == 0, (
-        f"Remote tensor parallel size {remote_tp_size} is not divisible "
-        f"by local tensor parallel size {local_tp_size}."
+        f"Remote tensor parallel size {remote_tp_size} is not divisible by local tensor parallel size {local_tp_size}."
     )
     return -(remote_tp_size // local_tp_size)
 
@@ -197,18 +196,13 @@ def _validate_asymmetric_region_lengths(
     for layouts that store K and V together.
     """
     if len(local_regions) != len(remote_regions):
-        return (
-            "Mooncake asymmetric TP requires matching KV region counts between "
-            "producer and consumer."
-        )
+        return "Mooncake asymmetric TP requires matching KV region counts between producer and consumer."
 
     if producer_cache_replicated:
         return None
 
     tp_ratio = _get_tp_ratio(local_tp_size, remote_tp_size)
-    for idx, (local_region, remote_region) in enumerate(
-        zip(local_regions, remote_regions)
-    ):
+    for idx, (local_region, remote_region) in enumerate(zip(local_regions, remote_regions)):
         if tp_ratio == 1:
             if local_region.kv_block_len != remote_region.kv_block_len:
                 return (
@@ -344,8 +338,8 @@ class MooncakeConnector(KVConnectorBase_V1):
         self.engine_id: EngineId = aphrodite_config.kv_transfer_config.engine_id
 
         if role == KVConnectorRole.SCHEDULER:
-            self.connector_scheduler: MooncakeConnectorScheduler | None = (
-                MooncakeConnectorScheduler(aphrodite_config, self.engine_id)
+            self.connector_scheduler: MooncakeConnectorScheduler | None = MooncakeConnectorScheduler(
+                aphrodite_config, self.engine_id
             )
             self.connector_worker: MooncakeConnectorWorker | None = None
         elif role == KVConnectorRole.WORKER:
@@ -357,38 +351,24 @@ class MooncakeConnector(KVConnectorBase_V1):
         if aphrodite_config.model_config is None:
             # This fallback mostly exists for unit tests that instantiate the
             # connector without a fully populated model config.
-            logger.warning_once(
-                "Unable to detect current APHRODITE config. "
-                "Fallback to default kv cache layout."
-            )
+            logger.warning_once("Unable to detect current APHRODITE config. Fallback to default kv cache layout.")
             return None
         if aphrodite_config.model_config.use_mla:
             return None
-        logger.info_once(
-            "MooncakeConnector setting KV cache layout to HND for "
-            "heterogeneous TP-safe KV transfer."
-        )
+        logger.info_once("MooncakeConnector setting KV cache layout to HND for heterogeneous TP-safe KV transfer.")
         return "HND"
 
     ############################################################
     # Scheduler Side Methods
     ############################################################
 
-    def get_num_new_matched_tokens(
-        self, request: "Request", num_computed_tokens: int
-    ) -> tuple[int, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
         assert self.connector_scheduler is not None
-        return self.connector_scheduler.get_num_new_matched_tokens(
-            request, num_computed_tokens
-        )
+        return self.connector_scheduler.get_num_new_matched_tokens(request, num_computed_tokens)
 
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         assert self.connector_scheduler is not None
-        return self.connector_scheduler.update_state_after_alloc(
-            request, blocks, num_external_tokens
-        )
+        return self.connector_scheduler.update_state_after_alloc(request, blocks, num_external_tokens)
 
     def build_connector_meta(
         self,
@@ -412,9 +392,7 @@ class MooncakeConnector(KVConnectorBase_V1):
         assert self.connector_worker is not None
         self.connector_worker.register_kv_caches(kv_caches)
 
-    def get_finished(
-        self, finished_req_ids: set[str]
-    ) -> tuple[set[str] | None, set[str] | None]:
+    def get_finished(self, finished_req_ids: set[str]) -> tuple[set[str] | None, set[str] | None]:
         """Get the finished recving and sending requests."""
         assert self.connector_worker is not None
         return self.connector_worker.get_finished()
@@ -449,12 +427,8 @@ class MooncakeConnectorScheduler:
         self.aphrodite_config = aphrodite_config
 
         assert aphrodite_config.kv_transfer_config
-        self.is_kv_producer: bool = (
-            aphrodite_config.kv_transfer_config.kv_role == "kv_producer"
-        )
-        self.is_kv_consumer: bool = (
-            aphrodite_config.kv_transfer_config.kv_role == "kv_consumer"
-        )
+        self.is_kv_producer: bool = aphrodite_config.kv_transfer_config.kv_role == "kv_producer"
+        self.is_kv_consumer: bool = aphrodite_config.kv_transfer_config.kv_role == "kv_consumer"
         logger.info("Initializing Mooncake Transfer Engine Scheduler %s", engine_id)
 
         # Requests that need to start recv/send.
@@ -466,9 +440,7 @@ class MooncakeConnectorScheduler:
         # remote prefill or aborted.
         self._reqs_not_processed: set[TransferId] = set()
 
-    def get_num_new_matched_tokens(
-        self, request: "Request", num_computed_tokens: int
-    ) -> tuple[int, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
         """
         For remote prefill, pull all prompt blocks from remote
         asynchronously relative to engine execution.
@@ -486,8 +458,7 @@ class MooncakeConnectorScheduler:
 
         params = request.kv_transfer_params
         logger.debug(
-            "MooncakeConnector get_num_new_matched_tokens: "
-            "num_computed_tokens=%s, kv_transfer_params=%s",
+            "MooncakeConnector get_num_new_matched_tokens: num_computed_tokens=%s, kv_transfer_params=%s",
             num_computed_tokens,
             params,
         )
@@ -506,13 +477,10 @@ class MooncakeConnectorScheduler:
         # No remote prefill for this request.
         return 0, False
 
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         params = request.kv_transfer_params
         logger.debug(
-            "MooncakeConnector update_state_after_alloc: "
-            "req_id=%s num_external_tokens=%s, kv_transfer_params=%s",
+            "MooncakeConnector update_state_after_alloc: req_id=%s num_external_tokens=%s, kv_transfer_params=%s",
             request.request_id,
             num_external_tokens,
             params,
@@ -523,22 +491,16 @@ class MooncakeConnectorScheduler:
 
         if params.get("do_remote_prefill"):
             assert not self.is_kv_producer
-            if all(
-                p in params
-                for p in ("remote_engine_id", "remote_bootstrap_addr", "transfer_id")
-            ):
+            if all(p in params for p in ("remote_engine_id", "remote_bootstrap_addr", "transfer_id")):
                 # If remote_blocks and num_external_tokens = 0, we have
                 # a full prefix cache hit on the D worker. We need to call
                 # send_notif in _read_blocks to free the memory on the P.
-                local_block_ids = (
-                    blocks.get_unhashed_block_ids() if num_external_tokens > 0 else []
-                )
+                local_block_ids = blocks.get_unhashed_block_ids() if num_external_tokens > 0 else []
                 # Get unhashed blocks to pull from remote.
                 self._reqs_need_recv[request.request_id] = (request, local_block_ids)
             else:
                 logger.warning(
-                    "Got invalid KVTransferParams: %s. This "
-                    "request will not utilize KVTransfer",
+                    "Got invalid KVTransferParams: %s. This request will not utilize KVTransfer",
                     params,
                 )
             # Only trigger 1 KV transfer per request.
@@ -596,8 +558,7 @@ class MooncakeConnectorScheduler:
 
         params = request.kv_transfer_params
         logger.debug(
-            "MooncakeConnector request_finished, req_id=%s, request_status=%s, "
-            "kv_transfer_params=%s",
+            "MooncakeConnector request_finished, req_id=%s, request_status=%s, kv_transfer_params=%s",
             request.request_id,
             request.status,
             params,
@@ -659,9 +620,7 @@ class MooncakeConnectorWorker:
         assert (kv_transfer_config := aphrodite_config.kv_transfer_config)
         self.is_kv_producer: bool = kv_transfer_config.kv_role == "kv_producer"
         self.is_kv_consumer: bool = kv_transfer_config.kv_role == "kv_consumer"
-        self.num_sender_workers = kv_transfer_config.kv_connector_extra_config.get(
-            "num_workers", 10
-        )
+        self.num_sender_workers = kv_transfer_config.kv_connector_extra_config.get("num_workers", 10)
         # Create more tasks than workers to keep the thread pool saturated.
         # Tasks can await async events, so a surplus (2x is a robust heuristic)
         # prevents workers from idling.
@@ -669,9 +628,7 @@ class MooncakeConnectorWorker:
         protocol = kv_transfer_config.kv_connector_extra_config.get(  # type: ignore[union-attr]
             "mooncake_protocol", "rdma"
         )
-        logger.info(
-            "The Mooncake Transfer Engine is using %s as its protocol.", protocol
-        )
+        logger.info("The Mooncake Transfer Engine is using %s as its protocol.", protocol)
         ret_value = self.engine.initialize(self.hostname, "P2PHANDSHAKE", protocol, "")
         if ret_value != 0:
             raise RuntimeError("Mooncake Transfer Engine initialization failed.")
@@ -700,9 +657,7 @@ class MooncakeConnectorWorker:
         self.dp_rank = dp_local_rank if parallel_config.local_engines_only else dp_rank
         pp_size = aphrodite_config.parallel_config.pipeline_parallel_size
         if pp_size > 1:
-            raise ValueError(
-                "Mooncake Transfer Engine does not support pipeline parallelism yet."
-            )
+            raise ValueError("Mooncake Transfer Engine does not support pipeline parallelism yet.")
         self.pp_rank = get_pp_group().rank_in_group
 
         self.kv_caches_base_addr: list[int] = []
@@ -727,9 +682,7 @@ class MooncakeConnectorWorker:
             self.sender_worker_queue = asyncio.Queue[tuple[bytes, bytes]]()
             self.sender_loop = asyncio.new_event_loop()
             # Background thread for processing new sending requests.
-            self._sender_listener_t = threading.Thread(
-                target=_async_loop, args=(self.sender_loop,), daemon=True
-            )
+            self._sender_listener_t = threading.Thread(target=_async_loop, args=(self.sender_loop,), daemon=True)
             self._sender_listener_t.start()
 
             # Start bootstrap server on global rank 0.
@@ -740,9 +693,7 @@ class MooncakeConnectorWorker:
 
         if not self.is_kv_producer:
             self.receiver_loop = asyncio.new_event_loop()
-            self._mooncake_receiver_t = threading.Thread(
-                target=_async_loop, args=(self.receiver_loop,), daemon=True
-            )
+            self._mooncake_receiver_t = threading.Thread(target=_async_loop, args=(self.receiver_loop,), daemon=True)
             self._mooncake_receiver_t.start()
             logger.debug("Mooncake Decoder: start receiver thread")
 
@@ -808,9 +759,7 @@ class MooncakeConnectorWorker:
             if self.sender_loop.is_running():
                 self.sender_loop.call_soon_threadsafe(self.sender_loop.stop)
                 self._sender_listener_t.join()
-            if should_launch_bootstrap_server(self.aphrodite_config) and hasattr(
-                self, "bootstrap_server"
-            ):
+            if should_launch_bootstrap_server(self.aphrodite_config) and hasattr(self, "bootstrap_server"):
                 self.bootstrap_server.shutdown()
         if not self.is_kv_producer and self.receiver_loop.is_running():
             self.receiver_loop.call_soon_threadsafe(self.receiver_loop.stop)
@@ -838,12 +787,8 @@ class MooncakeConnectorWorker:
                 # Bootstrap server not ready, wait for a while and retry.
                 await asyncio.sleep(1)
             except Exception as e:
-                err_msg = (
-                    e.response.text if isinstance(e, httpx.HTTPStatusError) else str(e)
-                )
-                logger.error(
-                    "Error registering %s with bootstrap server: %s", payload, err_msg
-                )
+                err_msg = e.response.text if isinstance(e, httpx.HTTPStatusError) else str(e)
+                logger.error("Error registering %s with bootstrap server: %s", payload, err_msg)
                 raise e
 
     async def _mooncake_sender_listener(self, ready_event: threading.Event):
@@ -863,10 +808,7 @@ class MooncakeConnectorWorker:
         await self.register_worker_with_bootstrap()
 
         # Create async worker tasks that process items from the queue
-        sender_tasks = [
-            asyncio.create_task(self._sender_worker(sock))
-            for _ in range(self.num_sender_tasks)
-        ]
+        sender_tasks = [asyncio.create_task(self._sender_worker(sock)) for _ in range(self.num_sender_tasks)]
 
         ready_event.set()
 
@@ -894,12 +836,8 @@ class MooncakeConnectorWorker:
                     await self.send_kv_to_decode(identity, sock, metadata)
                 except Exception as e:
                     logger.error("Error processing Mooncake xfer request: %s", e)
-                    error_response = MooncakeXferResponse(
-                        status=MooncakeXferResponseStatus.ERROR, err_msg=str(e)
-                    )
-                    await sock.send_multipart(
-                        (identity, self._encoder.encode(error_response))
-                    )
+                    error_response = MooncakeXferResponse(status=MooncakeXferResponseStatus.ERROR, err_msg=str(e))
+                    await sock.send_multipart((identity, self._encoder.encode(error_response)))
                 finally:
                     self.sender_worker_queue.task_done()
             except asyncio.CancelledError:
@@ -907,9 +845,7 @@ class MooncakeConnectorWorker:
             except Exception as e:
                 logger.error("Error in _sender_worker: %s", e)
 
-    async def send_kv_to_decode(
-        self, identity: bytes, sock: zmq.asyncio.Socket, meta: MooncakeXferMetadata
-    ):
+    async def send_kv_to_decode(self, identity: bytes, sock: zmq.asyncio.Socket, meta: MooncakeXferMetadata):
         pending_reqs: dict[ReqId, SendBlockMeta] = {}
         remote_tp_ranks = self.transfer_topo.handshake_target_ranks(meta.remote_tp_size)
         if meta.remote_tp_rank not in remote_tp_ranks:
@@ -926,12 +862,8 @@ class MooncakeConnectorWorker:
             )
             await sock.send_multipart((identity, self._encoder.encode(response)))
             return
-        local_regions = self._get_transfer_regions(
-            self.kv_caches_base_addr, self.block_len_per_layer
-        )
-        remote_regions = self._get_transfer_regions(
-            meta.kv_caches_base_addr, meta.block_lens
-        )
+        local_regions = self._get_transfer_regions(self.kv_caches_base_addr, self.block_len_per_layer)
+        remote_regions = self._get_transfer_regions(meta.kv_caches_base_addr, meta.block_lens)
         validation_err = _validate_asymmetric_region_lengths(
             local_regions=local_regions,
             remote_regions=remote_regions,
@@ -958,15 +890,12 @@ class MooncakeConnectorWorker:
             send_meta = self.reqs_need_send[transfer_id]
             pending_reqs[d_req_id] = send_meta
 
-        async def wait_and_ret(
-            d_req_id: ReqId, send_meta: SendBlockMeta
-        ) -> tuple[ReqId, SendBlockMeta]:
+        async def wait_and_ret(d_req_id: ReqId, send_meta: SendBlockMeta) -> tuple[ReqId, SendBlockMeta]:
             await send_meta.ready.wait()
             return d_req_id, send_meta
 
         wait_tasks = [
-            asyncio.create_task(wait_and_ret(d_req_id, send_meta))
-            for d_req_id, send_meta in pending_reqs.items()
+            asyncio.create_task(wait_and_ret(d_req_id, send_meta)) for d_req_id, send_meta in pending_reqs.items()
         ]
 
         while wait_tasks:
@@ -980,9 +909,7 @@ class MooncakeConnectorWorker:
                 # Timeout, abort all pending requests.
                 for task in wait_tasks:
                     task.cancel()
-                logger.warning(
-                    "Timeout waiting for P side ready: %s", list(pending_reqs)
-                )
+                logger.warning("Timeout waiting for P side ready: %s", list(pending_reqs))
                 response = MooncakeXferResponse(
                     status=MooncakeXferResponseStatus.FINISH,
                     err_reqs=list(pending_reqs),
@@ -992,11 +919,7 @@ class MooncakeConnectorWorker:
                 break
 
             wait_tasks = list(pending)
-            response_status = (
-                MooncakeXferResponseStatus.CONTINUE
-                if wait_tasks
-                else MooncakeXferResponseStatus.FINISH
-            )
+            response_status = MooncakeXferResponseStatus.CONTINUE if wait_tasks else MooncakeXferResponseStatus.FINISH
             ready_reqs: list[tuple[ReqId, SendBlockMeta]] = []
             for task in done:
                 d_req_id, send_meta = task.result()
@@ -1010,9 +933,7 @@ class MooncakeConnectorWorker:
                     ready_reqs.append((d_req_id, send_meta))
                 else:
                     # Otherwise (expired, very unlikely), just forget it.
-                    logger.warning(
-                        "Request %s expired before sending on P side.", d_req_id
-                    )
+                    logger.warning("Request %s expired before sending on P side.", d_req_id)
 
             (
                 src_ptrs,
@@ -1027,11 +948,7 @@ class MooncakeConnectorWorker:
                 remote_regions,
             )
             err_req_set = set(err_reqs)
-            ok_ready_reqs = [
-                (d_req_id, send_meta)
-                for d_req_id, send_meta in ready_reqs
-                if d_req_id not in err_req_set
-            ]
+            ok_ready_reqs = [(d_req_id, send_meta) for d_req_id, send_meta in ready_reqs if d_req_id not in err_req_set]
 
             if src_ptrs:
                 remote_session = f"{meta.remote_hostname}:{meta.remote_port}"
@@ -1046,11 +963,7 @@ class MooncakeConnectorWorker:
 
                 if ret_value != 0:
                     transfer_err_msg = f"Mooncake transfer engine returned {ret_value}"
-                    err_msg = (
-                        transfer_err_msg
-                        if err_msg is None
-                        else f"{err_msg}; {transfer_err_msg}"
-                    )
+                    err_msg = transfer_err_msg if err_msg is None else f"{err_msg}; {transfer_err_msg}"
                     err_reqs = list(err_reqs)
                     for d_req_id, _ in ok_ready_reqs:
                         err_reqs.append(d_req_id)
@@ -1131,13 +1044,11 @@ class MooncakeConnectorWorker:
             )
 
             for local_region, remote_region in zip(local_regions, remote_regions):
-                should_transfer, src_region_offset, dst_region_offset, transfer_len = (
-                    self._get_sender_transfer_plan(
-                        local_kv_block_len=local_region.kv_block_len,
-                        remote_kv_block_len=remote_region.kv_block_len,
-                        remote_tp_rank=agent_meta.remote_tp_rank,
-                        remote_tp_size=agent_meta.remote_tp_size,
-                    )
+                should_transfer, src_region_offset, dst_region_offset, transfer_len = self._get_sender_transfer_plan(
+                    local_kv_block_len=local_region.kv_block_len,
+                    remote_kv_block_len=remote_region.kv_block_len,
+                    remote_tp_rank=agent_meta.remote_tp_rank,
+                    remote_tp_size=agent_meta.remote_tp_size,
                 )
                 if not should_transfer:
                     # Replicated KV cache: only one producer rank in the TP group
@@ -1163,9 +1074,7 @@ class MooncakeConnectorWorker:
                     transfer_len=transfer_len,
                 )
 
-                for group_local_block_id, group_remote_block_id in zip(
-                    group_local_block_ids, group_remote_block_ids
-                ):
+                for group_local_block_id, group_remote_block_id in zip(group_local_block_ids, group_remote_block_ids):
                     if can_coalesce:
                         src_ptrs.append(
                             local_region.base_addr
@@ -1179,18 +1088,12 @@ class MooncakeConnectorWorker:
                         )
                         lengths.append(transfer_len * len(group_local_block_id))
                     else:
-                        for local_block_id, remote_block_id in zip(
-                            group_local_block_id, group_remote_block_id
-                        ):
+                        for local_block_id, remote_block_id in zip(group_local_block_id, group_remote_block_id):
                             src_ptrs.append(
-                                local_region.base_addr
-                                + local_block_id * local_region.block_len
-                                + src_region_offset
+                                local_region.base_addr + local_block_id * local_region.block_len + src_region_offset
                             )
                             dst_ptrs.append(
-                                remote_region.base_addr
-                                + remote_block_id * remote_region.block_len
-                                + dst_region_offset
+                                remote_region.base_addr + remote_block_id * remote_region.block_len + dst_region_offset
                             )
                             lengths.append(transfer_len)
 
@@ -1235,9 +1138,7 @@ class MooncakeConnectorWorker:
         lengths: list[int],
     ) -> int:
         start_time = time.perf_counter()
-        ret_value = self.engine.batch_transfer_sync_write(
-            remote_session, src_ptrs, dst_ptrs, lengths
-        )
+        ret_value = self.engine.batch_transfer_sync_write(remote_session, src_ptrs, dst_ptrs, lengths)
         if ret_value == 0:
             logger.debug(
                 "Sending to %s done, took %s",
@@ -1278,16 +1179,11 @@ class MooncakeConnectorWorker:
                 if tensor_size_bytes is None:
                     tensor_size_bytes = curr_tensor_size_bytes
                     self.num_blocks = cache.shape[0]
-                assert cache.shape[0] == self.num_blocks, (
-                    "All kv cache tensors must have the same number of blocks"
-                )
+                assert cache.shape[0] == self.num_blocks, "All kv cache tensors must have the same number of blocks"
                 assert curr_tensor_size_bytes % self.num_blocks == 0, (
-                    "Mooncake expects each kv cache tensor size to be "
-                    "divisible by the number of blocks."
+                    "Mooncake expects each kv cache tensor size to be divisible by the number of blocks."
                 )
-                self.block_len_per_layer.append(
-                    curr_tensor_size_bytes // self.num_blocks
-                )
+                self.block_len_per_layer.append(curr_tensor_size_bytes // self.num_blocks)
                 kv_data_ptrs.append(base_addr)
                 kv_data_lens.append(curr_tensor_size_bytes)
 
@@ -1312,9 +1208,7 @@ class MooncakeConnectorWorker:
             return
 
         ready_event = threading.Event()
-        asyncio.run_coroutine_threadsafe(
-            self._mooncake_sender_listener(ready_event), self.sender_loop
-        )
+        asyncio.run_coroutine_threadsafe(self._mooncake_sender_listener(ready_event), self.sender_loop)
         ready_event.wait()  # Wait for listener ZMQ socket to be ready.
 
     async def fetch_finished_recving_reqs(self) -> set[ReqId]:
@@ -1331,11 +1225,7 @@ class MooncakeConnectorWorker:
 
         expired_transfer_id = []
         for transfer_id, send_meta in self.reqs_need_send.items():
-            if (
-                send_meta.p_req_id
-                and send_meta.expire_time < now
-                and send_meta.sending == 0
-            ):
+            if send_meta.p_req_id and send_meta.expire_time < now and send_meta.sending == 0:
                 logger.warning(
                     "Request %s timed out after %d seconds without "
                     "being sent. Freeing its blocks on the producer side.",
@@ -1359,22 +1249,17 @@ class MooncakeConnectorWorker:
         recv_fut = None
         send_fut = None
         if not self.is_kv_producer:
-            recv_fut = asyncio.run_coroutine_threadsafe(
-                self.fetch_finished_recving_reqs(), self.receiver_loop
-            )
+            recv_fut = asyncio.run_coroutine_threadsafe(self.fetch_finished_recving_reqs(), self.receiver_loop)
 
         if not self.is_kv_consumer:
-            send_fut = asyncio.run_coroutine_threadsafe(
-                self.fetch_finished_sending_reqs(), self.sender_loop
-            )
+            send_fut = asyncio.run_coroutine_threadsafe(self.fetch_finished_sending_reqs(), self.sender_loop)
 
         finished_recving_reqs = recv_fut.result() if recv_fut else set()
         finished_sending_reqs = send_fut.result() if send_fut else set()
 
         if finished_sending_reqs or finished_recving_reqs:
             logger.debug(
-                "Rank %s, get_finished: %s requests done sending "
-                "and %s requests done recving",
+                "Rank %s, get_finished: %s requests done sending and %s requests done recving",
                 self.tp_rank,
                 len(finished_sending_reqs),
                 len(finished_recving_reqs),
@@ -1394,30 +1279,21 @@ class MooncakeConnectorWorker:
             remote_tp_size=self.tp_size,
             remote_tp_rank=self.tp_rank,
             req_blocks={
-                req_id: (pull_meta.transfer_id, pull_meta.local_block_ids)
-                for req_id, pull_meta in pull_metas.items()
+                req_id: (pull_meta.transfer_id, pull_meta.local_block_ids) for req_id, pull_meta in pull_metas.items()
             },
             kv_caches_base_addr=self.kv_caches_base_addr,
             block_lens=self.block_len_per_layer,
         )
 
         encoded_data = self._encoder.encode(metadata)
-        logger.debug(
-            "Size of encoded MooncakeXferMetadata: %d bytes", len(encoded_data)
-        )
-        logger.debug(
-            "Sending kv transfer request for %s on path: %s", req_ids, worker_addr
-        )
+        logger.debug("Size of encoded MooncakeXferMetadata: %d bytes", len(encoded_data))
+        logger.debug("Sending kv transfer request for %s on path: %s", req_ids, worker_addr)
 
         # Send query for the request.
         try:
-            with make_zmq_socket(
-                self.async_zmq_ctx, worker_addr, zmq.DEALER, bind=False, linger=0
-            ) as sock:
+            with make_zmq_socket(self.async_zmq_ctx, worker_addr, zmq.DEALER, bind=False, linger=0) as sock:
                 # If something goes wrong, let P wait timeout first (in asyncio.wait()).
-                sock.setsockopt(
-                    zmq.RCVTIMEO, (envs.APHRODITE_MOONCAKE_ABORT_REQUEST_TIMEOUT + 60) * 1000
-                )
+                sock.setsockopt(zmq.RCVTIMEO, (envs.APHRODITE_MOONCAKE_ABORT_REQUEST_TIMEOUT + 60) * 1000)
                 await sock.send(encoded_data)
                 while True:
                     ret_msg = await sock.recv()
@@ -1472,10 +1348,7 @@ class MooncakeConnectorWorker:
                 for _, dp_entry in data.items():
                     remote_engine_id = dp_entry["engine_id"]
                     self._remote_agents[remote_engine_id] = {
-                        int(tp_rank): {
-                            int(pp_rank): worker_addr
-                            for pp_rank, worker_addr in tp_entry.items()
-                        }
+                        int(tp_rank): {int(pp_rank): worker_addr for pp_rank, worker_addr in tp_entry.items()}
                         for tp_rank, tp_entry in dp_entry["worker_addr"].items()
                     }
                     self._tp_size[remote_engine_id] = len(dp_entry["worker_addr"])
@@ -1495,9 +1368,7 @@ class MooncakeConnectorWorker:
         remote_engine_id: EngineId,
         pull_metas: dict[ReqId, PullReqMeta],
     ):
-        remote_tp_ranks = self.transfer_topo.handshake_target_ranks(
-            self._tp_size[remote_engine_id]
-        )
+        remote_tp_ranks = self.transfer_topo.handshake_target_ranks(self._tp_size[remote_engine_id])
         count = len(remote_tp_ranks)
         logger.debug(
             "Receiving Mooncake KV for engine %s from producer TP ranks %s",
@@ -1508,9 +1379,7 @@ class MooncakeConnectorWorker:
             pull_meta.pull_tasks_count = count
         for remote_tp_rank in remote_tp_ranks:
             worker_addr = self._remote_agents[remote_engine_id][remote_tp_rank][0]
-            asyncio.create_task(
-                self.receive_kv_from_single_worker(worker_addr, pull_metas)
-            )
+            asyncio.create_task(self.receive_kv_from_single_worker(worker_addr, pull_metas))
 
     async def handle_new_engine_id(
         self,
@@ -1534,14 +1403,10 @@ class MooncakeConnectorWorker:
 
         self.receive_kv(remote_engine_id, pull_metas)
 
-    async def _start_load_kv(
-        self, reqs_to_recv: dict[EngineId, dict[ReqId, PullReqMeta]]
-    ):
+    async def _start_load_kv(self, reqs_to_recv: dict[EngineId, dict[ReqId, PullReqMeta]]):
         for remote_engine_id, pull_metas in reqs_to_recv.items():
             if remote_engine_id not in self._remote_agents:
-                asyncio.create_task(
-                    self.handle_new_engine_id(remote_engine_id, pull_metas)
-                )
+                asyncio.create_task(self.handle_new_engine_id(remote_engine_id, pull_metas))
             else:
                 self.receive_kv(remote_engine_id, pull_metas)
 
@@ -1552,9 +1417,7 @@ class MooncakeConnectorWorker:
                 send_meta = self.reqs_need_send[transfer_id]
                 send_meta.p_req_id = p_req_id
                 send_meta.local_block_ids = block_ids
-                send_meta.expire_time = (
-                    time.perf_counter() + envs.APHRODITE_MOONCAKE_ABORT_REQUEST_TIMEOUT
-                )
+                send_meta.expire_time = time.perf_counter() + envs.APHRODITE_MOONCAKE_ABORT_REQUEST_TIMEOUT
                 send_meta.ready.set()
             else:
                 # From update_state_after_alloc(),
@@ -1575,23 +1438,15 @@ class MooncakeConnectorWorker:
 
     def start_load_kv(self, metadata: MooncakeConnectorMetadata):
         if not self.is_kv_producer and metadata.reqs_to_recv:
-            asyncio.run_coroutine_threadsafe(
-                self._start_load_kv(metadata.reqs_to_recv), self.receiver_loop
-            )
+            asyncio.run_coroutine_threadsafe(self._start_load_kv(metadata.reqs_to_recv), self.receiver_loop)
 
-        if not self.is_kv_consumer and (
-            metadata.reqs_to_send or metadata.reqs_not_processed
-        ):
-            asyncio.run_coroutine_threadsafe(
-                self.record_send_reqs(metadata), self.sender_loop
-            )
+        if not self.is_kv_consumer and (metadata.reqs_to_send or metadata.reqs_not_processed):
+            asyncio.run_coroutine_threadsafe(self.record_send_reqs(metadata), self.sender_loop)
 
     def _producer_cache_is_replicated(self) -> bool:
         return self.transfer_topo.local_replicates_kv_cache
 
-    def _get_transfer_regions(
-        self, base_addrs: list[int], block_lens: list[int]
-    ) -> list[TransferRegion]:
+    def _get_transfer_regions(self, base_addrs: list[int], block_lens: list[int]) -> list[TransferRegion]:
         return _expand_transfer_regions(
             base_addrs=base_addrs,
             block_lens=block_lens,
@@ -1615,14 +1470,11 @@ class MooncakeConnectorWorker:
             producer_cache_replicated=self._producer_cache_is_replicated(),
         )
 
-    def _log_debug_cache_registration(
-        self, layer_name: str, cache: torch.Tensor
-    ) -> None:
+    def _log_debug_cache_registration(self, layer_name: str, cache: torch.Tensor) -> None:
         if not logger.isEnabledFor(logging.DEBUG):
             return
         logger.debug(
-            "Mooncake register view layer=%s shape=%s stride=%s "
-            "storage_offset=%d contiguous=%s dense=%s data_ptr=%d",
+            "Mooncake register view layer=%s shape=%s stride=%s storage_offset=%d contiguous=%s dense=%s data_ptr=%d",
             layer_name,
             tuple(cache.shape),
             tuple(cache.stride()),
@@ -1654,8 +1506,7 @@ def get_mooncake_side_channel_port(aphrodite_config: AphroditeConfig) -> int:
     # This logic is now centralized
     return (
         envs.APHRODITE_MOONCAKE_BOOTSTRAP_PORT
-        + aphrodite_config.parallel_config.data_parallel_index
-        * aphrodite_config.parallel_config.tensor_parallel_size
+        + aphrodite_config.parallel_config.data_parallel_index * aphrodite_config.parallel_config.tensor_parallel_size
     )
 
 
@@ -1671,9 +1522,7 @@ def should_launch_bootstrap_server(aphrodite_config: AphroditeConfig) -> bool:
     #
     # In internal LB mode,
     # only the real global first rank need to launch the bootstrap server.
-    return is_local_first_rank() and (
-        parallel_config.local_engines_only or parallel_config.data_parallel_index == 0
-    )
+    return is_local_first_rank() and (parallel_config.local_engines_only or parallel_config.data_parallel_index == 0)
 
 
 def get_mooncake_bootstrap_addr(aphrodite_config: AphroditeConfig) -> tuple[str, int]:

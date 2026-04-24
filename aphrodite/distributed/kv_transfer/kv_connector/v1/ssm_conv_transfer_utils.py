@@ -57,9 +57,7 @@ class MambaConvSplitInfo:
         bb = self.b_bytes
         return [(0, xb), (xb, bb), (xb + bb, bb)]
 
-    def remote_conv_offsets(
-        self, local_rank_offset: int, tp_ratio: int
-    ) -> list[tuple[int, int]]:
+    def remote_conv_offsets(self, local_rank_offset: int, tp_ratio: int) -> list[tuple[int, int]]:
         """(byte_offset, byte_size) of this D rank's x, B, C slice within
         one P page.
 
@@ -151,9 +149,7 @@ def derive_mamba_conv_split(
     )
 
 
-def compute_physical_blocks_per_logical(
-    ssm_sizes: tuple[int, ...], block_len: int
-) -> int:
+def compute_physical_blocks_per_logical(ssm_sizes: tuple[int, ...], block_len: int) -> int:
     """Derive _physical_blocks_per_logical_kv_block from remote metadata.
 
     The remote engine's ratio is not sent directly in the handshake, so we

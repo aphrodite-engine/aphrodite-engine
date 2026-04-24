@@ -158,9 +158,7 @@ class KVConnectorWorkerMetadata(ABC):
     """
 
     @abstractmethod
-    def aggregate(
-        self, other: "KVConnectorWorkerMetadata"
-    ) -> "KVConnectorWorkerMetadata":
+    def aggregate(self, other: "KVConnectorWorkerMetadata") -> "KVConnectorWorkerMetadata":
         """
         Aggregate metadata with another `KVConnectorWorkerMetadata` object.
         """
@@ -264,9 +262,7 @@ class KVConnectorBase_V1(ABC):
         """
         return
 
-    def register_cross_layers_kv_cache(
-        self, kv_cache: torch.Tensor, attn_backend: type["AttentionBackend"]
-    ):
+    def register_cross_layers_kv_cache(self, kv_cache: torch.Tensor, attn_backend: type["AttentionBackend"]):
         """
         Initialize with a single KV cache tensor used by all layers.
         The first dimension should be num_layers.
@@ -360,9 +356,7 @@ class KVConnectorBase_V1(ABC):
         """
         pass
 
-    def get_finished(
-        self, finished_req_ids: set[str]
-    ) -> tuple[set[str] | None, set[str] | None]:
+    def get_finished(self, finished_req_ids: set[str]) -> tuple[set[str] | None, set[str] | None]:
         """
         Notifies worker-side connector ids of requests that have
         finished generating tokens on the worker.
@@ -482,9 +476,7 @@ class KVConnectorBase_V1(ABC):
         pass
 
     @abstractmethod
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         """
         Update KVConnector state after block allocation.
 
@@ -503,9 +495,7 @@ class KVConnectorBase_V1(ABC):
         pass
 
     @abstractmethod
-    def build_connector_meta(
-        self, scheduler_output: SchedulerOutput
-    ) -> KVConnectorMetadata:
+    def build_connector_meta(self, scheduler_output: SchedulerOutput) -> KVConnectorMetadata:
         """
         Build the connector metadata for this step.
 
@@ -570,10 +560,7 @@ class KVConnectorBase_V1(ABC):
         """
 
         if cls is KVConnectorBase_V1:
-            raise TypeError(
-                "get_required_kvcache_layout should not be called "
-                "on the abstract base class"
-            )
+            raise TypeError("get_required_kvcache_layout should not be called on the abstract base class")
         return None
 
     @classmethod
@@ -611,9 +598,7 @@ class KVConnectorBase_V1(ABC):
         return None
 
     @classmethod
-    def build_kv_connector_stats(
-        cls, data: dict[str, Any] | None = None
-    ) -> "KVConnectorStats | None":
+    def build_kv_connector_stats(cls, data: dict[str, Any] | None = None) -> "KVConnectorStats | None":
         """
         KVConnectorStats resolution method. This method allows dynamically
         registered connectors to return their own KVConnectorStats object,
@@ -621,9 +606,7 @@ class KVConnectorBase_V1(ABC):
         """
         return None
 
-    def set_xfer_handshake_metadata(
-        self, metadata: dict[int, KVConnectorHandshakeMetadata]
-    ) -> None:
+    def set_xfer_handshake_metadata(self, metadata: dict[int, KVConnectorHandshakeMetadata]) -> None:
         """
         Set the KV connector handshake metadata for this connector.
 

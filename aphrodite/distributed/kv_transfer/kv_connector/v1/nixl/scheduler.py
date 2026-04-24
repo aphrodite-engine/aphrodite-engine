@@ -61,28 +61,19 @@ class NixlConnectorScheduler:
         self.kv_cache_config = kv_cache_config
         self.side_channel_host = envs.APHRODITE_NIXL_SIDE_CHANNEL_HOST
         self.side_channel_port = (
-            envs.APHRODITE_NIXL_SIDE_CHANNEL_PORT
-            + aphrodite_config.parallel_config.data_parallel_index
+            envs.APHRODITE_NIXL_SIDE_CHANNEL_PORT + aphrodite_config.parallel_config.data_parallel_index
         )
         assert aphrodite_config.kv_transfer_config is not None
         if current_platform.device_type == "cpu":
             self.use_host_buffer = False
         else:
-            self.use_host_buffer = (
-                aphrodite_config.kv_transfer_config.kv_buffer_device == "cpu"
-            )
+            self.use_host_buffer = aphrodite_config.kv_transfer_config.kv_buffer_device == "cpu"
         self._is_hma_required = (
             not aphrodite_config.scheduler_config.disable_hybrid_kv_cache_manager
             # Also handle unlikely SW-only model case instead of checking num_groups>1.
-            and any(
-                not isinstance(g.kv_cache_spec, FullAttentionSpec)
-                for g in kv_cache_config.kv_cache_groups
-            )
+            and any(not isinstance(g.kv_cache_spec, FullAttentionSpec) for g in kv_cache_config.kv_cache_groups)
         )
-        self._has_mamba = any(
-            isinstance(g.kv_cache_spec, MambaSpec)
-            for g in kv_cache_config.kv_cache_groups
-        )
+        self._has_mamba = any(isinstance(g.kv_cache_spec, MambaSpec) for g in kv_cache_config.kv_cache_groups)
 
         logger.info("Initializing NIXL Scheduler %s", engine_id)
         if aphrodite_config.scheduler_config.disable_hybrid_kv_cache_manager:
@@ -115,8 +106,7 @@ class NixlConnectorScheduler:
         # cdiv(n_tokens, block_size) gives blocks/window; add 1 to conservatively
         # account for boundary overlap eg window isn't fully aligned with blocks.
         self.blocks_per_sw = [
-            cdiv(n_tokens, block_size) + 1 if n_tokens else 0
-            for n_tokens, block_size in sw_sizes_tokens
+            cdiv(n_tokens, block_size) + 1 if n_tokens else 0 for n_tokens, block_size in sw_sizes_tokens
         ]
 
     def shutdown(self):
@@ -139,22 +129,16 @@ class NixlConnectorScheduler:
         # NOTE (NickLucche) This logic is currently handled at the connector level
         # because offloading connectors might want to receive the whole sequence even
         # for SWA groups. We will abstract this logic once the interface is more stable
-        assert len(block_ids) == len(self.blocks_per_sw), (
-            "Number of KV cache groups must match"
-        )
+        assert len(block_ids) == len(self.blocks_per_sw), "Number of KV cache groups must match"
         # For non-SWA groups, blocks_per_sw is 0 so we return all block_ids unchanged
         return tuple(
             [
-                blocks[-self.blocks_per_sw[i] :]
-                if self.blocks_per_sw[i] > 0
-                else blocks
+                blocks[-self.blocks_per_sw[i] :] if self.blocks_per_sw[i] > 0 else blocks
                 for i, blocks in enumerate(block_ids)
             ]
         )
 
-    def set_xfer_handshake_metadata(
-        self, metadata: dict[int, KVConnectorHandshakeMetadata]
-    ) -> None:
+    def set_xfer_handshake_metadata(self, metadata: dict[int, KVConnectorHandshakeMetadata]) -> None:
         """
         Set the KV connector handshake metadata for this connector.
 
@@ -165,10 +149,7 @@ class NixlConnectorScheduler:
         encoder = msgspec.msgpack.Encoder()
         for tp_rank, rank_metadata in metadata.items():
             if not isinstance(rank_metadata, NixlHandshakePayload):
-                raise ValueError(
-                    "NixlConnectorScheduler expects NixlHandshakePayload for "
-                    "handshake metadata."
-                )
+                raise ValueError("NixlConnectorScheduler expects NixlHandshakePayload for handshake metadata.")
             encoded_data[tp_rank] = encoder.encode(rank_metadata)
             logger.debug(
                 "Tp rank %d: encoded NixlHandshakePayload size: %s bytes",
@@ -261,9 +242,7 @@ class NixlConnectorScheduler:
             request.max_tokens = 1
             params["_p_side_truncated"] = True
 
-    def get_num_new_matched_tokens(
-        self, request: "Request", num_computed_tokens: int
-    ) -> tuple[int, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
         """
         For remote prefill, pull all prompt blocks from remote
         asynchronously relative to engine execution.
@@ -281,8 +260,7 @@ class NixlConnectorScheduler:
 
         params = request.kv_transfer_params
         logger.debug(
-            "NIXLConnector get_num_new_matched_tokens: "
-            "num_computed_tokens=%s, kv_transfer_params=%s",
+            "NIXLConnector get_num_new_matched_tokens: num_computed_tokens=%s, kv_transfer_params=%s",
             num_computed_tokens,
             params,
         )
@@ -301,13 +279,10 @@ class NixlConnectorScheduler:
         # No remote prefill for this request.
         return 0, False
 
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         params = request.kv_transfer_params
         logger.debug(
-            "NIXLConnector update_state_after_alloc: "
-            "num_external_tokens=%s, kv_transfer_params=%s",
+            "NIXLConnector update_state_after_alloc: num_external_tokens=%s, kv_transfer_params=%s",
             num_external_tokens,
             params,
         )
@@ -337,13 +312,9 @@ class NixlConnectorScheduler:
                     # send_notif in _read_blocks to free the memory on the P.
 
                     unhashed_local_block_ids: BlockIds = (
-                        blocks.get_unhashed_block_ids_all_groups()
-                        if num_external_tokens > 0
-                        else ()
+                        blocks.get_unhashed_block_ids_all_groups() if num_external_tokens > 0 else ()
                     )
-                    local_block_ids = self.get_sw_clipped_blocks(
-                        unhashed_local_block_ids
-                    )
+                    local_block_ids = self.get_sw_clipped_blocks(unhashed_local_block_ids)
 
                     # Get unhashed blocks to pull from remote. Mind that a full prefix
                     # cache hit is indicated with an empty list.
@@ -354,8 +325,7 @@ class NixlConnectorScheduler:
 
                 else:
                     logger.warning(
-                        "Got invalid KVTransferParams: %s. This "
-                        "request will not utilize KVTransfer",
+                        "Got invalid KVTransferParams: %s. This request will not utilize KVTransfer",
                         params,
                     )
             else:
@@ -387,9 +357,7 @@ class NixlConnectorScheduler:
             )
             assert scheduler_output.num_scheduled_tokens is not None
             num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
-            is_partial = (
-                req.num_computed_tokens + num_scheduled_tokens
-            ) < req.num_prompt_tokens
+            is_partial = (req.num_computed_tokens + num_scheduled_tokens) < req.num_prompt_tokens
             if not is_partial:
                 # For non-partial prefills, once new req_meta is scheduled, it
                 # can be removed from _reqs_need_save.
@@ -441,8 +409,7 @@ class NixlConnectorScheduler:
 
         params = request.kv_transfer_params
         logger.debug(
-            "NIXLConnector request_finished(%s), request_status=%s, "
-            "kv_transfer_params=%s",
+            "NIXLConnector request_finished(%s), request_status=%s, kv_transfer_params=%s",
             request.request_id,
             request.status,
             params,
@@ -478,14 +445,11 @@ class NixlConnectorScheduler:
         if delay_free_blocks:
             # Prefill request on remote. It will be read from D upon completion
             logger.debug(
-                "NIXLConnector request_finished(%s) waiting for %d seconds "
-                "for remote decode to fetch blocks",
+                "NIXLConnector request_finished(%s) waiting for %d seconds for remote decode to fetch blocks",
                 request.request_id,
                 envs.APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT,
             )
-            self._reqs_need_send[request.request_id] = (
-                time.perf_counter() + envs.APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT
-            )
+            self._reqs_need_send[request.request_id] = time.perf_counter() + envs.APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT
             # NOTE HMA will "mark" empty/null blocks in groups with 0s (eg SWA ones),
             # trimming down after allocating for the whole sequence length. Empty
             # blocks are always at the start of the list.
