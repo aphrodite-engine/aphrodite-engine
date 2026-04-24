@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite.config import AphroditeConfig, DeviceConfig, KVTransferConfig, ModelConfig, set_current_aphrodite_config
 from aphrodite.distributed.kv_transfer.kv_connector.utils import get_kv_connector_cache_layout
 from aphrodite.logger import init_logger

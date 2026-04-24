@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 from aphrodite.attention.ops.common import pack_seq_triton, unpack_seq_triton
 from torch.testing import assert_close

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite.distributed.kv_transfer.kv_connector.v1.shared_storage_connector import (  # noqa: E501
     SharedStorageConnectorMetadata,
 )

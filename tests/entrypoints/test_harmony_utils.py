@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite.endpoints.harmony_utils import has_custom_tools, parse_input_to_harmony_message
 from openai_harmony import Role
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import json
 import os
@@ -362,11 +362,12 @@ class Exl3LinearMethod(LinearMethodBase):
         layer: torch.nn.Module,
         shard_id: str | int | tuple[int, ...] | None,
     ) -> int:
-        if shard_id in (None, "q", "k", "v"):
-            if shard_id is None:
-                shard_idx = 0
-            else:
-                shard_idx = {"q": 0, "k": 1, "v": 2}[shard_id]
+        if shard_id is None:
+            shard_idx = 0
+            return layer.exl3_output_partition_sizes[shard_idx]
+
+        if isinstance(shard_id, str) and shard_id in ("q", "k", "v"):
+            shard_idx = {"q": 0, "k": 1, "v": 2}[shard_id]
             return layer.exl3_output_partition_sizes[shard_idx]
 
         if isinstance(shard_id, tuple):
@@ -651,7 +652,7 @@ class Exl3LinearMethod(LinearMethodBase):
     def _shard_ids_for_layer(
         layer: torch.nn.Module,
         output_partition_sizes: list[int],
-    ) -> list[str | int | None]:
+    ) -> list[str | int | tuple[int, ...] | None]:
         if len(output_partition_sizes) == 1:
             return [None]
 

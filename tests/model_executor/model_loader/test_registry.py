@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import pytest
 from aphrodite.modeling.model_loader import get_model_loader, register_model_loader
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader

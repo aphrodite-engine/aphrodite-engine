@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import pytest
 import torch
 from aphrodite.modeling.layers.fused_moe.config import nvfp4_moe_quant_config

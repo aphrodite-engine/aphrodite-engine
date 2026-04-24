@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite.endpoints.openai.protocol import serialize_message, serialize_messages
 from openai_harmony import Message
 

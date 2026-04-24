@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 from aphrodite.quantization.utils.fp8_utils import (
     apply_w8a8_block_fp8_linear,

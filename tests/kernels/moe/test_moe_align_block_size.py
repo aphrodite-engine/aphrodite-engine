@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Tests for the MOE align block size function.
 
 Run `pytest tests/kernels/moe/test_moe_align_block_size.py`.

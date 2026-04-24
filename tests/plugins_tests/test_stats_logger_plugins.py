@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import pytest
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from dummy_stat_logger.dummy_stat_logger import DummyStatLogger

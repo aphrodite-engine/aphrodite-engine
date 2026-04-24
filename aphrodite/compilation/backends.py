@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import ast
 import dataclasses
@@ -273,7 +273,7 @@ class CompilerManager:
                 # after loading the last graph for this shape, record the time.
                 # there can be multiple graphs due to piecewise compilation.
                 elapsed = time.perf_counter() - compilation_start_time
-                logger.info_once(
+                logger.debug_once(
                     "Directly load the compiled graph(s) for compile range %s from the cache, took %.3f s",
                     str(compile_range),
                     elapsed,
@@ -358,7 +358,7 @@ class CompilerManager:
             self.is_cache_updated = True
             if graph_index == 0:
                 # adds some info logging for the first graph
-                logger.info_once(
+                logger.debug_once(
                     "Cache the graph of compile range %s for later use",
                     str(compile_range),
                 )
@@ -373,7 +373,7 @@ class CompilerManager:
         # after compiling the last graph, record the end time
         if graph_index == num_graphs - 1:
             elapsed = time.perf_counter() - compilation_start_time
-            logger.info_once(
+            logger.debug_once(
                 "Compiling a graph for compile range %s takes %.2f s",
                 str(compile_range),
                 elapsed,
@@ -1021,7 +1021,7 @@ class AphroditeBackend:
         if disable_cache:
             logger.info_once("Aphrodite's torch.compile cache is disabled.")
         else:
-            logger.info_once(
+            logger.debug_once(
                 "Using cache directory: %s for Aphrodite's torch.compile",
                 local_cache_dir,
             )

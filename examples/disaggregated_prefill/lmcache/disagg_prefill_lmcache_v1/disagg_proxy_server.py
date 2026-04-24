@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import argparse
 import os
 import time
@@ -50,10 +50,10 @@ class StatsCalculator:
         np_arr = np.array(self._stats)
         output_str = (
             f"\nNum requests: {len(self._stats)}"
-            + "\nPrefill node TTFT stats:"
-            + f"\n - Average (ms): {np.mean(np_arr)}"
-            + f"\n - Median (ms): {np.median(np_arr)}"
-            + f"\n - 99th Percentile (ms): {np.percentile(np_arr, 99)}\n"
+            "\nPrefill node TTFT stats:"
+            f"\n - Average (ms): {np.mean(np_arr)}"
+            f"\n - Median (ms): {np.median(np_arr)}"
+            f"\n - 99th Percentile (ms): {np.percentile(np_arr, 99)}\n"
         )
         print(
             "===============================",

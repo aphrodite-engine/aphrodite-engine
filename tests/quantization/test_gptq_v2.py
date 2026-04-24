@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Tests whether aphrodite correctly load and run gptq_v2 format checkpoints.
 
 Run `pytest tests/quantization/test_gptq_v2.py --forked`.
