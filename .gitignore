@@ -223,3 +223,5 @@ aphrodite/third_party/triton_kernels/*
 aphrodite/third_party/deep_gemm/
 
 .triton
+
+benchmarks/results/**
