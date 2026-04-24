@@ -81,7 +81,7 @@ if TYPE_CHECKING:
     APHRODITE_MEDIA_CONNECTOR: str = "http"
     APHRODITE_MM_HASHER_ALGORITHM: str = "blake3"
     APHRODITE_TARGET_DEVICE: str = "cuda"
-    APHRODITE_MAIN_CUDA_VERSION: str = "12.9"
+    APHRODITE_MAIN_CUDA_VERSION: str = "13.0"
     APHRODITE_FLOAT32_MATMUL_PRECISION: Literal["highest", "high", "medium"] = "highest"
     APHRODITE_BATCH_INVARIANT: bool = False
     MAX_JOBS: str | None = None
@@ -483,7 +483,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # rocm, cpu]
     "APHRODITE_TARGET_DEVICE": lambda: os.getenv("APHRODITE_TARGET_DEVICE", "cuda").lower(),
     # Main CUDA version of Aphrodite. This follows PyTorch but can be overridden.
-    "APHRODITE_MAIN_CUDA_VERSION": lambda: (os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "12.9"),
+    "APHRODITE_MAIN_CUDA_VERSION": lambda: (os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "13.0"),
     # Controls PyTorch float32 matmul precision mode within Aphrodite workers.
     # Valid options mirror torch.set_float32_matmul_precision
     "APHRODITE_FLOAT32_MATMUL_PRECISION": env_with_choices(
