@@ -1079,6 +1079,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         layer: FusedMoE,
         x: torch.Tensor,
         router_logits: torch.Tensor,
+        input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         raise NotImplementedError("EXL3 MoE uses external routing.")
 

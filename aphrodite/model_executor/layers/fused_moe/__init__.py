@@ -30,6 +30,7 @@ from aphrodite.model_executor.layers.fused_moe.router.fused_moe_router import (
     FusedMoERouter,
 )
 from aphrodite.model_executor.layers.fused_moe.router.gate_linear import GateLinear
+from aphrodite.model_executor.layers.fused_moe.shared_fused_moe import SharedFusedMoE
 from aphrodite.model_executor.layers.fused_moe.unquantized_fused_moe_method import (
     UnquantizedFusedMoEMethod,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "FusedMoEPrepareAndFinalizeModular",
     "GateLinear",
     "RoutingMethodType",
+    "SharedFusedMoE",
     "activation_without_mul",
     "apply_moe_activation",
     "fused_moe_make_expert_params_mapping",

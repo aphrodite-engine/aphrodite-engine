@@ -154,6 +154,16 @@ class DeepseekV32IndexerBackend(AttentionBackend):
         return (0, 1, 2)
 
 
+class DeepseekV4IndexerBackend(DeepseekV32IndexerBackend):
+    @staticmethod
+    def get_name() -> str:
+        return "DEEPSEEK_V4_INDEXER"
+
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [256]
+
+
 @dataclass
 class DeepseekV32IndexerPrefillChunkMetadata:
     block_table: torch.Tensor
@@ -179,7 +189,7 @@ class DeepSeekV32IndexerDecodeMetadata:
     # seq_lens: per-token effective context lengths.
     #   - flatten path / plain decode: 1D (batch_size,)
     #   - native MTP path: 2D (B, next_n) where [b,j] = L_b - next_n + j + 1
-    # Both fp8_paged_mqa_logits and the topk kernels accept both shapes.
+    # Both fp8_fp4_paged_mqa_logits and the topk kernels accept both shapes.
     seq_lens: torch.Tensor
     decode_lens: torch.Tensor
     requires_padding: bool
@@ -191,16 +201,8 @@ class DeepseekV32IndexerMetadata:
     # FIXME (zyongye)
     # hacky way to access the data now, need to be in chunked meta
     seq_lens: torch.Tensor
-
-    num_reqs: int
-    max_query_len: int
     max_seq_len: int
-
-    num_actual_tokens: int  # Number of tokens excluding padding.
-    query_start_loc: torch.Tensor
     slot_mapping: torch.Tensor
-    # The dimension of the attention heads
-    head_dim: int
 
     # New for MLA (compared to FlashAttention)
     # For handling prefill decode split
@@ -291,7 +293,7 @@ def get_max_prefill_buffer_size(aphrodite_config: AphroditeConfig):
 
 class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
     reorder_batch_threshold: int = 1
-    natively_supported_next_n: list[int] = [1, 2]
+    natively_supported_next_n_fp4: list[int] = [1, 2]
     # TODO (matt): integrate kernel with next_n = 4 support
 
     @classmethod
@@ -327,7 +329,6 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         )
         if not self.use_flattening and next_n > 1:
             # Native MTP: 2D buffer for per-token seq_lens.
-            # Flattening path is never used, so no expanded_seq_lens_buffer.
             self.decode_seq_lens_buffer = torch.zeros(
                 (scheduler_config.max_num_seqs, next_n),
                 dtype=torch.int32,
@@ -531,6 +532,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         assert num_decodes + num_prefills == num_reqs
         assert num_decode_tokens + num_prefill_tokens == num_tokens
 
+        compressed_slot_mapping = common_attn_metadata.slot_mapping
         prefill_metadata = None
         if num_prefills > 0:
             prefill_query_lens_cpu = torch.diff(query_start_loc_cpu[num_decodes : num_decodes + num_prefills + 1])
@@ -608,13 +610,8 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
 
         attn_metadata = DeepseekV32IndexerMetadata(
             seq_lens=common_attn_metadata.seq_lens,
-            num_reqs=common_attn_metadata.num_reqs,
-            max_query_len=common_attn_metadata.max_query_len,
             max_seq_len=common_attn_metadata.max_seq_len,
-            num_actual_tokens=common_attn_metadata.num_actual_tokens,
-            query_start_loc=common_attn_metadata.query_start_loc,
-            slot_mapping=common_attn_metadata.slot_mapping,
-            head_dim=128,
+            slot_mapping=compressed_slot_mapping,
             num_decodes=num_decodes,
             num_decode_tokens=num_decode_tokens,
             num_prefills=num_prefills,
@@ -624,3 +621,130 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         )
 
         return attn_metadata
+
+
+def build_prefill_chunk_metadata(
+    start_idx: int,
+    end_idx: int,
+    query_start_loc: torch.Tensor,
+    query_start_loc_cpu: torch.Tensor,
+    uncompressed_seq_lens: torch.Tensor,
+    compressed_seq_lens: torch.Tensor,
+    compressed_seq_lens_cpu: torch.Tensor,
+    block_table: torch.Tensor,
+    compress_ratio: int,
+    query_slice: slice | None = None,
+    skip_kv_gather: bool = False,
+) -> DeepseekV32IndexerPrefillChunkMetadata | None:
+    total_seq_lens = compressed_seq_lens_cpu[start_idx:end_idx].sum().item()
+    if total_seq_lens == 0:
+        return None
+
+    num_reqs = end_idx - start_idx
+    device = block_table.device
+    token_to_seq = torch.empty(total_seq_lens, dtype=torch.int32, device=device)
+
+    cu_seq_lens = torch.empty(num_reqs + 1, dtype=torch.int32, device=device)
+    # Assigning to slice avoids cpu sync.
+    cu_seq_lens[:1] = 0
+    torch.cumsum(compressed_seq_lens[start_idx:end_idx], dim=0, out=cu_seq_lens[1:])
+
+    query_start_loc = query_start_loc[start_idx : end_idx + 1] - query_start_loc[start_idx]
+
+    total_query_len = int((query_start_loc_cpu[end_idx] - query_start_loc_cpu[start_idx]).item())
+    if query_slice is not None:
+        qs_start = query_slice.start
+        qs_stop = query_slice.stop
+    else:
+        qs_start = 0
+        qs_stop = total_query_len
+    output_query_len = qs_stop - qs_start
+
+    cu_seq_len_ks = torch.empty(output_query_len, dtype=torch.int32, device=device)
+    cu_seq_len_ke = torch.empty(output_query_len, dtype=torch.int32, device=device)
+
+    _build_prefill_chunk_metadata_kernel[(num_reqs,)](
+        query_start_loc,
+        uncompressed_seq_lens[start_idx:end_idx],
+        cu_seq_lens,
+        token_to_seq,
+        cu_seq_len_ks,
+        cu_seq_len_ke,
+        qs_start,
+        qs_stop,
+        BLOCK_SIZE=1024,
+        COMPRESS_RATIO=compress_ratio,
+    )
+
+    token_start = query_start_loc_cpu[start_idx].item()
+    if query_slice is not None:
+        token_end = token_start + qs_stop
+        token_start = token_start + qs_start
+        skip_kv_gather = skip_kv_gather or qs_start > 0
+    else:
+        token_end = query_start_loc_cpu[end_idx].item()
+
+    return DeepseekV32IndexerPrefillChunkMetadata(
+        cu_seqlen_ks=cu_seq_len_ks,
+        cu_seqlen_ke=cu_seq_len_ke,
+        cu_seq_lens=cu_seq_lens,
+        token_to_seq=token_to_seq,
+        total_seq_lens=total_seq_lens,
+        block_table=block_table[start_idx:end_idx],
+        token_start=token_start,
+        token_end=token_end,
+        num_reqs=num_reqs,
+        skip_kv_gather=skip_kv_gather,
+    )
+
+
+@triton.jit
+def _build_prefill_chunk_metadata_kernel(
+    # Inputs
+    query_start_loc_ptr,
+    uncompressed_seq_lens_ptr,
+    cu_compressed_seq_lens_ptr,
+    # Outputs
+    token_to_seq_ptr,
+    cu_compressed_seq_len_ks_ptr,
+    cu_compressed_seq_len_ke_ptr,
+    query_slice_start,
+    query_slice_stop,
+    BLOCK_SIZE: tl.constexpr,
+    COMPRESS_RATIO: tl.constexpr,
+):
+    batch_idx = tl.program_id(0)
+
+    query_start = tl.load(query_start_loc_ptr + batch_idx)
+    query_end = tl.load(query_start_loc_ptr + batch_idx + 1)
+    query_len = query_end - query_start
+
+    seq_start = tl.load(cu_compressed_seq_lens_ptr + batch_idx)
+    seq_end = tl.load(cu_compressed_seq_lens_ptr + batch_idx + 1)
+    compressed_seq_len = seq_end - seq_start
+
+    uncompressed_seq_len = tl.load(uncompressed_seq_lens_ptr + batch_idx)
+    start_pos = uncompressed_seq_len - query_len
+
+    for i in range(0, query_len, BLOCK_SIZE):
+        offset = i + tl.arange(0, BLOCK_SIZE)
+        abs_pos = query_start + offset
+        mask = (offset < query_len) & (abs_pos >= query_slice_start) & (abs_pos < query_slice_stop)
+        out_pos = abs_pos - query_slice_start
+
+        # Compute cu_seq_len_ks
+        tl.store(cu_compressed_seq_len_ks_ptr + out_pos, seq_start, mask=mask)
+
+        # Compute cu_seq_len_ke
+        seq_len_per_token = (start_pos + 1 + offset) // COMPRESS_RATIO
+        tl.store(
+            cu_compressed_seq_len_ke_ptr + out_pos,
+            seq_start + seq_len_per_token,
+            mask=mask,
+        )
+
+    # Compute token_to_seq
+    for i in range(0, compressed_seq_len, BLOCK_SIZE):
+        offset = i + tl.arange(0, BLOCK_SIZE)
+        mask = offset < compressed_seq_len
+        tl.store(token_to_seq_ptr + seq_start + offset, batch_idx, mask=mask)

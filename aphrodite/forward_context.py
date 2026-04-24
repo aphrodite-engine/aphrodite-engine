@@ -66,8 +66,26 @@ def _compute_sp_num_tokens(num_tokens_across_dp_cpu: torch.Tensor, sequence_para
     return sp_tokens.tolist()
 
 
+def _compute_chunked_local_num_tokens(
+    num_tokens_across_dp_cpu: torch.Tensor,
+    sequence_parallel_size: int,
+    max_num_tokens: int,
+    chunk_idx: int,
+) -> list[int]:
+    sp_tokens = _compute_sp_num_tokens(num_tokens_across_dp_cpu, sequence_parallel_size)
+    sp_size = len(sp_tokens)
+
+    local_size = [-1] * sp_size
+    for i in range(sp_size):
+        local_size[i] = min(max_num_tokens, sp_tokens[i] - (max_num_tokens * chunk_idx))
+        if local_size[i] <= 0:
+            local_size[i] = 1
+    return local_size
+
+
 @dataclass
 class DPMetadata:
+    max_tokens_across_dp_cpu: torch.Tensor
     num_tokens_across_dp_cpu: torch.Tensor
 
     # NOTE: local_sizes should only be set by the chunked_sizes context manager
@@ -88,7 +106,21 @@ class DPMetadata:
         # If num_tokens_across_dp is None, it will be computed by all_reduce
         # Otherwise, num_tokens_across_dp[dp_rank] should be equal to batchsize
         assert num_tokens_across_dp_cpu[dp_rank] == batchsize, f"{num_tokens_across_dp_cpu[dp_rank]} {batchsize}"
-        return DPMetadata(num_tokens_across_dp_cpu)
+        max_tokens_across_dp_cpu = torch.max(num_tokens_across_dp_cpu)
+        return DPMetadata(max_tokens_across_dp_cpu, num_tokens_across_dp_cpu)
+
+    @contextmanager
+    def chunked_sizes(self, sequence_parallel_size: int, max_chunk_size_per_rank: int, chunk_idx: int):
+        self.local_sizes = _compute_chunked_local_num_tokens(
+            self.num_tokens_across_dp_cpu,
+            sequence_parallel_size,
+            max_chunk_size_per_rank,
+            chunk_idx,
+        )
+        try:
+            yield self.local_sizes
+        finally:
+            self.local_sizes = None
 
     @contextmanager
     def sp_local_sizes(self, sequence_parallel_size: int):

@@ -639,6 +639,50 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             # clean up -dev packages, keep runtime libraries
             rm -rf /var/lib/apt/lists/* \
         ); \
+        # Install mooncake-transfer-engine from the zhewenl/Mooncake-rdma fork
+        # (based on ivanium/Mooncake@yifan/dev). The fork adds the dmabuf
+        # sub-allocation-address fix that upstream kvcache-ai/Mooncake lacks:
+        # upstream calls ibv_reg_dmabuf_mr with a tensor's sub-address instead
+        # of the true CUDA allocation base, which EFAULTs on vLLM KV caches
+        # that are sub-views of a larger PyTorch allocation. The fork also
+        # carries a glog 0.4 compat shim for Ubuntu 22.04.
+        # Built from source on both x86_64 and aarch64 — the upstream x86_64
+        # wheel has the dmabuf bug, and the upstream aarch64 wheel additionally
+        # needs glibc 2.39 (Ubuntu 24.04+) which the 22.04 base doesn't provide.
+        MOONCAKE_BUILD_PKGS="cmake ninja-build git \
+            libgoogle-glog-dev libgtest-dev libjsoncpp-dev libunwind-dev \
+            libpython3-dev libboost-all-dev libssl-dev \
+            libgrpc-dev libgrpc++-dev libprotobuf-dev libyaml-cpp-dev protobuf-compiler-grpc \
+            libcurl4-openssl-dev libhiredis-dev liburing-dev libjemalloc-dev \
+            libmsgpack-dev libzstd-dev libasio-dev libxxhash-dev pkg-config patchelf"; \
+        apt-get update -y && \
+        apt-get install -y --no-install-recommends ${MOONCAKE_BUILD_PKGS} && \
+        git clone --branch compat/ubuntu-22.04 --depth 1 --recurse-submodules \
+            https://github.com/zhewenl/Mooncake-rdma.git /tmp/Mooncake && \
+        cd /tmp/Mooncake/extern/yalantinglibs && mkdir -p build && cd build && \
+        cmake .. -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARK=OFF -DBUILD_UNIT_TESTS=OFF && \
+        cmake --build . -j$(nproc) && cmake --install . && \
+        cd /tmp/Mooncake && \
+        export LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LIBRARY_PATH} && \
+        mkdir -p build && cd build && \
+        cmake .. -DUSE_CUDA=ON -DWITH_NVIDIA_PEERMEM=OFF -DUSE_MNNVL=ON \
+            -DPython3_EXECUTABLE=$(which python3) \
+            -DPYTHON_EXECUTABLE=$(which python3) && \
+        make -j$(nproc) && make install && \
+        strings /usr/local/lib/python${PYTHON_VERSION}/dist-packages/mooncake/engine*.so \
+            | grep -q "cuMemGetAddressRange" || \
+            { echo "ERROR: mooncake dmabuf fix missing in built binary"; exit 1; } && \
+        cd / && rm -rf /tmp/Mooncake && \
+        apt-get purge -y ${MOONCAKE_BUILD_PKGS} && \
+        apt-get install -y --no-install-recommends \
+            libgoogle-glog0v5 libjsoncpp25 liburing2 libgflags2.2 \
+            libjemalloc2 libhiredis0.14 libcurl4 && \
+        apt-get autoremove -y && rm -rf /var/lib/apt/lists/* && \
+        if [ ! -f /usr/local/cuda/lib64/libcudart.so ] && [ -f /usr/local/cuda/lib64/libcudart.so.13 ]; then \
+            ln -s libcudart.so.13 /usr/local/cuda/lib64/libcudart.so; \
+        elif [ ! -f /usr/local/cuda/lib64/libcudart.so ] && [ -f /usr/local/cuda/lib64/libcudart.so.12 ]; then \
+            ln -s libcudart.so.12 /usr/local/cuda/lib64/libcudart.so; \
+        fi; \
     fi
 
 ENV APHRODITE_USAGE_SOURCE production-docker-image

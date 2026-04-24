@@ -739,6 +739,7 @@ class CompilationConfig:
         "aphrodite::kda_attention",
         "aphrodite::sparse_attn_indexer",
         "aphrodite::rocm_aiter_sparse_attn_indexer",
+        "aphrodite::deepseek_v4_attention",
     ]
 
     def compute_hash(self) -> str:

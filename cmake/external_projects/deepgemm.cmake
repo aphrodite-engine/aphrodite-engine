@@ -20,7 +20,7 @@ else()
   FetchContent_Declare(
     deepgemm
     GIT_REPOSITORY https://github.com/deepseek-ai/DeepGEMM.git
-    GIT_TAG 477618cd51baffca09c4b0b87e97c03fe827ef03
+    GIT_TAG 7f2a703ed51ac1f7af07f5e1453b2d3267d37d50
     GIT_SUBMODULES "third-party/cutlass" "third-party/fmt"
     GIT_PROGRESS TRUE
     CONFIGURE_COMMAND ""
@@ -117,6 +117,11 @@ if(DEEPGEMM_ARCHS)
 
   install(DIRECTORY "${deepgemm_SOURCE_DIR}/deep_gemm/legacy/"
     DESTINATION aphrodite/third_party/deep_gemm/legacy
+    COMPONENT _deep_gemm_C
+    FILES_MATCHING PATTERN "*.py")
+
+  install(DIRECTORY "${deepgemm_SOURCE_DIR}/deep_gemm/mega/"
+    DESTINATION vllm/third_party/deep_gemm/mega
     COMPONENT _deep_gemm_C
     FILES_MATCHING PATTERN "*.py")
 

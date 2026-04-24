@@ -255,6 +255,7 @@ class FusedMoE(PluggableLayer):
         custom_routing_function: Callable | None = None,
         scoring_func: str = "softmax",
         routed_scaling_factor: float = 1.0,
+        swiglu_limit: float | None = None,
         e_score_correction_bias: torch.Tensor | None = None,
         apply_router_weight_on_input: bool = False,
         activation: str = "silu",
@@ -272,8 +273,12 @@ class FusedMoE(PluggableLayer):
         routed_output_transform: torch.nn.Module | None = None,
         apply_routed_scale_to_output: bool = False,
         zero_expert_type: str | None = None,
+        hash_indices_table: torch.Tensor | None = None,
     ):
         super().__init__()
+
+        self._routed_input_transform = routed_input_transform
+        self.swiglu_limit = swiglu_limit
 
         if params_dtype is None:
             params_dtype = torch.get_default_dtype()
@@ -424,6 +429,7 @@ class FusedMoE(PluggableLayer):
         self.e_score_correction_bias = e_score_correction_bias
         # TODO(bnell): end attributes
 
+        self.hash_indices_table = hash_indices_table
         self.apply_router_weight_on_input = apply_router_weight_on_input
         self.activation = MoEActivation.from_str(activation)
 
@@ -446,6 +452,7 @@ class FusedMoE(PluggableLayer):
             # TODO(bnell): once we can construct the MK at init time, we
             # can make this a value.
             indices_type_getter=lambda: self.quant_method.topk_indices_dtype,
+            hash_indices_table=self.hash_indices_table,
             zero_expert_type=zero_expert_type,
             num_logical_experts=self.logical_num_experts,
         )
@@ -1461,10 +1468,12 @@ class FusedMoE(PluggableLayer):
         self,
         hidden_states: torch.Tensor,
         router_logits: torch.Tensor,
+        input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self.runner.forward(
             hidden_states,
             router_logits,
+            input_ids,
         )
 
     @property

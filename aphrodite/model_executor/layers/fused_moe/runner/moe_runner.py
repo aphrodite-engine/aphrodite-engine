@@ -414,6 +414,7 @@ class MoERunner(MoERunnerInterface):
         hidden_states: torch.Tensor,
         router_logits: torch.Tensor,
         shared_experts_input: torch.Tensor | None,
+        input_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor | None, torch.Tensor]:
         """Run expert routing and the fused MoE kernel via the quant method.
 
@@ -428,11 +429,13 @@ class MoERunner(MoERunnerInterface):
                 layer=layer,
                 x=hidden_states,
                 router_logits=router_logits,
+                input_ids=input_ids,
             )
         else:
             topk_weights, topk_ids = self.router.select_experts(
                 hidden_states=hidden_states,
                 router_logits=router_logits,
+                input_ids=input_ids,
             )
 
             # Passing shared_experts_input in case SharedExpertsOrder is
@@ -498,6 +501,7 @@ class MoERunner(MoERunnerInterface):
         self,
         hidden_states: torch.Tensor,
         router_logits: torch.Tensor,
+        input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Invoke the fused moe layer.
 
@@ -535,6 +539,7 @@ class MoERunner(MoERunnerInterface):
         result = self._forward_entry(
             hidden_states,
             router_logits,
+            input_ids,
             shared_experts_input,
             self._encode_layer_name(),
         )

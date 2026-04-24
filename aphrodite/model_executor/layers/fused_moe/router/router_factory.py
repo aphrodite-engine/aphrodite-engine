@@ -52,6 +52,7 @@ def create_fused_moe_router(
     # eplb parameters
     enable_eplb: bool = False,
     eplb_state: EplbLayerState = EMPTY_EPLB_STATE,
+    hash_indices_table: torch.Tensor | None = None,
     # zero expert parameters
     zero_expert_type: str | None = None,
     num_logical_experts: int | None = None,
@@ -172,17 +173,20 @@ def create_fused_moe_router(
             indices_type_getter=indices_type_getter,
         )
 
-    if e_score_correction_bias is not None:
+    assert scoring_func in ["sigmoid", "softmax", "sqrtsoftplus"]
+
+    if e_score_correction_bias is not None or hash_indices_table is not None:
         return FusedTopKBiasRouter(
             top_k=top_k,
             global_num_experts=global_num_experts,
             eplb_state=eplb_state,
             e_score_correction_bias=e_score_correction_bias,
-            scoring_func=scoring_func,
             renormalize=renormalize,
             routed_scaling_factor=routed_scaling_factor,
             enable_eplb=enable_eplb,
             indices_type_getter=indices_type_getter,
+            scoring_func=scoring_func,
+            hash_indices_table=hash_indices_table,
         )
 
     return FusedTopKRouter(

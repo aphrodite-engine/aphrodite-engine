@@ -4,12 +4,13 @@
 
 import copy
 import hashlib
+import math
 import os
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any, NewType, TypeAlias, overload
+from typing import Any, NewType, TypeAlias, cast, overload
 
 from aphrodite import envs
 from aphrodite.config import AphroditeConfig
@@ -24,6 +25,9 @@ from aphrodite.v1.kv_cache_interface import (
     KVCacheGroupSpec,
     KVCacheSpec,
     KVCacheTensor,
+    MambaSpec,
+    MLAAttentionSpec,
+    SlidingWindowMLASpec,
     SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
 )
@@ -532,6 +536,47 @@ def hash_block_tokens(
     return BlockHash(hash_function((parent_block_hash, curr_block_token_ids_tuple, extra_keys)))
 
 
+def resolve_kv_cache_block_sizes(
+    kv_cache_config: KVCacheConfig,
+    aphrodite_config: AphroditeConfig,
+) -> tuple[int, int]:
+    """Resolve scheduler and prefix-hash block sizes."""
+    cache_config = aphrodite_config.cache_config
+    dcp = aphrodite_config.parallel_config.decode_context_parallel_size
+    pcp = aphrodite_config.parallel_config.prefill_context_parallel_size
+    groups = kv_cache_config.kv_cache_groups
+
+    if len(groups) <= 1:
+        block_size = cache_config.block_size * dcp * pcp
+        return block_size, block_size
+
+    if dcp != 1 or pcp != 1:
+        raise ValueError("Hybrid KV cache groups with multiple block sizes do not support context parallelism.")
+
+    group_block_sizes = [group.kv_cache_spec.block_size for group in groups]
+    scheduler_block_size = math.lcm(*group_block_sizes)
+
+    connector_enabled = aphrodite_config.kv_transfer_config is not None
+    if not (cache_config.enable_prefix_caching or connector_enabled):
+        return scheduler_block_size, scheduler_block_size
+
+    if any(
+        isinstance(group.kv_cache_spec, MambaSpec) and group.kv_cache_spec.block_size != cache_config.block_size
+        for group in groups
+    ):
+        return scheduler_block_size, scheduler_block_size
+
+    requested = cache_config.hash_block_size
+    hash_block_size = requested if requested is not None else math.gcd(*group_block_sizes)
+    if any(block_size % hash_block_size != 0 for block_size in group_block_sizes):
+        raise ValueError(
+            f"Invalid hash_block_size={hash_block_size}; all KV cache group "
+            f"block sizes must be divisible by hash_block_size. "
+            f"Got group block sizes={group_block_sizes}."
+        )
+    return scheduler_block_size, hash_block_size
+
+
 def get_request_block_hasher(
     block_size: int,
     caching_hash_fn: Callable[[Any], bytes],
@@ -1034,6 +1079,42 @@ def _get_kv_cache_groups_uniform_page_size(
     return create_kv_cache_group_specs(kv_cache_spec, grouped_layers)
 
 
+def _get_kv_cache_config_deepseek_v4(
+    aphrodite_config: AphroditeConfig,
+    kv_cache_groups: list[KVCacheGroupSpec],
+    available_memory: int,
+) -> tuple[int, list[KVCacheTensor]]:
+    full_mla_spec = kv_cache_groups[0].kv_cache_spec
+    assert isinstance(full_mla_spec, UniformTypeKVCacheSpecs)
+    page_sizes = sorted(full_mla_spec.get_page_sizes())
+    layer_tuple_page_bytes = sum(page_sizes)
+
+    bucketed: list[dict[int, list[str]]] = []
+    for group in kv_cache_groups:
+        assert isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs)
+        specs = group.kv_cache_spec.kv_cache_specs
+        buckets: dict[int, list[str]] = defaultdict(list)
+        for name in group.layer_names:
+            buckets[specs[name].page_size_bytes].append(name)
+        bucketed.append(buckets)
+
+    num_layer_tuples = max(len(layers) for buckets in bucketed for layers in buckets.values())
+    num_blocks = available_memory // (layer_tuple_page_bytes * num_layer_tuples)
+    num_blocks = may_override_num_blocks(aphrodite_config, num_blocks)
+
+    kv_cache_tensors: list[KVCacheTensor] = []
+    for tuple_idx in range(num_layer_tuples):
+        for page_size in page_sizes:
+            shared_by: list[str] = []
+            for buckets in bucketed:
+                bucket = buckets.get(page_size)
+                if bucket is not None and tuple_idx < len(bucket):
+                    shared_by.append(bucket[tuple_idx])
+            kv_cache_tensors.append(KVCacheTensor(size=page_size * num_blocks, shared_by=shared_by))
+
+    return num_blocks, kv_cache_tensors
+
+
 def get_kv_cache_config_from_groups(
     aphrodite_config: AphroditeConfig,
     kv_cache_groups: list[KVCacheGroupSpec],
@@ -1075,6 +1156,12 @@ def get_kv_cache_config_from_groups(
             )
             for layer_name in kv_cache_groups[0].layer_names
         ]
+    elif all(isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs) for group in kv_cache_groups):
+        # DeepseekV4: UniformTypeKVCacheSpecs but multiple groups.
+        # Delegate to the DeepseekV4-specific allocator.
+        num_blocks, kv_cache_tensors = _get_kv_cache_config_deepseek_v4(
+            aphrodite_config, kv_cache_groups, available_memory
+        )
     else:
         # General case:
         # We will have group_size memory pools, each is shared by one layer from
@@ -1133,9 +1220,29 @@ def unify_hybrid_kv_cache_specs(kv_cache_spec: dict[str, KVCacheSpec]):
     has_full_attention = any(isinstance(spec, FullAttentionSpec) for spec in kv_cache_spec.values())
     has_sliding_window = any(isinstance(spec, SlidingWindowSpec) for spec in kv_cache_spec.values())
     has_chunked_local_attention = any(isinstance(spec, ChunkedLocalAttentionSpec) for spec in kv_cache_spec.values())
+    has_swa_mla = any(isinstance(spec, SlidingWindowMLASpec) for spec in kv_cache_spec.values())
+
+    uniform_block_size: int | None = None
+    if has_swa_mla:
+        assert has_full_attention
+        any_full_spec = next(spec for spec in kv_cache_spec.values() if isinstance(spec, FullAttentionSpec))
+        uniform_block_size = any_full_spec.block_size
+
     if has_full_attention and (has_sliding_window or has_chunked_local_attention):
         for layer_name, spec in kv_cache_spec.items():
-            if isinstance(spec, SlidingWindowSpec):
+            if isinstance(spec, SlidingWindowMLASpec):
+                kv_cache_spec[layer_name] = MLAAttentionSpec(
+                    block_size=uniform_block_size if uniform_block_size is not None else spec.block_size,
+                    num_kv_heads=spec.num_kv_heads,
+                    head_size=spec.head_size,
+                    dtype=spec.dtype,
+                    page_size_padded=spec.page_size_padded,
+                    cache_dtype_str=spec.cache_dtype_str,
+                    alignment=spec.alignment,
+                    compress_ratio=spec.compress_ratio,
+                    model_version=spec.model_version,
+                )
+            elif isinstance(spec, SlidingWindowSpec):
                 kv_cache_spec[layer_name] = FullAttentionSpec(
                     block_size=spec.block_size,
                     num_kv_heads=spec.num_kv_heads,
@@ -1158,6 +1265,127 @@ def unify_hybrid_kv_cache_specs(kv_cache_spec: dict[str, KVCacheSpec]):
         raise ValueError(
             "Hybrid KV cache manager is disabled but failed to convert the KV cache specs to one unified type."
         )
+
+
+def group_and_unify_kv_cache_specs(
+    kv_cache_spec: dict[str, KVCacheSpec],
+) -> list[UniformTypeKVCacheSpecs] | None:
+    if not any(isinstance(spec, SlidingWindowMLASpec) for spec in kv_cache_spec.values()):
+        return None
+
+    mla_specs: dict[str, KVCacheSpec] = {}
+    grouped_swa_mla_specs: dict[tuple[int, int], dict[str, KVCacheSpec]] = defaultdict(dict)
+    for name, spec in kv_cache_spec.items():
+        if isinstance(spec, SlidingWindowMLASpec):
+            grouped_swa_mla_specs[(spec.block_size, spec.sliding_window)][name] = spec
+        elif isinstance(spec, MLAAttentionSpec):
+            mla_specs[name] = spec
+
+    assert mla_specs
+    mla_uniform_spec = UniformTypeKVCacheSpecs.from_specs(mla_specs)
+    assert mla_uniform_spec is not None
+
+    swa_uniform_specs: list[UniformTypeKVCacheSpecs] = []
+    for spec_dict in grouped_swa_mla_specs.values():
+        uniform_spec = UniformTypeKVCacheSpecs.from_specs(spec_dict)
+        assert uniform_spec is not None
+        swa_uniform_specs.append(uniform_spec)
+
+    return [mla_uniform_spec, *swa_uniform_specs]
+
+
+def _approximate_gcd(values: Sequence[int], *, lower_bound: int | None = None) -> int:
+    if not values:
+        raise ValueError("values must be non-empty")
+    if any(value <= 0 for value in values):
+        raise ValueError(f"values must be positive, got: {list(values)!r}")
+
+    min_d = max(1, lower_bound if lower_bound is not None else 1)
+    max_d = max(values)
+    if min_d > max_d:
+        return min_d
+
+    best_d = min_d
+    best_pad: int | None = None
+    for d in range(min_d, max_d + 1):
+        pad = sum((d - (value % d)) % d for value in values)
+        if best_pad is None or pad < best_pad or (pad == best_pad and d > best_d):
+            best_pad = pad
+            best_d = d
+    return best_d
+
+
+def _get_kv_cache_groups_uniform_groups(
+    grouped_specs: list[UniformTypeKVCacheSpecs],
+) -> list[KVCacheGroupSpec]:
+    assert grouped_specs
+    full_mla_spec = grouped_specs[0]
+    assert all(isinstance(spec, MLAAttentionSpec) for spec in full_mla_spec.kv_cache_specs.values())
+    full_mla_group = KVCacheGroupSpec(
+        layer_names=list(full_mla_spec.kv_cache_specs.keys()),
+        kv_cache_spec=full_mla_spec,
+    )
+
+    num_layer_tuples_per_group = [grouped_spec.get_num_layer_tuples() for grouped_spec in grouped_specs]
+    num_layer_tuples = _approximate_gcd(
+        num_layer_tuples_per_group,
+        lower_bound=num_layer_tuples_per_group[0],
+    )
+    swa_mla_specs = grouped_specs[1:]
+    assert all(
+        isinstance(spec, SlidingWindowMLASpec) for group in swa_mla_specs for spec in group.kv_cache_specs.values()
+    )
+
+    all_page_sizes = full_mla_spec.get_page_sizes()
+    swa_mla_groups: list[KVCacheGroupSpec] = []
+    for sm_spec in swa_mla_specs:
+        sm_page_sizes = sm_spec.get_page_sizes()
+        layers_per_size: dict[int, list[str]] = defaultdict(list)
+        assert max(sm_page_sizes) <= max(all_page_sizes)
+
+        size_to_candidate = {page_size: min(x for x in all_page_sizes if x >= page_size) for page_size in sm_page_sizes}
+        for layer_name, layer_spec in sm_spec.kv_cache_specs.items():
+            current_size = layer_spec.page_size_bytes
+            candidate = size_to_candidate[current_size]
+            if current_size < candidate:
+                object.__setattr__(layer_spec, "page_size_padded", candidate)
+            layers_per_size[candidate].append(layer_name)
+
+        assert len({len(layers) for layers in layers_per_size.values()}) == 1
+        num_layers_per_size = len(next(iter(layers_per_size.values())))
+        num_tuple_groups = cdiv(num_layers_per_size, num_layer_tuples)
+        layer_tuples = list(zip(*layers_per_size.values(), strict=False))
+        for i in range(num_tuple_groups):
+            group_layer_tuples = layer_tuples[i::num_tuple_groups]
+            group_layer_names = [name for layer_tuple in group_layer_tuples for name in layer_tuple]
+            group_layer_specs = {name: sm_spec.kv_cache_specs[name] for name in group_layer_names}
+            sub_sm_spec = UniformTypeKVCacheSpecs.from_specs(group_layer_specs)
+            assert sub_sm_spec is not None
+            swa_mla_groups.append(
+                KVCacheGroupSpec(
+                    layer_names=group_layer_names,
+                    kv_cache_spec=sub_sm_spec,
+                )
+            )
+
+    return [full_mla_group, *swa_mla_groups]
+
+
+def _annotate_eagle_groups_deepseek_v4(
+    aphrodite_config: AphroditeConfig,
+    kv_cache_spec: dict[str, KVCacheSpec],
+    kv_cache_groups: list[KVCacheGroupSpec],
+) -> None:
+    spec_config = aphrodite_config.speculative_config
+    if spec_config is None or not spec_config.use_eagle():
+        return
+    if not any(getattr(spec, "model_version", None) == "deepseek_v4" for spec in kv_cache_spec.values()):
+        return
+    last_layer = next(reversed(kv_cache_spec))
+    for group in kv_cache_groups:
+        if last_layer in group.layer_names:
+            group.is_eagle_group = True
+            break
 
 
 def get_kv_cache_groups(
@@ -1191,6 +1419,14 @@ def get_kv_cache_groups(
         # full attention, or all layers are sliding window attention with the
         # same window size). Put all layers into one group.
         return _get_kv_cache_groups_uniform_type(uniform_spec)
+    elif grouped_specs := group_and_unify_kv_cache_specs(kv_cache_spec):
+        # DeepseekV4 case: All layers need the same number of token slots,
+        # yet some layers are full attention while others are sliding window
+        # attention in different sizes. Need to group layers into multiple
+        # UniformTypeKVCacheSpecs.
+        kv_cache_groups = _get_kv_cache_groups_uniform_groups(grouped_specs)
+        _annotate_eagle_groups_deepseek_v4(aphrodite_config, kv_cache_spec, kv_cache_groups)
+        return kv_cache_groups
 
     # As KVCacheManager can only allocate memory of one size, we need to unify
     # the page size of the layers. For cases cannot be unified, this function
@@ -1268,10 +1504,23 @@ def _max_memory_usage_bytes_from_groups(
     if not kv_cache_groups:
         return 0
 
-    # UniformTypeKVCacheSpecs special case (single group, per-layer specs)
     if len(kv_cache_groups) == 1 and isinstance(kv_cache_groups[0].kv_cache_spec, UniformTypeKVCacheSpecs):
+        # UniformTypeKVCacheSpecs special case (single group, per-layer specs)
         per_layer_specs = kv_cache_groups[0].kv_cache_spec.kv_cache_specs
         return sum(spec.max_memory_usage_bytes(aphrodite_config) for spec in per_layer_specs.values())
+    elif all(isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs) for group in kv_cache_groups):
+        full_mla_spec = cast(UniformTypeKVCacheSpecs, kv_cache_groups[0].kv_cache_spec)
+        layer_tuple_bytes = sum(full_mla_spec.get_page_sizes())
+        num_layer_tuples = max(
+            cast(UniformTypeKVCacheSpecs, group.kv_cache_spec).get_num_layer_tuples() for group in kv_cache_groups
+        )
+
+        total_max_mem_usage_bytes = 0
+        for group in kv_cache_groups:
+            group_spec = cast(UniformTypeKVCacheSpecs, group.kv_cache_spec)
+            g_max_mem_usage_pages = group_spec.max_memory_usage_pages(aphrodite_config)
+            total_max_mem_usage_bytes += num_layer_tuples * g_max_mem_usage_pages * layer_tuple_bytes
+        return total_max_mem_usage_bytes
 
     # General case: group_size pools, each shared by one layer per group
     # Memory = group_size * page_size * blocks_for_max_len
@@ -1405,7 +1654,13 @@ def _project_kv_cache_groups_to_worker(
                 block_size=group_spec.block_size,
                 kv_cache_specs={layer_name: group_spec.kv_cache_specs[layer_name] for layer_name in worker_layer_names},
             )
-        projected_groups.append(KVCacheGroupSpec(worker_layer_names, group_spec))
+        projected_groups.append(
+            KVCacheGroupSpec(
+                worker_layer_names,
+                group_spec,
+                is_eagle_group=group.is_eagle_group and bool(worker_layer_names),
+            )
+        )
     return projected_groups
 
 
@@ -1580,10 +1835,7 @@ class BlockHashListWithBlockSize:
     def _get_value_at(self, idx: int) -> BlockHash:
         base = idx * self.scale_factor
         end = base + self.scale_factor
-        merged_hash: bytes = self.block_hashes[base]
-        for i in range(base + 1, end):
-            merged_hash += self.block_hashes[i]
-        return BlockHash(merged_hash)
+        return BlockHash(b"".join(self.block_hashes[base:end]))
 
 
 BlockHashList = list[BlockHash] | BlockHashListWithBlockSize

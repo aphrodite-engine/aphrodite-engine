@@ -15,6 +15,7 @@ from aphrodite.model_executor.layers.attention.mla_attention import (
 )
 from aphrodite.platforms import current_platform
 from aphrodite.platforms.interface import DeviceCapability
+from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.platform_utils import num_compute_units
 from aphrodite.utils.torch_utils import is_quantized_kv_cache
 from aphrodite.v1.attention.backend import (
@@ -65,8 +66,8 @@ MIN_HEADS_FOR_BF16_PREFILL = 32
 """
 NOTE: FlashMLA Sparse uses an fp8 cache with the following format
 
-In the "FP8 with scale" format, each token's KV cache is 656 Bytes,
-structured as:
+For DeepSeek V3.2, in the "FP8 with scale" format, each token's KV cache is 656
+Bytes, structured as:
 -   **First 512 bytes:** The "quantized NoPE" part, containing 512
     `float8_e4m3` values.
 -   **Next 16 bytes:** Scale factors, containing 4 `float32` values.
@@ -74,6 +75,16 @@ structured as:
     the second for the next 128, and so on.
 -   **Last 128 bytes:** The "RoPE" part, containing 64 `bfloat16` values. This
     part is not quantized for accuracy.
+
+For DeepSeek V4, in the "FP8 with scale" format, each token's KV cache is 584
+Bytes, structured as:
+-   **First 448 bytes:** The "quantized NoPE" part, containing 448
+    `float8_e4m3` values.
+-   **Next 128 bytes:** The "RoPE" part, containing 64 `bfloat16` values. This
+    part is not quantized for accuracy.
+-   **Last 8 bytes:** Scale factors, containing 7 `ue8m0` values + 1B pad.
+    The first `ue8m0` is the scale for the first 64 `float8_e4m3` values,
+    the second for the next 64, and so on.
 """
 
 
@@ -104,7 +115,8 @@ class FlashMLASparseBackend(AttentionBackend):
 
     @classmethod
     def get_supported_head_sizes(cls) -> list[int]:
-        return [576]
+        # V3.2: 576 (512 NoPE + 64 RoPE); DeepseekV4: 512 (448 NoPE + 64 RoPE)
+        return [512, 576]
 
     @classmethod
     def is_mla(cls) -> bool:
@@ -127,9 +139,33 @@ class FlashMLASparseBackend(AttentionBackend):
         cache_dtype_str: str = "auto",
     ) -> tuple[int, ...]:
         if cache_dtype_str == "fp8_ds_mla":
-            # custom storage format is 656 bytes
-            #  see FlashMLA readme.md for details
+            # V3.2 main MLA: 656-byte custom storage format. See module docstring.
             return (num_blocks, block_size, 656)
+        else:
+            return (num_blocks, block_size, head_size)
+
+
+class DeepseekV4FlashMLASparseBackend(FlashMLASparseBackend):
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [256]
+
+    @staticmethod
+    def get_name() -> str:
+        return "V4_FLASHMLA_SPARSE"
+
+    @staticmethod
+    def get_kv_cache_shape(
+        num_blocks: int,
+        block_size: int,
+        num_kv_heads: int,
+        head_size: int,
+        cache_dtype_str: str = "auto",
+    ) -> tuple[int, ...]:
+        if cache_dtype_str == "fp8_ds_mla":
+            # DeepseekV4 main MLA: 584B per token (448 NoPE + 128 RoPE + 8 fp8 scale).
+            # head_size passed in is the semantic head_dim (512).
+            return (num_blocks, block_size, 584)
         else:
             return (num_blocks, block_size, head_size)
 
@@ -159,6 +195,7 @@ class FlashMLASparseMetadata(AttentionMetadata):
     class FP8SeparatePrefillDecode:
         @dataclass
         class Decode:
+            seq_lens: torch.Tensor
             kernel_metadata: "FlashMLASparseMetadata.FP8KernelMetadata"
             decode_query_len: int  # needed for reshape in spec decode
 
@@ -205,6 +242,13 @@ class FlashMLASparseMetadata(AttentionMetadata):
 
     fp8_extra_metadata: FP8SeparatePrefillDecode | FP8KernelMetadata | None = None
     fp8_use_mixed_batch: bool = False
+
+    # Pre-computed C128A metadata (DeepseekV4 only, compress_ratio == 128).
+    # Decode: global slot ids + valid-entry counts (fused from positions).
+    c128a_global_decode_topk_indices: torch.Tensor | None = None
+    c128a_decode_topk_lens: torch.Tensor | None = None
+    # Prefill: local topk indices (used by combine_topk_swa_indices).
+    c128a_prefill_topk_indices: torch.Tensor | None = None
 
 
 def get_prefill_workspace_size(max_model_len: int):
@@ -293,6 +337,57 @@ class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetad
             dtype=torch.int32,
             device=device,
         )
+
+        # DeepseekV4: has compress_ratios in hf_config.
+        hf_config = aphrodite_config.model_config.hf_config
+        self.is_deepseek_v4 = hasattr(hf_config, "compress_ratios") and len(hf_config.compress_ratios) > 0
+        self.compress_ratio = 1
+        if self.is_deepseek_v4:
+            assert hasattr(self.kv_cache_spec, "compress_ratio")
+            self.compress_ratio = self.kv_cache_spec.compress_ratio
+            # Pre-allocate compressed slot mapping buffer for CUDA graph
+            # address stability when compress_ratio > 1.
+            if self.compress_ratio > 1:
+                max_num_batched_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
+                self.compressed_slot_mapping_buffer = torch.empty(
+                    max_num_batched_tokens,
+                    dtype=torch.int64,
+                    device=self.device,
+                )
+
+            # Pre-allocate C128A topk buffers for CUDA graph address stability.
+            if self.compress_ratio == 128:
+                max_num_batched_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
+                # Pad to B_TOPK alignment (128 covers both h_q=64 B_TOPK=64 and
+                # h_q=128 B_TOPK=128). FlashMLA decode asserts extra_topk % B_TOPK
+                # == 0; unaligned widths (e.g. 17 = ceil(2136/128)) crash the
+                # sm100 head64 kernel. Padded slots stay -1 and decode_lens caps
+                # them via topk_length, so the pad is a no-op at kernel level.
+                # Mirrors _SPARSE_PREFILL_TOPK_ALIGNMENT in cache_utils.py.
+                _C128A_TOPK_ALIGNMENT = 128
+                c128a_max_compressed = cdiv(self.model_config.max_model_len, self.compress_ratio)
+                c128a_max_compressed = cdiv(c128a_max_compressed, _C128A_TOPK_ALIGNMENT) * _C128A_TOPK_ALIGNMENT
+                # Stored so _build_c128a_metadata passes it as the kernel's
+                # max_compressed_tokens, matching the buffer stride. Otherwise
+                # the kernel's default 8192 iterates past row width and spills
+                # writes into adjacent rows (present in both decode and prefill
+                # branches of _build_c128a_topk_metadata_kernel).
+                self.c128a_max_compressed = c128a_max_compressed
+                self.c128a_global_decode_buffer = torch.empty(
+                    (max_num_batched_tokens, c128a_max_compressed),
+                    dtype=torch.int32,
+                    device=self.device,
+                )
+                self.c128a_decode_lens_buffer = torch.empty(
+                    max_num_batched_tokens,
+                    dtype=torch.int32,
+                    device=self.device,
+                )
+                self.c128a_prefill_buffer = torch.empty(
+                    (max_num_batched_tokens, c128a_max_compressed),
+                    dtype=torch.int32,
+                    device=self.device,
+                )
 
     def _build_fp8_mixed_decode_prefill(
         self,
@@ -438,15 +533,7 @@ class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetad
             decode_query_len = (query_start_loc_cpu[1] - query_start_loc_cpu[0]).item()
 
             # Use padded head count since that's what the kernel will see
-            padded_heads = self.fp8_decode_padded_heads
-            scheduler_metadata, _ = get_mla_metadata(
-                cache_seqlens=self.topk_tokens_tensor[:num_decodes],
-                num_q_tokens_per_head_k=decode_query_len * padded_heads,
-                topk=self.topk_tokens,
-                num_heads_q=padded_heads,
-                num_heads_k=1,
-                is_fp8_kvcache=True,
-            )
+            scheduler_metadata, _ = get_mla_metadata()
 
             kernel_meta = FlashMLASparseMetadata.FP8KernelMetadata(
                 scheduler_metadata=scheduler_metadata,
@@ -454,6 +541,7 @@ class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetad
                 cache_lens=self.max_model_len_tensor[:num_decodes],
             )
             fp8_metadata.decode = FP8Meta.Decode(
+                seq_lens=common_attn_metadata.seq_lens[:num_decodes],
                 kernel_metadata=kernel_meta,
                 decode_query_len=decode_query_len,
             )
@@ -526,7 +614,7 @@ class FlashMLASparseImpl(SparseMLAAttentionImpl[FlashMLASparseMetadata]):
         attn_type: str,
         kv_sharing_target_layer_name: str | None,
         # MLA Specific Arguments
-        topk_indice_buffer: torch.Tensor | None = None,
+        topk_indices_buffer: torch.Tensor | None = None,
         indexer: "Indexer | None" = None,
         **mla_args,
     ) -> None:
@@ -582,7 +670,11 @@ class FlashMLASparseImpl(SparseMLAAttentionImpl[FlashMLASparseMetadata]):
             NUM_TOPK_TOKENS=topk_indices.shape[1],
         )
 
-        return self._bf16_flash_mla_kernel(q, kv_c_and_k_pe_cache, topk_indices)
+        return self._bf16_flash_mla_kernel(
+            q,
+            kv_c_and_k_pe_cache,
+            topk_indices,
+        )
 
     def _forward_fp8_kv_separate_prefill_decode(
         self,
@@ -623,7 +715,10 @@ class FlashMLASparseImpl(SparseMLAAttentionImpl[FlashMLASparseMetadata]):
         fp8_metadata = attn_metadata.fp8_extra_metadata
         assert isinstance(fp8_metadata, FlashMLASparseMetadata.FP8SeparatePrefillDecode)
 
-        def _fp8_decode(q: torch.Tensor, topk_indices: torch.Tensor) -> torch.Tensor:
+        def _fp8_decode(
+            q: torch.Tensor,
+            topk_indices: torch.Tensor,
+        ) -> torch.Tensor:
             # Reshape q: (num_decode_tokens, num_heads, head_dim)
             #         -> (num_decodes, seq_len, num_heads, head_dim)
             q = reshape_query_for_spec_decode(q, num_decodes)

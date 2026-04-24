@@ -1,2 +1,13 @@
-lmcache == 0.3.7
-nixl >= 0.6.0 # Required for disaggregated prefill
+lmcache >= 0.3.9
+nixl[cu13] >= 0.7.1, <= 0.10.1 # Required for disaggregated prefill
+nixl-cu12 >= 0.7.1, <= 0.10.1
+nixl-cu13 >= 0.7.1, <= 0.10.1
+# mooncake-transfer-engine is built from source in docker/Dockerfile
+# (both x86_64 and aarch64) from the zhewenl/Mooncake-rdma fork. The fork
+# adds a dmabuf sub-allocation-address fix that upstream kvcache-ai/Mooncake
+# lacks: with WITH_NVIDIA_PEERMEM=OFF, upstream calls ibv_reg_dmabuf_mr with
+# a tensor's sub-address into a larger PyTorch allocation, which EFAULTs on
+# vLLM KV caches (sub-views of a single torch.cuda.memory_pool allocation).
+# The aarch64 path additionally needs this fork because the upstream aarch64
+# wheel is built for glibc 2.39 (Ubuntu 24.04+), incompatible with our
+# Ubuntu 22.04 base (glibc 2.35).

@@ -51,6 +51,13 @@ class CacheConfig:
     """Whether block_size was explicitly provided. Derived automatically."""
     user_specified_mamba_block_size: bool = field(default=False, init=False)
     """Whether mamba_block_size was explicitly provided. Derived automatically."""
+    hash_block_size: SkipValidation[int] | None = None  # type: ignore
+    """Block size (in tokens) used for computing request block hashes.
+
+    This can be finer than the physical KV cache block size as long as every
+    KV cache group's block size is divisible by it. If unspecified, Aphrodite
+    chooses a default from the resolved KV cache groups.
+    """
     gpu_memory_utilization: float = Field(default=0.92, gt=0, le=1)
     """The fraction of GPU memory to be used for the model executor, which can
     range from 0 to 1. For example, a value of 0.5 would imply 50% GPU memory
@@ -182,6 +189,7 @@ class CacheConfig:
             "num_gpu_blocks_override",
             "enable_prefix_caching",
             "prefix_caching_hash_algo",
+            "hash_block_size",
             "mamba_page_size_padded",
             "user_specified_block_size",
             "user_specified_mamba_block_size",

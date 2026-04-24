@@ -1,0 +1,67 @@
+ARG BASE_IMAGE=inferactinc/public:crusoe-kimi-pd-20260415
+FROM ${BASE_IMAGE}
+
+# Rebuild mooncake-transfer-engine from zhewenl/Mooncake-rdma (compat/ubuntu-22.04)
+# on top of an already-built image whose mooncake wheel has the dmabuf
+# sub-allocation-address bug (upstream kvcache-ai/Mooncake v0.3.10.post*).
+#
+# The fork is based on ivanium/Mooncake@yifan/dev, plus a LOG_EVERY_T→LOG shim
+# for glog 0.4 (Ubuntu 22.04 ships glog 0.4; the fork requires 0.6). It fixes
+# ibv_reg_dmabuf_mr to resolve the true CUDA allocation base via
+# cuMemGetAddressRange, so Aphrodite KV caches (sub-views of a larger PyTorch
+# allocation) register successfully instead of returning EFAULT.
+#
+# WITH_NVIDIA_PEERMEM=OFF enables the dmabuf code path (nvidia-peermem is not
+# loadable on GB200, and dmabuf works on H200/H100 too).
+#
+# Usage:
+#   docker build -f docker/Dockerfile.mooncake-layer \
+#     --build-arg BASE_IMAGE=inferactinc/dev:svf-x86_64-cu130-b641ede \
+#     -t inferactinc/dev:svf-x86_64-cu130-b641ede-mcfix .
+RUN set -e && \
+    PY=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')") && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git wget unzip \
+        libibverbs-dev libgoogle-glog-dev libgtest-dev libjsoncpp-dev \
+        libunwind-dev libnuma-dev libpython3-dev libboost-all-dev libssl-dev \
+        libgrpc-dev libgrpc++-dev libprotobuf-dev libyaml-cpp-dev protobuf-compiler-grpc \
+        libcurl4-openssl-dev libhiredis-dev liburing-dev libjemalloc-dev \
+        libmsgpack-dev libzstd-dev libasio-dev libxxhash-dev \
+        pkg-config patchelf libc6-dev libc-bin && \
+    git clone --branch compat/ubuntu-22.04 --depth 1 --recurse-submodules \
+        https://github.com/zhewenl/Mooncake-rdma.git /tmp/Mooncake && \
+    cd /tmp/Mooncake/extern/yalantinglibs && mkdir -p build && cd build && \
+    cmake .. -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARK=OFF -DBUILD_UNIT_TESTS=OFF && \
+    cmake --build . -j$(nproc) && cmake --install . && \
+    cd /tmp/Mooncake && \
+    export LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LIBRARY_PATH} && \
+    mkdir -p build && cd build && \
+    cmake .. -DUSE_CUDA=ON -DWITH_NVIDIA_PEERMEM=OFF -DUSE_MNNVL=ON \
+        -DPython3_EXECUTABLE=$(which python3) \
+        -DPYTHON_EXECUTABLE=$(which python3) && \
+    make -j$(nproc) && make install && \
+    strings /usr/local/lib/python${PY}/dist-packages/mooncake/engine*.so \
+        | grep -q "cuMemGetAddressRange" || \
+        { echo "ERROR: mooncake dmabuf fix missing in built binary"; exit 1; } && \
+    echo "VERIFIED: dmabuf sub-address fix compiled" && \
+    cd / && rm -rf /tmp/Mooncake && \
+    apt-get purge -y \
+        cmake ninja-build git wget unzip \
+        libgoogle-glog-dev libgtest-dev libjsoncpp-dev \
+        libunwind-dev libpython3-dev libboost-all-dev libssl-dev \
+        libgrpc-dev libgrpc++-dev libprotobuf-dev libyaml-cpp-dev protobuf-compiler-grpc \
+        libcurl4-openssl-dev libhiredis-dev liburing-dev libjemalloc-dev \
+        libmsgpack-dev libzstd-dev libasio-dev libxxhash-dev \
+        pkg-config patchelf && \
+    apt-get install -y --no-install-recommends \
+        libgoogle-glog0v5 libjsoncpp25 liburing2 libgflags2.2 \
+        libjemalloc2 libhiredis0.14 libcurl4 && \
+    apt-get autoremove -y && rm -rf /var/lib/apt/lists/* && \
+    if [ ! -f /usr/local/cuda/lib64/libcudart.so ] && [ -f /usr/local/cuda/lib64/libcudart.so.13 ]; then \
+        ln -s libcudart.so.13 /usr/local/cuda/lib64/libcudart.so; \
+    elif [ ! -f /usr/local/cuda/lib64/libcudart.so ] && [ -f /usr/local/cuda/lib64/libcudart.so.12 ]; then \
+        ln -s libcudart.so.12 /usr/local/cuda/lib64/libcudart.so; \
+    fi
+
+ENTRYPOINT ["aphrodite", "serve"]
