@@ -53,7 +53,9 @@ from .weight_transfer import WeightTransferConfig
 if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
-    from aphrodite.model_executor.layers.quantization.base_config import QuantizationConfig
+    from aphrodite.model_executor.layers.quantization.base_config import (
+        QuantizationConfig,
+    )
     from aphrodite.v1.kv_cache_interface import KVCacheConfig
 else:
     PretrainedConfig = Any
@@ -89,7 +91,7 @@ IS_DENSE = False
 # if model_config is not None:
 #     IS_QUANTIZED = lambda c: c.model_config.is_quantized()
 #     IS_DENSE = lambda c: not c.model_config.is_model_moe()
-# See https://github.com/vllm-project/vllm/issues/25689.
+# See https://github.com/aphrodite-project/aphrodite/issues/25689.
 
 
 def enable_norm_fusion(cfg: "AphroditeConfig") -> bool:
@@ -127,10 +129,10 @@ def enable_allreduce_rms_fusion(cfg: "AphroditeConfig") -> bool:
         and has_flashinfer()
         and (current_platform.is_device_capability_family(100) or current_platform.is_device_capability(90))
         # tp-dp combination broken:
-        # https://github.com/vllm-project/vllm/issues/34458
+        # https://github.com/aphrodite-project/aphrodite/issues/34458
         and cfg.parallel_config.data_parallel_size == 1
         # tp-pp combination broken:
-        # https://github.com/vllm-project/vllm/issues/35426
+        # https://github.com/aphrodite-project/aphrodite/issues/35426
         and cfg.parallel_config.pipeline_parallel_size == 1
     )
 
@@ -509,7 +511,9 @@ class AphroditeConfig:
         from aphrodite.platforms import current_platform
 
         if model_config.quantization is not None:
-            from aphrodite.model_executor.model_loader.weight_utils import get_quant_config
+            from aphrodite.model_executor.model_loader.weight_utils import (
+                get_quant_config,
+            )
 
             quant_config = get_quant_config(model_config, load_config)
             capability_tuple = current_platform.get_device_capability()
@@ -691,7 +695,7 @@ class AphroditeConfig:
         self.instance_id = f"{time.time_ns()}"
 
         if self.performance_mode != "balanced":
-            logger.info_once("Performance mode set to '%s'.", self.performance_mode, scope="local")
+            logger.info_once("Performance mode set to '%s'.", self.performance_mode)
 
         self.try_verify_and_update_config()
 
@@ -775,13 +779,11 @@ class AphroditeConfig:
                 logger.warning_once(
                     "Async scheduling not supported with %s-based speculative decoding and will be disabled.",
                     self.speculative_config.method,
-                    scope="local",
                 )
                 self.scheduler_config.async_scheduling = False
             elif self.speculative_config is not None and self.speculative_config.disable_padded_drafter_batch:
                 logger.warning_once(
                     "Async scheduling is not compatible with disable_padded_drafter_batch=True and will be disabled.",
-                    scope="local",
                 )
                 self.scheduler_config.async_scheduling = False
             elif not executor_supports_async_sched:
@@ -789,7 +791,6 @@ class AphroditeConfig:
                     "Async scheduling will be disabled because it is not supported "
                     "with the `%s` distributed executor backend. ",
                     executor_backend,
-                    scope="local",
                 )
                 self.scheduler_config.async_scheduling = False
             else:
@@ -807,7 +808,6 @@ class AphroditeConfig:
                 ):
                     logger.info_once(
                         "Disabling NCCL for DP synchronization when using async scheduling.",
-                        scope="local",
                     )
                 self.parallel_config.disable_nccl_for_dp_synchronization = True
             else:
@@ -821,7 +821,6 @@ class AphroditeConfig:
         ):
             logger.warning_once(
                 "Disabling cascade attention (not yet compatible with async speculative decoding).",
-                scope="local",
             )
             self.model_config.disable_cascade_attn = True
 
@@ -876,7 +875,7 @@ class AphroditeConfig:
         # Enable quant_fp8 CUDA ops (TODO disable in follow up)
         # On H100 the CUDA kernel is faster than
         # native implementation
-        # https://github.com/vllm-project/vllm/issues/25094
+        # https://github.com/aphrodite-project/aphrodite/issues/25094
         if has_blocked_weights():
             custom_ops = self.compilation_config.custom_ops
             if "-quant_fp8" not in custom_ops:
@@ -1026,19 +1025,6 @@ class AphroditeConfig:
                 # override related settings when enforce eager
                 self.compilation_config.max_cudagraph_capture_size = 0
                 self.compilation_config.cudagraph_capture_sizes = []
-            elif (
-                self.quant_config is not None
-                and getattr(self.quant_config, "has_moe_tensors", lambda: False)()
-                and self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE
-            ):
-                # EXL3 MoE currently needs the Python overflow fallback for
-                # large routed batches, which is not compatible with mixed
-                # prefill/decode CUDA graph capture. Decode-only graphs remain
-                # useful and align with the small-batch fast path.
-                logger.warning_once(
-                    "Switching EXL3 MoE to FULL_DECODE_ONLY CUDA graphs. Mixed prefill/decode graphs remain disabled."
-                )
-                self.compilation_config.cudagraph_mode = CUDAGraphMode.FULL_DECODE_ONLY
             else:
                 self.compilation_config.cudagraph_num_of_warmups = 1
 
@@ -1114,7 +1100,7 @@ class AphroditeConfig:
             # native rms norm tracing errors due to incorrect residual shape.
             # Use custom rms norm to unblock. In the future,
             # the pass will operate on higher-level IR to avoid the issue.
-            # TODO: https://github.com/vllm-project/vllm/issues/27894
+            # TODO: https://github.com/aphrodite-project/aphrodite/issues/27894
             if self.compilation_config.mode != CompilationMode.APHRODITE_COMPILE:
                 logger.warning(
                     "Sequence parallelism is enabled, but running in wrong aphrodite compile mode: %s.",
@@ -1161,7 +1147,6 @@ class AphroditeConfig:
             self.model_config.disable_cascade_attn = True
             logger.warning_once(
                 "Disabling cascade attention when APHRODITE_BATCH_INVARIANT is enabled.",
-                scope="local",
             )
 
         if self.parallel_config.use_ubatching:
@@ -1263,7 +1248,7 @@ class AphroditeConfig:
         # Enable quant_fp8 CUDA ops (TODO disable in follow up)
         # On H100 the CUDA kernel is faster than
         # native implementation
-        # https://github.com/vllm-project/vllm/issues/25094
+        # https://github.com/aphrodite-project/aphrodite/issues/25094
         if has_blocked_weights():
             custom_ops = self.compilation_config.custom_ops
             if "-quant_fp8" not in custom_ops:
@@ -1323,7 +1308,6 @@ class AphroditeConfig:
                     " performance. Consider increasing max_num_batched_tokens to"
                     " accommodate the additional draft token slots, or decrease"
                     " num_speculative_tokens or max_num_seqs.",
-                    scope="local",
                 )
 
             max_num_scheduled_tokens = self.scheduler_config.max_num_scheduled_tokens
@@ -1587,7 +1571,9 @@ class AphroditeConfig:
 
         if self.model_config.convert_type == "classify":
             # Maybe convert ForCausalLM into ForSequenceClassification model.
-            from aphrodite.model_executor.models.adapters import SequenceClassificationConfig
+            from aphrodite.model_executor.models.adapters import (
+                SequenceClassificationConfig,
+            )
 
             SequenceClassificationConfig.verify_and_update_config(self)
 
@@ -1673,18 +1659,18 @@ class AphroditeConfig:
             unsupported.append("dual batch overlap")
 
         if self.model_config is not None and self.model_config.enable_return_routed_experts:
-            # Will be added by https://github.com/vllm-project/vllm/pull/38163
+            # Will be added by https://github.com/aphrodite-project/aphrodite/pull/38163
             unsupported.append("routed experts capture")
 
         if self.model_config is not None and self.model_config.logits_processors:
             unsupported.append("custom logits processors")
 
         if self.cache_config.kv_sharing_fast_prefill:
-            # Will be added by https://github.com/vllm-project/vllm/pull/35045
+            # Will be added by https://github.com/aphrodite-project/aphrodite/pull/35045
             unsupported.append("KV sharing fast prefill")
 
         if self.ec_transfer_config is not None:
-            # Will be added by https://github.com/vllm-project/vllm/pull/38390
+            # Will be added by https://github.com/aphrodite-project/aphrodite/pull/38390
             unsupported.append("EC transfer")
 
         if unsupported:
@@ -1806,7 +1792,7 @@ def set_current_aphrodite_config(aphrodite_config: AphroditeConfig, check_compil
 
 @lru_cache(maxsize=1)
 def get_cached_compilation_config():
-    """Cache config to avoid repeated calls to get_current_aphrodite_config()."""
+    """Cache config to avoid repeated calls to get_current_aphrodite_config()"""
     return get_current_aphrodite_config().compilation_config
 
 
@@ -1854,11 +1840,3 @@ def get_layers_from_aphrodite_config(
         for layer_name in layer_names
         if layer_name in forward_context and isinstance(forward_context[layer_name], layer_type)
     }
-
-
-# Backward-compatible upstream-derived names.
-AphroditeConfig = AphroditeConfig
-set_current_aphrodite_config = set_current_aphrodite_config
-get_current_aphrodite_config = get_current_aphrodite_config
-get_current_aphrodite_config_or_none = get_current_aphrodite_config_or_none
-get_layers_from_aphrodite_config = get_layers_from_aphrodite_config

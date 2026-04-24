@@ -14,8 +14,13 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import get_tensor_model_parallel_rank
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.model_executor.layers.activation import get_act_fn
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
-from aphrodite.model_executor.layers.linear import ColumnParallelLinear, RowParallelLinear
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+)
+from aphrodite.model_executor.layers.linear import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
@@ -319,7 +324,11 @@ class AriaTextModel(LlamaModel, SupportsQuant):
     }
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, layer_type=AriaTextDecoderLayer)
+        super().__init__(
+            aphrodite_config=aphrodite_config,
+            prefix=prefix,
+            layer_type=AriaTextDecoderLayer,
+        )
 
     # Adapted from LlamaModel.load_weights with the modification of adding
     # the expert weights mapping to `stacked_params_mapping`

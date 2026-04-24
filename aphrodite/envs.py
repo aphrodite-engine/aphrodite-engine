@@ -154,6 +154,10 @@ if TYPE_CHECKING:
     APHRODITE_RAY_EXTRA_ENV_VARS_TO_COPY: str = ""
     APHRODITE_MARLIN_USE_ATOMIC_ADD: bool = False
     APHRODITE_MARLIN_INPUT_DTYPE: Literal["int8", "fp8"] | None = None
+    APHRODITE_HUMMING_ONLINE_QUANT_CONFIG: dict[str, Any] | None = None
+    APHRODITE_HUMMING_INPUT_QUANT_CONFIG: dict[str, Any] | None = None
+    APHRODITE_HUMMING_USE_F16_ACCUM: bool = False
+    APHRODITE_HUMMING_MOE_GEMM_TYPE: Literal["indexed", "grouped", "auto"] | None = None
     APHRODITE_MXFP4_USE_MARLIN: bool | None = None
     APHRODITE_DEEPEPLL_NVFP4_DISPATCH: bool = False
     APHRODITE_V1_USE_OUTLINES_CACHE: bool = False
@@ -281,6 +285,15 @@ def maybe_convert_bool(value: str | None) -> bool | None:
     if value is None:
         return None
     return bool(int(value))
+
+
+def maybe_convert_json_str_or_file(value: str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if os.path.exists(value):
+        with open(value) as f:
+            return json.load(f)
+    return json.loads(value)
 
 
 def disable_compile_cache() -> bool:
@@ -781,9 +794,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # speech-to-text requests. Files larger than this will be rejected.
     # Default is 25 MB
     "APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB": lambda: int(os.getenv("APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB", "25")),
-    # Backend for Video IO
-    # - "opencv": Default backend that uses OpenCV stream buffered backend.
-    # - "identity": Returns raw video bytes for model processor to handle.
+    # Backend for Video IO — selects the frame-sampling algorithm.
+    # - "opencv": uniform sampling.
+    # - "opencv_dynamic": duration-aware dynamic sampling.
+    # - "identity": returns raw video bytes for model processor to handle.
     #
     # Custom backend implementations can be registered
     # via `@VIDEO_LOADER_REGISTRY.register("my_custom_video_loader")` and
@@ -1088,6 +1102,25 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_MXFP4_USE_MARLIN": lambda: maybe_convert_bool(os.environ.get("APHRODITE_MXFP4_USE_MARLIN", None)),
     # The activation dtype for marlin kernel
     "APHRODITE_MARLIN_INPUT_DTYPE": env_with_choices("APHRODITE_MARLIN_INPUT_DTYPE", None, ["int8", "fp8"]),
+    # The online quantization dtype for humming kernel
+    "APHRODITE_HUMMING_ONLINE_QUANT_CONFIG": lambda: maybe_convert_json_str_or_file(
+        os.environ.get("APHRODITE_HUMMING_ONLINE_QUANT_CONFIG", None)
+    ),
+    # The activation dtype config for humming kernel
+    "APHRODITE_HUMMING_INPUT_QUANT_CONFIG": lambda: maybe_convert_json_str_or_file(
+        os.environ.get("APHRODITE_HUMMING_INPUT_QUANT_CONFIG", None)
+    ),
+    # Whether to use fp16 accumulator mma
+    "APHRODITE_HUMMING_USE_F16_ACCUM": lambda: maybe_convert_bool(
+        os.environ.get("APHRODITE_HUMMING_USE_F16_ACCUM", "0")
+    ),
+    # Whether to use indexed gemm for humming moe
+    # if 1, force use indexed gemm
+    # if 0, force use grouped gemm
+    # if None, choose better gemm type automatically
+    "APHRODITE_HUMMING_MOE_GEMM_TYPE": lambda: maybe_convert_bool(
+        os.environ.get("APHRODITE_HUMMING_MOE_GEMM_TYPE", None)
+    ),
     # Whether to use DeepEPLL kernels for NVFP4 quantization and dispatch method
     # only supported on Blackwell GPUs and with
     # https://github.com/deepseek-ai/DeepEP/pull/341

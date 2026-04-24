@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import json
 import multiprocessing
 import os
@@ -74,10 +74,10 @@ def generate_presets(output_path="CMakeUserPresets.json"):
     cmake_jobs = max(1, cpu_cores // nvcc_threads)
     print(f"Detected {cpu_cores} CPU cores. Setting NVCC_THREADS={nvcc_threads} and CMake jobs={cmake_jobs}.")
 
-    # Get Aphrodite project root
+    # Get vLLM project root
     # (assuming this script is in aphrodite-engine/tools/)
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    print(f"Aphrodite project root detected as: {project_root}")
+    print(f"vLLM project root detected as: {project_root}")
 
     # Ensure python_executable path is absolute or resolvable
     if not os.path.isabs(python_executable) and which(python_executable):

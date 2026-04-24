@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import pytest
 from aphrodite.lora.models import LoRAModel
 from aphrodite.modeling.models.baichuan import BaiChuanBaseForCausalLM

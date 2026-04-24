@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from aphrodite import LLM, SamplingParams
 
 llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct")

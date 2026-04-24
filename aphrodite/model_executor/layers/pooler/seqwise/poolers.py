@@ -115,6 +115,7 @@ def pooler_for_classify(
 
     aphrodite_config = get_current_aphrodite_config()
     model_config = aphrodite_config.model_config
+    assert model_config.pooler_config is not None
     head = ClassifierPoolerHead(
         head_dtype=model_config.head_dtype,
         classifier=classifier,

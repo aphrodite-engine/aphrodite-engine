@@ -49,7 +49,7 @@ from aphrodite.config.profiler import ProfilerConfig
 from aphrodite.config.reasoning import ReasoningConfig
 from aphrodite.config.scheduler import SchedulerConfig
 from aphrodite.config.speculative import SpeculativeConfig
-from aphrodite.config.speech_to_text import SpeechToTextConfig
+from aphrodite.config.speech_to_text import SpeechToTextConfig, SpeechToTextParams
 from aphrodite.config.structured_outputs import StructuredOutputsConfig
 from aphrodite.config.utils import (
     ConfigType,
@@ -117,6 +117,7 @@ __all__ = [
     "SpeculativeConfig",
     # From aphrodite.config.speech_to_text
     "SpeechToTextConfig",
+    "SpeechToTextParams",
     # From aphrodite.config.structured_outputs
     "StructuredOutputsConfig",
     # From aphrodite.config.profiler

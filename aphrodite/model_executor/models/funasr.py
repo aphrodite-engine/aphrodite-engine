@@ -3,9 +3,8 @@
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Literal, cast
+from typing import Annotated, cast
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -16,6 +15,7 @@ from transformers import (
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.inputs import MultiModalDataDict, PromptType
 from aphrodite.logger import init_logger
@@ -605,7 +605,13 @@ class FunASRAudioInputs(TensorSchema):
 
 
 class FunASREncoder(nn.Module):
-    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", init_in_fp32: bool = False):
+    def __init__(
+        self,
+        *,
+        aphrodite_config: AphroditeConfig,
+        prefix: str = "",
+        init_in_fp32: bool = False,
+    ):
         super().__init__()
         self.audio_encoder = SenseVoiceEncoderSmall(
             input_size=560, **aphrodite_config.model_config.hf_config.audio_encoder_conf
@@ -847,18 +853,23 @@ class FunASRForConditionalGeneration(nn.Module, SupportsTranscription, SupportsM
     @classmethod
     def get_generation_prompt(
         cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,  # not needed here
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
+        stt_params: SpeechToTextParams,
     ) -> PromptType:
+        audio = stt_params.audio
+        stt_config = stt_params.stt_config
+        language = stt_params.language
+        hotwords = stt_params.hotwords
+
         if language is None:
             raise ValueError("Language must be specified when creating the funasr prompt")
 
-        funasr_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n语音转写：<|AUDIO|><|im_end|>\n<|im_start|>assistant\n"  # noqa: E501
+        if hotwords is not None:
+            funasr_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n请结合上下文信息，更加准确地完成语音转写任务。如果没有相关信息，我们会留空。\n\n\n**上下文信息：**\n\n\n热词列表：[{}]\n语音转写：<|AUDIO|><|im_end|>\n<|im_start|>assistant\n".format(  # noqa: E501
+                hotwords
+            )
+        else:
+            funasr_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n语音转写：<|AUDIO|><|im_end|>\n<|im_start|>assistant\n"  # noqa: E501
+
         prompt = {
             "prompt": funasr_prompt,
             "multi_modal_data": {

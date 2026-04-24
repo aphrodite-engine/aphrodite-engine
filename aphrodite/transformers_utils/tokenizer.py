@@ -17,5 +17,17 @@ def __getattr__(name: str):
         )
 
         return get_tokenizer
+    if name == "cached_tokenizer_from_config":
+        from aphrodite.tokenizers import cached_tokenizer_from_config
+
+        warnings.warn(
+            "`aphrodite.transformers_utils.tokenizer.cached_tokenizer_from_config` "
+            "has been moved to `aphrodite.tokenizers.cached_tokenizer_from_config`. "
+            "The old name will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        return cached_tokenizer_from_config
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

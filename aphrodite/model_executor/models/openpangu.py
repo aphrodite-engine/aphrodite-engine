@@ -44,7 +44,10 @@ from aphrodite.model_executor.layers.attention import (
     Attention,
     StaticSinkAttention,
 )
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -54,7 +57,10 @@ from aphrodite.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
-from aphrodite.model_executor.layers.mla import MLAModules, MultiHeadLatentAttentionWrapper
+from aphrodite.model_executor.layers.mla import (
+    MLAModules,
+    MultiHeadLatentAttentionWrapper,
+)
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.layers.rotary_embedding import get_rope
 from aphrodite.model_executor.layers.vocab_parallel_embedding import (
@@ -85,7 +91,9 @@ from aphrodite.platforms import current_platform
 from aphrodite.sequence import IntermediateTensors
 from aphrodite.transformers_utils.config import set_default_rope_theta
 from aphrodite.v1.attention.backend import AttentionType
-from aphrodite.v1.attention.backends.flash_attn_diffkv import FlashAttentionDiffKVBackend
+from aphrodite.v1.attention.backends.flash_attn_diffkv import (
+    FlashAttentionDiffKVBackend,
+)
 
 
 def check_ffn_act_fn(act_fn: str):
@@ -1067,7 +1075,7 @@ class OpenPanguModel(nn.Module):
         ]
         has_experts = hasattr(self.config, "n_routed_experts")
         if has_experts:
-            expert_merge_mapping = FusedMoE.make_expert_params_mapping(
+            expert_merge_mapping = fused_moe_make_expert_params_mapping(
                 self,
                 ckpt_gate_proj_name="gate_proj",
                 ckpt_down_proj_name="down_proj",

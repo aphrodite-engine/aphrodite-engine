@@ -66,14 +66,12 @@ def import_triton_kernels():
 
         logger.debug_once(
             f"Loading module triton_kernels from {triton_kernels.__file__}.",
-            scope="local",
         )
     elif _has_module("aphrodite.third_party.triton_kernels"):
         import aphrodite.third_party.triton_kernels as triton_kernels
 
         logger.debug_once(
             f"Loading module triton_kernels from {triton_kernels.__file__}.",
-            scope="local",
         )
         sys.modules["triton_kernels"] = triton_kernels
     else:
@@ -114,7 +112,7 @@ def resolve_obj_by_qualname(qualname: str) -> Any:
 
 @cache
 def get_aphrodite_optional_dependencies():
-    metadata = importlib.metadata.metadata("aphrodite")
+    metadata = importlib.metadata.metadata("aphrodite-engine")
     requirements = metadata.get_all("Requires-Dist", [])
     extras = metadata.get_all("Provides-Extra", [])
 

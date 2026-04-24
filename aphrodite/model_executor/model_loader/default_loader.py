@@ -14,7 +14,9 @@ from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 from aphrodite.config import ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.quantization.torchao import torchao_version_at_least
+from aphrodite.model_executor.layers.quantization.torchao import (
+    torchao_version_at_least,
+)
 from aphrodite.model_executor.model_loader.base_loader import BaseModelLoader
 from aphrodite.model_executor.model_loader.ep_weight_filter import (
     compute_local_expert_ids,
@@ -376,7 +378,6 @@ class DefaultModelLoader(BaseModelLoader):
         logger.info_once(
             "Loading weights took %.2f seconds",
             self.counter_after_loading_weights - self.counter_before_loading_weights,
-            scope="local",
         )
         # We only enable strict check for non-quantized models
         # that have loaded weights tracking currently.

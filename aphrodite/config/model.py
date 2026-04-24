@@ -52,7 +52,10 @@ from aphrodite.transformers_utils.model_arch_config_convertor import (
     MODEL_ARCH_CONFIG_CONVERTORS,
     ModelArchConfigConvertorBase,
 )
-from aphrodite.transformers_utils.runai_utils import ObjectStorageModel, is_runai_obj_uri
+from aphrodite.transformers_utils.runai_utils import (
+    ObjectStorageModel,
+    is_runai_obj_uri,
+)
 from aphrodite.transformers_utils.utils import maybe_model_redirect
 from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
@@ -308,21 +311,21 @@ class ModelConfig:
     multimodal_config: MultiModalConfig | None = None
     """Configuration for multimodal model. If `None`, this will be inferred
     from the architecture of `self.model`."""
-    language_model_only: InitVar[bool] = False
-    limit_mm_per_prompt: InitVar[dict[str, int | dict[str, int]] | None] = None
-    enable_mm_embeds: InitVar[bool | None] = None
-    media_io_kwargs: InitVar[dict[str, dict[str, Any]] | None] = None
-    mm_processor_kwargs: InitVar[dict[str, Any] | None] = None
-    mm_processor_cache_gb: InitVar[float | None] = None
-    mm_processor_cache_type: InitVar[MMCacheType | None] = None
-    mm_shm_cache_max_object_size_mb: InitVar[int | None] = None
-    mm_encoder_only: InitVar[bool | None] = None
-    mm_encoder_tp_mode: InitVar[MMEncoderTPMode | None] = None
-    mm_encoder_attn_backend: InitVar[AttentionBackendEnum | str | None] = None
-    interleave_mm_strings: InitVar[bool | None] = None
-    skip_mm_profiling: InitVar[bool | None] = None
-    video_pruning_rate: InitVar[float | None] = None
-    mm_tensor_ipc: InitVar[MMTensorIPC] = None
+    language_model_only: InitVar[bool] = False  # type: ignore[assignment]
+    limit_mm_per_prompt: InitVar[dict[str, int | dict[str, int]] | None] = None  # type: ignore[assignment]
+    enable_mm_embeds: InitVar[bool | None] = None  # type: ignore[assignment]
+    media_io_kwargs: InitVar[dict[str, dict[str, Any]] | None] = None  # type: ignore[assignment]
+    mm_processor_kwargs: InitVar[dict[str, Any] | None] = None  # type: ignore[assignment]
+    mm_processor_cache_gb: InitVar[float | None] = None  # type: ignore[assignment]
+    mm_processor_cache_type: InitVar[MMCacheType | None] = None  # type: ignore[assignment]
+    mm_shm_cache_max_object_size_mb: InitVar[int | None] = None  # type: ignore[assignment]
+    mm_encoder_only: InitVar[bool | None] = None  # type: ignore[assignment]
+    mm_encoder_tp_mode: InitVar[MMEncoderTPMode | None] = None  # type: ignore[assignment]
+    mm_encoder_attn_backend: InitVar[AttentionBackendEnum | str | None] = None  # type: ignore[assignment]
+    interleave_mm_strings: InitVar[bool | None] = None  # type: ignore[assignment]
+    skip_mm_profiling: InitVar[bool | None] = None  # type: ignore[assignment]
+    video_pruning_rate: InitVar[float | None] = None  # type: ignore[assignment]
+    mm_tensor_ipc: InitVar[MMTensorIPC] = None  # type: ignore[assignment]
 
     def compute_hash(self) -> str:
         """
@@ -922,8 +925,12 @@ class ModelConfig:
                 "mxfp4",
                 "gpt_oss_mxfp4",
                 "cpu_awq",
+                "humming",
                 "gguf",
             ]
+            # if the user specifies humming, we should always use humming
+            if self.quantization == "humming":
+                overrides = ["humming"] + overrides
             quantization_methods = [q for q in supported_quantization if q not in overrides]
             # Any custom overrides will be in quantization_methods so we place
             # them at the start of the list so custom overrides have preference
@@ -1143,22 +1150,9 @@ class ModelConfig:
     def is_deepseek_mla(self) -> bool:
         return self.model_arch_config.is_deepseek_mla
 
-    @cached_property
+    @property
     def is_mm_prefix_lm(self) -> bool:
-        """Whether to use bidirectional attention for mm positions."""
-        if hasattr(self.hf_config, "is_mm_prefix_lm"):
-            return bool(self.hf_config.is_mm_prefix_lm)
-        # fallback to list of known models
-        MM_PREFIX_LM_MODELS = (
-            "bagel",
-            "gemma3",
-            "molmo2",
-            "paligemma",
-            "umm",
-        )
-        if not hasattr(self.hf_config, "model_type"):
-            return False
-        return self.hf_config.model_type in MM_PREFIX_LM_MODELS
+        return self.model_arch_config.is_mm_prefix_lm
 
     def get_head_size(self) -> int:
         return self.model_arch_config.head_size

@@ -7,7 +7,12 @@ from typing import Union
 import torch
 
 from aphrodite.config import ParallelConfig, SchedulerConfig
-from aphrodite.distributed import get_dp_group, get_pcp_group, get_tensor_model_parallel_rank
+from aphrodite.config.kernel import MoEBackend
+from aphrodite.distributed import (
+    get_dp_group,
+    get_pcp_group,
+    get_tensor_model_parallel_rank,
+)
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_moe.activation import MoEActivation
 from aphrodite.model_executor.layers.quantization.utils.ocp_mx_utils import (
@@ -610,7 +615,9 @@ def gptq_marlin_moe_quant_config(
     """
     Construct a quant config for gptq marlin quantization.
     """
-    from aphrodite.model_executor.layers.quantization.utils.quant_utils import GroupShape
+    from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+        GroupShape,
+    )
 
     w_shape = None if group_size == -1 else GroupShape(row=1, col=group_size)
 
@@ -882,7 +889,9 @@ def awq_marlin_moe_quant_config(
     """
     Construct a quant config for awq marlin quantization.
     """
-    from aphrodite.model_executor.layers.quantization.utils.quant_utils import GroupShape
+    from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+        GroupShape,
+    )
 
     w_shape = None if group_size == -1 else GroupShape(row=1, col=group_size)
 
@@ -968,6 +977,10 @@ class FusedMoEParallelConfig:
 
     @property
     def use_batched_activation_format(self):
+        return self.use_deepep_ll_kernels or self.use_nixl_ep_kernels
+
+    @property
+    def needs_round_robin_routing_tables(self):
         return self.use_deepep_ll_kernels or self.use_nixl_ep_kernels
 
     @property
@@ -1164,7 +1177,7 @@ class FusedMoEConfig:
     # Defaults to intermediate_size_per_partition if not specified.
     intermediate_size_per_partition_unpadded: int | None = None
 
-    moe_backend: str = "auto"
+    moe_backend: MoEBackend = "auto"
     max_num_tokens: int = SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP
     has_bias: bool = False
     is_act_and_mul: bool = True
@@ -1261,3 +1274,7 @@ class FusedMoEConfig:
     @property
     def use_nixl_ep_kernels(self):
         return self.moe_parallel_config.use_nixl_ep_kernels
+
+    @property
+    def needs_round_robin_routing_tables(self):
+        return self.moe_parallel_config.needs_round_robin_routing_tables

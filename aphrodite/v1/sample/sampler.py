@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """A layer that samples the next tokens from the model's outputs."""
 
 from dataclasses import replace
@@ -7,9 +7,9 @@ from dataclasses import replace
 import torch
 import torch.nn as nn
 
-from aphrodite.common.sampling_params import SamplerID
 from aphrodite.config.model import LogprobsMode
 from aphrodite.logger import init_logger
+from aphrodite.sampling_params import SamplerID
 from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.outputs import LogprobsTensors, SamplerOutput
 from aphrodite.v1.sample.metadata import SamplingMetadata

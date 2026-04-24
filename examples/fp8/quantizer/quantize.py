@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved. # noqa: E501
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,53 +39,21 @@ EMPTY_CFG = {
         "*weight_quantizer": {
             "enable": False,
         },
-        "*input_quantizer": {
-            "enable": False
-        },
-        "*lm_head*": {
-            "enable": False
-        },
-        "*output_layer*": {
-            "enable": False
-        },
-        "default": {
-            "enable": False
-        },
+        "*input_quantizer": {"enable": False},
+        "*lm_head*": {"enable": False},
+        "*output_layer*": {"enable": False},
+        "default": {"enable": False},
     },
     "algorithm": "max",
 }
 
 KV_CACHE_CFG = {
-    "*.query_key_value.output_quantizer": {
-        "num_bits": 8,
-        "axis": None,
-        "enable": True
-    },
-    "*.Wqkv.output_quantizer": {
-        "num_bits": 8,
-        "axis": None,
-        "enable": True
-    },
-    "*.W_pack.output_quantizer": {
-        "num_bits": 8,
-        "axis": None,
-        "enable": True
-    },
-    "*.c_attn.output_quantizer": {
-        "num_bits": 8,
-        "axis": None,
-        "enable": True
-    },
-    "*.k_proj.output_quantizer": {
-        "num_bits": 8,
-        "axis": None,
-        "enable": True
-    },
-    "*.v_proj.output_quantizer": {
-        "num_bits": 8,
-        "axis": None,
-        "enable": True
-    },
+    "*.query_key_value.output_quantizer": {"num_bits": 8, "axis": None, "enable": True},
+    "*.Wqkv.output_quantizer": {"num_bits": 8, "axis": None, "enable": True},
+    "*.W_pack.output_quantizer": {"num_bits": 8, "axis": None, "enable": True},
+    "*.c_attn.output_quantizer": {"num_bits": 8, "axis": None, "enable": True},
+    "*.k_proj.output_quantizer": {"num_bits": 8, "axis": None, "enable": True},
+    "*.v_proj.output_quantizer": {"num_bits": 8, "axis": None, "enable": True},
 }
 
 QUANT_CFG_CHOICES = {
@@ -132,8 +100,7 @@ def get_tokenizer(ckpt_path, max_seq_len=MAX_SEQ_LEN, model_type=None):
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    assert (tokenizer.pad_token
-            is not None), f"Pad token for {model_type} cannot be set!"
+    assert tokenizer.pad_token is not None, f"Pad token for {model_type} cannot be set!"
 
     return tokenizer
 
@@ -152,17 +119,16 @@ def get_model(ckpt_path, dtype="fp16", device="cuda"):
     # model_kwargs = {"torch_dtype": dtype}
     model_kwargs = {"torch_dtype": "auto"}
 
-    model = AutoModelForCausalLM.from_pretrained(ckpt_path,
-                                                 device_map="auto",
-                                                 **model_kwargs,
-                                                 trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(ckpt_path, device_map="auto", **model_kwargs, trust_remote_code=True)
     model.eval()
 
     model_dtype = next(model.parameters()).dtype
     if dtype != model_dtype:
-        print("[TensorRT-LLM][WARNING] The manually set model data type is "
-              f"{dtype}, but the data type of the HuggingFace model is "
-              f"{model_dtype}.")
+        print(
+            "[TensorRT-LLM][WARNING] The manually set model data type is "
+            f"{dtype}, but the data type of the HuggingFace model is "
+            f"{model_dtype}."
+        )
 
     return model
 
@@ -174,18 +140,12 @@ def get_model_type(model):
     return None
 
 
-def get_calib_dataloader(data="cnn_dailymail",
-                         tokenizer=None,
-                         batch_size=1,
-                         calib_size=512,
-                         block_size=512,
-                         device=None):
+def get_calib_dataloader(
+    data="cnn_dailymail", tokenizer=None, batch_size=1, calib_size=512, block_size=512, device=None
+):
     print("Loading calibration dataset")
     if data == "pileval":
-        dataset = load_dataset(
-            "json",
-            data_files="https://the-eye.eu/public/AI/pile/val.jsonl.zst",
-            split="train")
+        dataset = load_dataset("json", data_files="https://the-eye.eu/public/AI/pile/val.jsonl.zst", split="train")
         dataset = dataset["text"][:calib_size]
     elif data == "cnn_dailymail":
         dataset = load_dataset("cnn_dailymail", name="3.0.0", split="train")
@@ -193,24 +153,19 @@ def get_calib_dataloader(data="cnn_dailymail",
     else:
         raise NotImplementedError
 
-    batch_encoded = tokenizer.batch_encode_plus(dataset,
-                                                return_tensors="pt",
-                                                padding="max_length",
-                                                truncation=True,
-                                                max_length=block_size)
+    batch_encoded = tokenizer.batch_encode_plus(
+        dataset, return_tensors="pt", padding="max_length", truncation=True, max_length=block_size
+    )
     if device:
         batch_encoded = batch_encoded.to(device)
     batch_encoded = batch_encoded["input_ids"]
 
-    calib_dataloader = DataLoader(batch_encoded,
-                                  batch_size=batch_size,
-                                  shuffle=False)
+    calib_dataloader = DataLoader(batch_encoded, batch_size=batch_size, shuffle=False)
 
     return calib_dataloader
 
 
 def quantize_model(model, quant_cfg, calib_dataloader=None):
-
     def calibrate_loop():
         if calib_dataloader is None:
             return
@@ -223,15 +178,14 @@ def quantize_model(model, quant_cfg, calib_dataloader=None):
     start_time = time.time()
     atq.quantize(model, quant_cfg, forward_loop=calibrate_loop)
     end_time = time.time()
-    print("Quantization done. Total time used: {:.2f} s.".format(end_time -
-                                                                 start_time))
+    print("Quantization done. Total time used: {:.2f} s.".format(end_time - start_time))
 
     return model
 
 
 def main(args):
     if not torch.cuda.is_available():
-        raise EnvironmentError("GPU is required for inference.")
+        raise OSError("GPU is required for inference.")
 
     random.seed(RAND_SEED)
     np.random.seed(RAND_SEED)
@@ -240,19 +194,22 @@ def main(args):
     model_type = get_model_type(model)
     tokenizer = get_tokenizer(args.model_dir, model_type=model_type)
 
-    if args.qformat in ["full_prec", "int8_wo", "int4_wo"
-                        ] and args.kv_cache_dtype is None:
+    if args.qformat in ["full_prec", "int8_wo", "int4_wo"] and args.kv_cache_dtype is None:
         print(f"No quantization applied, export {args.dtype} model")
     else:
         if "awq" in args.qformat:
             if args.calib_size > 32:
-                print("AWQ calibration could take longer with calib_size = "
-                      f"{args.calib_size}, Using calib_size=32 instead")
+                print(
+                    "AWQ calibration could take longer with calib_size = "
+                    f"{args.calib_size}, Using calib_size=32 instead"
+                )
                 args.calib_size = 32
-            print("\nAWQ calibration could take longer than other calibration "
-                  "methods. Please increase the batch size to speed up the "
-                  "calibration process. Batch size can be set by adding the "
-                  "argument --batch_size <batch_size> to the command line.\n")
+            print(
+                "\nAWQ calibration could take longer than other calibration "
+                "methods. Please increase the batch size to speed up the "
+                "calibration process. Batch size can be set by adding the "
+                "argument --batch_size <batch_size> to the command line.\n"
+            )
 
         calib_dataloader = get_calib_dataloader(
             tokenizer=tokenizer,
@@ -264,13 +221,11 @@ def main(args):
         if args.qformat in QUANT_CFG_CHOICES:
             quant_cfg = QUANT_CFG_CHOICES[args.qformat]
         else:
-            raise ValueError(
-                f"Unsupported quantization format: {args.qformat}")
+            raise ValueError(f"Unsupported quantization format: {args.qformat}")
 
         if "awq" in args.qformat:
             quant_cfg = copy.deepcopy(QUANT_CFG_CHOICES[args.qformat])
-            weight_quantizer = quant_cfg["quant_cfg"][
-                "*weight_quantizer"]  # type: ignore
+            weight_quantizer = quant_cfg["quant_cfg"]["*weight_quantizer"]  # type: ignore
             if isinstance(weight_quantizer, list):
                 weight_quantizer = weight_quantizer[0]
             weight_quantizer["block_sizes"][-1] = args.awq_block_size
@@ -287,8 +242,7 @@ def main(args):
 
     with torch.inference_mode():
         if model_type is None:
-            print(f"Unknown model type {type(model).__name__}. Continue "
-                  "exporting...")
+            print(f"Unknown model type {type(model).__name__}. Continue exporting...")
             model_type = f"unknown:{type(model).__name__}"
 
         export_path = args.output_dir
@@ -297,9 +251,7 @@ def main(args):
         if args.qformat == "int4_awq" and model_type == "qwen":
             torch.save(model.state_dict(), export_path)
         else:
-            export_npz = (model_type not in [
-                'gptj', 'falcon', 'chatglm', 'mpt', 'llama', 'baichuan'
-            ])
+            export_npz = model_type not in ["gptj", "falcon", "chatglm", "mpt", "llama", "baichuan"]
 
             # export safetensors
             export_model_config(
@@ -311,58 +263,44 @@ def main(args):
                 inference_pipeline_parallel=args.pp_size,
                 # export_tensorrt_llm_config=(not export_npz),
                 export_tensorrt_llm_config=False,
-                export_npz=export_npz)
+                export_npz=export_npz,
+            )
 
             # Workaround for wo quantization
             if args.qformat in ["int8_wo", "int4_wo", "full_prec"]:
-                with open(f"{export_path}/config.json", 'r') as f:
+                with open(f"{export_path}/config.json") as f:
                     tensorrt_llm_config = json.load(f)
                 if args.qformat == "int8_wo":
-                    tensorrt_llm_config["quantization"]["quant_algo"] = 'W8A16'
+                    tensorrt_llm_config["quantization"]["quant_algo"] = "W8A16"
                 elif args.qformat == "int4_wo":
-                    tensorrt_llm_config["quantization"]["quant_algo"] = 'W4A16'
+                    tensorrt_llm_config["quantization"]["quant_algo"] = "W4A16"
                 else:
                     tensorrt_llm_config["quantization"]["quant_algo"] = None
                 with open(f"{export_path}/config.json", "w") as f:
                     json.dump(tensorrt_llm_config, f, indent=4)
 
         end_time = time.time()
-        print("Quantized model exported to {} \nTotal time used {:.2f} s.".
-              format(export_path, end_time - start_time))
+        print("Quantized model exported to {} \nTotal time used {:.2f} s.".format(export_path, end_time - start_time))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model-dir",
-                        help="Specify where the HuggingFace model is",
-                        required=True)
+    parser.add_argument("--model-dir", help="Specify where the HuggingFace model is", required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dtype", help="Model data type.", default="float16")
     parser.add_argument(
         "--qformat",
         help="Quantization format.",
         default="full_prec",
-        choices=[
-            "fp8", "int8_sq", "int4_awq", "w4a8_awq", "int8_wo", "int4_wo",
-            "full_prec"
-        ],
+        choices=["fp8", "int8_sq", "int4_awq", "w4a8_awq", "int8_wo", "int4_wo", "full_prec"],
     )
-    parser.add_argument("--batch-size",
-                        help="Batch size for calibration.",
-                        type=int,
-                        default=1)
-    parser.add_argument("--calib-size",
-                        help="Number of samples for calibration.",
-                        type=int,
-                        default=512)
+    parser.add_argument("--batch-size", help="Batch size for calibration.", type=int, default=1)
+    parser.add_argument("--calib-size", help="Number of samples for calibration.", type=int, default=512)
     parser.add_argument("--output-dir", default="exported_model")
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--pp-size", type=int, default=1)
     parser.add_argument("--awq-block-size", type=int, default=128)
-    parser.add_argument("--kv-cache-dtype",
-                        help="KV Cache dtype.",
-                        default=None,
-                        choices=["int8", "fp8", None])
+    parser.add_argument("--kv-cache-dtype", help="KV Cache dtype.", default=None, choices=["int8", "fp8", None])
     args = parser.parse_args()
 
     main(args)

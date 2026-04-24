@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 DTYPES = ["fp16", "bf16", "fp32"]
 DTYPE_MAP = {
     "fp16": "nv_half",

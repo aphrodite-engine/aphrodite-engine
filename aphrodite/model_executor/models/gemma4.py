@@ -37,7 +37,10 @@ from aphrodite.forward_context import get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import GeluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE, GateLinear
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+    GateLinear,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -1142,7 +1145,7 @@ class Gemma4Model(nn.Module, EagleModelMixin):
             )
 
         # NOTE: Keep .clone() until fix in
-        # https://github.com/vllm-project/vllm/pull/22282
+        # https://github.com/aphrodite-project/aphrodite/pull/22282
         hidden_states = self_decoder_hidden_states.clone()
 
         num_padded = logits_indices_padded.size(0)

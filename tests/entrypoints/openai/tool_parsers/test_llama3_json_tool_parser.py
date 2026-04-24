@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import pytest
 from aphrodite.endpoints.openai.protocol import ExtractedToolCallInformation
 from aphrodite.endpoints.openai.tool_parsers.llama_tool_parser import Llama3JsonToolParser

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import torch
 from torch import nn
@@ -31,7 +31,9 @@ from aphrodite.model_executor.layers.mamba.ops.causal_conv1d import (
     causal_conv1d_update,
 )
 from aphrodite.model_executor.layers.mamba.ops.mamba_ssm import selective_scan_fn
-from aphrodite.model_executor.layers.mamba.ops.ssu_dispatch import selective_state_update
+from aphrodite.model_executor.layers.mamba.ops.ssu_dispatch import (
+    selective_state_update,
+)
 from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import (
@@ -252,15 +254,16 @@ class MambaMixer(MambaBase, PluggableLayer):
         """
 
         forward_context: ForwardContext = get_forward_context()
-        attn_metadata = forward_context.attn_metadata
+        attn_metadata_raw = forward_context.attn_metadata
 
         assert self.cache_config is not None
         mamba_block_size = self.cache_config.mamba_block_size
         is_mamba_cache_all = self.cache_config.mamba_cache_mode == "all"
 
-        if attn_metadata is not None:
-            assert isinstance(attn_metadata, dict)
-            attn_metadata = attn_metadata[self.prefix]
+        attn_metadata: Mamba1AttentionMetadata | None = None
+        if attn_metadata_raw is not None:
+            assert isinstance(attn_metadata_raw, dict)
+            attn_metadata = cast(Mamba1AttentionMetadata, attn_metadata_raw[self.prefix])
             assert isinstance(attn_metadata, Mamba1AttentionMetadata)
             query_start_loc_p = attn_metadata.query_start_loc_p
             state_indices_tensor_p = attn_metadata.state_indices_tensor_p
@@ -371,6 +374,9 @@ class MambaMixer(MambaBase, PluggableLayer):
             ssm_outputs.append(scan_out_p)
 
         if has_decode:
+            # state_indices_tensor_d is assigned when attn_metadata is not None,
+            # and has_decode is only True when attn_metadata is not None
+            assert state_indices_tensor_d is not None
             if is_mamba_cache_all:
                 state_indices_tensor_d_input = state_indices_tensor_d.gather(
                     1, block_idx_last_computed_token_d.unsqueeze(1)

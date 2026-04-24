@@ -4,7 +4,6 @@
 import asyncio
 import math
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
-from typing import Literal
 
 import numpy as np
 import torch
@@ -18,11 +17,15 @@ from mistral_common.tokens.tokenizers.audio import AudioConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.engine.protocol import StreamingInput
 from aphrodite.envs import APHRODITE_ENGINE_ITERATION_TIMEOUT_S
 from aphrodite.inputs import PromptType, TokensPrompt
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.models.interfaces import MultiModalEmbeddings, SupportsRealtime
+from aphrodite.model_executor.models.interfaces import (
+    MultiModalEmbeddings,
+    SupportsRealtime,
+)
 from aphrodite.model_executor.models.voxtral import (
     VoxtralDummyInputsBuilder,
     VoxtralForConditionalGeneration,
@@ -422,14 +425,13 @@ class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtim
     # for speech-to-text transcription
     def get_generation_prompt(
         cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
+        stt_params: SpeechToTextParams,
     ) -> PromptType:
+        audio = stt_params.audio
+        model_config = stt_params.model_config
+        stt_config = stt_params.stt_config
+        language = stt_params.language
+
         tokenizer = cached_tokenizer_from_config(model_config)
         audio = Audio(audio, int(stt_config.sample_rate), format="wav")  # lossless
 

@@ -3,16 +3,21 @@
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Literal
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
 from transformers import PretrainedConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, SpeechToTextConfig
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    ModelConfig,
+    SpeechToTextConfig,
+)
+from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.inputs import MultiModalDataDict, PromptType, TextPrompt
 from aphrodite.logger import init_logger
@@ -1806,7 +1811,7 @@ class CohereASRDummyInputsBuilder(BaseDummyInputsBuilder[CohereASRProcessingInfo
         self,
         seq_len: int,
         mm_counts: Mapping[str, int],
-        mm_options=None,
+        mm_options: Mapping[str, BaseDummyOptions],
         mm_processor_kwargs=None,
     ) -> MultiModalDataDict:
         feature_extractor = self.info.get_feature_extractor()
@@ -1921,16 +1926,12 @@ class CohereAsrForConditionalGeneration(nn.Module, SupportsTranscription, Suppor
         return super().validate_language(language)
 
     @classmethod
-    def get_generation_prompt(
-        cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,  # not needed here
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
-    ) -> PromptType:
+    def get_generation_prompt(cls, stt_params: SpeechToTextParams) -> PromptType:
+        audio = stt_params.audio
+        stt_config = stt_params.stt_config
+        language = stt_params.language
+        request_prompt = stt_params.request_prompt
+
         if language is None:
             raise ValueError("Language must be specified when creating the CohereASR prompt")
 

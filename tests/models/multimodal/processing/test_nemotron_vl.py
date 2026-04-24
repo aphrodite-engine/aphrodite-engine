@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Tests for Nemotron-Nano-VL's multimodal preprocessing kwargs."""
 
 from collections.abc import Mapping

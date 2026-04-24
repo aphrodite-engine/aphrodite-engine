@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # This script benchmarks the mrope kernel (mainly for Qwen2VL and Qwen2.5VL models).
 # It generates test data, runs benchmarks, and saves results to a CSV file.
 #

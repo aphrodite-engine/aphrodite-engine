@@ -72,7 +72,7 @@ def poly_norm(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, varianc
     from aphrodite import _custom_ops as ops
 
     out = torch.empty_like(x)
-    ops.poly_norm(
+    ops.poly_norm(  # type: ignore[attr-defined]
         out,
         x,
         weight,

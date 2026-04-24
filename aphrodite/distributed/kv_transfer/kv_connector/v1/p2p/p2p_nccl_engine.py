@@ -113,13 +113,8 @@ class P2pNcclEngine:
                     "kv_connector": "P2pNcclConnector",
                     "kv_connector_extra_config": {"http_port": 8000},
                 }
-                example = (
-                    f"--port=8000 --kv-transfer-config='{json.dumps(example_cfg)}'"
-                )
-                raise ValueError(
-                    "kv_connector_extra_config.http_port is required. "
-                    f"Example: {example}"
-                )
+                example = f"--port=8000 --kv-transfer-config='{json.dumps(example_cfg)}'"
+                raise ValueError(f"kv_connector_extra_config.http_port is required. Example: {example}")
             self.http_address = f"{self._hostname}:{http_port}"
 
         self.context = zmq.Context()
@@ -136,14 +131,8 @@ class P2pNcclEngine:
         self.send_stream = torch.cuda.Stream()
         self.recv_stream = torch.cuda.Stream()
 
-        mem_pool_size_gb = float(
-            self.config.get_from_extra_config(
-                "mem_pool_size_gb", DEFAULT_MEM_POOL_SIZE_GB
-            )
-        )
-        self.pool = TensorMemoryPool(
-            max_block_size=int(mem_pool_size_gb * 1024**3)
-        )  # GB
+        mem_pool_size_gb = float(self.config.get_from_extra_config("mem_pool_size_gb", DEFAULT_MEM_POOL_SIZE_GB))
+        self.pool = TensorMemoryPool(max_block_size=int(mem_pool_size_gb * 1024**3))  # GB
 
         # The sending type includes tree mutually exclusive options:
         # PUT, GET, PUT_ASYNC.
@@ -156,9 +145,7 @@ class P2pNcclEngine:
             # tensor_id: torch.Tensor
             self.send_queue: deque[SendQueueItem] = deque()
             if self.send_type == "PUT_ASYNC":
-                self._send_thread = threading.Thread(
-                    target=self.send_async, daemon=True
-                )
+                self._send_thread = threading.Thread(target=self.send_async, daemon=True)
                 self._send_thread.start()
 
         # tensor_id: torch.Tensor/(addr, dtype, shape)
@@ -171,13 +158,9 @@ class P2pNcclEngine:
         self.buffer_size = 0
         self.buffer_size_threshold = float(self.config.kv_buffer_size)
 
-        self.nccl_num_channels = self.config.get_from_extra_config(
-            "nccl_num_channels", "8"
-        )
+        self.nccl_num_channels = self.config.get_from_extra_config("nccl_num_channels", "8")
 
-        self._listener_thread = threading.Thread(
-            target=self.listen_for_requests, daemon=True
-        )
+        self._listener_thread = threading.Thread(target=self.listen_for_requests, daemon=True)
         self._listener_thread.start()
 
         self._ping_thread = None
@@ -244,9 +227,7 @@ class P2pNcclEngine:
                 self.recv_store_cv.notify()
             return True
 
-        item = SendQueueItem(
-            tensor_id=tensor_id, remote_address=remote_address, tensor=tensor
-        )
+        item = SendQueueItem(tensor_id=tensor_id, remote_address=remote_address, tensor=tensor)
 
         if self.send_type == "PUT":
             return self.send_sync(item)
@@ -275,13 +256,10 @@ class P2pNcclEngine:
                 assert len(self.send_store) > 0
                 oldest_tensor_id = next(iter(self.send_store))
                 oldest_tensor = self.send_store.pop(oldest_tensor_id)
-                oldest_tensor_size = (
-                    oldest_tensor.element_size() * oldest_tensor.numel()
-                )
+                oldest_tensor_size = oldest_tensor.element_size() * oldest_tensor.numel()
                 self.buffer_size -= oldest_tensor_size
                 logger.debug(
-                    "⛔[GET]Send to %s, tensor_id:%s, tensor_size:%d,"
-                    " buffer_size:%d, oldest_tensor_size:%d, rank:%d",
+                    "⛔[GET]Send to %s, tensor_id:%s, tensor_size:%d, buffer_size:%d, oldest_tensor_size:%d, rank:%d",
                     remote_address,
                     tensor_id,
                     tensor_size,
@@ -293,8 +271,7 @@ class P2pNcclEngine:
             self.send_store[tensor_id] = tensor
             self.buffer_size += tensor_size
             logger.debug(
-                "🔵[GET]Send to %s, tensor_id:%s, tensor_size:%d, "
-                "shape:%s, rank:%d, buffer_size:%d(%.2f%%)",
+                "🔵[GET]Send to %s, tensor_id:%s, tensor_size:%d, shape:%s, rank:%d, buffer_size:%d(%.2f%%)",
                 remote_address,
                 tensor_id,
                 tensor_size,
@@ -359,9 +336,7 @@ class P2pNcclEngine:
             return None
 
         with torch.cuda.stream(self.recv_stream):
-            tensor = torch.empty(
-                data["shape"], dtype=getattr(torch, data["dtype"]), device=self.device
-            )
+            tensor = torch.empty(data["shape"], dtype=getattr(torch, data["dtype"]), device=self.device)
 
         self.recv(comm, tensor, rank ^ 1, self.recv_stream)
 
@@ -380,9 +355,7 @@ class P2pNcclEngine:
                 with torch.accelerator.device_index(self.device.index):
                     rank = 1
                     with set_p2p_nccl_context(self.nccl_num_channels):
-                        comm: ncclComm_t = self.nccl.ncclCommInitRank(
-                            2, unique_id, rank
-                        )
+                        comm: ncclComm_t = self.nccl.ncclCommInitRank(2, unique_id, rank)
                     self.comms[remote_address.decode()] = (comm, rank)
                     logger.info(
                         "🤝ncclCommInitRank Success, %s👈%s, MyRank:%s",
@@ -408,8 +381,7 @@ class P2pNcclEngine:
                         addr = self.pool.store_tensor(tensor)
                         tensor = (addr, tensor.dtype, tensor.shape)
                         logger.warning(
-                            "🔴[PUT]Recv Tensor, Out Of Threshold, "
-                            "%s👈%s, data:%s, addr:%d",
+                            "🔴[PUT]Recv Tensor, Out Of Threshold, %s👈%s, data:%s, addr:%d",
                             self.zmq_address,
                             remote_address.decode(),
                             data,
@@ -491,8 +463,7 @@ class P2pNcclEngine:
                     self.send_queue_cv.wait()
             duration = time.time() - start_time
             logger.debug(
-                "🚧[PUT_ASYNC]It took %.3fms to wait for the send_queue"
-                " to be empty, rank:%d",
+                "🚧[PUT_ASYNC]It took %.3fms to wait for the send_queue to be empty, rank:%d",
                 duration * 1000,
                 self.rank,
             )
@@ -537,9 +508,7 @@ class P2pNcclEngine:
 
         return True
 
-    def get_finished(
-        self, finished_req_ids: set[str], no_compile_layers
-    ) -> tuple[set[str] | None, set[str] | None]:
+    def get_finished(self, finished_req_ids: set[str], no_compile_layers) -> tuple[set[str] | None, set[str] | None]:
         """
         Notifies worker-side connector ids of requests that have
         finished generating tokens.
@@ -588,8 +557,7 @@ class P2pNcclEngine:
 
     def send(self, comm, tensor: torch.Tensor, dst: int, stream=None):
         assert tensor.device == self.device, (
-            f"this nccl communicator is created to work on {self.device}, "
-            f"but the input tensor is on {tensor.device}"
+            f"this nccl communicator is created to work on {self.device}, but the input tensor is on {tensor.device}"
         )
         if stream is None:
             stream = current_stream()
@@ -607,8 +575,7 @@ class P2pNcclEngine:
 
     def recv(self, comm, tensor: torch.Tensor, src: int, stream=None):
         assert tensor.device == self.device, (
-            f"this nccl communicator is created to work on {self.device}, "
-            f"but the input tensor is on {tensor.device}"
+            f"this nccl communicator is created to work on {self.device}, but the input tensor is on {tensor.device}"
         )
         if stream is None:
             stream = current_stream()

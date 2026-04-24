@@ -17,9 +17,7 @@ _KV_CONNECTOR_AGENT: KVConnectorBaseType | None = None
 
 
 def get_kv_transfer_group() -> KVConnectorBaseType:
-    assert _KV_CONNECTOR_AGENT is not None, (
-        "disaggregated KV cache transfer parallel group is not initialized"
-    )
+    assert _KV_CONNECTOR_AGENT is not None, "disaggregated KV cache transfer parallel group is not initialized"
     return _KV_CONNECTOR_AGENT
 
 
@@ -60,10 +58,7 @@ def ensure_kv_transfer_initialized(
     if aphrodite_config.kv_transfer_config is None:
         return
 
-    if (
-        aphrodite_config.kv_transfer_config.is_kv_transfer_instance
-        and _KV_CONNECTOR_AGENT is None
-    ):
+    if aphrodite_config.kv_transfer_config.is_kv_transfer_instance and _KV_CONNECTOR_AGENT is None:
         _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
             config=aphrodite_config,
             role=KVConnectorRole.WORKER,

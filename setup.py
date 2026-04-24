@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import ctypes
 import importlib.util
 import logging
@@ -299,7 +299,10 @@ class cmake_build_ext(build_ext):
         if other_cmake_args:
             cmake_args += other_cmake_args.split()
 
-        subprocess.check_call(["cmake", ext.cmake_lists_dir, *build_tool, *cmake_args], cwd=self.build_temp)
+        subprocess.check_call(
+            ["cmake", ext.cmake_lists_dir, *build_tool, *cmake_args],
+            cwd=self.build_temp,
+        )
 
     def build_extensions(self) -> None:
         # Ensure that CMake is present and working
@@ -352,7 +355,15 @@ class cmake_build_ext(build_ext):
                 prefix = prefix.parent
 
             # prefix here should actually be the same for all components
-            install_args = ["cmake", "--install", ".", "--prefix", prefix, "--component", target_name(ext.name)]
+            install_args = [
+                "cmake",
+                "--install",
+                ".",
+                "--prefix",
+                prefix,
+                "--component",
+                target_name(ext.name),
+            ]
             subprocess.check_call(install_args, cwd=self.build_temp)
 
     def run(self):
@@ -415,7 +426,12 @@ def _is_hpu() -> bool:
             try:
                 output = subprocess.check_output("lsmod | grep habanalabs | wc -l", shell=True)
                 is_hpu_available = int(output) > 0
-            except (ValueError, FileNotFoundError, PermissionError, subprocess.CalledProcessError):
+            except (
+                ValueError,
+                FileNotFoundError,
+                PermissionError,
+                subprocess.CalledProcessError,
+            ):
                 pass
     return is_hpu_available
 
@@ -501,7 +517,13 @@ def get_gaudi_sw_version():
     Returns the driver version.
     """
     # Enable console printing for `hl-smi` check
-    output = subprocess.run("hl-smi", shell=True, text=True, capture_output=True, env={"ENABLE_CONSOLE": "true"})
+    output = subprocess.run(
+        "hl-smi",
+        shell=True,
+        text=True,
+        capture_output=True,
+        env={"ENABLE_CONSOLE": "true"},
+    )
     if output.returncode == 0 and output.stdout:
         return output.stdout.split("\n")[2].replace(" ", "").split(":")[1][:-1].split("-")[0]
     return "0.0.0"  # when hl-smi is not available
@@ -543,7 +565,10 @@ def get_aphrodite_version() -> str:
     elif _is_tpu():
         version += f"{sep}tpu"
     elif _is_cpu():
-        if envs.APHRODITE_TARGET_DEVICE == "cpu":
+        # Check the local APHRODITE_TARGET_DEVICE (may be set by
+        # auto-detect above), not envs.APHRODITE_TARGET_DEVICE, so CPU-only
+        # hosts still get `+cpu`.
+        if APHRODITE_TARGET_DEVICE == "cpu":
             version += f"{sep}cpu"
     elif _is_xpu():
         version += f"{sep}xpu"
@@ -618,15 +643,28 @@ if _build_custom_ops():
         if not disable_flash_attn:
             ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa2_C", cmake_lists_dir="."))
             if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
-                ext_modules.append(CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa3_C", cmake_lists_dir="."))
+                ext_modules.append(
+                    CMakeExtension(
+                        name="aphrodite.vllm_flash_attn._vllm_fa3_C",
+                        cmake_lists_dir=".",
+                    )
+                )
             ext_modules.append(
-                CMakeExtension(name="aphrodite.vllm_flash_attn._vllm_fa4_cutedsl_C", cmake_lists_dir=".", optional=True)
+                CMakeExtension(
+                    name="aphrodite.vllm_flash_attn._vllm_fa4_cutedsl_C",
+                    cmake_lists_dir=".",
+                    optional=True,
+                )
             )
 
         if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version("12.3"):
             ext_modules.append(CMakeExtension(name="aphrodite._flashmla_C", cmake_lists_dir=".", optional=True))
             ext_modules.append(
-                CMakeExtension(name="aphrodite._flashmla_extension_C", cmake_lists_dir=".", optional=True)
+                CMakeExtension(
+                    name="aphrodite._flashmla_extension_C",
+                    cmake_lists_dir=".",
+                    optional=True,
+                )
             )
             ext_modules.append(CMakeExtension(name="aphrodite._deep_gemm_C", cmake_lists_dir=".", optional=True))
         ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator", cmake_lists_dir="."))

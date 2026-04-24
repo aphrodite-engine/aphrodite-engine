@@ -41,9 +41,7 @@ class ReqMeta:
     num_tokens: int
 
     @staticmethod
-    def make_meta(
-        request_id: str, token_ids: list[int], block_ids: list[int], block_size: int
-    ) -> "ReqMeta":
+    def make_meta(request_id: str, token_ids: list[int], block_ids: list[int], block_size: int) -> "ReqMeta":
         block_ids_tensor = torch.tensor(block_ids)
         return ReqMeta(
             request_id=request_id,
@@ -66,9 +64,7 @@ class P2pNcclConnectorMetadata(KVConnectorMetadata):
         block_ids: list[int],
         block_size: int,
     ) -> None:
-        self.requests.append(
-            ReqMeta.make_meta(request_id, token_ids, block_ids, block_size)
-        )
+        self.requests.append(ReqMeta.make_meta(request_id, token_ids, block_ids, block_size))
 
 
 class P2pNcclConnector(KVConnectorBase_V1):
@@ -89,9 +85,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
         self.chunked_prefill: dict[str, tuple[list[int], list[int] | None]] = {}
 
         self._rank = get_world_group().rank if role == KVConnectorRole.WORKER else 0
-        self._local_rank = (
-            get_world_group().local_rank if role == KVConnectorRole.WORKER else 0
-        )
+        self._local_rank = get_world_group().local_rank if role == KVConnectorRole.WORKER else 0
 
         self.p2p_nccl_engine = (
             P2pNcclEngine(
@@ -160,9 +154,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
             Returns:
                 None. The function modifies `layer` in-place.
             """
-            if (
-                isinstance(attn_metadata, MLACommonMetadata) or layer.shape[1] == 2
-            ):  # MLA or FlashInfer
+            if isinstance(attn_metadata, MLACommonMetadata) or layer.shape[1] == 2:  # MLA or FlashInfer
                 num_block = kv_cache.shape[0]
                 self.check_tensors_except_dim(layer, kv_cache, 0)
                 if len(block_ids) == num_block:
@@ -170,8 +162,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
                 else:
                     layer[block_ids[:num_block], ...] = kv_cache
                     logger.warning(
-                        "🚧kv_cache does not match, block_ids:%d, "
-                        "num_block:%d, request_id:%s",
+                        "🚧kv_cache does not match, block_ids:%d, num_block:%d, request_id:%s",
                         len(block_ids),
                         num_block,
                         request_id,
@@ -185,8 +176,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
                 else:
                     layer[:, block_ids[:num_block], ...] = kv_cache
                     logger.warning(
-                        "🚧kv_cache does not match, block_ids:%d, "
-                        "num_block:%d, request_id:%s",
+                        "🚧kv_cache does not match, block_ids:%d, num_block:%d, request_id:%s",
                         len(block_ids),
                         num_block,
                         request_id,
@@ -216,17 +206,13 @@ class P2pNcclConnector(KVConnectorBase_V1):
 
                 layer = kv_cache
 
-                kv_cache = self.p2p_nccl_engine.recv_tensor(
-                    request.request_id + "#" + layer_name, remote_address
-                )
+                kv_cache = self.p2p_nccl_engine.recv_tensor(request.request_id + "#" + layer_name, remote_address)
 
                 if kv_cache is None:
                     logger.warning("🚧kv_cache is None, %s", request.request_id)
                     continue
 
-                inject_kv_into_layer(
-                    layer, kv_cache, request.block_ids, request.request_id
-                )
+                inject_kv_into_layer(layer, kv_cache, request.block_ids, request.request_id)
 
     def wait_for_layer_load(self, layer_name: str) -> None:
         """Blocking until the KV for a specific layer is loaded into Aphrodite's
@@ -284,9 +270,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
                 torch.Tensor: A tensor containing the extracted KV slices.
                 Returns None if the layout is unsupported.
             """
-            if (
-                isinstance(attn_metadata, MLACommonMetadata) or layer.shape[1] == 2
-            ):  # MLA or FlashInfer
+            if isinstance(attn_metadata, MLACommonMetadata) or layer.shape[1] == 2:  # MLA or FlashInfer
                 return layer[block_ids, ...]
 
             if layer.shape[0] == 2:  # FlashAttention
@@ -302,18 +286,14 @@ class P2pNcclConnector(KVConnectorBase_V1):
             remote_address = ip + ":" + str(port + self._rank)
 
             kv_cache = extract_kv_from_layer(kv_layer, request.block_ids)
-            self.p2p_nccl_engine.send_tensor(
-                request_id + "#" + layer_name, kv_cache, remote_address
-            )
+            self.p2p_nccl_engine.send_tensor(request_id + "#" + layer_name, kv_cache, remote_address)
 
     def wait_for_save(self):
         if self.is_producer:
             assert self.p2p_nccl_engine is not None
             self.p2p_nccl_engine.wait_for_sent()
 
-    def get_finished(
-        self, finished_req_ids: set[str], **kwargs: Any
-    ) -> tuple[set[str] | None, set[str] | None]:
+    def get_finished(self, finished_req_ids: set[str], **kwargs: Any) -> tuple[set[str] | None, set[str] | None]:
         """
         Notifies worker-side connector ids of requests that have
         finished generating tokens.
@@ -363,9 +343,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
 
         return num_external_tokens, False
 
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         """
         Update KVConnector state after block allocation.
         """
@@ -392,9 +370,7 @@ class P2pNcclConnector(KVConnectorBase_V1):
 
         for new_req in scheduler_output.scheduled_new_reqs:
             if self.is_producer:
-                num_scheduled_tokens = (scheduler_output.num_scheduled_tokens)[
-                    new_req.req_id
-                ]
+                num_scheduled_tokens = (scheduler_output.num_scheduled_tokens)[new_req.req_id]
                 num_tokens = num_scheduled_tokens + new_req.num_computed_tokens
                 # the request's prompt is chunked prefill
                 if num_tokens < len(new_req.prompt_token_ids or []):

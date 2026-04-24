@@ -26,18 +26,26 @@
 
 import math
 from collections.abc import Iterable, Mapping
-from typing import Annotated, Literal
+from typing import Annotated
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
 from transformers import BatchFeature, PretrainedConfig
 
-from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, SpeechToTextConfig
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    ModelConfig,
+    SpeechToTextConfig,
+)
 from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.inputs import MultiModalDataDict, PromptType, TokensPrompt
-from aphrodite.model_executor.layers.linear import ColumnParallelLinear, RowParallelLinear
+from aphrodite.model_executor.layers.linear import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -796,15 +804,14 @@ class GraniteSpeechForConditionalGeneration(
     @classmethod
     def get_generation_prompt(
         cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
+        stt_params: SpeechToTextParams,
     ) -> PromptType:
         """Get the generation prompt to be used for transcription requests."""
+        audio = stt_params.audio
+        model_config = stt_params.model_config
+        task_type = stt_params.task_type
+        to_language = stt_params.to_language
+
         # Audio placeholders don't use an index, so value doesn't matter
         audio_tok = cls.get_placeholder_str("audio", 0)
 

@@ -3,7 +3,6 @@
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Any, Literal
 
-import numpy as np
 import torch
 from torch import nn
 from transformers import AutoModel, BatchFeature
@@ -19,11 +18,14 @@ from transformers.models.siglip import SiglipImageProcessorFast
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.inputs import MultiModalDataDict, PromptType, TextPrompt
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import RowParallelLinear
-from aphrodite.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
+from aphrodite.model_executor.layers.vocab_parallel_embedding import (
+    VocabParallelEmbedding,
+)
 from aphrodite.model_executor.models.gemma3n import Gemma3nForCausalLM
 from aphrodite.model_executor.models.gemma3n_audio_utils import (
     adjust_audio_features_to_expected_length,
@@ -728,21 +730,17 @@ class Gemma3nForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsTra
             raise ValueError(f"Unsupported modality: {modality}")
 
     @classmethod
-    def get_generation_prompt(
-        cls,
-        audio: np.ndarray,
-        stt_config: SpeechToTextConfig,
-        model_config: ModelConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
-    ) -> PromptType:
+    def get_generation_prompt(cls, stt_params: SpeechToTextParams) -> PromptType:
         """
         Gemma3n supports "free-form" transcription.
         We fix its prompt here to standardize transcriptions/translations
         requests.
         """
+        audio = stt_params.audio
+        stt_config = stt_params.stt_config
+        language = stt_params.language
+        task_type = stt_params.task_type
+        to_language = stt_params.to_language
         # Transcribe this audio [into <>] | for transcription
         # Translate this audio [from <> into <>] | for translation
         prompt = "<start_of_turn>user\n"

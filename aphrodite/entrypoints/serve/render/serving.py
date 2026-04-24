@@ -55,13 +55,8 @@ from aphrodite.renderers.inputs.preprocess import (
     prompt_to_seq,
 )
 from aphrodite.tool_parsers import ToolParser
-
-try:
-    from aphrodite.tool_parsers.mistral_tool_parser import MistralToolParser
-except ModuleNotFoundError:
-    MistralToolParser = None
 from aphrodite.utils import random_uuid
-from aphrodite.utils.mistral import is_mistral_tokenizer
+from aphrodite.utils.mistral import is_mistral_tokenizer, is_mistral_tool_parser
 from aphrodite.utils.mistral import mt as _mt
 
 logger = init_logger(__name__)
@@ -522,7 +517,11 @@ class OpenAIServingRender:
 
         if reasoning_parser is not None:
             tokenizer = renderer.get_tokenizer()
-            request = reasoning_parser(tokenizer, model_config=self.model_config).adjust_request(request=request)
+            request = reasoning_parser(
+                tokenizer,
+                model_config=self.model_config,
+                chat_template_kwargs=chat_params.chat_template_kwargs,
+            ).adjust_request(request=request)
 
         # tool parsing is done only if a tool_parser has been set and if
         # tool_choice is not "none" (if tool_choice is "none" but a tool_parser
@@ -535,10 +534,7 @@ class OpenAIServingRender:
             tool_choice = getattr(request, "tool_choice", "none")
             tokenizer = renderer.get_tokenizer()
             is_mistral_grammar_eligible = (
-                MistralToolParser is not None
-                and issubclass(tool_parser, MistralToolParser)
-                and is_mistral_tokenizer(tokenizer)
-                and tokenizer.supports_grammar
+                is_mistral_tool_parser(tool_parser) and is_mistral_tokenizer(tokenizer) and tokenizer.supports_grammar
             )
             if tool_choice != "none" or is_mistral_grammar_eligible:
                 if not isinstance(request, ChatCompletionRequest | ResponsesRequest):

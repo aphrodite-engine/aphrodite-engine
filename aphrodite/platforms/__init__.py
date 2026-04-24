@@ -166,7 +166,6 @@ def cpu_platform_plugin() -> str | None:
             is_cpu = sys.platform.startswith("darwin")
             if is_cpu:
                 logger.debug("Confirmed CPU platform is available because the machine is MacOS.")
-
     except Exception as e:
         logger.debug("CPU platform is not available because: %s", str(e))
 

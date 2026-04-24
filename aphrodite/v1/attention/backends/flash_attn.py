@@ -101,6 +101,10 @@ class FlashAttentionBackend(AttentionBackend):
         return "FLASH_ATTN"
 
     @classmethod
+    def supports_batch_invariance(cls) -> bool:
+        return True
+
+    @classmethod
     def supports_non_causal(cls) -> bool:
         return True
 
@@ -252,11 +256,16 @@ class FlashAttentionMetadata:
 def _get_sliding_window_configs(
     aphrodite_config: AphroditeConfig,
 ) -> set[tuple[int, int] | None]:
-    """Get the set of all sliding window configs used in the model."""
+    """Get the set of all sliding window configs used in the model.
+
+    Only inspects FlashAttentionImpl layers. Other backends (e.g.
+    TurboQuant, MLA) use their own metadata builders and are skipped.
+    """
     sliding_window_configs: set[tuple[int, int] | None] = set()
     layers = get_layers_from_aphrodite_config(aphrodite_config, Attention)
     for layer in layers.values():
-        assert isinstance(layer.impl, FlashAttentionImpl)
+        if not isinstance(layer.impl, FlashAttentionImpl):
+            continue
         sliding_window_configs.add(layer.impl.sliding_window)
     return sliding_window_configs
 
@@ -279,7 +288,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
     # but for now just set it to `UNIFORM_BATCH` to get use to drop down
     # to FULL_AND_PIECEWISE.
     # TODO(luka, lucas): audit FA2 as part of:
-    #  https://github.com/vllm-project/vllm/issues/22945
+    #  https://github.com/aphrodite-project/aphrodite/issues/22945
     _cudagraph_support = (
         AttentionCGSupport.ALWAYS if get_flash_attn_version() == 3 else AttentionCGSupport.UNIFORM_BATCH
     )
@@ -336,7 +345,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
             # The +1 is for the tile_count_semaphore (synchronization).
             # The 4 slots per batch element (num_prepare_batch_vectors) are:
             #   prepare_varlen + dynamic_split + sort_batches + head_swizzle
-            # See: https://github.com/vllm-project/flash-attention/blob/5824e6e/hopper/flash_api.cpp#L664-L671  # noqa: E501
+            # See: https://github.com/aphrodite-project/flash-attention/blob/5824e6e/hopper/flash_api.cpp#L664-L671  # noqa: E501
             max_batch_size = max(
                 aphrodite_config.scheduler_config.max_num_seqs,
                 self.max_cudagraph_size or 0,
@@ -599,22 +608,21 @@ class FlashAttentionImpl(AttentionImpl):
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
 
         self.attn_type = attn_type
-        self.aphrodite_flash_attn_version = get_flash_attn_version(
+        self.vllm_flash_attn_version = get_flash_attn_version(
             requires_alibi=alibi_slopes is not None,
             head_size=head_size,
         )
         # head_size > 256 requires FA4 on SM90+; force upgrade from FA3
         if (
             head_size > 256
-            and self.aphrodite_flash_attn_version == 3
+            and self.vllm_flash_attn_version == 3
             and current_platform.is_cuda()
             and current_platform.is_device_capability_family(90)
         ):
-            self.aphrodite_flash_attn_version = 4
+            self.vllm_flash_attn_version = 4
         logger.info_once(
             "Using FlashAttention version %s",
-            self.aphrodite_flash_attn_version,
-            scope="local",
+            self.vllm_flash_attn_version,
         )
         # Cache the batch invariant result for use in forward passes
         self.batch_invariant_enabled = envs.APHRODITE_BATCH_INVARIANT
@@ -670,7 +678,7 @@ class FlashAttentionImpl(AttentionImpl):
               {q,k,v}_descale to be (num_sequences, num_kv_heads).
               We use torch's .expand() to avoid duplicating values
         """
-        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
+        assert self.vllm_flash_attn_version is not None, "FlashAttention version not detected."
 
         if output_scale is not None or output_block_scale is not None:
             raise NotImplementedError("fused output quantization is not yet supported for FlashAttentionImpl")
@@ -760,7 +768,7 @@ class FlashAttentionImpl(AttentionImpl):
                     block_table=block_table,
                     softcap=self.logits_soft_cap,
                     scheduler_metadata=scheduler_metadata,
-                    fa_version=self.aphrodite_flash_attn_version,
+                    fa_version=self.vllm_flash_attn_version,
                     q_descale=q_descale,
                     k_descale=k_descale,
                     v_descale=v_descale,
@@ -788,7 +796,7 @@ class FlashAttentionImpl(AttentionImpl):
             block_table=attn_metadata.block_table,
             common_prefix_len=attn_metadata.common_prefix_len,
             max_num_splits=attn_metadata.max_num_splits,
-            fa_version=self.aphrodite_flash_attn_version,
+            fa_version=self.vllm_flash_attn_version,
             prefix_scheduler_metadata=attn_metadata.prefix_scheduler_metadata,
             suffix_scheduler_metadata=attn_metadata.scheduler_metadata,
             q_descale=layer._q_scale,
@@ -844,7 +852,7 @@ class FlashAttentionImpl(AttentionImpl):
         k_descale: torch.Tensor | None = None,
         v_descale: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
+        assert self.vllm_flash_attn_version is not None, "FlashAttention version not detected."
 
         cu_seqlens_q = attn_metadata.query_start_loc
         max_seqlen_q = attn_metadata.max_query_len
@@ -877,7 +885,7 @@ class FlashAttentionImpl(AttentionImpl):
             softcap=self.logits_soft_cap,
             return_softmax_lse=True,
             scheduler_metadata=attn_metadata.scheduler_metadata,
-            fa_version=self.aphrodite_flash_attn_version,
+            fa_version=self.vllm_flash_attn_version,
             q_descale=q_descale,
             k_descale=k_descale,
             v_descale=v_descale,
@@ -910,7 +918,7 @@ class FlashAttentionImpl(AttentionImpl):
             window_size=sliding_window_size,
             softcap=self.logits_soft_cap,
             return_softmax_lse=True,
-            fa_version=self.aphrodite_flash_attn_version,
+            fa_version=self.vllm_flash_attn_version,
             q_descale=q_descale,
             k_descale=k_descale,
             v_descale=v_descale,
@@ -945,7 +953,7 @@ class FlashAttentionImpl(AttentionImpl):
             attn_metadata: Encoder attention metadata
             layer: The attention layer
         """
-        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
+        assert self.vllm_flash_attn_version is not None, "FlashAttention version not detected."
 
         # For encoder attention, process FP8 quantization if needed
         if is_quantized_kv_cache(self.kv_cache_dtype):
@@ -978,7 +986,7 @@ class FlashAttentionImpl(AttentionImpl):
             alibi_slopes=self.alibi_slopes,
             window_size=sliding_window_size,
             softcap=self.logits_soft_cap,
-            fa_version=self.aphrodite_flash_attn_version,
+            fa_version=self.vllm_flash_attn_version,
             q_descale=layer._q_scale.expand(descale_shape) if self.supports_quant_query_input else None,
             k_descale=layer._k_scale.expand(descale_shape),
             v_descale=layer._v_scale.expand(descale_shape),
@@ -1028,7 +1036,7 @@ def use_cascade_attention(
     #    is likely to be faster since it saves memory bandwidth.
     num_queries_per_kv = num_query_heads // num_kv_heads
     # The criteria for using FlashDecoding can be found in the following link:
-    # https://github.com/vllm-project/flash-attention/blob/96266b1111111f3d11aabefaf3bacbab6a89d03c/csrc/flash_attn/flash_api.cpp#L535
+    # https://github.com/aphrodite-project/flash-attention/blob/96266b1111111f3d11aabefaf3bacbab6a89d03c/csrc/flash_attn/flash_api.cpp#L535
     use_flash_decoding = num_queries_per_kv > 1 and not use_sliding_window and not use_alibi and np.all(query_lens == 1)
     if not use_flash_decoding:
         # Use cascade attention.

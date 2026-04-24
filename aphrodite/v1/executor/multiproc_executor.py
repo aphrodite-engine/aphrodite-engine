@@ -27,8 +27,14 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import destroy_distributed_environment, destroy_model_parallel
-from aphrodite.distributed.device_communicators.shm_broadcast import Handle, MessageQueue
+from aphrodite.distributed import (
+    destroy_distributed_environment,
+    destroy_model_parallel,
+)
+from aphrodite.distributed.device_communicators.shm_broadcast import (
+    Handle,
+    MessageQueue,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
 from aphrodite.distributed.parallel_state import (
     get_dcp_group,
@@ -60,7 +66,11 @@ from aphrodite.utils.system_utils import (
 )
 from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
 from aphrodite.v1.executor.abstract import Executor, FailureCallback
-from aphrodite.v1.outputs import AsyncModelRunnerOutput, DraftTokenIds, ModelRunnerOutput
+from aphrodite.v1.outputs import (
+    AsyncModelRunnerOutput,
+    DraftTokenIds,
+    ModelRunnerOutput,
+)
 from aphrodite.v1.worker.worker_base import WorkerWrapperBase
 
 logger = init_logger(__name__)
@@ -983,7 +993,6 @@ def set_multiprocessing_worker_envs():
                 "external environment to tune this value as needed.",
                 current_parallelism,
                 default_omp_num_threads,
-                scope="local",
             )
             os.environ["OMP_NUM_THREADS"] = str(default_omp_num_threads)
             torch.set_num_threads(default_omp_num_threads)

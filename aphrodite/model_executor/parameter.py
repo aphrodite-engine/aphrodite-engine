@@ -16,15 +16,12 @@ from aphrodite.logger import init_logger
 
 __all__ = [
     "BaseAphroditeParameter",
-    "BaseAphroditeParameter",
-    "PackedAphroditeParameter",
     "PackedAphroditeParameter",
     "PerTensorScaleParameter",
     "ModelWeightParameter",
     "ChannelQuantScaleParameter",
     "GroupQuantScaleParameter",
     "PackedColumnParameter",
-    "RowAphroditeParameter",
     "RowAphroditeParameter",
 ]
 
@@ -577,8 +574,8 @@ def _adjust_shard_indexes_for_marlin(shard_size, shard_offset, marlin_tile_size)
 
 
 def _adjust_shard_indexes_for_packing(shard_size, shard_offset, packed_factor, marlin_tile_size):
-    shard_size = shard_size // packed_factor
-    shard_offset = shard_offset // packed_factor
+    shard_size = round(shard_size // packed_factor)
+    shard_offset = round(shard_offset // packed_factor)
     if marlin_tile_size is not None:
         return _adjust_shard_indexes_for_marlin(
             shard_size=shard_size,
@@ -587,8 +584,3 @@ def _adjust_shard_indexes_for_packing(shard_size, shard_offset, packed_factor, m
         )
 
     return shard_size, shard_offset
-
-
-BaseAphroditeParameter = BaseAphroditeParameter
-PackedAphroditeParameter = PackedAphroditeParameter
-RowAphroditeParameter = RowAphroditeParameter

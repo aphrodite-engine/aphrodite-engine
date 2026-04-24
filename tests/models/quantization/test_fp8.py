@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # flake8: noqa
 """Tests fp8 models against ground truth generation
 Note: these tests will only pass on L4 GPU.

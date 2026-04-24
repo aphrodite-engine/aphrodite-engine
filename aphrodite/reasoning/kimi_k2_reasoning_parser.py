@@ -11,7 +11,9 @@ from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParser
 from aphrodite.reasoning.identity_reasoning_parser import IdentityReasoningParser
 
 if TYPE_CHECKING:
-    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.chat_completion.protocol import (
+        ChatCompletionRequest,
+    )
     from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 
 
@@ -58,6 +60,14 @@ class KimiK2ReasoningParser(ReasoningParser):
 
         if self._start_token_id is None or self._end_token_id is None:
             raise RuntimeError("KimiK2ReasoningParser could not locate think start/end tokens in the tokenizer!")
+
+    @property
+    def reasoning_start_str(self) -> str | None:
+        return self._start_token
+
+    @property
+    def reasoning_end_str(self) -> str | None:
+        return self._end_token
 
     def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         """

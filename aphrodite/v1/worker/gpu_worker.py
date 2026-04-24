@@ -15,7 +15,11 @@ import torch
 import torch.nn as nn
 
 import aphrodite.envs as envs
-from aphrodite.config import AphroditeConfig, CUDAGraphMode, set_current_aphrodite_config
+from aphrodite.config import (
+    AphroditeConfig,
+    CUDAGraphMode,
+    set_current_aphrodite_config,
+)
 from aphrodite.config.compilation import CompilationMode
 from aphrodite.distributed import (
     ensure_model_parallel_initialized,
@@ -123,7 +127,9 @@ class Worker(WorkerBase):
         precision = envs.APHRODITE_FLOAT32_MATMUL_PRECISION
         torch.set_float32_matmul_precision(precision)
 
-        from aphrodite.distributed.elastic_ep.elastic_execute import ElasticEPScalingExecutor
+        from aphrodite.distributed.elastic_ep.elastic_execute import (
+            ElasticEPScalingExecutor,
+        )
 
         self.elastic_ep_executor = ElasticEPScalingExecutor(self)
 
@@ -261,7 +267,7 @@ class Worker(WorkerBase):
             )
 
             if self.use_v2_model_runner:
-                logger.info_once("Using V2 Model Runner", scope="local")
+                logger.info_once("Using V2 Model Runner")
 
             # Set random seed.
             set_random_seed(self.model_config.seed)
@@ -419,7 +425,6 @@ class Worker(WorkerBase):
         logger.info_once(
             "Available KV cache memory: %s GiB",
             format_gib(self.available_kv_cache_memory_bytes),
-            scope="local",
         )
 
         if cudagraph_memory_estimate > 0:
@@ -432,9 +437,9 @@ class Worker(WorkerBase):
                     round(current_util + cg_util_delta, 4),
                     1.0,
                 )
-                logger.info_once(
-                    "CUDA graph memory profiling is enabled. "
-                    "The current --gpu-memory-utilization=%.4f is "
+                logger.info(
+                    "CUDA graph memory profiling is enabled (default since "
+                    "v0.21.0). The current --gpu-memory-utilization=%.4f is "
                     "equivalent to --gpu-memory-utilization=%.4f without "
                     "CUDA graph memory profiling. To maintain the same "
                     "effective KV cache size as before, increase "
@@ -449,13 +454,13 @@ class Worker(WorkerBase):
                     round(current_util + cg_util_delta, 4),
                     1.0,
                 )
-                logger.warning_once(
+                logger.warning(
                     "CUDA graph memory profiling is disabled "
                     "(APHRODITE_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0). "
                     "Without it, CUDA graph memory is not accounted for "
                     "during KV cache allocation, which may require lowering "
                     "--gpu-memory-utilization to avoid OOM. Consider "
-                    "re-enabling it and increasing "
+                    "re-enabling it (the default as of v0.21.0) and increasing "
                     "--gpu-memory-utilization from %.4f to %.4f.",
                     current_util,
                     suggested_util,
@@ -964,11 +969,10 @@ def init_worker_distributed_environment(
     backend: str = "nccl",
 ) -> None:
     """Initialize the distributed environment."""
-    attention_config = aphrodite_config.attention_config
     parallel_config = aphrodite_config.parallel_config
     from aphrodite.model_executor.layers.batch_invariant import init_batch_invariance
 
-    init_batch_invariance(attention_config.backend)
+    init_batch_invariance()
     override_envs_for_eplb(parallel_config)
     set_custom_all_reduce(not parallel_config.disable_custom_all_reduce)
 

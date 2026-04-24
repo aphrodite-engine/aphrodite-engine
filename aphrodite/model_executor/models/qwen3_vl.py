@@ -1708,7 +1708,11 @@ class Qwen3VLForConditionalGeneration(
         #                 spatial_merge_size=2 → 8x8 = 64 tokens
         min_budget = 64
         # Max: capped by max_num_batched_tokens
-        max_budget = aphrodite_config.scheduler_config.max_num_batched_tokens
+        # TODO(shen-shanshan): the max_budget auto-infer needs to be optimized later.
+        max_budget = min(
+            aphrodite_config.scheduler_config.max_num_batched_tokens,
+            self.model_config.max_model_len,
+        )
         return (min_budget, max_budget)
 
     def _get_pixel_values_by_modality(

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import pytest
 from aphrodite.endpoints.chat_utils import apply_hf_chat_template, load_chat_template
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest

@@ -58,7 +58,7 @@ class WorkerProfiler(ABC):
         """Call _stop with error handling but no safeguards."""
         try:
             self._stop()
-            logger.info_once("Profiler stopped successfully.", scope="local")
+            logger.info_once("Profiler stopped successfully.")
         except Exception as e:
             logger.warning("Failed to stop profiler: %s", e)
         self._running = False  # Always mark as not running, assume stop worked
@@ -81,7 +81,7 @@ class WorkerProfiler(ABC):
         self._active_iteration_count += 1
 
         if not self._running and self._delay_iters > 0 and self._active_iteration_count == self._delay_iters:
-            logger.info_once("Starting profiler after delay...", scope="local")
+            logger.info_once("Starting profiler after delay...")
             self._call_start()
 
         # Call profiler step for schedule-based profiling
@@ -93,7 +93,7 @@ class WorkerProfiler(ABC):
             # Automatically stop the profiler after max iters
             # will be marked as not running, but leave as active so that stop
             # can clean up properly
-            logger.info_once("Max profiling iterations reached. Stopping profiler...", scope="local")
+            logger.info_once("Max profiling iterations reached. Stopping profiler...")
             self._call_stop()
             return
 
@@ -121,7 +121,7 @@ class WorkerProfiler(ABC):
 
     def shutdown(self) -> None:
         """Ensure profiler is stopped when shutting down."""
-        logger.info_once("Shutting down profiler", scope="local")
+        logger.info_once("Shutting down profiler")
         if self._running:
             self.stop()
 
@@ -156,7 +156,6 @@ class TorchProfilerWrapper(WorkerProfiler):
             logger.info_once(
                 "Torch profiling enabled. Traces will be saved to: %s",
                 torch_profiler_trace_dir,
-                scope="local",
             )
             logger.debug(
                 "Profiler config: record_shapes=%s,profile_memory=%s,with_stack=%s,with_flops=%s",
@@ -195,7 +194,6 @@ class TorchProfilerWrapper(WorkerProfiler):
                     profiler_config.wait_iterations,
                     profiler_config.warmup_iterations,
                     profiler_config.active_iterations,
-                    scope="local",
                 )
 
         self.profiler = torch.profiler.profile(

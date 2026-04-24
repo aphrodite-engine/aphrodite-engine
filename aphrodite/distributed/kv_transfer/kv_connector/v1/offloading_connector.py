@@ -74,9 +74,7 @@ class OffloadingConnector(KVConnectorBase_V1):
         assert self.connector_worker is not None
         self.connector_worker.register_kv_caches(kv_caches)
 
-    def register_cross_layers_kv_cache(
-        self, kv_cache: torch.Tensor, attn_backend: type[AttentionBackend]
-    ):
+    def register_cross_layers_kv_cache(self, kv_cache: torch.Tensor, attn_backend: type[AttentionBackend]):
         assert self.connector_worker is not None
         self.connector_worker.register_cross_layers_kv_cache(kv_cache, attn_backend)
 
@@ -111,25 +109,15 @@ class OffloadingConnector(KVConnectorBase_V1):
         assert self.connector_worker is not None
         return self.connector_worker.get_finished(finished_req_ids)
 
-    def get_num_new_matched_tokens(
-        self, request: "Request", num_computed_tokens: int
-    ) -> tuple[int | None, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int | None, bool]:
         assert self.connector_scheduler is not None
-        return self.connector_scheduler.get_num_new_matched_tokens(
-            request, num_computed_tokens
-        )
+        return self.connector_scheduler.get_num_new_matched_tokens(request, num_computed_tokens)
 
-    def update_state_after_alloc(
-        self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int
-    ):
+    def update_state_after_alloc(self, request: "Request", blocks: "KVCacheBlocks", num_external_tokens: int):
         assert self.connector_scheduler is not None
-        return self.connector_scheduler.update_state_after_alloc(
-            request, blocks, num_external_tokens
-        )
+        return self.connector_scheduler.update_state_after_alloc(request, blocks, num_external_tokens)
 
-    def build_connector_meta(
-        self, scheduler_output: SchedulerOutput
-    ) -> KVConnectorMetadata:
+    def build_connector_meta(self, scheduler_output: SchedulerOutput) -> KVConnectorMetadata:
         assert self.connector_scheduler is not None
         return self.connector_scheduler.build_connector_meta(scheduler_output)
 
@@ -155,14 +143,8 @@ class OffloadingConnector(KVConnectorBase_V1):
         return self.connector_worker.get_kv_connector_stats()
 
     @classmethod
-    def build_kv_connector_stats(
-        cls, data: dict[str, Any] | None = None
-    ) -> KVConnectorStats | None:
-        return (
-            OffloadingConnectorStats(data=data)
-            if data is not None
-            else OffloadingConnectorStats()
-        )
+    def build_kv_connector_stats(cls, data: dict[str, Any] | None = None) -> KVConnectorStats | None:
+        return OffloadingConnectorStats(data=data) if data is not None else OffloadingConnectorStats()
 
     @classmethod
     def build_prom_metrics(
@@ -172,6 +154,4 @@ class OffloadingConnector(KVConnectorBase_V1):
         labelnames: list[str],
         per_engine_labelvalues: dict[int, list[object]],
     ) -> KVConnectorPromMetrics:
-        return OffloadPromMetrics(
-            aphrodite_config, metric_types, labelnames, per_engine_labelvalues
-        )
+        return OffloadPromMetrics(aphrodite_config, metric_types, labelnames, per_engine_labelvalues)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from
 # https://github.com/fmmoret/aphrodite/blob/fm-support-lora-on-quantized-models/tests/lora/test_llama.py
 from dataclasses import dataclass
