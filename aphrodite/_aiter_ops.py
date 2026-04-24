@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import functools
 from collections.abc import Callable
 
@@ -1104,7 +1104,7 @@ class rocm_aiter_ops:
         The environment variables are assigned when the module is imported,
         so you can't change the environment variables after the module is imported.
         This is done out of performance consideration. Accessing environment variables
-        is expensive as described in issue https://github.com/vllm-project/vllm/issues/17067
+        is expensive as described in issue https://github.com/aphrodite-project/aphrodite/issues/17067
         so we don't want to do it repeatedly, especially in the hot path (the forward pass).
         You can call the refresh_env_variables() function to reload the env variables
         after monkey patching the env variables in the unit test.
@@ -1739,6 +1739,8 @@ class rocm_aiter_ops:
         need_renorm: bool,
         routed_scaling_factor: float = 1.0,
     ) -> None:
+        if correction_bias.dtype != gating_output.dtype:
+            correction_bias = correction_bias.to(gating_output.dtype)
         torch.ops.aphrodite.rocm_aiter_biased_grouped_topk(
             gating_output,
             correction_bias,

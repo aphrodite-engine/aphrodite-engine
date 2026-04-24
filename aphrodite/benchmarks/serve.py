@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 r"""Benchmark online serving throughput.
 
 On the server side, run one of the following commands
@@ -50,7 +50,10 @@ from aphrodite.benchmarks.lib.endpoint_request_func import (
     RequestFuncOutput,
 )
 from aphrodite.benchmarks.lib.ready_checker import wait_for_endpoint
-from aphrodite.benchmarks.lib.utils import convert_to_pytorch_benchmark_format, write_to_json
+from aphrodite.benchmarks.lib.utils import (
+    convert_to_pytorch_benchmark_format,
+    write_to_json,
+)
 from aphrodite.tokenizers import TokenizerLike, get_tokenizer
 from aphrodite.utils.gc_utils import freeze_gc_heap
 from aphrodite.utils.network_utils import join_host_port
@@ -1460,14 +1463,12 @@ def add_cli_args(parser: argparse.ArgumentParser):
     )
     parser.add_argument(
         "--timeline-itl-thresholds",
-        type=float,
-        nargs=2,
-        default=[25.0, 50.0],
-        metavar=("THRESHOLD1", "THRESHOLD2"),
+        type=str,
+        default="25,50",
         help="ITL thresholds in milliseconds for timeline plot coloring. "
-        "Specify two values to categorize inter-token latencies into three groups: "
-        "below first threshold (green), between thresholds (orange), "
-        "and above second threshold (red). Default: 25 50 (milliseconds).",
+        "Specify two comma-separated values to categorize inter-token "
+        "latencies into three groups: below first threshold (green), "
+        "between thresholds (orange), and above second threshold (red).",
     )
     parser.add_argument(
         "--plot-dataset-stats",
@@ -1485,6 +1486,15 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     print(args)
     random.seed(args.seed)
     np.random.seed(args.seed)
+
+    # Validate timeline ITL thresholds
+    if args.plot_timeline:
+        try:
+            itl_thresholds = [float(t.strip()) for t in args.timeline_itl_thresholds.split(",")]
+            if len(itl_thresholds) != 2:
+                raise ValueError(f"Expected 2 ITL threshold values, got {len(itl_thresholds)}")
+        except ValueError as e:
+            raise ValueError(f"Invalid --timeline-itl-thresholds format: {e}") from e
 
     # Validate ramp-up arguments
     if args.ramp_up_strategy is not None:
@@ -1739,7 +1749,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 
                 timeline_path = Path(file_name).with_suffix(".timeline.html")
                 # Convert thresholds from milliseconds to seconds
-                itl_thresholds_sec = [t / 1000.0 for t in args.timeline_itl_thresholds]
+                itl_thresholds_sec = [float(t) / 1000.0 for t in args.timeline_itl_thresholds.split(",")]
                 generate_timeline_plot(per_request_data, timeline_path, itl_thresholds=itl_thresholds_sec)
             else:
                 warnings.warn(

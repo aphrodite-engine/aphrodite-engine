@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Copyright (c) 2023, Tri Dao.
 # ruff: noqa: E501
 
@@ -387,6 +387,7 @@ def flash_attn_varlen_func(
             num_splits=num_splits,
             return_lse=return_softmax_lse,
             out=out,
+            learnable_sink=s_aux,
         )
     else:
         raise ValueError(f"Unsupported FA version: {fa_version}")

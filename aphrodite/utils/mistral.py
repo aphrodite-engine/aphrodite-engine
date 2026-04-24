@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Provides lazy import of the aphrodite.tokenizers.mistral module."""
 
 from __future__ import annotations
@@ -12,8 +12,10 @@ from aphrodite.utils.import_utils import LazyLoader
 if TYPE_CHECKING:
     # if type checking, eagerly import the module
     import aphrodite.tokenizers.mistral as mt
+    import aphrodite.tool_parsers.mistral_tool_parser as mtp
 else:
     mt = LazyLoader("mt", globals(), "aphrodite.tokenizers.mistral")
+    mtp = LazyLoader("mtp", globals(), "aphrodite.tool_parsers.mistral_tool_parser")
 
 
 def is_mistral_tokenizer(obj: TokenizerLike | None) -> TypeGuard[mt.MistralTokenizer]:
@@ -23,3 +25,15 @@ def is_mistral_tokenizer(obj: TokenizerLike | None) -> TypeGuard[mt.MistralToken
     # do an isinstance() check.  If the attribute is True, do an isinstance
     # check to be sure we have the correct type.
     return bool(getattr(cls, "IS_MISTRAL_TOKENIZER", False) and isinstance(obj, mt.MistralTokenizer))
+
+
+def is_mistral_tool_parser(cls: type | None) -> bool:
+    """Return true if *cls* is (a subclass of) MistralToolParser.
+
+    Uses a class attribute check so that importing
+    ``aphrodite.tool_parsers.mistral_tool_parser`` — and transitively
+    ``mistral_common`` — is not required.
+    """
+    return bool(
+        getattr(cls, "IS_MISTRAL_TOOL_PARSER", False) and issubclass(cls, mtp.MistralToolParser)  # type: ignore[arg-type]
+    )

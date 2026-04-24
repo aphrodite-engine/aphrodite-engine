@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import copy
 from collections.abc import Iterable
 
@@ -9,7 +9,12 @@ import torch.nn.functional as F
 from transformers.configuration_utils import PretrainedConfig
 
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, get_current_aphrodite_config
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    ModelConfig,
+    get_current_aphrodite_config,
+)
 from aphrodite.distributed import (
     get_pp_group,
     get_tensor_model_parallel_rank,
@@ -21,7 +26,10 @@ from aphrodite.model_executor.layers.fla.ops.layernorm_guard import (
     RMSNormGated,
     layernorm_fn,
 )
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -45,7 +53,10 @@ from aphrodite.model_executor.layers.mamba.mamba_utils import (
     MambaStateDtypeCalculator,
     MambaStateShapeCalculator,
 )
-from aphrodite.model_executor.layers.mla import MLAModules, MultiHeadLatentAttentionWrapper
+from aphrodite.model_executor.layers.mla import (
+    MLAModules,
+    MultiHeadLatentAttentionWrapper,
+)
 from aphrodite.model_executor.layers.quantization.base_config import QuantizationConfig
 from aphrodite.model_executor.layers.rotary_embedding import get_rope
 from aphrodite.model_executor.layers.vocab_parallel_embedding import (
@@ -944,7 +955,7 @@ class BailingMoeV25Model(nn.Module):
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         """Get expert parameter mapping for MoE layers."""
-        return FusedMoE.make_expert_params_mapping(
+        return fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",

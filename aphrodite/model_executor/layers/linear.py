@@ -60,6 +60,7 @@ WEIGHT_LOADER_V2_SUPPORTED = [
     "ModelOptFp8PbWoLinearMethod",
     "QuarkLinearMethod",
     "ModelOptNvFp4LinearMethod",
+    "HummingLinearMethod",
 ]
 
 
@@ -212,7 +213,9 @@ class UnquantizedLinearMethod(LinearMethodBase):
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         if current_platform.is_cpu():
-            from aphrodite.model_executor.layers.utils import dispatch_cpu_unquantized_gemm
+            from aphrodite.model_executor.layers.utils import (
+                dispatch_cpu_unquantized_gemm,
+            )
 
             dispatch_cpu_unquantized_gemm(layer, remove_weight=True)
 
@@ -245,6 +248,7 @@ class LinearBase(PluggableLayer):
         self,
         input_size: int,
         output_size: int,
+        bias: bool = False,
         skip_bias_add: bool = False,
         params_dtype: torch.dtype | None = None,
         quant_config: QuantizationConfig | None = None,
@@ -258,6 +262,7 @@ class LinearBase(PluggableLayer):
         # Keep input parameters
         self.input_size = input_size
         self.output_size = output_size
+        self.has_bias = bias
         self.skip_bias_add = skip_bias_add
         if params_dtype is None:
             params_dtype = torch.get_default_dtype()
@@ -323,6 +328,7 @@ class ReplicatedLinear(LinearBase):
         super().__init__(
             input_size,
             output_size,
+            bias,
             skip_bias_add,
             params_dtype,
             quant_config,
@@ -453,6 +459,7 @@ class ColumnParallelLinear(LinearBase):
         super().__init__(
             input_size,
             output_size,
+            bias,
             skip_bias_add,
             params_dtype,
             quant_config,
@@ -478,6 +485,7 @@ class ColumnParallelLinear(LinearBase):
                 else self.weight_loader
             ),
         )
+
         if bias:
             self.bias = Parameter(torch.empty(self.output_size_per_partition, dtype=params_dtype))
             set_weight_attrs(
@@ -776,8 +784,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             # for the packing.
             packed_dim = getattr(param, "packed_dim", None)
             if packed_dim == output_dim:
-                shard_size = shard_size // param.packed_factor
-                shard_offset = shard_offset // param.packed_factor
+                shard_size = round(shard_size // param.packed_factor)
+                shard_offset = round(shard_offset // param.packed_factor)
                 # Special case for Marlin.
                 shard_size, shard_offset = adjust_marlin_shard(param, shard_size, shard_offset)
 
@@ -1173,8 +1181,8 @@ class QKVParallelLinear(ColumnParallelLinear):
                     shard_size, shard_offset = adjust_block_scale_shard(weight_block_size, shard_size, shard_offset)
 
                 if packed_dim == output_dim:
-                    shard_size = shard_size // param.packed_factor
-                    shard_offset = shard_offset // param.packed_factor
+                    shard_size = round(shard_size // param.packed_factor)
+                    shard_offset = round(shard_offset // param.packed_factor)
 
                     # Special case for Marlin.
                     shard_size, shard_offset = adjust_marlin_shard(param, shard_size, shard_offset)
@@ -1226,8 +1234,8 @@ class QKVParallelLinear(ColumnParallelLinear):
             # for the packing.
             packed_dim = getattr(param, "packed_dim", None)
             if packed_dim == output_dim:
-                shard_size = shard_size // param.packed_factor
-                shard_offset = shard_offset // param.packed_factor
+                shard_size = round(shard_size // param.packed_factor)
+                shard_offset = round(shard_offset // param.packed_factor)
 
                 # Special case for Marlin.
                 shard_size, shard_offset = adjust_marlin_shard(param, shard_size, shard_offset)
@@ -1344,6 +1352,7 @@ class RowParallelLinear(LinearBase):
         super().__init__(
             input_size,
             output_size,
+            bias,
             skip_bias_add,
             params_dtype,
             quant_config,

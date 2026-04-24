@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import contextlib
 import hashlib
@@ -279,7 +279,7 @@ def _try_load_aot_compiled_fn(
     Re-raises on failure when ``APHRODITE_FORCE_AOT_LOAD`` is set.
     """
     try:
-        with monitor_torch_compile(model.aphrodite_config):
+        with monitor_torch_compile(model.aphrodite_config, is_encoder=model._is_encoder):
             with (
                 set_current_aphrodite_config(model.aphrodite_config),
                 open(aot_compilation_path, "rb") as f,
@@ -294,7 +294,7 @@ def _try_load_aot_compiled_fn(
             with maybe_use_cudagraph_partition_wrapper(model.aphrodite_config):
                 loaded_fn._artifacts.compiled_fn.finalize_loading(model.aphrodite_config)
             compilation_counter.num_aot_artifacts_loaded += 1
-            logger.debug("Directly load AOT compilation from path %s", aot_compilation_path)
+            logger.info("Directly load AOT compilation from path %s", aot_compilation_path)
         return loaded_fn
     except Exception as e:
         if os.path.exists(aot_compilation_path):
@@ -592,7 +592,7 @@ def _support_torch_compile(
                 # store the path for saving after warmup
                 self._aot_compilation_path = aot_compilation_path
                 self._aot_cache_dir = cache_dir
-                with monitor_torch_compile(self.aphrodite_config):
+                with monitor_torch_compile(self.aphrodite_config, is_encoder=self._is_encoder):
                     self.aot_compiled_fn = self.aot_compile(*args, **kwargs)
                     compilation_counter.num_aot_compiles += 1
                     # All compilation is done at this point, save the
@@ -605,6 +605,7 @@ def _support_torch_compile(
                 with monitor_torch_compile(
                     self.aphrodite_config,
                     "torch.compile and initial profiling/warmup run together took %.2f s in total",
+                    is_encoder=self._is_encoder,
                 ):
                     output = TorchCompileWithNoGuardsWrapper.__call__(
                         self,  # type: ignore[arg-type]
@@ -634,10 +635,9 @@ def _support_torch_compile(
             self.aot_compiled_fn.save_compiled_function(tmp_file)
             os.replace(tmp_file, self._aot_compilation_path)
             compilation_counter.num_aot_artifacts_saved += 1
-            logger.debug_once(
+            logger.info_once(
                 "saved AOT compiled function to %s",
                 self._aot_compilation_path,
-                scope="local",
             )
         except Exception as e:
             logger.warning(

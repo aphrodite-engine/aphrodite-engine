@@ -23,61 +23,21 @@ import sys
 
 import regex as re
 
-FILES = [
-    "aphrodite/*.py",
-    "aphrodite/assets",
-    "aphrodite/distributed",
-    "aphrodite/endpoints",
-    "aphrodite/executor",
-    "aphrodite/inputs",
-    "aphrodite/logging_utils",
-    "aphrodite/multimodal",
-    "aphrodite/platforms",
-    "aphrodite/transformers_utils",
-    "aphrodite/triton_utils",
-    "aphrodite/usage",
-    "aphrodite/v1/core",
-    "aphrodite/v1/engine",
-]
-
 # After fixing errors resulting from changing follow_imports
-# from "skip" to "silent", move the following directories to FILES
+# from "skip" to "silent", remove its directory from SEPARATE_GROUPS.
 SEPARATE_GROUPS = [
     "tests",
     # v0 related
-    "aphrodite/attention",
-    "aphrodite/compilation",
-    "aphrodite/engine",
-    "aphrodite/inputs",
     "aphrodite/lora",
-    "aphrodite/modeling",
-    "aphrodite/quantization",
-    "aphrodite/plugins",
-    "aphrodite/worker",
-    # v1 related
-    "aphrodite/v1/attention",
-    "aphrodite/v1/executor",
-    "aphrodite/v1/kv_offload",
-    "aphrodite/v1/metrics",
-    "aphrodite/v1/pool",
-    "aphrodite/v1/sample",
-    "aphrodite/v1/spec_decode",
-    "aphrodite/v1/structured_output",
-    "aphrodite/v1/worker",
 ]
 
-# TODO: Include the code from Megatron and HuggingFace.
+# TODO(woosuk): Include the code from Megatron and HuggingFace.
 EXCLUDE = [
-    "aphrodite/modeling/parallel_utils",
-    "aphrodite/modeling/models",
-    "aphrodite/modeling/layers/fla/ops",
+    "aphrodite/model_executor/models",
     "aphrodite/model_executor/layers/fla/ops",
-    "aphrodite/vllm_flash_attn",
-    "aphrodite/third_party",
-    # Ignore triton kernels in ops.
-    "aphrodite/attention/ops",
+    # TODO: Remove these entries after fixing mypy errors.
+    "aphrodite/benchmarks",
 ]
-EXCLUDE_PATTERN = f"^({'|'.join(EXCLUDE)}).*"
 
 
 def group_files(changed_files: list[str]) -> dict[str, list[str]]:
@@ -90,8 +50,7 @@ def group_files(changed_files: list[str]) -> dict[str, list[str]]:
     Returns:
         A dictionary mapping file group names to lists of changed files.
     """
-    exclude_pattern = re.compile(EXCLUDE_PATTERN)
-    files_pattern = re.compile(f"^({'|'.join(FILES)}).*")
+    exclude_pattern = re.compile(f"^{'|'.join(EXCLUDE)}.*")
     file_groups = {"": []}
     file_groups.update({k: [] for k in SEPARATE_GROUPS})
     for changed_file in changed_files:
@@ -99,14 +58,13 @@ def group_files(changed_files: list[str]) -> dict[str, list[str]]:
         if exclude_pattern.match(changed_file):
             continue
         # Group files by mypy call
-        if files_pattern.match(changed_file):
-            file_groups[""].append(changed_file)
-            continue
+        for directory in SEPARATE_GROUPS:
+            if re.match(f"^{directory}.*", changed_file):
+                file_groups[directory].append(changed_file)
+                break
         else:
-            for directory in SEPARATE_GROUPS:
-                if re.match(f"^{directory}.*", changed_file):
-                    file_groups[directory].append(changed_file)
-                    break
+            if changed_file.startswith("aphrodite/"):
+                file_groups[""].append(changed_file)
     return file_groups
 
 
@@ -135,12 +93,12 @@ def mypy(
         args += ["--python-version", python_version]
     if follow_imports is not None:
         args += ["--follow-imports", follow_imports]
-    args += ["--exclude", EXCLUDE_PATTERN]
     print(f"$ {' '.join(args)} {file_group}")
     return subprocess.run(args + targets, check=False).returncode
 
 
 def main():
+    ci = sys.argv[1] == "1"
     python_version = sys.argv[2]
     file_groups = group_files(sys.argv[3:])
 
@@ -149,7 +107,7 @@ def main():
 
     returncode = 0
     for file_group, changed_files in file_groups.items():
-        follow_imports = "skip"
+        follow_imports = None if ci and file_group == "" else "skip"
         if changed_files:
             returncode |= mypy(changed_files, python_version, follow_imports, file_group)
     return returncode

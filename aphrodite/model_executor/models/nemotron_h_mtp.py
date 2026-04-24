@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """NemotronH-MTP model with attention layers."""
 
 import typing
@@ -11,7 +11,9 @@ import torch.nn as nn
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.config.parallel import ParallelConfig
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import ColumnParallelLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
@@ -375,7 +377,7 @@ class NemotronHMTP(nn.Module, SupportsPP):
         if getattr(self.config, "model_type", None) == "nemotron_h_puzzle":
             num_experts = self.config.mtp_n_routed_experts
         if num_experts is not None:
-            expert_params_mapping = FusedMoE.make_expert_params_mapping(
+            expert_params_mapping = fused_moe_make_expert_params_mapping(
                 self,
                 ckpt_gate_proj_name="up_proj",
                 ckpt_down_proj_name="down_proj",

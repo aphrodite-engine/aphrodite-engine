@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 from collections.abc import Iterable
 
@@ -8,7 +8,9 @@ import torch.nn as nn
 
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.vocab_parallel_embedding import (
@@ -103,7 +105,7 @@ class DeepseekV2Model(nn.Module):
 
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
-        expert_params_mapping = FusedMoE.make_expert_params_mapping(
+        expert_params_mapping = fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",
@@ -187,7 +189,11 @@ class EagleDeepseekV3ForCausalLM(DeepseekV3ForCausalLM):
         self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
         quant_config = aphrodite_config.quant_config
         target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
-        self.model = DeepseekV2Model(aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num)
+        self.model = DeepseekV2Model(
+            aphrodite_config=aphrodite_config,
+            prefix="model",
+            start_layer_id=target_layer_num,
+        )
 
         self.lm_head = ParallelLMHead(
             self.config.vocab_size,

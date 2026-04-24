@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from
 # https://github.com/ROCm/aphrodite/blob/cea7419f151cc50293a05b7fac8547f8f887c9f6/aphrodite/model_executor/models/grok1.py
 # Copyright 2023 The Aphrodite team.
@@ -38,7 +38,10 @@ from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import GeluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
@@ -504,7 +507,7 @@ class Grok1Model(nn.Module):
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         # Map expert parameter names to standard names
         num_experts = _get_num_experts(self.config)
-        return FusedMoE.make_expert_params_mapping(
+        return fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name=self.ckpt_gate_proj_name,
             ckpt_down_proj_name=self.ckpt_down_proj_name,

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import functools
 from math import prod
 
@@ -21,6 +21,9 @@ from aphrodite.model_executor.layers.quantization.utils.mxfp6_utils import (
 )
 from aphrodite.model_executor.layers.quantization.utils.mxfp8_utils import (
     mxfp8_e4m3_quantize,
+)
+from aphrodite.model_executor.layers.quantization.utils.nvfp4_emulation_utils import (
+    ref_nvfp4_quant_dequant,
 )
 from aphrodite.model_executor.layers.quantization.utils.w8a8_utils import (
     per_tensor_dequantize,
@@ -130,7 +133,7 @@ def _fp8_quantize(
     """
     if block_shape is None:
         # TODO(luka): use QuantFP8 custom op
-        #  https://github.com/vllm-project/vllm/issues/20711
+        #  https://github.com/aphrodite-project/aphrodite/issues/20711
         A, A_scale = ops.scaled_fp8_quant(A, A_scale, use_per_token_if_dynamic=per_act_token)
     else:
         assert not per_act_token
@@ -247,6 +250,7 @@ def moe_kernel_quantize_input(
     block_shape: list[int] | None = None,
     is_fp4_scale_swizzled: bool = True,
     ocp_mx_scheme: str | None = None,
+    quantization_emulation: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     # Handle OCP MX scheme that requires QDQ (quantize-dequantize) for emulation
     if ocp_mx_scheme is not None:
@@ -266,16 +270,38 @@ def moe_kernel_quantize_input(
         # activation quantization below.
 
     if quant_dtype == current_platform.fp8_dtype():
+        if quantization_emulation:
+            raise NotImplementedError(
+                f"moe_kernel_quantize_input does not support quant_dtype={quant_dtype}"
+                " MOE quantization emulation. Please open an issue."
+            )
         return _fp8_quantize(A, A_scale, per_act_token_quant, block_shape)
     elif quant_dtype == torch.int8:
+        if quantization_emulation:
+            raise NotImplementedError(
+                "moe_kernel_quantize_input does not support quant_dtype=torch.int8"
+                " MOE quantization emulation. Please open an issue."
+            )
         return _int8_quantize(A, A_scale, per_act_token_quant, block_shape)
     elif quant_dtype == "nvfp4":
-        return _nvfp4_quantize(A, A_scale, is_sf_swizzled_layout=is_fp4_scale_swizzled)
+        if not quantization_emulation:
+            return _nvfp4_quantize(A, A_scale, is_sf_swizzled_layout=is_fp4_scale_swizzled)
+        else:
+            return ref_nvfp4_quant_dequant(A, A_scale, block_size=16)
     elif quant_dtype == "mxfp4":
+        if not quantization_emulation:
+            raise NotImplementedError(
+                "moe_kernel_quantize_input should not be used for native quant_dtype='mxfp4' MOE. Please open an issue."
+            )
         return _mxfp4_quantize(A, A_scale, per_act_token_quant, block_shape)
     elif quant_dtype == "mxfp8":
         # TODO: `quant_dtype == "mxfp8"` is ambiguous,
         # should be fp8_e4m3. OCP MX also defines `fp8_e5m2`.
+        if quantization_emulation:
+            raise NotImplementedError(
+                "moe_kernel_quantize_input does not support quant_dtype='mxfp8' MOE "
+                "quantization emulation. Please open an issue."
+            )
         return _mxfp8_e4m3_quantize(
             A,
             A_scale,
@@ -284,8 +310,20 @@ def moe_kernel_quantize_input(
             is_sf_swizzled_layout=is_fp4_scale_swizzled,
         )
     elif quant_dtype == "mxfp6_e3m2":
+        if not quantization_emulation:
+            raise NotImplementedError(
+                "moe_kernel_quantize_input should not be used for native "
+                " quant_dtype='mxfp6_e3m2'MOE. Please open an issue."
+            )
+
         return _mxfp6_e3m2_quantize(A, A_scale, per_act_token_quant, block_shape)
     elif quant_dtype == "mxfp6_e2m3":
+        if not quantization_emulation:
+            raise NotImplementedError(
+                "moe_kernel_quantize_input should not be used for native"
+                " quant_dtype='mxfp6_e2m3' MOE. Please open an issue."
+            )
+
         return _mxfp6_e2m3_quantize(A, A_scale, per_act_token_quant, block_shape)
     else:
         return A, A_scale
@@ -316,7 +354,7 @@ def normalize_batched_scales_shape(
 
 # Torch custom ops can't deal with outputs aliasing inputs so we need to
 # disable inplace for torch >= 2.9.
-# See https://github.com/vllm-project/vllm/issues/26378
+# See https://github.com/aphrodite-project/aphrodite/issues/26378
 @functools.cache
 def disable_inplace() -> bool:
     return is_torch_equal_or_newer("2.9")

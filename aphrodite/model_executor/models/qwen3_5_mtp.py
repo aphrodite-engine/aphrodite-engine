@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Inference-only Qwen3_5 MTP model."""
 
 import typing
@@ -12,7 +12,9 @@ from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.linear import ColumnParallelLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.vocab_parallel_embedding import (
@@ -77,7 +79,7 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
 
         # Workaround: mtp.fc is stored as BF16 in NVFP4 checkpoints but is
         # missing from hf_quant_config.json exclude_modules. Force unquantized.
-        # Ref: https://github.com/vllm-project/vllm/pull/38650
+        # Ref: https://github.com/aphrodite-project/aphrodite/pull/38650
         # Ref: https://github.com/NVIDIA/Model-Optimizer/pull/1124
         fc_quant = None if (quant_config and quant_config.get_name() == "modelopt_fp4") else quant_config
         self.fc = ColumnParallelLinear(
@@ -184,7 +186,7 @@ class Qwen3_5MultiTokenPredictor(nn.Module):
 
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
-        expert_params_mapping = FusedMoE.make_expert_params_mapping(
+        expert_params_mapping = fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",

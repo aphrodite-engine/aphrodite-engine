@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ from torch import nn
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import ReplicatedLinear
 from aphrodite.model_executor.models.olmoe import OlmoeAttention, OlmoeForCausalLM

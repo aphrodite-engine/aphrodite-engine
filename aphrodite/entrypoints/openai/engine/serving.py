@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import contextlib
 import json
@@ -44,7 +44,10 @@ from aphrodite.entrypoints.openai.speech_to_text.protocol import (
     TranscriptionResponse,
     TranslationRequest,
 )
-from aphrodite.entrypoints.serve.disagg.protocol import GenerateRequest, GenerateResponse
+from aphrodite.entrypoints.serve.disagg.protocol import (
+    GenerateRequest,
+    GenerateResponse,
+)
 from aphrodite.entrypoints.serve.tokenize.protocol import (
     DetokenizeRequest,
     TokenizeChatRequest,
@@ -65,11 +68,6 @@ from aphrodite.renderers.inputs.preprocess import (
 from aphrodite.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.tokenizers import TokenizerLike
 from aphrodite.tool_parsers import ToolParser
-
-try:
-    from aphrodite.tool_parsers.mistral_tool_parser import MistralToolParser
-except ModuleNotFoundError:
-    MistralToolParser = None
 from aphrodite.tracing import (
     contains_trace_headers,
     extract_trace_headers,
@@ -77,6 +75,7 @@ from aphrodite.tracing import (
 )
 from aphrodite.utils import random_uuid
 from aphrodite.utils.async_utils import collect_from_async_generator
+from aphrodite.utils.mistral import is_mistral_tool_parser
 
 logger = init_logger(__name__)
 
@@ -580,9 +579,7 @@ class OpenAIServing:
         # let the parser handle the output.
         use_mistral_tool_parser = (
             isinstance(request, ChatCompletionRequest)
-            and tool_parser_cls is not None
-            and MistralToolParser is not None
-            and issubclass(tool_parser_cls, MistralToolParser)
+            and is_mistral_tool_parser(tool_parser_cls)
             and request._grammar_from_tool_parser
         )
 

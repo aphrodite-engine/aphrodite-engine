@@ -35,7 +35,12 @@ from transformers import DeepseekV2Config, DeepseekV3Config
 import aphrodite._custom_ops as ops
 from aphrodite._aiter_ops import rocm_aiter_ops
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import AphroditeConfig, CacheConfig, ParallelConfig, get_current_aphrodite_config
+from aphrodite.config import (
+    AphroditeConfig,
+    CacheConfig,
+    ParallelConfig,
+    get_current_aphrodite_config,
+)
 from aphrodite.distributed import (
     get_ep_group,
     get_pp_group,
@@ -51,6 +56,7 @@ from aphrodite.model_executor.layers.fused_moe import (
     FusedMoE,
     GateLinear,
     RoutingMethodType,
+    fused_moe_make_expert_params_mapping,
 )
 from aphrodite.model_executor.layers.layernorm import LayerNorm, RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -61,7 +67,10 @@ from aphrodite.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
-from aphrodite.model_executor.layers.mla import MLAModules, MultiHeadLatentAttentionWrapper
+from aphrodite.model_executor.layers.mla import (
+    MLAModules,
+    MultiHeadLatentAttentionWrapper,
+)
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
     per_token_group_quant_fp8,
@@ -334,6 +343,16 @@ class DeepseekV2MoE(nn.Module):
             and self.experts.routing_method_type == RoutingMethodType.DeepSeekV3
             else torch.bfloat16
         )
+
+        # Pre-cast the bias to match the gate output dtype so the
+        # conversion is not repeated on every forward pass.  All
+        # downstream references (FusedMoE, router) share the same
+        # nn.Parameter object, so mutating .data propagates everywhere.
+        # Weight loading uses copy_(), which handles the dtype conversion.
+        # Only needed on ROCm where the aiter biased_grouped_topk kernel
+        # requires the bias dtype to match the gating output dtype.
+        if self.is_rocm_aiter_moe_enabled and self.gate.e_score_correction_bias is not None:
+            self.gate.e_score_correction_bias.data = self.gate.e_score_correction_bias.data.to(self.gate.out_dtype)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         num_tokens, hidden_dim = hidden_states.shape
@@ -618,7 +637,9 @@ class Indexer(nn.Module):
         )
         self.max_model_len = aphrodite_config.model_config.max_model_len
         self.prefix = prefix
-        from aphrodite.v1.attention.backends.mla.indexer import get_max_prefill_buffer_size
+        from aphrodite.v1.attention.backends.mla.indexer import (
+            get_max_prefill_buffer_size,
+        )
 
         self.max_total_seq_len = get_max_prefill_buffer_size(aphrodite_config)
         self.indexer_op = SparseAttnIndexer(
@@ -1354,7 +1375,7 @@ class DeepseekV2ForCausalLM(
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
-        return FusedMoE.make_expert_params_mapping(
+        return fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",
@@ -1394,7 +1415,7 @@ class DeepseekV2ForCausalLM(
 
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
-        expert_params_mapping = FusedMoE.make_expert_params_mapping(
+        expert_params_mapping = fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",

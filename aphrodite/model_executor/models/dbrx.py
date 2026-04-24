@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 from collections.abc import Iterable
 from itertools import islice
@@ -15,7 +15,9 @@ from aphrodite.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+)
 from aphrodite.model_executor.layers.linear import (
     QKVParallelLinear,
     ReplicatedLinear,
@@ -434,7 +436,10 @@ class DbrxForCausalLM(nn.Module, SupportsPP):
             raise ValueError("tie_word_embeddings is not supported for Dbrx models.")
         self.quant_config = quant_config
 
-        self.transformer = DbrxModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer"))
+        self.transformer = DbrxModel(
+            aphrodite_config=aphrodite_config,
+            prefix=maybe_prefix(prefix, "transformer"),
+        )
         self.lm_head = ParallelLMHead(
             config.vocab_size,
             config.d_model,

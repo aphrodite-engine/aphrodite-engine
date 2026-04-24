@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import asyncio
 import json
@@ -73,18 +73,9 @@ from aphrodite.reasoning import ReasoningParser
 from aphrodite.renderers import ChatParams
 from aphrodite.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.tokenizers import TokenizerLike
-
-try:
-    from aphrodite.tool_parsers.mistral_tool_parser import (
-        MistralToolCall,
-        MistralToolParser,
-    )
-except ModuleNotFoundError:
-    MistralToolCall = None
-    MistralToolParser = None
 from aphrodite.tool_parsers.utils import partial_json_loads
 from aphrodite.utils.collection_utils import as_list
-from aphrodite.utils.mistral import is_mistral_tokenizer
+from aphrodite.utils.mistral import is_mistral_tokenizer, is_mistral_tool_parser
 
 if TYPE_CHECKING:
     from aphrodite.entrypoints.serve.render.serving import OpenAIServingRender
@@ -146,12 +137,9 @@ class OpenAIServingChat(OpenAIServing):
             enable_auto_tools=enable_auto_tools,
             model_name=self.model_config.model,
         )
-        _is_mistral_tool_parser = (
-            self.tool_parser is not None
-            and MistralToolParser is not None
-            and issubclass(self.tool_parser, MistralToolParser)
-        )
-        if _is_mistral_tool_parser and self.reasoning_parser_cls is not None:
+        if is_mistral_tool_parser(self.tool_parser) and self.reasoning_parser_cls is not None:
+            from aphrodite.tool_parsers.mistral_tool_parser import MistralToolParser
+
             MistralToolParser.model_can_reason = True
 
         self.exclude_tools_when_tool_choice_none = exclude_tools_when_tool_choice_none
@@ -190,6 +178,16 @@ class OpenAIServingChat(OpenAIServing):
                 chat_template_content_format=self.chat_template_content_format,
                 chat_template_kwargs=self.default_chat_template_kwargs,
             )
+        )
+
+    def _effective_chat_template_kwargs(self, request: ChatCompletionRequest) -> dict[str, Any]:
+        return (
+            request.build_chat_params(
+                self.chat_template,
+                self.chat_template_content_format,
+            )
+            .with_defaults(self.default_chat_template_kwargs)
+            .chat_template_kwargs
         )
 
     async def render_chat_request(
@@ -234,10 +232,7 @@ class OpenAIServingChat(OpenAIServing):
         # Streaming response
         tokenizer = self.renderer.tokenizer
         assert tokenizer is not None
-        chat_template_kwargs = self._prepare_extra_chat_template_kwargs(
-            request.chat_template_kwargs,
-            self.default_chat_template_kwargs,
-        )
+        chat_template_kwargs = self._effective_chat_template_kwargs(request)
         reasoning_parser: ReasoningParser | None = None
         if self.reasoning_parser_cls:
             reasoning_parser = self.reasoning_parser_cls(
@@ -751,8 +746,11 @@ class OpenAIServingChat(OpenAIServing):
                         harmony_tools_streamed[i] |= tools_streamed_flag
                     # Mistral grammar path: combined reasoning + tool streaming
                     elif is_mistral_grammar_path:
+                        from aphrodite.tool_parsers.mistral_tool_parser import (
+                            MistralToolParser,
+                        )
+
                         assert tool_parser is not None
-                        assert MistralToolParser is not None
                         assert isinstance(tool_parser, MistralToolParser)
                         assert reasoning_end_arr is not None
                         output_token_ids = as_list(output.token_ids)
@@ -823,6 +821,10 @@ class OpenAIServingChat(OpenAIServing):
                             else:
                                 # Generate ID based on tokenizer type
                                 if is_mistral_tokenizer(tokenizer):
+                                    from aphrodite.tool_parsers.mistral_tool_parser import (
+                                        MistralToolCall,
+                                    )
+
                                     tool_call_id = MistralToolCall.generate_random_id()
                                 else:
                                     tool_call_id = make_tool_call_id(
@@ -1147,8 +1149,6 @@ class OpenAIServingChat(OpenAIServing):
         request_metadata: RequestResponseMetadata,
         reasoning_parser: ReasoningParser | None = None,
     ) -> ErrorResponse | ChatCompletionResponse:
-        from aphrodite.tokenizers.mistral import MistralTokenizer
-
         created_time = int(time.time())
         final_res: RequestOutput | None = None
 
@@ -1259,13 +1259,17 @@ class OpenAIServingChat(OpenAIServing):
                 enable_auto_tools=self.enable_auto_tools,
                 tool_parser_cls=self.tool_parser,
             )
-            tool_call_class = (
-                MistralToolCall if MistralToolCall is not None and is_mistral_tokenizer(tokenizer) else ToolCall
-            )
+            if is_mistral_tokenizer(tokenizer):
+                from aphrodite.tool_parsers.mistral_tool_parser import MistralToolCall
+
+                tool_call_class: type[ToolCall] = MistralToolCall
+            else:
+                tool_call_class = ToolCall
 
             use_mistral_tool_parser = request._grammar_from_tool_parser
             if use_mistral_tool_parser:
-                assert MistralToolParser is not None
+                from aphrodite.tool_parsers.mistral_tool_parser import MistralToolParser
+
                 tool_call_items = MistralToolParser.build_non_streaming_tool_calls(tool_calls)
                 if tool_call_items:
                     auto_tools_called = request.tool_choice is None or request.tool_choice == "auto"
@@ -1294,7 +1298,7 @@ class OpenAIServingChat(OpenAIServing):
                         # Generate ID using the correct format (kimi_k2 or random),
                         # but leave it to the class if it's Mistral to preserve
                         # 9-char IDs
-                        if isinstance(tokenizer, MistralTokenizer):
+                        if is_mistral_tokenizer(tokenizer):
                             tool_call_class_items.append(tool_call_class(function=tc))
                         else:
                             generated_id = make_tool_call_id(
@@ -1323,7 +1327,7 @@ class OpenAIServingChat(OpenAIServing):
                         # Generate ID using the correct format (kimi_k2 or random),
                         # but leave it to the class if it's Mistral to preserve
                         # 9-char IDs
-                        if isinstance(tokenizer, MistralTokenizer):
+                        if is_mistral_tokenizer(tokenizer):
                             tool_call_class_items.append(tool_call_class(function=tool_call))
                         else:
                             generated_id = make_tool_call_id(
@@ -1367,7 +1371,7 @@ class OpenAIServingChat(OpenAIServing):
                             # Generate ID using the correct format (kimi_k2 or random),
                             # but leave it to the class if it's Mistral to preserve
                             # 9-char IDs
-                            if isinstance(tokenizer, MistralTokenizer):
+                            if is_mistral_tokenizer(tokenizer):
                                 tool_call_items.append(tool_call_class(function=tc))
                             else:
                                 generated_id = make_tool_call_id(

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 
 import numpy as np
@@ -214,7 +214,7 @@ class MMEncoderAttention(CustomOp):
         if self.attn_backend == AttentionBackendEnum.FLASHINFER:
             _get_flashinfer_workspace_buffer()
 
-        logger.info_once(f"Using {self.attn_backend} for MMEncoderAttention.", scope="local")
+        logger.info_once(f"Using {self.attn_backend} for MMEncoderAttention.")
 
     @classmethod
     def enabled(cls) -> bool:

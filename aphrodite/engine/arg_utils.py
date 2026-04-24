@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import argparse
 import copy
@@ -105,12 +105,17 @@ from aphrodite.transformers_utils.config import (
 from aphrodite.transformers_utils.gguf_utils import is_gguf
 from aphrodite.transformers_utils.repo_utils import get_model_path
 from aphrodite.transformers_utils.utils import is_cloud_storage
-from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+from aphrodite.utils.argparse_utils import (
+    FlexibleArgumentParser,
+    human_readable_int,
+    human_readable_int_or_auto,
+)
 from aphrodite.utils.mem_constants import GiB_bytes
 from aphrodite.utils.network_utils import get_ip
 from aphrodite.utils.torch_utils import resolve_kv_cache_dtype_string
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 from aphrodite.v1.sample.logits_processor import LogitsProcessor
+from aphrodite.version import __version__ as APHRODITE_VERSION
 
 if TYPE_CHECKING:
     from aphrodite.config.quantization import OnlineQuantizationConfigArgs
@@ -245,8 +250,30 @@ def _maybe_add_docs_url(cls: Any) -> str:
     """Generate API docs URL for a aphrodite config class."""
     if not cls.__module__.startswith("aphrodite.config"):
         return ""
-    # version = f"v{APHRODITE_VERSION}" if "dev" not in APHRODITE_VERSION else "latest"
-    return "\n\nAPI docs: TBD"
+    version = f"v{APHRODITE_VERSION}" if "dev" not in APHRODITE_VERSION else "latest"
+    return f"\n\nAPI docs: https://docs.aphrodite.ai/en/{version}/api/aphrodite/config/#aphrodite.config.{cls.__name__}"
+
+
+def _expand_json_human_readable_numbers(val: str) -> str:
+    """Expand human-readable number suffixes in a JSON string.
+
+    Based on :func:`human_readable_int` so that the ``k/m/g/t`` (decimal) and
+    ``K/M/G/T`` (binary) conventions work out the box.
+    Also works inside JSON config arguments such
+    as ``--kv-transfer-config '{"cpu_bytes_to_use": 80m}'``.
+
+    Only bare (unquoted) tokens are replaced so that JSON string values
+    like ``"model_name"`` are never modified.
+    """
+    # Split on quoted strings so we only touch non-string regions.
+    parts = re.split(r'("(?:[^"\\]|\\.)*")', val)
+    for i in range(0, len(parts), 2):  # even indices = outside strings
+        parts[i] = re.sub(
+            r"\b\d+(?:\.\d+)?[kKmMgGtT]\b",
+            lambda m: str(human_readable_int(m.group())),
+            parts[i],
+        )
+    return "".join(parts)
 
 
 @functools.lru_cache(maxsize=30)
@@ -292,6 +319,7 @@ def _compute_kwargs(cls: ConfigType) -> dict[str, dict[str, Any]]:
 
             def parse_dataclass(val: str, cls=dataclass_cls) -> Any:
                 try:
+                    val = _expand_json_human_readable_numbers(val)
                     return TypeAdapter(cls).validate_json(val)
                 except ValidationError as e:
                     raise argparse.ArgumentTypeError(repr(e)) from e
@@ -914,7 +942,11 @@ class EngineArgs:
             description=CacheConfig.__doc__,
         )
         cache_group.add_argument("--block-size", **cache_kwargs["block_size"])
-        cache_group.add_argument("-gmu", "--gpu-memory-utilization", **cache_kwargs["gpu_memory_utilization"])
+        cache_group.add_argument(
+            "--gpu-memory-utilization",
+            "-gmu",
+            **cache_kwargs["gpu_memory_utilization"],
+        )
         cache_group.add_argument("--kv-cache-memory-bytes", **cache_kwargs["kv_cache_memory_bytes"])
         cache_group.add_argument("--kv-cache-dtype", **cache_kwargs["cache_dtype"])
         cache_group.add_argument("--num-gpu-blocks-override", **cache_kwargs["num_gpu_blocks_override"])
@@ -1159,7 +1191,10 @@ class EngineArgs:
         aphrodite_group.add_argument("--reasoning-config", **aphrodite_kwargs["reasoning_config"])
         aphrodite_group.add_argument("--kernel-config", **aphrodite_kwargs["kernel_config"])
         aphrodite_group.add_argument("--additional-config", **aphrodite_kwargs["additional_config"])
-        aphrodite_group.add_argument("--structured-outputs-config", **aphrodite_kwargs["structured_outputs_config"])
+        aphrodite_group.add_argument(
+            "--structured-outputs-config",
+            **aphrodite_kwargs["structured_outputs_config"],
+        )
         aphrodite_group.add_argument("--profiler-config", **aphrodite_kwargs["profiler_config"])
         aphrodite_group.add_argument("--optimization-level", **aphrodite_kwargs["optimization_level"])
         aphrodite_group.add_argument("--performance-mode", **aphrodite_kwargs["performance_mode"])
@@ -1223,7 +1258,7 @@ class EngineArgs:
                 self.seed,
             )
 
-        return ModelConfig(
+        return ModelConfig(  # type: ignore[call-arg]
             model=self.model,
             model_weights=self.model_weights,
             hf_config_path=self.hf_config_path,
@@ -1630,7 +1665,7 @@ class EngineArgs:
         assert self.max_num_seqs is not None, "max_num_seqs must be set by this point"
         assert self.enable_chunked_prefill is not None, "enable_chunked_prefill must be set by this point"
         assert model_config.max_model_len is not None, "max_model_len must be set by this point"
-        scheduler_config = SchedulerConfig(
+        scheduler_config = SchedulerConfig(  # type: ignore[call-arg]
             runner_type=model_config.runner_type,
             max_num_batched_tokens=self.max_num_batched_tokens,
             max_num_seqs=self.max_num_seqs,
@@ -1949,14 +1984,12 @@ class EngineArgs:
                 "This model does not officially support disabling chunked prefill. "
                 "Disabling this manually may cause the engine to crash "
                 "or produce incorrect outputs.",
-                scope="local",
             )
         elif model_config.runner_type == "pooling" and self.enable_chunked_prefill and not default_chunked_prefill:
             logger.warning_once(
                 "This model does not officially support chunked prefill. "
                 "Enabling this manually may cause the engine to crash "
                 "or produce incorrect outputs.",
-                scope="local",
             )
 
         if self.enable_prefix_caching is None:
@@ -1971,7 +2004,6 @@ class EngineArgs:
                 "This model does not officially support prefix caching. "
                 "Enabling this manually may cause the engine to crash "
                 "or produce incorrect outputs.",
-                scope="local",
             )
 
         # Disable chunked prefill and prefix caching for:
@@ -2090,68 +2122,3 @@ class AsyncEngineArgs(EngineArgs):
 def _raise_unsupported_error(feature_name: str):
     msg = f"{feature_name} is not supported. We recommend to remove {feature_name} from your config."
     raise NotImplementedError(msg)
-
-
-def human_readable_int(value: str) -> int:
-    """Parse human-readable integers like '1k', '2M', etc.
-    Including decimal values with decimal multipliers.
-
-    Examples:
-    - '1k' -> 1,000
-    - '1K' -> 1,024
-    - '25.6k' -> 25,600
-    """
-    value = value.strip()
-
-    match = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmMgGtT])", value)
-    if match:
-        decimal_multiplier = {
-            "k": 10**3,
-            "m": 10**6,
-            "g": 10**9,
-            "t": 10**12,
-        }
-        binary_multiplier = {
-            "K": 2**10,
-            "M": 2**20,
-            "G": 2**30,
-            "T": 2**40,
-        }
-
-        number, suffix = match.groups()
-        if suffix in decimal_multiplier:
-            mult = decimal_multiplier[suffix]
-            return int(float(number) * mult)
-        elif suffix in binary_multiplier:
-            mult = binary_multiplier[suffix]
-            # Do not allow decimals with binary multipliers
-            try:
-                return int(number) * mult
-            except ValueError as e:
-                raise argparse.ArgumentTypeError(
-                    "Decimals are not allowed "
-                    f"with binary suffixes like {suffix}. Did you mean to use "
-                    f"{number}{suffix.lower()} instead?"
-                ) from e
-
-    # Regular plain number.
-    return int(value)
-
-
-def human_readable_int_or_auto(value: str) -> int:
-    """Parse human-readable integers like '1k', '2M', etc.
-    Including decimal values with decimal multipliers.
-    Also accepts -1 or 'auto' as a special value for auto-detection.
-
-    Examples:
-    - '1k' -> 1,000
-    - '1K' -> 1,024
-    - '25.6k' -> 25,600
-    - '-1' or 'auto' -> -1 (special value for auto-detection)
-    """
-    value = value.strip()
-
-    if value == "-1" or value.lower() == "auto":
-        return -1
-
-    return human_readable_int(value)

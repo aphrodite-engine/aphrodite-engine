@@ -13,7 +13,9 @@ from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser
 
 if TYPE_CHECKING:
-    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.chat_completion.protocol import (
+        ChatCompletionRequest,
+    )
     from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
     from aphrodite.tokenizers import TokenizerLike
 
@@ -226,6 +228,14 @@ class Olmo3ReasoningParser(ReasoningParser):
         self.reasoning_regex = re.compile(reasoning_expr, re.DOTALL)
 
         self.buffer = Olmo3ReasoningBuffer(think_start=self.think_start, think_end=self.think_end)
+
+    @property
+    def reasoning_start_str(self) -> str:
+        return self.think_start
+
+    @property
+    def reasoning_end_str(self) -> str:
+        return self.think_end
 
     def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         text = self.model_tokenizer.decode(input_ids)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 """Inference-only Kimi-Audio model compatible with HuggingFace weights."""
 
@@ -14,6 +14,7 @@ from transformers import WhisperConfig as HFWhisperConfig
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.inputs import PromptType, TokensPrompt
 from aphrodite.model_executor.model_loader import DefaultModelLoader
 from aphrodite.model_executor.model_loader.weight_utils import default_weight_loader
@@ -78,7 +79,13 @@ class KimiAudioWhisperEncoder(WhisperEncoder):
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
     }
 
-    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", init_in_fp32: bool = False):
+    def __init__(
+        self,
+        *,
+        aphrodite_config: AphroditeConfig,
+        prefix: str = "",
+        init_in_fp32: bool = False,
+    ):
         # Load Whisper config from subfolder (authoritative source)
         # Kimi-Audio stores Whisper config in whisper-large-v3/config.json
         model_path = aphrodite_config.model_config.model
@@ -597,16 +604,12 @@ class KimiAudioForConditionalGeneration(
         )
 
     @classmethod
-    def get_generation_prompt(
-        cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
-    ) -> PromptType:
+    def get_generation_prompt(cls, stt_params: SpeechToTextParams) -> PromptType:
+        audio = stt_params.audio
+        model_config = stt_params.model_config
+        task_type = stt_params.task_type
+        request_prompt = stt_params.request_prompt
+
         tokenizer = cached_get_tokenizer(
             model_config.tokenizer,
             tokenizer_cls=KimiAudioTokenizer,

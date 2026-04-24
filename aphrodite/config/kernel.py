@@ -3,7 +3,7 @@
 import contextlib
 from collections.abc import Callable
 from dataclasses import asdict, fields
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import Field, field_validator
 
@@ -48,7 +48,7 @@ class IrOpPriorityConfig:
         assert "_impls" not in factors
         factors["_impls"] = {
             name: {provider: IrOp.registry[name].impls[provider].uuid() for provider in p}
-            for name, p in asdict(self).items()
+            for name, p in asdict(cast(Any, self)).items()
         }
 
         return hash_factors(factors)
@@ -90,7 +90,7 @@ class IrOpPriorityConfig:
         A helper to create an IrOpPriorityConfig where fields not specified in kwargs
         use the given default list.
         """
-        for field in fields(cls):
+        for field in fields(cast(Any, cls)):
             if field.name not in kwargs:
                 kwargs[field.name] = list(default)
 
@@ -107,6 +107,7 @@ MoEBackend = Literal[
     "flashinfer_cutedsl",
     "marlin",
     "aiter",
+    "emulation",
 ]
 
 
@@ -134,7 +135,10 @@ class KernelConfig:
     - "flashinfer_cutlass": Use FlashInfer with CUTLASS kernels
     - "flashinfer_cutedsl": Use FlashInfer with CuteDSL kernels (FP4 only)
     - "marlin": Use Marlin kernels (weight-only quantization)
-    - "aiter": Use AMD AITer kernels (ROCm only)"""
+    - "aiter": Use AMD AITer kernels (ROCm only)
+    - "emulation": use BF16/FP16 GEMM, dequantizing weights and
+                   running QDQ on activations.
+    """
 
     @field_validator("moe_backend", mode="before")
     @classmethod

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from
 # https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/utils/offloader.py
 """Prefetch-based CPU offloading with async prefetching.
@@ -21,6 +21,7 @@ import torch.nn as nn
 import aphrodite.model_executor.offloader.prefetch_ops  # noqa: F401
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.offloader.base import BaseOffloader, should_pin_memory
+from aphrodite.utils.torch_utils import get_dtype_size
 
 logger = init_logger(__name__)
 
@@ -53,7 +54,7 @@ class ParamInfo:
         numel = 1
         for dim in self.shape:
             numel *= dim
-        return numel * torch.finfo(self.dtype).bits // 8
+        return numel * get_dtype_size(self.dtype)
 
 
 class StaticBufferPool:

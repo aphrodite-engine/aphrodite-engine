@@ -1,19 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Attention layer with FlashAttention."""
 
 import torch
 
 from aphrodite.utils.torch_utils import is_quantized_kv_cache
 from aphrodite.v1.attention.backend import AttentionType
-from aphrodite.v1.attention.backends.fa_utils import is_flash_attn_varlen_func_available
+from aphrodite.v1.attention.backends.fa_utils import (
+    get_flash_attn_version,
+    is_flash_attn_varlen_func_available,
+)
 from aphrodite.v1.attention.ops.triton_reshape_and_cache_flash import (
     triton_reshape_and_cache_flash_diffkv,
 )
 
 if is_flash_attn_varlen_func_available():
     from aphrodite.v1.attention.backends.fa_utils import flash_attn_varlen_func
-from aphrodite.logger import init_logger
 from aphrodite.v1.attention.backends.utils import get_kv_cache_layout
 
 from .flash_attn import (
@@ -22,8 +24,6 @@ from .flash_attn import (
     FlashAttentionMetadata,
     cascade_attention,
 )
-
-logger = init_logger(__name__)
 
 
 class FlashAttentionDiffKVBackend(FlashAttentionBackend):
@@ -86,6 +86,20 @@ class FlashAttentionDiffKVBackend(FlashAttentionBackend):
 
 
 class FlashAttentionDiffKVImpl(FlashAttentionImpl):
+    vllm_flash_attn_version: int | None
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Re-derive the FA version with diff-kv context so that
+        # get_flash_attn_version can apply the FA3 -> FA4 upgrade rule
+        # for sinks + hdim != hdim_v.
+        self.vllm_flash_attn_version = get_flash_attn_version(
+            requires_alibi=self.alibi_slopes is not None,
+            head_size=self.head_size,
+            head_size_v=FlashAttentionDiffKVBackend.head_size_v,
+            has_sinks=self.sinks is not None,
+        )
+
     def do_kv_cache_update(
         self,
         layer: torch.nn.Module,
@@ -147,7 +161,7 @@ class FlashAttentionDiffKVImpl(FlashAttentionImpl):
               {q,k,v}_descale to be (num_sequences, num_kv_heads).
               We use torch's .expand() to avoid duplicating values
         """
-        assert self.aphrodite_flash_attn_version is not None, "FlashAttention version not detected."
+        assert self.vllm_flash_attn_version is not None, "FlashAttention version not detected."
 
         if output_scale is not None or output_block_scale is not None:
             raise NotImplementedError("fused output quantization is not yet supported for FlashAttentionImpl")
@@ -235,7 +249,7 @@ class FlashAttentionDiffKVImpl(FlashAttentionImpl):
                     block_table=block_table,
                     softcap=self.logits_soft_cap,
                     scheduler_metadata=scheduler_metadata,
-                    fa_version=self.aphrodite_flash_attn_version,
+                    fa_version=self.vllm_flash_attn_version,
                     q_descale=layer._q_scale.expand(descale_shape),
                     k_descale=layer._k_scale.expand(descale_shape),
                     v_descale=layer._v_scale.expand(descale_shape),
@@ -263,7 +277,7 @@ class FlashAttentionDiffKVImpl(FlashAttentionImpl):
             block_table=attn_metadata.block_table,
             common_prefix_len=attn_metadata.common_prefix_len,
             max_num_splits=attn_metadata.max_num_splits,
-            fa_version=self.aphrodite_flash_attn_version,
+            fa_version=self.vllm_flash_attn_version,
             prefix_scheduler_metadata=attn_metadata.prefix_scheduler_metadata,
             suffix_scheduler_metadata=attn_metadata.scheduler_metadata,
             q_descale=layer._q_scale,

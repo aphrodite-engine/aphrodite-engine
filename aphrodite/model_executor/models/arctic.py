@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Inference-only Snowflake Arctic model."""
 
 from collections.abc import Iterable
@@ -18,7 +18,10 @@ from aphrodite.distributed import (
 )
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import fused_experts, fused_topk
+from aphrodite.model_executor.layers.fused_moe import (
+    fused_experts,
+    fused_topk,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,

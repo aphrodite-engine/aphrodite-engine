@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import ast
 import dataclasses
@@ -23,6 +23,10 @@ from torch._logging._internal import trace_structured
 from torch.fx._lazy_graph_module import _use_lazy_graph_module
 
 import aphrodite.envs as envs
+from aphrodite.compilation.codegen import (
+    compile_execution_fn,
+    generate_execution_code,
+)
 from aphrodite.config import AphroditeConfig, CompilationConfig, CUDAGraphMode
 from aphrodite.config.compilation import DynamicShapesType
 from aphrodite.config.utils import Range, hash_factors
@@ -269,15 +273,10 @@ class CompilerManager:
                 # after loading the last graph for this shape, record the time.
                 # there can be multiple graphs due to piecewise compilation.
                 elapsed = time.perf_counter() - compilation_start_time
-                if is_encoder:
-                    compilation_config.encoder_compilation_time += elapsed
-                else:
-                    compilation_config.compilation_time += elapsed
-                logger.debug_once(
+                logger.info_once(
                     "Directly load the compiled graph(s) for compile range %s from the cache, took %.3f s",
                     str(compile_range),
                     elapsed,
-                    scope="local",
                 )
             return compiled_graph
 
@@ -359,10 +358,9 @@ class CompilerManager:
             self.is_cache_updated = True
             if graph_index == 0:
                 # adds some info logging for the first graph
-                logger.debug_once(
+                logger.info_once(
                     "Cache the graph of compile range %s for later use",
                     str(compile_range),
-                    scope="local",
                 )
             logger.debug_once(
                 "Store the %s-th graph for compile range%s from %s via handle %s",
@@ -370,21 +368,15 @@ class CompilerManager:
                 str(compile_range),
                 self.compiler.name,
                 handle,
-                scope="local",
             )
 
         # after compiling the last graph, record the end time
         if graph_index == num_graphs - 1:
             elapsed = time.perf_counter() - compilation_start_time
-            if is_encoder:
-                compilation_config.encoder_compilation_time += elapsed
-            else:
-                compilation_config.compilation_time += elapsed
-            logger.debug_once(
+            logger.info_once(
                 "Compiling a graph for compile range %s takes %.2f s",
                 str(compile_range),
                 elapsed,
-                scope="local",
             )
 
         return compiled_graph
@@ -695,10 +687,6 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):  # type: ignore[misc]
         self.aphrodite_backend = aphrodite_backend
         # When True, it annoyingly dumps the torch.fx.Graph on errors.
         self.extra_traceback = False
-        self.compiled_count = 0
-        self.total_to_compile = len(compile_submod_names)
-        self.progress = None
-        self.progress_task = None
 
     @instrument(span_name="Inductor compilation")
     def run(self, *args: Any) -> Any:
@@ -725,39 +713,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):  # type: ignore[misc]
             # Lazy import here to avoid circular import
             from torch._inductor.compile_fx import graph_returns_tuple
 
-            from aphrodite.distributed.parallel_state import is_global_first_rank
-
             from .piecewise_backend import PiecewiseBackend
-
-            if self.progress is None and is_global_first_rank():
-                from rich.progress import (
-                    BarColumn,
-                    Progress,
-                    TaskProgressColumn,
-                    TextColumn,
-                    TimeRemainingColumn,
-                )
-
-                from aphrodite.utils import get_progress_log_prefix
-
-                log_prefix = get_progress_log_prefix()
-                progress = Progress(
-                    TextColumn(log_prefix),
-                    TextColumn("{task.description}"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    TextColumn("({task.elapsed:.1f}s)"),
-                    TimeRemainingColumn(),
-                )
-                progress.start()
-                self.progress = progress
-                self.progress_task = progress.add_task("Compiling piecewise graphs", total=self.total_to_compile)
-
-            if self.progress is not None and self.progress_task is not None:
-                self.progress.update(
-                    self.progress_task,
-                    description=(f"torch.compile ({self.compiled_count + 1}/{self.total_to_compile})"),
-                )
 
             piecewise_backend = PiecewiseBackend(
                 submod,
@@ -779,13 +735,6 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):  # type: ignore[misc]
             )
 
             compilation_counter.num_piecewise_capturable_graphs_seen += 1
-            self.compiled_count += 1
-            if self.progress_task is not None:
-                self.progress.update(self.progress_task, advance=1)
-                if self.compiled_count >= self.total_to_compile and self.progress is not None:
-                    self.progress.stop()
-                    self.progress = None
-                    self.progress_task = None
 
         return output
 
@@ -1070,12 +1019,11 @@ class AphroditeBackend:
         disable_cache = disable_cache or is_ngram_gpu_enabled
 
         if disable_cache:
-            logger.info_once("Aphrodite's torch.compile cache is disabled.", scope="local")
+            logger.info_once("Aphrodite's torch.compile cache is disabled.")
         else:
-            logger.debug_once(
+            logger.info_once(
                 "Using cache directory: %s for Aphrodite's torch.compile",
                 local_cache_dir,
-                scope="local",
             )
 
         self.compiler_manager.initialize_cache(local_cache_dir, disable_cache, self.prefix)
@@ -1130,11 +1078,10 @@ class AphroditeBackend:
         from .monitor import torch_compile_start_time
 
         dynamo_time = time.perf_counter() - torch_compile_start_time
-        logger.debug_once("Dynamo bytecode transform time: %.2f s", dynamo_time, scope="local")
-        if self.is_encoder:
-            self.compilation_config.encoder_compilation_time += dynamo_time
-        else:
-            self.compilation_config.compilation_time += dynamo_time
+        logger.info_once(
+            "Dynamo bytecode transform time: %.2f s",
+            dynamo_time,
+        )
 
         # Record Dynamo time in tracing if available
         start_time = int(torch_compile_start_time * 1e9)
@@ -1200,7 +1147,6 @@ class AphroditeBackend:
             logger.info_once(
                 "Saved compiler manager cache in %.2f seconds.",
                 elapsed,
-                scope="local",
             )
 
         from torch._guards import detect_fake_mode
@@ -1237,15 +1183,10 @@ class AphroditeBackend:
             with open(graph_path, "w") as f:
                 f.write(src)
 
-            logger.debug_once("Computation graph saved to %s", graph_path, scope="local")
+            logger.debug_once("Computation graph saved to %s", graph_path)
 
         self._called = True
         graph_to_serialize = original_split_gm if envs.APHRODITE_USE_MEGA_AOT_ARTIFACT else self.graph
-
-        from aphrodite.compilation.codegen import (
-            compile_execution_fn,
-            generate_execution_code,
-        )
 
         execution_code, submod_names = generate_execution_code(self.split_gm)
         # Use getattr to get correct callables: __dict__ has PiecewiseBackend

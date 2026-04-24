@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Inference-only MiniMaxText01 model."""
 
 from collections.abc import Iterable
@@ -24,7 +24,9 @@ from aphrodite.distributed.parallel_state import (
 from aphrodite.forward_context import get_forward_context
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
@@ -33,7 +35,9 @@ from aphrodite.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
-from aphrodite.model_executor.layers.mamba.linear_attn import MiniMaxText01LinearAttention
+from aphrodite.model_executor.layers.mamba.linear_attn import (
+    MiniMaxText01LinearAttention,
+)
 from aphrodite.model_executor.layers.mamba.mamba_utils import (
     MambaStateCopyFunc,
     MambaStateCopyFuncCalculator,

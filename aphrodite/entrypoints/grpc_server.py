@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # mypy: ignore-errors
 """
 Aphrodite gRPC Server
@@ -26,8 +26,10 @@ import time
 
 try:
     import grpc
+    from grpc_health.v1 import health_pb2_grpc
     from grpc_reflection.v1alpha import reflection
     from smg_grpc_proto import aphrodite_engine_pb2, aphrodite_engine_pb2_grpc
+    from smg_grpc_servicer.aphrodite.health_servicer import AphroditeHealthServicer
     from smg_grpc_servicer.aphrodite.servicer import AphroditeEngineServicer
 except ImportError as e:
     raise ImportError(
@@ -98,9 +100,14 @@ async def serve_grpc(args: argparse.Namespace):
     # Add servicer to server
     aphrodite_engine_pb2_grpc.add_AphroditeEngineServicer_to_server(servicer, server)
 
+    # Add standard gRPC health service for Kubernetes probes
+    health_servicer = AphroditeHealthServicer(async_llm)
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+
     # Enable reflection for grpcurl and other tools
     service_names = (
         aphrodite_engine_pb2.DESCRIPTOR.services_by_name["AphroditeEngine"].full_name,
+        "grpc.health.v1.Health",
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -147,6 +154,10 @@ async def serve_grpc(args: argparse.Namespace):
         logger.info("Shutting down Aphrodite gRPC server...")
         if stats_task is not None:
             stats_task.cancel()
+        try:
+            health_servicer.set_not_serving()
+        except Exception:  # broad: must not prevent server.stop() / shutdown()
+            logger.warning("Failed to set health status to NOT_SERVING", exc_info=True)
         await server.stop(grace=5.0)
         logger.info("gRPC server stopped")
         async_llm.shutdown()

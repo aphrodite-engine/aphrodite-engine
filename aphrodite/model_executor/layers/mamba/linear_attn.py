@@ -21,7 +21,10 @@ from aphrodite.model_executor.layers.lightning_attn import (
     lightning_attention,
     linear_decode_forward_triton,
 )
-from aphrodite.model_executor.layers.linear import ColumnParallelLinear, RowParallelLinear
+from aphrodite.model_executor.layers.linear import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.model_executor.layers.mamba.abstract import MambaBase
 from aphrodite.model_executor.layers.mamba.mamba_utils import (
     MambaStateDtypeCalculator,
@@ -29,7 +32,6 @@ from aphrodite.model_executor.layers.mamba.mamba_utils import (
 )
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.utils.torch_utils import direct_register_custom_op
-from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.attention.backends.linear_attn import LinearAttentionMetadata
 
 
@@ -376,10 +378,11 @@ class MiniMaxText01LinearAttention(nn.Module, MambaBase):
 
     def _forward(self, hidden_states: torch.Tensor, output: torch.Tensor, positions: torch.Tensor) -> None:
         forward_context = get_forward_context()
-        attn_metadata: AttentionMetadata = forward_context.attn_metadata
-        if attn_metadata is not None:
-            assert isinstance(attn_metadata, dict)
-            attn_metadata = attn_metadata[self.prefix]
+        attn_metadata_raw = forward_context.attn_metadata
+        attn_metadata: LinearAttentionMetadata | None = None
+        if attn_metadata_raw is not None:
+            assert isinstance(attn_metadata_raw, dict)
+            attn_metadata = attn_metadata_raw[self.prefix]
             assert isinstance(attn_metadata, LinearAttentionMetadata)
             num_actual_tokens = attn_metadata.num_prefill_tokens + attn_metadata.num_decode_tokens
         else:

@@ -34,7 +34,10 @@ from aphrodite.config import (
 from aphrodite.config.cache import CacheConfig
 from aphrodite.distributed.ec_transfer import get_ec_transfer, has_ec_transfer
 from aphrodite.distributed.eplb.eplb_state import EplbState
-from aphrodite.distributed.kv_transfer import get_kv_transfer_group, has_kv_transfer_group
+from aphrodite.distributed.kv_transfer import (
+    get_kv_transfer_group,
+    has_kv_transfer_group,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.utils import copy_kv_blocks
 from aphrodite.distributed.parallel_state import (
     get_dcp_group,
@@ -186,11 +189,15 @@ from aphrodite.v1.worker.cp_utils import (
     get_total_cp_world_size,
 )
 from aphrodite.v1.worker.dp_utils import coordinate_batch_across_dp
-from aphrodite.v1.worker.ec_connector_model_runner_mixin import ECConnectorModelRunnerMixin
+from aphrodite.v1.worker.ec_connector_model_runner_mixin import (
+    ECConnectorModelRunnerMixin,
+)
 from aphrodite.v1.worker.gpu.pool.late_interaction_runner import LateInteractionRunner
 from aphrodite.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 from aphrodite.v1.worker.gpu_ubatch_wrapper import UBatchWrapper
-from aphrodite.v1.worker.kv_connector_model_runner_mixin import KVConnectorModelRunnerMixin
+from aphrodite.v1.worker.kv_connector_model_runner_mixin import (
+    KVConnectorModelRunnerMixin,
+)
 from aphrodite.v1.worker.lora_model_runner_mixin import LoRAModelRunnerMixin
 from aphrodite.v1.worker.ubatch_utils import (
     UBatchSlices,
@@ -539,7 +546,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 self.use_aux_hidden_state_outputs = True
             else:
                 raise ValueError(f"Unknown speculative decoding method: {self.speculative_config.method}")
-            self.rejection_sampler = RejectionSampler(self.sampler)
+            self.rejection_sampler = RejectionSampler(self.sampler, self.speculative_config, self.device)
 
         self.num_spec_tokens = 0
         self.valid_sampled_token_count_gpu: torch.Tensor | None = None
@@ -1995,6 +2002,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         num_computed_tokens_cpu = self.input_batch.num_computed_tokens_cpu_tensor[:num_reqs_padded]
         num_prompt_tokens_cpu = self.input_batch.num_prompt_tokens_cpu_tensor[:num_reqs_padded]
         seq_lens_cpu = self.optimistic_seq_lens_cpu[:num_reqs_padded]
+        seq_lens_cpu_upper_bound = seq_lens_cpu
 
         # is_prefilling: True if request is still in prefill phase.
         # Used by mamba backends to distinguish actual decodes from
@@ -2012,6 +2020,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             seq_lens=self.seq_lens[:num_reqs_padded],
             _seq_lens_cpu=seq_lens_cpu,
             _num_computed_tokens_cpu=num_computed_tokens_cpu,
+            seq_lens_cpu_upper_bound=seq_lens_cpu_upper_bound,
             num_reqs=num_reqs_padded,
             num_actual_tokens=num_tokens_padded,
             max_query_len=max_query_len,
@@ -2133,13 +2142,26 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
 
         if self.is_mm_prefix_lm:
             req_doc_ranges = {}
+
+            # Gemma4 bidi: skip ranges that exceed the sliding
+            # window. When image tokens > sliding_window, bidi causes
+            # early image tokens to attend to the entire image
+            # (e.g. 6 -> 1092 targets), degrading spatial precision.
+            # Per-range filtering keeps bidi for small images/video
+            # frames while skipping oversized images.
+            hf_text_config = self.model_config.hf_text_config
+            _bidi_sw = getattr(hf_text_config, "sliding_window", None)
+
             for req_id in self.input_batch.req_ids:
                 image_doc_ranges = []
                 req_state = self.requests[req_id]
                 for mm_feature in req_state.mm_features:
                     pos_info = mm_feature.mm_position
                     img_doc_range = pos_info.extract_embeds_range()
-                    image_doc_ranges.extend(img_doc_range)
+                    for r in img_doc_range:
+                        if _bidi_sw is not None and (r[1] - r[0] + 1) > _bidi_sw:
+                            continue
+                        image_doc_ranges.append(r)
                 req_idx = self.input_batch.req_id_to_index[req_id]
                 req_doc_ranges[req_idx] = image_doc_ranges
 
@@ -4392,7 +4414,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                     self.load_config.load_format = "dummy"
                 model_loader = get_model_loader(self.load_config)
                 self.model = model_loader.load_model(
-                    aphrodite_config=self.aphrodite_config, model_config=self.model_config
+                    aphrodite_config=self.aphrodite_config,
+                    model_config=self.model_config,
                 )
                 if self.lora_config:
                     self.model = self.load_lora_model(self.model, self.aphrodite_config, self.device)
@@ -4468,7 +4491,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             "Model loading took %s GiB memory and %.6f seconds",
             format_gib(self.model_memory_usage),
             time_after_load - time_before_load,
-            scope="local",
         )
         if not load_dummy_weights:
             prepare_communication_buffer_for_model(self.model)
@@ -4584,7 +4606,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             weights_iterator = cast(Iterable[tuple[str, torch.Tensor]], weights_iterator)
 
         # begin loading weights
-        logger.info_once("Reloading weights inplace...", scope="local")
+        logger.info_once("Reloading weights inplace...")
         if is_checkpoint_format:
             # load weights from checkpoint/ original model format
             initialize_layerwise_reload(model)
@@ -4596,7 +4618,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             logger.warning_once(
                 "Reloading with `is_checkpoint_format=True` requires that "
                 "weights be in kernel format and already sharded",
-                scope="local",
             )
             loaded_weights = set()
             for name, loaded_weight in weights_iterator:
@@ -4610,7 +4631,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         logger.info_once(
             "Reloading and processing weights took %.2f seconds",
             diff_seconds,
-            scope="local",
         )
         if self.model_config.quantization is None and loaded_weights is not None:
             weights_not_loaded = weights_to_load - loaded_weights
@@ -5366,7 +5386,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                             encoder_budget,
                             max_mm_items_per_batch,
                             dummy_modality,
-                            scope="local",
                         )
 
                         # Create dummy batch of multimodal inputs.
@@ -5413,7 +5432,10 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         saved_override = self.cache_config.num_gpu_blocks_override
         self.cache_config.num_gpu_blocks_override = min_blocks
         minimal_config = get_kv_cache_config_from_groups(
-            self.aphrodite_config, kv_cache_groups, available_memory=0, suppress_log=True
+            self.aphrodite_config,
+            kv_cache_groups,
+            available_memory=0,
+            suppress_log=True,
         )
         self.cache_config.num_gpu_blocks_override = saved_override
 
@@ -5652,7 +5674,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             "Graph capturing finished in %.0f secs, took %.2f GiB",
             elapsed_time,
             cuda_graph_size / (1 << 30),
-            scope="local",
         )
         return cuda_graph_size
 

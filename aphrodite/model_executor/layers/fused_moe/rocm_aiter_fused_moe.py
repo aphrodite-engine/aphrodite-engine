@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from enum import IntEnum
 from functools import lru_cache
 
@@ -137,7 +137,7 @@ def rocm_aiter_grouped_topk(
     if e_score_correction_bias is not None:
         rocm_aiter_ops.biased_grouped_topk(
             gating_output,
-            e_score_correction_bias.to(gating_output.dtype),
+            e_score_correction_bias,
             topk_weights,
             topk_ids,
             num_expert_group,

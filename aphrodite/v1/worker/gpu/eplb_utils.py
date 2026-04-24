@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 from collections.abc import Callable
 from functools import wraps
@@ -90,7 +90,7 @@ class EPLBController:
         if not is_mixture_of_experts(model):
             return False
 
-        logger.info_once("EPLB is enabled for model %s.", model_config.model, scope="local")
+        logger.info_once("EPLB is enabled for model %s.", model_config.model)
         assert self.state is not None
         self.state.add_model(model, model_config)
         self._has_registered_models = True

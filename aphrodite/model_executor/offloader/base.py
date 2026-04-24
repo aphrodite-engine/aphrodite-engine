@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # Adapted from
 # https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/utils/offloader.py
 """Base classes for model parameter offloading."""
@@ -116,9 +116,9 @@ def set_offloader(instance: BaseOffloader) -> None:
     global _instance
     _instance = instance
     if isinstance(instance, NoopOffloader):
-        logger.debug_once("Offloader set to NoopOffloader (no offloading).", scope="local")
+        logger.debug_once("Offloader set to NoopOffloader (no offloading).")
     else:
-        logger.info_once("Offloader set to %s", type(instance).__name__, scope="local")
+        logger.info_once("Offloader set to %s", type(instance).__name__)
 
 
 def create_offloader(offload_config: "OffloadConfig") -> BaseOffloader:

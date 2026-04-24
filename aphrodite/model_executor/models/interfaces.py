@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import asyncio
 from collections.abc import (
@@ -29,7 +29,7 @@ from torch import Tensor
 from transformers.models.whisper.tokenization_whisper import LANGUAGES
 from typing_extensions import Self, TypeIs
 
-from aphrodite.config import ModelConfig, SpeechToTextConfig
+from aphrodite.config import ModelConfig, SpeechToTextConfig, SpeechToTextParams
 from aphrodite.inputs import PromptType, TokensPrompt
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.mamba.mamba_utils import MambaStateCopyFunc
@@ -80,7 +80,7 @@ def _require_is_multimodal(is_multimodal: Tensor | None) -> Tensor:
         raise ValueError(
             "`embed_input_ids` now requires `is_multimodal` arg, "
             "please update your model runner according to "
-            "https://github.com/vllm-project/vllm/pull/16229."
+            "https://github.com/aphrodite-project/aphrodite/pull/16229."
         )
 
     return is_multimodal
@@ -1108,13 +1108,7 @@ class SupportsTranscription(Protocol):
     @classmethod
     def get_generation_prompt(
         cls,
-        audio: np.ndarray,
-        stt_config: SpeechToTextConfig,
-        model_config: ModelConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
+        stt_params: SpeechToTextParams,
     ) -> PromptType:
         """Get the prompt for the ASR model.
         The model has control over the construction, as long as it

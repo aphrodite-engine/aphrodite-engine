@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import asyncio
 import time
@@ -114,13 +114,11 @@ class OpenAIServingChatBatch(OpenAIServingChat):
         """
         tokenizer = self.renderer.tokenizer
         assert tokenizer is not None
+        single_requests = [request.to_chat_completion_request(messages) for messages in request.messages]
 
         reasoning_parser: ReasoningParser | None = None
         if self.reasoning_parser_cls:
-            chat_template_kwargs = self._prepare_extra_chat_template_kwargs(
-                request.chat_template_kwargs,
-                self.default_chat_template_kwargs,
-            )
+            chat_template_kwargs = self._effective_chat_template_kwargs(single_requests[0])
             reasoning_parser = self.reasoning_parser_cls(
                 tokenizer,
                 chat_template_kwargs=chat_template_kwargs,  # type: ignore[call-arg]
@@ -151,7 +149,7 @@ class OpenAIServingChatBatch(OpenAIServingChat):
                 self.default_sampling_params,
                 self.override_max_tokens,
             )
-            single_request = request.to_chat_completion_request(request.messages[i])
+            single_request = single_requests[i]
             sampling_params = single_request.to_sampling_params(max_tokens, self.default_sampling_params)
             self._log_inputs(
                 sub_request_id,

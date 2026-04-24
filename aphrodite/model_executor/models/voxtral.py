@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
-from typing import Literal, cast
+from typing import cast
 
 import numpy as np
 import regex as re
@@ -19,6 +19,7 @@ from transformers import BatchFeature, WhisperConfig
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.inputs import MultiModalDataDict, PromptType, TokensPrompt
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
@@ -417,14 +418,13 @@ class VoxtralForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP,
     # for speech-to-text transcription
     def get_generation_prompt(
         cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
+        stt_params: SpeechToTextParams,
     ) -> PromptType:
+        audio = stt_params.audio
+        model_config = stt_params.model_config
+        stt_config = stt_params.stt_config
+        language = stt_params.language
+
         tokenizer = cached_tokenizer_from_config(model_config)
         audio = Audio(audio, int(stt_config.sample_rate), format="wav")  # lossless
         req = TranscriptionRequest(

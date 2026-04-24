@@ -51,7 +51,10 @@ from aphrodite.entrypoints.chat_utils import (
 from aphrodite.entrypoints.pooling.factories import init_pooling_io_processors
 from aphrodite.entrypoints.pooling.scoring.io_processor import ScoringIOProcessor
 from aphrodite.entrypoints.pooling.scoring.typing import ScoreInput
-from aphrodite.entrypoints.pooling.typing import OfflineInputsContext, OfflineOutputsContext
+from aphrodite.entrypoints.pooling.typing import (
+    OfflineInputsContext,
+    OfflineOutputsContext,
+)
 from aphrodite.entrypoints.utils import log_non_default_args
 from aphrodite.inputs import (
     DataPrompt,
@@ -78,7 +81,11 @@ from aphrodite.renderers.inputs.preprocess import (
     parse_model_prompt,
     prompt_to_seq,
 )
-from aphrodite.sampling_params import BeamSearchParams, RequestOutputKind, SamplingParams
+from aphrodite.sampling_params import (
+    BeamSearchParams,
+    RequestOutputKind,
+    SamplingParams,
+)
 from aphrodite.tasks import SCORE_TYPE_MAP, PoolingTask
 from aphrodite.tokenizers import TokenizerLike
 from aphrodite.usage.usage_lib import UsageContext
@@ -300,7 +307,9 @@ class LLM:
             return value
 
         if isinstance(compilation_config, int):
-            compilation_config_instance = CompilationConfig(mode=CompilationMode(compilation_config))
+            compilation_config_instance = CompilationConfig(  # type: ignore[call-arg]
+                mode=CompilationMode(compilation_config)
+            )
         else:
             compilation_config_instance = _make_config(compilation_config, CompilationConfig)
 
@@ -1105,19 +1114,16 @@ class LLM:
 
         if pooling_task is None:
             raise ValueError(
-                "pooling_task required for `LLM.encode`\n"
-                "Please use one of the more specific methods or set the "
-                "pooling_task when using `LLM.encode`:\n"
-                "  - For embeddings, use `LLM.embed(...)` "
-                'or `pooling_task="embed"`.\n'
-                "  - For classification logits, use `LLM.classify(...)` "
-                'or `pooling_task="classify"`.\n'
-                "  - For similarity scores, use `LLM.score(...)`.\n"
-                "  - For rewards, use `LLM.reward(...)` "
-                'or `pooling_task="token_classify"`\n'
-                "  - For token classification, "
-                'use `pooling_task="token_classify"`\n'
-                '  - For multi-vector retrieval, use `pooling_task="token_embed"`'
+                """
+                pooling_task required for `LLM.encode`.
+                Please use one of the more specific methods or set the pooling_task when using `LLM.encode`:
+                  - For embeddings, use `LLM.embed(...)` or `pooling_task="embed"`.
+                  - For classification logits, use `LLM.classify(...)` or `pooling_task="classify"`.
+                  - For similarity scores, use `LLM.score(...)`.
+                  - For rewards, `pooling_task="classify"` or `pooling_task="token_classify"`.
+                  - For token classification, use `pooling_task="token_classify"`.
+                  - For multi-vector retrieval, use `pooling_task="token_embed"`.
+                """  # noqa: E501
             )
 
         if pooling_task in ("embed", "token_embed") and pooling_task not in self.supported_tasks:
@@ -1266,6 +1272,11 @@ class LLM:
             A list of `PoolingRequestOutput` objects containing the
             pooled hidden states in the same order as the input prompts.
         """
+        logger.warning_once(
+            "`llm.reward` api is deprecated and will be removed in v0.23. "
+            'Please use `LLM.encode` with `pooling_task="classify"` or '
+            '`pooling_task="token_classify"` instead.'
+        )
         return self.encode(
             prompts,
             use_tqdm=use_tqdm,

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 from collections.abc import Iterable
 
@@ -14,7 +14,10 @@ from aphrodite.distributed import (
 )
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import SiluAndMul
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.kda import KimiDeltaAttention
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -30,7 +33,10 @@ from aphrodite.model_executor.layers.mamba.mamba_utils import (
     MambaStateDtypeCalculator,
     MambaStateShapeCalculator,
 )
-from aphrodite.model_executor.layers.mla import MLAModules, MultiHeadLatentAttentionWrapper
+from aphrodite.model_executor.layers.mla import (
+    MLAModules,
+    MultiHeadLatentAttentionWrapper,
+)
 from aphrodite.model_executor.layers.quantization.base_config import QuantizationConfig
 from aphrodite.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
@@ -463,7 +469,7 @@ class KimiLinearModel(nn.Module):
         if self.config.is_moe:
             # Params for weights, fp8 weight scales, fp8 activation scales
             # (param_name, weight_name, expert_id, shard_id)
-            expert_params_mapping = FusedMoE.make_expert_params_mapping(
+            expert_params_mapping = fused_moe_make_expert_params_mapping(
                 self,
                 ckpt_gate_proj_name="w1",
                 ckpt_down_proj_name="w2",
@@ -584,7 +590,8 @@ class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExper
         aphrodite_config: "AphroditeConfig",
     ) -> tuple[torch.dtype, torch.dtype, torch.dtype, torch.dtype]:
         return MambaStateDtypeCalculator.kda_state_dtype(
-            aphrodite_config.model_config.dtype, aphrodite_config.cache_config.mamba_cache_dtype
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
         )
 
     @classmethod

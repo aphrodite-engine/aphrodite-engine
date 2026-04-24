@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import torch
 
@@ -15,11 +15,15 @@ from aphrodite.utils.flashinfer import nvfp4_block_scale_interleave
 
 
 def get_local_sizes():
-    return get_forward_context().dp_metadata.get_chunk_sizes_across_dp_rank()
+    dp_metadata = get_forward_context().dp_metadata
+    assert dp_metadata is not None
+    return dp_metadata.get_chunk_sizes_across_dp_rank()
 
 
 class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
     """Base class for FlashInfer MoE prepare and finalize operations."""
+
+    all2all_manager: All2AllManagerBase
 
     def __init__(
         self,
@@ -27,7 +31,10 @@ class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
     ):
         super().__init__()
         self.num_dispatchers_ = num_dispatchers
-        self.all2all_manager = get_ep_group().device_communicator.all2all_manager
+        device_communicator = get_ep_group().device_communicator
+        assert device_communicator is not None
+        assert device_communicator.all2all_manager is not None
+        self.all2all_manager = device_communicator.all2all_manager
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
@@ -123,7 +130,9 @@ def flashinfer_alltoall_dispatch(
 ):
     from flashinfer.comm.trtllm_alltoall import MnnvlMoe
 
-    assert all2all_manager.ensure_alltoall_workspace_initialized(), "FlashInfer AllToAll workspace not available"
+    assert all2all_manager.ensure_alltoall_workspace_initialized(), (  # type: ignore[attr-defined]
+        "FlashInfer AllToAll workspace not available"
+    )
 
     ep_rank = all2all_manager.rank
     ep_size = all2all_manager.world_size
@@ -133,7 +142,7 @@ def flashinfer_alltoall_dispatch(
         topk_ids,
         topk_weights,
         None,
-        all2all_manager.prepare_workspace_tensor,
+        all2all_manager.prepare_workspace_tensor,  # type: ignore[attr-defined]
         max_num_token,
         ep_rank,
         ep_size,
@@ -160,7 +169,7 @@ def flashinfer_alltoall_dispatch(
         x = MnnvlMoe.mnnvl_moe_alltoallv(
             x,
             alltoall_info,
-            all2all_manager.workspace_tensor,
+            all2all_manager.workspace_tensor,  # type: ignore[attr-defined]
             ep_rank,
             ep_size,
         )
@@ -168,7 +177,7 @@ def flashinfer_alltoall_dispatch(
         x_sf = MnnvlMoe.mnnvl_moe_alltoallv(
             x_sf,
             alltoall_info,
-            all2all_manager.workspace_tensor,
+            all2all_manager.workspace_tensor,  # type: ignore[attr-defined]
             ep_rank,
             ep_size,
         )
@@ -184,7 +193,7 @@ def flashinfer_alltoall_dispatch(
         x = MnnvlMoe.mnnvl_moe_alltoallv(
             x,
             alltoall_info,
-            all2all_manager.workspace_tensor,
+            all2all_manager.workspace_tensor,  # type: ignore[attr-defined]
             ep_rank,
             ep_size,
         )
@@ -200,11 +209,13 @@ def flashinfer_alltoall_combine(
 ):
     from flashinfer.comm.trtllm_alltoall import MnnvlMoe
 
-    assert all2all_manager.ensure_alltoall_workspace_initialized(), "FlashInfer AllToAll workspace not available"
+    assert all2all_manager.ensure_alltoall_workspace_initialized(), (  # type: ignore[attr-defined]
+        "FlashInfer AllToAll workspace not available"
+    )
     return MnnvlMoe.mnnvl_moe_alltoallv_combine(
         output,
         alltoall_info,
-        all2all_manager.workspace_tensor,
+        all2all_manager.workspace_tensor,  # type: ignore[attr-defined]
         ep_rank=all2all_manager.rank,
         ep_size=all2all_manager.world_size,
         top_k=top_k,

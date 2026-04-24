@@ -11,7 +11,9 @@ from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser
 
 if TYPE_CHECKING:
-    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.chat_completion.protocol import (
+        ChatCompletionRequest,
+    )
     from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 
 logger = init_logger(__name__)
@@ -31,6 +33,14 @@ class IdentityReasoningParser(ReasoningParser):
             raise ValueError(
                 "The model tokenizer must be passed to the ReasoningParser constructor during construction."
             )
+
+    @property
+    def reasoning_start_str(self) -> str | None:
+        return None
+
+    @property
+    def reasoning_end_str(self) -> str | None:
+        return None
 
     def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         # Always return True, since we never treat reasoning specially

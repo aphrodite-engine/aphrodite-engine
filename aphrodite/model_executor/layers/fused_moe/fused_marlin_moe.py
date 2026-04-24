@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Fused MoE utilities for GPTQ."""
 
 from collections.abc import Callable
@@ -40,6 +40,8 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8Static128BlockSym,
     kFp8StaticChannelSym,
     kFp8StaticTensorSym,
+    kInt4Static,
+    kInt8Static,
     kMxfp4Static,
     kMxfp8Static,
     kNvfp4Static,
@@ -571,6 +573,8 @@ class MarlinExpertsBase(mk.FusedMoEExpertsModular):
             kMxfp4Static,
             kMxfp8Static,
             kNvfp4Static,
+            kInt4Static,
+            kInt8Static,
         ]
         return weight_key in SUPPORTED_W
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 
 # ===================== import region =====================
@@ -108,7 +108,7 @@ class PyNcclCommunicator:
         if self.rank == 0:
             # get the unique id from NCCL
             self.unique_id = self.nccl.ncclGetUniqueId()
-            logger.debug_once("Aphrodite is using nccl==%s", self.nccl.ncclGetVersion(), scope="local")
+            logger.info_once("Aphrodite is using nccl==%s", self.nccl.ncclGetVersion())
         else:
             # construct an empty unique id
             self.unique_id = ncclUniqueId()

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Compatibility wrapper for DeepGEMM API changes.
 
 Users of Aphrodite should always import **only** these wrappers.
@@ -98,14 +98,14 @@ def is_deep_gemm_e8m0_used() -> bool:
     _lazy_init()
 
     if _fp8_gemm_nt_impl is None:
-        logger.info_once("DeepGEMM E8M0 disabled: _fp8_gemm_nt_impl not found", scope="local")
+        logger.info_once("DeepGEMM E8M0 disabled: _fp8_gemm_nt_impl not found")
         return False
 
     if envs.APHRODITE_USE_DEEP_GEMM_E8M0:
-        logger.info_once("DeepGEMM E8M0 enabled on current platform.", scope="local")
+        logger.info_once("DeepGEMM E8M0 enabled on current platform.")
         return True
 
-    logger.info_once("DeepGEMM E8M0 disabled on current configuration.", scope="local")
+    logger.info_once("DeepGEMM E8M0 disabled on current configuration.")
     return False
 
 

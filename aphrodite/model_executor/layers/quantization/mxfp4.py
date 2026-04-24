@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import torch
 
@@ -31,7 +31,9 @@ from aphrodite.model_executor.layers.quantization.base_config import (
     QuantizationConfig,
     QuantizeMethodBase,
 )
-from aphrodite.model_executor.layers.quantization.utils.quant_utils import is_layer_skipped
+from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+    is_layer_skipped,
+)
 from aphrodite.model_executor.utils import replace_parameter, set_weight_attrs
 
 logger = init_logger(__name__)
@@ -80,7 +82,6 @@ class Mxfp4Config(QuantizationConfig):
                 return UnquantizedLinearMethod()
             logger.debug_once(
                 "MXFP4 linear layer is not implemented - falling back to UnquantizedLinearMethod.",
-                scope="local",
             )
             return UnquantizedLinearMethod()
         elif isinstance(layer, FusedMoE):
@@ -88,7 +89,6 @@ class Mxfp4Config(QuantizationConfig):
         elif isinstance(layer, Attention):
             logger.debug_once(
                 "MXFP4 attention layer is not implemented. Skipping quantization for this layer.",
-                scope="local",
             )
         return None
 

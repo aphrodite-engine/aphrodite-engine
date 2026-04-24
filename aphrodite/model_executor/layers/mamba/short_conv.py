@@ -24,7 +24,6 @@ from aphrodite.model_executor.layers.mamba.ops.causal_conv1d import (
     causal_conv1d_update,
 )
 from aphrodite.utils.torch_utils import direct_register_custom_op
-from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.attention.backends.short_conv_attn import ShortConvAttentionMetadata
 
 
@@ -113,10 +112,11 @@ class ShortConv(MambaBase, CustomOp):
         # chunked prefill modes; they are computed at top-level model forward
         # since they stay the same and reused for all mamba layers in the same
         # iteration.
-        attn_metadata: AttentionMetadata = forward_context.attn_metadata
-        if attn_metadata is not None:
-            assert isinstance(attn_metadata, dict)
-            attn_metadata = attn_metadata[self.prefix]
+        attn_metadata_raw = forward_context.attn_metadata
+        attn_metadata: ShortConvAttentionMetadata | None = None
+        if attn_metadata_raw is not None:
+            assert isinstance(attn_metadata_raw, dict)
+            attn_metadata = attn_metadata_raw[self.prefix]
             assert isinstance(attn_metadata, ShortConvAttentionMetadata)
             conv_state = self.kv_cache[0] if is_conv_state_dim_first() else self.kv_cache[0].transpose(-1, -2)
             state_indices_tensor_p = attn_metadata.state_indices_tensor_p

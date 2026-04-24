@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import torch
 from einops import rearrange
@@ -16,7 +16,6 @@ from aphrodite.logger import init_logger
 from aphrodite.model_executor.model_loader.weight_utils import sharded_weight_loader
 from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.utils.torch_utils import direct_register_custom_op
-from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 
 from .fla.ops.kda import (
@@ -121,7 +120,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
         self.cache_config = cache_config
         if model_config is None:
             raise ValueError("model_config must be provided")
-        kda_config = model_config.linear_attn_config
+        kda_config = model_config.linear_attn_config  # type: ignore[attr-defined]
         self.head_dim = kda_config["head_dim"]
         self.num_heads = kda_config["num_heads"]
         self.layer_idx = layer_idx
@@ -289,19 +288,19 @@ class KimiDeltaAttention(nn.Module, MambaBase):
         core_attn_out: torch.Tensor,
     ) -> None:
         forward_context = get_forward_context()
-        attn_metadata: AttentionMetadata = forward_context.attn_metadata
+        attn_metadata_raw = forward_context.attn_metadata
 
-        if attn_metadata is None:
+        if attn_metadata_raw is None:
             #     # V1 profile run
             return
 
-        assert isinstance(attn_metadata, dict)
-        attn_metadata = attn_metadata[self.prefix]
-        assert isinstance(attn_metadata, GDNAttentionMetadata)
-        has_initial_state = attn_metadata.has_initial_state
-        non_spec_query_start_loc = attn_metadata.non_spec_query_start_loc
-        non_spec_state_indices_tensor = attn_metadata.non_spec_state_indices_tensor  # noqa: E501
-        num_actual_tokens = attn_metadata.num_actual_tokens
+        assert isinstance(attn_metadata_raw, dict)
+        attn_metadata_narrowed = attn_metadata_raw[self.prefix]
+        assert isinstance(attn_metadata_narrowed, GDNAttentionMetadata)
+        has_initial_state = attn_metadata_narrowed.has_initial_state
+        non_spec_query_start_loc = attn_metadata_narrowed.non_spec_query_start_loc
+        non_spec_state_indices_tensor = attn_metadata_narrowed.non_spec_state_indices_tensor  # noqa: E501
+        num_actual_tokens = attn_metadata_narrowed.num_actual_tokens
         constant_caches = self.kv_cache
 
         q_proj_states = q_proj_states[:num_actual_tokens]
@@ -321,7 +320,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
         q_conv_weights = self.q_conv1d.weight.view(self.q_conv1d.weight.size(0), self.q_conv1d.weight.size(2))
         k_conv_weights = self.k_conv1d.weight.view(self.k_conv1d.weight.size(0), self.k_conv1d.weight.size(2))
         v_conv_weights = self.v_conv1d.weight.view(self.v_conv1d.weight.size(0), self.v_conv1d.weight.size(2))
-        if attn_metadata.num_prefills > 0:
+        if attn_metadata_narrowed.num_prefills > 0:
             q_proj_states = q_proj_states.transpose(0, 1)
             k_proj_states = k_proj_states.transpose(0, 1)
             v_proj_states = v_proj_states.transpose(0, 1)
@@ -334,7 +333,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 has_initial_state=has_initial_state,
                 cache_indices=non_spec_state_indices_tensor,
                 query_start_loc=non_spec_query_start_loc,
-                metadata=attn_metadata,
+                metadata=attn_metadata_narrowed,
             ).transpose(0, 1)
             k = causal_conv1d_fn(
                 k_proj_states,
@@ -345,7 +344,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 has_initial_state=has_initial_state,
                 cache_indices=non_spec_state_indices_tensor,
                 query_start_loc=non_spec_query_start_loc,
-                metadata=attn_metadata,
+                metadata=attn_metadata_narrowed,
             ).transpose(0, 1)
             v = causal_conv1d_fn(
                 v_proj_states,
@@ -356,10 +355,11 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 has_initial_state=has_initial_state,
                 cache_indices=non_spec_state_indices_tensor,
                 query_start_loc=non_spec_query_start_loc,
-                metadata=attn_metadata,
+                metadata=attn_metadata_narrowed,
             ).transpose(0, 1)
         else:
-            decode_conv_indices = non_spec_state_indices_tensor[: attn_metadata.num_actual_tokens]
+            assert non_spec_state_indices_tensor is not None
+            decode_conv_indices = non_spec_state_indices_tensor[: attn_metadata_narrowed.num_actual_tokens]
             q = causal_conv1d_update(
                 q_proj_states,
                 conv_state_q,
@@ -390,7 +390,9 @@ class KimiDeltaAttention(nn.Module, MambaBase):
 
         q, k, v = map(lambda x: rearrange(x, "n (h d) -> 1 n h d", d=self.head_dim), (q, k, v))
 
-        if attn_metadata.num_prefills > 0:
+        if attn_metadata_narrowed.num_prefills > 0:
+            assert non_spec_state_indices_tensor is not None
+            assert has_initial_state is not None
             zero_idx = non_spec_state_indices_tensor[~has_initial_state]
             recurrent_state[zero_idx] = 0
             initial_state = recurrent_state[non_spec_state_indices_tensor].contiguous()
@@ -411,6 +413,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
             # Init cache
             recurrent_state[non_spec_state_indices_tensor] = last_recurrent_state
         else:
+            assert non_spec_query_start_loc is not None
             (
                 core_attn_out_non_spec,
                 last_recurrent_state,
@@ -422,7 +425,7 @@ class KimiDeltaAttention(nn.Module, MambaBase):
                 beta=beta,
                 initial_state=recurrent_state,
                 use_qk_l2norm_in_kernel=True,
-                cu_seqlens=non_spec_query_start_loc[: attn_metadata.num_decodes + 1],
+                cu_seqlens=non_spec_query_start_loc[: attn_metadata_narrowed.num_decodes + 1],
                 ssm_state_indices=non_spec_state_indices_tensor,
             )
         core_attn_out[0, :num_actual_tokens] = core_attn_out_non_spec[0, :num_actual_tokens]

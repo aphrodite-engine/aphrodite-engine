@@ -163,7 +163,26 @@ def get_inductor_factors() -> list[Any]:
 
     torch_factors = torch_key()
     factors.append(torch_factors)
+
+    from torch._functorch import config as functorch_config
+    from torch._inductor import config as inductor_config
+
+    factors.append(inductor_config.save_config_portable())
+    with functorch_config.patch(_get_aphrodite_functorch_config()):
+        factors.append(functorch_config.save_config_portable())
     return factors
+
+
+def _get_aphrodite_functorch_config() -> dict[str, Any]:
+    """Return functorch config overrides applied at compile time.
+
+    This is used by both set_functorch_config() and get_inductor_factors()
+    so the active compile config and cache key remain consistent.
+    """
+    cfg: dict[str, Any] = {}
+    if not envs.APHRODITE_USE_MEGA_AOT_ARTIFACT:
+        cfg["bundled_autograd_cache"] = False
+    return cfg
 
 
 def is_compile_cache_enabled(
@@ -707,8 +726,8 @@ def set_inductor_config(config: dict[str, Any], compile_range: Range) -> None:
 
 
 def set_functorch_config() -> None:
-    if not envs.APHRODITE_USE_MEGA_AOT_ARTIFACT:
-        torch._functorch.config.bundled_autograd_cache = False
+    for k, v in _get_aphrodite_functorch_config().items():
+        setattr(torch._functorch.config, k, v)
 
 
 class EagerAdaptor(CompilerInterface):

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from contextlib import contextmanager
 from typing import Any
 
@@ -61,14 +61,18 @@ class CPUModelRunner(GPUModelRunner):
 
         # Speculative decoding fallbacks
         import aphrodite.v1.sample.rejection_sampler
-        import aphrodite.v1.spec_decode.eagle
+        import aphrodite.v1.spec_decode.llm_base_proposer
         import aphrodite.v1.spec_decode.utils
 
-        aphrodite.v1.spec_decode.eagle.eagle_prepare_inputs_padded_kernel = cpu_tl.eagle_prepare_inputs_padded_kernel
-        aphrodite.v1.spec_decode.eagle.eagle_prepare_next_token_padded_kernel = (
+        aphrodite.v1.spec_decode.llm_base_proposer.eagle_prepare_inputs_padded_kernel = (
+            cpu_tl.eagle_prepare_inputs_padded_kernel
+        )
+        aphrodite.v1.spec_decode.llm_base_proposer.eagle_prepare_next_token_padded_kernel = (
             cpu_tl.eagle_prepare_next_token_padded_kernel
         )
-        aphrodite.v1.spec_decode.eagle.copy_and_expand_eagle_inputs_kernel = cpu_tl.copy_and_expand_eagle_inputs_kernel
+        aphrodite.v1.spec_decode.llm_base_proposer.copy_and_expand_eagle_inputs_kernel = (
+            cpu_tl.copy_and_expand_eagle_inputs_kernel
+        )
         aphrodite.v1.spec_decode.utils.eagle_step_slot_mapping_metadata_kernel = (
             cpu_tl.eagle_step_slot_mapping_metadata_kernel
         )

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """Attention layer with PagedAttention and Triton prefix prefill."""
 
 from dataclasses import dataclass
@@ -27,7 +27,6 @@ from aphrodite.v1.attention.backend import (
     CommonAttentionMetadata,
     MultipleOf,
 )
-from aphrodite.v1.attention.backends.flash_attn import FlashAttentionMetadata
 from aphrodite.v1.attention.ops.chunked_prefill_paged_decode import (
     chunked_prefill_paged_decode,
 )
@@ -68,6 +67,9 @@ class RocmAttentionMetadata:
     # Optional aot scheduling
     scheduler_metadata: torch.Tensor | None = None
     prefix_scheduler_metadata: torch.Tensor | None = None
+
+    # DFlash drafting sets this to False via CommonAttentionMetadata.
+    causal: bool = True
 
 
 class RocmAttentionMetadataBuilder(AttentionMetadataBuilder[RocmAttentionMetadata]):
@@ -146,6 +148,7 @@ class RocmAttentionMetadataBuilder(AttentionMetadataBuilder[RocmAttentionMetadat
             prefix_kv_lens=prefix_kv_lens,
             suffix_kv_lens=suffix_kv_lens,
             prefix_scheduler_metadata=prefix_scheduler_metadata,
+            causal=common_attn_metadata.causal,
         )
         return attn_metadata
 
@@ -171,7 +174,7 @@ class RocmAttentionBackend(AttentionBackend):
         # due to shared memory (LDS) constraints on AMD GPUs.
         # See csrc/rocm/attention.cu CALL_CUSTOM_LAUNCHER_BLK macro.
         # However, Aphrodite allows support for any multiple of 16 via the Triton path.
-        # As addressed in PR: https://github.com/vllm-project/vllm/pull/31380,
+        # As addressed in PR: https://github.com/aphrodite-project/aphrodite/pull/31380,
         # non-standard models (like qwen3-next with block_size 544, or qwen3_5
         # with 784 and 1056) are dynamically routed to our optimized Triton kernel
         # in `do_kv_cache_update`.
@@ -191,6 +194,10 @@ class RocmAttentionBackend(AttentionBackend):
         # Callink this backend with sinks will cause it to fall back to the Triton
         # kernel, which is less efficient than the proper triton backends.
         return False
+
+    @classmethod
+    def supports_non_causal(cls) -> bool:
+        return True
 
     forward_includes_kv_cache_update: bool = False
 
@@ -293,7 +300,7 @@ class RocmAttentionImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
         output: torch.Tensor,
-        attn_metadata: FlashAttentionMetadata,
+        attn_metadata: RocmAttentionMetadata,
         layer: torch.nn.Module,
     ) -> torch.Tensor:
         """Forward pass for encoder attention without KV cache.
@@ -316,7 +323,9 @@ class RocmAttentionImpl(AttentionImpl):
         max_query_len = attn_metadata.max_query_len
 
         # Call flash attention directly on Q, K, V tensors
-        from aphrodite.v1.attention.ops.triton_prefill_attention import context_attention_fwd
+        from aphrodite.v1.attention.ops.triton_prefill_attention import (
+            context_attention_fwd,
+        )
 
         context_attention_fwd(
             q=query,
@@ -340,7 +349,7 @@ class RocmAttentionImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
-        attn_metadata: FlashAttentionMetadata,
+        attn_metadata: RocmAttentionMetadata,
         output: torch.Tensor,
         output_scale: torch.Tensor | None = None,
         output_block_scale: torch.Tensor | None = None,
@@ -423,6 +432,7 @@ class RocmAttentionImpl(AttentionImpl):
             sm_scale=self.scale,
             output_scale=output_scale,
             sinks=self.sinks,
+            causal=attn_metadata.causal,
         )
 
         return output

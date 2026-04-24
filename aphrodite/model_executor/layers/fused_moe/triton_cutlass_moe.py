@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 
 import torch
@@ -10,7 +10,9 @@ from aphrodite.model_executor.layers.fused_moe.config import (
     FusedMoEConfig,
     FusedMoEQuantConfig,
 )
-from aphrodite.model_executor.layers.fused_moe.cutlass_moe import CutlassExpertsFp8
+from aphrodite.model_executor.layers.fused_moe.experts.cutlass_moe import (
+    CutlassExpertsFp8,
+)
 from aphrodite.model_executor.layers.fused_moe.fallback import FallbackExperts
 from aphrodite.model_executor.layers.fused_moe.fused_moe import TritonExperts
 from aphrodite.platforms import current_platform

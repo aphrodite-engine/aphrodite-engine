@@ -40,7 +40,12 @@ class BaseModelLoader(ABC):
         raise NotImplementedError
 
     @instrument(span_name="Load model")
-    def load_model(self, aphrodite_config: AphroditeConfig, model_config: ModelConfig, prefix: str = "") -> nn.Module:
+    def load_model(
+        self,
+        aphrodite_config: AphroditeConfig,
+        model_config: ModelConfig,
+        prefix: str = "",
+    ) -> nn.Module:
         """Load a model with the given configurations."""
         device_config = aphrodite_config.device_config
         load_config = aphrodite_config.load_config
@@ -66,7 +71,6 @@ class BaseModelLoader(ABC):
                 logger.debug_once(
                     "Peak GPU memory after loading weights: %s GiB",
                     format_gib(peak_memory),
-                    scope="local",
                 )
 
             # Process weights into kernel format. Note that when using online

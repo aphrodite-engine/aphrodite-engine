@@ -13,7 +13,9 @@ from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser
 
 if TYPE_CHECKING:
-    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.chat_completion.protocol import (
+        ChatCompletionRequest,
+    )
     from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 
 logger = init_logger(__name__)
@@ -29,6 +31,7 @@ class Step3ReasoningParser(ReasoningParser):
 
     def __init__(self, tokenizer: PreTrainedTokenizerBase, *args, **kwargs):
         super().__init__(tokenizer, *args, **kwargs)
+        self.think_start_token = "<think>"
         self.think_end_token = "</think>"
 
         self.reasoning_regex = re.compile(rf"(.*?){self.think_end_token}", re.DOTALL)
@@ -42,6 +45,14 @@ class Step3ReasoningParser(ReasoningParser):
         if think_end_token_id is None:
             raise RuntimeError("Step3 reasoning parser could not locate think end token in the tokenizer!")
         self.think_end_token_id: int = think_end_token_id
+
+    @property
+    def reasoning_start_str(self) -> str:
+        return self.think_start_token
+
+    @property
+    def reasoning_end_str(self) -> str:
+        return self.think_end_token
 
     def extract_reasoning_streaming(
         self,

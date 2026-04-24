@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 # --------------------------------------------------------
 # Adapted from
-# https://github.com/vllm-project/vllm/blob/main/aphrodite/model_executor/models/internvl.py
+# https://github.com/aphrodite-project/aphrodite/blob/main/aphrodite/model_executor/models/internvl.py
 # under Apache-2.0 License
 #     LICENSE is in root directory.
 # --------------------------------------------------------
@@ -34,7 +34,10 @@ from aphrodite.model_executor.models.interfaces import (
 )
 from aphrodite.model_executor.models.module_mapping import MultiModelKeys
 from aphrodite.model_executor.models.nemotron_h import NemotronHForCausalLM
-from aphrodite.model_executor.models.parakeet import ParakeetExtractor, ProjectedParakeet
+from aphrodite.model_executor.models.parakeet import (
+    ParakeetExtractor,
+    ProjectedParakeet,
+)
 from aphrodite.model_executor.models.radio import RadioModel, calc_seq_lens
 from aphrodite.model_executor.models.utils import (
     WeightsMapper,
@@ -1038,7 +1041,11 @@ class NemotronH_Nano_VL_V2(nn.Module, HasInnerState, IsHybrid, SupportsMultiModa
             pixel_values_flat = DynamicResolutionImageTiler.stack(pixel_values_flat, self.patch_size)
             return NanoNemotronVLImagePixelInputsDynamic(pixel_values_flat=pixel_values_flat, **kwargs)
         else:
-            return NanoNemotronVLImagePixelInputs(num_patches=kwargs.pop("image_num_patches"), **kwargs)
+            return NanoNemotronVLImagePixelInputs(
+                pixel_values_flat=pixel_values_flat,
+                num_patches=kwargs.pop("image_num_patches"),
+                **kwargs,
+            )
 
     def _process_image_input_dynamic(
         self, image_input: NanoNemotronVLImagePixelInputsDynamic

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 """
 Define LoRA functionality mixin for model runners.
 """
@@ -97,7 +97,8 @@ class LoRAModelRunnerMixin:
             assert self.lora_manager is not None, "LoRA is not enabled"
 
             num_loras = lora_config.max_loras
-            lora_warmup_rank = lora_config.max_lora_rank if lora_config.max_lora_rank < 8 else 8
+            lora_warmup_rank: int = lora_config.max_lora_rank if lora_config.max_lora_rank < 8 else 8
+            lora_warmup_rank = self.lora_manager.get_dummy_lora_warmup_rank(lora_warmup_rank)
             # Make dummy lora requests
             lora_requests: set[LoRARequest] = {
                 LoRARequest(

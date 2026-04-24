@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import contextlib
 import hashlib
@@ -16,6 +16,7 @@ from torch.fx._graph_pickler import GraphPickler, Options
 from torch.utils import _pytree as pytree
 
 import aphrodite.envs as envs
+from aphrodite.compilation.codegen import compile_execution_fn
 from aphrodite.compilation.compiler_interface import get_inductor_factors
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.config import AphroditeConfig, get_current_aphrodite_config
@@ -168,7 +169,7 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
 
     def __init__(
         self,
-        graph_module: torch.fx.GraphModule,
+        graph_module: torch.fx.GraphModule | bytes,
         example_inputs: Sequence[Any],
         prefix: str,
         optimized_call: Callable[..., Any],
@@ -179,7 +180,6 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
         execution_code: str | None = None,
         submod_names: list[str] | None = None,
     ) -> None:
-        assert isinstance(graph_module, torch.fx.GraphModule)
         self.graph_module = graph_module
         self.example_inputs = example_inputs
         self.prefix = prefix
@@ -280,8 +280,6 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
         state = pickle.loads(data)
         fake_mode = FakeTensorMode(shape_env=ShapeEnv())
 
-        state["graph_module"] = cls.deserialize_graph_module(state["graph_module"], fake_mode)
-        state["graph_module"].recompile()
         state["example_inputs"] = GraphPickler.loads(state["example_inputs"], fake_mode)
 
         standalone_compile_artifacts = state.pop("standalone_compile_artifacts", None)
@@ -307,6 +305,7 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
                     aphrodite_config=get_current_aphrodite_config(),
                     sym_shape_indices_map=sym_shape_indices_map,
                     returns_tuple_map=returns_tuple_map,
+                    fake_mode=fake_mode,
                 )
 
             logger.info(
@@ -316,6 +315,9 @@ class AphroditeSerializableFunction(SerializableCallable):  # type: ignore[misc]
             )
 
             return fn
+
+        state["graph_module"] = cls.deserialize_graph_module(state["graph_module"], fake_mode)
+        state["graph_module"].recompile()
 
         # Fall back to standard AphroditeBackend.
         # Use a lazy closure: the backend needs traced_files for cache
@@ -381,6 +383,7 @@ def reconstruct_serializable_fn_from_mega_artifact(
     aphrodite_config: AphroditeConfig,
     sym_shape_indices_map: dict[str, list[int]],
     returns_tuple_map: dict[str, bool],
+    fake_mode: FakeTensorMode,
 ) -> "AphroditeSerializableFunction":
     """Construct a AphroditeSerializableFunction from cached inductor artifacts.
 
@@ -423,7 +426,6 @@ def reconstruct_serializable_fn_from_mega_artifact(
 
     prefix = state["prefix"]
     is_encoder = state.get("is_encoder", False)
-    split_gm = state["graph_module"]
     compilation_config = aphrodite_config.compilation_config
 
     standalone_compile_artifacts.load_all()
@@ -447,10 +449,13 @@ def reconstruct_serializable_fn_from_mega_artifact(
     )
 
     # spot check that cached submodules exist in the graph structure
-    graph_children = {name for name, _ in split_gm.named_children()}
+    # if an old cache is used, this will fail but that's fine because
+    # we will just try this error and re-generate the new cache.
+    graph_children = set(state["submod_names"])
     missing = set(piecewise_submod_names) - graph_children
     assert not missing, f"artifacts reference submodules not in graph: {missing}. graph has: {sorted(graph_children)}"
 
+    submod_callables = {}
     for i, submod_name in enumerate(piecewise_submod_names):
         assert submod_name in sym_shape_indices_map and submod_name in returns_tuple_map
 
@@ -479,7 +484,7 @@ def reconstruct_serializable_fn_from_mega_artifact(
             is_last,
         )
 
-        split_gm.__dict__[submod_name] = wrapped_backend
+        submod_callables[submod_name] = wrapped_backend
         logger.debug(
             "Replaced submodule %s with piecewise backend from cache",
             submod_name,
@@ -489,17 +494,18 @@ def reconstruct_serializable_fn_from_mega_artifact(
     execution_code = state.get("execution_code")
     submod_names = state.get("submod_names")
     if execution_code is not None and submod_names is not None:
-        from aphrodite.compilation.codegen import compile_execution_fn
-
-        submod_callables = {name: getattr(split_gm, name) for name, _ in split_gm.named_children()}
         runtime_callable = compile_execution_fn(execution_code, submod_callables, submod_names)
     else:
-        runtime_callable = split_gm
+        logger.warning("No execution code found, falling back to graph module execution.")
+        runtime_callable = GraphPickler.loads(state["graph_module"], fake_mode=fake_mode)
 
     if compilation_config.cudagraph_copy_inputs:
         sym_tensor_indices = state["sym_tensor_indices"]
         input_buffers = [
-            torch.empty_like(state["example_inputs"][idx], device=aphrodite_config.device_config.device)
+            torch.empty_like(
+                state["example_inputs"][idx],
+                device=aphrodite_config.device_config.device,
+            )
             for idx in sym_tensor_indices
         ]
         optimized_call = make_copy_and_call(sym_tensor_indices, input_buffers, runtime_callable)

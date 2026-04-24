@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from enum import Enum
 from typing import Union
 
@@ -7,6 +7,7 @@ import torch
 
 import aphrodite.model_executor.layers.fused_moe.modular_kernel as mk
 from aphrodite import envs
+from aphrodite.config.kernel import MoEBackend
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_moe import (
     FusedMoEConfig,
@@ -20,7 +21,9 @@ from aphrodite.model_executor.layers.fused_moe.config import (
     mxfp4_w4a16_moe_quant_config,
     ocp_mx_moe_quant_config,
 )
-from aphrodite.model_executor.layers.quantization.utils.mxfp4_utils import _swizzle_mxfp4
+from aphrodite.model_executor.layers.quantization.utils.mxfp4_utils import (
+    _swizzle_mxfp4,
+)
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     QuantKey,
     kMxfp4Static,
@@ -60,6 +63,8 @@ class Mxfp4MoeBackend(Enum):
     TRITON_UNFUSED = "TRITON_UNFUSED"
     # XPU
     XPU = "XPU"
+    # Emulation
+    EMULATION = "EMULATION"
 
 
 # Backends that share the same TRTLLM weight format
@@ -137,15 +142,24 @@ def backend_to_kernel_cls(
         return [AiterExperts]
 
     elif backend == Mxfp4MoeBackend.XPU:
-        from aphrodite.model_executor.layers.fused_moe.xpu_fused_moe import XPUExpertsMXFp4
+        from aphrodite.model_executor.layers.fused_moe.experts.xpu_moe import (
+            XPUExpertsMXFp4,
+        )
 
         return [XPUExpertsMXFp4]
+
+    elif backend == Mxfp4MoeBackend.EMULATION:
+        from aphrodite.model_executor.layers.fused_moe.experts.ocp_mx_emulation_moe import (
+            OCP_MXQuantizationEmulationTritonExperts,
+        )
+
+        return [OCP_MXQuantizationEmulationTritonExperts]
 
     else:
         raise ValueError(f"Unknown MXFP4 MoE backend: {backend.value}")
 
 
-def map_mxfp4_backend(runner_backend: str) -> Mxfp4MoeBackend:
+def map_mxfp4_backend(runner_backend: MoEBackend) -> Mxfp4MoeBackend:
     """Map user's moe_backend string to Mxfp4MoeBackend."""
     mapping: dict[str, Mxfp4MoeBackend] = {
         "flashinfer_trtllm": Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_BF16,
@@ -156,6 +170,7 @@ def map_mxfp4_backend(runner_backend: str) -> Mxfp4MoeBackend:
         "marlin": Mxfp4MoeBackend.MARLIN,
         "aiter": Mxfp4MoeBackend.AITER,
         "xpu": Mxfp4MoeBackend.XPU,
+        "emulation": Mxfp4MoeBackend.EMULATION,
     }
     if backend := mapping.get(runner_backend):
         return backend
@@ -178,6 +193,7 @@ def _get_priority_backends() -> list[Mxfp4MoeBackend]:
         Mxfp4MoeBackend.MARLIN,
         Mxfp4MoeBackend.BATCHED_MARLIN,
         Mxfp4MoeBackend.XPU,
+        Mxfp4MoeBackend.EMULATION,
     ]
     return _AVAILABLE_BACKENDS
 
@@ -199,10 +215,10 @@ def select_gpt_oss_mxfp4_moe_backend(
     Select the primary MXFP4 MoE backend.
     Note: Shape-specific fallbacks may still occur at runtime.
     """
-    triton_kernels_supported = has_triton_kernels() and (
-        9,
-        0,
-    ) <= current_platform.get_device_capability() < (11, 0)
+    device_capability = current_platform.get_device_capability()
+    triton_kernels_supported = (
+        has_triton_kernels() and device_capability is not None and (9, 0) <= device_capability < (11, 0)
+    )
 
     # LoRA: separate experts backend path
     if config.is_lora_enabled:
@@ -243,7 +259,7 @@ def select_gpt_oss_mxfp4_moe_backend(
         for k_cls in backend_to_kernel_cls(backend):
             supported, reason = k_cls.is_supported_config(k_cls, config, weight_key, activation_key, activation_format)
             if supported:
-                logger.info_once(_make_log_backend(backend), scope="local")
+                logger.info_once(_make_log_backend(backend))
                 return backend, k_cls
         raise ValueError(_make_log_unsupported(backend, reason))
 
@@ -334,10 +350,10 @@ def select_gpt_oss_mxfp4_moe_backend(
                 k_cls, config, kMxfp4Static, activation_key, activation_format
             )
             if supported:
-                logger.info_once(_make_log_backend(backend), scope="local")
+                logger.info_once(_make_log_backend(backend))
                 return backend, k_cls
             else:
-                logger.debug_once(_make_log_unsupported(backend, reason), scope="local")
+                logger.debug_once(_make_log_unsupported(backend, reason))
 
     if current_platform.is_xpu():
         backend = Mxfp4MoeBackend.XPU
@@ -712,6 +728,17 @@ def convert_gpt_oss_weight_to_mxfp4_moe_kernel_format(
             w13_bias,
             w2_bias,
         )
+    elif mxfp4_backend == Mxfp4MoeBackend.EMULATION:
+        # No additional transformation needed for emulation backend,
+        # weights are dequantized on the fly in the experts class.
+        return (
+            w13_weight,
+            w2_weight,
+            w13_weight_scale,
+            w2_weight_scale,
+            w13_bias,
+            w2_bias,
+        )
     else:
         raise ValueError(f"Unsupported mxfp4_backend: {mxfp4_backend}: should be one of: {list(Mxfp4MoeBackend)}.")
 
@@ -780,7 +807,7 @@ def make_mxfp4_moe_kernel(
     )
     assert prepare_finalize is not None
 
-    logger.info_once("Using %s", prepare_finalize.__class__.__name__, scope="local")
+    logger.info_once("Using %s", prepare_finalize.__class__.__name__)
 
     # Create Experts.
     if prepare_finalize.activation_format == mk.FusedMoEActivationFormat.BatchedExperts:
@@ -801,7 +828,7 @@ def make_mxfp4_moe_kernel(
     kernel = mk.FusedMoEKernel(
         prepare_finalize,
         experts,
-        shared_experts=(shared_experts if moe_config.moe_parallel_config.use_deepep_ll_kernels else None),
+        shared_experts=(shared_experts if moe_config.moe_parallel_config.use_batched_activation_format else None),
         inplace=(not moe_config.disable_inplace and mxfp4_backend not in TRTLLM_BACKENDS),
     )
 

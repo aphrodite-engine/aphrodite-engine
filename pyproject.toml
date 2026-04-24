@@ -1,5 +1,5 @@
 [build-system]
-# Should be mirrored in requirements/build.txt
+# Should be mirrored in requirements/build/cuda.txt
 requires = [
     "cmake>=3.26.1",
     "ninja",
@@ -8,8 +8,7 @@ requires = [
     "setuptools-scm>=8.0",
     "torch == 2.11.0",
     "wheel",
-    "jinja2>=3.1.6",
-    "protobuf >= 5.29.6, !=6.30.*, !=6.31.*, !=6.32.*, !=6.33.0.*, !=6.33.1.*, !=6.33.2.*, !=6.33.3.*, !=6.33.4.*",
+    "jinja2",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -31,7 +30,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 requires-python = ">=3.10,<3.14"
-dynamic = [ "version", "dependencies"]
+dynamic = [ "version", "dependencies", "optional-dependencies"]
 
 [project.urls]
 Homepage="https://github.com/aphrodite-engine/aphrodite-engine"
@@ -40,8 +39,9 @@ Documentation="https://aphrodite.pygmalion.chat"
 [project.scripts]
 aphrodite = "aphrodite.entrypoints.cli.main:main"
 
-[project.entry-points."aphrodite.io_processor_plugins"]
-terratorch_segmentation = "aphrodite.modeling.models.terratorch_plugin.plugins.segmentation:register_segmentation_plugin"
+[project.entry-points."aphrodite.general_plugins"]
+lora_filesystem_resolver = "aphrodite.plugins.lora_resolvers.filesystem_resolver:register_filesystem_resolver"
+lora_hf_hub_resolver = "aphrodite.plugins.lora_resolvers.hf_hub_resolver:register_hf_hub_resolver"
 
 [tool.setuptools_scm]
 # no extra settings needed, presence enables setuptools-scm
@@ -50,47 +50,15 @@ terratorch_segmentation = "aphrodite.modeling.models.terratorch_plugin.plugins.s
 where = ["."]
 include = ["aphrodite*"]
 
-[project.optional-dependencies]
-diffusion = [
-    "diffusers==0.35.2",
-    "yunchang==0.6.3.post1",
-    "opencv-python==4.10.0.84",
-    "imageio==2.36.0",
-    "imageio-ffmpeg==0.5.1",
-    "PyYAML==6.0.1",
-    "moviepy>=2.0.0",
-    "cloudpickle",
-    "remote-pdb",
-    "torchcodec==0.5.0",
-    "st_attn ==0.0.7",
-    "vsa==0.0.4",
-    "python-dateutil",
-]
-
-
 [tool.ruff]
-# Allow lines to be as long as 120.
 line-length = 120
 exclude = [
-    "examples/fp8/quantizer/quantize.py",
-    "kernels/hadamard/generator.py",
-    "kernels/flash_mla/**",
     "aphrodite/vllm_flash_attn/**",
-    "aphrodite/distributed/kv_transfer/**"
+    "aphrodite/third_party/**",
 ]
-
-[tool.codespell]
-ignore-words-list = "dout, te, indicies, ist, subtile, wit, whit, beseige, devlop, serie, vor, holliday, discus, tennant, carin, parma, mor, slac, revered, chanel, sammon, nast, shepard, insead, bloc, clea, appy, ser, fter, trough, incase"
-skip = "./tests/,./aphrodite/endpoints/kobold/klite.embd,./kernels/,./tests/benchmarks/sonnet.txt,./docs/,./tests/lora/data/long_context_test_data.py,./tests/models/fixtures/"
-
-[tool.isort]
-use_parentheses = true
-skip_gitignore = true
-
 
 [tool.ruff.lint.per-file-ignores]
 "aphrodite/third_party/**" = ["ALL"]
-"aphrodite/diffusion/third_party/**" = ["ALL"]
 "aphrodite/version.py" = ["F401"]
 "aphrodite/_version.py" = ["ALL"]
 "aphrodite/platforms/cuda.py" = ["E402"]
@@ -105,6 +73,8 @@ select = [
     "UP",
     # flake8-bugbear
     "B",
+    # flake8-implicit-str-concat
+    "ISC",
     # flake8-simplify
     "SIM",
     # isort
@@ -135,11 +105,6 @@ plugins = ['pydantic.mypy']
 ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"
-exclude = [
-    '^aphrodite/vllm_flash_attn/',
-    '^aphrodite/third_party/',
-    '^aphrodite/model_executor/layers/fla/ops/',
-]
 
 [tool.pytest.ini_options]
 markers = [
@@ -151,12 +116,10 @@ markers = [
     "cpu_test: mark test as CPU-only test",
     "split: run this test as part of a split",
     "distributed: run this test only in distributed GPU tests",
-    "skip_v1: do not run this test with v1",
     "optional: optional tests that are automatically skipped, include --optional to run them",
 ]
 
 [tool.ty.src]
-root = "./aphrodite"
 respect-ignore-files = true
 
 [tool.ty.environment]
@@ -164,51 +127,36 @@ python = "./.venv"
 
 [tool.typos.files]
 # these files may be written in non english words
-extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*",
+extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*", "tests/tokenizers_/*",
     "benchmarks/sonnet.txt", "tests/lora/data/*", "build/*",
-    "aphrodite/third_party/*", "aphrodite/endpoints/openai/klite.embd",
-    "aphrodite/entrypoints/serve/instrumentator/static/*", ".git/*"]
-ignore-hidden = true
-ignore-files = true
-ignore-dot = true
-ignore-vcs = true
-ignore-global = true
-ignore-parent = true
+    "examples/pooling/token_embed/*", "tests/models/language/pooling/*",
+    "aphrodite/third_party/*", "aphrodite/entrypoints/serve/instrumentator/static/*", "tests/entrypoints/openai/speech_to_text/test_transcription_validation.py",
+    "docs/governance/process.md", "docs/assets/contributing/aphrodite_bench_serve_timeline.html",
+    "tests/v1/engine/test_fast_incdec_prefix_err.py", ".git/*"]
+ignore-hidden = false
 
 [tool.typos.default]
-binary = false
-check-filename = false
-check-file = true
-unicode = true
-ignore-hex = true
-identifier-leading-digits = false
-locale = "en"
-extend-ignore-identifiers-re = ["NVML_*", ".*Unc.*", ".*_thw",
-    ".*UE8M0.*", ".*[UE4M3|ue4m3].*", ".*eles.*",
-     ".*[Tt]h[rR].*", "ot"]
-extend-ignore-words-re = []
-extend-ignore-re = []
+extend-ignore-identifiers-re = [".*[Uu][Ee][0-9][Mm][0-9].*"]
 
 [tool.typos.default.extend-identifiers]
 bbc5b7ede = "bbc5b7ede"
-womens_doubles = "womens_doubles"
-v_2nd = "v_2nd"
-# splitted_input = "splitted_input"
 NOOPs = "NOOPs"
-typ = "typ"
 nin_shortcut = "nin_shortcut"
-UperNetDecoder = "UperNetDecoder"
-subtile = "subtile"
 cudaDevAttrMaxSharedMemoryPerBlockOptin = "cudaDevAttrMaxSharedMemoryPerBlockOptin"
-SFOuput = "SFOuput"
-# huggingface transformers repo uses these words
+
 depthwise_seperable_out_channel = "depthwise_seperable_out_channel"
-DepthWiseSeperableConv1d = "DepthWiseSeperableConv1d"
-depthwise_seperable_CNN = "depthwise_seperable_CNN"
+pard_token = "pard_token"
+ptd_token_id = "ptd_token_id"
+ser_de = "ser_de"
+shared_memory_per_block_optin = "shared_memory_per_block_optin"
+FoPE = "FoPE"
+k_ot = "k_ot"
+view_seperator = "view_seperator"
+inverse_std_variences = "inverse_std_variences"
 
 [tool.typos.default.extend-words]
 iy = "iy"
-tendencias = "tendencias"
+indx = "indx"
 # intel cpu features
 tme = "tme"
 dout = "dout"
@@ -232,143 +180,9 @@ datas = "datas"
 ser = "ser"
 ure = "ure"
 VALU = "VALU"
+# Walsh-Hadamard Transform
 wht = "wht"
 WHT = "WHT"
-indx = "indx"
-halfs = "halfs"
-
-[tool.typos.type.py]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.py.extend-identifiers]
-arange = "arange"
-NDArray = "NDArray"
-EOFError = "EOFError"
-fo = "fo"
-ba = "ba"
-
-[tool.typos.type.py.extend-words]
-ba = "ba"
-nd = "nd"
-
-[tool.typos.type.cpp]
-extend-glob = ["*.cu"]
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.cpp.extend-identifiers]
-countr_one = "countr_one"
-k_ot = "k_ot"
-ot = "ot"
-
-[tool.typos.type.cpp.extend-words]
-
-[tool.typos.type.rust]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.rust.extend-identifiers]
-flate2 = "flate2"
-
-[tool.typos.type.rust.extend-words]
-ser = "ser"
-
-[tool.typos.type.lock]
-extend-glob = []
-check-file = false
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.lock.extend-identifiers]
-
-[tool.typos.type.lock.extend-words]
-
-[tool.typos.type.jl]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.jl.extend-identifiers]
-
-[tool.typos.type.jl.extend-words]
-modul = "modul"
-egals = "egals"
-usig = "usig"
-egal = "egal"
-
-[tool.typos.type.go]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.go.extend-identifiers]
-flate = "flate"
-
-[tool.typos.type.go.extend-words]
-
-[tool.typos.type.css]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.css.extend-identifiers]
-nd = "nd"
-
-[tool.typos.type.css.extend-words]
-
-[tool.typos.type.man]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.man.extend-identifiers]
-Nd = "Nd"
-
-[tool.typos.type.man.extend-words]
-
-[tool.typos.type.cert]
-extend-glob = []
-check-file = false
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.cert.extend-identifiers]
-
-[tool.typos.type.cert.extend-words]
-
-[tool.typos.type.sh]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.sh.extend-identifiers]
-ot = "ot"
-
-[tool.typos.type.sh.extend-words]
-
-[tool.typos.type.vimscript]
-extend-glob = []
-extend-ignore-identifiers-re = []
-extend-ignore-words-re = []
-extend-ignore-re = []
-
-[tool.typos.type.vimscript.extend-identifiers]
-windo = "windo"
-
-[tool.typos.type.vimscript.extend-words]
 
 [tool.uv]
 no-build-isolation-package = ["torch"]

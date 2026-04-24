@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 import fnmatch
 from typing import TYPE_CHECKING, Any, cast
@@ -107,7 +107,7 @@ class QuarkConfig(QuantizationConfig):
         :param hf_to_aphrodite_mapper: maps from hf model structure (the assumed
             structure of the qconfig) to aphrodite model structure
         """
-        quant_config_with_hf_to_aphrodite_mapper = {}
+        quant_config_with_hf_to_aphrodite_mapper: dict[str, Any] = {}
 
         for k, v in self.quant_config.items():
             if isinstance(v, list):

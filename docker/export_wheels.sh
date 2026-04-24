@@ -8,14 +8,14 @@ set -e
 #   CUDA_VERSION=12.8.1 ./docker/export_wheels.sh
 #
 # Environment variables:
-#   CUDA_VERSION      - CUDA version (default: 13.0.0)
+#   CUDA_VERSION      - CUDA version (default: 13.0.2)
 #   TARGETPLATFORM    - Target platform (default: linux/amd64)
 #   TORCH_CUDA_ARCH_LIST - CUDA arch list to compile into the wheel
 #   MAX_JOBS           - Number of parallel jobs for Ninja (default: 2)
 #   NVCC_THREADS       - Number of threads for nvcc (default: 8)
 #   PYTHON_VERSION     - Python version in the build image (default: 3.12)
 
-CUDA_VERSION="${CUDA_VERSION:-13.0.0}"
+CUDA_VERSION="${CUDA_VERSION:-13.0.2}"
 TARGETPLATFORM="${TARGETPLATFORM:-linux/amd64}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-7.0 7.5 8.0 8.9 9.0 10.0 12.0}"

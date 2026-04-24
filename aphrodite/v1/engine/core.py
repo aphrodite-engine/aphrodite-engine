@@ -274,20 +274,17 @@ class EngineCore:
                 compile_time + encoder_compile_time,
                 compile_time,
                 encoder_compile_time,
-                scope="local",
             )
         elif compile_time > 0:
             logger.info_once(
                 "init engine (profile, create kv cache, warmup model) took %.2f s (compilation: %.2f s)",
                 elapsed,
                 compile_time,
-                scope="local",
             )
         else:
             logger.info_once(
                 "init engine (profile, create kv cache, warmup model) took %.2f s",
                 elapsed,
-                scope="local",
             )
         return scheduler_kv_cache_config
 
@@ -898,7 +895,12 @@ class EngineCoreProc(EngineCore):
             # We need to handshake with rank 0 front-end and our colocated frontend.
             assert local_client
             local_handshake = self._perform_handshake(
-                input_ctx, client_handshake_address, identity, True, False, aphrodite_config
+                input_ctx,
+                client_handshake_address,
+                identity,
+                True,
+                False,
+                aphrodite_config,
             )
             with handshake as addresses, local_handshake as client_addresses:
                 # 1. Obtain DP Coordinator zmq address and DP process group address
@@ -1785,7 +1787,10 @@ class EngineCoreActorMixin:
             self._set_cuda_visible_devices(aphrodite_config, local_dp_rank, device_control_env_var)
 
     def _set_cuda_visible_devices(
-        self, aphrodite_config: AphroditeConfig, local_dp_rank: int, device_control_env_var: str
+        self,
+        aphrodite_config: AphroditeConfig,
+        local_dp_rank: int,
+        device_control_env_var: str,
     ):
         world_size = aphrodite_config.parallel_config.world_size
         # Set CUDA_VISIBLE_DEVICES or equivalent.

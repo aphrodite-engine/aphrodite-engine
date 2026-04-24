@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 
 import torch
@@ -208,7 +208,9 @@ def persistent_masked_m_silu_mul_quant(
         DeepGemmQuantScaleFMT.UE8M0,
     ]
 
-    cuda_arch = current_platform.get_device_capability(device_id=y.device.index).to_int()
+    device_capability = current_platform.get_device_capability(device_id=y.device.index)
+    assert device_capability is not None
+    cuda_arch = device_capability.to_int()
 
     if current_platform.is_cuda() and cuda_arch >= 80:
         torch.ops._C.persistent_masked_m_silu_mul_quant(y, tokens_per_expert, y_q, y_s, ceil_ue8m0)
@@ -353,7 +355,6 @@ class BatchedDeepGemmExperts(mk.FusedMoEExpertsModular):
         if dp_meta is None:
             logger.warning_once(
                 f"DPMetadata unavailable. Defaulting expected_m to {max_tokens_per_expert}.",
-                scope="local",
             )
             return max_tokens_per_expert
 

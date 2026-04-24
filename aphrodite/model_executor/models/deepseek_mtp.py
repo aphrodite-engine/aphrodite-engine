@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import typing
 from collections.abc import Callable, Iterable
 
@@ -11,7 +11,9 @@ from aphrodite._aiter_ops import rocm_aiter_ops
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
@@ -238,7 +240,7 @@ class DeepSeekMTP(nn.Module, DeepseekV2MixtureOfExperts):
         ]
         stacked_params_mapping.extend(indexer_fused_mapping)
 
-        expert_params_mapping = FusedMoE.make_expert_params_mapping(
+        expert_params_mapping = fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",

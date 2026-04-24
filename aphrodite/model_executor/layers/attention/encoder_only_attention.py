@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import functools
 from copy import copy
 
@@ -21,7 +21,7 @@ from aphrodite.v1.kv_cache_interface import KVCacheSpec
 
 @functools.lru_cache
 def create_encoder_only_attention_backend(
-    underlying_attn_backend: AttentionBackend,
+    underlying_attn_backend: type[AttentionBackend],
 ) -> type[AttentionBackend]:
     prefix = "EncoderOnlyAttention_"
     underlying_builder = underlying_attn_backend.get_builder_cls()
@@ -91,6 +91,6 @@ class EncoderOnlyAttention(Attention):
             **kwargs,
         )
 
-    def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec:
+    def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec | None:
         # Does not need KV cache
         return None

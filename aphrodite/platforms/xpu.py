@@ -200,6 +200,26 @@ class XPUPlatform(Platform):
                     "falling back to PIECEWISE graph mode on XPU platform."
                 )
 
+        # Disable fusion passes not yet supported on XPU.
+        pass_config = compilation_config.pass_config
+        fusion_passes_to_disable = {
+            "enable_sp": "Sequence parallelism",
+            "fuse_gemm_comms": "Async TP",
+            "fuse_allreduce_rms": "AllReduce + RMSNorm fusion",
+            "fuse_norm_quant": "RMSNorm + quant fusion",
+            "fuse_act_quant": "Activation + quant fusion",
+            "fuse_attn_quant": "Attention + quant fusion",
+            "fuse_act_padding": "Activation + padding fusion",
+            "fuse_rope_kvcache": "RoPE + KV cache fusion",
+        }
+        for flag, feature_name in fusion_passes_to_disable.items():
+            if getattr(pass_config, flag):
+                logger.warning(
+                    "Feature %r is not yet supported on XPU and will be disabled.",
+                    feature_name,
+                )
+                setattr(pass_config, flag, False)
+
         # check and update parallel config
         parallel_config = aphrodite_config.parallel_config
         # Only override worker_cls if it's still the default "auto"
@@ -298,6 +318,10 @@ class XPUPlatform(Platform):
         if not supports_xccl():
             logger.warning("xccl is not enabled in this torch build, communication is not available.")
         return "aphrodite.distributed.device_communicators.xpu_communicator.XpuCommunicator"  # noqa
+
+    @classmethod
+    def supports_fp8(cls) -> bool:
+        return True
 
     @classmethod
     def get_default_ir_op_priority(cls, aphrodite_config: "AphroditeConfig") -> "IrOpPriorityConfig":

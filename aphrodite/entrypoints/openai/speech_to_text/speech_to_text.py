@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import asyncio
 import io
 import math
@@ -22,7 +22,10 @@ from aphrodite.entrypoints.openai.engine.protocol import (
     RequestResponseMetadata,
     UsageInfo,
 )
-from aphrodite.entrypoints.openai.engine.serving import OpenAIServing, SpeechToTextRequest
+from aphrodite.entrypoints.openai.engine.serving import (
+    OpenAIServing,
+    SpeechToTextRequest,
+)
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.openai.speech_to_text.protocol import (
     TranscriptionResponse,
@@ -46,7 +49,10 @@ from aphrodite.multimodal.audio import get_audio_duration, split_audio
 from aphrodite.multimodal.media.audio import load_audio
 from aphrodite.outputs import RequestOutput
 from aphrodite.renderers.inputs import DictPrompt, EncoderDecoderDictPrompt
-from aphrodite.renderers.inputs.preprocess import parse_enc_dec_prompt, parse_model_prompt
+from aphrodite.renderers.inputs.preprocess import (
+    parse_enc_dec_prompt,
+    parse_model_prompt,
+)
 from aphrodite.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.tokenizers import get_tokenizer
 
@@ -175,9 +181,8 @@ class OpenAISpeechToText(OpenAIServing):
         request_id: str,
     ) -> tuple[list[EngineInput], float]:
         # Validate request
-        language = self.model_cls.validate_language(request.language)
-        # Skip to_language validation to avoid extra logging for Whisper.
-        to_language = self.model_cls.validate_language(request.to_language) if request.to_language else None
+        request.language = self.model_cls.validate_language(request.language)
+        request.to_language = self.model_cls.validate_language(request.to_language) if request.to_language else None
 
         if len(audio_data) / 1024**2 > self.max_audio_filesize_mb:
             raise APHRODITEValidationError(
@@ -215,24 +220,19 @@ class OpenAISpeechToText(OpenAIServing):
                 min_energy_window_size=self.asr_config.min_energy_split_window_size,
             )
 
-        if language is None and getattr(self.model_cls, "supports_explicit_language_detection", False):
+        if request.language is None and getattr(self.model_cls, "supports_explicit_language_detection", False):
             # Auto-detect language from the first chunk.
-            language = await self._detect_language(chunks[0], f"{request_id}-lang_detect")
-            request.language = language
+            request.language = await self._detect_language(chunks[0], f"{request_id}-lang_detect")
 
         parsed_prompts: list[DictPrompt] = []
         for chunk in chunks:
-            # The model has control over the construction, as long as it
-            # returns a valid PromptType.
-            prompt = self.model_cls.get_generation_prompt(
+            stt_params = request.build_stt_params(
                 audio=chunk,
                 stt_config=self.asr_config,
                 model_config=self.model_config,
-                language=language,
                 task_type=self.task_type,
-                request_prompt=request.prompt,
-                to_language=to_language,
             )
+            prompt = self.model_cls.get_generation_prompt(stt_params)
 
             parsed_prompt: DictPrompt
             if request.response_format == "verbose_json":

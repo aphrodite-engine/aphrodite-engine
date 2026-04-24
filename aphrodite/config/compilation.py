@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from pydantic import Field, TypeAdapter, field_validator
 
 import aphrodite.envs as envs
-from aphrodite.compilation.passes.inductor_pass import CallableInductorPass, InductorPass
+from aphrodite.compilation.passes.inductor_pass import (
+    CallableInductorPass,
+    InductorPass,
+)
 from aphrodite.config.utils import (
     Range,
     config,
@@ -731,6 +734,7 @@ class CompilationConfig:
         "aphrodite::linear_attention",
         "aphrodite::plamo2_mamba_mixer",
         "aphrodite::gdn_attention_core",
+        "aphrodite::gdn_attention_core_xpu",
         "aphrodite::olmo_hybrid_gdn_full_forward",
         "aphrodite::kda_attention",
         "aphrodite::sparse_attn_indexer",

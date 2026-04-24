@@ -241,6 +241,22 @@ class ModelArchConfigConvertorBase:
             )
         return False
 
+    def is_mm_prefix_lm(self) -> bool:
+        """Whether to use bidirectional attention for mm positions."""
+        if hasattr(self.hf_config, "is_mm_prefix_lm"):
+            return bool(self.hf_config.is_mm_prefix_lm)
+        # fallback to list of known models
+        MM_PREFIX_LM_MODELS = (
+            "bagel",
+            "gemma3",
+            "molmo2",
+            "paligemma",
+            "umm",
+        )
+        if not hasattr(self.hf_config, "model_type"):
+            return False
+        return self.hf_config.model_type in MM_PREFIX_LM_MODELS
+
     def derive_max_model_len_and_key(self) -> tuple[float, str | None]:
         derived_max_model_len = float("inf")
         possible_keys = [
@@ -277,7 +293,7 @@ class ModelArchConfigConvertorBase:
         return derived_max_model_len, max_len_key
 
     def convert(self) -> ModelArchitectureConfig:
-        model_arch_config = ModelArchitectureConfig(
+        model_arch_config = ModelArchitectureConfig(  # type: ignore[call-arg]
             architectures=self.get_architectures(),
             model_type=self.hf_config.model_type,
             text_model_type=getattr(self.hf_text_config, "model_type", None),
@@ -290,6 +306,7 @@ class ModelArchConfigConvertorBase:
             num_experts=self.get_num_experts(),
             quantization_config=self.get_quantization_config(),
             is_deepseek_mla=self.is_deepseek_mla(),
+            is_mm_prefix_lm=self.is_mm_prefix_lm(),
             derived_max_model_len_and_key=self.derive_max_model_len_and_key(),
         )
 
@@ -427,6 +444,9 @@ class LongCatFlashMTPModelArchConfigConvertor(ModelArchConfigConvertorBase):
 
 
 class Gemma4ModelArchConfigConvertor(ModelArchConfigConvertorBase):
+    def is_mm_prefix_lm(self) -> bool:
+        return getattr(self.hf_text_config, "use_bidirectional_attention", None) == "vision"
+
     def get_head_size(self) -> int:
         # Gemma4 uses dual head dimensions: head_dim (sliding attention)
         # and global_head_dim (full attention).  Return the largest so

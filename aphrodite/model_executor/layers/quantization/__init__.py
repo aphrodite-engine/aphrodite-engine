@@ -22,6 +22,7 @@ QuantizationMethods = Literal[
     "gptq_marlin",
     "awq_marlin",
     "gptq",
+    "humming",
     "compressed-tensors",
     "bitsandbytes",
     "experts_int8",
@@ -68,7 +69,9 @@ def register_quantization_config(quantization: str):
         >>> from aphrodite.model_executor.layers.quantization import (
         ...     register_quantization_config,
         ... )
-        >>> from aphrodite.model_executor.layers.quantization import get_quantization_config
+        >>> from aphrodite.model_executor.layers.quantization import (
+        ...     get_quantization_config,
+        ... )
         >>> from aphrodite.model_executor.layers.quantization.base_config import (
         ...     QuantizationConfig,
         ... )
@@ -125,6 +128,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     from .gguf import GGUFConfig
     from .gptq import GPTQConfig
     from .gptq_marlin import GPTQMarlinConfig
+    from .humming import HummingConfig
     from .inc import INCConfig
     from .modelopt import (
         ModelOptFp8Config,
@@ -162,6 +166,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         "mxfp4": Mxfp4Config,
         "gpt_oss_mxfp4": GptOssMxfp4Config,
         "cpu_awq": CPUAWQConfig,
+        "humming": HummingConfig,
         "online": OnlineQuantizationConfig,
     }
 

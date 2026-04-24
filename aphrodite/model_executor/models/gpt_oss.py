@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 import typing
 from collections.abc import Callable, Iterable
 
@@ -20,7 +20,10 @@ from aphrodite.distributed import (
     tensor_model_parallel_all_gather,
 )
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoE,
+    fused_moe_make_expert_params_mapping,
+)
 from aphrodite.model_executor.layers.fused_moe.config import FusedMoEParallelConfig
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -30,7 +33,9 @@ from aphrodite.model_executor.layers.linear import (
 )
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
-from aphrodite.model_executor.layers.quantization.utils.ocp_mx_utils import OCP_MX_BLOCK_SIZE
+from aphrodite.model_executor.layers.quantization.utils.ocp_mx_utils import (
+    OCP_MX_BLOCK_SIZE,
+)
 from aphrodite.model_executor.layers.rotary_embedding import get_rope
 from aphrodite.model_executor.layers.utils import rocm_unquantized_gemm
 from aphrodite.model_executor.layers.vocab_parallel_embedding import (
@@ -321,7 +326,7 @@ class GptOssModel(nn.Module, EagleModelMixin):
         # Params for weights, weight scales, activation scales
         # (param_name, weight_name, expert_id, shard_id)
         # NOTE: this is only used for quark.
-        return FusedMoE.make_expert_params_mapping(
+        return fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="w1",
             ckpt_down_proj_name="w2",

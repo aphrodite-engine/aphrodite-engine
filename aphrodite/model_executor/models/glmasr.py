@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Any, Literal, TypeAlias
 
-import numpy as np
 import torch
 import torch.nn as nn
 from transformers import BatchFeature
@@ -13,6 +12,7 @@ from transformers.models.whisper import WhisperFeatureExtractor
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.speech_to_text import SpeechToTextParams
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_world_size
 from aphrodite.inputs import ModalityData, MultiModalDataDict, PromptType, TokensPrompt
 from aphrodite.model_executor.layers.activation import get_act_fn
@@ -481,7 +481,9 @@ class GlmAsrEncoder(nn.Module):
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Custom weight loading to handle q_proj/k_proj/v_proj -> qkv_proj mapping."""
-        from aphrodite.model_executor.model_loader.weight_utils import default_weight_loader
+        from aphrodite.model_executor.model_loader.weight_utils import (
+            default_weight_loader,
+        )
 
         weights = _create_fake_bias_for_k_proj(weights, ".k_proj.weight")
 
@@ -1087,17 +1089,12 @@ class GlmAsrForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP, 
         )
 
     @classmethod
-    def get_generation_prompt(
-        cls,
-        audio: np.ndarray,
-        model_config: ModelConfig,
-        stt_config: SpeechToTextConfig,
-        language: str | None,
-        task_type: Literal["transcribe", "translate"],
-        request_prompt: str,
-        to_language: str | None,
-    ) -> PromptType:
+    def get_generation_prompt(cls, stt_params: SpeechToTextParams) -> PromptType:
         """Get the generation prompt to be used for transcription requests."""
+        audio = stt_params.audio
+        model_config = stt_params.model_config
+        task_type = stt_params.task_type
+        to_language = stt_params.to_language
         tokenizer = cached_tokenizer_from_config(model_config)
         audio_token = cls._get_audio_token(model_config)
 

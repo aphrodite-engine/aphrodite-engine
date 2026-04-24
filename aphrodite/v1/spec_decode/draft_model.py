@@ -9,7 +9,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.utils import replace
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.model_loader import get_model
-from aphrodite.v1.spec_decode.eagle import SpecDecodeBaseProposer
+from aphrodite.v1.spec_decode.llm_base_proposer import SpecDecodeBaseProposer
 
 logger = init_logger(__name__)
 
