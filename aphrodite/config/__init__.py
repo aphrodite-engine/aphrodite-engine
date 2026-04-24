@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from aphrodite.config.aphrodite import (
+# NOTE: Keep this import block near the end. `aphrodite.config.aphrodite`
+# depends on other config modules, including `speculative`, which imports
+# `LoadConfig` from the package namespace. Reordering this block upward can
+# reintroduce a package-init circular import.
+from aphrodite.config.aphrodite import (  # noqa: E402
     AphroditeConfig,
     get_cached_compilation_config,
     get_current_aphrodite_config,
@@ -127,15 +131,10 @@ __all__ = [
     "update_config",
     # From aphrodite.config.aphrodite
     "AphroditeConfig",
-    "AphroditeConfig",
     "get_cached_compilation_config",
     "get_current_aphrodite_config",
     "get_current_aphrodite_config_or_none",
-    "get_current_aphrodite_config",
-    "get_current_aphrodite_config_or_none",
     "set_current_aphrodite_config",
-    "set_current_aphrodite_config",
-    "get_layers_from_aphrodite_config",
     "get_layers_from_aphrodite_config",
     "WeightTransferConfig",
 ]
