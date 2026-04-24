@@ -23,6 +23,14 @@ def kobold(request: Request) -> OpenAIServingKobold | None:
 
 
 @router.post(
+    "/api/latest/generate",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+@router.post(
     "/api/v1/generate",
     dependencies=[Depends(validate_json_request)],
     responses={
@@ -124,11 +132,13 @@ async def count_tokens(request: KAITokenizeRequest, raw_request: Request):
     return JSONResponse({"value": len(token_ids)})
 
 
+@router.get("/api/latest/info/version")
 @router.get("/api/v1/info/version")
 async def get_version():
     return JSONResponse({"result": "1.2.4"})
 
 
+@router.get("/api/latest/model")
 @router.get("/api/v1/model")
 async def get_model(raw_request: Request):
     handler = kobold(raw_request)
@@ -140,27 +150,32 @@ async def get_model(raw_request: Request):
     return JSONResponse({"result": f"aphrodite/{model_name}"})
 
 
+@router.get("/api/latest/config/soft_prompts_list")
 @router.get("/api/v1/config/soft_prompts_list")
 async def get_available_softprompts():
     return JSONResponse({"values": []})
 
 
+@router.get("/api/latest/config/soft_prompt")
 @router.get("/api/v1/config/soft_prompt")
 async def get_current_softprompt():
     return JSONResponse({"value": ""})
 
 
+@router.put("/api/latest/config/soft_prompt")
 @router.put("/api/v1/config/soft_prompt")
 async def set_current_softprompt():
     return JSONResponse({})
 
 
+@router.get("/api/latest/config/max_length")
 @router.get("/api/v1/config/max_length")
 async def get_max_length(raw_request: Request):
     max_length = raw_request.app.state.aphrodite_config.model_config.max_model_len
     return JSONResponse({"value": max_length})
 
 
+@router.get("/api/latest/config/max_context_length")
 @router.get("/api/v1/config/max_context_length")
 @router.get("/api/extra/true_max_context_length")
 async def get_max_context_length(raw_request: Request):
