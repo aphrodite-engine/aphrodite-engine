@@ -62,6 +62,7 @@ def _metadata(**overrides) -> SamplingMetadata:
         presence_penalties=torch.tensor([0.0], dtype=torch.float32),
         repetition_penalties=torch.tensor([1.0], dtype=torch.float32),
         output_token_ids=[[]],
+        output_token_ids_tensor=None,
         allowed_token_ids_mask=None,
         bad_words_token_ids={},
         logit_bias={},
@@ -552,6 +553,7 @@ def test_input_batch_preserves_custom_sampler_metadata():
     assert metadata.dry_sequence_breaker_ids[0, :2].tolist() == [9, 10]
     assert metadata.prompt_token_ids is not None
     assert metadata.output_token_ids == [[5, 6]]
+    assert metadata.output_token_ids_tensor is None
 
 
 def test_input_batch_keeps_token_history_for_no_repeat_ngram_only():

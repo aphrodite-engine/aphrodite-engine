@@ -124,10 +124,36 @@ def _construct_expected_sampling_metadata(
 
     return SamplingMetadata(
         temperature=torch.tensor(temperature, dtype=torch.float, device=device),
+        dynatemp_min=None,
+        dynatemp_max=None,
+        dynatemp_exp=None,
         all_greedy=False,
         all_random=True,
         top_p=None if all(x == 1.0 for x in top_p) else torch.tensor(top_p, dtype=torch.float, device=device),
         top_k=None if all(x == 0 for x in top_k) else torch.tensor(top_k, dtype=torch.int, device=device),
+        top_a=None,
+        dry_multiplier=None,
+        dry_base=None,
+        dry_allowed_length=None,
+        dry_sequence_breaker_ids=None,
+        dry_ranges=None,
+        dry_max_ngram=None,
+        dry_max_occurrences=None,
+        dry_early_exit_match_len=None,
+        no_repeat_ngram_size=None,
+        tfs=None,
+        eta_cutoff=None,
+        epsilon_cutoff=None,
+        typical_p=None,
+        quadratic_smoothing_factor=None,
+        quadratic_smoothing_curve=None,
+        xtc_threshold=None,
+        xtc_probability=None,
+        top_nsigma=None,
+        mirostat_mode=None,
+        mirostat_tau=None,
+        mirostat_eta=None,
+        skew=None,
         generators={},
         max_num_logprobs=0,
         prompt_token_ids=make_tensor_with_pad(
@@ -140,6 +166,12 @@ def _construct_expected_sampling_metadata(
         presence_penalties=torch.tensor(presence_penalties, dtype=torch.float, device=device),
         repetition_penalties=torch.tensor(repetition_penalties, dtype=torch.float, device=device),
         output_token_ids=output_token_ids,
+        output_token_ids_tensor=make_tensor_with_pad(
+            output_token_ids,
+            pad=VOCAB_SIZE,
+            device=torch.device(device),
+            dtype=torch.int64,
+        ),
         spec_token_ids=[[] for _ in range(len(output_token_ids))],
         no_penalties=(
             all(x == 0 for x in presence_penalties)
@@ -148,6 +180,7 @@ def _construct_expected_sampling_metadata(
         ),
         allowed_token_ids_mask=allowed_token_ids_mask,
         bad_words_token_ids=bad_words_token_ids,
+        logit_bias=logit_bias,
         logitsprocs=LogitsProcessors(),
     )
 

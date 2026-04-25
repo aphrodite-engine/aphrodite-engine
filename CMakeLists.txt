@@ -290,6 +290,7 @@ set(APHRODITE_EXT_SRC
   "csrc/quantization/activation_kernels.cu"
   "csrc/cuda_utils_kernels.cu"
   "csrc/all_reduce/custom_all_reduce.cu"
+  "csrc/cpu/dry.cpp"
   "csrc/torch_bindings.cpp")
 
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")

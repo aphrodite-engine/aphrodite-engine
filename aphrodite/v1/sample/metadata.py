@@ -105,3 +105,17 @@ class SamplingMetadata:
 
     # Speculative token ids
     spec_token_ids: list[list[int]] | None = None
+
+    # Cached padded token-history tensor for GPU-side sampler ops.
+    output_token_ids_tensor: torch.Tensor | None = None
+    token_history_ids: torch.Tensor | None = None
+    token_history_lens: torch.Tensor | None = None
+    token_history_ids_cpu: torch.Tensor | None = None
+    token_history_lens_cpu: torch.Tensor | None = None
+    dry_multiplier_cpu: torch.Tensor | None = None
+    dry_allowed_length_cpu: torch.Tensor | None = None
+    dry_sequence_breaker_ids_cpu: torch.Tensor | None = None
+    dry_ranges_cpu: torch.Tensor | None = None
+    dry_max_ngram_cpu: torch.Tensor | None = None
+    dry_max_occurrences_cpu: torch.Tensor | None = None
+    dry_early_exit_match_len_cpu: torch.Tensor | None = None
