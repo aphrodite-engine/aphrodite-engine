@@ -14,7 +14,9 @@ inline bool is_breaker(const std::vector<int64_t>& breaker_ids, int64_t token) {
 
 }  // namespace
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
+template <typename history_t>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+dry_scan_penalties_cpu_impl(
     const torch::Tensor& token_history_ids,
     const torch::Tensor& token_history_lens,
     const torch::Tensor& dry_multiplier, const torch::Tensor& allowed_lengths,
@@ -52,7 +54,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
   const auto max_history_len = history.size(1);
   const auto max_breakers = breakers_c.dim() > 1 ? breakers_c.size(1) : 0;
 
-  auto history_acc = history.accessor<int64_t, 2>();
+  auto history_acc = history.accessor<history_t, 2>();
   auto history_lens_acc = history_lens_c.accessor<int32_t, 1>();
   auto dry_multiplier_acc = dry_multiplier_c.accessor<float, 1>();
   auto allowed_lengths_acc = allowed_lengths_c.accessor<int32_t, 1>();
@@ -89,7 +91,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
       }
     }
 
-    const int64_t last_token = history_acc[row][history_len - 1];
+    const int64_t last_token =
+        static_cast<int64_t>(history_acc[row][history_len - 1]);
     if (is_breaker(breaker_ids, last_token)) {
       continue;
     }
@@ -104,7 +107,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
         std::min<int64_t>(history_len - start_idx, max_ngram_val + 1);
     for (curr_max_ngram = 0; curr_max_ngram < ngram_cap; ++curr_max_ngram) {
       if (is_breaker(breaker_ids,
-                     history_acc[row][history_len - curr_max_ngram - 1])) {
+                     static_cast<int64_t>(
+                         history_acc[row][history_len - curr_max_ngram - 1]))) {
         break;
       }
     }
@@ -117,7 +121,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
     std::vector<int64_t> endpoint_indexes;
     endpoint_indexes.reserve(max_occurrences_acc[row]);
     for (int64_t idx = start_idx; idx < history_len - 1; ++idx) {
-      if (history_acc[row][idx] == last_token) {
+      if (static_cast<int64_t>(history_acc[row][idx]) == last_token) {
         endpoint_indexes.push_back(idx);
       }
     }
@@ -140,11 +144,13 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
       const int64_t max_unwind =
           std::min<int64_t>(idx - start_idx, curr_max_ngram);
       for (int64_t unwind = 1; unwind <= max_unwind; ++unwind) {
-        const int64_t candidate_tok = history_acc[row][idx - unwind];
+        const int64_t candidate_tok =
+            static_cast<int64_t>(history_acc[row][idx - unwind]);
         if (is_breaker(breaker_ids, candidate_tok)) {
           break;
         }
-        if (candidate_tok != history_acc[row][history_len - unwind - 1]) {
+        if (candidate_tok !=
+            static_cast<int64_t>(history_acc[row][history_len - unwind - 1])) {
           break;
         }
         match_len = unwind;
@@ -154,7 +160,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
         continue;
       }
 
-      const int64_t next_token = history_acc[row][idx + 1];
+      const int64_t next_token =
+          static_cast<int64_t>(history_acc[row][idx + 1]);
       const int64_t new_len = match_len + 1;
       auto found = std::find_if(
           penalties.begin(), penalties.end(),
@@ -189,4 +196,26 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
       torch::tensor(token_indices, long_opts),
       torch::tensor(match_lens, long_opts),
   };
+}
+
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
+    const torch::Tensor& token_history_ids,
+    const torch::Tensor& token_history_lens,
+    const torch::Tensor& dry_multiplier, const torch::Tensor& allowed_lengths,
+    const torch::Tensor& sequence_breakers_ids, const torch::Tensor& ranges,
+    const torch::Tensor& max_ngram, const torch::Tensor& max_occurrences,
+    const torch::Tensor& early_exit_match_len, int64_t vocab_size) {
+  if (token_history_ids.scalar_type() == torch::kInt32) {
+    return dry_scan_penalties_cpu_impl<int32_t>(
+        token_history_ids, token_history_lens, dry_multiplier, allowed_lengths,
+        sequence_breakers_ids, ranges, max_ngram, max_occurrences,
+        early_exit_match_len, vocab_size);
+  }
+  if (token_history_ids.scalar_type() == torch::kInt64) {
+    return dry_scan_penalties_cpu_impl<int64_t>(
+        token_history_ids, token_history_lens, dry_multiplier, allowed_lengths,
+        sequence_breakers_ids, ranges, max_ngram, max_occurrences,
+        early_exit_match_len, vocab_size);
+  }
+  TORCH_CHECK(false, "token_history_ids must be int32 or int64");
 }
