@@ -2,11 +2,14 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 
-from aphrodite.utils.platform_utils import is_pin_memory_available
-from aphrodite.utils.torch_utils import make_tensor_with_pad
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.ops.bad_words import apply_bad_words
-from aphrodite.v1.sample.ops.dry import apply_all_dry
+from aphrodite.v1.sample.ops.dry import (
+    DRY_STATE_KEY,
+    DryRequestState,
+    _compute_dry_penalties,
+    _get_or_rebuild_dry_state,
+)
 from aphrodite.v1.sample.ops.epsilon_cutoff import epsilon_cutoff
 from aphrodite.v1.sample.ops.eta_cutoff import eta_cutoff
 from aphrodite.v1.sample.ops.min_p import min_p
@@ -93,40 +96,102 @@ class SamplingOps:
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
         """Apply DRY sampling to the logits."""
-        if sampling_metadata.dry_multiplier is not None and sampling_metadata.prompt_token_ids is not None:
-            # Convert output_token_ids to tensor
-            _, vocab_size = logits.shape
-            output_tokens_t = make_tensor_with_pad(
-                sampling_metadata.output_token_ids,
-                pad=vocab_size,
-                device="cpu",
-                dtype=torch.int64,
-                pin_memory=is_pin_memory_available(),
-            ).to(logits.device, non_blocking=True)
-
-            # Ensure all required tensors are not None
+        if (
+            sampling_metadata.dry_multiplier is not None
+            and sampling_metadata.dry_base is not None
+            and sampling_metadata.dry_allowed_length is not None
+            and sampling_metadata.dry_sequence_breaker_ids is not None
+            and sampling_metadata.dry_ranges is not None
+            and sampling_metadata.dry_max_ngram is not None
+            and sampling_metadata.dry_max_occurrences is not None
+            and sampling_metadata.dry_early_exit_match_len is not None
+        ):
             if (
-                sampling_metadata.dry_base is not None
-                and sampling_metadata.dry_allowed_length is not None
-                and sampling_metadata.dry_sequence_breaker_ids is not None
-                and sampling_metadata.dry_ranges is not None
-                and sampling_metadata.dry_max_ngram is not None
-                and sampling_metadata.dry_max_occurrences is not None
-                and sampling_metadata.dry_early_exit_match_len is not None
+                sampling_metadata.token_history_ids_cpu is not None
+                and sampling_metadata.token_history_lens_cpu is not None
+                and sampling_metadata.dry_multiplier_cpu is not None
+                and sampling_metadata.dry_allowed_length_cpu is not None
+                and sampling_metadata.dry_sequence_breaker_ids_cpu is not None
+                and sampling_metadata.dry_ranges_cpu is not None
+                and sampling_metadata.dry_max_ngram_cpu is not None
+                and sampling_metadata.dry_max_occurrences_cpu is not None
+                and sampling_metadata.dry_early_exit_match_len_cpu is not None
             ):
-                logits = apply_all_dry(
-                    logits,
-                    sampling_metadata.prompt_token_ids,
-                    output_tokens_t,
-                    sampling_metadata.dry_multiplier,
-                    sampling_metadata.dry_base,
-                    sampling_metadata.dry_allowed_length,
-                    sampling_metadata.dry_sequence_breaker_ids,
-                    sampling_metadata.dry_ranges,
-                    sampling_metadata.dry_max_ngram,
-                    sampling_metadata.dry_max_occurrences,
-                    sampling_metadata.dry_early_exit_match_len,
+                row_indexes_cpu, token_indexes_cpu, match_lens_cpu = torch.ops._C.dry_scan_penalties(
+                    sampling_metadata.token_history_ids_cpu,
+                    sampling_metadata.token_history_lens_cpu,
+                    sampling_metadata.dry_multiplier_cpu,
+                    sampling_metadata.dry_allowed_length_cpu,
+                    sampling_metadata.dry_sequence_breaker_ids_cpu,
+                    sampling_metadata.dry_ranges_cpu,
+                    sampling_metadata.dry_max_ngram_cpu,
+                    sampling_metadata.dry_max_occurrences_cpu,
+                    sampling_metadata.dry_early_exit_match_len_cpu,
+                    logits.size(-1),
                 )
+                if row_indexes_cpu.numel():
+                    row_indexes_gpu = row_indexes_cpu.to(device=logits.device, non_blocking=True)
+                    token_indexes_gpu = token_indexes_cpu.to(device=logits.device, non_blocking=True)
+                    match_lens_gpu = match_lens_cpu.to(device=logits.device, dtype=logits.dtype, non_blocking=True)
+                    allowed_lengths_t = sampling_metadata.dry_allowed_length[row_indexes_gpu].to(logits.dtype)
+                    scales = sampling_metadata.dry_base[row_indexes_gpu] ** (match_lens_gpu - allowed_lengths_t)
+                    logits[row_indexes_gpu, token_indexes_gpu] -= (
+                        sampling_metadata.dry_multiplier[row_indexes_gpu] * scales
+                    )
+                return logits
+
+            row_indexes: list[int] = []
+            token_indexes: list[int] = []
+            match_lens: list[int] = []
+
+            for irow_t in sampling_metadata.dry_multiplier.nonzero(as_tuple=True)[0]:
+                irow = irow_t.item()
+                persistent_entry = sampling_metadata.persistent_data.setdefault(irow, {})
+                dry_state = persistent_entry.get(DRY_STATE_KEY)
+                breaker_ids = (
+                    sampling_metadata.dry_sequence_breaker_ids[irow]
+                    .masked_select(sampling_metadata.dry_sequence_breaker_ids[irow] < logits.size(-1))
+                    .tolist()
+                )
+                expected_len = len(sampling_metadata.output_token_ids[irow])
+                if sampling_metadata.prompt_token_ids is not None:
+                    expected_len += (sampling_metadata.prompt_token_ids[irow] < logits.size(-1)).sum().item()
+                if (
+                    not isinstance(dry_state, DryRequestState)
+                    or dry_state.breaker_ids != frozenset(breaker_ids)
+                    or len(dry_state.history) != expected_len
+                ):
+                    dry_state = _get_or_rebuild_dry_state(
+                        persistent_entry,
+                        None
+                        if sampling_metadata.prompt_token_ids is None
+                        else sampling_metadata.prompt_token_ids[irow]
+                        .masked_select(sampling_metadata.prompt_token_ids[irow] < logits.size(-1))
+                        .tolist(),
+                        sampling_metadata.output_token_ids[irow],
+                        breaker_ids,
+                    )
+                penalties = _compute_dry_penalties(
+                    dry_state,
+                    allowed_length=sampling_metadata.dry_allowed_length[irow].item(),
+                    range_limit=sampling_metadata.dry_ranges[irow].item(),
+                    max_ngram=sampling_metadata.dry_max_ngram[irow].item(),
+                    max_occurrences=sampling_metadata.dry_max_occurrences[irow].item(),
+                    early_exit_match_len=sampling_metadata.dry_early_exit_match_len[irow].item(),
+                )
+                for token_id, match_len in penalties.items():
+                    row_indexes.append(irow)
+                    token_indexes.append(token_id)
+                    match_lens.append(match_len)
+
+            if row_indexes:
+                row_indexes_t = torch.tensor(row_indexes, device=logits.device, dtype=torch.long)
+                token_indexes_t = torch.tensor(token_indexes, device=logits.device, dtype=torch.long)
+                match_lens_t = torch.tensor(match_lens, device=logits.device, dtype=logits.dtype)
+                allowed_lengths_t = sampling_metadata.dry_allowed_length[row_indexes_t].to(logits.dtype)
+                scales = sampling_metadata.dry_base[row_indexes_t] ** (match_lens_t - allowed_lengths_t)
+                logits[row_indexes_t, token_indexes_t] -= sampling_metadata.dry_multiplier[row_indexes_t] * scales
+            return logits
         return logits
 
     def apply_no_repeat_ngram(

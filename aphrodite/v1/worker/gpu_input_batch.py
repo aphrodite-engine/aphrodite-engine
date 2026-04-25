@@ -22,6 +22,7 @@ from aphrodite.v1.sample.logits_processor import (
     MoveDirectionality,
 )
 from aphrodite.v1.sample.metadata import SamplingMetadata
+from aphrodite.v1.sample.ops.dry import init_dry_state
 from aphrodite.v1.utils import copy_slice
 from aphrodite.v1.worker.block_table import MultiGroupBlockTable
 
@@ -619,7 +620,15 @@ class InputBatch:
                 self.logit_bias[req_index] = sampling_params.logit_bias
 
             self.temperature_last[req_index] = sampling_params.temperature_last
-            self.persistent_data[req_index] = request.persistent_data.copy()
+            persistent_data = request.persistent_data.copy()
+            if sampling_params.dry_multiplier != 0.0:
+                init_dry_state(
+                    persistent_data,
+                    request.prompt_token_ids,
+                    request.output_token_ids,
+                    sampling_params.dry_sequence_breaker_ids,
+                )
+            self.persistent_data[req_index] = persistent_data
         elif pooling_params := request.pooling_params:
             pooling_states = request.pooling_states
             assert pooling_states is not None
@@ -1218,6 +1227,11 @@ class InputBatch:
             or self.logitsprocs_need_output_token_ids
         )
         output_token_ids = cast(list[list[int]], self.req_output_token_ids) if needs_output_token_ids else []
+        output_token_ids_tensor = None
+        token_history_ids, token_history_lens = None, None
+        token_history_ids_cpu, token_history_lens_cpu = (
+            self._get_token_history_cpu_views(num_reqs) if not self.no_dry else (None, None)
+        )
 
         allowed_token_ids_mask: torch.Tensor | None = None
         if not self.no_allowed_token_ids:
@@ -1278,6 +1292,20 @@ class InputBatch:
             presence_penalties=self.presence_penalties[:num_reqs],
             repetition_penalties=self.repetition_penalties[:num_reqs],
             output_token_ids=output_token_ids,
+            output_token_ids_tensor=output_token_ids_tensor,
+            token_history_ids=token_history_ids,
+            token_history_lens=token_history_lens,
+            token_history_ids_cpu=token_history_ids_cpu,
+            token_history_lens_cpu=token_history_lens_cpu,
+            dry_multiplier_cpu=(None if self.no_dry else self.dry_multiplier_cpu_tensor[:num_reqs]),
+            dry_allowed_length_cpu=(None if self.no_dry else self.dry_allowed_length_cpu_tensor[:num_reqs]),
+            dry_sequence_breaker_ids_cpu=(
+                None if self.no_dry else self._make_dry_sequence_breaker_ids_cpu_tensor(num_reqs)
+            ),
+            dry_ranges_cpu=(None if self.no_dry else self.dry_ranges_cpu_tensor[:num_reqs]),
+            dry_max_ngram_cpu=(None if self.no_dry else self.dry_max_ngram_cpu_tensor[:num_reqs]),
+            dry_max_occurrences_cpu=(None if self.no_dry else self.dry_max_occurrences_cpu_tensor[:num_reqs]),
+            dry_early_exit_match_len_cpu=(None if self.no_dry else self.dry_early_exit_match_len_cpu_tensor[:num_reqs]),
             spec_token_ids=self.spec_token_ids,
             no_penalties=self.no_penalties,
             allowed_token_ids_mask=allowed_token_ids_mask,
@@ -1328,6 +1356,61 @@ class InputBatch:
             prompt_token_ids[i, self.num_prompt_tokens[i] :] = self.vocab_size
         return prompt_token_ids_cpu_tensor
 
+    def _make_output_token_ids_tensor(self, num_reqs: int) -> torch.Tensor:
+        max_output_len = max((len(ids) for ids in self.req_output_token_ids[:num_reqs] if ids is not None), default=0)
+        if max_output_len == 0:
+            return torch.empty((num_reqs, 0), device=self.device, dtype=torch.int64)
+
+        output_token_ids_cpu_tensor = torch.full(
+            (num_reqs, max_output_len),
+            fill_value=self.vocab_size,
+            device="cpu",
+            dtype=torch.int64,
+            pin_memory=self.pin_memory,
+        )
+        for i in range(num_reqs):
+            req_output_token_ids = self.req_output_token_ids[i]
+            if req_output_token_ids:
+                output_token_ids_cpu_tensor[i, : len(req_output_token_ids)] = torch.tensor(
+                    req_output_token_ids,
+                    device="cpu",
+                    dtype=torch.int64,
+                )
+        return output_token_ids_cpu_tensor.to(device=self.device, non_blocking=True)
+
+    def _get_token_history_cpu_views(self, num_reqs: int) -> tuple[torch.Tensor, torch.Tensor]:
+        max_history_len = int(self.num_tokens_no_spec[:num_reqs].max()) if num_reqs else 0
+        return (
+            self.token_ids_cpu_tensor[:num_reqs, :max_history_len],
+            self.num_tokens_no_spec_cpu_tensor[:num_reqs],
+        )
+
+    def _make_token_history_tensors(self, num_reqs: int) -> tuple[torch.Tensor, torch.Tensor]:
+        history_lens = torch.as_tensor(
+            self.num_tokens_no_spec[:num_reqs],
+            device=self.device,
+            dtype=torch.int32,
+        )
+        max_history_len = history_lens.max().item() if num_reqs else 0
+        if max_history_len == 0:
+            return (
+                torch.empty((num_reqs, 0), device=self.device, dtype=torch.int64),
+                history_lens,
+            )
+
+        token_history_cpu_tensor = torch.empty(
+            (num_reqs, max_history_len),
+            device="cpu",
+            dtype=torch.int64,
+            pin_memory=self.pin_memory,
+        )
+        token_history = token_history_cpu_tensor.numpy()
+        token_history[:] = self.token_ids_cpu[:num_reqs, :max_history_len]
+        for i in range(num_reqs):
+            token_history[i, self.num_tokens_no_spec[i] : max_history_len] = self.vocab_size
+
+        return token_history_cpu_tensor.to(device=self.device, non_blocking=True), history_lens
+
     def _make_dry_sequence_breaker_ids_tensor(self, num_reqs: int) -> torch.Tensor:
         if not self.dry_sequence_breaker_ids:
             return torch.empty((num_reqs, 0), device=self.device, dtype=torch.long)
@@ -1336,8 +1419,19 @@ class InputBatch:
         tensor_data = []
         for i in range(num_reqs):
             ids = self.dry_sequence_breaker_ids.get(i, [])
-            tensor_data.append(ids + [0] * (max_len - len(ids)))
+            tensor_data.append(ids + [self.vocab_size] * (max_len - len(ids)))
         return torch.tensor(tensor_data, device=self.device, dtype=torch.long)
+
+    def _make_dry_sequence_breaker_ids_cpu_tensor(self, num_reqs: int) -> torch.Tensor:
+        if not self.dry_sequence_breaker_ids:
+            return torch.empty((num_reqs, 0), device="cpu", dtype=torch.long)
+
+        max_len = max(len(ids) for ids in self.dry_sequence_breaker_ids.values())
+        tensor_data = []
+        for i in range(num_reqs):
+            ids = self.dry_sequence_breaker_ids.get(i, [])
+            tensor_data.append(ids + [self.vocab_size] * (max_len - len(ids)))
+        return torch.tensor(tensor_data, device="cpu", dtype=torch.long)
 
     def make_lora_inputs(
         self, num_scheduled_tokens: np.ndarray, num_sampled_tokens: np.ndarray

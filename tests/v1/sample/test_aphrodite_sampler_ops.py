@@ -6,6 +6,7 @@ import torch
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.v1.sample.logits_processor import LogitsProcessors
 from aphrodite.v1.sample.metadata import SamplingMetadata
+from aphrodite.v1.sample.ops import SamplingOps
 from aphrodite.v1.sample.ops.dry import apply_all_dry
 from aphrodite.v1.sample.ops.epsilon_cutoff import epsilon_cutoff
 from aphrodite.v1.sample.ops.eta_cutoff import eta_cutoff
@@ -62,6 +63,7 @@ def _metadata(**overrides) -> SamplingMetadata:
         presence_penalties=torch.tensor([0.0], dtype=torch.float32),
         repetition_penalties=torch.tensor([1.0], dtype=torch.float32),
         output_token_ids=[[]],
+        output_token_ids_tensor=None,
         allowed_token_ids_mask=None,
         bad_words_token_ids={},
         logit_bias={},
@@ -328,6 +330,93 @@ def test_dry_respects_range_limit():
     assert torch.equal(result, logits)
 
 
+def test_dry_native_cpu_path_matches_reference_penalty_magnitude():
+    vocab_size = 200
+    logits = torch.zeros((1, vocab_size), dtype=torch.float32)
+    prompt_token_ids = torch.tensor([[101, 102, 103]], dtype=torch.int64)
+    output_list = [
+        [
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            20,
+        ]
+    ]
+    output_token_ids = torch.tensor(output_list, dtype=torch.int64)
+    history_ids_cpu = torch.tensor([prompt_token_ids[0].tolist() + output_list[0]], dtype=torch.int32)
+    history_lens_cpu = torch.tensor([history_ids_cpu.shape[1]], dtype=torch.int32)
+    sequence_breakers_ids = torch.full((1, 4), vocab_size, dtype=torch.int64)
+
+    reference = apply_all_dry(
+        logits.clone(),
+        prompt_token_ids,
+        output_token_ids,
+        torch.tensor([1.25], dtype=torch.float32),
+        torch.tensor([1.75], dtype=torch.float32),
+        torch.tensor([2], dtype=torch.int32),
+        sequence_breakers_ids,
+        torch.tensor([1000], dtype=torch.int32),
+        torch.tensor([20], dtype=torch.int32),
+        torch.tensor([16], dtype=torch.int32),
+        torch.tensor([8], dtype=torch.int32),
+    )
+
+    metadata = _metadata(
+        dry_multiplier=torch.tensor([1.25], dtype=torch.float32),
+        dry_base=torch.tensor([1.75], dtype=torch.float32),
+        dry_allowed_length=torch.tensor([2], dtype=torch.int32),
+        dry_sequence_breaker_ids=sequence_breakers_ids,
+        dry_ranges=torch.tensor([1000], dtype=torch.int32),
+        dry_max_ngram=torch.tensor([20], dtype=torch.int32),
+        dry_max_occurrences=torch.tensor([16], dtype=torch.int32),
+        dry_early_exit_match_len=torch.tensor([8], dtype=torch.int32),
+        prompt_token_ids=prompt_token_ids,
+        output_token_ids=output_list,
+        token_history_ids_cpu=history_ids_cpu,
+        token_history_lens_cpu=history_lens_cpu,
+        dry_multiplier_cpu=torch.tensor([1.25], dtype=torch.float32),
+        dry_allowed_length_cpu=torch.tensor([2], dtype=torch.int32),
+        dry_sequence_breaker_ids_cpu=sequence_breakers_ids.cpu(),
+        dry_ranges_cpu=torch.tensor([1000], dtype=torch.int32),
+        dry_max_ngram_cpu=torch.tensor([20], dtype=torch.int32),
+        dry_max_occurrences_cpu=torch.tensor([16], dtype=torch.int32),
+        dry_early_exit_match_len_cpu=torch.tensor([8], dtype=torch.int32),
+    )
+
+    result = SamplingOps().apply_dry(logits.clone(), metadata)
+
+    assert torch.equal(result, reference)
+
+
 def test_xtc_probability_zero_is_noop():
     torch.manual_seed(0)
     logits = torch.tensor([[4.0, 3.5, 3.0, 0.0]], dtype=torch.float32)
@@ -552,6 +641,7 @@ def test_input_batch_preserves_custom_sampler_metadata():
     assert metadata.dry_sequence_breaker_ids[0, :2].tolist() == [9, 10]
     assert metadata.prompt_token_ids is not None
     assert metadata.output_token_ids == [[5, 6]]
+    assert metadata.output_token_ids_tensor is None
 
 
 def test_input_batch_keeps_token_history_for_no_repeat_ngram_only():

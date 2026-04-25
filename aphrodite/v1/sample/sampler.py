@@ -377,6 +377,18 @@ class Sampler(nn.Module):
                 if sampling_metadata.spec_token_ids is not None
                 else None
             ),
+            output_token_ids_tensor=maybe_index_tensor(sampling_metadata.output_token_ids_tensor),
+            token_history_ids=maybe_index_tensor(sampling_metadata.token_history_ids),
+            token_history_lens=maybe_index_tensor(sampling_metadata.token_history_lens),
+            token_history_ids_cpu=maybe_index_tensor(sampling_metadata.token_history_ids_cpu),
+            token_history_lens_cpu=maybe_index_tensor(sampling_metadata.token_history_lens_cpu),
+            dry_multiplier_cpu=maybe_index_tensor(sampling_metadata.dry_multiplier_cpu),
+            dry_allowed_length_cpu=maybe_index_tensor(sampling_metadata.dry_allowed_length_cpu),
+            dry_sequence_breaker_ids_cpu=maybe_index_tensor(sampling_metadata.dry_sequence_breaker_ids_cpu),
+            dry_ranges_cpu=maybe_index_tensor(sampling_metadata.dry_ranges_cpu),
+            dry_max_ngram_cpu=maybe_index_tensor(sampling_metadata.dry_max_ngram_cpu),
+            dry_max_occurrences_cpu=maybe_index_tensor(sampling_metadata.dry_max_occurrences_cpu),
+            dry_early_exit_match_len_cpu=maybe_index_tensor(sampling_metadata.dry_early_exit_match_len_cpu),
             generators={
                 new_i: sampling_metadata.generators[old_i]
                 for new_i, old_i in enumerate(indices)

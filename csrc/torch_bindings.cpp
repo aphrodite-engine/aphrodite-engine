@@ -5,6 +5,14 @@
 #include <torch/library.h>
 #include <torch/version.h>
 
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> dry_scan_penalties_cpu(
+    const torch::Tensor& token_history_ids,
+    const torch::Tensor& token_history_lens,
+    const torch::Tensor& dry_multiplier, const torch::Tensor& allowed_lengths,
+    const torch::Tensor& sequence_breakers_ids, const torch::Tensor& ranges,
+    const torch::Tensor& max_ngram, const torch::Tensor& max_occurrences,
+    const torch::Tensor& early_exit_match_len, int64_t vocab_size);
+
 // Note on op signatures:
 // The X_meta signatures are for the meta functions corresponding to op X.
 // They must be kept in sync with the signature for X. Generally, only
@@ -72,6 +80,20 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def("get_cuda_view_from_cpu_tensor(Tensor cpu_tensor) -> Tensor");
   ops.impl("get_cuda_view_from_cpu_tensor", torch::kCPU,
            &get_cuda_view_from_cpu_tensor);
+
+  ops.def(
+      "dry_scan_penalties("
+      "    Tensor token_history_ids,"
+      "    Tensor token_history_lens,"
+      "    Tensor dry_multiplier,"
+      "    Tensor allowed_lengths,"
+      "    Tensor sequence_breakers_ids,"
+      "    Tensor ranges,"
+      "    Tensor max_ngram,"
+      "    Tensor max_occurrences,"
+      "    Tensor early_exit_match_len,"
+      "    int vocab_size) -> (Tensor, Tensor, Tensor)");
+  ops.impl("dry_scan_penalties", torch::kCPU, &dry_scan_penalties_cpu);
 
   // Attention ops
   // Compute the attention between an input query and the cached

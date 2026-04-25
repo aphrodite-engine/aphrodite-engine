@@ -165,6 +165,7 @@ from aphrodite.v1.pool.metadata import PoolingMetadata, PoolingStates
 from aphrodite.v1.sample.logits_processor import LogitsProcessors, build_logitsprocs
 from aphrodite.v1.sample.logits_processor.interface import LogitsProcessor
 from aphrodite.v1.sample.metadata import SamplingMetadata
+from aphrodite.v1.sample.ops.dry import update_dry_state
 from aphrodite.v1.sample.rejection_sampler import RejectionSampler
 from aphrodite.v1.sample.sampler import Sampler
 from aphrodite.v1.spec_decode.dflash import DFlashProposer
@@ -1190,8 +1191,17 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                     if num_new_tokens == 1:
                         # Avoid slicing list in most common case.
                         req_state.output_token_ids.append(new_token_ids[-1])
+                        update_dry_state(req_state.persistent_data, [new_token_ids[-1]])
+                        if req_index is not None:
+                            update_dry_state(
+                                self.input_batch.persistent_data.setdefault(req_index, {}), [new_token_ids[-1]]
+                            )
                     elif num_new_tokens > 0:
-                        req_state.output_token_ids.extend(new_token_ids[-num_new_tokens:])
+                        appended_ids = new_token_ids[-num_new_tokens:]
+                        req_state.output_token_ids.extend(appended_ids)
+                        update_dry_state(req_state.persistent_data, appended_ids)
+                        if req_index is not None:
+                            update_dry_state(self.input_batch.persistent_data.setdefault(req_index, {}), appended_ids)
             elif num_output_tokens < len(req_state.output_token_ids):
                 # Some output tokens were discarded due to a sync-KV-load
                 # failure, or output_token_ids was inflated by the optimistic
@@ -3210,6 +3220,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             req_id = req_ids[req_idx]
             req_state = self.requests[req_id]
             req_state.output_token_ids.extend(sampled_ids)
+            update_dry_state(req_state.persistent_data, sampled_ids)
+            update_dry_state(self.input_batch.persistent_data.setdefault(req_idx, {}), sampled_ids)
 
         # Compute prompt logprobs if needed.
         prompt_logprobs_dict = self._get_prompt_logprobs_dict(
@@ -5232,6 +5244,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             presence_penalties=dummy_tensors(0.1),
             repetition_penalties=dummy_tensors(0.1),
             output_token_ids=[[] for _ in range(num_reqs)],
+            output_token_ids_tensor=None,
             allowed_token_ids_mask=None,
             bad_words_token_ids={},
             logit_bias={},
