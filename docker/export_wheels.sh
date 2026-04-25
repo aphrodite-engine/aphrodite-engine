@@ -36,6 +36,7 @@ if [ -n "${APHRODITE_VERSION_OVERRIDE}" ]; then
     echo "Using Aphrodite version override: ${APHRODITE_VERSION_OVERRIDE}"
 fi
 mkdir -p ./wheels/main
+rm -f ./wheels/main/*.whl
 DOCKER_BUILDKIT=1 docker build \
     --target main-wheel-export \
     --output ./wheels/main \
