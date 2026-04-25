@@ -14,11 +14,17 @@ from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
 from aphrodite.v1.attention.backend import (
     AttentionBackend,
+    AttentionCGSupport,
     AttentionImpl,
     AttentionMetadataBuilder,
     AttentionType,
     CommonAttentionMetadata,
     MultipleOf,
+)
+from aphrodite.v1.attention.backends.flash_attn import (
+    FlashAttentionImpl,
+    FlashAttentionMetadata,
+    FlashAttentionMetadataBuilder,
 )
 from aphrodite.v1.attention.backends.utils import (
     split_decodes_and_prefills,
@@ -112,9 +118,9 @@ class TreeAttentionMetadata:
         # Construct & cache prefill-phase attention metadata structure
         self._cached_prefill_metadata = TreeAttentionMetadata(
             num_actual_tokens=self.num_prefill_tokens,
-            max_query_len=int(q_seqlens.max().item()),
+            max_query_len=self.max_query_len,
             query_start_loc=q_start_loc - q_start_loc[0],
-            max_seq_len=int(kv_seqlens.max().item()),
+            max_seq_len=self.max_seq_len,
             seq_lens=kv_seqlens,
             block_table=self.block_table[self.num_decodes :],
             slot_mapping=self.slot_mapping[self.num_decode_tokens :],
@@ -137,9 +143,9 @@ class TreeAttentionMetadata:
         # Construct & cache decode-phase attention metadata structure
         self._cached_decode_metadata = TreeAttentionMetadata(
             num_actual_tokens=self.num_decode_tokens,
-            max_query_len=int(q_seqlens.max().item()),
+            max_query_len=self.max_query_len,
             query_start_loc=q_start_loc,
-            max_seq_len=int(kv_seqlens.max().item()),
+            max_seq_len=self.max_seq_len,
             seq_lens=kv_seqlens,
             block_table=self.block_table[: self.num_decodes],
             slot_mapping=self.slot_mapping[: self.num_decode_tokens],
@@ -149,6 +155,9 @@ class TreeAttentionMetadata:
 
 
 class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadata]):
+    _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
+    supports_update_block_table: bool = True
+
     def __init__(
         self,
         kv_cache_spec: AttentionSpec,
@@ -157,6 +166,12 @@ class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadat
         device: torch.device,
     ):
         super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
+        self.flash_builder = FlashAttentionMetadataBuilder(
+            kv_cache_spec=kv_cache_spec,
+            layer_names=layer_names,
+            aphrodite_config=aphrodite_config,
+            device=device,
+        )
 
         self.block_size = kv_cache_spec.block_size
 
@@ -176,15 +191,41 @@ class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadat
             device=device,
         )
 
+        spec = aphrodite_config.speculative_config
+        self.runtime_tree_attn_bias_buffer: torch.Tensor | None = None
+        if spec is not None and spec.use_ddtree():
+            query_len = 1 + spec.get_num_spec_decode_slots()
+            self.runtime_tree_attn_bias_buffer = torch.full(
+                (query_len, query_len),
+                -torch.inf,
+                dtype=torch.float32,
+                device=device,
+            )
+            self.runtime_tree_attn_bias_buffer.fill_diagonal_(0)
+            self.runtime_tree_attn_bias_buffer[:, 0] = 0
+
         self.reorder_batch_threshold = self.tree_attn_bias.shape[0]
+        if self.runtime_tree_attn_bias_buffer is not None:
+            self.reorder_batch_threshold = max(
+                self.reorder_batch_threshold,
+                self.runtime_tree_attn_bias_buffer.shape[0],
+            )
 
     def build(
         self,
         common_prefix_len: int,
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
-    ) -> TreeAttentionMetadata:
-        decode_threshold = self.tree_attn_bias.shape[0]
+    ) -> TreeAttentionMetadata | FlashAttentionMetadata:
+        tree_attn_bias = common_attn_metadata.runtime_tree_attn_bias
+        if tree_attn_bias is None:
+            return self.flash_builder.build(common_prefix_len, common_attn_metadata, fast_build)
+
+        if tree_attn_bias is not None and self.runtime_tree_attn_bias_buffer is not None:
+            query_len = common_attn_metadata.runtime_tree_decode_threshold or tree_attn_bias.shape[0]
+            self.runtime_tree_attn_bias_buffer[:query_len, :query_len].copy_(tree_attn_bias)
+            tree_attn_bias = self.runtime_tree_attn_bias_buffer[:query_len, :query_len]
+        decode_threshold = common_attn_metadata.runtime_tree_decode_threshold or tree_attn_bias.shape[0]
         num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
             common_attn_metadata, decode_threshold=decode_threshold
         )
@@ -209,8 +250,41 @@ class TreeAttentionMetadataBuilder(AttentionMetadataBuilder[TreeAttentionMetadat
             seq_lens=kv_seqlens,
             block_table=block_table,
             slot_mapping=slot_mapping,
-            tree_attn_bias=self.tree_attn_bias,
+            tree_attn_bias=tree_attn_bias,
         )
+
+    def update_block_table(
+        self,
+        metadata: TreeAttentionMetadata | FlashAttentionMetadata,
+        blk_table: torch.Tensor,
+        slot_mapping: torch.Tensor,
+    ) -> TreeAttentionMetadata | FlashAttentionMetadata:
+        if isinstance(metadata, FlashAttentionMetadata):
+            return self.flash_builder.update_block_table(metadata, blk_table, slot_mapping)
+
+        new_metadata = TreeAttentionMetadata(
+            num_actual_tokens=metadata.num_actual_tokens,
+            max_query_len=metadata.max_query_len,
+            query_start_loc=metadata.query_start_loc,
+            max_seq_len=metadata.max_seq_len,
+            seq_lens=metadata.seq_lens,
+            block_table=blk_table,
+            slot_mapping=slot_mapping,
+            num_prefill_tokens=metadata.num_prefill_tokens,
+            num_decode_tokens=metadata.num_decode_tokens,
+            num_prefills=metadata.num_prefills,
+            num_decodes=metadata.num_decodes,
+            tree_attn_bias=metadata.tree_attn_bias,
+        )
+        return new_metadata
+
+    def build_for_cudagraph_capture(
+        self,
+        common_attn_metadata: CommonAttentionMetadata,
+    ) -> TreeAttentionMetadata | FlashAttentionMetadata:
+        if common_attn_metadata.runtime_tree_attn_bias is None:
+            return self.flash_builder.build_for_cudagraph_capture(common_attn_metadata)
+        return super().build_for_cudagraph_capture(common_attn_metadata)
 
     def build_for_drafting(
         self,
@@ -299,6 +373,18 @@ class TreeAttentionImpl(AttentionImpl):
         attn_type: AttentionType = AttentionType.DECODER,
         kv_sharing_target_layer_name: str | None = None,
     ) -> None:
+        self.flash_impl = FlashAttentionImpl(
+            num_heads=num_heads,
+            head_size=head_size,
+            scale=scale,
+            num_kv_heads=num_kv_heads,
+            alibi_slopes=alibi_slopes,
+            sliding_window=sliding_window,
+            kv_cache_dtype=kv_cache_dtype,
+            logits_soft_cap=logits_soft_cap,
+            attn_type=attn_type,
+            kv_sharing_target_layer_name=kv_sharing_target_layer_name,
+        )
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = float(scale)
@@ -357,7 +443,7 @@ class TreeAttentionImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
-        attn_metadata: TreeAttentionMetadata,
+        attn_metadata: TreeAttentionMetadata | FlashAttentionMetadata,
         output: torch.Tensor,
         output_scale: torch.Tensor | None = None,
         output_block_scale: torch.Tensor | None = None,
@@ -380,6 +466,19 @@ class TreeAttentionImpl(AttentionImpl):
         if attn_metadata is None:
             # Profiling run.
             return output.fill_(0)
+
+        if isinstance(attn_metadata, FlashAttentionMetadata):
+            return self.flash_impl.forward(
+                layer=layer,
+                query=query,
+                key=key,
+                value=value,
+                kv_cache=kv_cache,
+                attn_metadata=attn_metadata,
+                output=output,
+                output_scale=output_scale,
+                output_block_scale=output_block_scale,
+            )
 
         key_cache, value_cache = kv_cache.unbind(0)
 

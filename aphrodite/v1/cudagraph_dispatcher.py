@@ -37,7 +37,7 @@ class CudagraphDispatcher:
         self.uniform_decode_query_len = (
             1
             if not self.aphrodite_config.speculative_config
-            else 1 + self.aphrodite_config.speculative_config.num_speculative_tokens
+            else 1 + self.aphrodite_config.speculative_config.get_num_spec_decode_slots()
         )
 
         # Dict to store valid cudagraph dispatching keys.
@@ -155,6 +155,7 @@ class CudagraphDispatcher:
         # This should be called only after attention backend is initialized. So we can
         # get the correct cudagraph mode after backend support is resolved.
         self.cudagraph_mode = cudagraph_mode
+        self.uniform_decode_query_len = uniform_decode_query_len
 
         # Early exit if cudagraphs are disabled
         if cudagraph_mode == CUDAGraphMode.NONE:

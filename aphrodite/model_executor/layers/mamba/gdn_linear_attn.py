@@ -263,7 +263,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         self.cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         self.speculative_config = aphrodite_config.speculative_config
-        self.num_spec = self.speculative_config.num_speculative_tokens if self.speculative_config else 0
+        self.num_spec = self.speculative_config.get_num_spec_decode_slots() if self.speculative_config else 0
         self.gqa_interleaved_layout = gqa_interleaved_layout
         self._forward_method = self.forward_xpu if current_platform.is_xpu() else self.forward_cuda
 

@@ -243,6 +243,13 @@ class CudaPlatformBase(Platform):
             parallel_config.worker_cls = "aphrodite.v1.worker.gpu_worker.Worker"
 
         scheduler_config = aphrodite_config.scheduler_config
+        spec_config = aphrodite_config.speculative_config
+
+        if spec_config is not None and spec_config.use_ddtree():
+            if aphrodite_config.attention_config.backend != AttentionBackendEnum.TREE_ATTN:
+                logger.info("DDTree requires TREE_ATTN for target-model verification; overriding attention backend.")
+                aphrodite_config.attention_config.backend = AttentionBackendEnum.TREE_ATTN
+
         # Note: model_config may be None during testing
         if (
             model_config is not None

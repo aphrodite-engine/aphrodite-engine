@@ -713,7 +713,9 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         hf_config = aphrodite_config.model_config.hf_text_config
         tp_size = parallel_config.tensor_parallel_size
         num_spec = (
-            aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
+            aphrodite_config.speculative_config.get_num_spec_decode_slots()
+            if aphrodite_config.speculative_config
+            else 0
         )
         return MambaStateShapeCalculator.gated_delta_net_state_shape(
             tp_size,

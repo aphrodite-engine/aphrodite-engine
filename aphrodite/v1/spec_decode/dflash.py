@@ -25,7 +25,7 @@ class DFlashProposer(SpecDecodeBaseProposer):
         runner=None,
     ):
         assert aphrodite_config.speculative_config is not None
-        assert aphrodite_config.speculative_config.method == "dflash"
+        assert aphrodite_config.speculative_config.method in ("dflash", "ddtree")
         super().__init__(
             aphrodite_config=aphrodite_config,
             device=device,

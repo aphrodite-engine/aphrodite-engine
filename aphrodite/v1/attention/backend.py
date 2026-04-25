@@ -399,6 +399,9 @@ class CommonAttentionMetadata:
     decode rows (assumes every draft was accepted). Not safe for kernels
     that need exact per-row context lengths on decode rows."""
 
+    runtime_tree_attn_bias: torch.Tensor | None = None
+    runtime_tree_decode_threshold: int | None = None
+
     # WARNING: Deprecated fields. Will be removed in a future release (v0.15.0)
     _seq_lens_cpu: torch.Tensor | None = None
     _num_computed_tokens_cpu: torch.Tensor | None = None
@@ -476,6 +479,8 @@ class CommonAttentionMetadata:
             dcp_local_seq_lens=maybe_slice_reqs(self.dcp_local_seq_lens),
             dcp_local_seq_lens_cpu=maybe_slice_reqs(self.dcp_local_seq_lens_cpu),
             is_prefilling=maybe_slice_reqs(self.is_prefilling),
+            runtime_tree_attn_bias=self.runtime_tree_attn_bias,
+            runtime_tree_decode_threshold=self.runtime_tree_decode_threshold,
         )
 
 

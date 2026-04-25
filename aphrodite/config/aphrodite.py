@@ -458,8 +458,8 @@ class AphroditeConfig:
 
     @property
     def num_speculative_tokens(self) -> int:
-        if self.speculative_config is not None and self.speculative_config.num_speculative_tokens is not None:
-            return self.speculative_config.num_speculative_tokens
+        if self.speculative_config is not None:
+            return self.speculative_config.get_num_spec_decode_slots()
         return 0
 
     @property

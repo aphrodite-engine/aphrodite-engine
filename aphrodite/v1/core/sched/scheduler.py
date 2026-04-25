@@ -196,7 +196,7 @@ class Scheduler(SchedulerInterface):
         self.use_eagle = False
         self.num_spec_tokens = self.num_lookahead_tokens = 0
         if speculative_config:
-            self.num_spec_tokens = speculative_config.num_speculative_tokens
+            self.num_spec_tokens = speculative_config.get_num_spec_decode_slots()
             if speculative_config.use_eagle():
                 self.use_eagle = True
                 self.num_lookahead_tokens = self.num_spec_tokens

@@ -35,9 +35,12 @@ def kernel_warmup(worker: "Worker"):
         deep_gemm_warmup(model, max_tokens)
 
     enable_flashinfer_autotune = worker.aphrodite_config.kernel_config.enable_flashinfer_autotune
+    spec_config = worker.aphrodite_config.speculative_config
     # FlashInfer autotune for Hopper (SM 9.0) and Blackwell (SM 10.0) GPUs
     if enable_flashinfer_autotune is False:
         logger.info("Skipping FlashInfer autotune because it is disabled.")
+    elif spec_config is not None and spec_config.use_ddtree():
+        logger.info("Skipping FlashInfer autotune for DDTree.")
     elif has_flashinfer() and current_platform.has_device_capability(90):
         flashinfer_autotune(worker.model_runner)
 

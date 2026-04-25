@@ -153,13 +153,21 @@ def run_benchmark(args: argparse.Namespace) -> None:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, trust_remote_code=args.trust_remote_code)
     prompts = {size: make_prompt(tokenizer, size) for size in prefill_sizes}
 
+    spec_method = None
     spec_config = None
-    if not args.no_dflash:
+    if args.ddtree:
+        spec_method = "ddtree"
+    elif not args.no_dflash:
+        spec_method = "dflash"
+
+    if spec_method is not None:
         spec_config = {
-            "method": "dflash",
+            "method": spec_method,
             "model": args.draft_model,
             "num_speculative_tokens": args.num_speculative_tokens,
         }
+        if args.ddtree_tree_budget is not None:
+            spec_config["ddtree_tree_budget"] = args.ddtree_tree_budget
     server_cmd = [
         args.aphrodite_bin,
         "run",
@@ -193,6 +201,7 @@ def run_benchmark(args: argparse.Namespace) -> None:
                 "server_cmd": server_cmd,
                 "prefill_sizes": prefill_sizes,
                 "decode_sizes": decode_sizes,
+                "speculative_method": spec_method,
                 "speculative_config": spec_config,
                 "tokenizer_model": tokenizer_model,
                 "args": vars(args),
@@ -315,7 +324,7 @@ def run_benchmark(args: argparse.Namespace) -> None:
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="Qwen/Qwen3.5-4B")
+    parser.add_argument("--model", default="lovedheart/Qwen3.5-4B-FP8")
     parser.add_argument("--draft-model", default="z-lab/Qwen3.5-4B-DFlash")
     parser.add_argument("--tokenizer-model")
     parser.add_argument("--aphrodite-bin", default="aphrodite")
@@ -324,6 +333,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.8)
     parser.add_argument("--num-speculative-tokens", type=int, default=8)
     parser.add_argument("--no-dflash", action="store_true")
+    parser.add_argument("--ddtree", action="store_true")
+    parser.add_argument("--ddtree-tree-budget", type=int)
     parser.add_argument("--max-num-seqs", type=int, default=1)
     parser.add_argument("--max-num-batched-tokens", type=int, default=65536)
     parser.add_argument("--max-model-len", type=int, default=65536)
@@ -341,6 +352,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--extra-server-arg", action="append")
     args = parser.parse_args(argv)
+    if args.ddtree and args.no_dflash:
+        parser.error("--ddtree and --no-dflash are mutually exclusive")
+    if args.ddtree and args.ddtree_tree_budget is None:
+        args.ddtree_tree_budget = args.num_speculative_tokens
     run_benchmark(args)
     return 0
 

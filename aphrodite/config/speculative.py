@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 from pydantic import Field, SkipValidation, model_validator
 from typing_extensions import Self
 
+from aphrodite.config.attention import AttentionBackendEnum
 from aphrodite.config.kernel import MoEBackend
 from aphrodite.config.load import LoadConfig
 from aphrodite.config.model import ModelConfig
@@ -48,7 +49,7 @@ MTPModelTypes = Literal[
     "hy_v3_mtp",
 ]
 NgramGPUTypes = Literal["ngram_gpu"]
-DFlashModelTypes = Literal["dflash"]
+DFlashModelTypes = Literal["dflash", "ddtree"]
 EagleModelTypes = Literal["eagle", "eagle3", "extract_hidden_states", MTPModelTypes, DFlashModelTypes]
 SpeculativeMethod = Literal[
     "ngram",
@@ -179,6 +180,15 @@ class SpeculativeConfig:
     """Load config for the draft model. If not specified, will use the load
     config from the target model."""
 
+    draft_attention_backend: AttentionBackendEnum | None = None
+    """Attention backend override for the draft model. Primarily used by
+    DDTree so the target model can use TREE_ATTN while the DFlash drafter
+    still uses an auto-selected backend."""
+
+    ddtree_tree_budget: int | None = Field(default=None, ge=1)
+    """Node budget for DDTree verification. Defaults to
+    num_speculative_tokens when unset."""
+
     rejection_sample_method: RejectionSampleMethod = "strict"
     """Whether to use strict (target and draft sampled tokens match exactly)
     or probabilistic rejection sampling. Both respect the target model
@@ -252,6 +262,7 @@ class SpeculativeConfig:
             "eagle3",
             "extract_hidden_states",
             "dflash",
+            "ddtree",
         )
         factors.append(uses_aux_hidden_states)
 
@@ -525,7 +536,7 @@ class SpeculativeConfig:
                 )
 
                 # Automatically detect the method
-                if self.method in ("eagle", "eagle3", "dflash"):
+                if self.method in ("eagle", "eagle3", "dflash", "ddtree"):
                     pass
                 # examples:
                 # yuhuili/EAGLE-LLaMA3-Instruct-8B
@@ -563,7 +574,7 @@ class SpeculativeConfig:
                     raise NotImplementedError(f"Unsupported speculative method: '{self.method}'")
 
                 # Replace hf_config for EAGLE draft_model
-                if self.method in ("eagle", "eagle3", "dflash"):
+                if self.method in ("eagle", "eagle3", "dflash", "ddtree"):
                     from aphrodite.transformers_utils.configs.eagle import EAGLEConfig
                     from aphrodite.transformers_utils.configs.speculators import (
                         SpeculatorsConfig,
@@ -577,14 +588,17 @@ class SpeculativeConfig:
                     else:
                         eagle_config = EAGLEConfig(
                             self.draft_model_config.hf_config,
-                            method=self.method,
+                            method="dflash" if self.method == "ddtree" else self.method,
                             model_type="eagle",
                         )
                         self.draft_model_config.hf_config = eagle_config
                         self.update_arch_()
 
-                if self.method == "dflash":
+                if self.method in ("dflash", "ddtree"):
                     self.parallel_drafting = True
+                if self.method == "ddtree":
+                    if self.ddtree_tree_budget is None:
+                        self.ddtree_tree_budget = self.num_speculative_tokens
 
                 if self.num_speculative_tokens is not None and hasattr(
                     self.draft_model_config.hf_config, "num_lookahead_tokens"
@@ -812,7 +826,7 @@ class SpeculativeConfig:
             "gemma4",
         ]
         if (
-            self.method in ("eagle3", "extract_hidden_states", "dflash")
+            self.method in ("eagle3", "extract_hidden_states", "dflash", "ddtree")
             and self.target_model_config
             and not any(
                 supported_model in self.target_model_config.hf_text_config.model_type
@@ -864,6 +878,19 @@ class SpeculativeConfig:
 
     def use_dflash(self) -> bool:
         return self.method == "dflash"
+
+    def use_ddtree(self) -> bool:
+        return self.method == "ddtree"
+
+    def get_draft_horizon(self) -> int:
+        assert self.num_speculative_tokens is not None
+        return self.num_speculative_tokens
+
+    def get_num_spec_decode_slots(self) -> int:
+        slots = self.get_draft_horizon()
+        if self.use_ddtree():
+            slots = max(slots, self.ddtree_tree_budget or 0)
+        return slots
 
     def uses_draft_model(self) -> bool:
         return self.method == "draft_model"

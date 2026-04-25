@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
+from aphrodite.v1.spec_decode.ddtree import DDTreeRuntimeTree
+
 
 @dataclass
 class SpecDecodeMetadata:
@@ -22,9 +24,14 @@ class SpecDecodeMetadata:
     bonus_logits_indices: torch.Tensor
     # [num_tokens + batch_size]
     logits_indices: torch.Tensor
+    runtime_tree: DDTreeRuntimeTree | None = None
 
     def __post_init__(self):
         self.max_spec_len = max(self.num_draft_tokens)
+
+    @property
+    def is_ddtree(self) -> bool:
+        return self.runtime_tree is not None
 
     @classmethod
     def make_dummy(

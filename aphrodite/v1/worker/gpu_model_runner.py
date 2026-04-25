@@ -167,6 +167,8 @@ from aphrodite.v1.sample.logits_processor.interface import LogitsProcessor
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.rejection_sampler import RejectionSampler
 from aphrodite.v1.sample.sampler import Sampler
+from aphrodite.v1.spec_decode.ddtree import follow_verified_tree
+from aphrodite.v1.spec_decode.ddtree_proposer import DDTreeProposer
 from aphrodite.v1.spec_decode.dflash import DFlashProposer
 from aphrodite.v1.spec_decode.draft_model import DraftModelProposer
 from aphrodite.v1.spec_decode.eagle import EagleProposer
@@ -505,6 +507,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 | SuffixDecodingProposer
                 | EagleProposer
                 | DFlashProposer
+                | DDTreeProposer
                 | DraftModelProposer
                 | MedusaProposer
                 | ExtractHiddenStatesProposer
@@ -533,6 +536,9 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             elif self.speculative_config.use_dflash():
                 self.drafter = DFlashProposer(self.aphrodite_config, self.device, self)
                 self.use_aux_hidden_state_outputs = True
+            elif self.speculative_config.use_ddtree():
+                self.drafter = DDTreeProposer(self.aphrodite_config, self.device, self)
+                self.use_aux_hidden_state_outputs = True
             elif self.speculative_config.method == "suffix":
                 self.drafter = SuffixDecodingProposer(self.aphrodite_config)
             elif self.speculative_config.use_eagle():
@@ -551,7 +557,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         self.num_spec_tokens = 0
         self.valid_sampled_token_count_gpu: torch.Tensor | None = None
         if self.speculative_config:
-            self.num_spec_tokens = self.speculative_config.num_speculative_tokens
+            self.num_spec_tokens = self.speculative_config.get_num_spec_decode_slots()
             draft_config = self.speculative_config.draft_model_config
             if draft_config is not None and draft_config.max_model_len is not None:
                 self.effective_drafter_max_model_len = draft_config.max_model_len
@@ -725,6 +731,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
 
         # Cached outputs.
         self._draft_token_ids: list[list[int]] | torch.Tensor | None = None
+        self._ddtree_runtime_trees: dict[str, object] = {}
         # N-gram GPU path: async D2H buffer/event for per-request valid draft counts.
         self._num_valid_draft_tokens: torch.Tensor | None = None
         self._num_valid_draft_tokens_cpu: torch.Tensor | None = None
@@ -1686,6 +1693,19 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
 
         # Get positions.
         positions_np = self.input_batch.num_computed_tokens_cpu[req_indices] + self.query_pos.np[: cu_num_tokens[-1]]
+        ddtree_runtime_tree = None
+        use_ddtree_runtime = False
+        if (
+            self.speculative_config is not None
+            and self.speculative_config.use_ddtree()
+            and len(scheduler_output.scheduled_spec_decode_tokens) == 1
+            and num_reqs == 1
+        ):
+            req_id = self.input_batch.req_ids[0]
+            ddtree_runtime_tree = self._ddtree_runtime_trees.get(req_id)
+            if ddtree_runtime_tree is not None:
+                draft_len = len(scheduler_output.scheduled_spec_decode_tokens.get(req_id, ()))
+                use_ddtree_runtime = ddtree_runtime_tree.num_nodes == draft_len
 
         # Calculate M-RoPE positions.
         # Only relevant for models using M-RoPE (e.g, Qwen2-VL)
@@ -1858,6 +1878,10 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             self.query_start_loc.gpu[: num_reqs + 1],
             self.positions[:total_num_scheduled_tokens],
         )
+        if use_ddtree_runtime:
+            draft_len = ddtree_runtime_tree.num_nodes
+            base_pos = int(self.num_computed_tokens[0].item())
+            self.positions[1 : draft_len + 1] = base_pos + ddtree_runtime_tree.node_depths.to(torch.int64)
 
         # Copy the tensors to the GPU.
         self._prepare_input_ids(
@@ -1916,6 +1940,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 if self.input_batch.num_computed_tokens_cpu[req_idx] >= self.input_batch.num_prompt_tokens[req_idx]:
                     num_decode_draft_tokens[req_idx] = draft_len
             spec_decode_metadata = self._calc_spec_decode_metadata(num_draft_tokens, cu_num_tokens)
+            if use_ddtree_runtime:
+                spec_decode_metadata.runtime_tree = ddtree_runtime_tree
             logits_indices = spec_decode_metadata.logits_indices
             num_sampled_tokens = num_draft_tokens + 1
             # For DECODE only cuda graph of some attention backends (e.g., GDN).
@@ -1942,6 +1968,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         num_reqs_padded: int | None = None,
         ubatch_slices: UBatchSlices | None = None,
         logits_indices: torch.Tensor | None = None,
+        spec_decode_metadata: SpecDecodeMetadata | None = None,
         use_spec_decode: bool = False,
         for_cudagraph_capture: bool = False,
         num_scheduled_tokens: dict[str, int] | None = None,
@@ -2131,6 +2158,10 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                         spec_decode_common_attn_metadata = cm
                 else:
                     spec_decode_common_attn_metadata = cm
+
+            if spec_decode_metadata is not None and spec_decode_metadata.is_ddtree:
+                cm.runtime_tree_attn_bias = spec_decode_metadata.runtime_tree.attn_bias
+                cm.runtime_tree_decode_threshold = spec_decode_metadata.runtime_tree.query_len
 
             for attn_gid in range(len(self.attn_groups[kv_cache_gid])):
                 if ubatch_slices is not None:
@@ -3096,6 +3127,31 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             draft_token_ids_cpu, _ = self._get_draft_token_ids_cpu()
             self.input_batch.update_async_spec_token_ids(draft_token_ids_cpu)
 
+        if spec_decode_metadata.is_ddtree:
+            runtime_tree = spec_decode_metadata.runtime_tree
+            assert runtime_tree is not None
+            target_logits = logits[spec_decode_metadata.logits_indices].to(torch.float32)
+            posterior_token_ids = self.sampler.greedy_sample(target_logits)
+            accepted_indices, bonus_token_id = follow_verified_tree(runtime_tree, posterior_token_ids)
+            output_token_ids = torch.full(
+                (1, spec_decode_metadata.max_spec_len + 1),
+                -1,
+                dtype=torch.int32,
+                device=logits.device,
+            )
+            accepted_tokens = [runtime_tree.node_token_ids[idx - 1].item() for idx in accepted_indices[1:]]
+            if accepted_tokens:
+                output_token_ids[0, : len(accepted_tokens)] = torch.tensor(
+                    accepted_tokens,
+                    dtype=torch.int32,
+                    device=logits.device,
+                )
+            output_token_ids[0, len(accepted_tokens)] = int(bonus_token_id)
+            return SamplerOutput(
+                sampled_token_ids=output_token_ids,
+                logprobs_tensors=None,
+            )
+
         sampler_output = self.rejection_sampler(
             spec_decode_metadata,
             None,  # draft_probs
@@ -3702,6 +3758,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 max_query_len=max_num_scheduled_tokens,
                 ubatch_slices=ubatch_slices_attn,
                 logits_indices=logits_indices,
+                spec_decode_metadata=spec_decode_metadata,
                 use_spec_decode=use_spec_decode,
                 num_scheduled_tokens=scheduler_output.num_scheduled_tokens,
                 cascade_attn_prefix_lens=cascade_attn_prefix_lens,
@@ -3923,14 +3980,17 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 <= self.effective_drafter_max_model_len
             )
             use_gpu_toks = (
-                spec_config.use_eagle() or spec_config.uses_draft_model() or spec_config.uses_extract_hidden_states()
+                spec_config.use_eagle()
+                or spec_config.use_ddtree()
+                or spec_config.uses_draft_model()
+                or spec_config.uses_extract_hidden_states()
             ) and not spec_config.disable_padded_drafter_batch
             if use_gpu_toks:
                 # EAGLE/DraftModel speculative decoding can use the GPU sampled tokens
                 # as inputs, and does not need to wait for bookkeeping to finish.
                 assert isinstance(
                     self.drafter,
-                    EagleProposer | DFlashProposer | DraftModelProposer | ExtractHiddenStatesProposer,
+                    EagleProposer | DFlashProposer | DDTreeProposer | DraftModelProposer | ExtractHiddenStatesProposer,
                 )
                 sampled_token_ids = sampler_output.sampled_token_ids
                 if input_fits_in_drafter:
@@ -4280,8 +4340,13 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             )
             self._copy_valid_sampled_token_count(next_token_ids, valid_sampled_tokens_count)
 
-        elif spec_config.use_eagle() or spec_config.use_dflash() or spec_config.uses_draft_model():
-            assert isinstance(self.drafter, EagleProposer | DFlashProposer | DraftModelProposer)
+        elif (
+            spec_config.use_eagle()
+            or spec_config.use_dflash()
+            or spec_config.use_ddtree()
+            or spec_config.uses_draft_model()
+        ):
+            assert isinstance(self.drafter, EagleProposer | DFlashProposer | DDTreeProposer | DraftModelProposer)
 
             if spec_config.disable_padded_drafter_batch:
                 # When padded-batch is disabled, the sampled_token_ids should be
@@ -4378,6 +4443,14 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 num_rejected_tokens_gpu=num_rejected_tokens_gpu,
                 slot_mappings=slot_mappings,
             )
+            if spec_config.use_ddtree():
+                assert isinstance(self.drafter, DDTreeProposer)
+                runtime_trees = self.drafter.pop_runtime_trees()
+                self._ddtree_runtime_trees.clear()
+                if runtime_trees is not None:
+                    for req_id, runtime_tree in zip(self.input_batch.req_ids, runtime_trees, strict=False):
+                        if runtime_tree is not None:
+                            self._ddtree_runtime_trees[req_id] = runtime_tree
 
         return draft_token_ids
 
@@ -5034,6 +5107,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                     for_cudagraph_capture=is_graph_capturing,
                     slot_mappings=slot_mappings_by_group,
                     use_spec_decode=self.speculative_config is not None,
+                    spec_decode_metadata=None,
                 )
 
         with self.maybe_dummy_run_with_lora(
@@ -5116,12 +5190,13 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
 
             if self.speculative_config and (
                 self.speculative_config.use_eagle()
+                or self.speculative_config.use_ddtree()
                 or self.speculative_config.uses_draft_model()
                 or self.speculative_config.uses_extract_hidden_states()
             ):
                 assert isinstance(
                     self.drafter,
-                    EagleProposer | DFlashProposer | DraftModelProposer | ExtractHiddenStatesProposer,
+                    EagleProposer | DFlashProposer | DDTreeProposer | DraftModelProposer | ExtractHiddenStatesProposer,
                 )
                 assert self.speculative_config is not None
                 # Eagle currently only supports PIECEWISE cudagraphs.
@@ -5139,12 +5214,13 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                 if self.compilation_config.cudagraph_specialize_lora and num_active_loras > 0:
                     use_cudagraphs = False
 
-                self.drafter.dummy_run(
-                    num_tokens,
-                    use_cudagraphs=use_cudagraphs,
-                    is_graph_capturing=is_graph_capturing,
-                    slot_mappings=slot_mappings,
-                )
+                if not self.speculative_config.use_ddtree():
+                    self.drafter.dummy_run(
+                        num_tokens,
+                        use_cudagraphs=use_cudagraphs,
+                        is_graph_capturing=is_graph_capturing,
+                        slot_mappings=slot_mappings,
+                    )
 
         # We register layerwise NVTX hooks here after the first dynamo tracing is
         # done to avoid nvtx operations in hook functions being traced by
@@ -5890,9 +5966,11 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
 
         # Initialize drafter attention backend
         if self.speculative_config and (
-            self.speculative_config.use_eagle() or self.speculative_config.uses_draft_model()
+            self.speculative_config.use_eagle()
+            or self.speculative_config.use_ddtree()
+            or self.speculative_config.uses_draft_model()
         ):
-            assert isinstance(self.drafter, EagleProposer | DFlashProposer | DraftModelProposer)
+            assert isinstance(self.drafter, EagleProposer | DFlashProposer | DDTreeProposer | DraftModelProposer)
             self.drafter.initialize_attn_backend(kv_cache_config, kernel_block_sizes)
 
     def _check_and_update_cudagraph_mode(
@@ -5933,11 +6011,13 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
 
         # Initialize drafter's cudagraph dispatcher if using spec decode.
         if self.speculative_config and (
-            self.speculative_config.use_eagle() or self.speculative_config.uses_extract_hidden_states()
+            self.speculative_config.use_eagle()
+            or self.speculative_config.use_ddtree()
+            or self.speculative_config.uses_extract_hidden_states()
         ):
             assert isinstance(
                 self.drafter,
-                EagleProposer | DFlashProposer | ExtractHiddenStatesProposer,
+                EagleProposer | DFlashProposer | DDTreeProposer | ExtractHiddenStatesProposer,
             )
             self.drafter.initialize_cudagraph_keys(cudagraph_mode)
 

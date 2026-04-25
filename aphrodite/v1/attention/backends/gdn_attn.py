@@ -89,7 +89,7 @@ class GDNAttentionMetadataBuilder(AttentionMetadataBuilder[GDNAttentionMetadata]
 
         if self.speculative_config:
             assert self.speculative_config.num_speculative_tokens is not None
-            self.num_spec: int = self.speculative_config.num_speculative_tokens
+            self.num_spec = self.speculative_config.get_num_spec_decode_slots()
         else:
             self.num_spec = 0
         self.use_spec_decode: bool = self.num_spec > 0
