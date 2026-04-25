@@ -101,16 +101,17 @@ dry_scan_penalties_cpu_impl(
     const int64_t start_idx =
         range_limit > 0 ? std::max<int64_t>(0, history_len - range_limit) : 0;
 
-    int64_t curr_max_ngram = 0;
+    int64_t curr_max_ngram = -1;
     const int64_t max_ngram_val = max_ngram_acc[row];
     const int64_t ngram_cap =
         std::min<int64_t>(history_len - start_idx, max_ngram_val + 1);
-    for (curr_max_ngram = 0; curr_max_ngram < ngram_cap; ++curr_max_ngram) {
+    for (int64_t ngram_idx = 0; ngram_idx < ngram_cap; ++ngram_idx) {
       if (is_breaker(breaker_ids,
                      static_cast<int64_t>(
-                         history_acc[row][history_len - curr_max_ngram - 1]))) {
+                         history_acc[row][history_len - ngram_idx - 1]))) {
         break;
       }
+      curr_max_ngram = ngram_idx;
     }
 
     const int64_t min_ngram = allowed_lengths_acc[row];
