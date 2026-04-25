@@ -266,7 +266,9 @@ RUN --mount=type=bind,source=.git,target=.git \
     if [ "$GIT_REPO_CHECK" != "0" ]; then bash tools/check_repo.sh ; fi
 
 ARG aphrodite_target_device="cuda"
+ARG APHRODITE_VERSION_OVERRIDE=""
 ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
+ENV APHRODITE_VERSION_OVERRIDE=${APHRODITE_VERSION_OVERRIDE}
 
 # Skip adding +precompiled suffix to version (preserves git-derived version)
 ENV APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX=1

@@ -30,10 +30,14 @@ def load_module_from_path(module_name, path):
 ROOT_DIR = Path(os.path.dirname(__file__))
 logger = logging.getLogger(__name__)
 
+_VERSION_OVERRIDE = os.getenv("APHRODITE_VERSION_OVERRIDE")
+if _VERSION_OVERRIDE:
+    os.environ["SETUPTOOLS_SCM_PRETEND_VERSION"] = _VERSION_OVERRIDE
+
 # Capture the SCM-derived version before setup-time generated files dirty an
 # exact-tag checkout. Otherwise release Docker builds can become
 # `<next>.dev0+g<sha>.d<date>` after `embed_commit_hash()` writes commit_id.py.
-_SCM_VERSION = None if os.getenv("APHRODITE_VERSION_OVERRIDE") else get_version(write_to="aphrodite/_version.py")
+_SCM_VERSION = get_version(write_to="aphrodite/_version.py")
 
 
 def embed_commit_hash():
@@ -537,10 +541,6 @@ def get_gaudi_sw_version():
 def get_aphrodite_version() -> str:
     # Allow overriding the version. This is useful to build platform-specific
     # wheels (e.g. CPU, TPU) without modifying the source.
-    if env_version := os.getenv("APHRODITE_VERSION_OVERRIDE"):
-        return env_version
-
-    assert _SCM_VERSION is not None
     version = _SCM_VERSION
     sep = "+" if "+" not in version else "."  # dev versions might contain +
 
