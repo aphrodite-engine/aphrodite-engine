@@ -30,6 +30,11 @@ def load_module_from_path(module_name, path):
 ROOT_DIR = Path(os.path.dirname(__file__))
 logger = logging.getLogger(__name__)
 
+# Capture the SCM-derived version before setup-time generated files dirty an
+# exact-tag checkout. Otherwise release Docker builds can become
+# `<next>.dev0+g<sha>.d<date>` after `embed_commit_hash()` writes commit_id.py.
+_SCM_VERSION = None if os.getenv("APHRODITE_VERSION_OVERRIDE") else get_version(write_to="aphrodite/_version.py")
+
 
 def embed_commit_hash():
     try:
@@ -535,7 +540,8 @@ def get_aphrodite_version() -> str:
     if env_version := os.getenv("APHRODITE_VERSION_OVERRIDE"):
         return env_version
 
-    version = get_version(write_to="aphrodite/_version.py")
+    assert _SCM_VERSION is not None
+    version = _SCM_VERSION
     sep = "+" if "+" not in version else "."  # dev versions might contain +
 
     if _no_device():
