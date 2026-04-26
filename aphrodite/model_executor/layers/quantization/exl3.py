@@ -82,6 +82,7 @@ def _exl3_linear_one(
     ops.exl3_reconstruct(
         weight,
         trellis,
+        # EXL3 reconstruct expects K where packed.shape[2] == 16 * K.
         trellis.shape[2] // 16,
         mcg,
         mul1,
@@ -1450,6 +1451,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         ops.exl3_reconstruct(
             weight,
             trellis,
+            # EXL3 reconstruct expects K where packed.shape[2] == 16 * K.
             trellis.shape[2] // 16,
             mcg,
             mul1,

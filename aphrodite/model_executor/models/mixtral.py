@@ -499,7 +499,8 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
             quant_config=quant_config,
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        if model_should_use_tied_lm_head(config, quant_config):
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
+        if self.use_tied_lm_head:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
@@ -567,7 +568,10 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(self)
+        loader = AutoWeightsLoader(
+            self,
+            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
+        )
         return loader.load_weights(weights)
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
