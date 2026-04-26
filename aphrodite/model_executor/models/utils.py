@@ -100,6 +100,31 @@ class WeightsMapper:
         return {out_name: value for name, value in values.items() if (out_name := self._map_name(name)) is not None}
 
 
+def model_should_use_tied_lm_head(
+    config: PretrainedConfig,
+    quant_config: QuantizationConfig | None,
+) -> bool:
+    """Return whether the model should tie lm_head to input embeddings.
+
+    Some quantization formats can carry an independently quantized output head
+    even when the HF config still advertises tied embeddings. In that case the
+    model must instantiate/load lm_head so the quantized head is used.
+    """
+    if not getattr(config, "tie_word_embeddings", False):
+        return False
+    if quant_config is None:
+        return True
+
+    has_quantized_lm_head = False
+    if hasattr(quant_config, "has_quantized_lm_head"):
+        has_quantized_lm_head = quant_config.has_quantized_lm_head()
+    # EXL3 exposes head quantization through `head_bits` before all tensor
+    # storage metadata is necessarily available.
+    if not has_quantized_lm_head and getattr(quant_config, "head_bits", None):
+        has_quantized_lm_head = True
+    return not has_quantized_lm_head
+
+
 class AutoWeightsLoader:
     """
     Helper class to load weights into a [`torch.nn.Module`][]. It is able
