@@ -38,6 +38,280 @@ _EXL3_MOE_MAX_EXPERTS_PER_TOKEN = 32
 _EXL3_MOE_ACT_SILU = 0
 
 
+@torch.library.custom_op(
+    "aphrodite::exl3_linear_one",
+    mutates_args=(),
+    device_types="cuda",
+)
+def _exl3_linear_one(
+    x: torch.Tensor,
+    trellis: torch.Tensor,
+    suh: torch.Tensor,
+    svh: torch.Tensor,
+    mcg: bool,
+    mul1: bool,
+) -> torch.Tensor:
+    out_features = trellis.shape[1] * 16
+    output = torch.empty(
+        (x.shape[0], out_features),
+        device=x.device,
+        dtype=torch.float16,
+    )
+    x_had = torch.empty_like(x)
+
+    if x.shape[0] <= 32:
+        ops.exl3_gemm(
+            x,
+            trellis,
+            output,
+            suh,
+            x_had,
+            svh,
+            -1,
+            mcg,
+            mul1,
+            0,
+        )
+        return output
+
+    weight = torch.empty(
+        (trellis.shape[0] * 16, out_features),
+        device=trellis.device,
+        dtype=torch.float16,
+    )
+    ops.exl3_reconstruct(
+        weight,
+        trellis,
+        # EXL3 reconstruct expects K where packed.shape[2] == 16 * K.
+        trellis.shape[2] // 16,
+        mcg,
+        mul1,
+    )
+    ops.exl3_had_r_128(
+        x,
+        x_had,
+        suh,
+        None,
+        1.0,
+    )
+    ops.exl3_hgemm(
+        x_had,
+        weight,
+        output,
+    )
+    ops.exl3_had_r_128(
+        output,
+        output,
+        None,
+        svh,
+        1.0,
+    )
+    return output
+
+
+@_exl3_linear_one.register_fake
+def _exl3_linear_one_fake(
+    x: torch.Tensor,
+    trellis: torch.Tensor,
+    suh: torch.Tensor,
+    svh: torch.Tensor,
+    mcg: bool,
+    mul1: bool,
+) -> torch.Tensor:
+    del suh, svh, mcg, mul1
+    return torch.empty(
+        (x.shape[0], trellis.shape[1] * 16),
+        device=x.device,
+        dtype=torch.float16,
+    )
+
+
+@torch.library.custom_op(
+    "aphrodite::exl3_gate_up",
+    mutates_args=(),
+    device_types="cuda",
+)
+def _exl3_gate_up(
+    x: torch.Tensor,
+    gate_trellis: torch.Tensor,
+    gate_suh: torch.Tensor,
+    gate_svh: torch.Tensor,
+    up_trellis: torch.Tensor,
+    up_suh: torch.Tensor,
+    up_svh: torch.Tensor,
+    ptrs_trellis: torch.Tensor,
+    ptrs_suh: torch.Tensor,
+    ptrs_svh: torch.Tensor,
+    k: int,
+    mcg: bool,
+    mul1: bool,
+) -> torch.Tensor:
+    if x.shape[0] > 32:
+        return torch.cat(
+            [
+                _exl3_linear_one(x, gate_trellis, gate_suh, gate_svh, mcg, mul1),
+                _exl3_linear_one(x, up_trellis, up_suh, up_svh, mcg, mul1),
+            ],
+            dim=-1,
+        )
+
+    x_3d = x.view(1, x.shape[0], x.shape[1])
+    out_features = gate_trellis.shape[1] * 16
+    output = torch.empty(
+        (2, x.shape[0], out_features),
+        device=x.device,
+        dtype=torch.float16,
+    )
+    x_had = torch.empty(
+        (2, x.shape[0], x.shape[1]),
+        device=x.device,
+        dtype=torch.float16,
+    )
+    ops.exl3_mgemm(
+        x_3d,
+        ptrs_trellis,
+        output,
+        ptrs_suh,
+        x_had,
+        ptrs_svh,
+        None,
+        None,
+        k,
+        -1,
+        mcg,
+        mul1,
+        -1,
+        -1,
+        0,
+    )
+    return torch.cat([output[0], output[1]], dim=-1)
+
+
+@_exl3_gate_up.register_fake
+def _exl3_gate_up_fake(
+    x: torch.Tensor,
+    gate_trellis: torch.Tensor,
+    gate_suh: torch.Tensor,
+    gate_svh: torch.Tensor,
+    up_trellis: torch.Tensor,
+    up_suh: torch.Tensor,
+    up_svh: torch.Tensor,
+    ptrs_trellis: torch.Tensor,
+    ptrs_suh: torch.Tensor,
+    ptrs_svh: torch.Tensor,
+    k: int,
+    mcg: bool,
+    mul1: bool,
+) -> torch.Tensor:
+    del gate_suh, gate_svh, up_trellis, up_suh, up_svh
+    del ptrs_trellis, ptrs_suh, ptrs_svh, k, mcg, mul1
+    return torch.empty(
+        (x.shape[0], gate_trellis.shape[1] * 32),
+        device=x.device,
+        dtype=torch.float16,
+    )
+
+
+@torch.library.custom_op(
+    "aphrodite::exl3_qkv",
+    mutates_args=(),
+    device_types="cuda",
+)
+def _exl3_qkv(
+    x: torch.Tensor,
+    q_trellis: torch.Tensor,
+    q_suh: torch.Tensor,
+    q_svh: torch.Tensor,
+    k_trellis: torch.Tensor,
+    k_suh: torch.Tensor,
+    k_svh: torch.Tensor,
+    v_trellis: torch.Tensor,
+    v_suh: torch.Tensor,
+    v_svh: torch.Tensor,
+    ptrs_trellis: torch.Tensor,
+    ptrs_suh: torch.Tensor,
+    ptrs_svh: torch.Tensor,
+    k: int,
+    q_mcg: bool,
+    q_mul1: bool,
+    kv_mcg: bool,
+    kv_mul1: bool,
+) -> torch.Tensor:
+    q = _exl3_linear_one(x, q_trellis, q_suh, q_svh, q_mcg, q_mul1)
+    if x.shape[0] > 32:
+        return torch.cat(
+            [
+                q,
+                _exl3_linear_one(x, k_trellis, k_suh, k_svh, kv_mcg, kv_mul1),
+                _exl3_linear_one(x, v_trellis, v_suh, v_svh, kv_mcg, kv_mul1),
+            ],
+            dim=-1,
+        )
+
+    x_3d = x.view(1, x.shape[0], x.shape[1])
+    out_features = k_trellis.shape[1] * 16
+    output = torch.empty(
+        (2, x.shape[0], out_features),
+        device=x.device,
+        dtype=torch.float16,
+    )
+    x_had = torch.empty(
+        (2, x.shape[0], x.shape[1]),
+        device=x.device,
+        dtype=torch.float16,
+    )
+    ops.exl3_mgemm(
+        x_3d,
+        ptrs_trellis,
+        output,
+        ptrs_suh,
+        x_had,
+        ptrs_svh,
+        None,
+        None,
+        k,
+        -1,
+        kv_mcg,
+        kv_mul1,
+        -1,
+        -1,
+        0,
+    )
+    return torch.cat([q, output[0], output[1]], dim=-1)
+
+
+@_exl3_qkv.register_fake
+def _exl3_qkv_fake(
+    x: torch.Tensor,
+    q_trellis: torch.Tensor,
+    q_suh: torch.Tensor,
+    q_svh: torch.Tensor,
+    k_trellis: torch.Tensor,
+    k_suh: torch.Tensor,
+    k_svh: torch.Tensor,
+    v_trellis: torch.Tensor,
+    v_suh: torch.Tensor,
+    v_svh: torch.Tensor,
+    ptrs_trellis: torch.Tensor,
+    ptrs_suh: torch.Tensor,
+    ptrs_svh: torch.Tensor,
+    k: int,
+    q_mcg: bool,
+    q_mul1: bool,
+    kv_mcg: bool,
+    kv_mul1: bool,
+) -> torch.Tensor:
+    del q_suh, q_svh, k_suh, k_svh, v_suh, v_svh
+    del ptrs_trellis, ptrs_suh, ptrs_svh, k
+    del q_mcg, q_mul1, kv_mcg, kv_mul1
+    out_features = q_trellis.shape[1] * 16 + k_trellis.shape[1] * 16 + v_trellis.shape[1] * 16
+    return torch.empty(
+        (x.shape[0], out_features),
+        device=x.device,
+        dtype=torch.float16,
+    )
+
+
 class Exl3Config(QuantizationConfig):
     """Config class for ExLlamaV3 EXL3 checkpoints.
 
@@ -332,8 +606,8 @@ class Exl3LinearMethod(LinearMethodBase):
         else:
             x_2d = x_2d.contiguous()
 
-        if getattr(layer, "exl3_can_mgemm", False) and x_2d.shape[0] <= 32:
-            output = self._apply_fused_small_batch(layer, x_2d)
+        if getattr(layer, "exl3_can_mgemm", False):
+            output = self._apply_fused_mgemm(layer, x_2d)
         else:
             outputs = [self._apply_one(layer, x_2d, shard_id) for shard_id in layer.exl3_shard_ids]
             output = outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=-1)
@@ -489,71 +763,54 @@ class Exl3LinearMethod(LinearMethodBase):
         mcg = shard_id in layer.mcg.exl3_tensors
         mul1 = shard_id in layer.mul1.exl3_tensors
 
-        out_features = trellis.shape[1] * 16
-        output = torch.empty(
-            (x.shape[0], out_features),
-            device=x.device,
-            dtype=torch.float16,
-        )
-        x_had = torch.empty_like(x)
+        return _exl3_linear_one(x, trellis, suh, svh, mcg, mul1)
 
-        if x.shape[0] <= 32:
-            ops.exl3_gemm(
-                x,
-                trellis,
-                output,
-                suh,
-                x_had,
-                svh,
-                -1,
-                mcg,
-                mul1,
-                0,
-            )
-            return output
-
-        weight = torch.empty(
-            (trellis.shape[0] * 16, trellis.shape[1] * 16),
-            device=trellis.device,
-            dtype=torch.float16,
-        )
-        ops.exl3_reconstruct(
-            weight,
-            trellis,
-            trellis.shape[2] // 16,
-            mcg,
-            mul1,
-        )
-        ops.exl3_had_r_128(
-            x,
-            x_had,
-            suh,
-            None,
-            1.0,
-        )
-        ops.exl3_hgemm(
-            x_had,
-            weight,
-            output,
-        )
-        ops.exl3_had_r_128(
-            output,
-            output,
-            None,
-            svh,
-            1.0,
-        )
-        return output
-
-    def _apply_fused_small_batch(
+    def _apply_fused_mgemm(
         self,
         layer: torch.nn.Module,
         x: torch.Tensor,
     ) -> torch.Tensor:
-        output = self._apply_mgemm(layer, x)
         if getattr(layer, "exl3_mgemm_mode", None) == "qkv_kv":
-            q = self._apply_one(layer, x, "q")
-            return torch.cat([q, output[0], output[1]], dim=-1)
+            return _exl3_qkv(
+                x,
+                layer.trellis.exl3_tensors["q"],
+                layer.suh.exl3_tensors["q"],
+                layer.svh.exl3_tensors["q"],
+                layer.trellis.exl3_tensors["k"],
+                layer.suh.exl3_tensors["k"],
+                layer.svh.exl3_tensors["k"],
+                layer.trellis.exl3_tensors["v"],
+                layer.suh.exl3_tensors["v"],
+                layer.svh.exl3_tensors["v"],
+                layer.exl3_mgemm_ptrs_trellis,
+                layer.exl3_mgemm_ptrs_suh,
+                layer.exl3_mgemm_ptrs_svh,
+                layer.exl3_mgemm_k,
+                "q" in layer.mcg.exl3_tensors,
+                "q" in layer.mul1.exl3_tensors,
+                layer.exl3_mgemm_mcg,
+                layer.exl3_mgemm_mul1,
+            )
+
+        if getattr(layer, "exl3_mgemm_mode", None) == "gate_up":
+            gate_id, up_id = layer.exl3_shard_ids
+            return _exl3_gate_up(
+                x,
+                layer.trellis.exl3_tensors[gate_id],
+                layer.suh.exl3_tensors[gate_id],
+                layer.svh.exl3_tensors[gate_id],
+                layer.trellis.exl3_tensors[up_id],
+                layer.suh.exl3_tensors[up_id],
+                layer.svh.exl3_tensors[up_id],
+                layer.exl3_mgemm_ptrs_trellis,
+                layer.exl3_mgemm_ptrs_suh,
+                layer.exl3_mgemm_ptrs_svh,
+                layer.exl3_mgemm_k,
+                layer.exl3_mgemm_mcg,
+                layer.exl3_mgemm_mul1,
+            )
+
+        output = self._apply_mgemm(layer, x)
         return torch.cat([output[i] for i in range(output.shape[0])], dim=-1)
 
     def _apply_mgemm(self, layer: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
@@ -1194,6 +1451,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         ops.exl3_reconstruct(
             weight,
             trellis,
+            # EXL3 reconstruct expects K where packed.shape[2] == 16 * K.
             trellis.shape[2] // 16,
             mcg,
             mul1,

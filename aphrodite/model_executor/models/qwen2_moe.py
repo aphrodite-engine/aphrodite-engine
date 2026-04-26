@@ -69,6 +69,7 @@ from .utils import (
     make_empty_intermediate_tensors_factory,
     make_layers,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 logger = init_logger(__name__)
@@ -533,7 +534,8 @@ class Qwen2MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
             quant_config=quant_config,
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        if self.config.tie_word_embeddings:
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
+        if self.use_tied_lm_head:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
@@ -559,7 +561,10 @@ class Qwen2MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(self)
+        loader = AutoWeightsLoader(
+            self,
+            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
+        )
         return loader.load_weights(weights)
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:

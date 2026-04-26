@@ -100,6 +100,7 @@ from .utils import (
     make_empty_intermediate_tensors_factory,
     make_layers,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 logger = init_logger(__name__)
@@ -476,20 +477,10 @@ class Qwen3_5ForCausalLMBase(
             self.packed_modules_mapping["in_proj_qkv"] = ["in_proj_qkv"]
             self.packed_modules_mapping["in_proj_z"] = ["in_proj_z"]
 
-        use_tied_lm_head = config.tie_word_embeddings
-        if use_tied_lm_head and self.quant_config is not None:
-            has_quantized_lm_head = False
-            if hasattr(self.quant_config, "has_quantized_lm_head"):
-                has_quantized_lm_head = self.quant_config.has_quantized_lm_head()
-            # EXL3 checkpoints expose head quantization through `head_bits`
-            # early, even before tensor storage is fully populated.
-            if not has_quantized_lm_head and getattr(self.quant_config, "head_bits", None):
-                has_quantized_lm_head = True
-            if has_quantized_lm_head:
-                use_tied_lm_head = False
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, self.quant_config)
 
         if get_pp_group().is_last_rank:
-            if use_tied_lm_head:
+            if self.use_tied_lm_head:
                 self.lm_head = self.model.embed_tokens
             else:
                 self.lm_head = ParallelLMHead(
@@ -533,9 +524,12 @@ class Qwen3_5ForCausalLMBase(
         return self.logits_processor(self.lm_head, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        skip_prefixes = ["mtp."]
+        if self.use_tied_lm_head:
+            skip_prefixes.append("lm_head.")
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=["mtp."],
+            skip_prefixes=skip_prefixes,
         )
         return loader.load_weights(weights)
 
@@ -688,9 +682,12 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        skip_prefixes = ["mtp."]
+        if self.language_model.use_tied_lm_head:
+            skip_prefixes.append("language_model.lm_head.")
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=["mtp."],
+            skip_prefixes=skip_prefixes,
         )
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
