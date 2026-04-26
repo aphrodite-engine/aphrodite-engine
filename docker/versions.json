@@ -43,6 +43,12 @@
     "aphrodite_target_device": {
       "default": "cuda"
     },
+    "MAX_JOBS": {
+      "default": "2"
+    },
+    "NVCC_THREADS": {
+      "default": "8"
+    },
     "FLASHINFER_VERSION": {
       "default": "0.6.8.post1"
     },

@@ -267,8 +267,13 @@ RUN --mount=type=bind,source=.git,target=.git \
 
 ARG aphrodite_target_device="cuda"
 ARG APHRODITE_VERSION_OVERRIDE=""
+ARG max_jobs=2
+ARG nvcc_threads=8
 ENV APHRODITE_TARGET_DEVICE=${aphrodite_target_device}
 ENV APHRODITE_VERSION_OVERRIDE=${APHRODITE_VERSION_OVERRIDE}
+ENV MAX_JOBS=${max_jobs}
+ENV NVCC_THREADS=${nvcc_threads}
+ENV CMAKE_BUILD_TYPE=Release
 
 # Skip adding +precompiled suffix to version (preserves git-derived version)
 ENV APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX=1
