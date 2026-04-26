@@ -687,10 +687,48 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):  # type: ignore[misc]
         self.aphrodite_backend = aphrodite_backend
         # When True, it annoyingly dumps the torch.fx.Graph on errors.
         self.extra_traceback = False
+        self.compiled_count = 0
+        self.total_to_compile = len(compile_submod_names)
+        self.progress = None
+        self.progress_task = None
 
     @instrument(span_name="Inductor compilation")
     def run(self, *args: Any) -> Any:
-        return super().run(*args)
+        if self.total_to_compile:
+            from aphrodite.distributed.parallel_state import is_global_first_rank
+
+            if is_global_first_rank():
+                from rich.progress import (
+                    BarColumn,
+                    MofNCompleteColumn,
+                    Progress,
+                    TextColumn,
+                    TimeElapsedColumn,
+                )
+
+                from aphrodite.utils import get_progress_log_prefix
+
+                progress = Progress(
+                    TextColumn(get_progress_log_prefix() + " [progress.description]{task.description}"),
+                    BarColumn(),
+                    MofNCompleteColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                )
+                progress.start()
+                self.progress = progress
+                self.progress_task = progress.add_task(
+                    "torch.compile",
+                    total=self.total_to_compile,
+                )
+
+        try:
+            return super().run(*args)
+        finally:
+            if self.progress is not None:
+                self.progress.stop()
+                self.progress = None
+                self.progress_task = None
 
     def call_module(
         self,
@@ -709,6 +747,12 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):  # type: ignore[misc]
             submod = self.fetch_attr(target)
 
             sym_shape_indices = [i for i, x in enumerate(args) if isinstance(x, torch.SymInt)]
+
+            if self.progress is not None and self.progress_task is not None:
+                self.progress.update(
+                    self.progress_task,
+                    description=f"torch.compile ({self.compiled_count + 1}/{self.total_to_compile})",
+                )
 
             # Lazy import here to avoid circular import
             from torch._inductor.compile_fx import graph_returns_tuple
@@ -735,6 +779,9 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):  # type: ignore[misc]
             )
 
             compilation_counter.num_piecewise_capturable_graphs_seen += 1
+            self.compiled_count += 1
+            if self.progress is not None and self.progress_task is not None:
+                self.progress.advance(self.progress_task)
 
         return output
 

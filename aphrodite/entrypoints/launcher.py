@@ -4,6 +4,9 @@
 import asyncio
 import signal
 import socket
+import sys
+from collections import defaultdict
+from collections.abc import Iterable
 from functools import partial
 from typing import Any
 
@@ -22,6 +25,195 @@ from aphrodite.utils.network_utils import find_process_using_port
 
 logger = init_logger(__name__)
 
+_ROUTE_LOG_PATHS_PER_LINE = 3
+_KOBOLD_COMPACT_HIDDEN_ROUTES = {
+    "/api/{v1,latest}/config/soft_prompt",
+    "/api/{v1,latest}/config/soft_prompts_list",
+    "/api/extra/preloadstory",
+}
+_ANSI_RESET = "\033[0m"
+_ANSI_BOLD = "\033[1m"
+_ANSI_DIM = "\033[2m"
+_ANSI_BLUE = "\033[34m"
+_ANSI_CYAN = "\033[36m"
+_ANSI_GREEN = "\033[32m"
+_ANSI_MAGENTA = "\033[35m"
+_ANSI_YELLOW = "\033[33m"
+_ROUTE_GROUP_COLORS = {
+    "Core": _ANSI_GREEN,
+    "OpenAI": _ANSI_CYAN,
+    "Kobold": _ANSI_MAGENTA,
+    "Docs": _ANSI_DIM,
+    "Other": _ANSI_YELLOW,
+}
+_ROUTE_METHOD_COLORS = {
+    "DELETE": _ANSI_YELLOW,
+    "ENDPOINT": _ANSI_MAGENTA,
+    "GET": _ANSI_BLUE,
+    "PATCH": _ANSI_YELLOW,
+    "POST": _ANSI_GREEN,
+    "PUT": _ANSI_YELLOW,
+}
+
+
+def _use_route_log_color() -> bool:
+    if envs.NO_COLOR or envs.APHRODITE_LOGGING_COLOR == "0":
+        return False
+    if envs.APHRODITE_LOGGING_COLOR == "1":
+        return True
+    if envs.APHRODITE_LOGGING_STREAM == "ext://sys.stdout":
+        return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    if envs.APHRODITE_LOGGING_STREAM == "ext://sys.stderr":
+        return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+    return False
+
+
+def _route_log_color(text: str, color: str) -> str:
+    if not _use_route_log_color():
+        return text
+    return f"{color}{text}{_ANSI_RESET}"
+
+
+def _route_method_color(label: str) -> str:
+    method = label.split(",", maxsplit=1)[0]
+    return _ROUTE_METHOD_COLORS.get(method, _ANSI_CYAN)
+
+
+def _normalize_methods(methods: Iterable[str]) -> str:
+    methods_set = set(methods)
+    if "GET" in methods_set:
+        methods_set.discard("HEAD")
+    return ", ".join(sorted(methods_set))
+
+
+def _route_group(path: str) -> str:
+    if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}:
+        return "Docs"
+    if path.startswith("/v1/") or path.startswith("/inference/v1/"):
+        return "OpenAI"
+    if path.startswith("/api/"):
+        return "Kobold"
+    if path in {
+        "/health",
+        "/version",
+        "/metrics",
+        "/load",
+        "/ping",
+        "/tokenize",
+        "/detokenize",
+        "/v1/tokenize",
+        "/v1/detokenize",
+    }:
+        return "Core"
+    return "Other"
+
+
+def _compact_route_path(path: str) -> str:
+    if path.startswith("/api/v1/"):
+        return path.replace("/api/v1/", "/api/{v1,latest}/", 1)
+    if path.startswith("/api/latest/"):
+        return path.replace("/api/latest/", "/api/{v1,latest}/", 1)
+    return path
+
+
+def _log_full_routes(app: FastAPI) -> None:
+    logger.info("Available routes are:")
+    for route in app.routes:
+        methods = getattr(route, "methods", None)
+        path = getattr(route, "path", None)
+
+        if methods is None or path is None:
+            continue
+
+        logger.info("Route: %s, Methods: %s", path, _normalize_methods(methods))
+
+    for route in app.routes:
+        endpoint = getattr(route, "endpoint", None)
+        methods = getattr(route, "methods", None)
+        path = getattr(route, "path", None)
+
+        if endpoint is None or path is None or methods is not None:
+            continue
+
+        logger.info("Route: %s, Endpoint: %s", path, endpoint.__name__)
+
+
+def _log_compact_routes(app: FastAPI) -> None:
+    grouped_routes: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    endpoint_routes: dict[str, set[str]] = defaultdict(set)
+    route_count = 0
+
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        if path is None:
+            continue
+
+        route_count += 1
+        group = _route_group(path)
+        compact_path = _compact_route_path(path)
+        if compact_path in _KOBOLD_COMPACT_HIDDEN_ROUTES:
+            continue
+
+        methods = getattr(route, "methods", None)
+        if methods is None:
+            endpoint = getattr(route, "endpoint", None)
+            endpoint_name = getattr(endpoint, "__name__", "unknown")
+            endpoint_routes[group].add(f"{compact_path} -> {endpoint_name}")
+            continue
+
+        grouped_routes[group][_normalize_methods(methods)].add(compact_path)
+
+    displayed_route_count = sum(
+        len(paths) for method_groups in grouped_routes.values() for paths in method_groups.values()
+    ) + sum(len(endpoints) for endpoints in endpoint_routes.values())
+    alias_note = ""
+    if displayed_route_count != route_count:
+        alias_note = f", {displayed_route_count} shown"
+    logger.info(
+        "%s %d total%s %s",
+        _route_log_color("Available routes:", _ANSI_BOLD),
+        route_count,
+        alias_note,
+        _route_log_color("(set APHRODITE_LOG_ROUTES=full for details)", _ANSI_DIM),
+    )
+
+    for group in ("Core", "OpenAI", "Kobold", "Docs", "Other"):
+        method_groups = grouped_routes[group]
+        endpoints = endpoint_routes[group]
+        if not method_groups and not endpoints:
+            continue
+
+        group_route_count = sum(len(paths) for paths in method_groups.values()) + len(endpoints)
+        group_label = _route_log_color(
+            f"Routes [{group}]:",
+            f"{_ANSI_BOLD}{_ROUTE_GROUP_COLORS[group]}",
+        )
+        logger.info("%s %d", group_label, group_route_count)
+        for methods, paths in sorted(method_groups.items()):
+            _log_route_paths(methods, sorted(paths))
+        if endpoints:
+            _log_route_paths("ENDPOINT", sorted(endpoints))
+
+
+def _log_route_paths(label: str, paths: list[str]) -> None:
+    for idx in range(0, len(paths), _ROUTE_LOG_PATHS_PER_LINE):
+        chunk = paths[idx : idx + _ROUTE_LOG_PATHS_PER_LINE]
+        prefix = label if idx == 0 else ""
+        prefix = f"{prefix:<10}"
+        if prefix.strip():
+            prefix = _route_log_color(prefix, _route_method_color(label))
+        logger.info("  %s %s", prefix, ", ".join(chunk))
+
+
+def _log_routes(app: FastAPI) -> None:
+    route_log_format = envs.APHRODITE_LOG_ROUTES
+    if route_log_format == "off":
+        return
+    if route_log_format == "full":
+        _log_full_routes(app)
+        return
+    _log_compact_routes(app)
+
 
 async def serve_http(
     app: FastAPI,
@@ -34,27 +226,7 @@ async def serve_http(
     options.  Supports http header limits via h11_max_incomplete_event_size and
     h11_max_header_count.
     """
-    logger.info("Available routes are:")
-    # post endpoints
-    for route in app.routes:
-        methods = getattr(route, "methods", None)
-        path = getattr(route, "path", None)
-
-        if methods is None or path is None:
-            continue
-
-        logger.info("Route: %s, Methods: %s", path, ", ".join(methods))
-
-    # other endpoints
-    for route in app.routes:
-        endpoint = getattr(route, "endpoint", None)
-        methods = getattr(route, "methods", None)
-        path = getattr(route, "path", None)
-
-        if endpoint is None or path is None or methods is not None:
-            continue
-
-        logger.info("Route: %s, Endpoint: %s", path, endpoint.__name__)
+    _log_routes(app)
 
     # Extract header limit options if present
     h11_max_incomplete_event_size = uvicorn_kwargs.pop("h11_max_incomplete_event_size", None)

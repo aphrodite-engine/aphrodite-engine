@@ -250,6 +250,7 @@ if TYPE_CHECKING:
     APHRODITE_WEIGHT_OFFLOADING_DISABLE_PIN_MEMORY: bool = False
     APHRODITE_WEIGHT_OFFLOADING_DISABLE_UVA: bool = False
     APHRODITE_DISABLE_LOG_LOGO: bool = False
+    APHRODITE_LOG_ROUTES: Literal["off", "compact", "full"] = "compact"
     APHRODITE_LORA_DISABLE_PDL: bool = False
     APHRODITE_ENABLE_CUDA_COMPATIBILITY: bool = False
     APHRODITE_CUDA_COMPATIBILITY_PATH: str | None = None
@@ -496,7 +497,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # rocm, cpu]
     "APHRODITE_TARGET_DEVICE": lambda: os.getenv("APHRODITE_TARGET_DEVICE", "cuda").lower(),
     # Main CUDA version of Aphrodite. This follows PyTorch but can be overridden.
-    "APHRODITE_MAIN_CUDA_VERSION": lambda: (os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "13.0"),
+    "APHRODITE_MAIN_CUDA_VERSION": lambda: os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "13.0",
     # Controls PyTorch float32 matmul precision mode within Aphrodite workers.
     # Valid options mirror torch.set_float32_matmul_precision
     "APHRODITE_FLOAT32_MATMUL_PRECISION": env_with_choices(
@@ -570,7 +571,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_RPC_BASE_PATH": lambda: os.getenv("APHRODITE_RPC_BASE_PATH", tempfile.gettempdir()),
     # If true, will load models from ModelScope instead of Hugging Face Hub.
     # note that the value is true or false, not numbers
-    "APHRODITE_USE_MODELSCOPE": lambda: (os.environ.get("APHRODITE_USE_MODELSCOPE", "False").lower() == "true"),
+    "APHRODITE_USE_MODELSCOPE": lambda: os.environ.get("APHRODITE_USE_MODELSCOPE", "False").lower() == "true",
     # Interval in seconds to log a warning message when the ring buffer is full
     "APHRODITE_RINGBUFFER_WARNING_INTERVAL": lambda: int(os.environ.get("APHRODITE_RINGBUFFER_WARNING_INTERVAL", "60")),
     # path to cudatoolkit home directory, under which should be bin, include,
@@ -587,13 +588,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Feature flag to enable/disable Inductor standalone compile.
     # In torch <= 2.7 we ignore this flag; in torch >= 2.9 this is
     # enabled by default.
-    "APHRODITE_USE_STANDALONE_COMPILE": lambda: (os.environ.get("APHRODITE_USE_STANDALONE_COMPILE", "1") == "1"),
+    "APHRODITE_USE_STANDALONE_COMPILE": lambda: os.environ.get("APHRODITE_USE_STANDALONE_COMPILE", "1") == "1",
     # Inductor's pre-grad passes don't do anything for Aphrodite.
     # The pre-grad passes get run even on cache-hit and negatively impact
     # aphrodite cold compile times by O(1s)
     # Can remove this after the following issue gets fixed
     # https://github.com/pytorch/pytorch/issues/174502
-    "APHRODITE_ENABLE_PREGRAD_PASSES": lambda: (os.environ.get("APHRODITE_ENABLE_PREGRAD_PASSES", "0") == "1"),
+    "APHRODITE_ENABLE_PREGRAD_PASSES": lambda: os.environ.get("APHRODITE_ENABLE_PREGRAD_PASSES", "0") == "1",
     # Debug pattern matching inside custom passes.
     # Should be set to the fx.Node name (e.g. 'getitem_34' or 'scaled_mm_3').
     "APHRODITE_PATTERN_MATCH_DEBUG": lambda: os.environ.get("APHRODITE_PATTERN_MATCH_DEBUG", None),
@@ -903,13 +904,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
         int(os.getenv("APHRODITE_ENABLE_FLA_PACKED_RECURRENT_DECODE", "1"))
     ),
     # Disable pynccl (using torch.distributed instead)
-    "APHRODITE_DISABLE_PYNCCL": lambda: (os.getenv("APHRODITE_DISABLE_PYNCCL", "False").lower() in ("true", "1")),
+    "APHRODITE_DISABLE_PYNCCL": lambda: os.getenv("APHRODITE_DISABLE_PYNCCL", "False").lower() in ("true", "1"),
     # Optional: enable external Oink custom ops (e.g., Blackwell RMSNorm).
     # Disabled by default.
-    "APHRODITE_USE_OINK_OPS": lambda: (os.getenv("APHRODITE_USE_OINK_OPS", "False").lower() in ("true", "1")),
+    "APHRODITE_USE_OINK_OPS": lambda: os.getenv("APHRODITE_USE_OINK_OPS", "False").lower() in ("true", "1"),
     # Disable aiter ops unless specifically enabled.
     # Acts as a parent switch to enable the rest of the other operations.
-    "APHRODITE_ROCM_USE_AITER": lambda: (os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in ("true", "1")),
+    "APHRODITE_ROCM_USE_AITER": lambda: os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in ("true", "1"),
     # Whether to use aiter paged attention.
     # By default is disabled.
     "APHRODITE_ROCM_USE_AITER_PAGED_ATTN": lambda: (
@@ -923,23 +924,17 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Whether to use aiter moe ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MOE": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER_MOE": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in ("true", "1"),
     # use aiter rms norm op if aiter ops are enabled.
     "APHRODITE_ROCM_USE_AITER_RMSNORM": lambda: (
         os.getenv("APHRODITE_ROCM_USE_AITER_RMSNORM", "True").lower() in ("true", "1")
     ),
     # Whether to use aiter mla ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MLA": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_MLA", "True").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER_MLA": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MLA", "True").lower() in ("true", "1"),
     # Whether to use aiter mha ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MHA": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_MHA", "True").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER_MHA": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MHA", "True").lower() in ("true", "1"),
     # Whether to use aiter fp4 gemm asm.
     # By default is disabled.
     "APHRODITE_ROCM_USE_AITER_FP4_ASM_GEMM": lambda: (
@@ -1063,7 +1058,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Port of the master node in the data parallel setting
     "APHRODITE_DP_MASTER_PORT": lambda: int(os.getenv("APHRODITE_DP_MASTER_PORT", "0")),
     # Randomize inputs during dummy runs when using Data Parallel
-    "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS": lambda: (os.environ.get("APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS", "0") == "1"),
+    "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS": lambda: os.environ.get("APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS", "0") == "1",
     # Strategy to pack the data parallel ranks for Ray.
     # Available options:
     # - "fill":
@@ -1097,7 +1092,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # meta-llama/Llama-3.2-1B   /tmp/Llama-3.2-1B
     "APHRODITE_MODEL_REDIRECT_PATH": lambda: os.environ.get("APHRODITE_MODEL_REDIRECT_PATH", None),
     # Whether to use atomicAdd reduce in gptq/awq marlin kernel.
-    "APHRODITE_MARLIN_USE_ATOMIC_ADD": lambda: (os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1"),
+    "APHRODITE_MARLIN_USE_ATOMIC_ADD": lambda: os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1",
     # Whether to use marlin kernel in mxfp4 quantization method
     "APHRODITE_MXFP4_USE_MARLIN": lambda: maybe_convert_bool(os.environ.get("APHRODITE_MXFP4_USE_MARLIN", None)),
     # The activation dtype for marlin kernel
@@ -1128,7 +1123,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Whether to turn on the outlines cache for V1
     # This cache is unbounded and on disk, so it's not safe to use in
     # an environment with potentially malicious users.
-    "APHRODITE_V1_USE_OUTLINES_CACHE": lambda: (os.environ.get("APHRODITE_V1_USE_OUTLINES_CACHE", "0") == "1"),
+    "APHRODITE_V1_USE_OUTLINES_CACHE": lambda: os.environ.get("APHRODITE_V1_USE_OUTLINES_CACHE", "0") == "1",
     # Gap between padding buckets for the forward pass. So we have
     # 8, we will run forward pass with [16, 24, 32, ...].
     "APHRODITE_TPU_BUCKET_PADDING_GAP": lambda: (
@@ -1515,6 +1510,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Disable logging of Aphrodite logo at server startup time.
     "APHRODITE_DISABLE_LOG_LOGO": lambda: bool(int(os.getenv("APHRODITE_DISABLE_LOG_LOGO", "0"))),
+    # Controls route logging at server startup time.
+    # - "off": disable route logging
+    # - "compact": group routes by API family
+    # - "full": log every route individually
+    "APHRODITE_LOG_ROUTES": env_with_choices("APHRODITE_LOG_ROUTES", "compact", ["off", "compact", "full"]),
     # Disable PDL for LoRA, as enabling PDL with LoRA on SM100 causes
     # Triton compilation to fail.
     "APHRODITE_LORA_DISABLE_PDL": lambda: bool(int(os.getenv("APHRODITE_LORA_DISABLE_PDL", "0"))),

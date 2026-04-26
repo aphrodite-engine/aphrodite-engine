@@ -22,6 +22,7 @@ from aphrodite.model_executor.model_loader.ep_weight_filter import (
     compute_local_expert_ids,
 )
 from aphrodite.model_executor.model_loader.weight_utils import (
+    _get_checkpoints_size_bytes,
     download_safetensors_index_file_from_hf,
     download_weights_from_hf,
     fastsafetensors_weights_iterator,
@@ -189,8 +190,11 @@ class DefaultModelLoader(BaseModelLoader):
 
         return hf_folder, hf_weights_files, use_safetensors
 
-    def _get_weights_iterator(self, source: "Source") -> Generator[tuple[str, torch.Tensor], None, None]:
-        """Get an iterator for the model weights based on the load format."""
+    def _get_weights_iterator_with_size(
+        self,
+        source: "Source",
+    ) -> tuple[Generator[tuple[str, torch.Tensor], None, None], int]:
+        """Get an iterator for the model weights and their checkpoint size."""
         extra_config = self.load_config.model_loader_extra_config
         hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
             source.model_or_path,
@@ -199,6 +203,8 @@ class DefaultModelLoader(BaseModelLoader):
             source.fall_back_to_pt,
             source.allow_patterns_overrides,
         )
+        total_bytes = _get_checkpoints_size_bytes(hf_weights_files)
+
         if self.load_config.load_format == "npcache":
             # Currently np_cache only support *.bin checkpoints
             assert use_safetensors is False
@@ -252,13 +258,22 @@ class DefaultModelLoader(BaseModelLoader):
         if self.counter_before_loading_weights == 0.0:
             self.counter_before_loading_weights = time.perf_counter()
         # Apply the prefix.
-        return ((source.prefix + name, tensor) for (name, tensor) in weights_iterator)
+        return (
+            ((source.prefix + name, tensor) for (name, tensor) in weights_iterator),
+            total_bytes,
+        )
+
+    def _get_weights_iterator(self, source: "Source") -> Generator[tuple[str, torch.Tensor], None, None]:
+        """Get an iterator for the model weights based on the load format."""
+        iterator, _ = self._get_weights_iterator_with_size(source)
+        return iterator
 
     def get_all_weights(
         self,
         model_config: ModelConfig,
         model: nn.Module,
-    ) -> Generator[tuple[str, torch.Tensor], None, None]:
+    ) -> tuple[Iterable[tuple[str, torch.Tensor]], int]:
+        """Get all weights and the total checkpoint size in bytes."""
         primary_weights = DefaultModelLoader.Source(
             model_config.model,
             model_config.revision,
@@ -266,22 +281,24 @@ class DefaultModelLoader(BaseModelLoader):
             fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True),
             allow_patterns_overrides=getattr(model, "allow_patterns_overrides", None),
         )
-        yield from self._get_weights_iterator(primary_weights)
+        primary_iterator, total_bytes = self._get_weights_iterator_with_size(primary_weights)
 
         secondary_weights = cast(
             Iterable[DefaultModelLoader.Source],
             getattr(model, "secondary_weights", ()),
         )
+        secondary_iterators: list[Generator[tuple[str, torch.Tensor], None, None]] = []
         for source in secondary_weights:
-            yield from self._get_weights_iterator(source)
+            secondary_iterator, secondary_bytes = self._get_weights_iterator_with_size(source)
+            secondary_iterators.append(secondary_iterator)
+            total_bytes += secondary_bytes
 
-    @staticmethod
-    def _should_use_rich_weight_progress(model_config: ModelConfig) -> bool:
-        # Remote HF/Xet-backed models can still emit their own download progress
-        # during first access to the weight files, which fights with the rich
-        # loader bar and spams the terminal. Only enable the rich bar for local
-        # directory checkpoints.
-        return os.path.isdir(model_config.model)
+        def weights_iterator() -> Generator[tuple[str, torch.Tensor], None, None]:
+            yield from primary_iterator
+            for iterator in secondary_iterators:
+                yield from iterator
+
+        return weights_iterator(), total_bytes
 
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(
@@ -369,9 +386,9 @@ class DefaultModelLoader(BaseModelLoader):
         self._init_ep_weight_filter(model_config)
 
         weights_to_load = {name for name, _ in model.named_parameters()}
-        weights_iter = self.get_all_weights(model_config, model)
-        if self._should_use_rich_weight_progress(model_config):
-            weights_iter = tensor_progress_bar(weights_iter, None, "Loading model weights")
+        weights_iter, total_bytes = self.get_all_weights(model_config, model)
+        if self.load_config.use_tqdm_on_load:
+            weights_iter = tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
         loaded_weights = model.load_weights(weights_iter)
 
         self.counter_after_loading_weights = time.perf_counter()

@@ -865,7 +865,7 @@ def safetensors_weights_iterator(
     fits_in_ram = total_bytes <= (ram_threshold_pct / 100.0) * avail_bytes
     fs_name = fs_type.upper() if fs_type else "unknown"
 
-    logger.info_once(
+    logger.debug_once(
         "Filesystem type for checkpoints: %s. Checkpoint size: %.2f GiB. Available RAM: %.2f GiB.",
         fs_name,
         total_bytes / 1024**3,
@@ -887,14 +887,14 @@ def safetensors_weights_iterator(
                 avail_bytes / 1024**3,
             )
         elif not is_net_fs and fits_in_ram:
-            logger.info_once(
+            logger.debug_once(
                 "Auto-prefetch is disabled because the filesystem (%s) is not a "
                 "recognized network FS (NFS/Lustre). If you want to force "
                 "prefetching, start Aphrodite with --safetensors-load-strategy=prefetch.",
                 fs_name,
             )
         elif not is_net_fs and not fits_in_ram:
-            logger.info_once(
+            logger.debug_once(
                 "Auto-prefetch is disabled because the filesystem (%s) is not a "
                 "recognized network FS (NFS/Lustre) and the checkpoint size "
                 "(%.2f GiB) exceeds %d%% of available RAM (%.2f GiB).",

@@ -294,7 +294,7 @@ def _try_load_aot_compiled_fn(
             with maybe_use_cudagraph_partition_wrapper(model.aphrodite_config):
                 loaded_fn._artifacts.compiled_fn.finalize_loading(model.aphrodite_config)
             compilation_counter.num_aot_artifacts_loaded += 1
-            logger.info("Directly load AOT compilation from path %s", aot_compilation_path)
+            logger.debug("Directly load AOT compilation from path %s", aot_compilation_path)
         return loaded_fn
     except Exception as e:
         if os.path.exists(aot_compilation_path):
