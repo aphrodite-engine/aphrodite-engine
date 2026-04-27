@@ -281,7 +281,7 @@ class DeepseekV4ScalingRotaryEmbedding(DeepseekScalingRotaryEmbedding):
         offsets: torch.Tensor | None = None,
         inverse: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        from vllm import _custom_ops as ops
+        from aphrodite import _custom_ops as ops
 
         # The indexer and attention have different head_dim,
         # we obtain the corresponding head_dim via the query.
