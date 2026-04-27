@@ -299,6 +299,9 @@ class CustomChatCompletionMessageParam(TypedDict, total=False):
     tools: list[ChatCompletionFunctionToolParam] | None
     """The tools for developer role."""
 
+    task: str | None
+    """Model-specific task marker. Currently passed through for DeepSeek V4."""
+
 
 ChatCompletionMessageParam: TypeAlias = (
     OpenAIChatCompletionMessageParam | CustomChatCompletionMessageParam | OpenAIHarmonyMessage
@@ -330,6 +333,9 @@ class ConversationMessage(TypedDict, total=False):
 
     tools: list[ChatCompletionFunctionToolParam] | None
     """The tools for developer role."""
+
+    task: str | None
+    """Model-specific task marker. Currently passed through for DeepSeek V4."""
 
 
 # Passed in by user
@@ -1449,6 +1455,9 @@ def _parse_chat_message_content(
 
         if "name" in message and isinstance(message["name"], str):
             result_msg["name"] = message["name"]
+
+        if "task" in message and isinstance(message["task"], str):
+            result_msg["task"] = message["task"]
 
         if role == "developer":
             result_msg["tools"] = message.get("tools", None)

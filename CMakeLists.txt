@@ -281,7 +281,6 @@ set(APHRODITE_EXT_SRC
   "csrc/topk.cu"
   "csrc/cuda_view.cu"
   "csrc/dsv3_fused_a_gemm.cu"
-  "csrc/minimax_reduce_rms_kernel.cu"
   "csrc/quantization/gptq/q_gemm.cu"
   "csrc/quantization/w8a8/int8/scaled_quant.cu"
   "csrc/quantization/w8a8/fp8/common.cu"
@@ -293,7 +292,11 @@ set(APHRODITE_EXT_SRC
   "csrc/cpu/dry.cpp"
   "csrc/torch_bindings.cpp")
 
-  if(APHRODITE_GPU_LANG STREQUAL "CUDA")
+if(APHRODITE_GPU_LANG STREQUAL "CUDA")
+  list(APPEND APHRODITE_EXT_SRC
+    "csrc/minimax_reduce_rms_kernel.cu"
+    "csrc/fused_deepseek_v4_qnorm_rope_kv_insert_kernel.cu")
+
   SET(CUTLASS_ENABLE_HEADERS_ONLY ON CACHE BOOL "Enable only the header library")
 
   # Set CUTLASS_REVISION. Used for FetchContent. Also fixes some bogus messages when building.
@@ -945,7 +948,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   list(APPEND APHRODITE_MOE_EXT_SRC
     "csrc/moe/moe_wna16.cu"
     "csrc/moe/grouped_topk_kernels.cu"
-    "csrc/moe/router_gemm.cu")
+    "csrc/moe/router_gemm.cu"
+    "csrc/moe/topk_softplus_sqrt_kernels.cu")
 endif()
 
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
