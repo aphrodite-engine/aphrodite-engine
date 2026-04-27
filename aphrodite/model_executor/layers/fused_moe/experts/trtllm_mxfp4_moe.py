@@ -356,9 +356,9 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
             "tune_max_num_tokens": max(self.max_capture_size, 1),
         }
 
-        from flashinfer import _is_fi_autotuning, trtllm_fp4_block_scale_routed_moe
+        from flashinfer import trtllm_fp4_block_scale_routed_moe
 
-        from aphrodite.utils.flashinfer import autotune
+        from aphrodite.utils.flashinfer import _is_fi_autotuning, autotune
 
         with autotune(_is_fi_autotuning):
             trtllm_fp4_block_scale_routed_moe(**kwargs)
