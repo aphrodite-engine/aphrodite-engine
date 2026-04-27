@@ -168,6 +168,9 @@ fp_exl3_mgemm_kernel select_exl3_mgemm_kernel(
   } else if (cc == CC_BLACKWELL && K == 4 && size_m == 1 && size_k == 1024 &&
              size_n == 3072 && bszm_out == 2) {
     shape_idx = 2;
+  } else if (cc == CC_BLACKWELL && K == 4 && size_m == 1 && size_k == 256 &&
+             size_n == 1024 && bszm_out <= 32) {
+    shape_idx = 2;
   } else {
     shape_idx = select_gemm_shape(cc, size_m, size_k, size_n, K, true, bszm_in,
                                   bszm_out);

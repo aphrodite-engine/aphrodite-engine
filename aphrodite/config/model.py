@@ -585,6 +585,7 @@ class ModelConfig:
             if self.pooler_config.tok_pooling_type is None:
                 self.pooler_config.tok_pooling_type = default_tok_pooling_type
 
+        requested_dtype = self.dtype
         self.dtype: torch.dtype = _get_and_verify_dtype(
             self.model,
             self.hf_config,
@@ -667,6 +668,15 @@ class ModelConfig:
         self.config_updated = False
         self._try_verify_and_update_model_config()
         self._verify_quantization()
+        if (
+            self.quantization == "exl3"
+            and isinstance(requested_dtype, str)
+            and requested_dtype.lower() == "auto"
+            and self.dtype != torch.float16
+            and "moe" in self.hf_config.model_type.lower()
+        ):
+            logger.info("Defaulting EXL3 activation dtype from %s to torch.float16.", self.dtype)
+            self.dtype = torch.float16
         self._verify_cuda_graph()
         self._verify_bnb_config()
 

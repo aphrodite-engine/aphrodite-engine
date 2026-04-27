@@ -184,6 +184,8 @@ def _exl3_gate_up(
         -1,
         0,
     )
+    if x.shape[0] == 1:
+        return output.view(1, out_features * 2)
     return torch.cat([output[0], output[1]], dim=-1)
 
 
