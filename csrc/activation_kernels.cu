@@ -105,6 +105,18 @@ __global__ void silu_mul_kernel(scalar_t* __restrict__ out,
   }
 }
 
+__global__ void make_gate_up_indices_kernel(int64_t* __restrict__ out,
+                                            const int64_t* __restrict__ indices,
+                                            const int64_t numel,
+                                            const int64_t offset) {
+  for (int64_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < numel;
+       idx += (int64_t)blockDim.x * gridDim.x) {
+    const int64_t expert_id = APHRODITE_LDG(&indices[idx]);
+    out[idx] = expert_id;
+    out[idx + numel] = expert_id + offset;
+  }
+}
+
 template <typename T>
 __device__ __forceinline__ T gelu_kernel(const T& x) {
   // Equivalent to PyTorch GELU with 'none' approximation.
@@ -263,6 +275,30 @@ void silu_mul(torch::Tensor& out, torch::Tensor const& gate,
         out.data_ptr<scalar_t>(), gate.data_ptr<scalar_t>(),
         up.data_ptr<scalar_t>(), numel);
   });
+}
+
+void make_gate_up_indices(torch::Tensor& out, torch::Tensor const& indices,
+                          int64_t offset) {
+  TORCH_CHECK(out.is_cuda(), "out must be a CUDA tensor");
+  TORCH_CHECK(indices.is_cuda(), "indices must be a CUDA tensor");
+  TORCH_CHECK(out.scalar_type() == at::ScalarType::Long,
+              "out must have dtype int64");
+  TORCH_CHECK(indices.scalar_type() == at::ScalarType::Long,
+              "indices must have dtype int64");
+  TORCH_CHECK(out.numel() == indices.numel() * 2,
+              "out must have exactly twice as many elements as indices");
+
+  const int64_t numel = indices.numel();
+  if (numel == 0) {
+    return;
+  }
+
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(indices));
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  const int block = 256;
+  const int grid = std::min<int64_t>((numel + block - 1) / block, 1024);
+  aphrodite::make_gate_up_indices_kernel<<<grid, block, 0, stream>>>(
+      out.data_ptr<int64_t>(), indices.data_ptr<int64_t>(), numel, offset);
 }
 
 void gelu_and_mul(torch::Tensor& out,    // [..., d]

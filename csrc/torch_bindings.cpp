@@ -172,6 +172,10 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.impl("silu_mul", torch::kCUDA, &silu_mul);
 
   ops.def(
+      "make_gate_up_indices(Tensor! result, Tensor indices, int offset) -> ()");
+  ops.impl("make_gate_up_indices", torch::kCUDA, &make_gate_up_indices);
+
+  ops.def(
       "silu_and_mul_quant(Tensor! result, Tensor input, Tensor scale) -> ()");
   ops.impl("silu_and_mul_quant", torch::kCUDA, &silu_and_mul_quant);
 

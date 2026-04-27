@@ -1195,40 +1195,64 @@ class Exl3MoEMethod(FusedMoEMethodBase):
     ) -> torch.Tensor:
         x_3d = x_2d.unsqueeze(0)
 
-        ops.exl3_mgemm(
-            x_3d,
-            layer.exl3_gate_ptrs_trellis,
-            layer.exl3_small_interm_g,
-            layer.exl3_gate_ptrs_suh,
-            layer.exl3_small_yh,
-            layer.exl3_gate_ptrs_svh,
-            topk_ids,
-            None,
-            layer.exl3_moe_k_gate,
-            -1,
-            layer.exl3_gate_mcg,
-            layer.exl3_gate_mul1,
-            -1,
-            -1,
-            0,
-        )
-        ops.exl3_mgemm(
-            x_3d,
-            layer.exl3_up_ptrs_trellis,
-            layer.exl3_small_interm_u,
-            layer.exl3_up_ptrs_suh,
-            layer.exl3_small_yh,
-            layer.exl3_up_ptrs_svh,
-            topk_ids,
-            None,
-            layer.exl3_moe_k_up,
-            -1,
-            layer.exl3_up_mcg,
-            layer.exl3_up_mul1,
-            -1,
-            -1,
-            0,
-        )
+        if layer.exl3_fuse_gate_up:
+            ops.make_gate_up_indices(
+                layer.exl3_small_gate_up_ids,
+                topk_ids,
+                layer.local_num_experts,
+            )
+            ops.exl3_mgemm(
+                x_3d,
+                layer.exl3_gate_up_ptrs_trellis,
+                layer.exl3_small_interm_gu,
+                layer.exl3_gate_up_ptrs_suh,
+                layer.exl3_small_yh_gu,
+                layer.exl3_gate_up_ptrs_svh,
+                layer.exl3_small_gate_up_ids,
+                None,
+                layer.exl3_moe_k_gate,
+                -1,
+                layer.exl3_gate_mcg,
+                layer.exl3_gate_mul1,
+                -1,
+                -1,
+                0,
+            )
+        else:
+            ops.exl3_mgemm(
+                x_3d,
+                layer.exl3_gate_ptrs_trellis,
+                layer.exl3_small_interm_g,
+                layer.exl3_gate_ptrs_suh,
+                layer.exl3_small_yh,
+                layer.exl3_gate_ptrs_svh,
+                topk_ids,
+                None,
+                layer.exl3_moe_k_gate,
+                -1,
+                layer.exl3_gate_mcg,
+                layer.exl3_gate_mul1,
+                -1,
+                -1,
+                0,
+            )
+            ops.exl3_mgemm(
+                x_3d,
+                layer.exl3_up_ptrs_trellis,
+                layer.exl3_small_interm_u,
+                layer.exl3_up_ptrs_suh,
+                layer.exl3_small_yh,
+                layer.exl3_up_ptrs_svh,
+                topk_ids,
+                None,
+                layer.exl3_moe_k_up,
+                -1,
+                layer.exl3_up_mcg,
+                layer.exl3_up_mul1,
+                -1,
+                -1,
+                0,
+            )
         ops.silu_mul(
             layer.exl3_small_interm_a,
             layer.exl3_small_interm_g,
@@ -1271,40 +1295,64 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         topk_weights_3d = topk_weights.unsqueeze(1)
 
         for i in range(x_2d.shape[0]):
-            ops.exl3_mgemm(
-                x_3d[i],
-                layer.exl3_gate_ptrs_trellis,
-                layer.exl3_small_interm_g,
-                layer.exl3_gate_ptrs_suh,
-                layer.exl3_small_yh,
-                layer.exl3_gate_ptrs_svh,
-                topk_ids_3d[i],
-                None,
-                layer.exl3_moe_k_gate,
-                -1,
-                layer.exl3_gate_mcg,
-                layer.exl3_gate_mul1,
-                -1,
-                -1,
-                0,
-            )
-            ops.exl3_mgemm(
-                x_3d[i],
-                layer.exl3_up_ptrs_trellis,
-                layer.exl3_small_interm_u,
-                layer.exl3_up_ptrs_suh,
-                layer.exl3_small_yh,
-                layer.exl3_up_ptrs_svh,
-                topk_ids_3d[i],
-                None,
-                layer.exl3_moe_k_up,
-                -1,
-                layer.exl3_up_mcg,
-                layer.exl3_up_mul1,
-                -1,
-                -1,
-                0,
-            )
+            if layer.exl3_fuse_gate_up:
+                ops.make_gate_up_indices(
+                    layer.exl3_small_gate_up_ids,
+                    topk_ids_3d[i],
+                    layer.local_num_experts,
+                )
+                ops.exl3_mgemm(
+                    x_3d[i],
+                    layer.exl3_gate_up_ptrs_trellis,
+                    layer.exl3_small_interm_gu,
+                    layer.exl3_gate_up_ptrs_suh,
+                    layer.exl3_small_yh_gu,
+                    layer.exl3_gate_up_ptrs_svh,
+                    layer.exl3_small_gate_up_ids,
+                    None,
+                    layer.exl3_moe_k_gate,
+                    -1,
+                    layer.exl3_gate_mcg,
+                    layer.exl3_gate_mul1,
+                    -1,
+                    -1,
+                    0,
+                )
+            else:
+                ops.exl3_mgemm(
+                    x_3d[i],
+                    layer.exl3_gate_ptrs_trellis,
+                    layer.exl3_small_interm_g,
+                    layer.exl3_gate_ptrs_suh,
+                    layer.exl3_small_yh,
+                    layer.exl3_gate_ptrs_svh,
+                    topk_ids_3d[i],
+                    None,
+                    layer.exl3_moe_k_gate,
+                    -1,
+                    layer.exl3_gate_mcg,
+                    layer.exl3_gate_mul1,
+                    -1,
+                    -1,
+                    0,
+                )
+                ops.exl3_mgemm(
+                    x_3d[i],
+                    layer.exl3_up_ptrs_trellis,
+                    layer.exl3_small_interm_u,
+                    layer.exl3_up_ptrs_suh,
+                    layer.exl3_small_yh,
+                    layer.exl3_up_ptrs_svh,
+                    topk_ids_3d[i],
+                    None,
+                    layer.exl3_moe_k_up,
+                    -1,
+                    layer.exl3_up_mcg,
+                    layer.exl3_up_mul1,
+                    -1,
+                    -1,
+                    0,
+                )
             ops.silu_mul(
                 layer.exl3_small_interm_a,
                 layer.exl3_small_interm_g,
@@ -1359,6 +1407,9 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         layer.exl3_up_ptrs_trellis = ptr_tensor("w13", "trellis", "w3")
         layer.exl3_up_ptrs_suh = ptr_tensor("w13", "suh", "w3")
         layer.exl3_up_ptrs_svh = ptr_tensor("w13", "svh", "w3")
+        layer.exl3_gate_up_ptrs_trellis = torch.cat([layer.exl3_gate_ptrs_trellis, layer.exl3_up_ptrs_trellis])
+        layer.exl3_gate_up_ptrs_suh = torch.cat([layer.exl3_gate_ptrs_suh, layer.exl3_up_ptrs_suh])
+        layer.exl3_gate_up_ptrs_svh = torch.cat([layer.exl3_gate_ptrs_svh, layer.exl3_up_ptrs_svh])
         layer.exl3_down_ptrs_trellis = ptr_tensor("w2", "trellis", "w2")
         layer.exl3_down_ptrs_suh = ptr_tensor("w2", "suh", "w2")
         layer.exl3_down_ptrs_svh = ptr_tensor("w2", "svh", "w2")
@@ -1378,14 +1429,26 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         layer.exl3_up_mul1 = (0, "w3") in layer.w13_mul1.exl3_tensors
         layer.exl3_down_mcg = (0, "w2") in layer.w2_mcg.exl3_tensors
         layer.exl3_down_mul1 = (0, "w2") in layer.w2_mul1.exl3_tensors
+        layer.exl3_fuse_gate_up = (
+            layer.exl3_moe_k_gate == layer.exl3_moe_k_up
+            and layer.exl3_gate_mcg == layer.exl3_up_mcg
+            and layer.exl3_gate_mul1 == layer.exl3_up_mul1
+        )
 
         layer.exl3_small_batch_threshold = min(
             layer.local_num_experts // layer.top_k,
             _EXL3_MOE_MAX_EXPERTS_PER_TOKEN,
         )
-        layer.exl3_small_yh = torch.empty((layer.top_k, 1, layer.hidden_size), dtype=torch.float16, device=device)
-        layer.exl3_small_interm_g = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
-        layer.exl3_small_interm_u = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
+        layer.exl3_small_yh_gu = torch.empty(
+            (layer.top_k * 2, 1, layer.hidden_size), dtype=torch.float16, device=device
+        )
+        layer.exl3_small_interm_gu = torch.empty(
+            (layer.top_k * 2, 1, intermediate_size), dtype=torch.float16, device=device
+        )
+        layer.exl3_small_yh = layer.exl3_small_yh_gu[: layer.top_k]
+        layer.exl3_small_interm_g = layer.exl3_small_interm_gu[: layer.top_k]
+        layer.exl3_small_interm_u = layer.exl3_small_interm_gu[layer.top_k :]
+        layer.exl3_small_gate_up_ids = torch.empty((1, layer.top_k * 2), dtype=torch.long, device=device)
         layer.exl3_small_interm_a = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
         layer.exl3_small_out_d = torch.empty((layer.top_k, 1, layer.hidden_size), dtype=torch.float32, device=device)
         layer.exl3_small_batch_out = torch.empty(
