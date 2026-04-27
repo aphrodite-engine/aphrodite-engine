@@ -23,6 +23,26 @@ namespace cg = cooperative_groups;
 #include "exl3_kernel_map_samples.cuh"
 std::map<uint64_t, TResult> _tuning_cache = {};
 
+static bool select_blackwell_gemm_override(int size_m, int size_k, int size_n,
+                                           int K, int* shape_idx,
+                                           int* num_sms) {
+  if (size_m != 1 || K != 4) return false;
+
+  // RTX 50-series Blackwell has fewer SMs than the sample table's tuning
+  // target. These common contraction projections are faster with fewer blocks.
+  if (size_k == 3072 && size_n == 1024) {
+    *shape_idx = 2;
+    *num_sms = 48;
+    return true;
+  }
+  if (size_k == 2048 && size_n == 1024) {
+    *shape_idx = 2;
+    *num_sms = 32;
+    return true;
+  }
+  return false;
+}
+
 int select_gemm_shape(int cc, int size_m, int size_k, int size_n, int K,
                       bool multi, int bszm_in, int bszm_out) {
   bool mod_256 = (size_n % 256 == 0);
@@ -54,7 +74,7 @@ int select_gemm_shape(int cc, int size_m, int size_k, int size_n, int K,
       if (mod_256) return 3;
       return 2;
 
-    // case CC_HOPPER:
+    case CC_HOPPER:
     case CC_BLACKWELL:
       if ((K == 4 || K == 2) && !multi) {
         if (size_k <= 2048) return 1;
@@ -348,6 +368,20 @@ TResult* select_exl3_gemm_mgemm_kernel_new(int cc, int size_m, int size_k,
 
   auto lookup = _tuning_cache.find(key);
   if (lookup == _tuning_cache.end()) {
+    int override_shape_idx = 0;
+    int override_num_sms = 0;
+    if (cc == CC_BLACKWELL && select_blackwell_gemm_override(
+                                  size_m, size_k, size_n, K,
+                                  &override_shape_idx, &override_num_sms)) {
+      TResult tr = {get_gemm_kernel_ptr(K, override_shape_idx, c_fp32, cb),
+                    get_mgemm_kernel_ptr(K, override_shape_idx, c_fp32, cb),
+                    override_shape_idx, override_num_sms,
+                    exl3_gemm_blockdim[override_shape_idx]};
+      _tuning_cache[key] = tr;
+      lookup = _tuning_cache.find(key);
+      return &(lookup->second);
+    }
+
     // Find closest kernel in map
     bool mod512 = (size_n % 512 == 0);
     bool mod256 = (size_n % 256 == 0);
@@ -356,10 +390,11 @@ TResult* select_exl3_gemm_mgemm_kernel_new(int cc, int size_m, int size_k,
     TSample* cand = mod512 ? samples_512 : (mod256 ? samples_256 : samples_128);
     TSample* best = nullptr;
     int64_t best_dist = 1ll << 62;
+    const int sample_cc = cc == CC_BLACKWELL ? CC_HOPPER : cc;
 
     for (; cand->K; cand++) {
       if (cand->K != K) continue;
-      if (cand->cc != cc) continue;
+      if (cand->cc != sample_cc) continue;
 
       int64_t distk = (int64_t)(size_k - cand->k);
       int64_t distn = (int64_t)(size_n - cand->n);

@@ -12,13 +12,12 @@
 // Workspace size
 #define WORKSPACE_SIZE (16 * 1024 * 1024)
 
-// Treat hopper and blackwell as same arch for now
 #define MAX_DEVICES 16
 #define CC_OLD 1
 #define CC_AMPERE 2
 #define CC_ADA 3
 #define CC_HOPPER 4
-#define CC_BLACKWELL 4
+#define CC_BLACKWELL 5
 
 // Singleton to manage context for each device. Stores device attributes and a
 // large-enough lock buffer per device
