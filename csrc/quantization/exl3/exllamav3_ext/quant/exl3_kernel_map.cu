@@ -98,6 +98,10 @@ int select_gemm_shape(int cc, int size_m, int size_k, int size_n, int K,
 
     case CC_HOPPER:
     case CC_BLACKWELL:
+      if (cc == CC_BLACKWELL && multi && K == 4 && size_k == 1024 &&
+          size_n <= 8192 && size_n % 512 == 0) {
+        return 4;
+      }
       if ((K == 4 || K == 2) && !multi) {
         if (size_k <= 2048) return 1;
       }
