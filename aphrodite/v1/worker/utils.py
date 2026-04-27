@@ -491,12 +491,8 @@ def is_residual_scattered_for_sp(aphrodite_config: AphroditeConfig, num_input_to
     """Check if the residual tensor is scattered for sequence parallelism.
 
     The residual tensor is scattered across tensor parallel ranks when sequence
-    parallelism and tensor parallelism is enabled.
-
-    This follows the same logic as SequenceParallelismPass.is_applicable_for_range():
-    - In full-graph compilation mode (no splitting ops or using inductor graph
-      partition), SP is always applied
-    - Otherwise, SP is only applied for specific shapes in compile_sizes
+    parallelism and tensor parallelism is enabled. SP is only supported in
+    full-graph compilation mode.
     """
     if not aphrodite_config.compilation_config.pass_config.enable_sp:
         return False
@@ -506,16 +502,13 @@ def is_residual_scattered_for_sp(aphrodite_config: AphroditeConfig, num_input_to
     if tp == 1:
         return False
 
+    assert (
+        aphrodite_config.compilation_config.use_inductor_graph_partition
+        or not aphrodite_config.compilation_config.splitting_ops
+    ), "Sequence parallelism requires full-graph compilation"
+
     # When sequence parallelism is enabled, we always pad num_input_tokens
     # to be a multiple of tensor_parallel_size (tp) earlier.
     assert num_input_tokens % tp == 0
 
-    if (
-        not aphrodite_config.compilation_config.splitting_ops
-        or aphrodite_config.compilation_config.use_inductor_graph_partition
-    ):
-        return True
-    compile_sizes = aphrodite_config.compilation_config.compile_sizes
-    if compile_sizes is None:
-        return False
-    return num_input_tokens in compile_sizes
+    return True
