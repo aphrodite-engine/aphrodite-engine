@@ -23,48 +23,6 @@ namespace cg = cooperative_groups;
 #include "exl3_kernel_map_samples.cuh"
 std::map<uint64_t, TResult> _tuning_cache = {};
 
-static bool select_blackwell_gemm_override(int size_m, int size_k, int size_n,
-                                           int K, int* shape_idx,
-                                           int* num_sms) {
-  if (size_m != 1) return false;
-
-  // RTX 50-series Blackwell has fewer SMs than the sample table's tuning
-  // target. These common contraction projections are faster with fewer blocks.
-  if ((K == 3 || K == 4 || K == 8) && size_k == 3072 && size_n == 1024) {
-    *shape_idx = 2;
-    *num_sms = 48;
-    return true;
-  }
-  if (K == 4 && size_k == 2048 && size_n == 1024) {
-    *shape_idx = 2;
-    *num_sms = 32;
-    return true;
-  }
-  if (K == 4 && size_k == 1024 && size_n == 256) {
-    *shape_idx = 4;
-    *num_sms = 32;
-    return true;
-  }
-  if (size_k == 1024 && size_n >= 65536) {
-    if (K == 5) {
-      *shape_idx = 3;
-      *num_sms = 84;
-      return true;
-    }
-    if (K == 6) {
-      *shape_idx = 4;
-      *num_sms = 84;
-      return true;
-    }
-    if (K == 8) {
-      *shape_idx = 3;
-      *num_sms = 72;
-      return true;
-    }
-  }
-  return false;
-}
-
 int select_gemm_shape(int cc, int size_m, int size_k, int size_n, int K,
                       bool multi, int bszm_in, int bszm_out) {
   bool mod_256 = (size_n % 256 == 0);
@@ -96,12 +54,8 @@ int select_gemm_shape(int cc, int size_m, int size_k, int size_n, int K,
       if (mod_256) return 3;
       return 2;
 
-    case CC_HOPPER:
+    // case CC_HOPPER:
     case CC_BLACKWELL:
-      if (cc == CC_BLACKWELL && multi && K == 4 && size_k == 1024 &&
-          size_n <= 8192 && size_n % 512 == 0) {
-        return 4;
-      }
       if ((K == 4 || K == 2) && !multi) {
         if (size_k <= 2048) return 1;
       }
@@ -205,10 +159,16 @@ fp_exl3_mgemm_kernel select_exl3_mgemm_kernel(
     int cc, int size_m, int size_k, int size_n, int K, bool c_fp32,
     int force_shape_idx, int* out_block_dim, int* out_shape_idx, int* num_sms,
     int cb, int bszm_in, int bszm_out) {
-  int shape_idx = force_shape_idx <= 0
-                      ? select_gemm_shape(cc, size_m, size_k, size_n, K, true,
-                                          bszm_in, bszm_out)
-                      : force_shape_idx;
+  int shape_idx;
+  if (force_shape_idx > 0) {
+    shape_idx = force_shape_idx;
+  } else if (cc == CC_BLACKWELL && K == 4 && size_m == 1 && size_k == 1024 &&
+             size_n == 256 && bszm_out <= 32) {
+    shape_idx = 4;
+  } else {
+    shape_idx = select_gemm_shape(cc, size_m, size_k, size_n, K, true, bszm_in,
+                                  bszm_out);
+  }
   TORCH_CHECK(shape_idx > 0, "exl3_mgemm: no compatible kernel");
   if (out_shape_idx) *out_shape_idx = shape_idx;
   if (out_block_dim) *out_block_dim = exl3_gemm_blockdim[shape_idx];
@@ -394,20 +354,6 @@ TResult* select_exl3_gemm_mgemm_kernel_new(int cc, int size_m, int size_k,
 
   auto lookup = _tuning_cache.find(key);
   if (lookup == _tuning_cache.end()) {
-    int override_shape_idx = 0;
-    int override_num_sms = 0;
-    if (cc == CC_BLACKWELL && select_blackwell_gemm_override(
-                                  size_m, size_k, size_n, K,
-                                  &override_shape_idx, &override_num_sms)) {
-      TResult tr = {get_gemm_kernel_ptr(K, override_shape_idx, c_fp32, cb),
-                    get_mgemm_kernel_ptr(K, override_shape_idx, c_fp32, cb),
-                    override_shape_idx, override_num_sms,
-                    exl3_gemm_blockdim[override_shape_idx]};
-      _tuning_cache[key] = tr;
-      lookup = _tuning_cache.find(key);
-      return &(lookup->second);
-    }
-
     // Find closest kernel in map
     bool mod512 = (size_n % 512 == 0);
     bool mod256 = (size_n % 256 == 0);
@@ -416,11 +362,10 @@ TResult* select_exl3_gemm_mgemm_kernel_new(int cc, int size_m, int size_k,
     TSample* cand = mod512 ? samples_512 : (mod256 ? samples_256 : samples_128);
     TSample* best = nullptr;
     int64_t best_dist = 1ll << 62;
-    const int sample_cc = cc == CC_BLACKWELL ? CC_HOPPER : cc;
 
     for (; cand->K; cand++) {
       if (cand->K != K) continue;
-      if (cand->cc != sample_cc) continue;
+      if (cand->cc != cc) continue;
 
       int64_t distk = (int64_t)(size_k - cand->k);
       int64_t distn = (int64_t)(size_n - cand->n);
