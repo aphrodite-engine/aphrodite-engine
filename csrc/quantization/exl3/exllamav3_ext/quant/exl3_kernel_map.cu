@@ -26,19 +26,41 @@ std::map<uint64_t, TResult> _tuning_cache = {};
 static bool select_blackwell_gemm_override(int size_m, int size_k, int size_n,
                                            int K, int* shape_idx,
                                            int* num_sms) {
-  if (size_m != 1 || K != 4) return false;
+  if (size_m != 1) return false;
 
   // RTX 50-series Blackwell has fewer SMs than the sample table's tuning
   // target. These common contraction projections are faster with fewer blocks.
-  if (size_k == 3072 && size_n == 1024) {
+  if ((K == 3 || K == 4 || K == 8) && size_k == 3072 && size_n == 1024) {
     *shape_idx = 2;
     *num_sms = 48;
     return true;
   }
-  if (size_k == 2048 && size_n == 1024) {
+  if (K == 4 && size_k == 2048 && size_n == 1024) {
     *shape_idx = 2;
     *num_sms = 32;
     return true;
+  }
+  if (K == 4 && size_k == 1024 && size_n == 256) {
+    *shape_idx = 4;
+    *num_sms = 32;
+    return true;
+  }
+  if (size_k == 1024 && size_n >= 65536) {
+    if (K == 5) {
+      *shape_idx = 3;
+      *num_sms = 84;
+      return true;
+    }
+    if (K == 6) {
+      *shape_idx = 4;
+      *num_sms = 84;
+      return true;
+    }
+    if (K == 8) {
+      *shape_idx = 3;
+      *num_sms = 72;
+      return true;
+    }
   }
   return false;
 }
