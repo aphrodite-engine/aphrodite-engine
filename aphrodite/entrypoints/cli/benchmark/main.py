@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
+import logging
 import sys
 import typing
 
@@ -20,6 +21,7 @@ def _import_bench_subcommand_modules() -> None:
     # when `aphrodite bench` is actually invoked.
     import aphrodite.entrypoints.cli.benchmark.latency  # noqa: F401
     import aphrodite.entrypoints.cli.benchmark.mm_processor  # noqa: F401
+    import aphrodite.entrypoints.cli.benchmark.perf  # noqa: F401
     import aphrodite.entrypoints.cli.benchmark.serve  # noqa: F401
     import aphrodite.entrypoints.cli.benchmark.startup  # noqa: F401
     import aphrodite.entrypoints.cli.benchmark.sweep  # noqa: F401
@@ -55,7 +57,12 @@ class BenchmarkSubcommand(CLISubcommand):
         # before the subcommand don't break detection.
         first_positional = next((arg for arg in sys.argv[1:] if not arg.startswith("-")), None)
         if first_positional == self.name:
-            _import_bench_subcommand_modules()
+            previous_disable_level = logging.root.manager.disable
+            logging.disable(logging.INFO)
+            try:
+                _import_bench_subcommand_modules()
+            finally:
+                logging.disable(previous_disable_level)
             for cmd_cls in BenchmarkSubcommandBase.__subclasses__():
                 cmd_subparser = bench_subparsers.add_parser(
                     cmd_cls.name,
