@@ -292,8 +292,8 @@ set(APHRODITE_EXT_SRC
   "csrc/cpu/dry.cpp"
   "csrc/torch_bindings.cpp")
 
-  if(APHRODITE_GPU_LANG STREQUAL "CUDA")
-  list(APPEND VLLM_EXT_SRC
+if(APHRODITE_GPU_LANG STREQUAL "CUDA")
+  list(APPEND APHRODITE_EXT_SRC
     "csrc/minimax_reduce_rms_kernel.cu"
     "csrc/fused_deepseek_v4_qnorm_rope_kv_insert_kernel.cu")
 
