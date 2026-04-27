@@ -547,7 +547,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         # Part 2: Core Attention (Custom Op)
         # ============================================================
         # Note: we should not use torch.empty here like other attention backends,
-        # see discussions in https://github.com/aphrodite-project/aphrodite/pull/28182
+        # see discussions in https://github.com/vllm-project/vllm/pull/28182
         core_attn_out = torch.zeros(
             (num_tokens, self.num_v_heads // self.tp_size, self.head_v_dim),
             dtype=hidden_states.dtype,

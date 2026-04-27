@@ -14,7 +14,10 @@ ALLOWED_LINES = {
     "from aphrodite.triton_utils import tl, triton",
 }
 
-ALLOWED_FILES = {"aphrodite/triton_utils/importing.py"}
+ALLOWED_FILES = {
+    "aphrodite/model_executor/layers/fused_moe/experts/gpt_oss_triton_kernels_moe.py",
+    "aphrodite/triton_utils/importing.py",
+}
 
 
 def is_allowed_file(current_file: str) -> bool:

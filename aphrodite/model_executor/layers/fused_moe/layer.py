@@ -255,6 +255,7 @@ class FusedMoE(PluggableLayer):
         custom_routing_function: Callable | None = None,
         scoring_func: str = "softmax",
         routed_scaling_factor: float = 1.0,
+        swiglu_limit: float | None = None,
         e_score_correction_bias: torch.Tensor | None = None,
         apply_router_weight_on_input: bool = False,
         activation: str = "silu",
@@ -272,6 +273,7 @@ class FusedMoE(PluggableLayer):
         routed_output_transform: torch.nn.Module | None = None,
         apply_routed_scale_to_output: bool = False,
         zero_expert_type: str | None = None,
+        hash_indices_table: torch.Tensor | None = None,
     ):
         super().__init__()
 
@@ -281,6 +283,7 @@ class FusedMoE(PluggableLayer):
 
         aphrodite_config = get_current_aphrodite_config()
         self.aphrodite_config = aphrodite_config
+        self.swiglu_limit = swiglu_limit
 
         # FIXME (varun): We should have a better way of inferring the activation
         # datatype. This works for now as the tensor datatype entering the MoE
@@ -424,6 +427,7 @@ class FusedMoE(PluggableLayer):
         self.e_score_correction_bias = e_score_correction_bias
         # TODO(bnell): end attributes
 
+        self.hash_indices_table = hash_indices_table
         self.apply_router_weight_on_input = apply_router_weight_on_input
         self.activation = MoEActivation.from_str(activation)
 
@@ -448,6 +452,7 @@ class FusedMoE(PluggableLayer):
             indices_type_getter=lambda: self.quant_method.topk_indices_dtype,
             zero_expert_type=zero_expert_type,
             num_logical_experts=self.logical_num_experts,
+            hash_indices_table=self.hash_indices_table,
         )
         self.routing_method_type: RoutingMethodType = self.router.routing_method_type
 
@@ -1461,10 +1466,12 @@ class FusedMoE(PluggableLayer):
         self,
         hidden_states: torch.Tensor,
         router_logits: torch.Tensor,
+        input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self.runner.forward(
             hidden_states,
             router_logits,
+            input_ids,
         )
 
     @property

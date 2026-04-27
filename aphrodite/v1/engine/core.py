@@ -45,6 +45,7 @@ from aphrodite.v1.core.kv_cache_utils import (
     get_kv_cache_configs,
     get_request_block_hasher,
     init_none_hash,
+    resolve_kv_cache_block_sizes,
 )
 from aphrodite.v1.core.sched.interface import PauseState, SchedulerInterface
 from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -137,11 +138,7 @@ class EngineCore:
                 logger.warning("Disabling chunked prefill for model without KVCache")
                 aphrodite_config.scheduler_config.enable_chunked_prefill = False
 
-        scheduler_block_size = (
-            aphrodite_config.cache_config.block_size
-            * aphrodite_config.parallel_config.decode_context_parallel_size
-            * aphrodite_config.parallel_config.prefill_context_parallel_size
-        )
+        scheduler_block_size, hash_block_size = resolve_kv_cache_block_sizes(kv_cache_config, aphrodite_config)
 
         self.scheduler: SchedulerInterface = Scheduler(
             aphrodite_config=aphrodite_config,
@@ -150,6 +147,7 @@ class EngineCore:
             include_finished_set=include_finished_set,
             log_stats=self.log_stats,
             block_size=scheduler_block_size,
+            hash_block_size=hash_block_size,
         )
         self.use_spec_decode = aphrodite_config.speculative_config is not None
         if self.scheduler.connector is not None:  # type: ignore
@@ -197,7 +195,7 @@ class EngineCore:
             caching_hash_fn = get_hash_fn_by_name(aphrodite_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
 
-            self.request_block_hasher = get_request_block_hasher(scheduler_block_size, caching_hash_fn)
+            self.request_block_hasher = get_request_block_hasher(hash_block_size, caching_hash_fn)
 
         self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
         self.async_scheduling = aphrodite_config.scheduler_config.async_scheduling

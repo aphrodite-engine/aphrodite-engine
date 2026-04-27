@@ -486,7 +486,7 @@ class Llama4Model(LlamaModel):
                 if expert_map is not None:
                     local_expert_indices = (expert_map != -1).nonzero().flatten().to(new_loaded_weight.device)
                     # Workaround for FP8 CPU indexing on older PyTorch:
-                    # https://github.com/aphrodite-project/aphrodite/issues/32862
+                    # https://github.com/vllm-project/vllm/issues/32862
                     is_fp8_dtype = new_loaded_weight.dtype == (current_platform.fp8_dtype()) or (
                         new_loaded_weight.dtype.is_floating_point and new_loaded_weight.element_size() == 1
                     )

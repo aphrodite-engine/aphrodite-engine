@@ -313,6 +313,8 @@ class RoutingSimulatorRouter(BaseRouter):
         hidden_states: torch.Tensor,
         router_logits: torch.Tensor,
         indices_type: torch.dtype | None,
+        *,
+        input_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Use routing simulator to compute routing."""
         routing_strategy = envs.APHRODITE_MOE_ROUTING_SIMULATION_STRATEGY

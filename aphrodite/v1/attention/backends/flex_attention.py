@@ -818,7 +818,7 @@ class FlexAttentionMetadataBuilder(AttentionMetadataBuilder[FlexAttentionMetadat
             uses_paged_kv=uses_paged_kv,
             # FIXME(Isotr0py): direct build has issue to build bidirectional
             # attention block mask for encoder-only models, disable it temporarily.
-            # see: https://github.com/aphrodite-project/aphrodite/pull/27329#issuecomment-3431484053
+            # see: https://github.com/vllm-project/vllm/pull/27329#issuecomment-3431484053
             direct_build=self.direct_build and uses_paged_kv,
             q_block_size=self.q_block_size,
             kv_block_size=self.kv_block_size,
@@ -1002,7 +1002,7 @@ class FlexAttentionImpl(AttentionImpl):
             if (key_tensor.size(-2) > num_actual_tokens) or (value_tensor.size(-2) > num_actual_tokens):
                 # In the encoder-only model with torch.compile,
                 # qkv might be padded, which might cause exception.
-                # see: https://github.com/aphrodite-project/aphrodite/pull/24872#discussion_r2353252290
+                # see: https://github.com/vllm-project/vllm/pull/24872#discussion_r2353252290
                 key_tensor = key_tensor[:, :, :num_actual_tokens, :]
                 value_tensor = value_tensor[:, :, :num_actual_tokens, :]
 

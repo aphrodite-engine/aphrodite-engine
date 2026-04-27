@@ -81,10 +81,10 @@ else:
 
 logger = init_logger(__name__)
 
-RunnerOption = Literal["auto", RunnerType]
+RunnerOption = Literal["auto", "generate", "pooling", "draft"]
 ConvertType = Literal["none", "embed", "classify"]
 ConvertOption = Literal["auto", ConvertType]
-TokenizerMode = Literal["auto", "hf", "slow", "mistral", "deepseek_v32"]
+TokenizerMode = Literal["auto", "hf", "slow", "mistral", "deepseek_v32", "deepseek_v4"]
 ModelDType = Literal["auto", "half", "float16", "bfloat16", "float", "float32"]
 LogprobsMode = Literal["raw_logits", "raw_logprobs", "processed_logits", "processed_logprobs"]
 HfOverrides = dict[str, Any] | Callable[[PretrainedConfig], PretrainedConfig]
@@ -131,6 +131,7 @@ class ModelConfig:
     - "slow" will always use the slow tokenizer.
     - "mistral" will always use the tokenizer from `mistral_common`.
     - "deepseek_v32" will always use the tokenizer from `deepseek_v32`.
+    - "deepseek_v4" will always use the tokenizer from `deepseek_v4`.
     - "qwen_vl" will always use the tokenizer from `qwen_vl`.
     - Other custom values can be supported via plugins."""
     trust_remote_code: bool = False
@@ -555,6 +556,8 @@ class ModelConfig:
                 self.tokenizer_mode = "qwen_vl"
             elif arch == "DeepseekV32ForCausalLM":
                 self.tokenizer_mode = "deepseek_v32"
+            elif arch == "DeepseekV4ForCausalLM":
+                self.tokenizer_mode = "deepseek_v4"
 
             if self.tokenizer_mode != "auto":
                 logger.info(
@@ -924,6 +927,7 @@ class ModelConfig:
                 # imports during override detection (e.g., MXFP4 imports Triton)
                 "mxfp4",
                 "gpt_oss_mxfp4",
+                "deepseek_v4_fp8",
                 "cpu_awq",
                 "humming",
                 "gguf",
