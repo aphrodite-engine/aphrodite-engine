@@ -1,20 +1,57 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import math
+import os
+import tempfile
 from functools import cache
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
 
+from aphrodite import envs
 from aphrodite.platforms import current_platform
 from aphrodite.utils.import_utils import has_tilelang
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
+
+def _is_noexec_path(path: str) -> bool:
+    path = os.path.realpath(path)
+    try:
+        mounts = Path("/proc/self/mountinfo").read_text().splitlines()
+    except OSError:
+        return False
+
+    best_mount = ""
+    best_options = ""
+    for line in mounts:
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        mount_point = os.path.realpath(parts[4])
+        if (path == mount_point or path.startswith(f"{mount_point}/")) and len(mount_point) > len(best_mount):
+            best_mount = mount_point
+            best_options = parts[5]
+
+    return "noexec" in best_options.split(",")
+
+
+def _ensure_tilelang_executable_tmpdir() -> None:
+    if not _is_noexec_path(tempfile.gettempdir()):
+        return
+
+    tmpdir = Path(envs.APHRODITE_CACHE_ROOT) / "tilelang_tmp"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    os.environ["TMPDIR"] = str(tmpdir)
+    tempfile.tempdir = str(tmpdir)
+
+
 # tilelang is only available on CUDA platforms
 if TYPE_CHECKING or current_platform.is_cuda_alike():
     if not has_tilelang():
         raise ImportError("tilelang is required for mhc but is not installed. Install it with `pip install tilelang`.")
+    _ensure_tilelang_executable_tmpdir()
     import tilelang
     import tilelang.language as T
 else:
