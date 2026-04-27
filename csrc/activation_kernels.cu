@@ -92,6 +92,19 @@ __device__ __forceinline__ packed_t packed_silu_kernel(const packed_t& val) {
   return cast_to_packed<packed_t>(fval);
 }
 
+template <typename scalar_t>
+__global__ void silu_mul_kernel(scalar_t* __restrict__ out,
+                                const scalar_t* __restrict__ gate,
+                                const scalar_t* __restrict__ up,
+                                const int64_t numel) {
+  for (int64_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < numel;
+       idx += (int64_t)blockDim.x * gridDim.x) {
+    const scalar_t gate_val = APHRODITE_LDG(&gate[idx]);
+    const scalar_t up_val = APHRODITE_LDG(&up[idx]);
+    out[idx] = silu_kernel(gate_val) * up_val;
+  }
+}
+
 template <typename T>
 __device__ __forceinline__ T gelu_kernel(const T& x) {
   // Equivalent to PyTorch GELU with 'none' approximation.
@@ -219,6 +232,37 @@ void mul_and_silu(torch::Tensor& out,    // [..., d]
   // applies the silu to the latter half of the input.
   LAUNCH_ACTIVATION_GATE_KERNEL(aphrodite::silu_kernel,
                                 aphrodite::packed_silu_kernel, false);
+}
+
+void silu_mul(torch::Tensor& out, torch::Tensor const& gate,
+              torch::Tensor const& up) {
+  TORCH_CHECK(out.is_cuda(), "out must be a CUDA tensor");
+  TORCH_CHECK(gate.is_cuda(), "gate must be a CUDA tensor");
+  TORCH_CHECK(up.is_cuda(), "up must be a CUDA tensor");
+  TORCH_CHECK(out.scalar_type() == gate.scalar_type(),
+              "out and gate must have the same dtype");
+  TORCH_CHECK(up.scalar_type() == gate.scalar_type(),
+              "up and gate must have the same dtype");
+  TORCH_CHECK(out.numel() == gate.numel(),
+              "out and gate must have the same number of elements");
+  TORCH_CHECK(up.numel() == gate.numel(),
+              "up and gate must have the same number of elements");
+
+  const int64_t numel = gate.numel();
+  if (numel == 0) {
+    return;
+  }
+
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(gate));
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  const int block = 256;
+  const int grid = std::min<int64_t>((numel + block - 1) / block, 1024);
+
+  APHRODITE_DISPATCH_FLOATING_TYPES(gate.scalar_type(), "silu_mul_kernel", [&] {
+    aphrodite::silu_mul_kernel<scalar_t><<<grid, block, 0, stream>>>(
+        out.data_ptr<scalar_t>(), gate.data_ptr<scalar_t>(),
+        up.data_ptr<scalar_t>(), numel);
+  });
 }
 
 void gelu_and_mul(torch::Tensor& out,    // [..., d]

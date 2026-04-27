@@ -1054,11 +1054,6 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         else:
             x_2d = x_2d.contiguous()
 
-        output = torch.zeros(
-            (x_2d.shape[0], layer.hidden_size),
-            device=x_2d.device,
-            dtype=torch.float32,
-        )
         topk_ids = topk_ids.to(torch.long)
         topk_weights = topk_weights.to(torch.float16)
         total_assignments = x_2d.shape[0] * topk_ids.shape[-1]
@@ -1083,6 +1078,11 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 x.shape[:-1],
             )
 
+        output = torch.zeros(
+            (x_2d.shape[0], layer.hidden_size),
+            device=x_2d.device,
+            dtype=torch.float32,
+        )
         flat_expert = topk_ids.reshape(-1)
         flat_weight = topk_weights.reshape(-1)
         flat_token = torch.arange(x_2d.shape[0], device=x_2d.device)
@@ -1229,7 +1229,11 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             -1,
             0,
         )
-        layer.exl3_small_interm_a.copy_(torch.nn.functional.silu(layer.exl3_small_interm_g) * layer.exl3_small_interm_u)
+        ops.silu_mul(
+            layer.exl3_small_interm_a,
+            layer.exl3_small_interm_g,
+            layer.exl3_small_interm_u,
+        )
         ops.exl3_mgemm(
             layer.exl3_small_interm_a,
             layer.exl3_down_ptrs_trellis,
@@ -1261,11 +1265,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         original_dtype: torch.dtype,
         original_shape: tuple[int, ...],
     ) -> torch.Tensor:
-        output = torch.empty(
-            (x_2d.shape[0], layer.hidden_size),
-            device=x_2d.device,
-            dtype=torch.float32,
-        )
+        output = layer.exl3_small_batch_out[: x_2d.shape[0]]
         x_3d = x_2d.unsqueeze(1).unsqueeze(1)
         topk_ids_3d = topk_ids.unsqueeze(1)
         topk_weights_3d = topk_weights.unsqueeze(1)
@@ -1305,8 +1305,10 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 -1,
                 0,
             )
-            layer.exl3_small_interm_a.copy_(
-                torch.nn.functional.silu(layer.exl3_small_interm_g) * layer.exl3_small_interm_u
+            ops.silu_mul(
+                layer.exl3_small_interm_a,
+                layer.exl3_small_interm_g,
+                layer.exl3_small_interm_u,
             )
             ops.exl3_mgemm(
                 layer.exl3_small_interm_a,
@@ -1386,6 +1388,11 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         layer.exl3_small_interm_u = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
         layer.exl3_small_interm_a = torch.empty((layer.top_k, 1, intermediate_size), dtype=torch.float16, device=device)
         layer.exl3_small_out_d = torch.empty((layer.top_k, 1, layer.hidden_size), dtype=torch.float32, device=device)
+        layer.exl3_small_batch_out = torch.empty(
+            (layer.exl3_small_batch_threshold, layer.hidden_size),
+            dtype=torch.float32,
+            device=device,
+        )
 
         concurrency = max(
             1,

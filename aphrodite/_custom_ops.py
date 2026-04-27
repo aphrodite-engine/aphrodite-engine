@@ -846,6 +846,10 @@ def silu_and_mul_per_block_quant(
     return output, scales
 
 
+def silu_mul(out: torch.Tensor, gate: torch.Tensor, up: torch.Tensor) -> None:
+    torch.ops._C.silu_mul(out, gate, up)
+
+
 # quantization ops
 # awq
 def awq_dequantize(
