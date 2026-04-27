@@ -159,10 +159,19 @@ fp_exl3_mgemm_kernel select_exl3_mgemm_kernel(
     int cc, int size_m, int size_k, int size_n, int K, bool c_fp32,
     int force_shape_idx, int* out_block_dim, int* out_shape_idx, int* num_sms,
     int cb, int bszm_in, int bszm_out) {
-  int shape_idx = force_shape_idx <= 0
-                      ? select_gemm_shape(cc, size_m, size_k, size_n, K, true,
-                                          bszm_in, bszm_out)
-                      : force_shape_idx;
+  int shape_idx;
+  if (force_shape_idx > 0) {
+    shape_idx = force_shape_idx;
+  } else if (cc == CC_BLACKWELL && K == 4 && size_m == 1 && size_k == 1024 &&
+             size_n == 256 && bszm_out <= 32) {
+    shape_idx = 4;
+  } else if (cc == CC_BLACKWELL && K == 4 && size_m == 1 && size_k == 1024 &&
+             size_n == 3072 && bszm_out == 2) {
+    shape_idx = 2;
+  } else {
+    shape_idx = select_gemm_shape(cc, size_m, size_k, size_n, K, true, bszm_in,
+                                  bszm_out);
+  }
   TORCH_CHECK(shape_idx > 0, "exl3_mgemm: no compatible kernel");
   if (out_shape_idx) *out_shape_idx = shape_idx;
   if (out_block_dim) *out_block_dim = exl3_gemm_blockdim[shape_idx];

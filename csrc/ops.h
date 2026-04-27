@@ -259,6 +259,12 @@ void rotary_embedding(torch::Tensor& positions, torch::Tensor& query,
 
 void silu_and_mul(torch::Tensor& out, torch::Tensor& input);
 
+void silu_mul(torch::Tensor& out, torch::Tensor const& gate,
+              torch::Tensor const& up);
+
+void make_gate_up_indices(torch::Tensor& out, torch::Tensor const& indices,
+                          int64_t offset);
+
 void silu_and_mul_quant(torch::Tensor& out, torch::Tensor& input,
                         torch::Tensor& scale);
 
