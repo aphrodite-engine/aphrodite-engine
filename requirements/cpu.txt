@@ -1,7 +1,7 @@
 # Common dependencies
 -r common.txt
 
-numba == 0.61.2; platform_machine != "s390x" # Required for N-gram speculative decoding
+numba == 0.65.0; platform_machine != "s390x" # Required for N-gram speculative decoding
 
 # Dependencies for CPUs
 packaging>=24.2

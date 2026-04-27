@@ -41,7 +41,7 @@ This will create a [OpenAI](https://platform.openai.com/docs/api-reference/)-com
 ## Requirements
 
 - Operating System: Linux, Windows (WSL2)
-- Python: 3.10 to 3.13
+- Python: 3.10 to 3.13 (build from source for 3.14)
 
 #### Build Requirements
 
