@@ -2,11 +2,6 @@
 ARG REMOTE_APHRODITE="0"
 ARG COMMON_WORKDIR=/app
 ARG BASE_IMAGE=rocm/aphrodite-dev:base
-# AMD NIC backend
-ARG NIC_BACKEND=none
-# AMD AINIC apt repo settings
-ARG AINIC_VERSION=1.117.5
-ARG UBUNTU_CODENAME=jammy
 
 # Sccache configuration (only used in release pipeline)
 ARG USE_SCCACHE
@@ -129,17 +124,15 @@ COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/benchmarks /benchmarks
 COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/tests /tests
 COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/examples /examples
 COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/docker/Dockerfile.rocm /docker/
-COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/.buildkite /.buildkite
-COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/aphrodite/v1 /aphrodite_v1
 
 
 # -----------------------
 # RIXL/UCX build stages
 FROM base AS build_rixl
-ARG RIXL_BRANCH="bf4a7214"
+ARG RIXL_BRANCH="f33a5599"
 ARG RIXL_REPO="https://github.com/ROCm/RIXL.git"
-ARG UCX_BRANCH="7009d7a1"
-ARG UCX_REPO="https://github.com/openucx/ucx.git"
+ARG UCX_BRANCH="da3fac2a"
+ARG UCX_REPO="https://github.com/ROCm/ucx.git"
 ENV ROCM_PATH=/opt/rocm
 ENV UCX_HOME=/usr/local/ucx
 ENV RIXL_HOME=/usr/local/rixl
@@ -188,11 +181,8 @@ RUN git clone ${RIXL_REPO} /opt/rixl \
     && ninja \
     && ninja install
 
-# Generate RIXL wheel. Exclude libcore and libpull from auditwheel: transitive
-# dependencies that are not shipped in the wheel and vary across base images.
+# Generate RIXL wheel.
 RUN cd /opt/rixl \
-    && sed -i "s/--exclude 'libamdhip64\*'/--exclude 'libamdhip64*' --exclude 'libcore*' --exclude 'libpull*'/" \
-        contrib/build-wheel.sh \
     && mkdir -p /app/install \
     && ./contrib/build-wheel.sh \
         --output-dir /app/install \
@@ -206,10 +196,9 @@ RUN cd /opt/rixl \
 FROM base AS build_deep
 ARG ROCSHMEM_BRANCH="ba0bf0f3"
 ARG ROCSHMEM_REPO="https://github.com/ROCm/rocm-systems.git"
-ARG DEEPEP_BRANCH="5d90af8b"
+ARG DEEPEP_BRANCH="e84464ec"
 ARG DEEPEP_REPO="https://github.com/ROCm/DeepEP.git"
 ARG DEEPEP_NIC="cx7"
-ARG DEEPEP_ROCM_ARCH="gfx942;gfx950"
 ENV ROCSHMEM_DIR=/opt/rocshmem
 
 RUN git clone ${ROCSHMEM_REPO} \
@@ -217,47 +206,18 @@ RUN git clone ${ROCSHMEM_REPO} \
     && git checkout ${ROCSHMEM_BRANCH} \
     && mkdir -p projects/rocshmem/build \
     && cd projects/rocshmem/build \
-    && bash ../scripts/build_configs/all_backends \
+    && cmake .. \
         -DCMAKE_INSTALL_PREFIX="${ROCSHMEM_DIR}" \
         -DROCM_PATH=/opt/rocm \
-        -DGPU_TARGETS="${DEEPEP_ROCM_ARCH}" \
-        -DUSE_EXTERNAL_MPI=OFF
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DUSE_EXTERNAL_MPI=OFF \
+    && make -j \
+    && make install
 
 RUN git clone ${DEEPEP_REPO} \
     && cd DeepEP \
     && git checkout ${DEEPEP_BRANCH} \
     && python3 setup.py --variant rocm --nic ${DEEPEP_NIC} bdist_wheel --dist-dir=/app/deep_install
-
-
-# -----------------------
-# MoRI runtime dependencies. These live in Dockerfile.rocm so NIC backend
-# changes do not force users to rebuild the long-lived base image.
-FROM base AS mori_base
-ARG NIC_BACKEND
-ARG AINIC_VERSION
-ARG UBUNTU_CODENAME
-RUN /bin/bash -lc 'set -euo pipefail; \
-    echo "[MORI] Install MoRI proxy deps"; \
-    pip install --quiet --ignore-installed blinker; \
-    pip install --quiet quart msgpack aiohttp pyzmq; \
-    echo "[MORI] NIC_BACKEND=${NIC_BACKEND}"; \
-    case "${NIC_BACKEND}" in \
-      none) \
-        ;; \
-      ainic) \
-        apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg apt-transport-https; \
-        rm -rf /var/lib/apt/lists/*; \
-        mkdir -p /etc/apt/keyrings; \
-        curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor > /etc/apt/keyrings/amdainic.gpg; \
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/amdainic.gpg] https://repo.radeon.com/amdainic/pensando/ubuntu/${AINIC_VERSION} ${UBUNTU_CODENAME} main" > /etc/apt/sources.list.d/amdainic.list; \
-        apt-get update && apt-get install -y --no-install-recommends libionic-dev ionic-common; \
-        rm -rf /var/lib/apt/lists/*; \
-        ;; \
-      *) \
-        echo "ERROR: unknown NIC_BACKEND=${NIC_BACKEND}. Use one of: none, ainic"; \
-        exit 2; \
-        ;; \
-    esac;'
 
 
 # -----------------------
@@ -336,13 +296,11 @@ COPY --from=build_aphrodite_wheel_release ${COMMON_WORKDIR}/aphrodite/benchmarks
 COPY --from=build_aphrodite_wheel_release ${COMMON_WORKDIR}/aphrodite/tests /tests
 COPY --from=build_aphrodite_wheel_release ${COMMON_WORKDIR}/aphrodite/examples /examples
 COPY --from=build_aphrodite_wheel_release ${COMMON_WORKDIR}/aphrodite/docker/Dockerfile.rocm /docker/
-COPY --from=build_aphrodite_wheel_release ${COMMON_WORKDIR}/aphrodite/.buildkite /.buildkite
-COPY --from=build_aphrodite_wheel_release ${COMMON_WORKDIR}/aphrodite/aphrodite/v1 /aphrodite_v1
 
 
 # -----------------------
 # Test Aphrodite image
-FROM mori_base AS test
+FROM base AS test
 
 RUN python3 -m pip install --upgrade pip && rm -rf /var/lib/apt/lists/*
 
@@ -409,7 +367,7 @@ RUN printf '%s\n' \
 
 # -----------------------
 # Final Aphrodite image
-FROM mori_base AS final
+FROM base AS final
 
 RUN python3 -m pip install --upgrade pip && rm -rf /var/lib/apt/lists/*
 
@@ -443,8 +401,6 @@ RUN --mount=type=bind,from=export_aphrodite,src=/,target=/install \
 
 ARG COMMON_WORKDIR
 ARG BASE_IMAGE
-ARG NIC_BACKEND
-ARG AINIC_VERSION
 
 COPY --from=export_aphrodite /benchmarks ${COMMON_WORKDIR}/aphrodite-engine/benchmarks
 COPY --from=export_aphrodite /examples ${COMMON_WORKDIR}/aphrodite-engine/examples
@@ -458,9 +414,7 @@ ENV HIP_FORCE_DEV_KERNARG=1
 RUN echo "ROCTRACER_MAX_EVENTS=10000000" > ${COMMON_WORKDIR}/libkineto.conf
 ENV KINETO_CONFIG="${COMMON_WORKDIR}/libkineto.conf"
 
-RUN echo "APHRODITE_BASE_IMAGE=${BASE_IMAGE}" >> ${COMMON_WORKDIR}/versions.txt \
-    && echo "MORI_NIC_BACKEND=${NIC_BACKEND}" >> ${COMMON_WORKDIR}/versions.txt \
-    && echo "AINIC_VERSION=${AINIC_VERSION}" >> ${COMMON_WORKDIR}/versions.txt
+RUN echo "APHRODITE_BASE_IMAGE=${BASE_IMAGE}" >> ${COMMON_WORKDIR}/versions.txt
 
 CMD ["/bin/bash"]
 
