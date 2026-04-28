@@ -1270,12 +1270,12 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             topk_ids,
             topk_weights,
             layer.exl3_moe_k_down,
-            -1,
+            layer.exl3_down_force_shape,
             layer.exl3_down_mcg,
             layer.exl3_down_mul1,
             -1,
             -1,
-            0,
+            layer.exl3_down_force_num_sms,
         )
         output = layer.exl3_small_out_d[:1].reshape(*original_shape, layer.hidden_size)
         if output.dtype != original_dtype:
@@ -1370,12 +1370,12 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 topk_ids_3d[i],
                 topk_weights_3d[i],
                 layer.exl3_moe_k_down,
-                -1,
+                layer.exl3_down_force_shape,
                 layer.exl3_down_mcg,
                 layer.exl3_down_mul1,
                 -1,
                 -1,
-                0,
+                layer.exl3_down_force_num_sms,
             )
             output[i : i + 1] = layer.exl3_small_out_d[0]
 
@@ -1431,6 +1431,14 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         layer.exl3_up_mul1 = (0, "w3") in layer.w13_mul1.exl3_tensors
         layer.exl3_down_mcg = (0, "w2") in layer.w2_mcg.exl3_tensors
         layer.exl3_down_mul1 = (0, "w2") in layer.w2_mul1.exl3_tensors
+        device_props = torch.cuda.get_device_properties(device)
+        is_blackwell = device_props.major == 12
+        layer.exl3_down_force_shape = (
+            2
+            if (is_blackwell and layer.exl3_moe_k_down == 4 and intermediate_size == 256 and layer.hidden_size == 1024)
+            else -1
+        )
+        layer.exl3_down_force_num_sms = 32 if layer.exl3_down_force_shape > 0 else 0
         layer.exl3_fuse_gate_up = (
             layer.exl3_moe_k_gate == layer.exl3_moe_k_up
             and layer.exl3_gate_mcg == layer.exl3_up_mcg
