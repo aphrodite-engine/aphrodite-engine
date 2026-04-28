@@ -60,6 +60,7 @@ exclude = [
 
 [tool.ruff.lint.per-file-ignores]
 "aphrodite/third_party/**" = ["ALL"]
+"aphrodite/kernels/kt_kernel/loader.py" = ["ALL"]
 "aphrodite/version.py" = ["F401"]
 "aphrodite/_version.py" = ["ALL"]
 "aphrodite/platforms/cuda.py" = ["E402"]
@@ -131,7 +132,7 @@ python = "./.venv"
 extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*", "tests/tokenizers_/*",
     "benchmarks/sonnet.txt", "tests/lora/data/*", "build/*",
     "examples/pooling/token_embed/*", "tests/models/language/pooling/*",
-    "aphrodite/third_party/*", "aphrodite/entrypoints/serve/instrumentator/static/*", "tests/entrypoints/openai/speech_to_text/test_transcription_validation.py",
+    "aphrodite/third_party/*", "aphrodite/kernels/kt_kernel/loader.py", "aphrodite/entrypoints/serve/instrumentator/static/*", "tests/entrypoints/openai/speech_to_text/test_transcription_validation.py",
     "docs/governance/process.md", "docs/assets/contributing/aphrodite_bench_serve_timeline.html",
     "tests/v1/engine/test_fast_incdec_prefix_err.py", ".git/*"]
 ignore-hidden = false

@@ -77,6 +77,36 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.impl("exl3_moe", torch::kCUDA, &aphrodite_exl3_moe);
 #endif
 
+  ops.def("kt_create_cpu_infer(Tensor numa_nodes, Tensor thread_counts) -> int");
+  ops.impl("kt_create_cpu_infer", torch::kCPU, &kt_create_cpu_infer);
+
+  ops.def("kt_destroy_cpu_infer(int handle, Tensor dispatch_key) -> ()");
+  ops.impl("kt_destroy_cpu_infer", torch::kCPU, &kt_destroy_cpu_infer);
+
+  ops.def(
+      "kt_create_moe(int cpu_handle, str method, int layer_idx, int "
+      "expert_num, int num_experts_per_tok, int hidden_size, int "
+      "intermediate_size, Tensor gpu_experts_mask, int max_len, str path, "
+      "bool load, bool save, Tensor gate_projs, Tensor up_projs, Tensor "
+      "down_projs, Tensor gate_scales, Tensor up_scales, Tensor down_scales, "
+      "int quant_bits, int group_size, bool zero_point, bool per_channel, "
+      "int activation_type) -> int");
+  ops.impl("kt_create_moe", torch::kCPU, &kt_create_moe);
+
+  ops.def("kt_destroy_moe(int handle, Tensor dispatch_key) -> ()");
+  ops.impl("kt_destroy_moe", torch::kCPU, &kt_destroy_moe);
+
+  ops.def("kt_moe_load_weights(int handle, Tensor physical_map) -> ()");
+  ops.impl("kt_moe_load_weights", torch::kCPU, &kt_moe_load_weights);
+
+  ops.def(
+      "kt_moe_submit_forward(int handle, Tensor batch_size, Tensor expert_ids, "
+      "Tensor weights, Tensor input, Tensor output, bool incremental) -> ()");
+  ops.impl("kt_moe_submit_forward", torch::kCPU, &kt_moe_submit_forward);
+
+  ops.def("kt_moe_sync_forward(int handle, Tensor dispatch_key) -> ()");
+  ops.impl("kt_moe_sync_forward", torch::kCPU, &kt_moe_sync_forward);
+
   ops.def("get_cuda_view_from_cpu_tensor(Tensor cpu_tensor) -> Tensor");
   ops.impl("get_cuda_view_from_cpu_tensor", torch::kCPU,
            &get_cuda_view_from_cpu_tensor);

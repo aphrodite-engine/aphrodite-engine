@@ -13,8 +13,10 @@ cmake_minimum_required(VERSION 3.26)
 # cmake --install . --component _C
 project(aphrodite_extensions LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(OpenMP REQUIRED)
+include(CheckIncludeFileCXX)
 
 # CUDA by default, can be overridden by using -DAPHRODITE_TARGET_DEVICE=... (used by setup.py)
 set(APHRODITE_TARGET_DEVICE "cuda" CACHE STRING "Target device backend for Aphrodite")
@@ -291,6 +293,19 @@ set(APHRODITE_EXT_SRC
   "csrc/all_reduce/custom_all_reduce.cu"
   "csrc/cpu/dry.cpp"
   "csrc/torch_bindings.cpp")
+
+set(KT_KERNEL_SRCS
+  "csrc/moe/kt_kernel/ops.cpp"
+  "csrc/moe/kt_kernel/cpu_backend/shared_mem_buffer.cpp"
+  "csrc/moe/kt_kernel/cpu_backend/task_queue.cpp"
+  "csrc/moe/kt_kernel/cpu_backend/worker_pool.cpp"
+  "csrc/moe/kt_kernel/third_party/llama.cpp/ggml_compat.cpp")
+list(APPEND APHRODITE_EXT_SRC "${KT_KERNEL_SRCS}")
+set_source_files_properties(${KT_KERNEL_SRCS} PROPERTIES CXX_STANDARD 20)
+set_source_files_properties(
+  "csrc/moe/kt_kernel/ops.cpp"
+  PROPERTIES
+  COMPILE_OPTIONS "-mavx2;-mfma;-mf16c;-mavx512f;-mavx512bw;-mavx512vl;-mavx512dq;-mavx512vnni;-mavx512bf16;-mavx512vbmi;-mamx-tile;-mamx-int8;-mamx-bf16")
 
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   list(APPEND APHRODITE_EXT_SRC
@@ -724,10 +739,21 @@ define_gpu_extension_target(
   COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
   ARCHITECTURES ${APHRODITE_GPU_ARCHES}
   INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/csrc
+  INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/csrc/moe/kt_kernel
+  INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/csrc/moe/kt_kernel/third_party
+  INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/csrc/moe/kt_kernel/third_party/llama.cpp
   INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR}
   INCLUDE_DIRECTORIES ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
   USE_SABI 3
   WITH_SOABI)
+
+check_include_file_cxx("numa.h" KT_KERNEL_HAS_NUMA_H)
+find_library(NUMA_LIBRARY numa)
+target_link_libraries(_C PRIVATE OpenMP::OpenMP_CXX)
+if(KT_KERNEL_HAS_NUMA_H AND NUMA_LIBRARY)
+  target_compile_definitions(_C PRIVATE KT_KERNEL_USE_NUMA=1)
+  target_link_libraries(_C PRIVATE ${NUMA_LIBRARY})
+endif()
 
 # If CUTLASS is compiled on NVCC >= 12.5, it by default uses
 # cudaGetDriverEntryPointByVersion as a wrapper to avoid directly calling the

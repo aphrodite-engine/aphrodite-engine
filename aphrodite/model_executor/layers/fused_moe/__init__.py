@@ -16,6 +16,9 @@ from aphrodite.model_executor.layers.fused_moe.config import (
 from aphrodite.model_executor.layers.fused_moe.fused_moe_method_base import (
     FusedMoEMethodBase,
 )
+from aphrodite.model_executor.layers.fused_moe.ktransformers_moe import (
+    KTransformersMoEWrapperMethod,
+)
 from aphrodite.model_executor.layers.fused_moe.layer import (
     FusedMoE,
     FusedMoeWeightScaleSupported,
@@ -59,6 +62,7 @@ __all__ = [
     "MoEActivation",
     "UnquantizedFusedMoEMethod",
     "FusedMoeWeightScaleSupported",
+    "KTransformersMoEWrapperMethod",
     "FusedMoEExpertsModular",
     "FusedMoEActivationFormat",
     "FusedMoEPrepareAndFinalizeModular",

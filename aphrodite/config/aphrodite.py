@@ -33,6 +33,7 @@ from .compilation import CompilationConfig, CompilationMode, CUDAGraphMode
 from .device import DeviceConfig
 from .ec_transfer import ECTransferConfig
 from .kernel import KernelConfig
+from .ktransformers import KTransformersMoEConfig
 from .kv_events import KVEventsConfig
 from .kv_transfer import KVTransferConfig
 from .load import LoadConfig
@@ -290,6 +291,8 @@ class AphroditeConfig:
     """Mamba configuration."""
     kernel_config: KernelConfig = Field(default_factory=KernelConfig)
     """Kernel configuration."""
+    ktransformers_moe_config: KTransformersMoEConfig = Field(default_factory=KTransformersMoEConfig)
+    """ktransformers hybrid MoE execution configuration."""
     lora_config: LoRAConfig | None = None
     """LoRA configuration."""
     speculative_config: SpeculativeConfig | None = None
@@ -430,6 +433,10 @@ class AphroditeConfig:
             aphrodite_factors.append("None")
         if self.kernel_config:
             aphrodite_factors.append(self.kernel_config.compute_hash())
+        else:
+            aphrodite_factors.append(None)
+        if self.ktransformers_moe_config:
+            aphrodite_factors.append(self.ktransformers_moe_config.compute_hash())
         else:
             aphrodite_factors.append(None)
         if self.kv_transfer_config:
@@ -1637,7 +1644,8 @@ class AphroditeConfig:
             f"enable_chunked_prefill={self.scheduler_config.enable_chunked_prefill}, "  # noqa
             f"pooler_config={self.model_config.pooler_config!r}, "
             f"compilation_config={self.compilation_config!r}, "
-            f"kernel_config={self.kernel_config!r}"
+            f"kernel_config={self.kernel_config!r}, "
+            f"ktransformers_moe_config={self.ktransformers_moe_config!r}"
         )
 
     def _validate_v2_model_runner(self) -> None:

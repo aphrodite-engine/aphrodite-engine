@@ -105,6 +105,28 @@ inline void aphrodite_exl3_moe(
 #endif
 }
 
+int64_t kt_create_cpu_infer(const at::Tensor& numa_nodes,
+                            const at::Tensor& thread_counts);
+void kt_destroy_cpu_infer(int64_t handle, const at::Tensor& dispatch_key);
+int64_t kt_create_moe(
+    int64_t cpu_handle_id, const std::string& method, int64_t layer_idx,
+    int64_t expert_num, int64_t num_experts_per_tok, int64_t hidden_size,
+    int64_t intermediate_size, const at::Tensor& gpu_experts_mask,
+    int64_t max_len, const std::string& path, bool load, bool save,
+    const at::Tensor& gate_projs, const at::Tensor& up_projs,
+    const at::Tensor& down_projs, const at::Tensor& gate_scales,
+    const at::Tensor& up_scales, const at::Tensor& down_scales,
+    int64_t quant_bits, int64_t group_size, bool zero_point,
+    bool per_channel, int64_t activation_type);
+void kt_destroy_moe(int64_t handle, const at::Tensor& dispatch_key);
+void kt_moe_load_weights(int64_t handle, const at::Tensor& physical_map);
+void kt_moe_submit_forward(int64_t handle, const at::Tensor& batch_size,
+                           const at::Tensor& expert_ids,
+                           const at::Tensor& weights,
+                           const at::Tensor& input,
+                           const at::Tensor& output, bool incremental);
+void kt_moe_sync_forward(int64_t handle, const at::Tensor& dispatch_key);
+
 torch::Tensor weak_ref_tensor(torch::Tensor& tensor) {
   // Ensure tensor is on CUDA
   if (!tensor.is_cuda()) {

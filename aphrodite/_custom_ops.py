@@ -347,6 +347,102 @@ def exl3_moe(
     )
 
 
+def kt_create_cpu_infer(numa_nodes: torch.Tensor, thread_counts: torch.Tensor) -> int:
+    return torch.ops._C.kt_create_cpu_infer(numa_nodes, thread_counts)
+
+
+def _kt_cpu_dispatch_key() -> torch.Tensor:
+    return torch.empty((), dtype=torch.uint8, device="cpu")
+
+
+def kt_destroy_cpu_infer(handle: int) -> None:
+    torch.ops._C.kt_destroy_cpu_infer(handle, _kt_cpu_dispatch_key())
+
+
+def kt_create_moe(
+    cpu_handle: int,
+    method: str,
+    layer_idx: int,
+    expert_num: int,
+    num_experts_per_tok: int,
+    hidden_size: int,
+    intermediate_size: int,
+    gpu_experts_mask: torch.Tensor,
+    max_len: int,
+    path: str,
+    load: bool,
+    save: bool,
+    gate_projs: torch.Tensor,
+    up_projs: torch.Tensor,
+    down_projs: torch.Tensor,
+    gate_scales: torch.Tensor,
+    up_scales: torch.Tensor,
+    down_scales: torch.Tensor,
+    quant_bits: int,
+    group_size: int,
+    zero_point: bool,
+    per_channel: bool,
+    activation_type: int,
+) -> int:
+    return torch.ops._C.kt_create_moe(
+        cpu_handle,
+        method,
+        layer_idx,
+        expert_num,
+        num_experts_per_tok,
+        hidden_size,
+        intermediate_size,
+        gpu_experts_mask,
+        max_len,
+        path,
+        load,
+        save,
+        gate_projs,
+        up_projs,
+        down_projs,
+        gate_scales,
+        up_scales,
+        down_scales,
+        quant_bits,
+        group_size,
+        zero_point,
+        per_channel,
+        activation_type,
+    )
+
+
+def kt_destroy_moe(handle: int) -> None:
+    torch.ops._C.kt_destroy_moe(handle, _kt_cpu_dispatch_key())
+
+
+def kt_moe_load_weights(handle: int, physical_map: torch.Tensor) -> None:
+    torch.ops._C.kt_moe_load_weights(handle, physical_map)
+
+
+def kt_moe_submit_forward(
+    handle: int,
+    batch_size: torch.Tensor,
+    expert_ids: torch.Tensor,
+    weights: torch.Tensor,
+    input: torch.Tensor,
+    output: torch.Tensor,
+    incremental: bool,
+) -> None:
+    torch.ops._C.kt_moe_submit_forward(
+        handle,
+        batch_size,
+        expert_ids,
+        weights,
+        input,
+        output,
+        incremental,
+    )
+
+
+def kt_moe_sync_forward(handle: int) -> None:
+    torch.ops._C.kt_moe_sync_forward(handle, _kt_cpu_dispatch_key())
+
+
 if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
 
     @register_fake("_C::exl3_gemm")

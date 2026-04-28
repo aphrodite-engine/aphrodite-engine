@@ -24,6 +24,7 @@ from aphrodite.config.compilation import (
 from aphrodite.config.device import DeviceConfig
 from aphrodite.config.ec_transfer import ECTransferConfig
 from aphrodite.config.kernel import KernelConfig
+from aphrodite.config.ktransformers import KTransformersMoEConfig
 from aphrodite.config.kv_events import KVEventsConfig
 from aphrodite.config.kv_transfer import KVTransferConfig
 from aphrodite.config.load import LoadConfig
@@ -80,6 +81,8 @@ __all__ = [
     "ECTransferConfig",
     # From aphrodite.config.kernel
     "KernelConfig",
+    # From aphrodite.config.ktransformers
+    "KTransformersMoEConfig",
     # From aphrodite.config.kv_events
     "KVEventsConfig",
     # From aphrodite.config.kv_transfer

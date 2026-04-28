@@ -6,6 +6,7 @@ import copy
 import dataclasses
 import functools
 import json
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import MISSING, asdict, dataclass, fields, is_dataclass
@@ -42,6 +43,7 @@ from aphrodite.config import (
     ECTransferConfig,
     EPLBConfig,
     KernelConfig,
+    KTransformersMoEConfig,
     KVEventsConfig,
     KVTransferConfig,
     LoadConfig,
@@ -450,6 +452,12 @@ class EngineArgs:
     enable_expert_parallel: bool = ParallelConfig.enable_expert_parallel
     enable_ep_weight_filter: bool = ParallelConfig.enable_ep_weight_filter
     moe_backend: MoEBackend = KernelConfig.moe_backend
+    kt_weight_path: str | None = KTransformersMoEConfig.kt_weight_path
+    kt_method: str = KTransformersMoEConfig.kt_method
+    kt_cpuinfer: int | None = KTransformersMoEConfig.kt_cpuinfer
+    kt_threadpool_count: int = KTransformersMoEConfig.kt_threadpool_count
+    kt_num_gpu_experts: int | None = KTransformersMoEConfig.kt_num_gpu_experts
+    kt_max_deferred_experts_per_token: int | None = KTransformersMoEConfig.kt_max_deferred_experts_per_token
     all2all_backend: All2AllBackend = ParallelConfig.all2all_backend
     enable_elastic_ep: bool = ParallelConfig.enable_elastic_ep
     enable_dbo: bool = ParallelConfig.enable_dbo
@@ -1191,6 +1199,21 @@ class EngineArgs:
         moe_backend_kwargs["type"] = lambda s: s.lower().replace("-", "_")
         kernel_group.add_argument("--moe-backend", **moe_backend_kwargs)
 
+        ktransformers_moe_kwargs = get_kwargs(KTransformersMoEConfig)
+        kt_group = parser.add_argument_group(
+            title="KTransformersMoEConfig",
+            description=KTransformersMoEConfig.__doc__,
+        )
+        kt_group.add_argument("--kt-weight-path", **ktransformers_moe_kwargs["kt_weight_path"])
+        kt_group.add_argument("--kt-method", **ktransformers_moe_kwargs["kt_method"])
+        kt_group.add_argument("--kt-cpuinfer", **ktransformers_moe_kwargs["kt_cpuinfer"])
+        kt_group.add_argument("--kt-threadpool-count", **ktransformers_moe_kwargs["kt_threadpool_count"])
+        kt_group.add_argument("--kt-num-gpu-experts", **ktransformers_moe_kwargs["kt_num_gpu_experts"])
+        kt_group.add_argument(
+            "--kt-max-deferred-experts-per-token",
+            **ktransformers_moe_kwargs["kt_max_deferred_experts_per_token"],
+        )
+
         # Aphrodite arguments
         aphrodite_kwargs = get_kwargs(AphroditeConfig)
         aphrodite_group = parser.add_argument_group(
@@ -1782,6 +1805,26 @@ class EngineArgs:
         if self.moe_backend != "auto":
             kernel_config.moe_backend = self.moe_backend
 
+        kt_weight_path = self.kt_weight_path
+        if kt_weight_path is None and self.kt_num_gpu_experts is not None:
+            if os.path.exists(self.model):
+                kt_weight_path = self.model
+            else:
+                raise ValueError(
+                    "--kt-weight-path is required for remote/non-local models. "
+                    "For local HF safetensors checkpoints, it can be omitted and "
+                    "will default to --model."
+                )
+
+        ktransformers_moe_config = KTransformersMoEConfig(
+            kt_weight_path=kt_weight_path,
+            kt_method=self.kt_method,
+            kt_cpuinfer=self.kt_cpuinfer,
+            kt_threadpool_count=self.kt_threadpool_count,
+            kt_num_gpu_experts=self.kt_num_gpu_experts,
+            kt_max_deferred_experts_per_token=self.kt_max_deferred_experts_per_token,
+        )
+
         # Transfer top-level ir_op_priority into KernelConfig.ir_op_priority
         for op_name, op_priority in asdict(self.ir_op_priority).items():
             # Empty means unset
@@ -1861,6 +1904,7 @@ class EngineArgs:
             device_config=device_config,
             load_config=load_config,
             offload_config=offload_config,
+            ktransformers_moe_config=ktransformers_moe_config,
             attention_config=attention_config,
             mamba_config=mamba_config,
             kernel_config=kernel_config,

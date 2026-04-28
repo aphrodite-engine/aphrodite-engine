@@ -32,6 +32,9 @@ from aphrodite.model_executor.layers.fused_moe.fused_moe_method_base import (
 from aphrodite.model_executor.layers.fused_moe.fused_moe_modular_method import (
     FusedMoEModularMethod,
 )
+from aphrodite.model_executor.layers.fused_moe.ktransformers_moe import (
+    KTransformersMoEWrapperMethod,
+)
 from aphrodite.model_executor.layers.fused_moe.rocm_aiter_fused_moe import (
     init_aiter_topK_meta_data,
 )
@@ -504,6 +507,21 @@ class FusedMoE(PluggableLayer):
         # Note: get_quant_method will look at the layer's local_num_experts
         # for heuristic purposes, so it must be initialized first.
         self.quant_method: FusedMoEMethodBase = _get_quant_method()
+        kt_config = aphrodite_config.ktransformers_moe_config
+        if kt_config.is_enabled:
+            num_layers = None
+            if aphrodite_config.model_config is not None:
+                num_layers = getattr(
+                    aphrodite_config.model_config.hf_config,
+                    "num_hidden_layers",
+                    None,
+                )
+            self.quant_method = KTransformersMoEWrapperMethod(
+                self.quant_method,
+                kt_config,
+                layer_idx=self.layer_id,
+                num_layers=num_layers,
+            )
 
         if not self.moe_config.is_act_and_mul and not current_platform.is_cuda_alike():
             raise NotImplementedError("is_act_and_mul=False is supported only for CUDA and ROCm for now")
@@ -1068,6 +1086,12 @@ class FusedMoE(PluggableLayer):
             # Failed to load this param since it's not local to this rank
             return False if return_success else None
         # Hereafter, `expert_id` is local physical id
+
+        if (
+            getattr(self.quant_method, "is_ktransformers_moe_wrapper", False)
+            and expert_id >= self.quant_method.num_gpu_experts
+        ):
+            return False if return_success else None
 
         # is_transposed: if the dim to shard the weight
         # should be flipped. Required by GPTQ, compressed-tensors
