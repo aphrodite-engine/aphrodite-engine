@@ -1,12 +1,42 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import json
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import torch
 from safetensors import safe_open
 
 from aphrodite import _custom_ops as ops
+
+
+@dataclass
+class CandidateResult:
+    shape: int
+    sms: int
+    correct: bool
+    max_abs: float
+    ms: float | None
+
+
+@dataclass
+class SweepResult:
+    model: str
+    prefixes: list[str]
+    batch: int
+    outputs: int
+    size_k: int
+    size_n: int
+    bits: int
+    mcg: bool
+    mul1: bool
+    weighted: bool
+    auto_noise_abs: float
+    allowed_abs: float
+    candidates: list[CandidateResult]
+    best_correct: CandidateResult | None
 
 
 def _load_tensor(model: str, key: str, device: str) -> torch.Tensor:
@@ -16,7 +46,7 @@ def _load_tensor(model: str, key: str, device: str) -> torch.Tensor:
 
 def _has_tensor(model: str, key: str) -> bool:
     with safe_open(f"{model}/model.safetensors", framework="pt", device="cpu") as f:
-        return key in f
+        return key in set(f.keys())
 
 
 def _bench_ms(fn: Callable[[], None], warmup: int, iters: int) -> float:
@@ -130,6 +160,12 @@ def main() -> None:
         help="Allowed candidate max_abs is max(atol, auto-vs-auto noise * this value).",
     )
     parser.add_argument("--weighted", action="store_true")
+    parser.add_argument(
+        "--json-output",
+        type=Path,
+        default=None,
+        help="Write the full correctness/timing sweep as JSON.",
+    )
     args = parser.parse_args()
 
     device = "cuda"
@@ -195,7 +231,8 @@ def main() -> None:
 
     candidates = [(-1, 0)]
     candidates.extend((shape, sms) for shape in range(1, 5) for sms in sms_values if sms != 0)
-    best: tuple[float, int, int] | None = None
+    results: list[CandidateResult] = []
+    best: CandidateResult | None = None
     for force_shape, force_sms in candidates:
 
         def bench(force_shape: int = force_shape, force_sms: int = force_sms) -> None:
@@ -212,11 +249,39 @@ def main() -> None:
             continue
 
         print(f"{force_shape:5d} {force_sms:3d} {str(correct):>7} {max_abs:8.5f} {ms:8.4f}")
-        if correct and (best is None or ms < best[0]):
-            best = (ms, force_shape, force_sms)
+        result = CandidateResult(
+            shape=force_shape,
+            sms=force_sms,
+            correct=correct,
+            max_abs=max_abs,
+            ms=ms if correct else None,
+        )
+        results.append(result)
+        if result.ms is not None and (best is None or best.ms is None or result.ms < best.ms):
+            best = result
 
-    if best is not None:
-        print(f"best_correct shape={best[1]} sms={best[2]} ms={best[0]:.4f}")
+    if best is not None and best.ms is not None:
+        print(f"best_correct shape={best.shape} sms={best.sms} ms={best.ms:.4f}")
+
+    if args.json_output is not None:
+        sweep = SweepResult(
+            model=args.model,
+            prefixes=prefixes,
+            batch=args.batch,
+            outputs=len(prefixes),
+            size_k=size_k,
+            size_n=size_n,
+            bits=k,
+            mcg=mcg,
+            mul1=mul1,
+            weighted=args.weighted,
+            auto_noise_abs=auto_noise_abs,
+            allowed_abs=allowed_abs,
+            candidates=results,
+            best_correct=best,
+        )
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(json.dumps(asdict(sweep), indent=2) + "\n")
 
 
 if __name__ == "__main__":
