@@ -38,6 +38,27 @@ _EXL3_MOE_MAX_EXPERTS_PER_TOKEN = 32
 _EXL3_MOE_ACT_SILU = 0
 
 
+def _get_exl3_moe_down_tuning(
+    *,
+    device: torch.device,
+    k_down: int,
+    intermediate_size: int,
+    hidden_size: int,
+) -> tuple[int, int]:
+    """Return correctness-verified EXL3 MoE down-projection tuning.
+
+    Keep this deliberately narrow: EXL3 MGEMM shape choices are not purely
+    performance hints, and invalid choices can silently corrupt generation.
+    Candidate additions should first pass
+    benchmarks/kernels/bench_exl3_mgemm_correctness.py and an end-to-end
+    generation sanity check.
+    """
+    device_props = torch.cuda.get_device_properties(device)
+    if device_props.major == 12 and k_down == 4 and intermediate_size == 256 and hidden_size == 1024:
+        return 2, 32
+    return -1, 0
+
+
 @torch.library.custom_op(
     "aphrodite::exl3_linear_one",
     mutates_args=(),
@@ -1270,12 +1291,12 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             topk_ids,
             topk_weights,
             layer.exl3_moe_k_down,
-            -1,
+            layer.exl3_down_force_shape,
             layer.exl3_down_mcg,
             layer.exl3_down_mul1,
             -1,
             -1,
-            0,
+            layer.exl3_down_force_num_sms,
         )
         output = layer.exl3_small_out_d[:1].reshape(*original_shape, layer.hidden_size)
         if output.dtype != original_dtype:
@@ -1370,12 +1391,12 @@ class Exl3MoEMethod(FusedMoEMethodBase):
                 topk_ids_3d[i],
                 topk_weights_3d[i],
                 layer.exl3_moe_k_down,
-                -1,
+                layer.exl3_down_force_shape,
                 layer.exl3_down_mcg,
                 layer.exl3_down_mul1,
                 -1,
                 -1,
-                0,
+                layer.exl3_down_force_num_sms,
             )
             output[i : i + 1] = layer.exl3_small_out_d[0]
 
@@ -1431,6 +1452,12 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         layer.exl3_up_mul1 = (0, "w3") in layer.w13_mul1.exl3_tensors
         layer.exl3_down_mcg = (0, "w2") in layer.w2_mcg.exl3_tensors
         layer.exl3_down_mul1 = (0, "w2") in layer.w2_mul1.exl3_tensors
+        layer.exl3_down_force_shape, layer.exl3_down_force_num_sms = _get_exl3_moe_down_tuning(
+            device=device,
+            k_down=layer.exl3_moe_k_down,
+            intermediate_size=intermediate_size,
+            hidden_size=layer.hidden_size,
+        )
         layer.exl3_fuse_gate_up = (
             layer.exl3_moe_k_gate == layer.exl3_moe_k_up
             and layer.exl3_gate_mcg == layer.exl3_up_mcg
