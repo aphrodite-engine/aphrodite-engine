@@ -23,6 +23,7 @@ from aphrodite.model_executor.layers.mamba.ops.causal_conv1d import (
     causal_conv1d_fn,
     causal_conv1d_update,
 )
+from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import direct_register_custom_op
 from aphrodite.v1.attention.backend import AttentionMetadata
@@ -42,6 +43,7 @@ class ShortConv(MambaBase, CustomOp):
         layer_idx: int,
         model_config: ModelConfig | None = None,
         cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -67,12 +69,14 @@ class ShortConv(MambaBase, CustomOp):
             input_size=dim,
             output_sizes=[dim] * 3,
             bias=self.bias,
+            quant_config=quant_config,
             prefix=f"{prefix}.in_proj",
         )
         self.out_proj = RowParallelLinear(
             input_size=dim,
             output_size=dim,
             bias=self.bias,
+            quant_config=quant_config,
             prefix=f"{prefix}.out_proj",
         )
 
