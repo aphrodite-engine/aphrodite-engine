@@ -896,8 +896,9 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
         # Reject empty tools array, matching OpenAI API behavior
         if data.get("tools") == []:
-            raise ValueError(
-                "`tools` must not be an empty array. Either provide at least one tool or omit the field entirely."
+            raise APHRODITEValidationError(
+                "`tools` must not be an empty array. Either provide at least one tool or omit the field entirely.",
+                parameter="tools",
             )
 
         # if "tool_choice" is not specified but tools are provided,
@@ -1107,11 +1108,15 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
         if isinstance(data, BatchChatCompletionRequest):
             data = data.model_dump(exclude_unset=True)
         if data.get("use_beam_search"):
-            raise ValueError(
-                "Batch chat completions do not support beam search. Please set `use_beam_search` to False."
+            raise APHRODITEValidationError(
+                "Batch chat completions do not support beam search. Please set `use_beam_search` to False.",
+                parameter="use_beam_search",
             )
         if data.get("logprob_token_ids") and not data.get("logprobs"):
-            raise ValueError("when using `logprob_token_ids`, `logprobs` must be set to true.")
+            raise APHRODITEValidationError(
+                "when using `logprob_token_ids`, `logprobs` must be set to true.",
+                parameter="logprob_token_ids",
+            )
         response_format = data.get("response_format")
         rf_type = (
             response_format.get("type") if isinstance(response_format, dict) else getattr(response_format, "type", None)
@@ -1122,7 +1127,11 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
             validate_structured_outputs_structural_tag(structured_outputs)
         n = data.get("n", 1)
         if n is not None and n != 1:
-            raise ValueError("Batch chat completions do not support `n > 1`. Please set `n` to 1.")
+            raise APHRODITEValidationError(
+                "Batch chat completions do not support `n > 1`. Please set `n` to 1.",
+                parameter="n",
+                value=n,
+            )
         return data
 
     def to_chat_completion_request(self, messages: list[ChatCompletionMessageParam]) -> ChatCompletionRequest:
