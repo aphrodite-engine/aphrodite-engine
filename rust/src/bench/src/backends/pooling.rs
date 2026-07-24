@@ -158,9 +158,10 @@ impl PoolingBackend {
                 // (mirrors Python async_request_aphrodite_rerank).
                 if let Some(ref list) = input.prompt_list {
                     if list.len() < 2 {
-                        eprintln!(
-                            "WARNING: aphrodite-rerank request has no documents \
-                             (prompt_list needs [query, doc, ...])"
+                        tracing::warn!(
+                            backend = "aphrodite-rerank",
+                            inputs = list.len(),
+                            "rerank request has no documents"
                         );
                     }
                     let query = list.first().map(|s| s.as_ref()).unwrap_or("");
@@ -175,10 +176,10 @@ impl PoolingBackend {
                     // Legacy path: text prompt as query, documents via --extra-body.
                     let query = input.prompt.as_ref();
                     if query.is_empty() && input.prompt_token_ids.is_some() {
-                        eprintln!(
-                            "WARNING: aphrodite-rerank received empty query (random dataset uses \
-                             token IDs only). Use --dataset-name random-rerank for meaningful \
-                             rerank benchmarks."
+                        tracing::warn!(
+                            backend = "aphrodite-rerank",
+                            dataset = "random",
+                            "rerank request has an empty query; use the random-rerank dataset"
                         );
                     }
                     serde_json::json!({
