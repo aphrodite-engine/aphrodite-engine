@@ -17,6 +17,9 @@ from aphrodite.compilation.breakable_cudagraph import (
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.compilation import CUDAGraphMode
+from aphrodite.distributed.device_communicators.pynccl_allocator import (
+    set_graph_pool_id,
+)
 from aphrodite.distributed.parallel_state import (
     get_pp_group,
     graph_capture,
@@ -313,6 +316,10 @@ class CudaGraphManager:
                         # Sync offloader's copy stream before capture.
                         # Ensure any pre-capture prefetches from offloader are complete.
                         get_offloader().sync_prev_onload()
+                        if self.pool is not None:
+                            set_graph_pool_id(self.pool)
+                        else:
+                            set_graph_pool_id(current_platform.graph_pool_handle())
                         with torch.cuda.graph(graph, self.pool):
                             forward_fn(CUDAGraphMode.NONE)
                             # Join offloader's copy stream after forward to avoid
