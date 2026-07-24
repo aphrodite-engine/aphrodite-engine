@@ -125,7 +125,6 @@ from aphrodite.utils.torch_utils import (
     PIN_MEMORY,
     async_tensor_h2d,
     current_stream,
-    get_dtype_size,
     is_quantized_kv_cache,
     kv_cache_dtype_str_to_dtype,
 )
@@ -6727,7 +6726,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             corresponding memory buffer for KV cache.
         """
         kv_caches: dict[str, torch.Tensor] = {}
-        has_attn, has_mamba = False, False
+        has_attn = False
 
         # Map layer names to (offset, block_stride) within the packed
         # backing tensor so we can create strided views per layer.
@@ -6789,27 +6788,16 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                     )
 
                 elif isinstance(kv_cache_spec, MambaSpec):
-                    has_mamba = True
                     raw_tensor = kv_cache_raw_tensors[layer_name]
-                    state_tensors = []
-                    storage_offset_bytes = 0
-                    for shape, dtype in zip(kv_cache_spec.shapes, kv_cache_spec.dtypes):
-                        dtype_size = get_dtype_size(dtype)
-                        num_element_per_page = kv_cache_spec.page_size_bytes // dtype_size
-                        target_shape = (num_blocks, *shape)
-                        stride = torch.empty(target_shape).stride()
-                        target_stride = (num_element_per_page, *stride[1:])
-                        assert storage_offset_bytes % dtype_size == 0
-                        tensor = torch.as_strided(
-                            raw_tensor.view(dtype),
-                            size=target_shape,
-                            stride=target_stride,
-                            storage_offset=storage_offset_bytes // dtype_size,
-                        )
-                        state_tensors.append(tensor)
-                        storage_offset_bytes += stride[0] * dtype_size
-
-                    kv_caches[layer_name] = state_tensors
+                    page_size_bytes = kv_cache_spec.page_size_bytes
+                    # Hold a single contiguous [num_blocks, 1, 1, page_size_bytes]
+                    # int8 page view per layer; the layer's bind_kv_cache unpacks
+                    # each block's bytes into its conv/ssm state views. Keeping
+                    # one tensor per layer lets the KV connector register it
+                    # without special-casing Mamba.
+                    kv_caches[layer_name] = raw_tensor[: num_blocks * page_size_bytes].view(
+                        num_blocks, 1, 1, page_size_bytes
+                    )
                 else:
                     raise NotImplementedError
 
@@ -6817,7 +6805,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         # attention/mamba models, and by encoder-decoder models whose shared
         # decoder/cross-attention allocation mixes K/V-first and blocks-first
         # backends (see _has_mixed_attention_kv_layout).
-        if has_attn and (has_mamba or self._has_mixed_attention_kv_layout(kernel_block_sizes)):
+        if has_attn and self._has_mixed_attention_kv_layout(kernel_block_sizes):
             self._update_hybrid_attention_mamba_layout(kv_caches, kernel_block_sizes)
 
         return kv_caches
