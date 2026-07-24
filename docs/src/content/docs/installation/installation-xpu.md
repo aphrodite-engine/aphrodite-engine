@@ -25,7 +25,10 @@ docker run -it \
 
 ## Building from Source
 
-First, install the required driver and intel OneAPI 2024.1 or later.
+First, install the required driver and intel OneAPI 2024.1 or later. Starting
+with aphrodite-xpu-kernels v0.1.10, we recommend upgrading the driver to the
+[compute runtime 26.18](https://github.com/intel/compute-runtime/releases/tag/26.18.38308.1)
+release to avoid potential compatibility issues.
 Second, install Python packages for Aphrodite XPU backend:
 
 ```sh
