@@ -1143,7 +1143,7 @@ class DeepStreamVideoBackend(VideoBackend):
 
 @VIDEO_LOADER_REGISTRY.register(
     "qwen3_vl",
-    video_processor="Qwen3VLVideoProcessor",
+    video_processor=("Qwen3VLVideoProcessor", "Cosmos3EdgeVideoProcessor"),
 )
 class Qwen3VLVideoBackend(VideoBackend):
     @classmethod
