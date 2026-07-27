@@ -1860,6 +1860,14 @@ def compile_factors() -> dict[str, object]:
         "APHRODITE_CACHE_ROOT",
         # Runtime memory-plan persistence; does not affect compiled graphs.
         "APHRODITE_ENABLE_STARTUP_PLAN",
+        # Location-only derived paths: where a cache/config directory lives
+        # cannot affect compiled artifacts, and hashing them means relocating
+        # HOME or the XDG roots silently invalidates every compile cache
+        # (APHRODITE_CACHE_ROOT above and
+        # APHRODITE_FLASHINFER_AUTOTUNE_CACHE_DIR below are already ignored for
+        # the same reason).
+        "APHRODITE_XLA_CACHE_PATH",
+        "APHRODITE_CONFIG_ROOT",
         "LD_LIBRARY_PATH",
         "APHRODITE_SERVER_DEV_MODE",
         "APHRODITE_DP_MASTER_IP",
