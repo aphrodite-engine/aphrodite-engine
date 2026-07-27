@@ -8,6 +8,7 @@ from typing import Any, Literal, TypeAlias, TypedDict, final
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from pydantic.dataclasses import dataclass
 
+import aphrodite.envs as envs
 from aphrodite.config.utils import config
 from aphrodite.utils.hashing import safe_hash
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
@@ -329,6 +330,17 @@ class MultiModalConfig:
         """
         kwargs = self.mm_processor_kwargs or {}
         return kwargs | dict(inference_kwargs)
+
+    def use_gpu_video_backend(self) -> bool:
+        """Return whether the configured video loader or codec uses the GPU."""
+        from aphrodite.multimodal.video import VIDEO_LOADER_REGISTRY
+
+        video_kwargs = self.media_io_kwargs.get("video", {})
+        video_loader_backend = video_kwargs.get("video_backend") or envs.APHRODITE_VIDEO_LOADER_BACKEND
+        codec_backend = video_kwargs.get("backend")
+        return VIDEO_LOADER_REGISTRY.backend_requires_gpu(video_loader_backend) or (
+            codec_backend is not None and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
+        )
 
     def is_multimodal_pruning_enabled(self):
         return self.video_pruning_rate is not None and self.video_pruning_rate > 0
