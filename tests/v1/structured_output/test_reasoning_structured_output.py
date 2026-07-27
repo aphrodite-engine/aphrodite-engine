@@ -71,6 +71,7 @@ class TestReasoningStructuredOutput:
         request.all_token_ids = [1, 2, 3, 4, 5, 6, 7, 8]
         request.num_computed_tokens = 5
         request.num_output_placeholders = 0
+        request.request_id = "mock_req"
         return request
 
     @pytest.fixture
@@ -184,32 +185,8 @@ class TestReasoningStructuredOutput:
 
         result = manager_with_reasoner.should_advance(mock_request_with_structured_output)
 
-        # Should set reasoning_ended to True but return False for this step
+        # The scheduler trims the reasoning prefix before advancing the grammar.
         assert mock_request_with_structured_output.structured_output_request.reasoning_ended is True
-        assert result is False
-
-    def test_should_advance_reasoning_just_ended_with_spec_decode_structural_tag(
-        self,
-        manager_with_reasoner,
-        mock_request_with_structured_output,
-    ):
-        """When reasoning ends this step, advance immediately for structural
-        tags with speculative decoding."""
-        structured_req = mock_request_with_structured_output.structured_output_request
-        structured_req.reasoning_ended = False
-        structured_req.structured_output_key = (
-            StructuredOutputOptions.STRUCTURAL_TAG,
-            "{}",
-        )
-        reasoner = MockReasoner(tokenizer=Mock())
-        reasoner.is_reasoning_end_streaming.return_value = True
-        structured_req.reasoner = reasoner
-
-        manager_with_reasoner.aphrodite_config.speculative_config = Mock()
-
-        result = manager_with_reasoner.should_advance(mock_request_with_structured_output)
-
-        assert structured_req.reasoning_ended is True
         assert result is True
 
     def test_should_advance_reasoning_already_ended(
@@ -225,3 +202,105 @@ class TestReasoningStructuredOutput:
 
         # Should return True since reasoning has ended
         assert result is True
+
+    def test_should_advance_uses_new_token_ids_when_provided(
+        self,
+        manager_with_reasoner,
+        mock_request_with_structured_output,
+    ):
+        """The reasoner sees the exact multi-token delta."""
+        structured_req = mock_request_with_structured_output.structured_output_request
+        structured_req.reasoning_ended = False
+
+        end_token_id = 248069
+
+        reasoner = MockReasoner(tokenizer=Mock())
+        reasoner.is_reasoning_end_streaming = Mock(
+            side_effect=lambda input_ids, delta_ids: end_token_id in list(delta_ids)
+        )
+        structured_req.reasoner = reasoner
+
+        new_token_ids = [9, 198, end_token_id, 271]
+        mock_request_with_structured_output.all_token_ids = [
+            1,
+            2,
+            3,
+            4,
+            5,
+        ] + new_token_ids
+        mock_request_with_structured_output.num_computed_tokens = 9
+        mock_request_with_structured_output.num_output_placeholders = 1
+
+        result = manager_with_reasoner.should_advance(
+            mock_request_with_structured_output,
+            new_token_ids=new_token_ids,
+        )
+
+        first_call = reasoner.is_reasoning_end_streaming.call_args_list[0]
+        _, called_delta = first_call.args
+        assert list(called_delta) == new_token_ids
+        assert structured_req.reasoning_ended is True
+        assert result is True
+
+    def test_should_advance_without_new_token_ids_falls_back(
+        self,
+        manager_with_reasoner,
+        mock_request_with_structured_output,
+    ):
+        """Callers without new_token_ids keep the placeholder-derived delta."""
+        structured_req = mock_request_with_structured_output.structured_output_request
+        structured_req.reasoning_ended = False
+        reasoner = MockReasoner(tokenizer=Mock())
+        reasoner.is_reasoning_end_streaming.return_value = False
+        structured_req.reasoner = reasoner
+
+        mock_request_with_structured_output.all_token_ids = [1, 2, 3, 4, 5]
+        mock_request_with_structured_output.num_computed_tokens = 5
+        mock_request_with_structured_output.num_output_placeholders = 2
+
+        result = manager_with_reasoner.should_advance(mock_request_with_structured_output)
+
+        _, called_delta = reasoner.is_reasoning_end_streaming.call_args[0]
+        assert list(called_delta) == [4, 5]
+        assert result is False
+
+    def test_should_advance_trims_reasoning_prefix_for_json(
+        self,
+        manager_with_reasoner,
+        mock_request_with_structured_output,
+    ):
+        """JSON uses the common trim-then-advance path at the boundary."""
+        structured_req = mock_request_with_structured_output.structured_output_request
+        structured_req.reasoning_ended = False
+        structured_req.structured_output_key = (
+            StructuredOutputOptions.JSON_OBJECT,
+            "{}",
+        )
+
+        marker = 248069
+
+        class MarkerReasoner:
+            def __init__(self, *_, **__):
+                pass
+
+            def is_reasoning_end_streaming(self, input_ids, delta_ids):
+                return marker in list(delta_ids)
+
+        structured_req.reasoner = MarkerReasoner()
+
+        new_token_ids = [9, 198, marker, 271, 5005]
+        mock_request_with_structured_output.all_token_ids = [1, 2, 3] + new_token_ids
+
+        result = manager_with_reasoner.should_advance(
+            mock_request_with_structured_output,
+            new_token_ids=new_token_ids,
+        )
+
+        structured_req.grammar.accept_tokens.assert_not_called()
+        assert structured_req.reasoning_ended is True
+        assert result is True
+        assert structured_req.reasoning_end_token_index == 5
+        assert manager_with_reasoner.trim_reasoning_for_advance(mock_request_with_structured_output, new_token_ids) == [
+            271,
+            5005,
+        ]
