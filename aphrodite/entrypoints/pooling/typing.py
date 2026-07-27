@@ -160,7 +160,7 @@ class RenderParams(TypedDict):
 
 
 class EncodeCMPLRenderParams(RenderParams):
-    prompts: DictPrompt
+    prompts: DictPrompt | bytes
 
 
 class EncodeChatRenderParams(RenderParams):

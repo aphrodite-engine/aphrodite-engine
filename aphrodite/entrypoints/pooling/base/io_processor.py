@@ -9,7 +9,7 @@ from aphrodite import (
     PoolingParams,
     PoolingRequestOutput,
 )
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.entrypoints.chat_utils import (
     ChatTemplateConfig,
 )
@@ -47,12 +47,12 @@ class PoolingIOProcessor:
 
     def __init__(
         self,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         renderer: BaseRenderer,
         chat_template_config: ChatTemplateConfig,
     ):
-        self.vllm_config = vllm_config
-        self.model_config = vllm_config.model_config
+        self.aphrodite_config = aphrodite_config
+        self.model_config = aphrodite_config.model_config
         self.renderer = renderer
 
         self.chat_template = chat_template_config.chat_template

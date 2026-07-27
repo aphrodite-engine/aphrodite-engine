@@ -40,7 +40,7 @@ class PluginWithIOProcessorPlugins(PoolingIOProcessor):
         super().__init__(*args, **kwargs)
 
         io_processor = get_io_processor(
-            self.vllm_config,
+            self.aphrodite_config,
             self.renderer,
             self.model_config.io_processor_plugin,
         )

@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from starlette.datastructures import Headers
 
 from aphrodite import PoolingRequestOutput, envs
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.chat_utils import ChatTemplateConfig
 from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
@@ -55,7 +55,7 @@ class PoolingBaseServing(ABC, BaseServing):
 
         self.engine_client = engine_client
         self.renderer = engine_client.renderer
-        self.vllm_config = engine_client.vllm_config
+        self.aphrodite_config = engine_client.aphrodite_config
         self.max_model_len = self.model_config.max_model_len
         self.return_tokens_as_token_ids = return_tokens_as_token_ids
         self.log_error_stack = log_error_stack
@@ -243,7 +243,7 @@ class PoolingServing(PoolingBaseServing, ABC):
         super().__init__(*args, **kwargs)
 
         self.io_processor = self.init_io_processor(
-            vllm_config=self.vllm_config,
+            aphrodite_config=self.aphrodite_config,
             renderer=self.renderer,
             chat_template_config=self.chat_template_config,
         )
@@ -251,7 +251,7 @@ class PoolingServing(PoolingBaseServing, ABC):
     @abstractmethod
     def init_io_processor(
         self,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         renderer: BaseRenderer,
         chat_template_config: ChatTemplateConfig,
     ) -> PoolingIOProcessor:

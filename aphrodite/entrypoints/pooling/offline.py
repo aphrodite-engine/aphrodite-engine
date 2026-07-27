@@ -51,7 +51,7 @@ class PoolingOfflineMixin(OfflineInferenceMixin):
         self.chat_template_config = ChatTemplateConfig(chat_template=self.chat_template)
         self.pooling_io_processors = init_pooling_io_processors(
             supported_tasks=self.supported_tasks,
-            vllm_config=self.llm_engine.vllm_config,
+            aphrodite_config=self.llm_engine.aphrodite_config,
             renderer=self.renderer,
             chat_template_config=self.chat_template_config,
         )
@@ -378,7 +378,7 @@ class PoolingOfflineMixin(OfflineInferenceMixin):
 
         # Keeping max_num_seqs * 2 requests in the core can already saturate the core.
         # Therefore, keep most requests waiting outside the core.
-        max_requests_in_core = self.llm_engine.vllm_config.scheduler_config.max_num_seqs * 2
+        max_requests_in_core = self.llm_engine.aphrodite_config.scheduler_config.max_num_seqs * 2
         num_requests_in_core = 0
         num_waited_requests = num_requests
 
