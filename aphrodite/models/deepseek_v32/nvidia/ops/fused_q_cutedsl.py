@@ -12,10 +12,7 @@ from aphrodite.cute_utils import TORCH_TO_CUTE_DTYPE, cvt
 
 
 def _make_fake_tensor(dtype, shape, divisibility):
-    stride = tuple(
-        1 if i == len(shape) - 1 else cute.sym_int64(divisibility=divisibility)
-        for i in range(len(shape))
-    )
+    stride = tuple(1 if i == len(shape) - 1 else cute.sym_int64(divisibility=divisibility) for i in range(len(shape)))
     return cute.runtime.make_fake_tensor(
         dtype,
         shape,
@@ -269,9 +266,7 @@ class FusedQKernel:
         rQ_nope_bf16 = cute.make_rmem_tensor(16, BFloat16)
         rQ_rope_bf16 = cute.make_rmem_tensor(2, BFloat16)
 
-        src_ql_nope = cute.local_tile(
-            ql_nope[token_id, head_id, None], (16,), (lane_id,)
-        )
+        src_ql_nope = cute.local_tile(ql_nope[token_id, head_id, None], (16,), (lane_id,))
         src_q_rope = cute.local_tile(q_pe[token_id, head_id, None], (2,), (lane_id,))
         cute.copy(cp_32B, src_ql_nope, rQ_nope_bf16)
         cute.copy(cp_4B, src_q_rope, rQ_rope_bf16)
@@ -283,9 +278,7 @@ class FusedQKernel:
         rQ_nope_f32 = cvt.bf16x2_to_fp32x2(rQ_nope_bf16).load() * inv_scale
         rQ_nope_f8 = cute.make_rmem_tensor(16, Float8E4M3FN)
         rQ_nope_f8.store(rQ_nope_f32.to(Float8E4M3FN))
-        dst_Q_nope = cute.local_tile(
-            mqa_output[token_id, head_id, None], (16,), (lane_id,)
-        )
+        dst_Q_nope = cute.local_tile(mqa_output[token_id, head_id, None], (16,), (lane_id,))
         cute.copy(cp_16B, rQ_nope_f8, dst_Q_nope)
 
         ##### process RoPE ######
@@ -300,9 +293,7 @@ class FusedQKernel:
         # TensorSSA fp32->fp8 cvt has a bug. rely on direct PTX
         rQ_rope_f8 = cute.make_rmem_tensor(2, Float8E4M3FN)
         cute.recast_tensor(rQ_rope_f8, Uint16)[0] = cvt.fp32x2_to_fp8x2(r0, r1)
-        dst_Q_rope = cute.local_tile(
-            mqa_output[token_id, head_id, None], (2,), (256 + lane_id,)
-        )
+        dst_Q_rope = cute.local_tile(mqa_output[token_id, head_id, None], (2,), (256 + lane_id,))
         cute.copy(cp_2B, rQ_rope_f8, dst_Q_rope)
 
     @cute.jit
@@ -334,14 +325,10 @@ class FusedQKernel:
         ##### issue all loads first #####
         rQ_rope_bf16 = cute.make_rmem_tensor(8, BFloat16)
         if cutlass.const_expr(self.index_rope_interleave):
-            src_idx_q_rope = cute.local_tile(
-                idx_q[token_id, head_id, None], (8,), (sublane_id,)
-            )
+            src_idx_q_rope = cute.local_tile(idx_q[token_id, head_id, None], (8,), (sublane_id,))
             cute.copy(cp_16B, src_idx_q_rope, rQ_rope_bf16)
         else:
-            src_idx_q_rope = cute.zipped_divide(
-                idx_q[token_id, head_id, None], (4,)
-            )  # (4,32)
+            src_idx_q_rope = cute.zipped_divide(idx_q[token_id, head_id, None], (4,))  # (4,32)
             cute.copy(
                 cp_8B,
                 src_idx_q_rope[None, 0 + sublane_id],
@@ -354,9 +341,7 @@ class FusedQKernel:
             )
 
         rQ_nope_bf16 = cute.make_rmem_tensor(8, BFloat16)
-        src_idx_q_nope = cute.local_tile(
-            idx_q[token_id, head_id, None], (8,), (8 + sublane_id,)
-        )
+        src_idx_q_nope = cute.local_tile(idx_q[token_id, head_id, None], (8,), (8 + sublane_id,))
         cute.copy(cp_16B, src_idx_q_nope, rQ_nope_bf16)
 
         rCos_raw = cute.make_rmem_tensor(4, idx_q_rope_cache.element_type)
@@ -421,22 +406,16 @@ class FusedQKernel:
         # quantize and store
         rQ_nope_f8 = cute.make_rmem_tensor(8, Float8E4M3FN)
         rQ_nope_f8.store(rQ_nope_f32.load().to(Float8E4M3FN))
-        dst_idx_q_nope = cute.local_tile(
-            idx_q_fp8[token_id, head_id, None], (8,), (8 + sublane_id,)
-        )
+        dst_idx_q_nope = cute.local_tile(idx_q_fp8[token_id, head_id, None], (8,), (8 + sublane_id,))
         cute.copy(cp_8B, rQ_nope_f8, dst_idx_q_nope)
 
         rQ_rope_f8 = cute.make_rmem_tensor(8, Float8E4M3FN)
         rQ_rope_f8.store(rQ_rope_f32.load().to(Float8E4M3FN))
         if cutlass.const_expr(self.index_rope_interleave):
-            dst_idx_q_rope = cute.local_tile(
-                idx_q_fp8[token_id, head_id, None], (8,), (sublane_id,)
-            )
+            dst_idx_q_rope = cute.local_tile(idx_q_fp8[token_id, head_id, None], (8,), (sublane_id,))
             cute.copy(cp_8B, rQ_rope_f8, dst_idx_q_rope)
         else:
-            dst_idx_q_rope = cute.zipped_divide(
-                idx_q_fp8[token_id, head_id, None], (4,)
-            )  # (4,32)
+            dst_idx_q_rope = cute.zipped_divide(idx_q_fp8[token_id, head_id, None], (4,))  # (4,32)
             cute.copy(
                 cp_4B,
                 cute.local_tile(rQ_rope_f8, (4,), (0,)),
@@ -470,13 +449,9 @@ class FusedQKernel:
         max_pos = cute.sym_int()
 
         positions = _make_fake_tensor(Int64, (num_tokens,), divisibility=1)
-        q_pe = _make_fake_tensor(
-            BFloat16, (num_tokens, num_heads, rope_dim), divisibility=16
-        )
+        q_pe = _make_fake_tensor(BFloat16, (num_tokens, num_heads, rope_dim), divisibility=16)
         rope_cache = _make_fake_tensor(rope_type, (max_pos, rope_dim), divisibility=8)
-        ql_nope = _make_fake_tensor(
-            BFloat16, (num_tokens, num_heads, nope_dim), divisibility=16
-        )
+        ql_nope = _make_fake_tensor(BFloat16, (num_tokens, num_heads, nope_dim), divisibility=16)
         q_scale = _make_fake_tensor(Float32, (1,), divisibility=4)
         mqa_output = _make_fake_tensor(
             Float8E4M3FN,
@@ -485,21 +460,11 @@ class FusedQKernel:
         )
 
         if idx_rope_type is not None:
-            index_q = _make_fake_tensor(
-                BFloat16, (num_tokens, num_idx_heads, idx_dim), divisibility=16
-            )
-            index_rope_cache = _make_fake_tensor(
-                idx_rope_type, (max_pos, rope_dim), divisibility=8
-            )
-            index_weights = _make_fake_tensor(
-                idx_weights_type, (num_tokens, num_idx_heads), divisibility=8
-            )
-            index_q_fp8 = _make_fake_tensor(
-                Float8E4M3FN, (num_tokens, num_idx_heads, idx_dim), divisibility=16
-            )
-            index_weights_out = _make_fake_tensor(
-                Float32, (num_tokens, num_idx_heads), divisibility=4
-            )
+            index_q = _make_fake_tensor(BFloat16, (num_tokens, num_idx_heads, idx_dim), divisibility=16)
+            index_rope_cache = _make_fake_tensor(idx_rope_type, (max_pos, rope_dim), divisibility=8)
+            index_weights = _make_fake_tensor(idx_weights_type, (num_tokens, num_idx_heads), divisibility=8)
+            index_q_fp8 = _make_fake_tensor(Float8E4M3FN, (num_tokens, num_idx_heads, idx_dim), divisibility=16)
+            index_weights_out = _make_fake_tensor(Float32, (num_tokens, num_idx_heads), divisibility=4)
         else:
             index_q = index_rope_cache = index_q_fp8 = None
             index_weights = index_weights_out = None
