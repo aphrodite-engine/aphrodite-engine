@@ -8,7 +8,8 @@ import regex as re
 import torch
 import torch.nn as nn
 
-from aphrodite.config import AphroditeConfig
+import aphrodite.envs as envs
+from aphrodite.config import AphroditeConfig, get_current_aphrodite_config
 from aphrodite.distributed import (
     get_pp_group,
     get_tensor_model_parallel_rank,
@@ -104,6 +105,41 @@ class DeepseekV4MLP(nn.Module):
         return x
 
 
+def _shared_experts_are_fp4(config, layer_idx: int | None = None) -> bool:
+    """Whether the shared experts are MXFP4 and thus fusable.
+
+    ``layer_idx=None`` resolves the model-wide default (global scheme), used by
+    the main-model weight loader / mapper callers that operate per-model.
+    """
+    quant_cfg = getattr(config, "quantization_config", None)
+    if quant_cfg is None:
+        return False
+    if layer_idx is None:
+        base = None
+    elif layer_idx >= config.num_hidden_layers:
+        base = f"mtp.{layer_idx - config.num_hidden_layers}.ffn.shared_experts"
+    else:
+        base = f"layers.{layer_idx}.ffn.shared_experts"
+    if base and any(e.startswith(base) for e in (quant_cfg.get("exclude") or [])):
+        return False
+    entry = (quant_cfg.get("layer_quant_config") or {}).get(f"{base}.w1") if base else None
+    if entry is None:
+        entry = quant_cfg.get("global_quant_config")
+    return ((entry or {}).get("weight") or {}).get("dtype") == "fp4"
+
+
+def _fuse_shared_experts_enabled(config, prefix: str = "") -> bool:
+    """Whether to fuse the shared expert into the routed MXFP4 grouped GEMM."""
+    if not (
+        current_platform.is_rocm()
+        and getattr(config, "n_shared_experts", None)
+        and envs.APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS
+        and not get_current_aphrodite_config().parallel_config.enable_expert_parallel
+    ):
+        return False
+    return _shared_experts_are_fp4(config, extract_layer_index(prefix) if prefix else None)
+
+
 class DeepseekV4MoE(nn.Module):
     def __init__(
         self,
@@ -158,7 +194,10 @@ class DeepseekV4MoE(nn.Module):
                 requires_grad=False,
             )
 
-        if config.n_shared_experts is None:
+        self.n_shared_experts = config.n_shared_experts
+        self.fuse_shared_experts = _fuse_shared_experts_enabled(config, prefix)
+
+        if config.n_shared_experts is None or self.fuse_shared_experts:
             self.shared_experts = None
         else:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
@@ -182,6 +221,7 @@ class DeepseekV4MoE(nn.Module):
 
         self.experts = FusedMoE(
             shared_experts=self.shared_experts,
+            n_shared_experts=(config.n_shared_experts if self.fuse_shared_experts else None),
             gate=self.gate,
             num_experts=config.n_routed_experts,
             top_k=config.num_experts_per_tok,
@@ -603,7 +643,25 @@ class DeepseekV4Model(nn.Module):
         # Pre-compute expert mapping ONCE.
         expert_mapping = self.get_expert_mapping()
 
+        fuse_by_layer = {
+            extract_layer_index(mod_name): mod.fuse_shared_experts
+            for mod_name, mod in self.named_modules()
+            if isinstance(mod, DeepseekV4MoE)
+        }
+        n_routed = self.config.n_routed_experts
+        if any(fuse_by_layer.values()) and self.config.n_shared_experts != 1:
+            raise NotImplementedError(
+                "deepseek-v4 fused shared-expert loading supports only "
+                f"n_shared_experts == 1, got {self.config.n_shared_experts}"
+            )
+
         for name, loaded_weight in weights:
+            if ".ffn.shared_experts.w" in name and fuse_by_layer.get(extract_layer_index(name), False):
+                name = name.replace(
+                    ".ffn.shared_experts.w",
+                    f".ffn.experts.{n_routed}.w",
+                )
+
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 # Skip non-stacked layers and experts (experts handled below).
                 if ".experts." in name:
@@ -674,16 +732,18 @@ class DeepseekV4Model(nn.Module):
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
+        n_shared = getattr(self.config, "n_shared_experts", 0) or 0
+        num_experts = self.config.n_routed_experts + (n_shared if _fuse_shared_experts_enabled(self.config) else 0)
         return fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="w1",
             ckpt_down_proj_name="w2",
             ckpt_up_proj_name="w3",
-            num_experts=self.config.n_routed_experts,
+            num_experts=num_experts,
         )
 
 
-def _make_deepseek_v4_weights_mapper(expert_dtype: str) -> WeightsMapper:
+def _make_deepseek_v4_weights_mapper(expert_dtype: str, fuse_shared_experts: bool = False) -> WeightsMapper:
     if expert_dtype == "fp4":
         # MXFP4 experts use Mxfp4MoEMethod, which registers scales as
         # ``w{1,2,3}_weight_scale`` (no _inv suffix). FP8 linear and
@@ -692,6 +752,7 @@ def _make_deepseek_v4_weights_mapper(expert_dtype: str) -> WeightsMapper:
         scale_regex = {
             re.compile(r"(\.experts\.\d+\.w[123])\.scale$"): r"\1.weight_scale",
             re.compile(r"\.scale$"): ".weight_scale_inv",
+            re.compile(r"(?<!\.w[123])\.weight_scale$"): ".weight_scale_inv",
         }
     else:
         # FP8 experts use Fp8MoEMethod (block_quant=True), which registers
@@ -700,6 +761,7 @@ def _make_deepseek_v4_weights_mapper(expert_dtype: str) -> WeightsMapper:
         scale_regex = {
             re.compile(r"\.scale$"): ".weight_scale_inv",
         }
+    substr_map = {} if fuse_shared_experts else {".shared_experts.w2": ".shared_experts.down_proj"}
     return WeightsMapper(
         orig_to_new_prefix={
             "layers.": "model.layers.",
@@ -714,9 +776,7 @@ def _make_deepseek_v4_weights_mapper(expert_dtype: str) -> WeightsMapper:
             "embed.weight": "embed_tokens.weight",
             ".ffn.gate.bias": ".ffn.gate.e_score_correction_bias",
         },
-        orig_to_new_substr={
-            ".shared_experts.w2": ".shared_experts.down_proj",
-        },
+        orig_to_new_substr=substr_map,
     )
 
 
@@ -733,8 +793,11 @@ class DeepseekV4ForCausalLM(nn.Module, SupportsPP):
         config = aphrodite_config.model_config.hf_config
         self.config = config
         expert_dtype = getattr(config, "expert_dtype", "fp4")
-        if expert_dtype != "fp4":
-            self.hf_to_aphrodite_mapper = _make_deepseek_v4_weights_mapper(expert_dtype)
+        fuse_shared_experts = _fuse_shared_experts_enabled(config)
+        if expert_dtype != "fp4" or fuse_shared_experts:
+            self.hf_to_aphrodite_mapper = _make_deepseek_v4_weights_mapper(
+                expert_dtype, fuse_shared_experts=fuse_shared_experts
+            )
 
         self.model = self.model_cls(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:

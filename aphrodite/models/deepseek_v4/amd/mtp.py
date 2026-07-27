@@ -318,6 +318,13 @@ class DeepSeekV4MTP(nn.Module):
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
 
+        def _resolve_scale_name(name: str) -> str:
+            if name.endswith(".weight_scale") and name not in params_dict:
+                inv = name.removesuffix(".weight_scale") + ".weight_scale_inv"
+                if inv in params_dict:
+                    return inv
+            return name
+
         # TP for attention
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
@@ -371,6 +378,7 @@ class DeepSeekV4MTP(nn.Module):
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
+                name = _resolve_scale_name(name)
 
                 param = params_dict[name]
                 weight_loader = param.weight_loader
@@ -418,6 +426,7 @@ class DeepSeekV4MTP(nn.Module):
                         name = name.replace(".shared_experts.w2", ".shared_experts.down_proj")
                     if name.endswith(".ffn.gate.bias"):
                         name = name.replace(".bias", ".e_score_correction_bias")
+                    name = _resolve_scale_name(name)
                     param = params_dict[name]
                     weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
