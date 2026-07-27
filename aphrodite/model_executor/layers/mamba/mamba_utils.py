@@ -49,6 +49,15 @@ def is_conv_state_dim_first() -> bool:
 
 class MambaStateDtypeCalculator:
     @classmethod
+    def append_replayssm_ring(
+        cls,
+        base_dtypes: tuple[torch.dtype, ...],
+        model_dtype: ModelDType | torch.dtype,
+    ) -> tuple[torch.dtype, ...]:
+        activation_dtype = get_kv_cache_torch_dtype("auto", model_dtype)
+        return (*base_dtypes, activation_dtype, torch.float32, activation_dtype)
+
+    @classmethod
     def linear_attention_state_dtype(
         cls,
         model_dtype: ModelDType | torch.dtype,
@@ -176,6 +185,28 @@ class MambaStateShapeCalculator:
         #   e.g., (h_heads, head_dim, state_size) = (128, 64, 128)
         temporal_state_shape = (divide(num_heads, tp_world_size), head_dim, state_size)
         return conv_state_shape, temporal_state_shape
+
+    @classmethod
+    def append_replayssm_ring(
+        cls,
+        base_shapes: tuple[tuple[int, ...], ...],
+        n_groups: int,
+        tp_world_size: int,
+        replayssm_buffer_len: int,
+    ) -> tuple[tuple[int, ...], ...]:
+        """Append the ReplaySSM ring shapes (x_cache, dt_cache, B_cache) to a
+        base ``(conv, ssm)`` tuple. ``base_shapes[1]`` is the ssm shape
+        ``(nheads // tp, head_dim, state_size)``; B_cache uses the un-extended
+        ``n_groups``.
+        """
+        local_nheads, head_dim, state_size = base_shapes[1]
+        local_ngroups = divide(n_groups, tp_world_size)
+        return (
+            *base_shapes,
+            (local_nheads, replayssm_buffer_len, head_dim),
+            (local_nheads, replayssm_buffer_len),
+            (local_ngroups, replayssm_buffer_len, state_size),
+        )
 
     @classmethod
     def short_conv_state_shape(
