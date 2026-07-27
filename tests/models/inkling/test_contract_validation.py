@@ -6,6 +6,7 @@ import pytest
 
 from aphrodite.config.compilation import CompilationConfig, CUDAGraphMode
 from aphrodite.models.inkling.common.mm_preprocess import InklingMultiModalDataParser
+from aphrodite.models.inkling.common.towers import plan_out_scales
 from aphrodite.models.inkling.configs import (
     InklingAudioConfig,
     InklingModelConfig,
@@ -15,6 +16,22 @@ from aphrodite.models.inkling.nvidia.sconv_swa_attn import (
     InklingSconvMetadataBuilder,
 )
 from aphrodite.v1.attention.backend import AttentionCGSupport
+
+
+def test_vision_scale_plan_matches_released_config():
+    assert plan_out_scales(2, 40, 4) == [
+        (1, 1, 1, 3),
+        (1, 5, 5, 128),
+        (1, 10, 10, 320),
+        (1, 40, 40, 4800),
+        (2, 40, 40, 9600),
+    ]
+
+
+def test_vision_scale_plan_breaks_assignment_ties_in_order():
+    reductions = [np.prod(scale[:-1]) for scale in plan_out_scales(2, 52, 4)]
+
+    assert reductions == sorted(set(reductions))
 
 
 @pytest.mark.parametrize(
