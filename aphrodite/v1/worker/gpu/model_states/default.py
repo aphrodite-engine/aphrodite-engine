@@ -5,7 +5,6 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from aphrodite.compilation.breakable_cudagraph import is_breakable_cudagraph_enabled
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.compilation import CUDAGraphMode
 from aphrodite.v1.core.sched.output import NewRequestData
@@ -130,9 +129,7 @@ class DefaultModelState(ModelState):
         kv_cache_config: KVCacheConfig,
         for_capture: bool = False,
     ) -> dict[str, Any]:
-        if cudagraph_mode == CUDAGraphMode.FULL or (
-            cudagraph_mode == CUDAGraphMode.PIECEWISE and is_breakable_cudagraph_enabled()
-        ):
+        if cudagraph_mode == CUDAGraphMode.FULL:
             # Use padded sizes - padding is handled by model_runner.prepare_attn.
             num_reqs = input_batch.num_reqs_after_padding
             num_tokens = input_batch.num_tokens_after_padding
