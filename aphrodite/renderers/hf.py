@@ -1048,6 +1048,8 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
         # NOTE: use_unified_vision_chunk is currently specific to Kimi-K2.5
         # model which uses unified vision chunks for both images and videos.
         if self.use_unified_vision_chunk and mm_uuids is not None and mm_data is not None:
+            mm_uuids = rebuild_mm_uuids_from_mm_data(mm_uuids, mm_data)
+
             # get video placeholder, replace it with runtime video-chunk prompts
             video_placeholder = getattr(model_config.hf_config, "video_placeholder", None)
             prompt_raw = cast(
