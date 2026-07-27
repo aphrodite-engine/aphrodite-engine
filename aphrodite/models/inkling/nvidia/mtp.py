@@ -13,6 +13,9 @@ from torch import nn
 from aphrodite.config import AphroditeConfig
 from aphrodite.model_executor.layers.linear import ReplicatedLinear
 from aphrodite.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
+from aphrodite.model_executor.model_loader.mtp_validation import (
+    is_mtp_completeness_check_enabled,
+)
 from aphrodite.model_executor.model_loader.weight_utils import default_weight_loader
 from aphrodite.model_executor.models.interfaces import MultiModalEmbeddings
 from aphrodite.model_executor.models.utils import maybe_prefix
@@ -295,7 +298,7 @@ def _load_inkling_mtp_weights(
             raise ValueError(f"Unexpected Inkling MTP weight: {original_name}")
 
     required = {name for name in params if name.startswith("model.layers.") or name.startswith("model.chain_norm.")}
-    if missing := sorted(required - loaded):
+    if (missing := sorted(required - loaded)) and is_mtp_completeness_check_enabled():
         raise ValueError("Inkling MTP checkpoint is missing required parameters: " + ", ".join(missing))
     return loaded
 

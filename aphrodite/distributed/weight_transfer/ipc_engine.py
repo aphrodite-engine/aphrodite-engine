@@ -254,7 +254,12 @@ class IPCWeightTransferEngine(WeightTransferEngine[IPCWeightTransferInitInfo, IP
                 weight = rebuild_cuda_tensor(*list_args)
                 weights.append((name, weight))
 
-        self.model.load_weights(weights)
+        from aphrodite.model_executor.model_loader.mtp_validation import (
+            disable_mtp_completeness_check,
+        )
+
+        with disable_mtp_completeness_check():
+            self.model.load_weights(weights)
 
     def shutdown(self) -> None:
         pass
