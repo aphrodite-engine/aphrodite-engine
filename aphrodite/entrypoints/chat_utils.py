@@ -910,7 +910,7 @@ class MultiModalContentParser(BaseMultiModalContentParser):
         `tensor.shape[0]` placeholder tokens after tokenization.
         """
         if not self.model_config.enable_prompt_embeds:
-            raise ValueError(_ENABLE_PROMPT_EMBEDS_ERROR)
+            raise APHRODITEValidationError(_ENABLE_PROMPT_EMBEDS_ERROR, parameter="prompt_embeds")
 
         tensor = safe_load_prompt_embeds(self.model_config, data.encode())
         self._tracker.add("prompt_embeds", (tensor, None))
@@ -929,7 +929,10 @@ class MultiModalContentParser(BaseMultiModalContentParser):
     ) -> None:
         mm_config = self.model_config.get_multimodal_config()
         if not mm_config.enable_mm_embeds:
-            raise ValueError("You must set `--enable-mm-embeds` to input `image_embeds`")
+            raise APHRODITEValidationError(
+                "You must set `--enable-mm-embeds` to input `image_embeds`",
+                parameter="image_embeds",
+            )
 
         if isinstance(image_embeds, dict):
             embeds = {k: self._connector.fetch_image_embedding(v) for k, v in image_embeds.items()}
@@ -951,7 +954,10 @@ class MultiModalContentParser(BaseMultiModalContentParser):
     ) -> None:
         mm_config = self.model_config.get_multimodal_config()
         if not mm_config.enable_mm_embeds:
-            raise ValueError("You must set `--enable-mm-embeds` to input `audio_embeds`")
+            raise APHRODITEValidationError(
+                "You must set `--enable-mm-embeds` to input `audio_embeds`",
+                parameter="audio_embeds",
+            )
 
         if isinstance(audio_embeds, dict):
             embeds = {k: self._connector.fetch_audio_embedding(v) for k, v in audio_embeds.items()}
@@ -1041,7 +1047,7 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         thread-pool executor via `safe_load_prompt_embeds_async`.
         """
         if not self.model_config.enable_prompt_embeds:
-            raise ValueError(_ENABLE_PROMPT_EMBEDS_ERROR)
+            raise APHRODITEValidationError(_ENABLE_PROMPT_EMBEDS_ERROR, parameter="prompt_embeds")
 
         self._tracker.add("prompt_embeds", partial(self._load_prompt_embeds_async, data.encode()))
         self._add_placeholder("prompt_embeds", PROMPT_EMBEDS_PLACEHOLDER_TOKEN)
@@ -1067,7 +1073,10 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
     ) -> None:
         mm_config = self.model_config.get_multimodal_config()
         if not mm_config.enable_mm_embeds:
-            raise ValueError("You must set `--enable-mm-embeds` to input `image_embeds`")
+            raise APHRODITEValidationError(
+                "You must set `--enable-mm-embeds` to input `image_embeds`",
+                parameter="image_embeds",
+            )
 
         if isinstance(image_embeds, dict):
             embeds = {k: self._connector.fetch_image_embedding(v) for k, v in image_embeds.items()}
@@ -1087,7 +1096,10 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
     ) -> None:
         mm_config = self.model_config.get_multimodal_config()
         if not mm_config.enable_mm_embeds:
-            raise ValueError("You must set `--enable-mm-embeds` to input `audio_embeds`")
+            raise APHRODITEValidationError(
+                "You must set `--enable-mm-embeds` to input `audio_embeds`",
+                parameter="audio_embeds",
+            )
 
         if isinstance(audio_embeds, dict):
             embeds = {k: self._connector.fetch_audio_embedding(v) for k, v in audio_embeds.items()}
@@ -1458,10 +1470,10 @@ def _parse_chat_message_content_mm_part(
             tool_reference = tool_reference_params.get("name", None)
             return "tool_reference", tool_reference
         # Raise an error if no 'type' or direct URL is found.
-        raise ValueError("Missing 'type' field in multimodal part.")
+        raise APHRODITEValidationError("Missing 'type' field in multimodal part.", parameter="type")
 
     if not isinstance(part_type, str):
-        raise ValueError("Invalid 'type' field in multimodal part.")
+        raise APHRODITEValidationError("Invalid 'type' field in multimodal part.", parameter="type")
     return part_type, "unknown part_type content"
 
 
@@ -1593,7 +1605,7 @@ def _parse_chat_message_content_part(
         modality = "audio"
     elif part_type == "prompt_embeds":
         if not content:
-            raise ValueError(_PROMPT_EMBEDS_MISSING_DATA_ERROR)
+            raise APHRODITEValidationError(_PROMPT_EMBEDS_MISSING_DATA_ERROR, parameter="prompt_embeds")
         mm_parser.parse_prompt_embeds(cast(str, content))
         modality = "prompt_embeds"
     elif part_type == "audio_url":
