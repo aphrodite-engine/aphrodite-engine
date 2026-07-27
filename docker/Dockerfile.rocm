@@ -225,16 +225,15 @@ COPY --from=build_aphrodite ${COMMON_WORKDIR}/aphrodite/rust /rust
 
 
 # -----------------------
-# RIXL/UCX build stages
-FROM base AS build_rixl
-ARG RIXL_BRANCH="f33a5599"
-ARG RIXL_REPO="https://github.com/ROCm/RIXL.git"
-ARG UCX_BRANCH="da3fac2a"
-ARG UCX_REPO="https://github.com/ROCm/ucx.git"
+# NIXL/UCX build stages
+FROM base AS build_nixl
+ARG NIXL_BRANCH="231d56753047c989062a5cb2ac703a1ad761c7d2"
+ARG NIXL_REPO="https://github.com/ai-dynamo/nixl.git"
+ARG UCX_BRANCH="96e58a16039f6d7d213bc967b8069238742c5194"
+ARG UCX_REPO="https://github.com/openucx/ucx.git"
 ENV ROCM_PATH=/opt/rocm
 ENV UCX_HOME=/usr/local/ucx
-ENV RIXL_HOME=/usr/local/rixl
-ENV RIXL_BENCH_HOME=/usr/local/rixl_bench
+ENV NIXL_HOME=/usr/local/nixl
 
 RUN apt-get -y update && apt-get -y install --no-install-recommends \
     autoconf libtool pkg-config libgrpc-dev libgrpc++-dev libprotobuf-dev \
@@ -243,7 +242,8 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system meson auditwheel patchelf tomlkit
+    uv pip install --system meson meson-python pybind11 pyyaml types-PyYAML \
+        auditwheel build patchelf pytest tomlkit "setuptools>=80.9.0"
 
 RUN cd /usr/local/src \
     && git clone ${UCX_REPO} \
@@ -269,24 +269,48 @@ RUN cd /usr/local/src \
 ENV PATH=/usr/local/ucx/bin:$PATH
 ENV LD_LIBRARY_PATH=${UCX_HOME}/lib:${LD_LIBRARY_PATH}
 
-RUN git clone ${RIXL_REPO} /opt/rixl \
-    && cd /opt/rixl \
-    && git checkout ${RIXL_BRANCH} \
-    && meson setup build --prefix=${RIXL_HOME} \
+RUN git clone ${NIXL_REPO} /opt/nixl \
+    && cd /opt/nixl \
+    && git checkout ${NIXL_BRANCH} \
+    && meson setup build --prefix=${NIXL_HOME} \
         -Ducx_path=${UCX_HOME} \
-        -Drocm_path=${ROCM_PATH} \
+        -Dwheel_variant=rocm \
+        -Dbuild_tests=false \
+        -Dbuild_examples=false \
     && cd build \
     && ninja \
-    && ninja install
+    && ninja install \
+    && echo "${NIXL_HOME}/lib/$(uname -m)-linux-gnu" \
+        > /etc/ld.so.conf.d/nixl.conf \
+    && echo "${NIXL_HOME}/lib/$(uname -m)-linux-gnu/plugins" \
+        >> /etc/ld.so.conf.d/nixl.conf \
+    && ldconfig
 
-# Generate RIXL wheel.
-RUN cd /opt/rixl \
-    && mkdir -p /app/install \
-    && ./contrib/build-wheel.sh \
-        --output-dir /app/install \
-        --rocm-dir ${ROCM_PATH} \
+# Generate the ROCm NIXL wheel. Upstream's generic wheel helper detects CUDA,
+# so configure the ROCm wheel variant directly through Meson.
+# Exclude libcore and libpull from auditwheel: transitive dependencies
+# that are not shipped in the wheel and vary across base images.
+RUN cd /opt/nixl \
+    && ./contrib/tomlutil.py --wheel-name nixl-rocm pyproject.toml \
+    && uv build --wheel --no-build-isolation --out-dir /tmp/nixl_wheels \
+        --python ${PYTHON_VERSION} \
+        -Csetup-args=-Ducx_path=${UCX_HOME} \
+        -Csetup-args=-Dwheel_variant=rocm \
+        -Csetup-args=-Dbuild_tests=false \
+        -Csetup-args=-Dbuild_examples=false \
+    && mkdir -p /tmp/nixl_wheels/repaired /app/install \
+    && auditwheel repair \
+        --exclude 'libamdhip64*' \
+        --exclude 'libcore*' \
+        --exclude 'libpull*' \
+        /tmp/nixl_wheels/nixl_rocm*.whl \
+        --plat manylinux_2_34_$(uname -m) \
+        --wheel-dir /tmp/nixl_wheels/repaired \
+    && ./contrib/wheel_add_ucx_plugins.py \
         --ucx-plugins-dir ${UCX_HOME}/lib/ucx \
-        --nixl-plugins-dir ${RIXL_HOME}/lib/x86_64-linux-gnu/plugins
+        --nixl-plugins-dir ${NIXL_HOME}/lib/$(uname -m)-linux-gnu/plugins \
+        /tmp/nixl_wheels/repaired/*.whl \
+    && cp /tmp/nixl_wheels/repaired/*.whl /app/install
 
 
 # -----------------------
@@ -432,8 +456,8 @@ RUN --mount=type=bind,from=export_aphrodite,src=/,target=/install \
 # not available once the RUN step completes.
 COPY --from=export_aphrodite /*.whl /opt/aphrodite-wheels/
 
-RUN --mount=type=bind,from=build_rixl,src=/app/install,target=/rixl_install \
-    uv pip install --system /rixl_install/*.whl
+RUN --mount=type=bind,from=build_nixl,src=/app/install,target=/nixl_install \
+    uv pip install --system /nixl_install/*.whl
 
 RUN --mount=type=bind,from=build_deep,src=/app/deep_install,target=/deep_install \
     uv pip install --system /deep_install/*.whl
@@ -456,6 +480,7 @@ ENV HF_HUB_DOWNLOAD_TIMEOUT=60
 
 # Use legacy IPC mode for HSA to avoid GPU memory pinning issues with UCX rocm_ipc.
 ENV HSA_ENABLE_IPC_MODE_LEGACY=1
+ENV UCX_RMA_PPLN_ENABLE=y
 
 # Source code is used in python-only compile tests. Hide it inside src/ so it
 # will not be imported by other tests.
@@ -512,6 +537,10 @@ RUN --mount=type=bind,from=export_aphrodite,src=/,target=/install \
     && pip uninstall -y aphrodite-engine \
     && uv pip install --system *.whl
 
+# Install NIXL ROCm wheel.
+RUN --mount=type=bind,from=build_nixl,src=/app/install,target=/nixl_install \
+    uv pip install --system /nixl_install/*.whl
+
 ARG COMMON_WORKDIR
 ARG BASE_IMAGE
 
@@ -523,6 +552,7 @@ ENV RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
 ENV TOKENIZERS_PARALLELISM=false
 ENV SAFETENSORS_FAST_GPU=1
 ENV HIP_FORCE_DEV_KERNARG=1
+ENV UCX_RMA_PPLN_ENABLE=y
 
 RUN echo "ROCTRACER_MAX_EVENTS=10000000" > ${COMMON_WORKDIR}/libkineto.conf
 ENV KINETO_CONFIG="${COMMON_WORKDIR}/libkineto.conf"
