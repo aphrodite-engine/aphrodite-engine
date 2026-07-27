@@ -80,27 +80,22 @@ __launch_bounds__(128) __global__
                                   OutIndType* indices, int num_rows,
                                   int num_experts, float routed_scaling_factor,
                                   const HashIndType* input_ids,
-                                  const HashIndType* tid2eid,
-                                  const bool* is_padding) {
+                                  const HashIndType* tid2eid) {
   const int warp = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
   const int lane = threadIdx.x % 32;
   if (warp >= num_rows) return;
   const int64_t token_id = load_index_as_int64(input_ids, warp);
-  const bool is_pad_row = is_padding != nullptr && is_padding[warp];
 
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
   cudaGridDependencySynchronize();
   #endif
   int expert = 0;
   float weight = 0.f;
-  if (lane < 6 && !is_pad_row) {
+  if (lane < 6) {
     // Only load and calculate for 6 experts.
     expert = static_cast<int>(tid2eid[token_id * 6 + lane]);
     const float x = input[warp * num_experts + expert];
     weight = sqrtf(fmaxf(x, 0.f) + __logf(1.f + __expf(-fabsf(x))));
-    if (isnan(weight)) {
-      weight = 0.f;
-    }
   }
   float weight_sum = weight;
   #pragma unroll
