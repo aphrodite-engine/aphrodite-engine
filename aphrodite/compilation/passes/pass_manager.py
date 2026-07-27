@@ -7,7 +7,7 @@ from typing import Any, ParamSpec, TypeVar
 from torch import fx as fx
 
 from aphrodite import envs
-from aphrodite._aiter_ops import check_aiter_fused_qk_rmsnorm, rocm_aiter_ops
+from aphrodite._aiter_ops import rocm_aiter_ops
 from aphrodite.compilation.passes.utility.post_cleanup import PostCleanupPass
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.logger import init_logger
@@ -172,11 +172,7 @@ class PostGradPassManager(CustomGraphPass):  # type: ignore[misc]
                 if rocm_aiter_ops.is_enabled():
                     self.passes += [RocmAiterSiluMulFp8GroupQuantFusionPass(config)]
 
-            if (
-                self.pass_config.fuse_mla_dual_rms_norm
-                and rocm_aiter_ops.is_enabled()
-                and check_aiter_fused_qk_rmsnorm()
-            ):
+            if self.pass_config.fuse_mla_dual_rms_norm and rocm_aiter_ops.is_enabled():
                 self.passes += [MLADualRMSNormFusionPass(config)]
 
             if self.pass_config.fuse_rope_kvcache:
