@@ -262,7 +262,7 @@ class HYV3Attention(nn.Module):
             self.total_num_heads,
             self.total_num_kv_heads,
             quant_config=quant_config,
-            bias=None,
+            bias=False,
             prefix=f"{prefix}.qkv_proj",
         )
         self.o_proj = RowParallelLinear(
