@@ -9,7 +9,10 @@ from typing import Literal, overload
 from aphrodite.distributed.kv_events import BlockStored, KVCacheEvent
 from aphrodite.logger import init_logger
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.v1.core.kv_cache_coordinator import get_kv_cache_coordinator
+from aphrodite.v1.core.kv_cache_coordinator import (
+    HybridKVCacheCoordinator,
+    get_kv_cache_coordinator,
+)
 from aphrodite.v1.core.kv_cache_metrics import KVCacheMetricsCollector
 from aphrodite.v1.core.kv_cache_utils import KVCacheBlock, KVCacheBlockCopy
 from aphrodite.v1.kv_cache_interface import (
@@ -263,6 +266,42 @@ class KVCacheManager:
             num_new_computed_tokens,
             shared_prefix_boundary,
         )
+
+    def get_computed_blocks_for_connector(self, request: Request) -> tuple[KVCacheBlocks, int, int, bool]:
+        """Local prefix-cache lookup for a request scheduled with a KV connector.
+
+        Hybrid (Mamba + full-attention) models can have per-group prefix hits
+        diverge under block pressure. Report the full-attention hit as the local
+        prefix and flag when that hit ran deeper than a lagging group. If the
+        connector supplies no external tokens, the caller must reconcile the
+        groups with ``get_computed_blocks``.
+
+        Non-hybrid models and already-convergent hits use ``get_computed_blocks``.
+
+        Returns:
+            The ``get_computed_blocks`` result plus ``hit_diverged``.
+        """
+        coordinator = self.coordinator
+        if not (
+            self.kv_cache_config.has_mamba_layers
+            and isinstance(coordinator, HybridKVCacheCoordinator)
+            and coordinator.full_attention_group_id is not None
+        ):
+            return *self.get_computed_blocks(request), False
+
+        if not self.prefix_cache_lookup_enabled(request):
+            return self.empty_kv_cache_blocks, 0, 0, False
+
+        fa_group_id = coordinator.full_attention_group_id
+        computed, per_group_hits = coordinator.find_longest_cache_hit_per_group(
+            request.block_hashes, request.num_tokens - 1
+        )
+        if any(hit > per_group_hits[fa_group_id] for hit in per_group_hits):
+            return *self.get_computed_blocks(request), False
+
+        num_local = per_group_hits[fa_group_id]
+        blocks = self.create_kv_cache_blocks(computed)
+        return blocks, num_local, 0, min(per_group_hits) < num_local
 
     def allocate_slots(
         self,
