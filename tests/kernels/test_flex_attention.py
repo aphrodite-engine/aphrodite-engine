@@ -252,7 +252,7 @@ def test_block_mask_direct_vs_slow_path():
     device = torch.device("cuda")
 
     aphrodite_config = create_aphrodite_config(
-        model_name="meta-llama/Meta-Llama-3-8B", block_size=16, max_model_len=1024
+        model_name="Qwen/Qwen2.5-1.5B-Instruct", block_size=16, max_model_len=1024
     )
     kv_cache_spec = create_standard_kv_cache_spec(aphrodite_config)
 
