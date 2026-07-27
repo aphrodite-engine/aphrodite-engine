@@ -103,6 +103,7 @@ class DecodeEagleCudaGraphManager(EagleCudaGraphManagerBase):
                 block_tables,
                 attn_groups,
                 kv_cache_config,
+                full_cudagraph=desc.cg_mode == CUDAGraphMode.FULL,
             )
             attn_metadata, slot_mappings = attn_state
 
