@@ -1697,6 +1697,48 @@ def test_lookup_partial_prefix_returns_first_hit_length():
     assert worker.lookup(48, [b"a0", b"a1", b"a2"]) == 32
 
 
+def test_lookup_full_hit_reuses_existing_boundary():
+    """A full hit is re-derived below the request end without another RPC."""
+    worker = _make_bare_worker(block_size=16)
+    worker.store.batch_is_exist.return_value = [1, 1]
+
+    assert worker.lookup(32, [b"h0", b"h1"]) == 16
+    assert worker.store.batch_is_exist.call_count == 1
+
+
+def test_lookup_full_hit_with_eagle_pops_once_not_twice():
+    """Eagle full hits must not be re-derived after the drafter block is popped."""
+    worker = _make_bare_worker(block_size=16)
+    worker.coord = mooncake_store_worker.MooncakeStoreCoordinator(
+        worker._kv_cache_groups,
+        scheduler_block_size=16,
+        hash_block_size=16,
+        use_eagle=True,
+    )
+    worker.store.batch_is_exist.return_value = [1, 1, 1, 1]
+
+    assert worker.lookup(64, [b"h0", b"h1", b"h2", b"h3"]) == 48
+    assert worker.store.batch_is_exist.call_count == 1
+
+
+def test_lookup_full_hit_swa_degrades_when_no_stored_boundary_is_usable():
+    """A full SWA hit must be re-derived on an actually stored boundary."""
+    from aphrodite.v1.kv_cache_interface import KVCacheGroupSpec, SlidingWindowSpec
+
+    worker = _make_bare_worker(block_size=16)
+    swa = SlidingWindowSpec(block_size=16, num_kv_heads=8, head_size=64, dtype=None, sliding_window=32)
+    worker._kv_cache_groups = [KVCacheGroupSpec(["layer0"], swa)]
+    worker.coord = mooncake_store_worker.MooncakeStoreCoordinator(
+        worker._kv_cache_groups,
+        scheduler_block_size=worker.hash_block_size,
+        hash_block_size=worker.hash_block_size,
+    )
+    worker.store.batch_is_exist.return_value = [0, 0, 1, 1]
+
+    assert worker.lookup(64, [b"h0", b"h1", b"h2", b"h3"]) == 0
+    assert worker.store.batch_is_exist.call_count == 1
+
+
 def test_lookup_swa_single_group_returns_full_when_tail_window_present():
     """Single-SWA, sliding_window=32 (= 2 blocks): producer stored only the
     tail. Coordinator-driven lookup returns full prefix even though the
@@ -1712,7 +1754,7 @@ def test_lookup_swa_single_group_returns_full_when_tail_window_present():
         hash_block_size=worker.hash_block_size,
     )
     worker.store.batch_is_exist.return_value = [0, 0, 1, 1]
-    assert worker.lookup(64, [b"h0", b"h1", b"h2", b"h3"]) == 64
+    assert worker.lookup(65, [b"h0", b"h1", b"h2", b"h3"]) == 64
 
 
 def test_lookup_checks_all_potential_swa_hit_boundaries():
@@ -2171,7 +2213,7 @@ def test_lookup_records_mooncake_metrics():
     worker = _make_bare_worker()
     worker.store.batch_is_exist.return_value = [1, 1]
 
-    result = worker.lookup(32, [b"a0", b"a1"])
+    result = worker.lookup(33, [b"a0", b"a1"])
     stats = worker.get_kv_connector_stats()
 
     assert result == 32
