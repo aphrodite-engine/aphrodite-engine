@@ -35,7 +35,7 @@ Otherwise, we support everything, plus many other parameters.
 
 Aphrodite also provides experimental support for the OpenAI Vision API.
 
-For the postprocessing endpoints that turn generated token IDs back into OpenAI-compatible responses, see the [Derenderer APIs](./derenderer).
+For the postprocessing endpoints that turn generated token IDs back into OpenAI-compatible responses, see the [Derenderer APIs](/usage/derenderer/).
 
 ## Extra Parameters
 
