@@ -305,11 +305,11 @@ def log_version_and_model(lgr: Logger, version: str, model_name: str) -> None:
 
     logo_template = Template(
         "\n"
-        "${b}     ▄▄▄  ▄▄▄▄  ▄▄ ▄▄ ▄▄▄▄   ▄▄▄  ▄▄▄▄  ▄▄ ▄▄▄▄▄▄ ▄▄▄▄▄${r}\n"
-        "${b}    ██▀██ ██▄█▀ ██▄██ ██▄█▄ ██▀██ ██▀██ ██   ██   ██▄▄${r}\n"
-        "${b}    ██▀██ ██    ██ ██ ██ ██ ▀███▀ ████▀ ██   ██   ██▄▄▄${r}\n"
+        "${w}     ▄▄▄  ▄▄▄▄  ▄▄ ▄▄ ▄▄▄▄   ▄▄▄  ▄▄▄▄  ▄▄ ▄▄▄▄▄▄ ▄▄▄▄▄${r}\n"
+        "${w}    ██▀██ ██▄█▀ ██▄██ ██▄█▄ ██▀██ ██▀██ ██   ██   ██▄▄${r}\n"
+        "${w}    ██▀██ ██    ██ ██ ██ ██ ▀███▀ ████▀ ██   ██   ██▄▄▄${r}\n"
     )
-    colors = {"b": "\033[94m", "r": "\033[0m"}  # blue, reset
+    colors = {"w": "\033[1m", "r": "\033[0m"}  # bold default foreground, reset
     if formatter != "color":
         # monochrome logo (no ansi escape codes)
         colors = dict.fromkeys(colors, "")
