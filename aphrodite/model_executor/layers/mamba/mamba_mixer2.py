@@ -687,8 +687,9 @@ class MambaMixer2(MambaBase, PluggableLayer):
         attn_metadata: Mamba2AttentionMetadata | None = None
         if attn_metadata_raw is not None:
             assert isinstance(attn_metadata_raw, dict)
-            attn_metadata = attn_metadata_raw[self.prefix]
-            assert isinstance(attn_metadata, Mamba2AttentionMetadata)
+            layer_attn_metadata = attn_metadata_raw[self.prefix]
+            assert isinstance(layer_attn_metadata, Mamba2AttentionMetadata)
+            attn_metadata = layer_attn_metadata
             # conv_state must be (..., dim, width-1) for the conv kernels.
             # DS layout stores it that way directly; SD layout needs a
             # transpose (which keeps dim contiguous via stride tricks).

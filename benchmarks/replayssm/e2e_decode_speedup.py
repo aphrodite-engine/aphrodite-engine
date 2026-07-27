@@ -30,18 +30,14 @@ MODE_LABEL = {"standard": "standard", "replayssm": "ReplaySSM"}
 
 
 def parse_args():
-    p = argparse.ArgumentParser(
-        description="E2E decode speedup: ReplaySSM vs the standard SSM kernel."
-    )
+    p = argparse.ArgumentParser(description="E2E decode speedup: ReplaySSM vs the standard SSM kernel.")
     p.add_argument("--model-id", default="nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16")
     p.add_argument("--prompt", default=DEFAULT_PROMPT)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--num-steps", type=int, default=1000)
     p.add_argument("--warmup-steps", type=int, default=128)
     p.add_argument("--repeats", type=int, default=1)
-    p.add_argument(
-        "--buffer-len", type=int, default=16, help="ReplaySSM input-buffer length."
-    )
+    p.add_argument("--buffer-len", type=int, default=16, help="ReplaySSM input-buffer length.")
     p.add_argument(
         "--dtype",
         default="bfloat16",
@@ -62,8 +58,7 @@ def parse_args():
         "--mamba-ssm-cache-dtype",
         default="auto",
         choices=["auto", "float32", "float16", "bfloat16"],
-        help="SSM state dtype (both modes). 'auto' = config-driven; "
-        "'float32' = fp32 state, 'bfloat16' = s16 state.",
+        help="SSM state dtype (both modes). 'auto' = config-driven; 'float32' = fp32 state, 'bfloat16' = s16 state.",
     )
     p.add_argument(
         "--baseline-ssm-config",
@@ -211,17 +206,13 @@ def run_one_mode(args, mode) -> dict:
         args.baseline_ssm_config,
     ]
     cmd.append(
-        "--disable-flashinfer-autotune"
-        if args.disable_flashinfer_autotune
-        else "--no-disable-flashinfer-autotune"
+        "--disable-flashinfer-autotune" if args.disable_flashinfer_autotune else "--no-disable-flashinfer-autotune"
     )
     if args.max_model_len is not None:
         cmd += ["--max-model-len", str(args.max_model_len)]
 
     result = None
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
-    )
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     for line in proc.stdout:
         sys.stdout.write(line)
         sys.stdout.flush()
@@ -255,10 +246,7 @@ def main():
     print(header)
     print("-" * len(header))
     for r in (std, fla):
-        print(
-            f"{MODE_LABEL[r['mode']]:<10}{r['per_step_ms']:>12.3f}"
-            f"{r['tok_s']:>16,.0f}{r['elapsed_s']:>12.3f}"
-        )
+        print(f"{MODE_LABEL[r['mode']]:<10}{r['per_step_ms']:>12.3f}{r['tok_s']:>16,.0f}{r['elapsed_s']:>12.3f}")
     print("-" * len(header))
     print(f"speedup (standard / ReplaySSM, per step): {speedup:.3f}x")
 
