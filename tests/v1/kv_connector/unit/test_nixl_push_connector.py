@@ -25,6 +25,7 @@ import queue
 import threading
 import time
 from collections import defaultdict
+from concurrent.futures import Future
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -306,6 +307,7 @@ class _StubWriterWorker(NixlPushConnectorWorker):
         w._finished_blocks_inbox = queue.Queue()
         w._pending_completion_notifs = queue.Queue()
         w._evict_finished_inbox = queue.Queue()
+        w._deferred_push_inbox = queue.Queue()
         w._push_writer_wake = threading.Event()
         w._push_writer_stop = threading.Event()
         w._push_writer_thread = None
@@ -320,6 +322,7 @@ class _StubWriterWorker(NixlPushConnectorWorker):
         w.world_size = 1
         w.engine_id = "test-decode-engine"
         w._remote_agents = {}
+        w._physical_blocks_per_logical_kv_block = 1
 
         # Track _do_start_push_kv invocations.
         calls: list[tuple[str, Any, dict[str, Any]]] = []
@@ -486,6 +489,101 @@ class TestPushWriterStartLoadKv:
         assert w._finished_blocks_inbox.qsize() == 1
         assert w._push_writer_wake.is_set()
         assert w.start_push_calls == []
+
+
+# The P→D handshake must run on the base worker's background executor, never
+# blocking the writer thread. These tests call the real implementation because
+# the stub overrides it for the matching tests.
+def _real_do_start_push_kv(w, *args):
+    return NixlPushConnectorWorker._do_start_push_kv(w, *args)
+
+
+def test_do_start_push_kv_defers_then_writes_when_handshake_ready():
+    w = _StubWriterWorker.fresh()
+    w._logical_to_kernel_block_ids = lambda block_ids, ratio: block_ids
+    xfer_calls: list[dict[str, Any]] = []
+    w._xfer_blocks_for_req = lambda **kwargs: xfer_calls.append(kwargs)
+
+    fut: Future = Future()
+    w._ensure_handshake = lambda *args, **kwargs: fut
+
+    registration = _registration_data("req-handshake", decode_engine_id="decode-engine")
+    _real_do_start_push_kv(w, "req-handshake", ([1, 2, 3],), registration)
+
+    assert xfer_calls == []
+    assert w._deferred_push_inbox.qsize() == 0
+    assert not w._push_writer_wake.is_set()
+
+    fut.set_result(({(0, 0): "agent"}, 0.0))
+    assert xfer_calls == []
+    assert w._push_writer_wake.is_set()
+    request_id, blocks, replay_registration = w._deferred_push_inbox.get_nowait()
+    assert (request_id, blocks, replay_registration) == (
+        "req-handshake",
+        ([1, 2, 3],),
+        registration,
+    )
+
+    w._ensure_handshake = lambda *args, **kwargs: None
+    _real_do_start_push_kv(w, request_id, blocks, replay_registration)
+    assert len(xfer_calls) == 1
+    assert xfer_calls[0]["req_id"] == "req-handshake"
+    meta = xfer_calls[0]["meta"]
+    assert meta.remote is not None
+    assert meta.remote.engine_id == "decode-engine"
+    assert meta.remote.request_id == "req-handshake"
+
+
+def test_do_start_push_kv_drops_request_on_handshake_failure():
+    w = _StubWriterWorker.fresh()
+    xfer_calls: list[dict[str, Any]] = []
+    w._xfer_blocks_for_req = lambda **kwargs: xfer_calls.append(kwargs)
+    failures: list[dict[str, Any]] = []
+    w._log_failure = lambda **kwargs: failures.append(kwargs)
+
+    fut: Future = Future()
+    w._ensure_handshake = lambda *args, **kwargs: fut
+
+    _real_do_start_push_kv(
+        w,
+        "req-failure",
+        ([9],),
+        _registration_data("req-failure"),
+    )
+    fut.set_exception(RuntimeError("handshake failed"))
+
+    assert w._deferred_push_inbox.qsize() == 0
+    assert xfer_calls == []
+    assert len(failures) == 1
+    assert failures[0]["failure_type"] == "push_handshake_failed"
+
+
+def test_writer_loop_drains_deferred_push_inbox():
+    w = _StubWriterWorker.fresh()
+    w.nixl_wrapper = MagicMock()
+    w.nixl_wrapper.get_new_notifs.return_value = {}
+
+    processed = threading.Event()
+
+    def _tracked(request_id, blocks, registration):
+        w.start_push_calls.append((request_id, blocks, registration))
+        processed.set()
+
+    w._do_start_push_kv = _tracked  # type: ignore[method-assign]
+    w._deferred_push_inbox.put(("req-replay", ([1, 2],), _registration_data("req-replay")))
+    w._push_writer_wake.set()
+
+    writer = threading.Thread(target=w._push_writer_loop, daemon=True)
+    writer.start()
+    try:
+        assert processed.wait(timeout=2.0), "writer did not drain deferred inbox"
+    finally:
+        w._push_writer_stop.set()
+        w._push_writer_wake.set()
+        writer.join(timeout=2)
+
+    assert len(w.start_push_calls) == 1
+    assert w.start_push_calls[0][0] == "req-replay"
 
 
 class TestPushWriterNotifs:
