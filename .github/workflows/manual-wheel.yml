@@ -1,0 +1,128 @@
+name: Build wheel
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  wheel:
+    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
+    timeout-minutes: 720
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      RCLONE_CONFIG_MEGA_TYPE: s3
+      RCLONE_CONFIG_MEGA_PROVIDER: Mega
+      RCLONE_CONFIG_MEGA_ACCESS_KEY_ID: ${{ secrets.MEGA_S4_ACCESS_KEY }}
+      RCLONE_CONFIG_MEGA_SECRET_ACCESS_KEY: ${{ secrets.MEGA_S4_SECRET_KEY }}
+      RCLONE_CONFIG_MEGA_ENDPOINT: ${{ vars.MEGA_S4_ENDPOINT }}
+      RCLONE_CONFIG_MEGA_ACL: private
+      MEGA_S4_BUCKET: ${{ vars.MEGA_S4_BUCKET }}
+    steps:
+      - name: Check out latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compute wheel version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+          release="${tag#v}"
+          IFS=. read -r major minor patch <<< "$release"
+          version="${major}.${minor}.$((patch + 1)).dev$(date -u +%Y%m%d%H%M)+cu130.g$(git rev-parse --short=9 HEAD)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Building ${version} from $(git rev-parse HEAD)"
+
+      - name: Build CUDA wheel
+        env:
+          APHRODITE_VERSION_OVERRIDE: ${{ steps.version.outputs.version }}
+          MAX_JOBS: "64"
+          NVCC_THREADS: "4"
+          CUDA_VERSION: "13.0.2"
+          TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
+        run: ./docker/export_wheels.sh
+
+      - name: Install rclone
+        run: |
+          ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+          echo "$RUNNER_TEMP/rclone-bin" >> "$GITHUB_PATH"
+
+      - name: Upload wheel and generate package index
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          wheel_name="$(basename "$wheel")"
+          remote="mega:${MEGA_S4_BUCKET}/wheels/${wheel_name}"
+
+          "$RUNNER_TEMP/rclone-bin/rclone" copyto "$wheel" "$remote" \
+            --s3-upload-concurrency 8 \
+            --s3-chunk-size 64M
+          wheel_url="$("$RUNNER_TEMP/rclone-bin/rclone" link "$remote" --expire 168h)"
+
+          python3 .github/scripts/generate_nightly_index.py \
+            --wheel "$wheel" \
+            --url "$wheel_url" \
+            --commit "$(git rev-parse HEAD)" \
+            --output manual-wheel-index/index.html
+
+          while IFS= read -r old_wheel; do
+            if [[ "$old_wheel" != "$wheel_name" ]]; then
+              "$RUNNER_TEMP/rclone-bin/rclone" deletefile \
+                "mega:${MEGA_S4_BUCKET}/wheels/${old_wheel}"
+            fi
+          done < <("$RUNNER_TEMP/rclone-bin/rclone" lsf \
+            "mega:${MEGA_S4_BUCKET}/wheels" --files-only --include '*.whl')
+
+      - name: Upload package index
+        uses: actions/upload-artifact@v4
+        with:
+          name: aphrodite-simple-index
+          path: manual-wheel-index/index.html
+          if-no-files-found: error
+          retention-days: 1
+
+  build-pages:
+    needs: wheel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download package index
+        uses: actions/download-artifact@v4
+        with:
+          name: aphrodite-simple-index
+          path: docs/public/simple/aphrodite-engine
+
+      - name: Build and upload site
+        uses: withastro/action@v3
+        with:
+          path: ./docs
+          node-version: 22
+          package-manager: pnpm@9.15.8
+
+  deploy:
+    needs: build-pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

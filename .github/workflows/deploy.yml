@@ -10,12 +10,25 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository using git
         uses: actions/checkout@v4
+      - name: Preserve the wheel package index
+        shell: bash
+        run: |
+          mkdir -p docs/public/simple/aphrodite-engine
+          curl --fail --location --silent --show-error \
+            https://aphrodite.pygmalion.chat/simple/aphrodite-engine/ \
+            --output docs/public/simple/aphrodite-engine/index.html \
+            || printf '%s\n' '<!doctype html><html><body></body></html>' \
+              > docs/public/simple/aphrodite-engine/index.html
       - name: Install, build, and upload your site
         uses: withastro/action@v3
         with:
