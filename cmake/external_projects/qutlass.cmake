@@ -53,6 +53,32 @@ if(NOT qutlass_SOURCE_DIR)
 endif()
 message(STATUS "[QUTLASS] QuTLASS is available at ${qutlass_SOURCE_DIR}")
 
+# PyTorch 2.13 replaced aoti_torch_get_current_cuda_stream with the stable
+# accelerator API. Patch the pinned QuTLASS source until upstream adopts it.
+set(_qutlass_common_header
+  "${qutlass_SOURCE_DIR}/qutlass/csrc/include/common.h")
+file(READ "${_qutlass_common_header}" _qutlass_common_contents)
+set(_qutlass_old_stream_helper
+"  void* stream_ptr = nullptr;
+  TORCH_ERROR_CODE_CHECK(
+      aoti_torch_get_current_cuda_stream(device_index, &stream_ptr));
+  return reinterpret_cast<cudaStream_t>(stream_ptr);")
+set(_qutlass_new_stream_helper
+"  return static_cast<cudaStream_t>(
+      torch::stable::accelerator::getCurrentStream(device_index).nativeHandle());")
+string(FIND "${_qutlass_common_contents}"
+  "${_qutlass_old_stream_helper}" _qutlass_old_stream_helper_pos)
+if(NOT _qutlass_old_stream_helper_pos EQUAL -1)
+  string(REPLACE "${_qutlass_old_stream_helper}"
+    "${_qutlass_new_stream_helper}"
+    _qutlass_common_contents "${_qutlass_common_contents}")
+  file(WRITE "${_qutlass_common_header}" "${_qutlass_common_contents}")
+elseif(NOT _qutlass_common_contents MATCHES
+       "torch::stable::accelerator::getCurrentStream")
+  message(FATAL_ERROR
+    "[QUTLASS] Could not apply the PyTorch 2.13 stream compatibility patch.")
+endif()
+
 if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 13.0)
   cuda_archs_loose_intersection(QUTLASS_SM120_ARCHS "12.0f" "${CUDA_ARCHS}")
   cuda_archs_loose_intersection(QUTLASS_SM100_ARCHS "10.0f" "${CUDA_ARCHS}")
