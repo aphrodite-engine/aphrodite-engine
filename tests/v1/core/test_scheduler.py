@@ -1057,6 +1057,132 @@ def test_preempt_during_execution():
     assert requests[1].output_token_ids[0] == 42
 
 
+def test_prefix_cache_query_not_inflated_by_connector_defer():
+    """A connector-deferred request is counted once, not once per retry."""
+    num_defers_before_matching = 3
+    scheduler = create_scheduler(
+        enable_prefix_caching=True,
+        use_kv_connector=mock_kv(
+            matched_tokens=0,
+            is_async=False,
+            num_defers_before_matching=num_defers_before_matching,
+        ),
+    )
+    request = create_requests(num_requests=1, num_tokens=32, block_size=16)[0]
+    scheduler.add_request(request)
+
+    for _ in range(num_defers_before_matching):
+        assert not scheduler.schedule().scheduled_new_reqs
+
+    output = scheduler.schedule()
+    assert any(r.req_id == request.request_id for r in output.scheduled_new_reqs)
+
+    stats = scheduler.kv_cache_manager.prefix_cache_stats
+    assert stats is not None
+    assert stats.requests == 1
+    assert stats.queries == request.num_tokens
+
+
+def test_preemption_re_records_prefix_cache_query():
+    """A resumed preempted request records its recomputation."""
+    scheduler = create_scheduler(enable_prefix_caching=True)
+    request = create_requests(num_requests=1)[0]
+    scheduler.add_request(request)
+
+    scheduler.schedule()
+    stats = scheduler.kv_cache_manager.prefix_cache_stats
+    assert stats is not None
+    assert (stats.requests, stats.preempted_requests) == (1, 0)
+
+    scheduler.running.remove(request)
+    scheduler._preempt_request(request, 0.0)
+    assert request.status == RequestStatus.PREEMPTED
+
+    scheduler.schedule()
+    assert request.status == RequestStatus.RUNNING
+    assert stats.preempted_requests == 1
+
+
+def test_prefix_cache_stats_not_recorded_when_caching_disabled():
+    """Disabling prefix caching records no phantom local-cache miss."""
+    scheduler = create_scheduler(enable_prefix_caching=False)
+    for request in create_requests(num_requests=2):
+        scheduler.add_request(request)
+
+    scheduler.schedule()
+
+    stats = scheduler.kv_cache_manager.prefix_cache_stats
+    assert stats is not None
+    assert (stats.requests, stats.queries, stats.hits) == (0, 0, 0)
+
+
+def test_prefix_cache_stats_counted_once_for_retried_then_scheduled_request():
+    """An allocation retry records its real cache hit exactly once."""
+    block_size = 16
+    scheduler = create_scheduler(
+        enable_prefix_caching=True,
+        enable_chunked_prefill=False,
+        block_size=block_size,
+    )
+
+    seed = create_requests(
+        num_requests=1,
+        num_tokens=block_size * 2,
+        max_tokens=2,
+        same_prompt=True,
+        block_size=block_size,
+        req_ids=["seed"],
+    )[0]
+    scheduler.add_request(seed)
+    _step_until_done(
+        scheduler,
+        scheduler.schedule(),
+        ModelRunnerOutput(
+            req_ids=["seed"],
+            req_id_to_index={"seed": 0},
+            sampled_token_ids=[[1000]],
+            logprobs=None,
+            prompt_logprobs_dict={},
+            pooler_output=[],
+        ),
+    )
+
+    stats = scheduler.kv_cache_manager.prefix_cache_stats
+    assert stats is not None
+    assert (stats.requests, stats.queries, stats.hits) == (0, 0, 0)
+
+    retried = create_requests(
+        num_requests=1,
+        num_tokens=block_size * 3,
+        max_tokens=1,
+        same_prompt=True,
+        block_size=block_size,
+        req_ids=["retried"],
+    )[0]
+    scheduler.add_request(retried)
+
+    orig_allocate_slots = scheduler.kv_cache_manager.allocate_slots
+    allocate_results: list = []
+
+    def spy_allocate_slots(*args, **kwargs):
+        result = None if not allocate_results else orig_allocate_slots(*args, **kwargs)
+        allocate_results.append(result)
+        return result
+
+    scheduler.kv_cache_manager.allocate_slots = spy_allocate_slots
+
+    assert not scheduler.schedule().scheduled_new_reqs
+    assert (stats.requests, stats.queries, stats.hits) == (0, 0, 0)
+
+    assert "retried" in scheduler.schedule().num_scheduled_tokens
+    assert allocate_results[0] is None and allocate_results[1] is not None
+    assert (stats.requests, stats.queries, stats.hits) == (
+        1,
+        retried.num_tokens,
+        block_size * 2,
+    )
+
+
 def test_scheduler_reset_prefix_cache():
     scheduler = create_scheduler(enable_prefix_caching=True)
     requests = create_requests(num_requests=10)
