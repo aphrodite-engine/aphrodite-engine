@@ -4846,9 +4846,9 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
     def update_config(self, overrides: dict[str, Any]) -> None:
         allowed_config_names = {"load_config", "model_config"}
         for config_name, config_overrides in overrides.items():
-            assert config_name in allowed_config_names, (
-                f"Config `{config_name}` not supported. Allowed configs: {allowed_config_names}"
-            )
+            if config_name not in allowed_config_names:
+                allowed = ", ".join(sorted(allowed_config_names))
+                raise ValueError(f"Config override '{config_name}' is not supported. Supported configs: {allowed}")
             config = getattr(self, config_name)
             new_config = update_config(config, config_overrides)
             setattr(self, config_name, new_config)
