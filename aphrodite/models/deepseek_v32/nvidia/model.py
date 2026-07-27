@@ -6,6 +6,7 @@ from itertools import islice
 
 import torch
 
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (
     get_pp_group,
@@ -39,6 +40,7 @@ from aphrodite.model_executor.models.utils import (
     sequence_parallel_chunk,
 )
 from aphrodite.sequence import IntermediateTensors
+from aphrodite.v1.attention.backends.mla.sparse_utils import register_phys_shadow
 
 from .attention import DeepseekV32Attention
 from .fused_ops import fused_allreduce_rms_norm
@@ -168,6 +170,7 @@ class DeepseekV32DecoderLayer(torch.nn.Module):
         return hidden_states, residual
 
 
+@support_torch_compile
 class DeepseekV32Model(torch.nn.Module):
     fall_back_to_pt_during_load = False
 
@@ -191,6 +194,7 @@ class DeepseekV32Model(torch.nn.Module):
             dtype=torch.int32,
             device=self.device,
         )
+        register_phys_shadow(topk_indices_buffer)
 
         if get_pp_group().is_first_rank:
             self.embed_tokens = VocabParallelEmbedding(
