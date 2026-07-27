@@ -5,6 +5,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from aphrodite.config.ec_manager_config import EncoderCacheManagerMetadata
 from aphrodite.logger import init_logger
 from aphrodite.v1.request import Request
 
@@ -264,6 +265,9 @@ class EncoderCacheManager:
         freed = self.freed
         self.freed = []
         return freed
+
+    def get_manager_metadata(self) -> EncoderCacheManagerMetadata | None:
+        return None
 
 
 def compute_mm_encoder_budget(

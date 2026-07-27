@@ -19,6 +19,7 @@ from aphrodite.config.compilation import (
 )
 from aphrodite.config.device import DeviceConfig
 from aphrodite.config.diffusion import DiffusionConfig
+from aphrodite.config.ec_manager_config import EncoderCacheManagerConfig
 from aphrodite.config.ec_transfer import ECTransferConfig
 from aphrodite.config.kernel import KernelConfig
 from aphrodite.config.kv_events import KVEventsConfig
@@ -75,6 +76,8 @@ __all__ = [
     "DeviceConfig",
     # From aphrodite.config.diffusion
     "DiffusionConfig",
+    # From aphrodite.config.ec_manager_config
+    "EncoderCacheManagerConfig",
     # From aphrodite.config.ec_transfer
     "ECTransferConfig",
     # From aphrodite.config.kernel
