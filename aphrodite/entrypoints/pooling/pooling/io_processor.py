@@ -10,7 +10,9 @@ from aphrodite.renderers.inputs.preprocess import parse_model_prompt, prompt_to_
 
 from ..base.io_processor import PoolingIOProcessor
 from ..typing import (
-    ALLOfflineInputsContext,
+    AnyOfflineInputsContext,
+    AnyRenderParam,
+    EncodeCMPLRenderParams,
     OfflineEncodeInputsContext,
     OfflineOutputsContext,
     OfflinePluginInputsContext,
@@ -38,7 +40,7 @@ class PluginWithIOProcessorPlugins(PoolingIOProcessor):
         super().__init__(*args, **kwargs)
 
         io_processor = get_io_processor(
-            self.aphrodite_config,
+            self.vllm_config,
             self.renderer,
             self.model_config.io_processor_plugin,
         )
@@ -49,7 +51,7 @@ class PluginWithIOProcessorPlugins(PoolingIOProcessor):
     #######################################
     # online APIs
 
-    def pre_process_online(self, ctx: PoolingServeContext):
+    def get_request_factory_online(self, ctx: PoolingServeContext) -> Sequence[AnyRenderParam]:
         assert isinstance(ctx.request, IOProcessorRequest)
 
         validated_prompt = self.io_processor.parse_data(ctx.request.data)
@@ -60,21 +62,32 @@ class PluginWithIOProcessorPlugins(PoolingIOProcessor):
             (prompt if isinstance(prompt, bytes) else parse_model_prompt(self.model_config, prompt))
             for prompt in prompt_to_seq(raw_prompts)
         ]
+        num_requests = len(parsed_prompts)
 
         tok_params = ctx.request.build_tok_params(self.model_config)
-
-        ctx.engine_inputs = self.renderer.render_cmpl(
-            parsed_prompts,
-            tok_params,
-            prompt_extras={
-                k: v for k in ("mm_processor_kwargs", "cache_salt") if (v := getattr(ctx.request, k, None)) is not None
-            },
-        )
 
         pooling_params = self.io_processor.merge_pooling_params()
         if pooling_params.task is None:
             pooling_params.task = "plugin"
         ctx.pooling_params = pooling_params
+
+        params_seq = self._params_to_seq(ctx.pooling_params, num_requests)
+        seq_lora_requests = self._lora_request_to_seq(ctx.lora_request, num_requests)
+        seq_priority = self._priority_to_seq(ctx.priorities, num_requests)
+
+        requests = [
+            EncodeCMPLRenderParams(
+                prompts=parsed_prompts[i],
+                tok_params=tok_params,
+                prompt_extras=ctx.prompt_extras,
+                skip_mm_cache=False,
+                params=params_seq[i],
+                lora_requests=seq_lora_requests[i],
+                priorities=seq_priority[i],
+            )
+            for i in range(num_requests)
+        ]
+        return requests
 
     def post_process_online(
         self,
@@ -103,7 +116,7 @@ class PluginWithIOProcessorPlugins(PoolingIOProcessor):
     #######################################
     # offline APIs
 
-    def get_request_factory_offline(self, ctx: ALLOfflineInputsContext) -> tuple[RequestFactory, int]:
+    def get_request_factory_offline(self, ctx: AnyOfflineInputsContext) -> tuple[RequestFactory, int]:
         assert isinstance(ctx, OfflinePluginInputsContext)
         assert isinstance(ctx.prompts, dict) and "data" in ctx.prompts
 
@@ -121,6 +134,7 @@ class PluginWithIOProcessorPlugins(PoolingIOProcessor):
         # obtain the actual model prompts from the pre-processor
         prompts = self.io_processor.pre_process(prompt=validated_prompt)
         prompts_seq = prompt_to_seq(prompts)
+
         num_requests = len(prompts_seq)
 
         pooling_params: PoolingParams | Sequence[PoolingParams]

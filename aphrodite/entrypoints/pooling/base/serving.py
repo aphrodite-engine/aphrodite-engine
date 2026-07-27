@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Mapping
 from concurrent.futures import Executor
@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from starlette.datastructures import Headers
 
 from aphrodite import PoolingRequestOutput, envs
-from aphrodite.config import AphroditeConfig
+from aphrodite.config import VllmConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.chat_utils import ChatTemplateConfig
 from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
@@ -34,7 +34,7 @@ from ..typing import AnyPoolingRequest, PoolingServeContext
 from .io_processor import PoolingIOProcessor
 
 
-class PoolingBaseServing(BaseServing, ABC):
+class PoolingBaseServing(ABC, BaseServing):
     request_id_prefix: ClassVar[str]
 
     def __init__(
@@ -55,7 +55,7 @@ class PoolingBaseServing(BaseServing, ABC):
 
         self.engine_client = engine_client
         self.renderer = engine_client.renderer
-        self.aphrodite_config = engine_client.aphrodite_config
+        self.vllm_config = engine_client.vllm_config
         self.max_model_len = self.model_config.max_model_len
         self.return_tokens_as_token_ids = return_tokens_as_token_ids
         self.log_error_stack = log_error_stack
@@ -63,7 +63,6 @@ class PoolingBaseServing(BaseServing, ABC):
 
         # Shared thread pool executor for preprocessing and postprocessing.
         self._executor: Executor = self.renderer._executor
-        self._preprocessing_async = make_async(self._preprocessing, executor=self._executor)
         self._postprocessing_async = make_async(self._postprocessing, executor=self._executor)
 
     async def __call__(
@@ -73,7 +72,7 @@ class PoolingBaseServing(BaseServing, ABC):
     ) -> Response:
         io_processor = self.get_io_processor(request)
         ctx = await self._init_ctx(io_processor, request, raw_request)
-        await self._preprocessing_async(io_processor, ctx)
+        await self._preprocessing(io_processor, ctx)
         await self._prepare_generators(ctx)
         await self._collect_batch(ctx)
         return await self._postprocessing_async(io_processor, ctx)
@@ -82,9 +81,13 @@ class PoolingBaseServing(BaseServing, ABC):
     def get_io_processor(self, request: AnyPoolingRequest) -> PoolingIOProcessor:
         raise NotImplementedError
 
-    @torch.inference_mode()
-    def _preprocessing(self, io_processor: PoolingIOProcessor, ctx: PoolingServeContext):
-        return io_processor.pre_process_online(ctx)
+    async def _preprocessing(self, io_processor: PoolingIOProcessor, ctx: PoolingServeContext):
+        requests = io_processor.get_request_factory_online(ctx)
+
+        if len(requests) == 0:
+            raise ValueError("You must pass at least one prompt")
+
+        ctx.engine_inputs = await asyncio.gather(*[io_processor.render_async(request) for request in requests])
 
     @torch.inference_mode()
     def _postprocessing(self, io_processor: PoolingIOProcessor, ctx: PoolingServeContext):
@@ -102,16 +105,26 @@ class PoolingBaseServing(BaseServing, ABC):
         await self._check_model(request)
 
         pooling_params = io_processor.create_pooling_params(request)
+        lora_request = self._maybe_get_adapters(request)
+        priorities = getattr(request, "priority", 0)
+        prompt_extras = {
+            k: v
+            for k in ("mm_processor_kwargs", "cache_salt", "chat_template_kwargs")
+            if (v := getattr(request, k, None)) is not None
+        }
+
         ctx = PoolingServeContext(
             request=request,
             raw_request=raw_request,
             model_name=model_name,
             pooling_params=pooling_params,
             request_id=request_id,
+            lora_request=lora_request,
+            priorities=priorities,
+            prompt_extras=prompt_extras,
         )
 
         self._validate_request(ctx)
-        ctx.lora_request = self._maybe_get_adapters(ctx.request)
         return ctx
 
     async def _prepare_generators(
@@ -119,7 +132,7 @@ class PoolingBaseServing(BaseServing, ABC):
         ctx: PoolingServeContext,
     ):
         if ctx.engine_inputs is None:
-            raise ValueError("Engine prompts not available")
+            raise ValueError("Engine inputs not available")
 
         generators: list[AsyncGenerator[PoolingRequestOutput, None]] = []
 
@@ -127,32 +140,25 @@ class PoolingBaseServing(BaseServing, ABC):
 
         assert ctx.pooling_params is not None
         pooling_params = ctx.pooling_params
-
-        if isinstance(pooling_params, list):
-            for params in pooling_params:
-                params.verify(self.model_config)
-        else:
-            pooling_params.verify(self.model_config)
+        pooling_params.verify(self.model_config)
 
         for i, engine_input in enumerate(ctx.engine_inputs):
             prompt_request_id = f"{ctx.request_id}-{i}" if ctx.prompt_request_ids is None else ctx.prompt_request_ids[i]
 
-            params = pooling_params[i] if isinstance(pooling_params, list) else pooling_params
-
             self._log_inputs(
                 prompt_request_id,
-                engine_input,
-                params=params,
+                engine_input["prompts"],
+                params=engine_input["params"],
                 lora_request=ctx.lora_request,
             )
 
             generator = self.engine_client.encode(
-                engine_input,
-                params,
-                prompt_request_id,
-                lora_request=ctx.lora_request,
+                request_id=prompt_request_id,
+                prompt=engine_input["prompts"],
+                pooling_params=engine_input["params"],
+                lora_request=engine_input["lora_requests"],
+                priority=engine_input["priorities"],
                 trace_headers=trace_headers,
-                priority=getattr(ctx.request, "priority", 0),
             )
 
             generators.append(generator)
@@ -197,7 +203,7 @@ class PoolingBaseServing(BaseServing, ABC):
         if request.model in self.models.lora_requests:
             return None
         if (
-            envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING
+            envs.VLLM_ALLOW_RUNTIME_LORA_UPDATING
             and request.model
             and (load_result := await self.models.resolve_lora(request.model))
         ):
@@ -237,7 +243,7 @@ class PoolingServing(PoolingBaseServing, ABC):
         super().__init__(*args, **kwargs)
 
         self.io_processor = self.init_io_processor(
-            aphrodite_config=self.aphrodite_config,
+            vllm_config=self.vllm_config,
             renderer=self.renderer,
             chat_template_config=self.chat_template_config,
         )
@@ -245,7 +251,7 @@ class PoolingServing(PoolingBaseServing, ABC):
     @abstractmethod
     def init_io_processor(
         self,
-        aphrodite_config: AphroditeConfig,
+        vllm_config: VllmConfig,
         renderer: BaseRenderer,
         chat_template_config: ChatTemplateConfig,
     ) -> PoolingIOProcessor:

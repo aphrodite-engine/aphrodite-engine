@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from collections.abc import Callable, Sequence
-from typing import Any, cast
+from typing import Any
 
 from tqdm.auto import tqdm
 
@@ -25,7 +25,7 @@ from .factories import init_pooling_io_processors
 from .scoring.io_processor import ScoringIOProcessor
 from .scoring.typing import ScoreInput
 from .typing import (
-    ALLOfflineInputsContext,
+    AnyOfflineInputsContext,
     OfflineEncodeInputsContext,
     OfflineOutputsContext,
     OfflinePluginInputsContext,
@@ -51,10 +51,11 @@ class PoolingOfflineMixin(OfflineInferenceMixin):
         self.chat_template_config = ChatTemplateConfig(chat_template=self.chat_template)
         self.pooling_io_processors = init_pooling_io_processors(
             supported_tasks=self.supported_tasks,
-            aphrodite_config=self.llm_engine.aphrodite_config,
+            vllm_config=self.llm_engine.vllm_config,
             renderer=self.renderer,
             chat_template_config=self.chat_template_config,
         )
+
         # Use thread pool executor to accelerate preprocessing.
         self._executor = self.renderer._executor
 
@@ -101,11 +102,11 @@ class PoolingOfflineMixin(OfflineInferenceMixin):
 
         io_processor = self.pooling_io_processors[pooling_task]
 
-        ctx: ALLOfflineInputsContext
+        ctx: AnyOfflineInputsContext
         if isinstance(prompts, dict) and "data" in prompts:
             ctx = OfflinePluginInputsContext(
                 pooling_task=pooling_task,
-                prompts=cast(DataPrompt, prompts),
+                prompts=prompts,  # type: ignore[arg-type]
                 tokenization_kwargs=tokenization_kwargs,
                 pooling_params=pooling_params,
                 lora_request=lora_request,
@@ -372,9 +373,12 @@ class PoolingOfflineMixin(OfflineInferenceMixin):
         num_requests: int,
         use_tqdm: bool | Callable[..., tqdm] = True,
     ):
-        # Keeping max_num_seqs * 2 requests in the core can already saturate
-        # the core. Therefore, keep most requests waiting outside the core.
-        max_requests_in_core = self.llm_engine.aphrodite_config.scheduler_config.max_num_seqs * 2
+        if num_requests == 0:
+            raise ValueError("You must pass at least one prompt")
+
+        # Keeping max_num_seqs * 2 requests in the core can already saturate the core.
+        # Therefore, keep most requests waiting outside the core.
+        max_requests_in_core = self.llm_engine.vllm_config.scheduler_config.max_num_seqs * 2
         num_requests_in_core = 0
         num_waited_requests = num_requests
 
@@ -417,7 +421,7 @@ class PoolingOfflineMixin(OfflineInferenceMixin):
                     )
 
                     for request_id in request_ids:
-                        # Undo assign_request_id.
+                        # undo assign_request_id
                         request_id = request_id.split("-", 1)[0]
                         added_request_ids.add(request_id)
 
