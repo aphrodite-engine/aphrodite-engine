@@ -1973,7 +1973,7 @@ def _parse_range_ratio(value: str) -> RangeRatio:
         return json.loads(value)
 
 
-def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
+def get_samples(args, tokenizer: TokenizerLike | None) -> list[SampleRequest]:
     if not hasattr(args, "request_id_prefix"):
         args.request_id_prefix = ""
 
@@ -2028,6 +2028,7 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
         )
 
     elif args.dataset_name == "sonnet":
+        assert tokenizer is not None, "Tokenizer must be initialized for the 'sonnet' dataset."
         sonnet_dataset = SonnetDataset(dataset_path=args.dataset_path, disable_shuffle=args.disable_shuffle)
         # For the "sonnet" dataset, formatting depends on the backend.
         if args.backend == "openai-chat":
@@ -2057,6 +2058,7 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
             )
 
     elif args.dataset_name == "hf":
+        assert tokenizer is not None, "Tokenizer must be initialized for the 'hf' dataset."
         # all following datasets are implemented from the
         # HuggingFaceDataset base class
         hf_kwargs = {}
@@ -2209,6 +2211,7 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
         )
 
     elif args.dataset_name == "timed_trace":
+        assert tokenizer is not None, "Tokenizer must be initialized for the 'timed_trace' dataset."
         dataloader = TimedTrace(**vars(args))
         input_requests = dataloader.sample(
             num_requests=args.num_prompts,
@@ -2218,6 +2221,7 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
 
     else:
         # For datasets that follow a similar structure, use a mapping.
+        assert tokenizer is not None, f"Tokenizer must be initialized for the '{args.dataset_name}' dataset."
         dataset_mapping = {
             "spec_bench": lambda: SpecBench(
                 dataset_path=args.dataset_path,
@@ -2398,7 +2402,7 @@ class CustomDataset(BenchmarkDataset):
 
     def sample(
         self,
-        tokenizer: TokenizerLike,
+        tokenizer: TokenizerLike | None,
         num_requests: int,
         request_id_prefix: str = "",
         no_oversample: bool = False,
@@ -2653,7 +2657,7 @@ class CustomImageDataset(CustomDataset):
 
     def sample(
         self,
-        tokenizer: TokenizerLike,
+        tokenizer: TokenizerLike | None,
         num_requests: int,
         request_id_prefix: str = "",
         no_oversample: bool = False,
@@ -2742,7 +2746,7 @@ class CustomAudioDataset(CustomDataset):
 
     def sample(
         self,
-        tokenizer: TokenizerLike,
+        tokenizer: TokenizerLike | None,
         num_requests: int,
         request_id_prefix: str = "",
         no_oversample: bool = False,
@@ -2867,7 +2871,7 @@ class SpecBench(CustomDataset):
 
     def sample(
         self,
-        tokenizer: TokenizerLike,
+        tokenizer: TokenizerLike | None,
         num_requests: int,
         request_id_prefix: str = "",
         no_oversample: bool = False,
