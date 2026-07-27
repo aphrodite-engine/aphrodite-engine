@@ -316,9 +316,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Build the Aphrodite wheel
 RUN --mount=type=cache,id=aphrodite-wheel-uv,target=/root/.cache/uv \
-    --mount=type=cache,id=aphrodite-wheel-ccache,target=/root/.cache/ccache,sharing=locked \
-    --mount=type=cache,id=aphrodite-wheel-cmake,target=/workspace/build,sharing=locked \
-    --mount=type=cache,id=aphrodite-wheel-deps,target=/workspace/.deps,sharing=locked \
+    --mount=type=cache,id=aphrodite-wheel-ccache-v2,target=/root/.cache/ccache,sharing=locked \
+    --mount=type=cache,id=aphrodite-wheel-deps-v2,target=/workspace/.deps,sharing=locked \
     --mount=type=bind,source=.git,target=.git \
     --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
     if [ "$USE_SCCACHE" = "1" ]; then \

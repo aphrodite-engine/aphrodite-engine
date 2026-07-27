@@ -488,13 +488,20 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
       # Generate sources:
       set(MACHETE_GEN_SCRIPT
         ${CMAKE_CURRENT_SOURCE_DIR}/csrc/libtorch_stable/quantization/machete/generate.py)
+      set(MACHETE_GEN_SUPPORT
+        ${CMAKE_CURRENT_SOURCE_DIR}/csrc/cutlass_extensions/aphrodite_cutlass_library_extension.py)
+      set(MACHETE_GEN_SENTINEL
+        ${CMAKE_CURRENT_SOURCE_DIR}/csrc/libtorch_stable/quantization/machete/generated/.complete)
       file(MD5 ${MACHETE_GEN_SCRIPT} MACHETE_GEN_SCRIPT_HASH)
+      file(MD5 ${MACHETE_GEN_SUPPORT} MACHETE_GEN_SUPPORT_HASH)
+      string(APPEND MACHETE_GEN_SCRIPT_HASH "-${MACHETE_GEN_SUPPORT_HASH}")
 
       message(STATUS "Machete generation script hash: ${MACHETE_GEN_SCRIPT_HASH}")
       message(STATUS "Last run machete generate script hash: $CACHE{MACHETE_GEN_SCRIPT_HASH}")
 
       if (NOT DEFINED CACHE{MACHETE_GEN_SCRIPT_HASH}
-          OR NOT $CACHE{MACHETE_GEN_SCRIPT_HASH} STREQUAL ${MACHETE_GEN_SCRIPT_HASH})
+          OR NOT $CACHE{MACHETE_GEN_SCRIPT_HASH} STREQUAL ${MACHETE_GEN_SCRIPT_HASH}
+          OR NOT EXISTS ${MACHETE_GEN_SENTINEL})
         execute_process(
           COMMAND ${CMAKE_COMMAND} -E env
           PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/csrc/cutlass_extensions/:${CUTLASS_DIR}/python/:${APHRODITE_PYTHON_PATH}:$ENV{PYTHONPATH}
@@ -649,7 +656,9 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
       message(STATUS "Last run Marlin generate script hash: $CACHE{MARLIN_GEN_SCRIPT_HASH_AND_ARCH}")
 
       if (NOT DEFINED CACHE{MARLIN_GEN_SCRIPT_HASH_AND_ARCH}
-          OR NOT $CACHE{MARLIN_GEN_SCRIPT_HASH_AND_ARCH} STREQUAL ${MARLIN_GEN_SCRIPT_HASH_AND_ARCH})
+          OR NOT $CACHE{MARLIN_GEN_SCRIPT_HASH_AND_ARCH} STREQUAL ${MARLIN_GEN_SCRIPT_HASH_AND_ARCH}
+          OR NOT EXISTS
+            ${CMAKE_CURRENT_SOURCE_DIR}/csrc/libtorch_stable/quantization/marlin/kernel_selector.h)
         execute_process(
           COMMAND ${CMAKE_COMMAND} -E env
           PYTHONPATH=$ENV{PYTHONPATH}
@@ -1326,7 +1335,9 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     message(STATUS "Last run Marlin MOE generate script hash with arch: $CACHE{MOE_MARLIN_GEN_SCRIPT_HASH_AND_ARCH}")
 
     if (NOT DEFINED CACHE{MOE_MARLIN_GEN_SCRIPT_HASH_AND_ARCH}
-        OR NOT $CACHE{MOE_MARLIN_GEN_SCRIPT_HASH_AND_ARCH} STREQUAL ${MOE_MARLIN_GEN_SCRIPT_HASH_AND_ARCH})
+        OR NOT $CACHE{MOE_MARLIN_GEN_SCRIPT_HASH_AND_ARCH} STREQUAL ${MOE_MARLIN_GEN_SCRIPT_HASH_AND_ARCH}
+        OR NOT EXISTS
+          ${CMAKE_CURRENT_SOURCE_DIR}/csrc/libtorch_stable/moe/marlin_moe_wna16/kernel_selector.h)
       execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
         PYTHONPATH=$ENV{PYTHONPATH}
