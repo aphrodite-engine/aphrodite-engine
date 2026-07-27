@@ -31,12 +31,10 @@ from aphrodite.third_party.flash_linear_attention.ops.index import (  # noqa: E4
 @pytest.mark.parametrize("num_seqs", [1, 5, 257])
 @pytest.mark.parametrize("state_dtype", [torch.bfloat16, torch.float32])
 def test_gdn_chunk_cutedsl_correctness(num_seqs: int, state_dtype: torch.dtype):
-    seq_lens = torch.randint(
-        1,
-        130,
-        (num_seqs,),
-        dtype=torch.int32,
-    )
+    rng_cpu = torch.Generator("cpu").manual_seed(1234)
+    rng = torch.Generator("cuda").manual_seed(2345)
+
+    seq_lens = torch.randint(1, 130, (num_seqs,), dtype=torch.int32, generator=rng_cpu)
     cu_seqlens = torch.zeros(num_seqs + 1, device="cuda", dtype=torch.int32)
     cu_seqlens[1:] = seq_lens.to(device="cuda").cumsum(0)
     total_tokens = int(cu_seqlens[-1].item())
@@ -54,8 +52,9 @@ def test_gdn_chunk_cutedsl_correctness(num_seqs: int, state_dtype: torch.dtype):
         head_k_dim,
         device="cuda",
         dtype=dtype,
+        generator=rng,
     )
-    k = torch.randn_like(q)
+    k = torch.randn_like(q, generator=rng)
     v = torch.randn(
         1,
         total_tokens,
@@ -63,29 +62,18 @@ def test_gdn_chunk_cutedsl_correctness(num_seqs: int, state_dtype: torch.dtype):
         head_v_dim,
         device="cuda",
         dtype=dtype,
+        generator=rng,
     )
     q = F.normalize(q.float(), p=2, dim=-1).to(dtype)
     k = F.normalize(k.float(), p=2, dim=-1).to(dtype)
-    a = torch.randn(
-        1,
-        total_tokens,
-        num_v_heads,
-        device="cuda",
-        dtype=dtype,
-    )
-    b = torch.randn(
-        1,
-        total_tokens,
-        num_v_heads,
-        device="cuda",
-        dtype=dtype,
-    )
+    a = torch.randn(1, total_tokens, num_v_heads, device="cuda", dtype=dtype, generator=rng)
+    b = torch.randn(1, total_tokens, num_v_heads, device="cuda", dtype=dtype, generator=rng)
     # Match upstream FLA GatedDeltaNet synthetic initialization:
     # https://github.com/fla-org/flash-linear-attention/blob/main/fla/layers/gated_deltanet.py
-    A = torch.empty(num_v_heads, device="cuda", dtype=torch.float32).uniform_(0, 16)
+    A = torch.empty(num_v_heads, device="cuda", dtype=torch.float32).uniform_(0, 16, generator=rng)
     A_log = torch.log(A)
     dt = torch.exp(
-        torch.rand(num_v_heads, device="cuda", dtype=torch.float32) * (math.log(0.1) - math.log(0.001))
+        torch.rand(num_v_heads, device="cuda", dtype=torch.float32, generator=rng) * (math.log(0.1) - math.log(0.001))
         + math.log(0.001)
     )
     dt = torch.clamp(dt, min=1e-4)
@@ -100,6 +88,7 @@ def test_gdn_chunk_cutedsl_correctness(num_seqs: int, state_dtype: torch.dtype):
             head_k_dim,
             device="cuda",
             dtype=state_dtype,
+            generator=rng,
         )
         * 0.05
     )
