@@ -14,6 +14,14 @@ export default defineConfig({
 			customCss: [
 				"./src/styles/custom.css"
 			],
+			head: [
+				{
+					tag: 'script',
+					attrs: {
+						src: '/reo.js',
+					},
+				},
+			],
 			title: 'Aphrodite Engine',
 			social: {
 				github: 'https://github.com/aphrodite-engine/aphrodite-engine',
