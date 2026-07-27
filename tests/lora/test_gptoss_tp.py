@@ -87,7 +87,10 @@ def generate_and_test(llm: aphrodite.LLM, lora_path: str, lora_id: int) -> None:
         False,
         pytest.param(
             True,
-            marks=pytest.mark.skipif(current_platform.is_rocm(), reason="marlin not supported"),
+            marks=pytest.mark.skipif(
+                current_platform.is_rocm() or current_platform.is_xpu(),
+                reason="marlin not supported",
+            ),
         ),
     ],
 )
@@ -125,7 +128,10 @@ def test_gpt_oss_lora(
         False,
         pytest.param(
             True,
-            marks=pytest.mark.skipif(current_platform.is_rocm(), reason="marlin not supported"),
+            marks=pytest.mark.skipif(
+                current_platform.is_rocm() or current_platform.is_xpu(),
+                reason="marlin not supported",
+            ),
         ),
     ],
 )
