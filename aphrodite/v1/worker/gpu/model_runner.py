@@ -51,7 +51,7 @@ from aphrodite.sequence import IntermediateTensors
 from aphrodite.tasks import SupportedTask
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.mem_utils import DeviceMemoryProfiler, format_gib
-from aphrodite.utils.torch_utils import PIN_MEMORY, STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
 from aphrodite.v1.kv_cache_interface import KVCacheConfig, MambaSpec
 from aphrodite.v1.outputs import DraftTokenIds, ModelRunnerOutput
@@ -501,12 +501,10 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         """Build KV-block zeroing metadata; invoked from gpu_worker."""
         self.kv_block_zeroer = KVBlockZeroer(
             self.device,
-            pin_memory=PIN_MEMORY,
             attn_groups_iter=(g for groups in self.attn_groups for g in groups),
             kernel_block_sizes=self.kernel_block_sizes,
             cache_dtype=self.cache_config.cache_dtype,
             static_forward_context=self.compilation_config.static_forward_context,
-            max_concurrency=self.aphrodite_config.max_concurrent_batches,
         )
 
     @torch.inference_mode()
