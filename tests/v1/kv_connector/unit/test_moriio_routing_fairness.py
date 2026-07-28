@@ -146,6 +146,19 @@ def test_owner_dp_read_is_faithful_and_covers_every_rank() -> None:
     assert sorted(targets) == list(range(8))
 
 
+def test_unknown_remote_tp_size_uses_local_size_for_read() -> None:
+    worker = make_decode_worker(world_size=4, tp_rank=2, dp_rank=0)
+    worker._read_blocks = MagicMock()
+    meta = make_meta(p_tp=0, p_dp=2, remote_dp_rank=1)
+
+    worker._read_blocks_for_req("r", meta)
+
+    kwargs = worker._read_blocks.call_args.kwargs
+    assert kwargs["remote_tp_size"] == 4
+    assert kwargs["chosen_tp"] == 2
+    assert get_port_offset(1, kwargs["chosen_tp"], kwargs["remote_tp_size"]) == 6
+
+
 def test_flexible_round_robin_is_deterministic_uniform_and_staggered() -> None:
     worker = make_decode_worker(world_size=1, tp_rank=0, dp_rank=0)
     sequence = [worker._next_flex_tp_rank(8) for _ in range(64)]
