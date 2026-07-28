@@ -201,8 +201,7 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLForConditionalGeneration, Qwen3V
         self._tokenizer = cached_tokenizer_from_config(aphrodite_config.model_config)
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        self.video_pruning_rate = multimodal_config.video_pruning_rate
-        self.is_multimodal_pruning_enabled = multimodal_config.is_multimodal_pruning_enabled()
+        self._init_video_pruning(multimodal_config)
 
         self.use_deepstack = hasattr(config.vision_config, "deepstack_visual_indexes")
         self.deepstack_num_level = len(config.vision_config.deepstack_visual_indexes) if self.use_deepstack else 0

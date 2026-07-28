@@ -50,7 +50,12 @@ from transformers.video_utils import VideoMetadata
 
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
-from aphrodite.config.multimodal import BaseDummyOptions, VideoDummyOptions
+from aphrodite.config.multimodal import (
+    BaseDummyOptions,
+    MultiModalConfig,
+    VideoDummyOptions,
+    VideoPruningMethod,
+)
 from aphrodite.distributed import get_pp_group, parallel_state
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.logger import init_logger
@@ -91,6 +96,12 @@ from aphrodite.multimodal.processing import (
     PromptReplacement,
     PromptUpdate,
     PromptUpdateDetails,
+)
+from aphrodite.multimodal.vidcom2 import (
+    compute_retained_tokens_count as vidcom2_compute_retained_tokens_count,
+)
+from aphrodite.multimodal.vidcom2 import (
+    compute_retention_mask as vidcom2_compute_retention_mask,
 )
 from aphrodite.sequence import IntermediateTensors
 from aphrodite.tokenizers.protocol import TokenizerLike
@@ -1206,7 +1217,7 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
             hf_config = self.info.get_hf_config()
             tokenizer = self.info.get_tokenizer()
             merge_size = hf_config.vision_config.spatial_merge_size
-            video_pruning_rate = self.info.ctx.get_mm_config().video_pruning_rate
+            pruning_spec = self.info.ctx.get_mm_config().get_video_pruning_spec()
             vision_start_token_id = hf_config.vision_start_token_id
             vision_end_token_id = hf_config.vision_end_token_id
             video_token_id = hf_config.video_token_id
@@ -1283,11 +1294,15 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                 num_frames = int(video_grid_thw[0, 0])
                 tokens_per_frame_base = int(video_grid_thw[0, 1:].prod()) // (merge_size**2)
 
-                if video_pruning_rate is not None and video_pruning_rate > 0.0:
-                    num_tokens = compute_retained_tokens_count(
+                if pruning_spec is not None:
+                    method, prune_q = pruning_spec
+                    count_fn = (
+                        vidcom2_compute_retained_tokens_count if method == "vidcom2" else compute_retained_tokens_count
+                    )
+                    num_tokens = count_fn(
                         tokens_per_frame=tokens_per_frame_base,
                         num_frames=num_frames,
-                        q=video_pruning_rate,
+                        q=prune_q,
                     )
                     tokens_per_frame = [num_tokens] + [0] * (num_frames - 1)
                     select_token_id = False
@@ -1400,12 +1415,16 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
             num_frames = int(grid_thw[0])
             tokens_per_frame_base = int(grid_thw[1:].prod()) // merge_length
 
-            video_pruning_rate = self.info.ctx.get_mm_config().video_pruning_rate
-            if video_pruning_rate is not None and video_pruning_rate > 0.0:
-                num_tokens = compute_retained_tokens_count(
+            pruning_spec = self.info.ctx.get_mm_config().get_video_pruning_spec()
+            if pruning_spec is not None:
+                method, prune_q = pruning_spec
+                count_fn = (
+                    vidcom2_compute_retained_tokens_count if method == "vidcom2" else compute_retained_tokens_count
+                )
+                num_tokens = count_fn(
                     tokens_per_frame=tokens_per_frame_base,
                     num_frames=num_frames,
-                    q=video_pruning_rate,
+                    q=prune_q,
                 )
                 tokens_per_frame = [num_tokens] + [0] * (num_frames - 1)
                 select_token_id = False
@@ -1617,6 +1636,7 @@ class Qwen3VLForConditionalGeneration(
     }
 
     supports_encoder_tp_data = True
+    supported_video_pruning_methods = ("evs", "vidcom2")
 
     # To ensure correct weight loading and mapping.
     hf_to_aphrodite_mapper = WeightsMapper(
@@ -1636,6 +1656,15 @@ class Qwen3VLForConditionalGeneration(
 
         raise ValueError("Only image or video modality is supported")
 
+    def _init_video_pruning(self, multimodal_config: MultiModalConfig) -> None:
+        pruning_spec = multimodal_config.get_video_pruning_spec()
+        if pruning_spec is None:
+            self.video_pruning_method: VideoPruningMethod | None = None
+            self.video_pruning_rate = multimodal_config.video_pruning_rate
+        else:
+            self.video_pruning_method, self.video_pruning_rate = pruning_spec
+        self.is_multimodal_pruning_enabled = multimodal_config.is_multimodal_pruning_enabled()
+
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "model"):
         super().__init__()
         config: Qwen3VLConfig = aphrodite_config.model_config.hf_config
@@ -1647,8 +1676,7 @@ class Qwen3VLForConditionalGeneration(
         self._tokenizer = cached_tokenizer_from_config(aphrodite_config.model_config)
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        self.video_pruning_rate = multimodal_config.video_pruning_rate
-        self.is_multimodal_pruning_enabled = multimodal_config.is_multimodal_pruning_enabled()
+        self._init_video_pruning(multimodal_config)
 
         self.use_deepstack = hasattr(config.vision_config, "deepstack_visual_indexes")
         self.deepstack_num_level = len(config.vision_config.deepstack_visual_indexes) if self.use_deepstack else 0
@@ -2170,7 +2198,10 @@ class Qwen3VLForConditionalGeneration(
             if self.is_multimodal_pruning_enabled:
                 # For each video, compute retention mask using EVS.
                 # retention_mask: [11424].
-                retention_mask = compute_retention_mask(
+                mask_fn = (
+                    vidcom2_compute_retention_mask if self.video_pruning_method == "vidcom2" else compute_retention_mask
+                )
+                retention_mask = mask_fn(
                     emb,
                     size,
                     spatial_merge_size=self.visual.spatial_merge_size,
