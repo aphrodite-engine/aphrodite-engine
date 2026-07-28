@@ -123,6 +123,12 @@ def build_offloading_config(
     )
 
     kv_events_config = aphrodite_config.kv_events_config
+    cache_dtype = (
+        aphrodite_config.model_config.dtype
+        if aphrodite_config.cache_config.cache_dtype == "auto"
+        else aphrodite_config.cache_config.cache_dtype
+    )
+
     return OffloadingConfig(
         groups=groups,
         worker_kv_bytes_per_block=worker_kv_bytes_per_block,
@@ -131,7 +137,7 @@ def build_offloading_config(
         engine_id=engine_id,
         model=OffloadingModelConfig(
             name=aphrodite_config.model_config.model,
-            dtype=str(aphrodite_config.cache_config.cache_dtype).replace("torch.", ""),
+            dtype=str(cache_dtype).removeprefix("torch."),
         ),
         cache=OffloadingCacheConfig(
             tokens_per_hash=tokens_per_hash,
