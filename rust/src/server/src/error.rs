@@ -143,6 +143,24 @@ mod tests {
     }
 
     #[test]
+    fn sampling_params_validation_maps_to_invalid_request() {
+        let api_error = text_submit_error(
+            "failed to submit completion request",
+            aphrodite_text::Error::SamplingParams(
+                aphrodite_text::SamplingParamsError::OutOfRange {
+                    parameter: "top_p",
+                    value: 0.0,
+                    expected: "(0, 1]",
+                },
+            ),
+        );
+        assert_eq!(api_error.status_code(), StatusCode::BAD_REQUEST);
+        let response = api_error.to_error_response();
+        assert_eq!(response.error.error_type, "invalid_request_error");
+        assert!(response.error.message.contains("top_p"));
+    }
+
+    #[test]
     fn chat_wrapped_prompt_too_long_maps_to_invalid_request() {
         let error = aphrodite_chat::Error::Text(aphrodite_text::Error::PromptTooLong {
             max_model_len: 8192,
