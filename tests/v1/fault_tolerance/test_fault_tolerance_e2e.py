@@ -16,8 +16,8 @@ import psutil
 import pytest
 import requests
 
-from tests.utils import RemoteOpenAIServer, multi_gpu_test
 from aphrodite.utils.import_utils import has_nixl_ep
+from tests.utils import RemoteOpenAIServer, multi_gpu_test
 
 MODEL_NAME = os.getenv("MODEL_NAME", "ibm-research/PowerMoE-3b")
 DP_SIZE = 2
@@ -170,9 +170,7 @@ def _get_ft_status(server) -> dict:
 
 def _assert_serving_and_healthy(servers) -> None:
     """Wait until every engine is healthy, then serve one request per server."""
-    healthy = _wait_for_engines(
-        list(servers), match_key="status", match_values={"healthy"}
-    )
+    healthy = _wait_for_engines(list(servers), match_key="status", match_values={"healthy"})
     assert all(healthy), healthy
     _in_parallel(lambda s: _complete(s.get_client()), servers)
 
@@ -190,11 +188,7 @@ def _apply_ft(server, instruction: str, params: dict | None = None) -> dict:
 
 def _kill_worker_process(server) -> None:
     """SIGKILL only the worker proc, leaving EngineCore and API server alive."""
-    workers = [
-        p
-        for p in psutil.Process(server.proc.pid).children(recursive=True)
-        if "Worker" in " ".join(p.cmdline())
-    ]
+    workers = [p for p in psutil.Process(server.proc.pid).children(recursive=True) if "Worker" in " ".join(p.cmdline())]
     assert len(workers) == 1, f"expected 1 worker proc, found: {workers}"
     workers[0].kill()
 
@@ -294,14 +288,11 @@ def test_injected_fault_retry_recovers_all_ranks(monkeypatch, tmp_path):
         # 2. Drive both ranks so rank 1 accumulates execute_model steps and trips
         #    the injected fault; rank 0 then times out on the DP allreduce.
         with _driving(rank0, rank1):
-            faulted = _wait_for_engines(
-                [rank0, rank1], match_key="status", match_values={"unhealthy"}
-            )
+            faulted = _wait_for_engines([rank0, rank1], match_key="status", match_values={"unhealthy"})
 
         for rank, engine_status in enumerate(faulted):
             assert engine_status is not None, (
-                f"rank {rank} did not report UNHEALTHY within "
-                f"{FAULT_DETECTION_DEADLINE_S}s -- it likely hung"
+                f"rank {rank} did not report UNHEALTHY within {FAULT_DETECTION_DEADLINE_S}s -- it likely hung"
             )
         # The rank that raised carries the fault info from its own exception.
         assert faulted[1] is not None
@@ -352,16 +343,14 @@ def test_worker_kill_survivor_unhealthy_and_dead_rejects_retry():
             )
 
         assert survivor_faulted is not None, (
-            "survivor did not report the peer fault within "
-            f"{FAULT_DETECTION_DEADLINE_S}s -- it likely hung"
+            f"survivor did not report the peer fault within {FAULT_DETECTION_DEADLINE_S}s -- it likely hung"
         )
         # The survivor's own executor is fine, so it must be UNHEALTHY, not DEAD.
         assert survivor_faulted["status"] == "unhealthy", survivor_faulted
         assert survivor_faulted.get("fault_info"), survivor_faulted
 
         assert victim_faulted is not None, (
-            "victim did not report its worker's death within "
-            f"{FAULT_DETECTION_DEADLINE_S}s"
+            f"victim did not report its worker's death within {FAULT_DETECTION_DEADLINE_S}s"
         )
         assert victim_faulted["status"] == "dead", victim_faulted
 
@@ -369,10 +358,6 @@ def test_worker_kill_survivor_unhealthy_and_dead_rejects_retry():
         request_id = _apply_ft(victim, "retry")["request_id"]
 
         # 5. ...but the DEAD engine must reject it: recovery requires UNHEALTHY.
-        ft_error = _wait_for_ft_apply_outcome(
-            victim, request_id, FAULT_DETECTION_DEADLINE_S
-        )
-        assert ft_error is not None, (
-            "rejection was never recorded in /fault_tolerance/status"
-        )
+        ft_error = _wait_for_ft_apply_outcome(victim, request_id, FAULT_DETECTION_DEADLINE_S)
+        assert ft_error is not None, "rejection was never recorded in /fault_tolerance/status"
         assert "status is DEAD" in ft_error, ft_error

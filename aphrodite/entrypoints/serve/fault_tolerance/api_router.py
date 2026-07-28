@@ -42,9 +42,7 @@ def _validate_payload(body: dict) -> tuple[str, dict]:
         HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
     },
 )
-async def process_fault_tolerance_instruction(
-    raw_request: Request, background_tasks: BackgroundTasks
-):
+async def process_fault_tolerance_instruction(raw_request: Request, background_tasks: BackgroundTasks):
     try:
         body = await raw_request.json()
     except json.JSONDecodeError as e:
@@ -73,9 +71,7 @@ async def process_fault_tolerance_instruction(
     )
 
 
-async def _run_fault_recovery(
-    client: EngineClient, ft_request: FaultToleranceRequest
-) -> None:
+async def _run_fault_recovery(client: EngineClient, ft_request: FaultToleranceRequest) -> None:
     """Drive recovery to completion after the 202 response is sent."""
     try:
         result = await client.handle_fault(ft_request)

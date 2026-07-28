@@ -67,32 +67,23 @@ class EngineCoreSentinel:
                 result = run_method(self, ft_request.instruction, (ft_request,), {})
             except Exception as e:
                 logger.exception("[FT] Instruction '%s' failed", ft_request.instruction)
-                result = FaultToleranceResult(
-                    request_id=ft_request.request_id, success=False, reason=str(e)
-                )
+                result = FaultToleranceResult(request_id=ft_request.request_id, success=False, reason=str(e))
 
         uo = UtilityOutput(call_id)
         uo.result = UtilityResult(msgspec.structs.asdict(result))
-        self.engine.output_queue.put_nowait(
-            (client_idx, EngineCoreOutputs(utility_output=uo))
-        )
+        self.engine.output_queue.put_nowait((client_idx, EngineCoreOutputs(utility_output=uo)))
 
     def on_fault(self, exc: Exception):
         """Called by the wrapper when the busy loop raises an exception."""
         self.resumed.clear()
-        logger.warning(
-            "[FT] Busy loop raised %s. Waiting for recovery.", type(exc).__name__
-        )
+        logger.warning("[FT] Busy loop raised %s. Waiting for recovery.", type(exc).__name__)
 
         engine = self.engine
         aborted = engine.scheduler.finish_requests(None, RequestStatus.FINISHED_ABORTED)
         engine._send_abort_outputs(aborted)
         if engine.batch_queue is not None:
             engine.batch_queue.clear()
-        if (
-            hasattr(engine.model_executor, "is_failed")
-            and engine.model_executor.is_failed
-        ):
+        if hasattr(engine.model_executor, "is_failed") and engine.model_executor.is_failed:
             self.status_type = EngineStatusType.DEAD
         else:
             self.status_type = EngineStatusType.UNHEALTHY
@@ -157,15 +148,13 @@ class EngineCoreSentinel:
             engine_port = int(engine.dp_store.get(engine_key).decode())
 
         stateless_destroy_torch_distributed_process_group(engine.dp_group)
-        engine.dp_group, engine.dp_store = (
-            stateless_init_torch_distributed_process_group(
-                parallel_config.data_parallel_master_ip,
-                engine_port,
-                parallel_config.data_parallel_rank,
-                parallel_config.data_parallel_size,
-                backend="gloo",
-                return_store=True,
-            )
+        engine.dp_group, engine.dp_store = stateless_init_torch_distributed_process_group(
+            parallel_config.data_parallel_master_ip,
+            engine_port,
+            parallel_config.data_parallel_rank,
+            parallel_config.data_parallel_size,
+            backend="gloo",
+            return_store=True,
         )
         return {"new_stateless_dp_group_ports": worker_ports}
 
@@ -183,9 +172,7 @@ def fault_tolerant_wrapper(busy_loop_func: Callable):
                 if not self.enable_fault_tolerance:
                     raise
                 self.ft_sentinel.on_fault(exc)
-                recovered = self.ft_sentinel.resumed.wait(
-                    timeout=self.ft_sentinel.engine_recovery_timeout_sec
-                )
+                recovered = self.ft_sentinel.resumed.wait(timeout=self.ft_sentinel.engine_recovery_timeout_sec)
                 if recovered:
                     continue
                 logger.error(
