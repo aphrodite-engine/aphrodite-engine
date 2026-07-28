@@ -11,6 +11,7 @@ from aphrodite.assets.image import ImageAsset
 from aphrodite.lora.request import LoRARequest
 from aphrodite.platforms import current_platform
 from aphrodite.sampling_params import BeamSearchParams
+from tests.conftest import AphroditeRunner
 
 
 @dataclass
@@ -56,23 +57,28 @@ class Qwen2VLTester:
 
     def __init__(self, config: TestConfig):
         self.config = config
-        self.llm = self._initialize_llm()
-
-    def _initialize_llm(self) -> aphrodite.LLM:
-        """Initialize the LLM with given configuration"""
-        return aphrodite.LLM(
-            model=self.config.model_path,
-            max_num_seqs=self.config.max_num_seqs,
+        self._runner = AphroditeRunner(
+            model_name=config.model_path,
+            max_num_seqs=config.max_num_seqs,
             enable_lora=True,
-            max_loras=self.config.max_loras,
-            max_lora_rank=self.config.max_lora_rank,
-            enable_tower_connector_lora=self.config.enable_tower_connector_lora,
-            trust_remote_code=True,
-            gpu_memory_utilization=self.config.gpu_memory_utilization,
-            mm_processor_kwargs=self.config.mm_processor_kwargs,
-            mm_processor_cache_gb=self.config.mm_processor_cache_gb,
-            max_model_len=self.config.max_model_len,
+            max_loras=config.max_loras,
+            max_lora_rank=config.max_lora_rank,
+            enable_tower_connector_lora=config.enable_tower_connector_lora,
+            gpu_memory_utilization=config.gpu_memory_utilization,
+            mm_processor_kwargs=config.mm_processor_kwargs,
+            mm_processor_cache_gb=config.mm_processor_cache_gb,
+            max_model_len=config.max_model_len,
         )
+
+    @property
+    def llm(self) -> aphrodite.LLM:
+        return self._runner.get_llm()
+
+    def __enter__(self) -> "Qwen2VLTester":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self._runner.__exit__(exc_type, exc_value, traceback)
 
     def run_test(
         self,
@@ -176,40 +182,37 @@ QWEN3VL_MODEL_PATH = "Qwen/Qwen3-VL-4B-Instruct"
 def test_qwen2vl_lora(qwen2vl_lora_files):
     """Test Qwen 2.0 VL model with LoRA"""
     config = TestConfig(model_path=QWEN2VL_MODEL_PATH, lora_path=qwen2vl_lora_files)
-    tester = Qwen2VLTester(config)
-
-    # Test with different LoRA IDs
-    for lora_id in [1, 2]:
-        tester.run_test(TEST_IMAGES, expected_outputs=EXPECTED_OUTPUTS, lora_id=lora_id)
+    with Qwen2VLTester(config) as tester:
+        # Test with different LoRA IDs
+        for lora_id in [1, 2]:
+            tester.run_test(TEST_IMAGES, expected_outputs=EXPECTED_OUTPUTS, lora_id=lora_id)
 
 
 def test_qwen2vl_lora_beam_search(qwen2vl_lora_files):
     """Test Qwen 2.0 VL model with LoRA through beam search."""
     config = TestConfig(model_path=QWEN2VL_MODEL_PATH, lora_path=qwen2vl_lora_files)
-    tester = Qwen2VLTester(config)
-
-    # Test with different LoRA IDs
-    for lora_id in [1, 2]:
-        # NOTE currently, we only test cherry blossom since stop sign
-        # output is slightly different for v1; - the root cause is likely
-        # independent of the intent of this test, which is to ensure beam
-        # search passes through lora through correctly.
-        tester.run_beam_search_test(
-            [ImageAsset("cherry_blossom")],
-            expected_outputs=EXPECTED_BEAM_SEARCH_OUTPUTS,
-            lora_id=lora_id,
-        )
+    with Qwen2VLTester(config) as tester:
+        # Test with different LoRA IDs
+        for lora_id in [1, 2]:
+            # NOTE currently, we only test cherry blossom since stop sign
+            # output is slightly different for v1; - the root cause is likely
+            # independent of the intent of this test, which is to ensure beam
+            # search passes through lora through correctly.
+            tester.run_beam_search_test(
+                [ImageAsset("cherry_blossom")],
+                expected_outputs=EXPECTED_BEAM_SEARCH_OUTPUTS,
+                lora_id=lora_id,
+            )
 
 
 @pytest.mark.skipif(current_platform.is_cuda_alike(), reason="Skipping to avoid redundant model tests")
 def test_qwen25vl_lora(qwen25vl_lora_files):
     """Test Qwen 2.5 VL model with LoRA"""
     config = TestConfig(model_path=QWEN25VL_MODEL_PATH, lora_path=qwen25vl_lora_files)
-    tester = Qwen2VLTester(config)
-
-    # Test with different LoRA IDs
-    for lora_id in [1, 2]:
-        tester.run_test(TEST_IMAGES, expected_outputs=EXPECTED_OUTPUTS, lora_id=lora_id)
+    with Qwen2VLTester(config) as tester:
+        # Test with different LoRA IDs
+        for lora_id in [1, 2]:
+            tester.run_test(TEST_IMAGES, expected_outputs=EXPECTED_OUTPUTS, lora_id=lora_id)
 
 
 @pytest.mark.skipif(current_platform.is_cuda_alike(), reason="Skipping to avoid redundant model tests")
@@ -223,13 +226,13 @@ def test_qwen25vl_vision_lora(qwen25vl_vision_lora_files):
         mm_processor_cache_gb=0,
         enable_tower_connector_lora=True,
     )
-    tester = Qwen2VLTester(config)
-    for lora_id in [1, 2]:
-        tester.run_test(
-            TEST_IMAGES,
-            expected_outputs=EXPECTED_OUTPUTS,
-            lora_id=lora_id,
-        )
+    with Qwen2VLTester(config) as tester:
+        for lora_id in [1, 2]:
+            tester.run_test(
+                TEST_IMAGES,
+                expected_outputs=EXPECTED_OUTPUTS,
+                lora_id=lora_id,
+            )
 
 
 def test_qwen3vl_vision_lora(qwen3vl_vision_lora_files):
@@ -242,13 +245,13 @@ def test_qwen3vl_vision_lora(qwen3vl_vision_lora_files):
         mm_processor_cache_gb=0,
         enable_tower_connector_lora=True,
     )
-    tester = Qwen2VLTester(config)
-    for lora_id in [1, 2]:
-        tester.run_test(
-            TEST_IMAGES,
-            expected_outputs=EXPECTED_OUTPUTS,
-            lora_id=lora_id,
-        )
+    with Qwen2VLTester(config) as tester:
+        for lora_id in [1, 2]:
+            tester.run_test(
+                TEST_IMAGES,
+                expected_outputs=EXPECTED_OUTPUTS,
+                lora_id=lora_id,
+            )
 
 
 def test_qwen2vl_multiple_lora_types(
@@ -276,34 +279,33 @@ def test_qwen2vl_multiple_lora_types(
         mm_processor_cache_gb=0,
         enable_tower_connector_lora=True,
     )
-    tester = Qwen2VLTester(config)
+    with Qwen2VLTester(config) as tester:
+        # Test 1: Language-only LoRA adapter
+        tester.config.lora_path = qwen2vl_language_lora_files
+        for lora_id in [1, 2]:
+            tester.run_test(
+                TEST_IMAGES,
+                expected_outputs=EXPECTED_OUTPUTS_LANGUAGE,
+                lora_id=lora_id,
+                lora_name="language_only",
+            )
 
-    # Test 1: Language-only LoRA adapter
-    tester.config.lora_path = qwen2vl_language_lora_files
-    for lora_id in [1, 2]:
-        tester.run_test(
-            TEST_IMAGES,
-            expected_outputs=EXPECTED_OUTPUTS_LANGUAGE,
-            lora_id=lora_id,
-            lora_name="language_only",
-        )
+        # Test 2: Vision tower + connector LoRA adapter
+        tester.config.lora_path = qwen2vl_vision_tower_connector_lora_files
+        for lora_id in [3, 4]:
+            tester.run_test(
+                TEST_IMAGES,
+                expected_outputs=EXPECTED_OUTPUTS_VISION,
+                lora_id=lora_id,
+                lora_name="vision_tower_connector",
+            )
 
-    # Test 2: Vision tower + connector LoRA adapter
-    tester.config.lora_path = qwen2vl_vision_tower_connector_lora_files
-    for lora_id in [3, 4]:
-        tester.run_test(
-            TEST_IMAGES,
-            expected_outputs=EXPECTED_OUTPUTS_VISION,
-            lora_id=lora_id,
-            lora_name="vision_tower_connector",
-        )
-
-    # Test 3: Vision tower only LoRA adapter (no connector)
-    tester.config.lora_path = qwen2vl_vision_tower_lora_files
-    for lora_id in [5, 6]:
-        tester.run_test(
-            TEST_IMAGES,
-            expected_outputs=EXPECTED_OUTPUTS_VISION_NO_CONNECTOR,
-            lora_id=lora_id,
-            lora_name="vision_tower",
-        )
+        # Test 3: Vision tower only LoRA adapter (no connector)
+        tester.config.lora_path = qwen2vl_vision_tower_lora_files
+        for lora_id in [5, 6]:
+            tester.run_test(
+                TEST_IMAGES,
+                expected_outputs=EXPECTED_OUTPUTS_VISION_NO_CONNECTOR,
+                lora_id=lora_id,
+                lora_name="vision_tower",
+            )
