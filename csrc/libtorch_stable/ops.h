@@ -46,6 +46,18 @@ void per_token_group_quant_int8(const torch::stable::Tensor& input,
 torch::stable::Tensor permute_cols(torch::stable::Tensor const& A,
                                    torch::stable::Tensor const& perm);
 
+std::tuple<torch::stable::Tensor, torch::stable::Tensor, torch::stable::Tensor>
+dry_scan_penalties_cpu(const torch::stable::Tensor& token_history_ids,
+                       const torch::stable::Tensor& token_history_lens,
+                       const torch::stable::Tensor& dry_multiplier,
+                       const torch::stable::Tensor& allowed_lengths,
+                       const torch::stable::Tensor& sequence_breakers_ids,
+                       const torch::stable::Tensor& ranges,
+                       const torch::stable::Tensor& max_ngram,
+                       const torch::stable::Tensor& max_occurrences,
+                       const torch::stable::Tensor& early_exit_match_len,
+                       int64_t vocab_size);
+
 #ifndef USE_ROCM
 bool cutlass_scaled_mm_supports_fp8(int64_t cuda_device_capability);
 bool cutlass_scaled_mm_supports_block_fp8(int64_t cuda_device_capability);

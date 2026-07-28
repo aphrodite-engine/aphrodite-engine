@@ -1,8 +1,6 @@
 #include <cuda_fp16.h>
 #include "exl3_gemm.cuh"
 
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 #include "../util.h"
@@ -43,9 +41,10 @@ int exl3_gemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                  const c10::optional<at::Tensor>& A_had,
                  const c10::optional<at::Tensor>& svh, int force_shape_idx,
                  bool mcg, bool mul1, int force_num_sms, Graph* graph) {
-  const at::cuda::OptionalCUDAGuard device_guard(A.device());
-  cudaStream_t stream =
-      graph ? graph->capture_stream : at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      A.get_device_index());
+  cudaStream_t stream = graph ? graph->capture_stream
+                              : get_current_cuda_stream(A.get_device_index());
 
   TORCH_CHECK_DIM(B, 3);
   TORCH_CHECK_SHAPES(A, -1, B, 0, 16);
@@ -53,7 +52,7 @@ int exl3_gemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
   // TORCH_CHECK_SHAPES(A, 0, C, 0, 1);
   TORCH_CHECK_DTYPE(A, kHalf);
   TORCH_CHECK_DTYPE(B, kShort);
-  bool c_fp32 = C.dtype() == at::kFloat;
+  bool c_fp32 = C.scalar_type() == at::kFloat;
   if (!c_fp32) TORCH_CHECK_DTYPE(C, kHalf);
 
   // Get SU, optionally
@@ -177,15 +176,16 @@ int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                   const c10::optional<at::Tensor>& weights, int K,
                   int force_shape_idx, bool mcg, bool mul1, int min_index,
                   int max_index, int force_num_sms, Graph* graph) {
-  const at::cuda::OptionalCUDAGuard device_guard(A.device());
-  cudaStream_t stream =
-      graph ? graph->capture_stream : at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      A.get_device_index());
+  cudaStream_t stream = graph ? graph->capture_stream
+                              : get_current_cuda_stream(A.get_device_index());
 
   TORCH_CHECK_DTYPE(A, kHalf);
   TORCH_CHECK_DTYPE(B, kLong);
   TORCH_CHECK_DTYPE(suh, kLong);
   TORCH_CHECK_DTYPE(svh, kLong);
-  bool c_fp32 = C.dtype() == at::kFloat;
+  bool c_fp32 = C.scalar_type() == at::kFloat;
   if (!c_fp32) TORCH_CHECK_DTYPE(C, kHalf);
   TORCH_CHECK_DIM(A, 3);
   TORCH_CHECK_DIM(B, 1);

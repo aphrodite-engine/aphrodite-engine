@@ -399,6 +399,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   #
   set(APHRODITE_STABLE_EXT_SRC
     "csrc/libtorch_stable/torch_bindings.cpp"
+    "csrc/cpu/dry.cpp"
     "csrc/libtorch_stable/cuda_view.cu"
     "csrc/libtorch_stable/cuda_utils_kernels.cu"
     "csrc/libtorch_stable/activation_kernels.cu"
@@ -1170,33 +1171,9 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   # if CUDA endif
   endif()
 
-  message(STATUS "Enabling C_stable extension.")
-  list(REMOVE_DUPLICATES APHRODITE_STABLE_EXT_SRC)
-  define_extension_target(
-    _C_stable_libtorch
-    DESTINATION aphrodite
-    LANGUAGE ${APHRODITE_GPU_LANG}
-    SOURCES ${APHRODITE_STABLE_EXT_SRC}
-    COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-    ARCHITECTURES ${APHRODITE_GPU_ARCHES}
-    INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR} ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
-    USE_SABI 3
-    WITH_SOABI)
-
-  #
-  # _C_fork extension — Aphrodite-only kernels with no upstream equivalent,
-  # registered into torch.ops._C via TORCH_LIBRARY_FRAGMENT (see
-  # csrc/fork_torch_bindings.cpp). Kept as a separate extension so the upstream
-  # _C_stable_libtorch sync surface stays clean. Currently built: DRY sampler
-  # (CPU) and EXL3 quantization (CUDA). Other fork kernels (exl2/aqlm/vptq/
-  # gguf/quip/...) remain in csrc but are intentionally not built.
-  #
-  set(APHRODITE_FORK_EXT_SRC
-    "csrc/fork_torch_bindings.cpp"
-    "csrc/cpu/dry.cpp")
-
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")
-    set(APHRODITE_FORK_EXL3_SRC
+    set(APHRODITE_EXL3_SRC
+      "csrc/libtorch_stable/exl3_torch_bindings.cpp"
       "csrc/quantization/exl3/exllamav3_ext/graph.cu"
       "csrc/quantization/exl3/exllamav3_ext/hgemm.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/exl3_devctx.cu"
@@ -1215,10 +1192,9 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
       "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_6.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_7.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_8.cu")
-    # EXL3 (exllamav3) kernels require Ampere+ (cp.async / m16n8k16 MMA) and
-    # cannot target SM7.x. Drop arches < 8.0 so release arch lists that include
-    # 7.5 (Turing) still build; exl3 is simply unavailable on those GPUs. Other
-    # arches are preserved verbatim (native cubins for 8.0..12.x, Thor 11.0).
+
+    # EXL3 requires Ampere+ instructions. Preserve all configured SM80+
+    # architectures, including native Thor SM110 cubins.
     set(EXL3_ARCHS)
     foreach(_arch IN LISTS CUDA_ARCHS)
       string(REGEX MATCH "^[0-9]+\\.[0-9]+" _arch_num "${_arch}")
@@ -1228,19 +1204,21 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
     endforeach()
     message(STATUS "EXL3_ARCHS (SM80+ subset of CUDA_ARCHS): ${EXL3_ARCHS}")
     set_gencode_flags_for_srcs(
-      SRCS "${APHRODITE_FORK_EXL3_SRC}"
+      SRCS "${APHRODITE_EXL3_SRC}"
       CUDA_ARCHS "${EXL3_ARCHS}")
-    list(APPEND APHRODITE_FORK_EXT_SRC "${APHRODITE_FORK_EXL3_SRC}")
+    list(APPEND APHRODITE_STABLE_EXT_SRC "${APHRODITE_EXL3_SRC}")
   endif()
 
-  message(STATUS "Enabling _C_fork extension.")
+  message(STATUS "Enabling C_stable extension.")
+  list(REMOVE_DUPLICATES APHRODITE_STABLE_EXT_SRC)
   define_extension_target(
-    _C_fork
+    _C_stable_libtorch
     DESTINATION aphrodite
     LANGUAGE ${APHRODITE_GPU_LANG}
-    SOURCES ${APHRODITE_FORK_EXT_SRC}
+    SOURCES ${APHRODITE_STABLE_EXT_SRC}
     COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
     ARCHITECTURES ${APHRODITE_GPU_ARCHES}
+    INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR} ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
     USE_SABI 3
     WITH_SOABI)
 

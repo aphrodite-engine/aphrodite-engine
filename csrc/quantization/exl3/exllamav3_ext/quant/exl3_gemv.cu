@@ -1,8 +1,6 @@
 #include <cuda_fp16.h>
 #include "exl3_gemv.cuh"
 
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 #include "../util.h"
@@ -12,8 +10,6 @@ namespace cg = cooperative_groups;
 #include "exl3_devctx.cuh"
 #include "hadamard.cuh"
 // #include <set>
-
-#include <ATen/Tensor.h>
 
 #define K_SPLIT 1
 
@@ -42,15 +38,16 @@ void exl3_gemv(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                const c10::optional<at::Tensor>& svh, bool mcg, bool mul1) {
   //    had_r_128(A, A_had.value(), suh, c10::nullopt, 1.0);
 
-  const at::cuda::OptionalCUDAGuard device_guard(A.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      A.get_device_index());
+  cudaStream_t stream = get_current_cuda_stream(A.get_device_index());
 
   TORCH_CHECK_DIM(B, 3);
   TORCH_CHECK_SHAPES(A, 1, B, 0, 16);
   TORCH_CHECK_SHAPES(C, -1, B, 1, 16);
   TORCH_CHECK_DTYPE(A, kHalf);
   TORCH_CHECK_DTYPE(B, kShort);
-  bool c_fp32 = C.dtype() == at::kFloat;
+  bool c_fp32 = C.scalar_type() == at::kFloat;
   if (!c_fp32) TORCH_CHECK_DTYPE(C, kHalf);
 
   int size_m = A.size(0);

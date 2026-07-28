@@ -253,7 +253,7 @@ class CudaPlatformBase(Platform):
         via ``STABLE_TORCH_LIBRARY`` regardless of the ``.so`` filename). The
         legacy fork ``_C``/``_moe_C`` extensions are intentionally NOT imported
         here: they would double-register the same op schemas and collide.
-        Fork-specific kernels (exl3, gguf, dry, ...) are relayered separately.
+        Aphrodite's DRY and EXL3 ops also live in ``_C_stable_libtorch``.
         """
         try:
             import aphrodite._C_stable_libtorch  # noqa: F401
@@ -263,12 +263,6 @@ class CudaPlatformBase(Platform):
             import aphrodite._moe_C_stable_libtorch  # noqa: F401
         except ImportError as e:
             logger.warning_once("Failed to import from aphrodite._moe_C_stable_libtorch: %r", e)
-        # Fork-only kernels (DRY sampler + EXL3). Imported after the stable
-        # extensions so the torch.ops._C namespace they extend already exists.
-        try:
-            import aphrodite._C_fork  # noqa: F401
-        except ImportError as e:
-            logger.warning_once("Failed to import from aphrodite._C_fork: %r", e)
         try:
             import aphrodite._qutlass_C  # noqa: F401
         except ImportError as e:

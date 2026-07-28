@@ -1,7 +1,5 @@
 #include <cuda_fp16.h>
 #include "quantize.cuh"
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 #include "../util.h"
 #include "../util.cuh"
 #include "hadamard_inner.cuh"
@@ -62,8 +60,9 @@ x and y must be same dtype, either float16 or float32
 void had_r_128(const at::Tensor& input, const at::Tensor& output,
                const c10::optional<at::Tensor>& pre_scale,
                const c10::optional<at::Tensor>& post_scale, const float scale) {
-  const at::cuda::OptionalCUDAGuard device_guard(input.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      input.get_device_index());
+  cudaStream_t stream = get_current_cuda_stream(input.get_device_index());
 
   TORCH_CHECK_SHAPES_FULL(input, output);
   TORCH_CHECK_DIM(input, 2);
@@ -77,7 +76,7 @@ void had_r_128(const at::Tensor& input, const at::Tensor& output,
   dim3 blockDim(32);
   dim3 gridDim(rows, blocks);
 
-  if (input.dtype() == at::kHalf) {
+  if (input.scalar_type() == at::kHalf) {
     TORCH_CHECK_DTYPE(output, kHalf);
     had_hf_r_128_kernel<<<gridDim, blockDim, 0, stream>>>(
         (const half*)input.data_ptr(), (half*)output.data_ptr(),
@@ -86,7 +85,7 @@ void had_r_128(const at::Tensor& input, const at::Tensor& output,
     cuda_check(cudaPeekAtLastError());
   }
 
-  else if (input.dtype() == at::kFloat) {
+  else if (input.scalar_type() == at::kFloat) {
     TORCH_CHECK_DTYPE(output, kFloat);
     had_ff_r_128_kernel<<<gridDim, blockDim, 0, stream>>>(
         (const float*)input.data_ptr(), (float*)output.data_ptr(),
@@ -106,8 +105,9 @@ void had_r_128_dual(const at::Tensor& input1, const at::Tensor& output1,
                     const c10::optional<at::Tensor>& pre_scale2,
                     const c10::optional<at::Tensor>& post_scale2,
                     const float scale) {
-  const at::cuda::OptionalCUDAGuard device_guard(input1.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      input1.get_device_index());
+  cudaStream_t stream = get_current_cuda_stream(input1.get_device_index());
 
   TORCH_CHECK_SHAPES_FULL(input1, output1);
   TORCH_CHECK_SHAPES_FULL(input1, input2);
@@ -123,7 +123,7 @@ void had_r_128_dual(const at::Tensor& input1, const at::Tensor& output1,
   dim3 blockDim(32);
   dim3 gridDim(rows, blocks);
 
-  if (input1.dtype() == at::kHalf) {
+  if (input1.scalar_type() == at::kHalf) {
     TORCH_CHECK_DTYPE(output1, kHalf);
     had_hf_r_128_dual_kernel<<<gridDim, blockDim, 0, stream>>>(
         (const half*)input1.data_ptr(), (half*)output1.data_ptr(),
@@ -134,7 +134,7 @@ void had_r_128_dual(const at::Tensor& input1, const at::Tensor& output1,
     cuda_check(cudaPeekAtLastError());
   }
 
-  else if (input1.dtype() == at::kFloat) {
+  else if (input1.scalar_type() == at::kFloat) {
     TORCH_CHECK_DTYPE(output1, kFloat);
     had_ff_r_128_dual_kernel<<<gridDim, blockDim, 0, stream>>>(
         (const float*)input1.data_ptr(), (float*)output1.data_ptr(),

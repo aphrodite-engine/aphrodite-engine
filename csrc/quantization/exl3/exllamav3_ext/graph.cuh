@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ATen/Tensor.h>
+#include "util.h"
 #include <vector>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>

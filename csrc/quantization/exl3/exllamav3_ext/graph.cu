@@ -1,7 +1,5 @@
 #include <Python.h>
 #include "graph.cuh"
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 // #include <torch/extension.h>
 #include "util.h"
 #include "util.cuh"
@@ -94,7 +92,7 @@ void Graph::record_param(void* kernel, int param_id, int param_offset) {
 
 void Graph::launch(std::vector<PPTR> params, cudaStream_t stream) {
   if (need_cublas) {
-    cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
+    cublasHandle_t cublas_handle = get_current_cuda_blas_handle();
     cublasSetStream(cublas_handle, stream);
     cublasSetPointerMode(cublas_handle, CUBLAS_POINTER_MODE_HOST);
     int device;

@@ -662,8 +662,6 @@ if _build_custom_ops():
     if _is_cuda() or _is_hip():
         ext_modules.append(CMakeExtension(name="aphrodite._C_stable_libtorch"))
         ext_modules.append(CMakeExtension(name="aphrodite._moe_C_stable_libtorch"))
-        # Fork-only kernels (DRY sampler + EXL3), registered into torch.ops._C.
-        ext_modules.append(CMakeExtension(name="aphrodite._C_fork"))
 
 package_data = {
     "aphrodite": [
