@@ -7,31 +7,15 @@ streaming (parse_delta), and ParsableContext.append_output() paths.
 """
 
 import json
-import os
 
 import pytest
 
-_STRICT_TOOL_CALLING_ENV = "VLLM_ENFORCE_STRICT_TOOL_CALLING"
-_STRICT_TOOL_CALLING_ENV_VALUE = os.environ.get(_STRICT_TOOL_CALLING_ENV)
-os.environ[_STRICT_TOOL_CALLING_ENV] = "0"
-
-from aphrodite.entrypoints.openai.chat_completion.protocol import (  # noqa: E402
-    ChatCompletionRequest,
-)
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage  # noqa: E402
-from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest  # noqa: E402
-from aphrodite.parser.abstract_parser import DelegatingParser  # noqa: E402
-from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser  # noqa: E402
-from aphrodite.tool_parsers.hermes_tool_parser import Hermes2ProToolParser  # noqa: E402
-
-
-@pytest.fixture(scope="module", autouse=True)
-def restore_strict_tool_calling_env():
-    yield
-    if _STRICT_TOOL_CALLING_ENV_VALUE is None:
-        os.environ.pop(_STRICT_TOOL_CALLING_ENV, None)
-    else:
-        os.environ[_STRICT_TOOL_CALLING_ENV] = _STRICT_TOOL_CALLING_ENV_VALUE
+from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
+from aphrodite.parser.abstract_parser import DelegatingParser
+from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
+from aphrodite.tool_parsers.hermes_tool_parser import Hermes2ProToolParser
 
 
 class ThinkReasoningParser(BaseThinkingReasoningParser):

@@ -14,6 +14,14 @@ from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 from aphrodite.tool_parsers.hermes_tool_parser import Hermes2ProToolParser
 
 
+@pytest.fixture(autouse=True)
+def enable_hermes_required_named_parsing(monkeypatch):
+    # With APHRODITE_ENFORCE_STRICT_TOOL_CALLING (default on), Hermes sets
+    # supports_required_and_named=False and uses structural-tag guided tool
+    # calling. Force it True to test the non-guided JSON required/named parse path.
+    monkeypatch.setattr(Hermes2ProToolParser, "supports_required_and_named", True)
+
+
 class ThinkReasoningParser(BaseThinkingReasoningParser):
     @property
     def start_token(self) -> str:
