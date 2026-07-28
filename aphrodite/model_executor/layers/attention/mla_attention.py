@@ -765,14 +765,11 @@ class MLAAttention(nn.Module, AttentionLayerBase):
         num_mha_tokens = q.size(0) - num_mqa_tokens
 
         if self.impl.is_sparse and num_mha_tokens > 0:
-            prefill_max_seq_len = getattr(attn_metadata, "prefill_max_seq_len", 0)
             impl_forward_mha = getattr(type(self.impl), "forward_mha", None)
             use_mha = (
                 self.prefill_backend is not None
                 and impl_forward_mha is not MLAAttentionImpl.forward_mha
-                and attn_metadata.prefill is not None
-                and prefill_max_seq_len <= getattr(attn_metadata, "topk_tokens", 0)
-                and not self._aphrodite_config.attention_config.sparse_mla_force_mqa
+                and getattr(attn_metadata.prefill, "use_dense_mha", False)
             )
             if not use_mha:
                 num_mqa_tokens = q.size(0)
@@ -1413,6 +1410,10 @@ class MLACommonPrefillMetadata:
     q_data_type: torch.dtype | None = None
     output_dtype: torch.dtype | None = None
     prefill_backend: MLAPrefillBackend | None = None
+    # Whether the prefill suffix is routed through dense MHA.
+    # Indexer scoring may be skipped only for a pure-prefill batch,
+    # since decode tokens still consume top-k indices.
+    use_dense_mha: bool = False
 
 
 @dataclass
