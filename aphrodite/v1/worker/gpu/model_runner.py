@@ -540,8 +540,11 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             num_tokens = max(num_tokens, self.decode_query_len)
             num_reqs = num_tokens // self.decode_query_len
             assert num_tokens % self.decode_query_len == 0
-        num_tokens_per_request = [num_tokens // num_reqs] * num_reqs
-        num_tokens_per_request[-1] += num_tokens % num_reqs
+        # Distribute the remainder evenly so no dummy request exceeds
+        # ceil(num_tokens / num_reqs) <= max_model_len tokens.
+        num_tokens_per_request = [
+            num_tokens // num_reqs + (i >= num_reqs - num_tokens % num_reqs) for i in range(num_reqs)
+        ]
 
         assert sum(num_tokens_per_request) == num_tokens
         num_scheduled_tokens = {f"_dummy_req_{i}": n for i, n in enumerate(num_tokens_per_request)}
