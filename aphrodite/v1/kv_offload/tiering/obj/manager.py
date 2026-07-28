@@ -373,11 +373,12 @@ class ObjectStoreSecondaryTierManager(SecondaryTierManager):
 
     def shutdown(self) -> None:
         self._lookup_manager.shutdown()
-        for job_id, entry in self._transfers.items():
+        for job_id, entry in list(self._transfers.items()):
             try:
                 self._agent.release_xfer_handle(entry.xfer_handle)
             except Exception as exc:
                 logger.warning("release_xfer_handle failed for job %d: %s", job_id, exc)
+                continue
             try:
                 self._agent.release_dlist_handle(entry.obj_handle)
             except Exception as exc:
@@ -386,7 +387,13 @@ class ObjectStoreSecondaryTierManager(SecondaryTierManager):
                 self._agent.deregister_memory(entry.files_desc)
             except Exception as exc:
                 logger.warning("deregister_memory failed for job %d: %s", job_id, exc)
-        self._transfers.clear()
+            del self._transfers[job_id]
+        if self._transfers:
+            logger.warning(
+                "shutdown deferred release of primary object-tier resources because %d transfer handles remain active",
+                len(self._transfers),
+            )
+            return
         if self._dram_prepped_handle is not None:
             try:
                 self._agent.release_dlist_handle(self._dram_prepped_handle)
