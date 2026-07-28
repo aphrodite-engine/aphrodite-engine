@@ -85,6 +85,8 @@ def make_mapper_from_offloading_spec(**kwargs) -> FileMapper:
         ),
         replicated_layout=kwargs.get("replicated_layout", False),
     )
+    if kwargs.get("omit_replicated_layout", False):
+        del mock_offloading_spec.config.replicated_layout
     mock_offloading_spec.blocks_per_chunk = kwargs.get("blocks_per_chunk", 1)
 
     return FileMapper.from_offloading_spec(
@@ -251,6 +253,15 @@ def test_parallel_agnostic_separates_persistent_layouts():
     assert agnostic.base_path != specific.base_path
     assert "parallel_agnostic" not in agnostic.fields
     assert specific.fields["parallel_agnostic"] is False
+
+
+def test_missing_replicated_layout_defaults_to_false():
+    mapper = make_mapper_from_offloading_spec(
+        omit_replicated_layout=True,
+        parallel_agnostic=True,
+    )
+
+    assert "replicated_layout" not in mapper.fields
 
 
 def test_replicated_layout_collapses_parallel_identity():
