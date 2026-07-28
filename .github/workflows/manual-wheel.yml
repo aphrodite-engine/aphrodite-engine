@@ -103,9 +103,30 @@ jobs:
           wheel_name="$(basename "$wheel")"
           remote="b2:${B2_S3_BUCKET}/wheels/${wheel_name}"
 
-          "$RUNNER_TEMP/rclone-bin/rclone" copyto "$wheel" "$remote" \
-            --s3-upload-concurrency 8 \
-            --s3-chunk-size 64M
+          upload_succeeded=false
+          for attempt in {1..5}; do
+            echo "Uploading ${wheel_name} (attempt ${attempt}/5)"
+            if timeout --signal=TERM --kill-after=30s 20m \
+              "$RUNNER_TEMP/rclone-bin/rclone" copyto "$wheel" "$remote" \
+                --s3-upload-cutoff 16M \
+                --s3-chunk-size 16M \
+                --s3-upload-concurrency 8 \
+                --retries 5 \
+                --low-level-retries 10 \
+                --retries-sleep 5s \
+                --progress \
+                --stats 30s \
+                --stats-one-line; then
+              upload_succeeded=true
+              break
+            fi
+            echo "Upload attempt ${attempt}/5 failed; retrying in 15 seconds"
+            sleep 15
+          done
+          if [[ "$upload_succeeded" != true ]]; then
+            echo "::error::Wheel upload failed after 5 attempts"
+            exit 1
+          fi
 
           public_wheel_name="${wheel_name//+/%2B}"
           public_wheel_url="${B2_PUBLIC_BASE_URL%/}/wheels/${public_wheel_name}"
