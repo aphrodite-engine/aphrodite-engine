@@ -602,7 +602,8 @@ def resolve_kv_cache_block_sizes(
     - ``scheduler_block_size`` is the token-alignment invariant used by the
       scheduler (e.g. for ``num_computed_tokens`` rounding). Single group:
       ``cache_config.block_size * dcp``. Multiple groups: LCM of every
-      group's block size; DCP is not supported here.
+      group's effective block size. Attention groups are scaled by DCP;
+      Mamba groups keep their full per-rank state and are not scaled.
     - ``hash_block_size`` is the granularity at which ``Request.block_hashes``
       is computed. Single group: equals scheduler block size. Multiple groups:
       ``cache_config.prefix_match_unit`` override if set, else the GCD of group
@@ -619,13 +620,10 @@ def resolve_kv_cache_block_sizes(
         bs = cache_config.block_size * dcp
         return bs, bs
 
-    if dcp != 1:
-        raise ValueError(
-            "Hybrid KV cache groups with multiple block sizes do not "
-            "support decode context parallelism (dcp_world_size > 1)."
-        )
-
-    group_block_sizes = [g.kv_cache_spec.block_size for g in groups]
+    group_block_sizes = [
+        g.kv_cache_spec.block_size * dcp if isinstance(g.kv_cache_spec, AttentionSpec) else g.kv_cache_spec.block_size
+        for g in groups
+    ]
     scheduler_block_size = math.lcm(*group_block_sizes)
 
     # Block hashes are only consumed by prefix caching and KV connectors
