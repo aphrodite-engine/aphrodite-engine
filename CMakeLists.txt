@@ -1138,6 +1138,24 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
     set(MLA_ARCHS)
   endif()
 
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 13.0)
+    cuda_archs_loose_intersection(KIMI_K3_ATTN_RES_ARCHS
+      "10.0f" "${CUDA_ARCHS}")
+  endif()
+  if(KIMI_K3_ATTN_RES_ARCHS)
+    set(KIMI_K3_ATTN_RES_SRC
+      "csrc/libtorch_stable/kimi_k3/attn_res_kernel.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${KIMI_K3_ATTN_RES_SRC}"
+      CUDA_ARCHS "${KIMI_K3_ATTN_RES_ARCHS}")
+    set_property(SOURCE ${KIMI_K3_ATTN_RES_SRC} APPEND PROPERTY
+      COMPILE_OPTIONS
+      "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr;--expt-extended-lambda;--use_fast_math>")
+    list(APPEND APHRODITE_STABLE_EXT_SRC "${KIMI_K3_ATTN_RES_SRC}")
+    message(STATUS
+      "Building Kimi K3 AttnRes for archs: ${KIMI_K3_ATTN_RES_ARCHS}")
+  endif()
+
   # Hadacore kernels
   cuda_archs_loose_intersection(HADACORE_ARCHS "8.0+PTX;9.0+PTX" "${CUDA_ARCHS}")
   if(HADACORE_ARCHS)
@@ -1243,6 +1261,10 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
     if(DSA_SM89_ARCHS)
       target_compile_definitions(_C_stable_libtorch PRIVATE
         APHRODITE_ENABLE_SM89_DSA=1)
+    endif()
+    if(KIMI_K3_ATTN_RES_ARCHS)
+      target_compile_definitions(_C_stable_libtorch PRIVATE
+        APHRODITE_ENABLE_KIMI_K3_ATTN_RES=1)
     endif()
     # Needed by CUTLASS kernels
     target_compile_definitions(_C_stable_libtorch PRIVATE
