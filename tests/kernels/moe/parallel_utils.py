@@ -36,6 +36,10 @@ if has_deep_ep_v2():
 P = ParamSpec("P")
 
 
+class GINNotAvailableError(RuntimeError):
+    pass
+
+
 @dataclasses.dataclass
 class ProcessGroupInfo:
     world_size: int
@@ -96,19 +100,26 @@ def parallel_launch(
     **kwargs: P.kwargs,
 ) -> None:
     assert not kwargs
-    spawn(
-        _worker_parallel_launch,
-        args=(
-            world_size,
-            world_size,
-            0,
-            f"tcp://{os.getenv('LOCALHOST', 'localhost')}:{get_open_port()}",
-            worker,
+    try:
+        spawn(
+            _worker_parallel_launch,
+            args=(
+                world_size,
+                world_size,
+                0,
+                f"tcp://{os.getenv('LOCALHOST', 'localhost')}:{get_open_port()}",
+                worker,
+            )
+            + args,
+            nprocs=world_size,
+            join=True,
         )
-        + args,
-        nprocs=world_size,
-        join=True,
-    )
+    except Exception as exc:
+        if "GINNotAvailableError" in str(exc):
+            import pytest
+
+            pytest.skip("NCCL GIN not available (no IBGDA-capable hardware)")
+        raise
 
 
 ## DeepEP specific utils
@@ -222,6 +233,16 @@ def make_deepep_v2_a2a(
     use_cudagraph: bool = False,
 ):
     import deep_ep
+
+    from aphrodite.utils.nccl import query_nccl_gin_type
+
+    probe = torch.zeros(1, device=pgi.device)
+    torch.distributed.all_reduce(probe, group=pg)
+    gin_type = query_nccl_gin_type(pg)
+    if gin_type is None:
+        raise RuntimeError("Failed to determine NCCL GIN support")
+    if gin_type == 0:
+        raise GINNotAvailableError("NCCL GIN not available")
 
     buffer = deep_ep.ElasticBuffer(
         group=pg,

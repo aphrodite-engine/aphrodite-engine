@@ -11,6 +11,29 @@ Here we break down the requirements in 2 steps:
 
 All scripts accept a positional argument as workspace path for staging the build, defaulting to `$(pwd)/ep_kernels_workspace`.
 
+## NCCL version requirement (CUDA 13+)
+
+DeepEPv2 uses the NCCL GIN backend, which requires NCCL >= 2.30.4 at both
+compile time and runtime. PyTorch 2.11 pins `nvidia-nccl-cu13==2.28.9`, so
+you need to override it.
+
+**With uv** (recommended):
+
+```bash
+echo "nvidia-nccl-cu13>=2.30.4" > /tmp/nccl-override.txt
+export UV_OVERRIDE=/tmp/nccl-override.txt
+uv pip install aphrodite-engine
+```
+
+**With pip**:
+
+```bash
+pip install aphrodite-engine
+pip install "nvidia-nccl-cu13>=2.30.4" --no-deps
+```
+
+The override must happen before building DeepEP and remain in place at runtime.
+
 ## Usage
 
 ```bash
