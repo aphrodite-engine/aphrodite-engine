@@ -266,6 +266,31 @@ Reference:
 
 Aphrodite supports LLM Compressor-produced quants. Please refer to their repo on how to generate these quants.
 
+## ModelOpt
+
+Aphrodite supports checkpoints produced by NVIDIA ModelOpt with the following
+`quantization.quant_algo` values:
+
+- `FP8`: ModelOpt FP8 checkpoints (use `quantization="modelopt"`).
+- `NVFP4`: ModelOpt NVFP4 checkpoints (use
+  `quantization="modelopt_fp4"`).
+- `MXFP8`: ModelOpt MXFP8 checkpoints (use
+  `quantization="modelopt_mxfp8"`).
+
+:::note
+For NVFP4 checkpoints, Aphrodite selects a GEMM kernel automatically at load
+time from the backends available on the current platform, including CUTLASS,
+FlashInfer, and Marlin. On GPUs without a supported native FP4 GEMM kernel,
+Aphrodite falls back to weight-only (W4A16) execution via Marlin; this may
+reduce throughput for compute-heavy workloads.
+
+Use `--linear-backend` to override automatic selection. Values relevant to
+NVFP4 include `cutlass`, `flashinfer_cutlass`, `flashinfer_cutedsl`,
+`flashinfer_trtllm`, `flashinfer_cudnn`, `flashinfer_b12x`, `marlin`,
+`fbgemm`, `emulation`, and `humming`. Run
+`aphrodite run --help=KernelConfig` for the full list.
+:::
+
 ## Quant-LLM
 
 Reference:
