@@ -53,6 +53,7 @@ from aphrodite.model_executor.layers.vocab_parallel_embedding import (
 )
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.sequence import IntermediateTensors
+from aphrodite.tokenizers.registry import cached_tokenizer_from_config
 from aphrodite.transformers_utils.configs.qwen3_5 import Qwen3_5Config, Qwen3_5TextConfig
 from aphrodite.transformers_utils.configs.qwen3_5_moe import (
     Qwen3_5MoeConfig,
@@ -387,8 +388,7 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
 class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid):
-    # Qwen3.5 does not support multimodal pruning (EVS).
-    supports_multimodal_pruning = False
+    supports_multimodal_pruning = True
 
     packed_modules_mapping = Qwen3VLForConditionalGeneration.packed_modules_mapping | {
         "in_proj_qkvz": ["in_proj_qkv", "in_proj_z"],
@@ -406,8 +406,15 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         self.model_config = aphrodite_config.model_config
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        # Qwen3.5 does not support multimodal pruning (EVS).
-        self.is_multimodal_pruning_enabled = False
+        self.is_multimodal_pruning_enabled = multimodal_config.is_multimodal_pruning_enabled()
+        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._tokenizer = cached_tokenizer_from_config(aphrodite_config.model_config)
+
+        # attributes needed by EVS-related functions inherited from Qwen3-VL
+        self.use_deepstack = hasattr(config.vision_config, "deepstack_visual_indexes")
+        self.deepstack_num_level = len(config.vision_config.deepstack_visual_indexes) if self.use_deepstack else 0
+        self.visual_dim = config.vision_config.out_hidden_size
+        self.multiscale_dim = self.visual_dim * self.deepstack_num_level
 
         with self._mark_tower_model(aphrodite_config, {"image", "video"}):
             self.visual = Qwen3_VisionTransformer(
@@ -449,11 +456,6 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         )
 
         return inputs_embeds
-
-    def recompute_mrope_positions(self, *args, **kwargs):
-        raise NotImplementedError(
-            "Qwen3.5 does not support multimodal pruning (EVS). recompute_mrope_positions should never be called."
-        )
 
     def forward(
         self,
@@ -610,8 +612,15 @@ class Qwen3_5MoeForConditionalGeneration(Qwen3_5ForConditionalGeneration, Qwen3_
         self.model_config = aphrodite_config.model_config
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        # Qwen3.5 does not support multimodal pruning (EVS).
-        self.is_multimodal_pruning_enabled = False
+        self.is_multimodal_pruning_enabled = multimodal_config.is_multimodal_pruning_enabled()
+        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._tokenizer = cached_tokenizer_from_config(aphrodite_config.model_config)
+
+        # attributes needed by EVS-related functions inherited from Qwen3-VL
+        self.use_deepstack = hasattr(config.vision_config, "deepstack_visual_indexes")
+        self.deepstack_num_level = len(config.vision_config.deepstack_visual_indexes) if self.use_deepstack else 0
+        self.visual_dim = config.vision_config.out_hidden_size
+        self.multiscale_dim = self.visual_dim * self.deepstack_num_level
 
         with self._mark_tower_model(aphrodite_config, {"image", "video"}):
             self.visual = Qwen3_VisionTransformer(
