@@ -19,6 +19,7 @@ from aphrodite.config.compilation import (
 from aphrodite.forward_context import set_forward_context
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 from tests.models.utils import check_logprobs_close
+from tests.utils import wait_for_rocm_memory_to_settle
 
 
 def get_test_models():
@@ -102,6 +103,7 @@ def test_dynamic_shapes_compilation(
     gc.collect()
     torch.accelerator.empty_cache()
     torch.accelerator.synchronize()
+    wait_for_rocm_memory_to_settle()
 
     eager_model = LLM(model=model_name, enforce_eager=True, max_model_len=1024)
     eager_outputs = []
