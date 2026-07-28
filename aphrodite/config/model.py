@@ -719,12 +719,16 @@ class ModelConfig:
 
             self.multimodal_config = MultiModalConfig(**mm_config_kwargs)  # type: ignore[arg-type]
 
-            if self.renderer_num_workers > 1 and self.multimodal_config.mm_processor_cache_gb > 0:
+            if (
+                self.renderer_num_workers > 1
+                and self.multimodal_config.mm_processor_cache_gb > 0
+                and self.runner_type == "pooling"
+            ):
                 raise ValueError(
                     "Cannot use --renderer-num-workers > 1 with the "
-                    "multimodal processor cache enabled. The cache is "
-                    "not thread-safe and does not support concurrent "
-                    "renderer workers. Please set "
+                    "multimodal processor cache enabled for pooling models. "
+                    "Pooling preprocessing runs on the renderer workers, and "
+                    "the cache is not thread-safe. Please set "
                     "--renderer-num-workers 1 (the default), or "
                     "disable the cache with --mm-processor-cache-gb 0."
                 )
