@@ -58,6 +58,7 @@ class TransferEntry(NamedTuple):
     xfer_handle: "nixl_xfer_handle"
     files_desc: object
     obj_handle: "nixl_prepped_dlist_handle"
+    success: bool | None = None
 
 
 class ObjAsyncLookupManager(AsyncLookupManager):
@@ -281,19 +282,21 @@ class ObjectStoreSecondaryTierManager(SecondaryTierManager):
         """Poll all in-flight transfers once; move newly-completed (success or
         failure) into ``_pending_results`` and release their NIXL handles."""
         for job_id, entry in list(self._transfers.items()):
-            try:
-                state = self._agent.check_xfer_state(entry.xfer_handle)
-            except Exception as exc:
-                success = False
-                logger.warning("check_xfer_state raised for job %d: %s", job_id, exc)
-            else:
-                if state == NIXL_PROC:
-                    continue
-                if state == NIXL_DONE:
-                    success = True
-                else:
+            success = entry.success
+            if success is None:
+                try:
+                    state = self._agent.check_xfer_state(entry.xfer_handle)
+                except Exception as exc:
                     success = False
-                    logger.warning("transfer failed job=%d state=%s", job_id, state)
+                    logger.warning("check_xfer_state raised for job %d: %s", job_id, exc)
+                else:
+                    if state == NIXL_PROC:
+                        continue
+                    if state == NIXL_DONE:
+                        success = True
+                    else:
+                        success = False
+                        logger.warning("transfer failed job=%d state=%s", job_id, state)
 
             try:
                 self._agent.release_xfer_handle(entry.xfer_handle)
@@ -302,6 +305,7 @@ class ObjectStoreSecondaryTierManager(SecondaryTierManager):
                 # can be released. The transfer may still access primary-tier
                 # memory, so publishing its result would allow unsafe reuse.
                 logger.warning("release_xfer_handle failed for job %d: %s", job_id, exc)
+                self._transfers[job_id] = entry._replace(success=success)
                 continue
 
             # Once the transfer handle is released, these remaining cleanup
