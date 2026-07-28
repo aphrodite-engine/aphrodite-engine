@@ -747,8 +747,7 @@ class NemotronHForCausalLM(
             Tuple containing:
             - conv_state_shape: Shape for convolutional state cache
             - temporal_state_shape: Shape for state space model cache
-            - (when use_replayssm is enabled) the x_cache/dt_cache/B_cache
-              ring-buffer shapes
+            - x_cache/dt_cache/B_cache ring-buffer shapes (use_replayssm only)
         """
         parallel_config = aphrodite_config.parallel_config
         cache_config = aphrodite_config.cache_config
