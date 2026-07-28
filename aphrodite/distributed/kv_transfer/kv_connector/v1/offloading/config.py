@@ -5,7 +5,11 @@
 from typing import TYPE_CHECKING
 
 from aphrodite.v1.core.kv_cache_utils import resolve_kv_cache_block_sizes
-from aphrodite.v1.kv_cache_interface import FullAttentionSpec, MLAAttentionSpec
+from aphrodite.v1.kv_cache_interface import (
+    AttentionSpec,
+    FullAttentionSpec,
+    MLAAttentionSpec,
+)
 from aphrodite.v1.kv_offload.config import (
     OffloadingCacheConfig,
     OffloadingConfig,
@@ -38,7 +42,14 @@ def build_offloading_config(
     parallel_config = aphrodite_config.parallel_config
     groups = tuple(
         OffloadingGroupConfig(
-            tokens_per_block=(group.kv_cache_spec.block_size * parallel_config.decode_context_parallel_size),
+            tokens_per_block=(
+                group.kv_cache_spec.block_size
+                * (
+                    parallel_config.decode_context_parallel_size
+                    if isinstance(group.kv_cache_spec, AttentionSpec)
+                    else 1
+                )
+            ),
             layer_names=tuple(group.layer_names),
         )
         for group in kv_cache_config.kv_cache_groups
