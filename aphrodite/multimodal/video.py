@@ -207,13 +207,19 @@ VIDEO_LOADER_REGISTRY = VideoLoaderRegistry()
 
 PYNVVIDEOCODEC_VIDEO_BACKEND: Literal["pynvvideocodec"] = "pynvvideocodec"
 DEEPSTREAM_VIDEO_BACKEND: Literal["deepstream"] = "deepstream"
-# Fixed upper bound reserved for persistent PyNvVideoCodec decoder surfaces.
+# Per-decoder upper bound reserved for persistent PyNvVideoCodec surfaces.
 PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES = 128 * MiB_bytes
 PYNVVIDEOCODEC_DECODER_CACHE_SIZE = 2
-PYNVVIDEOCODEC_MAX_RETAINED_DECODERS = 1
+PYNVVIDEOCODEC_DEFAULT_HW_DECODERS = 2
 # Per-API-server CUDA context and driver allocation, measured with
 # PyNvVideoCodec 2.0.4 on H100.
 PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES = int(1.8 * 1024 * MiB_bytes)
+
+
+def validate_pynvvideocodec_hw_decoders(hw_decoders: object) -> int:
+    if isinstance(hw_decoders, bool) or not isinstance(hw_decoders, int) or hw_decoders < 1:
+        raise ValueError("hw_decoders must be a positive integer")
+    return hw_decoders
 
 
 class PyNvVideoCodecDecoderSlot:
@@ -611,6 +617,7 @@ class PyNvVideoCodecVideoBackendMixin:
     _decoder_slots: ClassVar[list[PyNvVideoCodecDecoderSlot]] = []
     _active_decoder_slots: ClassVar[int] = 0
     _decoder_slot_cond: ClassVar[threading.Condition] = threading.Condition()
+    _max_decoder_slots: ClassVar[int | None] = None
     _DEVICE_INDEX: ClassVar[int] = 0
 
     @classmethod
@@ -634,6 +641,17 @@ class PyNvVideoCodecVideoBackendMixin:
 
         return PyNvVideoCodecDecoderSlot(torch.cuda.Stream(device=cls._DEVICE_INDEX))
 
+    @classmethod
+    def _configure_decoder_slots(cls, hw_decoders: object) -> None:
+        hw_decoders = validate_pynvvideocodec_hw_decoders(hw_decoders)
+        with cls._decoder_slot_cond:
+            if cls._max_decoder_slots is None:
+                cls._max_decoder_slots = hw_decoders
+            elif cls._max_decoder_slots != hw_decoders:
+                raise RuntimeError(
+                    f"PyNvVideoCodec decoder count is already configured as {cls._max_decoder_slots}, got {hw_decoders}"
+                )
+
     @staticmethod
     @contextmanager
     def _torch_stream_context(stream):
@@ -652,11 +670,14 @@ class PyNvVideoCodecVideoBackendMixin:
     def _borrow_decoder_slot(cls):
         create_slot = False
         with cls._decoder_slot_cond:
+            max_decoder_slots = cls._max_decoder_slots
+            if max_decoder_slots is None:
+                raise RuntimeError("PyNvVideoCodec decoder slots are not configured")
             while True:
                 if cls._decoder_slots:
                     slot = cls._decoder_slots.pop()
                     break
-                if cls._active_decoder_slots < PYNVVIDEOCODEC_MAX_RETAINED_DECODERS:
+                if cls._active_decoder_slots < max_decoder_slots:
                     cls._active_decoder_slots += 1
                     create_slot = True
                     break
@@ -963,6 +984,7 @@ class VideoBackend(
         backend: Literal["opencv", "pyav", "torchcodec", "pynvvideocodec", "deepstream"] = "opencv",
         num_ffmpeg_threads: int = 0,
         seek_mode: Literal["exact", "approximate"] = "exact",
+        hw_decoders: int = PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
         **kwargs,
     ) -> tuple[npt.NDArray, dict[str, Any]]:
         """Load sampled frames from raw video bytes.
@@ -983,6 +1005,8 @@ class VideoBackend(
                 TorchCodec. ``"exact"`` guarantees frame-accurate sampling;
                 ``"approximate"`` skips the initial scan and relies on
                 container metadata.
+            hw_decoders: Maximum number of concurrent PyNvVideoCodec decoder
+                slots. Defaults to 2 and must be a positive integer.
 
         Returns:
             Tuple of ``(frames_array, metadata_dict)``.
@@ -1029,6 +1053,7 @@ class VideoBackend(
         elif backend == PYNVVIDEOCODEC_VIDEO_BACKEND:
             if frame_recovery:
                 raise ValueError(f"frame_recovery is not supported for `{PYNVVIDEOCODEC_VIDEO_BACKEND}` backend")
+            cls._configure_decoder_slots(hw_decoders)
             frames, source, frame_idx, valid = cls.decode_frames_pynvvideocodec(
                 data,
                 target,

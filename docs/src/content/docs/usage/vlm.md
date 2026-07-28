@@ -130,10 +130,12 @@ The following decoding backends are supported:
 - `opencv` (default): OpenCV-based decoder.
 - `pyav`: PyAV decoder.
 - `torchcodec`: TorchCodec (PyTorch-native) decoder.
+- `pynvvideocodec`: NVIDIA NVDEC-based decoder.
 - `deepstream`: NVIDIA DeepStream (NVDEC) GPU decoder.
 
-`torchcodec` lets you choose which FFmpeg version is used, while `opencv` and
-`pyav` rely on whichever FFmpeg build they were linked against.
+The CPU backends are backed by FFmpeg. `torchcodec` lets you choose which FFmpeg
+version is used, while `opencv` and `pyav` rely on whichever FFmpeg build they
+were linked against.
 
 Select the codec backend by passing `backend` via `--media-io-kwargs`:
 
@@ -153,6 +155,21 @@ TorchCodec-specific parameters:
 ```bash
 aphrodite run Qwen/Qwen3-VL-30B-A3B-Instruct \
   --media-io-kwargs '{"video": {"backend": "torchcodec", "seek_mode": "approximate", "num_ffmpeg_threads": 4}}'
+```
+
+PyNvVideoCodec-specific parameters:
+
+- `hw_decoders`: Maximum number of concurrent hardware decoder slots retained
+  by each API server process. It must be a positive integer and defaults to `2`,
+  which is the recommended starting point for concurrent video workloads.
+  Because Aphrodite reserves GPU memory for these slots at startup, this value
+  cannot be overridden per request. Benchmark before increasing it because each
+  additional slot increases the GPU memory reservation.
+
+```bash
+# Example: explicitly use the recommended 2 hardware decoders
+aphrodite run Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --media-io-kwargs '{"video": {"backend": "pynvvideocodec", "hw_decoders": 2}}'
 ```
 
 #### GPU Video Decoding with DeepStream (NVDEC)
