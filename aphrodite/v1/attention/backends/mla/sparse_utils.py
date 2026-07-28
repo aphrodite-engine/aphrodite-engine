@@ -131,8 +131,6 @@ def triton_convert_req_index_to_global_index(
     prefill_workspace_request_ids: torch.Tensor | None = None,
     prefill_workspace_starts: torch.Tensor | None = None,
     return_valid_counts: bool = False,
-    out: torch.Tensor | None = None,
-    valid_counts_out: torch.Tensor | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     out[token_id, indice_id] =
@@ -183,17 +181,12 @@ def triton_convert_req_index_to_global_index(
     req_id_c = req_id.contiguous()
     block_table_c = block_table.contiguous()
     token_indices_c = token_indices.contiguous()
-    # Optional outputs keep the shared physical-index cache graph-safe.
-    out = torch.empty_like(token_indices_c) if out is None else out
+    out = torch.empty_like(token_indices_c)
 
     # Allocate valid count buffer if needed (must be zero-initialized for atomics)
     valid_counts: torch.Tensor | None = None
     if return_valid_counts:
-        if valid_counts_out is None:
-            valid_counts = torch.zeros(num_tokens, dtype=torch.int32, device=token_indices.device)
-        else:
-            valid_counts = valid_counts_out
-            valid_counts.zero_()
+        valid_counts = torch.zeros(num_tokens, dtype=torch.int32, device=token_indices.device)
 
     # Strides in elements
     bt_stride0, bt_stride1 = block_table_c.stride()
@@ -242,32 +235,6 @@ def triton_convert_req_index_to_global_index(
         assert valid_counts is not None
         return out, valid_counts
     return out
-
-
-# Physical-index shadows cache the converted form of a shared logical top-k
-# buffer. They are allocated only when the owning buffer is created, keeping
-# all accesses during CUDA graph capture allocation-free.
-import weakref as _weakref  # noqa: E402
-
-_PHYS_SHADOWS: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
-
-
-def register_phys_shadow(topk_buf: torch.Tensor) -> None:
-    """Allocate the physical-index and valid-count shadow for ``topk_buf``."""
-    key = id(topk_buf)
-    if key not in _PHYS_SHADOWS:
-        _PHYS_SHADOWS[key] = (
-            torch.empty_like(topk_buf),
-            torch.empty(topk_buf.shape[0], dtype=torch.int32, device=topk_buf.device),
-        )
-        _weakref.finalize(topk_buf, _PHYS_SHADOWS.pop, key, None)
-
-
-def phys_shadow(
-    topk_buf: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor] | None:
-    """Return the registered shadow, or ``None`` without allocating."""
-    return _PHYS_SHADOWS.get(id(topk_buf))
 
 
 def triton_filter_and_convert_dcp_index(
