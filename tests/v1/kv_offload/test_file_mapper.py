@@ -115,7 +115,7 @@ def test_get_file_name_full_structure():
     key = make_offload_key(block_hash, group_idx)
     path = fm.get_file_name(key)
 
-    expected_path = "/tmp/cache/test-model_588656ebcc66_r3/000/10_g2/0001020304050607.bin"
+    expected_path = "/tmp/cache/test-model_2334d155d307_r3/000/10_g2/0001020304050607.bin"
     assert path == expected_path
 
 
@@ -137,6 +137,7 @@ def test_get_run_config_fields():
         "dtype": "bfloat16",
         "kv_cache_groups": [],
         "inference_engine": "aphrodite",
+        "parallel_agnostic": False,
     }
 
 
@@ -182,6 +183,7 @@ def test_parallel_agnostic_enabled_for_single_full_attention():
     )
     assert fm.fields["tp_size"] == 1
     assert fm.rank == 0
+    assert "parallel_agnostic" not in fm.fields
 
 
 def test_parallel_agnostic_disabled_for_multiple_groups():
@@ -192,6 +194,7 @@ def test_parallel_agnostic_disabled_for_multiple_groups():
         parallel_agnostic=True,
     )
     assert fm.fields["tp_size"] == 2
+    assert fm.fields["parallel_agnostic"] is False
 
 
 def test_parallel_agnostic_disabled_for_non_full_attention():
@@ -202,6 +205,7 @@ def test_parallel_agnostic_disabled_for_non_full_attention():
         parallel_agnostic=True,
     )
     assert fm.fields["tp_size"] == 2
+    assert fm.fields["parallel_agnostic"] is False
 
 
 def test_parallel_agnostic_excludes_mla():
@@ -214,6 +218,7 @@ def test_parallel_agnostic_excludes_mla():
     fm = make_mapper_from_offloading_spec(tp_size=2, rank=1, kv_cache_groups=[group], parallel_agnostic=True)
     assert fm.fields["tp_size"] == 2
     assert fm.rank == 1
+    assert fm.fields["parallel_agnostic"] is False
 
 
 def test_parallel_agnostic_disabled_on_v2_model_runner():
@@ -227,3 +232,20 @@ def test_parallel_agnostic_disabled_on_v2_model_runner():
     )
     assert fm.fields["tp_size"] == 2
     assert fm.rank == 1
+    assert fm.fields["parallel_agnostic"] is False
+
+
+def test_parallel_agnostic_separates_persistent_layouts():
+    agnostic = make_mapper_from_offloading_spec(
+        kv_cache_groups=[_full_attention_group()],
+        parallel_agnostic=True,
+    )
+    specific = make_mapper_from_offloading_spec(
+        kv_cache_groups=[_full_attention_group()],
+        is_parallelism_agnostic=False,
+        parallel_agnostic=True,
+    )
+
+    assert agnostic.base_path != specific.base_path
+    assert "parallel_agnostic" not in agnostic.fields
+    assert specific.fields["parallel_agnostic"] is False
