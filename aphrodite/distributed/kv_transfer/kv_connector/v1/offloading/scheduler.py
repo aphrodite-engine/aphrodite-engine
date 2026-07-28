@@ -50,7 +50,7 @@ from aphrodite.v1.kv_offload.base import (
     make_offload_key,
 )
 from aphrodite.v1.outputs import KVConnectorOutput
-from aphrodite.v1.request import Request
+from aphrodite.v1.request import Request, RequestStatus
 
 logger = init_logger(__name__)
 
@@ -898,7 +898,9 @@ class OffloadingConnectorScheduler:
                 continue
             req = req_status.req
 
-            if req.is_finished():
+            if req.status is RequestStatus.FINISHED_ABORTED:
+                num_tokens_after_batch = req.num_computed_tokens
+            elif req.is_finished():
                 num_tokens_after_batch = req.num_tokens
             else:
                 num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
