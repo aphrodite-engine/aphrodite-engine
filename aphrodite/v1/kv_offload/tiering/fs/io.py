@@ -71,6 +71,11 @@ def _ensure_dirs(path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
 
+def _validate_batch_lengths(paths: list[str], offsets: list[int]) -> None:
+    if len(paths) != len(offsets):
+        raise ValueError(f"paths and offsets must have equal lengths, got {len(paths)} and {len(offsets)}")
+
+
 def _validate_offsets(view: memoryview, offsets: list[int], block_size: int) -> None:
     """Raise if any block would read/write past the bounds of `view`.
 
@@ -172,6 +177,7 @@ def batch_store_block(
     Each block buffer[offsets[i] : offsets[i]+block_size] is written atomically
     to dest_paths[i] via a temp-file rename.  Raises on first error.
     """
+    _validate_batch_lengths(paths, offsets)
     _validate_offsets(view, offsets, block_size)
 
     if _HAS_FSIO_C:
@@ -197,6 +203,7 @@ def batch_load_block(
     Block i is read from source_paths[i] into view[offsets[i] : offsets[i]+block_size].
     Raises on first error and removes the offending file.
     """
+    _validate_batch_lengths(paths, offsets)
     _validate_offsets(view, offsets, block_size)
 
     if _HAS_FSIO_C:

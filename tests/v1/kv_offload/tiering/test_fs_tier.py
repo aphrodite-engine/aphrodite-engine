@@ -382,6 +382,20 @@ def test_store_load_data_integrity(fs_tier, monkeypatch, use_c_ext, batch_size):
         assert torch.allclose(tensor[bid], expected[i]), f"Block {bid} data mismatch after store+load"
 
 
+@pytest.mark.parametrize("operation", ["batch_store_block", "batch_load_block"])
+@pytest.mark.parametrize("use_c_ext", [True, False])
+def test_batch_io_rejects_mismatched_paths_and_offsets(monkeypatch, tmp_path, operation, use_c_ext):
+    import aphrodite.v1.kv_offload.tiering.fs.io as io_mod
+
+    if use_c_ext and not io_mod._HAS_FSIO_C:
+        pytest.skip("fs_io_C extension not built")
+    monkeypatch.setattr(io_mod, "_HAS_FSIO_C", use_c_ext)
+
+    io_func = getattr(io_mod, operation)
+    with pytest.raises(ValueError, match="paths and offsets must have equal lengths"):
+        io_func([str(tmp_path / "block.bin")], memoryview(bytearray(1)), [], 1, False)
+
+
 def test_store_load_roundtrip_without_o_direct(tmp_path, monkeypatch):
     """Buffered fallback must round-trip data when O_DIRECT is unsupported.
 
