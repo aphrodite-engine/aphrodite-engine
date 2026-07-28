@@ -419,10 +419,6 @@ _TEXT_GENERATION_EXAMPLE_MODELS = {
     "PhiForCausalLM": _HfExamplesInfo("microsoft/phi-2"),
     "Phi3ForCausalLM": _HfExamplesInfo("microsoft/Phi-3-mini-4k-instruct"),
     "PhiMoEForCausalLM": _HfExamplesInfo("microsoft/Phi-3.5-MoE-instruct", trust_remote_code=True),
-    "Plamo2ForCausalLM": _HfExamplesInfo(
-        "pfnet/plamo-2-1b",
-        trust_remote_code=True,
-    ),
     "Plamo3ForCausalLM": _HfExamplesInfo(
         "pfnet/plamo-3-nict-2b-base",
         trust_remote_code=True,

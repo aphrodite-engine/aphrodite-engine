@@ -750,7 +750,6 @@ class CompilationConfig:
         "aphrodite::mamba_mixer",
         "aphrodite::short_conv",
         "aphrodite::linear_attention",
-        "aphrodite::plamo2_mamba_mixer",
         "aphrodite::qwen_gdn_attention_core",
         "aphrodite::gdn_attention_core_xpu",
         "aphrodite::olmo_hybrid_gdn_full_forward",
