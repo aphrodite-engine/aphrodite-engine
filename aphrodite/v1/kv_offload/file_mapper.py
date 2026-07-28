@@ -85,6 +85,7 @@ class FileMapper:
             for group in config.groups
         ]
         parallel = config.parallel
+        replicated_layout = bool(getattr(config, "replicated_layout", False))
         return cls(
             root_dir=root_dir,
             model_name=config.model.name,
@@ -97,8 +98,8 @@ class FileMapper:
             rank=parallel.rank,
             dtype=config.model.dtype,
             kv_cache_groups=kv_cache_groups,
-            parallel_agnostic=(parallel_agnostic and (parallel.is_parallelism_agnostic or config.replicated_layout)),
-            replicated_layout=(parallel_agnostic and config.replicated_layout),
+            parallel_agnostic=(parallel_agnostic and (parallel.is_parallelism_agnostic or replicated_layout)),
+            replicated_layout=(parallel_agnostic and replicated_layout),
         )
 
     def get_file_name(self, key: OffloadKey) -> str:
