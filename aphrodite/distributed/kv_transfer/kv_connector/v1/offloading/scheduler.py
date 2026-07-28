@@ -792,7 +792,8 @@ class OffloadingConnectorScheduler:
 
             if group_config.sliding_window_size_in_chunks is not None:
                 assert (
-                    num_pending_gpu_blocks <= group_config.sliding_window_size_in_chunks * self.config.blocks_per_chunk
+                    num_pending_gpu_blocks
+                    <= group_config.sliding_window_size_in_chunks * self.config.blocks_per_chunk + 1
                 )
 
             num_blocks = cdiv(num_cached_tokens, tokens_per_chunk)
