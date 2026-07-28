@@ -24,8 +24,9 @@ class CpuCommunicator(DeviceCommunicatorBase):
         device: torch.device | None = None,
         device_group: ProcessGroup | None = None,
         unique_name: str = "",
+        use_all2all: bool = False,
     ):
-        super().__init__(cpu_group, device, device_group, unique_name)
+        super().__init__(cpu_group, device, device_group, unique_name, use_all2all=use_all2all)
         self.dist_module = torch.distributed
 
         if (
