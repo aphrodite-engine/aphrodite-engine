@@ -916,6 +916,7 @@ class MoRIIOConnectorWorker:
         self._handshake_futures: dict[EngineId, Future[set[str]]] = {}
         # Protects _handshake_futures and _remote_agents.
         self._handshake_lock = threading.RLock()
+        self._eager_handshaked_engines: set[EngineId] = set()
 
         self.block_size = aphrodite_config.cache_config.block_size
         self.model_config = aphrodite_config.model_config
@@ -1131,6 +1132,7 @@ class MoRIIOConnectorWorker:
         remote_tp_size: int,
         expected_engine_id: str,
         remote_dp_rank: int = 0,
+        remote_tp_rank: int | None = None,
     ) -> set[str]:
         """Do a MoRIIO handshake with a remote instance."""
 
@@ -1140,7 +1142,8 @@ class MoRIIOConnectorWorker:
         # a hack to keep us moving. We will switch when moving to etcd
         # or where we have a single ZMQ socket in the scheduler.
 
-        port_offset = get_port_offset(remote_dp_rank, self._remote_tp_rank(remote_tp_size))
+        dial_tp_rank = self._remote_tp_rank(remote_tp_size) if remote_tp_rank is None else int(remote_tp_rank)
+        port_offset = get_port_offset(remote_dp_rank, dial_tp_rank, remote_tp_size)
         path = make_zmq_path("tcp", host, port + port_offset)
         logger.debug("handshake Querying metadata on path: %s", path)
 
@@ -1549,6 +1552,85 @@ class MoRIIOConnectorWorker:
     def get_engine_name_with_dp(self, engine_name, dp_rank):
         return f"{engine_name}_dp{dp_rank}"
 
+    def get_engine_name_with_dp_tp(self, engine_name, dp_rank, tp_rank):
+        return f"{engine_name}_dp{dp_rank}_tp{tp_rank}"
+
+    def _eager_handshake_all_dp_ranks(self, metadata: MoRIIOConnectorMetadata) -> None:
+        """Handshake all referenced prefill ranks before the decode forward."""
+        import torch.distributed as dist
+
+        engines: dict[str, ReqMeta] = {}
+        for meta in metadata.reqs_to_recv.values():
+            remote_engine_id = str(meta.remote_host) + ":" + str(meta.remote_handshake_port)
+            engines.setdefault(remote_engine_id, meta)
+
+        for remote_engine_id, meta in engines.items():
+            if remote_engine_id in self._eager_handshaked_engines:
+                continue
+
+            remote_dp_size = int(meta.remote_dp_size)
+            port = int(meta.remote_handshake_port)
+            tp_size = int(meta.tp_size)
+            flexible = self.world_size == 1 and self.use_mla and remote_dp_size == 1 and tp_size > 1
+            targets: list[tuple[str, int, int | None]]
+            if flexible:
+                targets = [
+                    (
+                        self.get_engine_name_with_dp_tp(remote_engine_id, dp, tp),
+                        dp,
+                        tp,
+                    )
+                    for dp in range(remote_dp_size)
+                    for tp in range(max(1, tp_size))
+                ]
+            else:
+                targets = [
+                    (self.get_engine_name_with_dp(remote_engine_id, dp), dp, None) for dp in range(remote_dp_size)
+                ]
+
+            futures: list[tuple[str, Future[set[str]]]] = []
+            with self._handshake_lock:
+                for engine_id, current_dp_rank, current_tp_rank in targets:
+                    if engine_id in self._remote_agents and engine_id in self.layer_name_to_remote_kv_cache_metadata:
+                        continue
+                    future = self._handshake_initiation_executor.submit(
+                        self._moriio_handshake,
+                        meta.remote_host,
+                        port,
+                        tp_size,
+                        engine_id,
+                        current_dp_rank,
+                        current_tp_rank,
+                    )
+                    futures.append((engine_id, future))
+
+            all_ok = True
+            results: dict[str, set[str]] = {}
+            for engine_id, future in futures:
+                try:
+                    results[engine_id] = future.result()
+                except Exception:
+                    logger.exception("Eager MoRIIO handshake failed for %s", engine_id)
+                    all_ok = False
+
+            with self._handshake_lock:
+                for engine_id, agents in results.items():
+                    self._remote_agents[engine_id] = agents
+
+            logger.info(
+                "Eager MoRIIO handshake: engine=%s dp_size=%d new_ranks=%d ok=%s tp_rank=%d",
+                remote_engine_id,
+                remote_dp_size,
+                len(futures),
+                all_ok,
+                self.tp_rank,
+            )
+            vote = torch.tensor([1 if all_ok else 0], device="cpu", dtype=torch.int32)
+            dist.all_reduce(vote, group=self.tp_group.cpu_group, op=dist.ReduceOp.MIN)
+            if int(vote.item()) == 0:
+                raise HandshakeError(f"Eager MoRIIO handshake failed for {remote_engine_id} on at least one TP rank")
+            self._eager_handshaked_engines.add(remote_engine_id)
+
     def start_load_kv(self, metadata: MoRIIOConnectorMetadata):
         """
         Start loading by triggering non-blocking moriio_xfer.
@@ -1568,6 +1650,8 @@ class MoRIIOConnectorWorker:
         if self.mode == MoRIIOMode.WRITE:
             return
 
+        self._eager_handshake_all_dp_ranks(metadata)
+
         wait_handshake_readd_req = False
         remote_engine_id = None
 
@@ -1575,7 +1659,10 @@ class MoRIIOConnectorWorker:
             remote_engine_id = str(meta.remote_host) + ":" + str(meta.remote_handshake_port)
             meta.remote_engine_id = remote_engine_id
             dp0_remote_engine_id = self.get_engine_name_with_dp(remote_engine_id, 0)
-            if dp0_remote_engine_id not in self._remote_agents:
+            if (
+                remote_engine_id not in self._eager_handshaked_engines
+                and dp0_remote_engine_id not in self._remote_agents
+            ):
                 # Initiate handshake with remote engine to exchange metadata.
                 with self._handshake_lock:
                     if remote_engine_id not in self._remote_agents:
@@ -1620,12 +1707,28 @@ class MoRIIOConnectorWorker:
                 self.save_kv_layer(metadata, layer_name, kv_layer, None)
             self._writer.seal_pending_transfers()
 
+    def _next_flex_tp_rank(self, remote_tp_size: int) -> int:
+        """Choose prefill TP ranks round-robin, staggered by decode DP rank."""
+        rr = getattr(self, "_flex_tp_rr", None)
+        if rr is None:
+            rr = int(getattr(self, "dp_rank", 0) or 0)
+        self._flex_tp_rr = rr + 1
+        return rr % remote_tp_size
+
+    def _resolve_read_source(self, meta: ReqMeta) -> tuple[int, bool]:
+        """Resolve the remote TP source and whether flexible routing is active."""
+        remote_tp_size = int(meta.tp_size)
+        flexible = self.world_size == 1 and self.use_mla and int(meta.remote_dp_size) == 1 and remote_tp_size > 1
+        chosen_tp = self._next_flex_tp_rank(remote_tp_size) if flexible else self._remote_tp_rank(remote_tp_size)
+        return chosen_tp, flexible
+
     def _read_blocks_for_req(self, req_id: str, meta: ReqMeta):
         logger.debug(
             "Remote agent %s available, calling _read_blocks for req %s",
             meta.remote_engine_id,
             req_id,
         )
+        chosen_tp, flexible = self._resolve_read_source(meta)
         self._read_blocks(
             request_id=req_id,
             transfer_id=meta.transfer_id,
@@ -1635,6 +1738,9 @@ class MoRIIOConnectorWorker:
             remote_host=meta.remote_host,
             remote_notify_port=meta.remote_notify_port,
             remote_tp_size=meta.tp_size,
+            remote_dp_rank=meta.remote_dp_rank,
+            chosen_tp=chosen_tp,
+            flexible=flexible,
         )
 
     def _write_blocks_for_req(self, req_id: ReqId, meta: ReqMeta, layer_name, kv_layer):
@@ -1774,12 +1880,19 @@ class MoRIIOConnectorWorker:
         remote_host: str,
         remote_notify_port: int,
         remote_tp_size: int,
+        remote_dp_rank: int = 0,
+        chosen_tp: int | None = None,
+        flexible: bool = False,
     ) -> None:
         if self.mode == MoRIIOMode.WRITE:
             return
 
-        dp0_engine_id = self.get_engine_name_with_dp(dst_engine_id, 0)
-        sessions, remote_moriio_meta = self._get_built_session(dp0_engine_id)
+        effective_tp_rank = int(chosen_tp) if chosen_tp is not None else self._remote_tp_rank(remote_tp_size)
+        if flexible:
+            remote_dp_engine_id = self.get_engine_name_with_dp_tp(dst_engine_id, int(remote_dp_rank), effective_tp_rank)
+        else:
+            remote_dp_engine_id = self.get_engine_name_with_dp(dst_engine_id, int(remote_dp_rank))
+        sessions, remote_moriio_meta = self._get_built_session(remote_dp_engine_id)
 
         sq_deadline = time.monotonic() + self.moriio_config.transfer_timeout
         for layer_name in self.layer_name_to_local_kv_cache_metadata:
@@ -1812,6 +1925,13 @@ class MoRIIOConnectorWorker:
                 self._recving_transfers[request_id].append(transfer_status)
                 self._recving_transfers_callback_addr[request_id] = (
                     remote_host,
-                    str(remote_notify_port + self._remote_tp_rank(remote_tp_size)),
+                    str(
+                        remote_notify_port
+                        + get_port_offset(
+                            int(remote_dp_rank),
+                            effective_tp_rank,
+                            remote_tp_size,
+                        )
+                    ),
                     transfer_id,
                 )
