@@ -1373,7 +1373,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # tensors above will instead be sent via a separate message.
     # While the sending side still actually copies the tensor
     # in all cases, on the receiving side, tensors above this
-    # limit will actually be zero-copy decoded.
+    # limit will actually be zero-copy decoded. The unit is bytes.
     "APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD": lambda: int(os.getenv("APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD", "256")),
     # If set, allow insecure serialization using pickle.
     # This is useful for environments where it is deemed safe to use the
