@@ -49,6 +49,7 @@ _MOCK_OFFLOADING_SPEC.config = SimpleNamespace(
         is_parallelism_agnostic=True,
     ),
     groups=(),
+    replicated_layout=False,
 )
 _MOCK_OFFLOADING_SPEC.blocks_per_chunk = 1
 
@@ -82,6 +83,7 @@ def make_mapper_from_offloading_spec(**kwargs) -> FileMapper:
             )
             for group in kwargs.get("kv_cache_groups", [])
         ),
+        replicated_layout=kwargs.get("replicated_layout", False),
     )
     mock_offloading_spec.blocks_per_chunk = kwargs.get("blocks_per_chunk", 1)
 
@@ -249,3 +251,70 @@ def test_parallel_agnostic_separates_persistent_layouts():
     assert agnostic.base_path != specific.base_path
     assert "parallel_agnostic" not in agnostic.fields
     assert specific.fields["parallel_agnostic"] is False
+
+
+def test_replicated_layout_collapses_parallel_identity():
+    shared = dict(
+        replicated_layout=True,
+        parallel_agnostic=True,
+    )
+    tp2 = make_mapper_from_offloading_spec(tp_size=2, rank=1, **shared)
+    tp4 = make_mapper_from_offloading_spec(tp_size=4, rank=3, **shared)
+
+    assert tp2.base_path == tp4.base_path
+    for mapper in (tp2, tp4):
+        assert mapper.fields["tp_size"] == 1
+        assert mapper.fields["pp_size"] == 1
+        assert mapper.fields["pcp_size"] == 1
+        assert mapper.fields["dcp_size"] == 1
+        assert mapper.rank == 0
+        assert "parallel_agnostic" not in mapper.fields
+        assert mapper.fields["replicated_layout"] is True
+
+
+def test_replicated_layout_requires_caller_opt_in():
+    replicated = make_mapper_from_offloading_spec(
+        tp_size=2,
+        rank=1,
+        replicated_layout=True,
+        parallel_agnostic=False,
+    )
+    baseline = make_mapper_from_offloading_spec(
+        tp_size=2,
+        rank=1,
+        replicated_layout=False,
+        parallel_agnostic=False,
+    )
+
+    assert replicated.base_path == baseline.base_path
+    assert replicated.rank == 1
+    assert "replicated_layout" not in replicated.fields
+
+
+def test_replicated_and_parallelism_agnostic_separate_layouts():
+    via_agnostic = make_mapper_from_offloading_spec(
+        kv_cache_groups=[_full_attention_group()],
+        is_parallelism_agnostic=True,
+        replicated_layout=False,
+        parallel_agnostic=True,
+    )
+    via_replicated = make_mapper_from_offloading_spec(
+        is_parallelism_agnostic=False,
+        replicated_layout=True,
+        parallel_agnostic=True,
+    )
+
+    assert via_agnostic.base_path != via_replicated.base_path
+    assert "replicated_layout" not in via_agnostic.fields
+    assert via_replicated.fields["replicated_layout"] is True
+
+
+def test_replicated_layout_run_config_tp_invariant():
+    shared = dict(
+        replicated_layout=True,
+        parallel_agnostic=True,
+    )
+    tp2 = make_mapper_from_offloading_spec(tp_size=2, rank=0, **shared)
+    tp4 = make_mapper_from_offloading_spec(tp_size=4, rank=2, **shared)
+
+    assert tp2.get_run_config() == tp4.get_run_config()
