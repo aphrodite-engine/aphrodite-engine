@@ -16,6 +16,7 @@ from huggingface_hub import hf_hub_download
 from transformers import AutoConfig, AutoTokenizer
 
 from aphrodite.utils.serial_utils import tensor2base64
+from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 from tests.utils import RemoteOpenAIServer
 
 QWEN2AUDIO_MODEL = "Qwen/Qwen2-Audio-7B-Instruct"
@@ -148,6 +149,7 @@ def qwen2audio_aligned_content_and_embeds_b64() -> tuple[str, str]:
             False,
             id="text-then-audio_embeds",
             marks=pytest.mark.xfail(
+                condition=is_torch_equal_or_newer("2.12.0"),
                 reason="torch 2.12 regression: prompt_embeds output diverges "
                 "from raw-text when text precedes audio; "
                 "https://github.com/pytorch/pytorch/issues/184431",
