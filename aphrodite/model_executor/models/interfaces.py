@@ -419,6 +419,7 @@ class SupportsMultiModalPruning(Protocol):
     """
 
     supports_multimodal_pruning: ClassVar[Literal[True]] = True
+    supported_video_pruning_methods: ClassVar[tuple[str, ...]] = ("evs",)
 
     def recompute_mrope_positions(
         self,
