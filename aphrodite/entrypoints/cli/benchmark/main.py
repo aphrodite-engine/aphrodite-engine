@@ -3,17 +3,36 @@
 
 import argparse
 import logging
+import os
 import sys
 import typing
 
+from aphrodite import envs
 from aphrodite.entrypoints.cli.benchmark.base import BenchmarkSubcommandBase
 from aphrodite.entrypoints.cli.types import CLISubcommand
 from aphrodite.entrypoints.serve.utils.api_utils import APHRODITE_SUBCMD_PARSER_EPILOG
+from aphrodite.logger import init_logger
 
 if typing.TYPE_CHECKING:
     from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 else:
     FlexibleArgumentParser = argparse.ArgumentParser
+
+logger = init_logger(__name__)
+
+
+def maybe_exec_rust_bench() -> None:
+    if sys.argv[1:3] != ["bench", "serve"] or not envs.APHRODITE_USE_RUST_BENCH:
+        return
+
+    rust_cli = envs.APHRODITE_RUST_FRONTEND_PATH
+    if rust_cli is None:
+        raise RuntimeError(
+            "APHRODITE_USE_RUST_BENCH=1 requires APHRODITE_RUST_FRONTEND_PATH to resolve to the aphrodite-rs binary."
+        )
+
+    logger.info("Delegating `aphrodite bench serve` to Rust binary at %s.", rust_cli)
+    os.execv(rust_cli, [rust_cli, "bench", "serve", *sys.argv[3:]])
 
 
 def _import_bench_subcommand_modules() -> None:

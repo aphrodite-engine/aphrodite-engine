@@ -123,6 +123,15 @@ def test_is_envs_cache_enabled() -> None:
     assert not envs._is_envs_cache_enabled()
 
 
+def test_rust_bench_auto_path_missing_fails_fast() -> None:
+    with (
+        patch.dict(os.environ, {"APHRODITE_USE_RUST_BENCH": "1"}, clear=True),
+        patch("aphrodite.envs.os.path.isfile", return_value=False),
+        pytest.raises(FileNotFoundError, match="aphrodite-rs binary was not found"),
+    ):
+        environment_variables["APHRODITE_RUST_FRONTEND_PATH"]()
+
+
 class TestEnvWithChoices:
     """Test cases for env_with_choices function."""
 
