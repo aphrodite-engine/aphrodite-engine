@@ -8,8 +8,6 @@ import torch
 from aphrodite.config import KVEventsConfig, KVTransferConfig
 from aphrodite.distributed.kv_events import (
     MEDIUM_CPU,
-    MEDIUM_FS,
-    MEDIUM_OBJ,
     BlockRemoved,
     BlockStored,
 )
@@ -32,6 +30,7 @@ from aphrodite.v1.kv_cache_interface import (
 )
 from aphrodite.v1.kv_offload.base import (
     Locality,
+    Medium,
     OffloadingEvent,
     OffloadingKVEventsConfig,
     OffloadKey,
@@ -40,7 +39,7 @@ from aphrodite.v1.kv_offload.base import (
 from aphrodite.v1.kv_offload.tiering.spec import TieringOffloadingSpec
 from tests.v1.kv_connector.unit.utils import create_aphrodite_config
 
-_CPU_MEDIUM = MEDIUM_CPU
+_CPU_MEDIUM = Medium.CPU
 _FULL_ATTENTION_EVENT_SPEC = OffloadingEventGroupSpec(
     kv_cache_spec_kind=KVCacheSpecKind.FULL_ATTENTION.value,
     kv_cache_spec_sliding_window=None,
@@ -135,7 +134,7 @@ def _record_lookup_chunks(
 
 def _stored_event(
     keys: list[OffloadKey],
-    medium: str = _CPU_MEDIUM,
+    medium: Medium = _CPU_MEDIUM,
     locality: Locality | None = None,
 ) -> OffloadingEvent:
     return OffloadingEvent(
@@ -148,7 +147,7 @@ def _stored_event(
 
 def _removed_event(
     keys: list[OffloadKey],
-    medium: str = _CPU_MEDIUM,
+    medium: Medium = _CPU_MEDIUM,
     locality: Locality | None = None,
 ) -> OffloadingEvent:
     return OffloadingEvent(
@@ -177,7 +176,7 @@ def test_take_events_forwards_locality_to_rich_store():
     req = _request(block_hashes=[_hash(0)], token_count=4)
     key = _record_chunks(tracker, req, _group_config(), num_chunks=1)[0]
 
-    events = list(tracker.take_events([_stored_event([key], locality=Locality.LOCAL, medium=MEDIUM_FS)]))
+    events = list(tracker.take_events([_stored_event([key], locality=Locality.LOCAL, medium=Medium.STORAGE)]))
 
     assert len(events) == 1
     assert isinstance(events[0], BlockStored)
@@ -191,7 +190,7 @@ def test_take_events_forwards_locality_to_placeholder_store():
     req = _request(block_hashes=[_hash(0)], token_count=4)
     key = _record_chunks(tracker, req, _group_config(), num_chunks=1)[0]
 
-    events = list(tracker.take_events([_stored_event([key], locality=Locality.REMOTE, medium=MEDIUM_FS)]))
+    events = list(tracker.take_events([_stored_event([key], locality=Locality.REMOTE, medium=Medium.STORAGE)]))
 
     assert len(events) == 1
     assert isinstance(events[0], BlockStored)
@@ -204,7 +203,7 @@ def test_take_events_forwards_locality_to_remove():
     req = _request(block_hashes=[_hash(0)], token_count=4)
     key = _record_chunks(tracker, req, _group_config(), num_chunks=1)[0]
 
-    events = list(tracker.take_events([_removed_event([key], locality=Locality.LOCAL, medium=MEDIUM_FS)]))
+    events = list(tracker.take_events([_removed_event([key], locality=Locality.LOCAL, medium=Medium.STORAGE)]))
 
     assert len(events) == 1
     assert isinstance(events[0], BlockRemoved)
@@ -226,7 +225,7 @@ def test_take_events_publishes_routable_block_stored():
 
     for i, event in enumerate(batch1):
         assert isinstance(event, BlockStored)
-        assert event.medium == _CPU_MEDIUM
+        assert event.medium == _CPU_MEDIUM.value
         assert event.block_hashes == [_wire_hash(_hash(i))]
         assert event.block_size == block_size
         assert event.token_ids == list(range(i * block_size + 1, (i + 1) * block_size + 1))
@@ -306,7 +305,7 @@ def test_lookup_promotion_factor_gt_1_store_and_remove():
     assert len(removed) == 1
     assert isinstance(removed[0], BlockRemoved)
     assert removed[0].block_hashes == expected_hashes
-    assert removed[0].medium == _CPU_MEDIUM
+    assert removed[0].medium == _CPU_MEDIUM.value
     assert removed[0].group_idx == 0
     assert not tracker._pending_event_metadata
 
@@ -424,12 +423,11 @@ def test_pending_cpu_removal_consumes_hit_backfill_until_next_hit():
     ]
 
 
-@pytest.mark.parametrize("medium", [MEDIUM_FS, MEDIUM_OBJ])
-def test_secondary_stored_event_does_not_mutate_cpu_metadata(medium: str):
+def test_secondary_stored_event_does_not_mutate_cpu_metadata():
     tracker, _, _, key = _lookup_chunk()
     expected_metadata = dict(tracker._pending_event_metadata)
 
-    stored = list(tracker.take_events([_stored_event([key], medium)]))
+    stored = list(tracker.take_events([_stored_event([key], Medium.STORAGE)]))
     assert stored[0].token_ids == [1, 2, 3, 4]
     assert tracker._pending_event_metadata == expected_metadata
 
