@@ -1,13 +1,33 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
 from aphrodite.v1.attention.backend import CommonAttentionMetadata
-from aphrodite.v1.attention.backends.mla.indexer import DeepseekV32IndexerMetadataBuilder
+from aphrodite.v1.attention.backends.mla.indexer import (
+    BuildPrefillChunkMetadataKernel,
+    DeepseekV32IndexerMetadataBuilder,
+)
 from aphrodite.v1.kv_cache_interface import MLAAttentionSpec
 from tests.v1.attention.utils import create_aphrodite_config
+
+
+def test_indexer_warmup_normalizes_zero_compress_ratios():
+    config = SimpleNamespace(
+        scheduler_config=SimpleNamespace(max_num_batched_tokens=8),
+        model_config=SimpleNamespace(hf_config=SimpleNamespace(compress_ratios=[0, 0, 4, 128, 0])),
+        parallel_config=SimpleNamespace(
+            decode_context_parallel_size=1,
+            cp_kv_cache_interleave_size=1,
+        ),
+    )
+
+    keys = BuildPrefillChunkMetadataKernel().get_warmup_keys(config)
+
+    assert {key.COMPRESS_RATIO for key in keys} == {1, 4, 128}
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
