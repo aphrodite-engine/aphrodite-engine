@@ -28,6 +28,18 @@ STABLE_TORCH_LIBRARY_FRAGMENT(_C, ops) {
       "output_s, int group_size, float eps, float int8_min, float int8_max) -> "
       "()");
   ops.def("permute_cols(Tensor A, Tensor perm) -> Tensor");
+  ops.def(
+      "dry_scan_penalties("
+      "    Tensor token_history_ids,"
+      "    Tensor token_history_lens,"
+      "    Tensor dry_multiplier,"
+      "    Tensor allowed_lengths,"
+      "    Tensor sequence_breakers_ids,"
+      "    Tensor ranges,"
+      "    Tensor max_ngram,"
+      "    Tensor max_occurrences,"
+      "    Tensor early_exit_match_len,"
+      "    int vocab_size) -> (Tensor, Tensor, Tensor)");
 
   ops.def("get_cuda_view_from_cpu_tensor(Tensor cpu_tensor) -> Tensor");
 
@@ -816,6 +828,7 @@ STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, ops) {
 STABLE_TORCH_LIBRARY_IMPL(_C, CPU, ops) {
   ops.impl("get_cuda_view_from_cpu_tensor",
            TORCH_BOX(&get_cuda_view_from_cpu_tensor));
+  ops.impl("dry_scan_penalties", TORCH_BOX(&dry_scan_penalties_cpu));
 }
 
 STABLE_TORCH_LIBRARY_FRAGMENT(_C_cuda_utils, cuda_utils) {

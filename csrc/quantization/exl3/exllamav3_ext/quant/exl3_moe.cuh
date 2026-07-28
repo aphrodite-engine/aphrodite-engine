@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ATen/Tensor.h>
+#include "../util.h"
 #include "../graph.cuh"
 
 int exl3_moe_max_concurrency(int device);

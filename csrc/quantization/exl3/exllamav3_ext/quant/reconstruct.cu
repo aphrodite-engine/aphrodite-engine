@@ -1,7 +1,5 @@
 #include <cuda_fp16.h>
 #include "reconstruct.cuh"
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 #include "../util.h"
 #include "../util.cuh"
 #include "../ptx.cuh"
@@ -91,8 +89,9 @@ Reconstruct encoded+packed tensor
 */
 void reconstruct(at::Tensor unpacked, at::Tensor packed, int K, bool mcg,
                  bool mul1) {
-  const at::cuda::OptionalCUDAGuard device_guard(unpacked.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      unpacked.get_device_index());
+  cudaStream_t stream = get_current_cuda_stream(unpacked.get_device_index());
 
   TORCH_CHECK_SHAPES(unpacked, 0, packed, 0, 16);
   TORCH_CHECK_SHAPES(unpacked, 1, packed, 1, 16);

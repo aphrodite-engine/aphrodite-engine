@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ATen/Tensor.h>
+#include "../util.h"
 #include "../graph.cuh"
 
 int exl3_gemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
