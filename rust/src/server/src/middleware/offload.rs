@@ -30,8 +30,8 @@ const OFFLOADED_PATHS: &[&str] = &[
     "/detokenize",
     "/inference/v1/generate",
     // gRPC routes:
-    "/aphrodite.Generate/Generate",
-    "/aphrodite.Generate/GenerateStream",
+    "/aphrodite.Inference/Generate",
+    "/aphrodite.Inference/GenerateStream",
 ];
 
 /// Return a Tower layer that runs selected data-plane requests on the request runtime,
@@ -124,8 +124,8 @@ mod tests {
         assert!(should_offload("/tokenize"));
         assert!(should_offload("/detokenize"));
         assert!(should_offload("/inference/v1/generate"));
-        assert!(should_offload("/aphrodite.Generate/Generate"));
-        assert!(should_offload("/aphrodite.Generate/GenerateStream"));
+        assert!(should_offload("/aphrodite.Inference/Generate"));
+        assert!(should_offload("/aphrodite.Inference/GenerateStream"));
     }
 
     #[test]

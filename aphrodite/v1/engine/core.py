@@ -1469,6 +1469,29 @@ class EngineCoreProc(EngineCore):
         if self.output_thread.is_alive():
             logger.fatal("Aphrodite shutdown signal from EngineCore failed to send. Please report this issue.")
 
+    def _make_ready_response(self) -> EngineCoreReadyResponse:
+        parallel_config = self.aphrodite_config.parallel_config
+        scheduler_config = self.aphrodite_config.scheduler_config
+        return EngineCoreReadyResponse(
+            max_model_len=self.aphrodite_config.model_config.max_model_len,
+            num_gpu_blocks=self.aphrodite_config.cache_config.num_gpu_blocks or 0,
+            block_size=self.aphrodite_config.cache_config.block_size,
+            dp_stats_address=self.frontend_stats_publish_address,
+            dtype=str(self.aphrodite_config.model_config.dtype).removeprefix("torch."),
+            aphrodite_version=APHRODITE_VERSION,
+            world_size=parallel_config.world_size,
+            data_parallel_size=parallel_config.data_parallel_size,
+            kv_cache_size_tokens=self.aphrodite_config.cache_config.kv_cache_size_tokens,
+            kv_cache_max_concurrency=self.aphrodite_config.cache_config.kv_cache_max_concurrency,
+            tensor_parallel_size=parallel_config.tensor_parallel_size,
+            pipeline_parallel_size=parallel_config.pipeline_parallel_size,
+            decode_context_parallel_size=parallel_config.decode_context_parallel_size,
+            data_parallel_rank=self.engine_index,
+            max_num_seqs=scheduler_config.max_num_seqs,
+            max_num_batched_tokens=scheduler_config.max_num_batched_tokens,
+            instance_id=self.aphrodite_config.instance_id,
+        )
+
     def process_input_sockets(
         self,
         input_addresses: list[str],
@@ -1504,18 +1527,7 @@ class EngineCoreProc(EngineCore):
 
             # Register sockets with poller.
             poller = zmq.Poller()
-            ready_response = EngineCoreReadyResponse(
-                max_model_len=self.aphrodite_config.model_config.max_model_len,
-                num_gpu_blocks=self.aphrodite_config.cache_config.num_gpu_blocks or 0,
-                block_size=self.aphrodite_config.cache_config.block_size,
-                dp_stats_address=self.frontend_stats_publish_address,
-                dtype=str(self.aphrodite_config.model_config.dtype).removeprefix("torch."),
-                aphrodite_version=APHRODITE_VERSION,
-                world_size=self.aphrodite_config.parallel_config.world_size,
-                data_parallel_size=self.aphrodite_config.parallel_config.data_parallel_size,
-                kv_cache_size_tokens=(self.aphrodite_config.cache_config.kv_cache_size_tokens),
-                kv_cache_max_concurrency=(self.aphrodite_config.cache_config.kv_cache_max_concurrency),
-            )
+            ready_response = self._make_ready_response()
             ready_payload = msgspec.msgpack.encode(ready_response)
             for input_socket in input_sockets:
                 # Send initial message to each input socket - this is required
