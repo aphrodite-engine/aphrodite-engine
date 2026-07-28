@@ -8,12 +8,12 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 from typing import Any, NamedTuple
 
 import pytest
-from huggingface_hub import hf_hub_download
 from pytest import MarkDecorator
 from transformers import AutoModelForImageTextToText
 
 from aphrodite.assets.image import ImageAsset
 from aphrodite.multimodal.image import rescale_image_size
+from aphrodite.transformers_utils.repo_utils import hf_api
 from aphrodite.utils.torch_utils import set_default_torch_num_threads
 
 from ...conftest import IMAGE_ASSETS, AphroditeRunner, HfRunner
@@ -33,8 +33,8 @@ class GGUFMMTestConfig(NamedTuple):
 
     @property
     def gguf_model(self):
-        hf_hub_download(self.gguf_repo, filename=self.gguf_mmproj)
-        return hf_hub_download(self.gguf_repo, filename=self.gguf_backbone)
+        hf_api().hf_hub_download(self.gguf_repo, filename=self.gguf_mmproj)
+        return hf_api().hf_hub_download(self.gguf_repo, filename=self.gguf_backbone)
 
 
 # Common prompts aligned with test_common.py "gemma3" entry format

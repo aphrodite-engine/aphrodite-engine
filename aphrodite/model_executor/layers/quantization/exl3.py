@@ -6,7 +6,6 @@ import os
 from typing import TYPE_CHECKING, Any
 
 import torch
-from huggingface_hub import hf_hub_download
 from transformers import PretrainedConfig
 
 from aphrodite import _custom_ops as ops
@@ -19,6 +18,7 @@ from aphrodite.model_executor.layers.fused_moe import (
     FusedMoEMethodBase,
     RoutedExperts,
 )
+from aphrodite.transformers_utils.repo_utils import hf_api
 
 if TYPE_CHECKING:
     from aphrodite.model_executor.layers.fused_moe.runner.shared_experts import SharedExperts
@@ -399,7 +399,7 @@ class Exl3Config(QuantizationConfig):
                 return
         else:
             try:
-                quant_config_path = hf_hub_download(
+                quant_config_path = hf_api().hf_hub_download(
                     repo_id=model_name,
                     filename="quantization_config.json",
                     revision=revision,

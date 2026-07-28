@@ -8,15 +8,15 @@ import os
 import unittest.mock as mock
 
 import pytest
-from huggingface_hub import snapshot_download
 
 from aphrodite.lora.request import LoRARequest
 from aphrodite.platforms import current_platform
+from aphrodite.transformers_utils.repo_utils import hf_api
 
 from ..conftest import AphroditeRunner, AudioTestAssets
 from ..utils import create_new_process_for_each_test
 
-MODEL_PATH = snapshot_download("microsoft/Phi-4-multimodal-instruct")
+MODEL_PATH = hf_api().snapshot_download("microsoft/Phi-4-multimodal-instruct")
 AUDIO_LORA_PATH = os.path.join(MODEL_PATH, "speech-lora")
 IMAGE_LORA_PATH = os.path.join(MODEL_PATH, "vision-lora")
 

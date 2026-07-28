@@ -6,7 +6,6 @@ from collections.abc import Sequence
 
 import pytest
 import regex as re
-from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
 from aphrodite.assets.image import ImageAsset
@@ -14,6 +13,7 @@ from aphrodite.logprobs import SampleLogprobs
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.image import convert_image_mode, rescale_image_size
 from aphrodite.multimodal.media.audio import load_audio
+from aphrodite.transformers_utils.repo_utils import hf_api
 
 from ....conftest import (
     IMAGE_ASSETS,
@@ -33,7 +33,7 @@ HF_IMAGE_PROMPTS = IMAGE_ASSETS.prompts(
 )
 HF_MULTIIMAGE_IMAGE_PROMPT = "<|user|>\n<|image_1|>\n<|image_2|>\nDescribe these images.<|end|>\n<|assistant|>\n"  # noqa: E501
 
-model_path = snapshot_download("microsoft/Phi-4-multimodal-instruct")
+model_path = hf_api().snapshot_download("microsoft/Phi-4-multimodal-instruct")
 # Since the vision-lora and speech-lora co-exist with the base model,
 # we have to manually specify the path of the lora weights.
 vision_lora_path = os.path.join(model_path, "vision-lora")

@@ -9,11 +9,11 @@ from tempfile import TemporaryDirectory
 
 import pytest
 import torch
-from huggingface_hub import snapshot_download
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.model_executor.model_loader import ShardedStateLoader
 from aphrodite.platforms import current_platform
+from aphrodite.transformers_utils.repo_utils import hf_api
 
 prompts = [
     "Hello, my name is",
@@ -52,7 +52,7 @@ def test_filter_subtensors():
 
 @pytest.fixture(scope="module")
 def llama_3p2_1b_files():
-    input_dir = snapshot_download("meta-llama/Llama-3.2-1B-Instruct", ignore_patterns=["*.bin*", "original/*"])
+    input_dir = hf_api().snapshot_download("meta-llama/Llama-3.2-1B-Instruct", ignore_patterns=["*.bin*", "original/*"])
 
     yield input_dir
 

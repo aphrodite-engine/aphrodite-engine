@@ -15,12 +15,12 @@ from unittest.mock import patch
 import pytest
 import torch
 import torch.distributed as dist
-from huggingface_hub import snapshot_download
 
 import aphrodite.envs as envs
 from aphrodite import LLM, SamplingParams
 from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.platforms import current_platform
+from aphrodite.transformers_utils.repo_utils import hf_api
 from aphrodite.utils.network_utils import get_open_port
 
 pytestmark = pytest.mark.skipif(
@@ -195,11 +195,11 @@ def _log_prompt_summaries() -> None:
 @lru_cache(maxsize=1)
 def _get_model_path() -> str:
     try:
-        path = snapshot_download(repo_id=MODEL_NAME, local_files_only=True)
+        path = hf_api().snapshot_download(repo_id=MODEL_NAME, local_files_only=True)
         _log(f"using cached model snapshot: {path}")
         return path
     except Exception:
-        path = snapshot_download(repo_id=MODEL_NAME)
+        path = hf_api().snapshot_download(repo_id=MODEL_NAME)
         _log(f"downloaded model snapshot: {path}")
         return path
 

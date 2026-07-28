@@ -39,7 +39,6 @@ import regex as re
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from huggingface_hub import hf_hub_download
 from PIL import Image
 from transformers import AutoProcessor, AutoTokenizer, BatchFeature
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
@@ -108,6 +107,7 @@ from aphrodite.multimodal.video import (
 )
 from aphrodite.sequence import IntermediateTensors
 from aphrodite.transformers_utils.processor import _merge_mm_kwargs
+from aphrodite.transformers_utils.repo_utils import hf_api
 from aphrodite.transformers_utils.utils import convert_model_repo_to_path
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
@@ -163,7 +163,7 @@ def _load_ov2_processor(
     try:
         config_file = os.path.join(path, "preprocessor_config.json")
         if not os.path.isfile(config_file):
-            config_file = hf_hub_download(path, "preprocessor_config.json", revision=revision)
+            config_file = hf_api().hf_hub_download(path, "preprocessor_config.json", revision=revision)
         with open(config_file, encoding="utf-8") as f:
             codec_config = json.load(f).get("codec", {}) or {}
     except Exception:

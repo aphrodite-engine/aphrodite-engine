@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 try:
-    from huggingface_hub import hf_hub_download
+    from aphrodite.transformers_utils.repo_utils import hf_api
 except ImportError:  # pragma: no cover
     hf_hub_download = None
 
@@ -36,7 +36,7 @@ def _resolve_config_file(model_path: str) -> Path | None:
         return None
 
     try:
-        return Path(hf_hub_download(repo_id=model_path, filename="config.json"))
+        return Path(hf_api().hf_hub_download(repo_id=model_path, filename="config.json"))
     except (OSError, ValueError) as exc:
         logger.debug("Failed to download config.json for %s: %s", model_path, exc)
         return None

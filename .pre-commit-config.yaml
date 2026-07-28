@@ -147,6 +147,12 @@ repos:
     types: [python]
     additional_dependencies: [regex]
     exclude: ^benchmarks/
+  - id: check-huggingface-imports
+    name: Prevent direct Hugging Face Hub repository API imports
+    entry: python tools/pre_commit/check_huggingface_imports.py
+    language: python
+    types: [python]
+    additional_dependencies: [regex]
   - id: check-torch-cuda-call
     name: "Prevent new 'torch.cuda' APIs call"
     entry: python tools/pre_commit/check_torch_cuda.py

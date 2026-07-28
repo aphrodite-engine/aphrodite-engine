@@ -3,9 +3,9 @@
 
 import pytest
 import pytest_asyncio
-from huggingface_hub import snapshot_download
 
 from aphrodite.platforms import current_platform
+from aphrodite.transformers_utils.repo_utils import hf_api
 from tests.utils import RemoteOpenAIServer
 
 from .utils import ARGS, CONFIGS, ServerConfig
@@ -20,7 +20,7 @@ def server_config(request):
         pytest.skip("The {} model can't be tested on the ROCm platform".format(config["model"]))
 
     # download model and tokenizer using transformers
-    snapshot_download(config["model"])
+    hf_api().snapshot_download(config["model"])
     yield CONFIGS[request.param]
 
 

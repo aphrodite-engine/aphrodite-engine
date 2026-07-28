@@ -33,7 +33,6 @@ import pytest
 import requests
 import torch
 import torch.nn.functional as F
-from huggingface_hub import hf_hub_download
 from huggingface_hub.constants import HF_HUB_OFFLINE
 from openai.types.completion import Completion
 from typing_extensions import ParamSpec
@@ -56,6 +55,7 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
 from aphrodite.model_executor.model_loader import get_model_loader
 from aphrodite.platforms import current_platform
 from aphrodite.tokenizers import get_tokenizer
+from aphrodite.transformers_utils.repo_utils import hf_api
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.mem_constants import GB_bytes
 from aphrodite.utils.network_utils import get_open_port
@@ -77,7 +77,7 @@ def prewarm_hf_cache(assets: list[tuple[str, str]]) -> None:
         return
     for repo_id, filename in assets:
         try:
-            hf_hub_download(repo_id=repo_id, filename=filename)
+            hf_api().hf_hub_download(repo_id=repo_id, filename=filename)
         except Exception as e:
             logger.warning(
                 "Failed to prefetch %s/%s: %r. Tests depending on this asset may fail.",

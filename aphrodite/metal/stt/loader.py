@@ -71,12 +71,12 @@ def _resolve_model_path(model_path: str | Path) -> Path:
         return model_path
 
     try:
-        from huggingface_hub import snapshot_download
+        from aphrodite.transformers_utils.repo_utils import hf_api
     except ImportError as e:  # pragma: no cover
         raise ValueError(f"Could not download model {model_path}: huggingface_hub is not installed") from e
 
     try:
-        return Path(snapshot_download(repo_id=str(model_path)))
+        return Path(hf_api().snapshot_download(repo_id=str(model_path)))
     except OSError as e:
         raise ValueError(f"Could not download model: {model_path}") from e
 
