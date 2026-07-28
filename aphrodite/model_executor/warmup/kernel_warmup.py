@@ -125,7 +125,9 @@ def kernel_warmup(worker: "Worker"):
     # Match the runtime eligibility in fused_moe/router/gate_linear.py: SM 9.0
     # or 10.x only. A plain >=90 check would include SM 11.x (Thor), where
     # cuteDSL's NVVM backend cannot compile and the JIT ICEs at startup.
-    if current_platform.is_device_capability((9, 0)) or current_platform.is_device_capability_family(100):
+    if worker.model_config.is_moe and (
+        current_platform.is_device_capability((9, 0)) or current_platform.is_device_capability_family(100)
+    ):
         _warmup_ll_bf16_router_gemm()
 
     # FlashInfer attention warmup
