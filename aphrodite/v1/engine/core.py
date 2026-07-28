@@ -293,8 +293,9 @@ class EngineCore:
 
         aphrodite_config.validate_block_size()
 
-        # Initialize kv cache and warmup the execution
         self.model_executor.initialize_from_config(kv_cache_configs)
+        if not envs.APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH:
+            self.model_executor.compile_or_warm_up_model()
 
         elapsed = time.time() - start
         compile_time = aphrodite_config.compilation_config.compilation_time
@@ -890,11 +891,7 @@ class EngineCore:
     def _eep_scale_up_before_kv_init(self):
         raise NotImplementedError
 
-    def _eep_send_engine_core_notification(
-        self,
-        notification_type: EEPNotificationType,
-        aphrodite_config: AphroditeConfig | None = None,
-    ):
+    def _eep_send_engine_core_notification(self, notification_type: EEPNotificationType):
         raise NotImplementedError
 
 
@@ -963,11 +960,6 @@ class EngineCoreProc(EngineCore):
 
             self.addresses = addresses
             self.process_input_queue_block = True
-            if envs.APHRODITE_ELASTIC_EP_SCALE_UP_LAUNCH:
-                self._eep_send_engine_core_notification(
-                    EEPNotificationType.NEW_CORE_ENGINES_INIT_READY,
-                    aphrodite_config=aphrodite_config,
-                )
             self._init_data_parallel(aphrodite_config)
 
             super().__init__(
@@ -1904,12 +1896,16 @@ class DPEngineCoreProc(EngineCoreProc):
             self._maybe_publish_request_counts()
 
             if self.eep_scaling_state is not None:
-                _ = self.eep_scaling_state.progress()
-                if self.eep_scaling_state.is_complete():
-                    if self.eep_scaling_state.worker_type == "removing":
+                state = self.eep_scaling_state
+                if state.commit_requested or not state.is_ready_for_switch():
+                    state.progress()
+                if state.is_complete():
+                    if state.worker_type == "removing":
                         raise SystemExit
                     self.process_input_queue_block = True
                     self.eep_scaling_state = None
+                elif not state.commit_requested and state.is_ready_for_switch():
+                    self.process_input_queue_block = True
 
             executed = self._process_engine_step()
             self._maybe_publish_request_counts()
@@ -1971,7 +1967,7 @@ class DPEngineCoreProc(EngineCoreProc):
 
         return has_unfinished
 
-    def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> None:
+    def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> str:
         from copy import deepcopy
 
         from aphrodite.distributed.elastic_ep.elastic_state import ElasticEPScalingState
@@ -1989,7 +1985,10 @@ class DPEngineCoreProc(EngineCoreProc):
         is_scale_down = reconfig_request.new_data_parallel_size < old_dp_size
         is_shutdown = reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK
 
-        self.eep_scaling_state = ElasticEPScalingState(
+        if self.eep_scaling_state is not None:
+            raise RuntimeError("Elastic EP reconfiguration is already active")
+
+        state = ElasticEPScalingState(
             model_executor=self.model_executor,
             engine_core=self,
             aphrodite_config=self.aphrodite_config,
@@ -1998,28 +1997,30 @@ class DPEngineCoreProc(EngineCoreProc):
             scale_type="scale_down" if is_scale_down else "scale_up",
             reconfig_request=reconfig_request,
         )
+        self.eep_scaling_state = state
+
         self.process_input_queue_block = False
         logger.info("[Elastic EP] Received reconfiguration request and starting scaling up/down")
+        return state.ready_key
 
-    def _eep_send_engine_core_notification(
-        self,
-        notification_type: EEPNotificationType,
-        aphrodite_config: AphroditeConfig | None = None,
-    ):
+    def commit_prepared_elastic_ep(self) -> None:
+        state = self.eep_scaling_state
+        if state is None or state.commit_requested or not state.is_ready_for_switch():
+            raise RuntimeError("No prepared Elastic EP reconfiguration is ready")
+        state.commit_requested = True
+        self.process_input_queue_block = False
+        logger.info("[Elastic EP] Committing prepared reconfiguration")
+
+    def _eep_send_engine_core_notification(self, notification_type: EEPNotificationType):
         """
         Send notifications to EngineCoreClient, which can then forward
         the notifications to other engine core processes. It is used for:
-        1) In scale up: new core engines to notify existing core engines
-           that they are ready;
-        2) In scale down: removing core engines to notify EngineCoreClient
+        1) In scale down: removing core engines to notify EngineCoreClient
            so EngineCoreClient can release their ray placement groups;
-        3) Both scale up/down: to notify EngineCoreClient that existing
+        2) Both scale up/down: to notify EngineCoreClient that existing
            core engines have already switched to the new parallel setup.
         """
-        if aphrodite_config is None:
-            dp_rank = self.aphrodite_config.parallel_config.data_parallel_rank
-        else:
-            dp_rank = aphrodite_config.parallel_config.data_parallel_rank
+        dp_rank = self.aphrodite_config.parallel_config.data_parallel_rank
         notification_data = (notification_type.value, dp_rank)
         outputs = EngineCoreOutputs(
             utility_output=UtilityOutput(
@@ -2039,20 +2040,11 @@ class DPEngineCoreProc(EngineCoreProc):
             ):
                 socket.send_multipart(encoder.encode(outputs))
 
-    def eep_handle_engine_core_notification(self, notification_type: str | EEPNotificationType):
-        """
-        Handle notification received from EngineCoreClient
-        (forwarded from new core engines).
-        """
-        assert self.eep_scaling_state is not None
-        if isinstance(notification_type, str):
-            notification_type = EEPNotificationType(notification_type)
-        self.eep_scaling_state.handle_notification(notification_type)
-
     def _eep_scale_up_before_kv_init(self):
         from aphrodite.distributed.elastic_ep.elastic_state import ElasticEPScalingState
 
-        self.eep_scaling_state = ElasticEPScalingState(
+        self.ignore_start_dp_wave = True
+        state = ElasticEPScalingState(
             model_executor=self.model_executor,
             engine_core=self,
             aphrodite_config=self.aphrodite_config,
@@ -2061,7 +2053,10 @@ class DPEngineCoreProc(EngineCoreProc):
             scale_type="scale_up",
             reconfig_request=None,
         )
-        self.eep_scaling_state.run_pre_kv_init_states()
+        if self.eep_scaling_state is not None:
+            raise RuntimeError("Elastic EP reconfiguration is already active")
+        self.eep_scaling_state = state
+        state.run_pre_kv_init_states()
         self.process_input_queue_block = False
 
 

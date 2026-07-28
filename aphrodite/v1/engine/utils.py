@@ -763,7 +763,12 @@ class CoreEngineActorManager:
 
         return placement_groups, local_dp_ranks
 
-    def scale_up_elastic_ep(self, cur_aphrodite_config: AphroditeConfig, new_data_parallel_size: int) -> None:
+    def scale_up_elastic_ep(
+        self,
+        cur_aphrodite_config: AphroditeConfig,
+        new_data_parallel_size: int,
+        num_redundant_experts: int,
+    ) -> None:
         import copy
 
         import ray
@@ -795,6 +800,7 @@ class CoreEngineActorManager:
             if new_data_parallel_size > 1:
                 _apply_dp_identity_suffix(dp_aphrodite_config, rank)
             dp_aphrodite_config.parallel_config.data_parallel_size = new_data_parallel_size
+            dp_aphrodite_config.parallel_config.eplb_config.num_redundant_experts = num_redundant_experts
             dp_aphrodite_config.parallel_config.placement_group = pg
 
             # Check if this placement group is on the head node
@@ -834,28 +840,15 @@ class CoreEngineActorManager:
             self.created_placement_groups.append(pg)
             self.placement_group_is_local.append(local_client)
 
-        ray.get(
-            [
-                actor.wait_for_init.remote()
-                for actor in (self.local_engine_actors[-new_local_engines:] if new_local_engines > 0 else [])
-                + self.remote_engine_actors[-(len(placement_groups) - new_local_engines) :]
-            ]
-        )
-
         actors = (
             self.local_engine_actors[-new_local_engines:] if new_local_engines > 0 else []
         ) + self.remote_engine_actors[-(len(placement_groups) - new_local_engines) :]
 
+        ray.get([actor.wait_for_init.remote() for actor in actors])
         for actor in actors:
             ref = actor.run.remote()
             self.run_refs.append(ref)
             self.actor_run_ref_dict[actor] = ref
-
-        cur_aphrodite_config.parallel_config.data_parallel_size = new_data_parallel_size
-        # Update old_aphrodite_config with new data_parallel_size_local if any new
-        # local engines were added
-        if new_local_engines > 0:
-            cur_aphrodite_config.parallel_config.data_parallel_size_local += new_local_engines
 
     def scale_down_elastic_ep(self, cur_data_parallel_size: int, new_data_parallel_size: int) -> None:
         import ray
