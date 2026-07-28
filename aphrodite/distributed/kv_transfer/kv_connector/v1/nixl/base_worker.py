@@ -619,8 +619,9 @@ class NixlBaseConnectorWorker:
                     remote_agent_name = self.add_remote_agent(metadata, remote_rank, remote_tp_size)
                 setup_agent_time = time.perf_counter()
                 logger.debug(
-                    "NIXL handshake: add agent took: %s",
+                    "NIXL handshake: add agent took: %s (notif_agents_only=%s)",
                     setup_agent_time - got_metadata_time,
+                    notif_agents_only,
                 )
                 remote_rank_to_agent_name[(remote_pp_rank, remote_rank)] = remote_agent_name
         assert best_offset is not None
