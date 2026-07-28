@@ -168,6 +168,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Reclaim old wheel build snapshots
+        if: ${{ always() && !inputs.storage_check_only }}
+        shell: bash
+        run: |
+          rm -f wheels/main/*.whl
+          docker buildx prune --force \
+            --filter type=regular \
+            --max-used-space 25gb
+
   build-pages:
     if: ${{ !inputs.storage_check_only }}
     needs: wheel
