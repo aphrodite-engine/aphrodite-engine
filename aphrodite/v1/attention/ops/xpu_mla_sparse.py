@@ -65,7 +65,10 @@ def _bf16_mla_sparse_kernel(
         mask_dpe = offs_dpe < dim_qk
         qpe = tl.load(q_buffer + off_qpe, mask=(mask_h[:, None]) & (mask_dpe[None, :]), other=0.0)
 
-    e_max = tl.zeros([BLOCK_H], dtype=tl.float32) - float("inf")
+    # Use a finite sentinel rather than -inf: if every key in a chunk is
+    # masked (e.g. leading -1 padding in `indices`) an -inf running max gives
+    # re_scale = exp2(-inf - -inf) = NaN, permanently poisoning acc / e_sum.
+    e_max = tl.zeros([BLOCK_H], dtype=tl.float32) - 1.0e30
     e_sum = tl.zeros([BLOCK_H], dtype=tl.float32)
     acc = tl.zeros([BLOCK_H, BLOCK_DV], dtype=tl.float32)
 
@@ -99,7 +102,7 @@ def _bf16_mla_sparse_kernel(
 
         # apply scaling
         qk *= sm_scale
-        qk = tl.where((mask_h[:, None]) & (mask_kv[None, :]), qk, -float("inf"))
+        qk = tl.where((mask_h[:, None]) & (mask_kv[None, :]), qk, -1.0e30)
 
         # load v
         mask_v_d = offs_dv < dim_v
