@@ -123,6 +123,22 @@ docker run --runtime nvidia --gpus all \
     --api-keys "sk-empty"
 ```
 
+### Persisting the compile cache across containers
+
+Mounting the Hugging Face cache keeps model weights across containers, but each new container still starts with an empty `APHRODITE_CACHE_ROOT` (default `~/.cache/aphrodite`) and recompiles the model's `torch.compile` artifacts. Mount a named volume at that path to reuse the inductor, Triton, and AOT artifacts from the second container onward:
+
+```sh
+docker run --runtime nvidia --gpus all \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v aphrodite-cache:/root/.cache/aphrodite \
+    -p 2242:2242 \
+    --ipc=host \
+    alpindale/aphrodite-openai:latest \
+    --model NousResearch/Meta-Llama-3.1-8B-Instruct
+```
+
+See [Faster Startup](../usage/optimization/#faster-startup) for the mechanism and for what invalidates the cache.
+
 ### Building via Docker image
 
 ```sh
