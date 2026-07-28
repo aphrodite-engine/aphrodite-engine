@@ -17,6 +17,7 @@ FROM ${BASE_IMAGE} AS base
 
 ARG ARG_PYTORCH_ROCM_ARCH
 ENV PYTORCH_ROCM_ARCH=${ARG_PYTORCH_ROCM_ARCH:-${PYTORCH_ROCM_ARCH}}
+# Do not set MORI_GPU_ARCHS here; MoRI automatically infers it at runtime.
 
 # Install basic utilities and ROCm build/runtime dependencies not guaranteed by
 # the base image.
