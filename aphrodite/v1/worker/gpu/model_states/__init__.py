@@ -4,7 +4,10 @@ import torch
 import torch.nn as nn
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.model_executor.layers.attention import CrossAttention
+from aphrodite.model_executor.layers.attention import (
+    CrossAttention,
+    EncoderOnlyAttention,
+)
 from aphrodite.v1.worker.gpu.mm.encoder_cache import EncoderCache
 
 
@@ -26,6 +29,14 @@ def init_model_state(
         )
 
         return EncoderDecoderModelState(aphrodite_config, model, encoder_cache, device)
+
+    # Encoder-only models (BERT/RoBERTa): non-causal self-attention, no KV cache.
+    if any(isinstance(m, EncoderOnlyAttention) for m in model.modules()):
+        from aphrodite.v1.worker.gpu.model_states.encoder_only import (
+            EncoderOnlyModelState,
+        )
+
+        return EncoderOnlyModelState(aphrodite_config, model, encoder_cache, device)
 
     if aphrodite_config.model_config.is_hybrid:
         from aphrodite.v1.worker.gpu.model_states.mamba_hybrid import MambaHybridModelState
