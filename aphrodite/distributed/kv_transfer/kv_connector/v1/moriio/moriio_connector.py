@@ -1142,6 +1142,7 @@ class MoRIIOConnectorWorker:
         # a hack to keep us moving. We will switch when moving to etcd
         # or where we have a single ZMQ socket in the scheduler.
 
+        remote_tp_size = self._effective_remote_tp_size(remote_tp_size)
         dial_tp_rank = self._remote_tp_rank(remote_tp_size) if remote_tp_rank is None else int(remote_tp_rank)
         port_offset = get_port_offset(remote_dp_rank, dial_tp_rank, remote_tp_size)
         path = make_zmq_path("tcp", host, port + port_offset)
@@ -1201,10 +1202,12 @@ class MoRIIOConnectorWorker:
 
         return {remote_agent_name}
 
+    def _effective_remote_tp_size(self, remote_tp_size: int) -> int:
+        # 0/unknown remote TP means a homogeneous deployment.
+        return remote_tp_size if remote_tp_size > 0 else self.world_size
+
     def _remote_tp_rank(self, remote_tp_size: int) -> int:
-        # 0/unknown remote TP == homogeneous (avoids collapsing all ranks to 0).
-        if remote_tp_size == 0:
-            remote_tp_size = self.world_size
+        remote_tp_size = self._effective_remote_tp_size(remote_tp_size)
         return get_moriio_remote_tp_rank(self.tp_rank, self.world_size, remote_tp_size)
 
     def _background_moriio_handshake(self, req_id: ReqId, remote_engine_id: EngineId, meta: ReqMeta):
@@ -1720,7 +1723,7 @@ class MoRIIOConnectorWorker:
 
     def _resolve_read_source(self, meta: ReqMeta) -> tuple[int, bool]:
         """Resolve the remote TP source and whether flexible routing is active."""
-        remote_tp_size = int(meta.tp_size)
+        remote_tp_size = self._effective_remote_tp_size(int(meta.tp_size))
         flexible = self.world_size == 1 and self.use_mla and int(meta.remote_dp_size) == 1 and remote_tp_size > 1
         chosen_tp = self._next_flex_tp_rank(remote_tp_size) if flexible else self._remote_tp_rank(remote_tp_size)
         return chosen_tp, flexible
@@ -1732,6 +1735,7 @@ class MoRIIOConnectorWorker:
             req_id,
         )
         chosen_tp, flexible = self._resolve_read_source(meta)
+        remote_tp_size = self._effective_remote_tp_size(int(meta.tp_size))
         self._read_blocks(
             request_id=req_id,
             transfer_id=meta.transfer_id,
@@ -1740,7 +1744,7 @@ class MoRIIOConnectorWorker:
             remote_block_ids=meta.remote_block_ids,
             remote_host=meta.remote_host,
             remote_notify_port=meta.remote_notify_port,
-            remote_tp_size=meta.tp_size,
+            remote_tp_size=remote_tp_size,
             remote_dp_rank=meta.remote_dp_rank,
             chosen_tp=chosen_tp,
             flexible=flexible,
@@ -1890,6 +1894,7 @@ class MoRIIOConnectorWorker:
         if self.mode == MoRIIOMode.WRITE:
             return
 
+        remote_tp_size = self._effective_remote_tp_size(remote_tp_size)
         effective_tp_rank = int(chosen_tp) if chosen_tp is not None else self._remote_tp_rank(remote_tp_size)
         if flexible:
             remote_dp_engine_id = self.get_engine_name_with_dp_tp(dst_engine_id, int(remote_dp_rank), effective_tp_rank)
