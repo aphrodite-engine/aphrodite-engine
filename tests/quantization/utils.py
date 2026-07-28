@@ -10,8 +10,8 @@ from aphrodite.platforms import current_platform
 
 
 def is_quant_method_supported(quant_method: str) -> bool:
-    # Currently, quantization tests only run GPUs
-    if current_platform.is_cpu():
+    # Currently, quantization tests only run on supported GPU platforms.
+    if not (current_platform.is_cuda() or current_platform.is_rocm() or current_platform.is_xpu()):
         return False
 
     try:
