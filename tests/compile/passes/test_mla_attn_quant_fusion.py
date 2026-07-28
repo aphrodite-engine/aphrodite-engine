@@ -405,14 +405,11 @@ def test_mla_attention_quant_pattern(
     model_class: type[MLAAttentionQuantPatternModel],
     backend: AttentionBackendEnum,
     dist_init,
-    monkeypatch,
-    use_fresh_inductor_cache,
+    disable_aphrodite_compile_cache,
 ):
     """Test MLA AttentionQuantPattern fusion pass"""
     if model_class is TestMLAAttentionNvfp4QuantPatternModel and not is_nvfp4_supported():
         pytest.skip("NVFP4 is not supported on this GPU (requires SM 100+).")
-
-    monkeypatch.setenv("APHRODITE_DISABLE_COMPILE_CACHE", "1")
 
     custom_ops_list = custom_ops.split(",") if custom_ops else []
 

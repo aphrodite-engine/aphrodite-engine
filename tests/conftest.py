@@ -1712,6 +1712,22 @@ def use_fresh_inductor_cache():
 
 
 @pytest.fixture
+def disable_aphrodite_compile_cache(monkeypatch, use_fresh_inductor_cache):
+    """
+    Use a fresh inductor cache AND disable Aphrodite's on-disk torch.compile cache.
+
+    This forces compilation (and any custom compile passes) to actually run
+    instead of being served from a warm cache left behind by previous runs
+    (e.g. on persistent CI agents). Use this for tests that inspect what
+    happens during compilation; use ``use_fresh_inductor_cache`` (or
+    ``fresh_aphrodite_cache``) instead when the Aphrodite compile cache must stay
+    enabled (e.g. cache save/load tests).
+    """
+    monkeypatch.setenv("APHRODITE_DISABLE_COMPILE_CACHE", "1")
+    yield
+
+
+@pytest.fixture
 def fresh_aphrodite_cache(monkeypatch, use_fresh_inductor_cache):
     """Temporary APHRODITE_CACHE_ROOT combined with a fresh inductor cache."""
     with tempfile.TemporaryDirectory() as tmp_dir:
