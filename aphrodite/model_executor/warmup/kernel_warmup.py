@@ -45,16 +45,30 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-_LL_BF16_WARMUP_MODEL_SHAPES: tuple[tuple[int, int], ...] = (
-    (6144, 264),  # Inkling
-    (7168, 256),  # DSV3
-    (7168, 384),  # DSV4-Pro
-    (14400, 256),  # DSV4-Flash
-)
 _LL_BF16_WARMUP_M_RANGE = range(1, 17)
 
 
-def _warmup_ll_bf16_router_gemm() -> None:
+def _ll_bf16_router_shapes_from_model(
+    model: torch.nn.Module,
+) -> tuple[tuple[int, int], ...]:
+    from aphrodite.model_executor.layers.fused_moe.router.gate_linear import GateLinear
+
+    shapes: set[tuple[int, int]] = set()
+    for module in model.modules():
+        if not isinstance(module, GateLinear):
+            continue
+        weight = getattr(module, "weight", None)
+        if not isinstance(weight, torch.Tensor):
+            continue
+        if weight.dim() != 2 or weight.dtype != torch.bfloat16:
+            continue
+        n, k = weight.shape
+        if k % 8 == 0:
+            shapes.add((int(k), int(n)))
+    return tuple(sorted(shapes))
+
+
+def _warmup_ll_bf16_router_gemm(model: torch.nn.Module) -> None:
     from aphrodite.model_executor.kernels.linear.cute_dsl.ll_bf16 import (
         is_available as is_ll_bf16_gemm_available,
     )
@@ -65,10 +79,15 @@ def _warmup_ll_bf16_router_gemm() -> None:
     if not is_ll_bf16_gemm_available():
         return
 
-    logger.info("Warming up ll_bf16 router GEMM kernels.")
+    shapes = _ll_bf16_router_shapes_from_model(model)
+    if not shapes:
+        logger.info("Skipping ll_bf16 router GEMM warmup: no bf16 GateLinear shapes found.")
+        return
+
+    logger.info("Warming up ll_bf16 router GEMM kernels for shapes: %s.", shapes)
     try:
         ll_bf16_gemm_kernel.warmup(
-            shapes=_LL_BF16_WARMUP_MODEL_SHAPES,
+            shapes=shapes,
             m_values=_LL_BF16_WARMUP_M_RANGE,
         )
     except Exception:
@@ -125,10 +144,8 @@ def kernel_warmup(worker: "Worker"):
     # Match the runtime eligibility in fused_moe/router/gate_linear.py: SM 9.0
     # or 10.x only. A plain >=90 check would include SM 11.x (Thor), where
     # cuteDSL's NVVM backend cannot compile and the JIT ICEs at startup.
-    if worker.model_config.is_moe and (
-        current_platform.is_device_capability((9, 0)) or current_platform.is_device_capability_family(100)
-    ):
-        _warmup_ll_bf16_router_gemm()
+    if current_platform.is_device_capability((9, 0)) or current_platform.is_device_capability_family(100):
+        _warmup_ll_bf16_router_gemm(worker.get_model())
 
     # FlashInfer attention warmup
     # Only warmup if the model has FlashInfer attention groups
