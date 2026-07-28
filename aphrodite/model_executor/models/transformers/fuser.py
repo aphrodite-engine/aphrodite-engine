@@ -26,14 +26,19 @@ from aphrodite.model_executor.models.transformers.fusers import (
 from aphrodite.model_executor.models.transformers.fx_utils import trace
 
 if TYPE_CHECKING:
-    from aphrodite.config.model import ModelConfig
+    from aphrodite.config import AphroditeConfig
 
 logger = init_logger(__name__)
 
 
-@cached(cache={}, key=type)
+def key(module: nn.Module) -> tuple:
+    """Cache key for `get_fuser`. Considers module type and its immediate children."""
+    return (type(module), tuple(name for name, _ in module.named_children()))
+
+
+@cached(cache={}, key=key)
 def get_fuser(module: nn.Module) -> BaseFuser | None:
-    """The fuser for `type(module)` (cached per class), or `None` if no match."""
+    """The fuser for `module`'s class and shape (cached), or `None` if no match."""
     # Projection fusions need >=2 sibling linears; the RMSNorm fusion needs a
     # leaf module (raw tensor math, no submodules). Nothing else can match, and
     # tracing is skipped for it.
@@ -49,9 +54,13 @@ def get_fuser(module: nn.Module) -> BaseFuser | None:
                 try:
                     fuser.update_forward(module)
                 except Exception as exc:
-                    # An unrecognised source just means we cannot fuse here.
-                    logger.debug("Could not rewrite %s for fusion: %s", type(module), exc)
-                    return None
+                    logger.debug(
+                        "Attempted to fuse %s using %s but failed to update its forward method: %s",
+                        type(module),
+                        fuser_cls.__name__,
+                        exc,
+                    )
+                    continue
             return fuser
     # A norm we could not match structurally is left unfused; flag likely misses.
     if module.__class__.__name__.endswith("RMSNorm"):
@@ -65,12 +74,12 @@ def get_fuser(module: nn.Module) -> BaseFuser | None:
 class Fusers(UserDict):
     """Mapping from module class to fuser, for all fusable classes in a model."""
 
-    def __init__(self, model: nn.Module, model_config: "ModelConfig"):
-        self.model_config = model_config
+    def __init__(self, model: nn.Module, aphrodite_config: "AphroditeConfig"):
+        self.aphrodite_config = aphrodite_config
         super().__init__({type(m): get_fuser(m) for m in model.modules()})
 
     def __getitem__(self, m: nn.Module) -> BaseFuser | None:
         fuser = self.data.get(type(m))
-        if fuser is not None and fuser.validate(m, self.model_config):
+        if fuser is not None and fuser.validate(m, self.aphrodite_config):
             return fuser
         return None

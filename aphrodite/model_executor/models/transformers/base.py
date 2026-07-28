@@ -104,6 +104,7 @@ class Base(
         super().__init__()
         logger.info("Using Transformers modeling backend.")
 
+        self.aphrodite_config = aphrodite_config
         self.config = aphrodite_config.model_config.hf_config
         self.text_config = self.config.get_text_config()
         self.cache_config = aphrodite_config.cache_config
@@ -350,7 +351,7 @@ class Base(
             has_parameters = lambda m: next(m.parameters(), None) is not None
             names = [n for n, c in module.named_children() if has_parameters(c)]
             tip = get_feature_request_tip(self.model_config.model, self.model_config.trust_remote_code)
-            logger.warning(
+            logger.warning_once(
                 "%s does not define a pipeline parallel plan. The Transformers "
                 "modeling backend will infer the split from the layers of %s in order "
                 "of declaration and keep parameter-free modules on every rank. This "
@@ -441,7 +442,7 @@ class Base(
         # Prefix the patterns because we always start from `self.model`
         tp_plan = {maybe_prefix("model", k): v for k, v in tp_plan.items()}
         # Detect fusable patterns once per module class (cached, so this is cheap)
-        fusers = Fusers(self.model, self.model_config)
+        fusers = Fusers(self.model, self.aphrodite_config)
 
         def register_fusion(fuser: BaseFuser, prefix: str):
             """Register a fused layer's mappings just before it is built."""
@@ -487,7 +488,7 @@ class Base(
                     new_module = replace_conv_class(child_module)
                 elif (fuser := fusers[child_module]) is not None:
                     register_fusion(fuser, qual_name)
-                    new_module = fuser.fuse(child_module, qual_name, self.model_config, self.quant_config)
+                    new_module = fuser.fuse(child_module, qual_name, self.aphrodite_config)
                     logger.info_once(fuser.info(child_name))
                     _recursive_replace(new_module, prefix=qual_name)
                 elif not isinstance(child_module, MoERunner):

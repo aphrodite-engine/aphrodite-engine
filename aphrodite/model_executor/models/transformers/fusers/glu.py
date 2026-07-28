@@ -34,8 +34,7 @@ from aphrodite.model_executor.models.transformers.utils import (
 from aphrodite.model_executor.models.utils import ShardId, maybe_prefix
 
 if TYPE_CHECKING:
-    from aphrodite.config.model import ModelConfig
-    from aphrodite.model_executor.layers.quantization import QuantizationConfig
+    from aphrodite.config import AphroditeConfig
 
 logger = init_logger(__name__)
 
@@ -165,20 +164,15 @@ class GLUFuser(StackedFuser):
         replace_expr(funcdef, muls[0], act_call)
         self.fused_forward = compile_forward(funcdef, fn)
 
-    def validate(self, module: nn.Module, model_config: "ModelConfig") -> bool:
+    def validate(self, module: nn.Module, aphrodite_config: "AphroditeConfig") -> bool:
         act = module.get_submodule(self.act_name)
         if self._get_act_and_mul_name(act) is None:
             logger.debug("No AndMul equivalent for %s; skipping fusion", type(act))
             return False
         return True
 
-    def update_attrs(
-        self,
-        module: nn.Module,
-        prefix: str,
-        model_config: "ModelConfig",
-        quant_config: "QuantizationConfig",
-    ) -> None:
+    def update_attrs(self, module: nn.Module, prefix: str, aphrodite_config: "AphroditeConfig") -> None:
+        quant_config = aphrodite_config.quant_config
         act_fn = self._get_act_and_mul(module.get_submodule(self.act_name))
         gate = module.get_submodule(self.gate_name)
         up = module.get_submodule(self.up_name)
