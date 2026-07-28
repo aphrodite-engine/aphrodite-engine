@@ -481,6 +481,7 @@ _TEXT_GENERATION_EXAMPLE_MODELS = {
     "TeleChat2ForCausalLM": _HfExamplesInfo("Tele-AI/TeleChat2-3B", trust_remote_code=True),
     "TeleChat3ForCausalLM": _HfExamplesInfo("Tele-AI/TeleChat3-36B-Thinking", trust_remote_code=True),
     "TeleFLMForCausalLM": _HfExamplesInfo("CofeAI/FLM-2-52B-Instruct-2407", trust_remote_code=True),
+    "VaultGemmaForCausalLM": _HfExamplesInfo("google/vaultgemma-1b"),
     "Zamba2ForCausalLM": _HfExamplesInfo("Zyphra/Zamba2-7B-instruct"),
     "MiMoForCausalLM": _HfExamplesInfo("XiaomiMiMo/MiMo-7B-RL", trust_remote_code=True),
     "MiMoV2FlashForCausalLM": _HfExamplesInfo("XiaomiMiMo/MiMo-V2-Flash", trust_remote_code=True),

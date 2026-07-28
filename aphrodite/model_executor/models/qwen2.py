@@ -55,7 +55,7 @@ from aphrodite.model_executor.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from aphrodite.sequence import IntermediateTensors
-from aphrodite.transformers_utils.config import is_interleaved, set_default_rope_theta
+from aphrodite.transformers_utils.config import set_default_rope_theta
 from aphrodite.v1.attention.backend import AttentionType
 
 from .interfaces import (
@@ -336,7 +336,7 @@ class Qwen2Model(nn.Module, EagleModelMixin):
         quant_config = aphrodite_config.quant_config
 
         # TODO (@robertgshaw2): see if this can be moved out
-        if is_interleaved(aphrodite_config.model_config.hf_text_config):
+        if len(set(getattr(config, "layer_types", []))) > 1:
             assert config.max_window_layers == config.num_hidden_layers, (
                 "Sliding window for some but all layers is not supported. "
                 "This model uses sliding window but `max_window_layers` = {} "

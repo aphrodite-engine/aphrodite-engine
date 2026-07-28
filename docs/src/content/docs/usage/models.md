@@ -58,6 +58,7 @@ Aphrodite supports a large variety of generative Transformer models in [Hugging 
 | `SolarForCausalLM`                |   `upstage/solar-pro-preview-instruct` |
 | `StableLmforCausalLM`             |         `stabilityai/stablelm-3b-4e1t` |
 | `Starcoder2ForCausalLM`           |                `bigcode/starcoder2-3b` |
+| `VaultGemmaForCausalLM`           |               `google/vaultgemma-1b` |
 | `XverseForCausalLM`               |               `xverse/XVERSE-65B-Chat` |
 
 :::tip
