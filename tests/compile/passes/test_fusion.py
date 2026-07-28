@@ -183,8 +183,6 @@ class TestModel(torch.nn.Module):
             # Blockwise path
             if self.use_aiter_fusion and self.use_aiter_quant_op:
                 return [rocm_aiter_ops.get_group_quant_op()]
-            if self.use_aiter_fusion:
-                return [torch.ops.aphrodite.triton_per_token_group_quant_fp8.default]
         else:
             if self.use_aiter_quant_op:
                 return [rocm_aiter_ops.get_per_token_quant_op()]
