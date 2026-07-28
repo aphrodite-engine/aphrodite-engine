@@ -71,6 +71,7 @@ _MOCK_OFFLOADING_SPEC.config = SimpleNamespace(
         is_parallelism_agnostic=True,
     ),
     groups=(),
+    replicated_layout=False,
 )
 _MOCK_OFFLOADING_SPEC.blocks_per_chunk = 1
 
