@@ -20,6 +20,7 @@ from aphrodite.sampling_params import SamplingParams
 from aphrodite.tasks import SupportedTask
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.input_processor import InputProcessor
+from aphrodite.v1.fault_tolerance.utils import FaultToleranceRequest, FaultToleranceResult
 
 if TYPE_CHECKING:
     from aphrodite.v1.engine import PauseMode
@@ -225,6 +226,14 @@ class EngineClient(ABC):
         kwargs: dict | None = None,
     ):
         """Perform a collective RPC call to the given path."""
+        raise NotImplementedError
+
+    async def handle_fault(self, fault_tolerance_request: FaultToleranceRequest) -> FaultToleranceResult:
+        """send fault tolerance instruction to the engine"""
+        raise NotImplementedError
+
+    async def get_status(self):
+        """Get fault tolerance status of all engines."""
         raise NotImplementedError
 
     async def get_supported_tasks(self) -> tuple[SupportedTask, ...]:

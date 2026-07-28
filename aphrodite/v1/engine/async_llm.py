@@ -44,6 +44,7 @@ from aphrodite.v1.engine.input_processor import InputProcessor
 from aphrodite.v1.engine.output_processor import OutputProcessor, RequestOutputCollector
 from aphrodite.v1.engine.parallel_sampling import ParentRequest
 from aphrodite.v1.executor import Executor
+from aphrodite.v1.fault_tolerance.utils import FaultToleranceRequest, FaultToleranceResult
 from aphrodite.v1.metrics.loggers import (
     StatLoggerFactory,
     StatLoggerManager,
@@ -998,6 +999,13 @@ class AsyncLLM(EngineClient):
             self.aphrodite_config.parallel_config.data_parallel_size = new_data_parallel_size
         finally:
             set_scaling_elastic_ep(False)
+
+    async def handle_fault(self, fault_tolerance_request: FaultToleranceRequest) -> FaultToleranceResult:
+        """send fault tolerance instruction to the engine"""
+        return await self.engine_core.handle_fault(fault_tolerance_request)
+
+    async def get_status(self):
+        return await self.engine_core.get_status()
 
     @property
     def is_running(self) -> bool:

@@ -13,6 +13,7 @@ from torch.distributed import ProcessGroup, ReduceOp, Store
 from typing_extensions import Self
 
 import aphrodite.envs as envs
+from aphrodite.config.fault_tolerance import FaultToleranceConfig
 from aphrodite.config.utils import config
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
@@ -391,6 +392,14 @@ class ParallelConfig:
         should only be set by API server scale-out.
     """
 
+    enable_fault_tolerance: bool = False
+    """Enable fault tolerance for detailed error recovery,
+    such as scaling down fault DPEngineCore.
+    """
+
+    fault_tolerance_config: FaultToleranceConfig = Field(default_factory=FaultToleranceConfig)
+    """The configurations for fault tolerance."""
+
     @field_validator("disable_nccl_for_dp_synchronization", mode="wrap")
     @classmethod
     def _skip_none_validation(cls, value: Any, handler: Callable) -> Any:
@@ -438,6 +447,13 @@ class ParallelConfig:
                 "Invalid value of `_api_process_rank`. "
                 f"Expected to be `-1` or `[0, {self._api_process_count})`, "
                 f"but found: {self._api_process_rank}"
+            )
+
+        if self.enable_fault_tolerance and self._api_process_count > 1:
+            raise ValueError(
+                "Fault tolerance requires a single API server process "
+                f"(--api-server-count=1), but got {self._api_process_count}. "
+                "The FT system assumes one AsyncMPClient manages all engines."
             )
 
         if self.all2all_backend in ["pplx", "naive"]:

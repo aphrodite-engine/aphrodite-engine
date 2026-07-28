@@ -21,6 +21,7 @@ from aphrodite.config.device import DeviceConfig
 from aphrodite.config.diffusion import DiffusionConfig
 from aphrodite.config.ec_manager_config import EncoderCacheManagerConfig
 from aphrodite.config.ec_transfer import ECTransferConfig
+from aphrodite.config.fault_tolerance import FaultToleranceConfig
 from aphrodite.config.kernel import KernelConfig
 from aphrodite.config.kv_events import KVEventsConfig
 from aphrodite.config.kv_transfer import KVTransferConfig
@@ -124,6 +125,8 @@ __all__ = [
     "StructuredOutputsConfig",
     # From aphrodite.config.profiler
     "ProfilerConfig",
+    # From aphrodite.config.fault_tolerance
+    "FaultToleranceConfig",
     # From aphrodite.config.utils
     "ConfigType",
     "SupportsMetricsInfo",

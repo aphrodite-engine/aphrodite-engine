@@ -261,6 +261,13 @@ def build_app(
 
         register_pooling_api_routers(app, supported_tasks, model_config)
 
+    if args.enable_fault_tolerance:
+        from aphrodite.entrypoints.serve.fault_tolerance.api_router import (
+            register_fault_tolerance_api_router,
+        )
+
+        register_fault_tolerance_api_router(app)
+
     # Endpoint plugins are attached last so their routes are registered after all core
     # routers. A plugin eligible for the `render` task still gets routes registered
     # and receives `engine_client=None` at Phase B.
