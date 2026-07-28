@@ -107,7 +107,8 @@ jobs:
             --s3-upload-concurrency 8 \
             --s3-chunk-size 64M
 
-          public_wheel_url="${B2_PUBLIC_BASE_URL%/}/wheels/${wheel_name}"
+          public_wheel_name="${wheel_name//+/%2B}"
+          public_wheel_url="${B2_PUBLIC_BASE_URL%/}/wheels/${public_wheel_name}"
           curl --fail --silent --show-error --location \
             --retry 10 \
             --retry-all-errors \
@@ -119,7 +120,8 @@ jobs:
           entries="$RUNNER_TEMP/aphrodite-wheel-index.tsv"
           : > "$entries"
           while IFS= read -r stored_wheel; do
-            stored_url="${B2_PUBLIC_BASE_URL%/}/wheels/${stored_wheel}"
+            public_stored_wheel="${stored_wheel//+/%2B}"
+            stored_url="${B2_PUBLIC_BASE_URL%/}/wheels/${public_stored_wheel}"
             if [[ "$stored_wheel" == "$wheel_name" ]]; then
               digest="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
               printf '%s\t%s\t%s\n' \
