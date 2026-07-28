@@ -529,6 +529,34 @@ class TestMockObjTierShutdown:
         tier.shutdown()
         tier.shutdown()  # must not raise
 
+    def test_shutdown_defers_dependent_cleanup_until_xfer_release(self, monkeypatch):
+        tier, agent = _make_tier(num_blocks=4)
+        tier.submit_store(make_job(1, [key(1)], [0]))
+
+        release_xfer = MagicMock(side_effect=[RuntimeError("transfer is active"), None])
+        release_dlist = MagicMock(wraps=agent.release_dlist_handle)
+        deregister = MagicMock(wraps=agent.deregister_memory)
+        monkeypatch.setattr(agent, "release_xfer_handle", release_xfer)
+        monkeypatch.setattr(agent, "release_dlist_handle", release_dlist)
+        monkeypatch.setattr(agent, "deregister_memory", deregister)
+
+        tier.shutdown()
+
+        assert 1 in tier._transfers
+        assert tier._dram_prepped_handle is not None
+        assert tier._primary_reg is not None
+        release_dlist.assert_not_called()
+        deregister.assert_not_called()
+
+        tier.shutdown()
+
+        assert not tier._transfers
+        assert tier._dram_prepped_handle is None
+        assert tier._primary_reg is None
+        assert release_xfer.call_count == 2
+        assert release_dlist.call_count == 2
+        assert deregister.call_count == 2
+
 
 class TestObjTierKVEvents:
     def setup_method(self):
