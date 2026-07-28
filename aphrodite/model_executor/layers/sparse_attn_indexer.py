@@ -8,7 +8,7 @@ import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite._aiter_ops import rocm_aiter_ops
 from aphrodite.compilation.breakable_cudagraph import eager_break_during_capture
-from aphrodite.config import get_current_aphrodite_config
+from aphrodite.config import CUDAGraphMode, get_current_aphrodite_config
 from aphrodite.distributed import get_dcp_group, get_pcp_group
 from aphrodite.forward_context import get_forward_context
 from aphrodite.logger import init_logger
@@ -305,6 +305,7 @@ def sparse_attn_indexer(
     topk_indices_buffer: torch.Tensor,
     skip_k_cache_insert: bool,
     use_pcp: bool,
+    dense_mha_metadata_layer_name: LayerNameType,
     use_fp4_cache: bool = False,
     dcp_rank: int = 0,
     dcp_world_size: int = 1,
@@ -313,7 +314,8 @@ def sparse_attn_indexer(
     dcp_local_prefill_shadow_rows: int = 0,
 ) -> torch.Tensor:
     # careful! this will be None in dummy run
-    attn_metadata = get_forward_context().attn_metadata
+    forward_context = get_forward_context()
+    attn_metadata = forward_context.attn_metadata
     fp8_dtype = current_platform.fp8_dtype()
     k_cache_prefix = _resolve_layer_name(k_cache_prefix)
 
@@ -363,6 +365,7 @@ def sparse_attn_indexer(
             topk_indices_buffer,
             skip_k_cache_insert,
             use_pcp,
+            dense_mha_metadata_layer_name,
             use_fp4_cache,
         )
     attn_metadata_narrowed = attn_metadata[k_cache_prefix]
@@ -407,6 +410,21 @@ def sparse_attn_indexer(
             quant_block_size,
             scale_fmt,
         )
+
+    # The indexer and main MLA may classify the same short extend differently
+    # because they use independent decode thresholds. Only the main MLA route
+    # can determine whether the top-k indices will be consumed.
+    if forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL:
+        dense_mha_layer = _resolve_layer_name(dense_mha_metadata_layer_name)
+        if dense_mha_layer:
+            mla_metadata = attn_metadata.get(dense_mha_layer)
+            prefill_metadata = getattr(mla_metadata, "prefill", None)
+            if (
+                getattr(prefill_metadata, "use_dense_mha", False)
+                and getattr(mla_metadata, "num_decode_tokens", -1) == 0
+                and not torch.cuda.is_current_stream_capturing()
+            ):
+                return topk_indices_buffer
 
     # The buffer must be pre-filled with -1 (the "no token" sentinel) before the
     # top-k kernels scatter valid indices into it. On the fused deepseek_v32
@@ -756,6 +774,7 @@ def sparse_attn_indexer_fake(
     topk_indices_buffer: torch.Tensor | None,
     skip_k_cache_insert: bool,
     use_pcp: bool,
+    dense_mha_metadata_layer_name: LayerNameType,
     use_fp4_cache: bool = False,
     dcp_rank: int = 0,
     dcp_world_size: int = 1,
@@ -812,6 +831,7 @@ class SparseAttnIndexer(CustomOp):
         self.topk_indices_buffer = topk_indices_buffer
         self.skip_k_cache_insert = skip_k_cache_insert
         self.use_fp4_cache = use_fp4_cache
+        self.dense_mha_metadata_layer_name = ""
         # DCP scalars are constant for the run; resolve them here (config is set
         # during model construction) and pass them into the custom op, rather
         # than threading them through per-step metadata.
@@ -881,6 +901,7 @@ class SparseAttnIndexer(CustomOp):
             self.topk_indices_buffer,
             self.skip_k_cache_insert,
             self.use_pcp,
+            _encode_layer_name(self.dense_mha_metadata_layer_name),
             self.use_fp4_cache,
             self.dcp_rank,
             self.dcp_world_size,
