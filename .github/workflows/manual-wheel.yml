@@ -163,6 +163,13 @@ jobs:
           name: aphrodite-simple-index
           path: docs/public/simple/aphrodite-engine
 
+      - name: Publish wheel index at /whl
+        run: |
+          mkdir -p docs/public/whl
+          cp \
+            docs/public/simple/aphrodite-engine/index.html \
+            docs/public/whl/index.html
+
       - name: Build and upload site
         uses: withastro/action@v3
         with:
