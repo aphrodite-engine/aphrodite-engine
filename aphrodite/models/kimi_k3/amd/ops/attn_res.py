@@ -38,9 +38,9 @@ def _attn_res_kernel(
         mask=d_mask,
         other=0.0,
     ).to(tl.float32)
-    input_qk_weight = tl.load(norm_weight_ptr + d_offsets, mask=d_mask, other=0.0).to(
-        tl.float32
-    ) * tl.load(qk_weight_ptr + d_offsets, mask=d_mask, other=0.0).to(tl.float32)
+    input_qk_weight = tl.load(norm_weight_ptr + d_offsets, mask=d_mask, other=0.0).to(tl.float32) * tl.load(
+        qk_weight_ptr + d_offsets, mask=d_mask, other=0.0
+    ).to(tl.float32)
 
     max_logit = tl.full((), -float("inf"), tl.float32)
     denominator = tl.zeros((), tl.float32)
@@ -52,10 +52,7 @@ def _attn_res_kernel(
         source_mask = source_offsets < num_sources
         is_prefix = source_offsets == num_blocks
         block_ptrs = (
-            blocks_ptr
-            + row_idx * stride_block_m
-            + source_offsets[:, None] * stride_block_r
-            + d_offsets[None, :]
+            blocks_ptr + row_idx * stride_block_m + source_offsets[:, None] * stride_block_r + d_offsets[None, :]
         )
         block_values = tl.load(
             block_ptrs,
@@ -64,9 +61,7 @@ def _attn_res_kernel(
             eviction_policy="evict_first",
         ).to(tl.float32)
         values = tl.where(is_prefix[:, None], prefix[None, :], block_values)
-        reciprocal_std = tl.rsqrt(
-            tl.sum(values * values, axis=1) * (1.0 / hidden_size) + eps
-        )
+        reciprocal_std = tl.rsqrt(tl.sum(values * values, axis=1) * (1.0 / hidden_size) + eps)
         logits = tl.sum(values * input_qk_weight[None, :], axis=1) * reciprocal_std
         scores = tl.where(source_mask, logits, -float("inf"))
 

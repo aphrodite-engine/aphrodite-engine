@@ -20,13 +20,8 @@ def get_attn_res_triton_warmup_profiles(
     max_blocks: int,
 ) -> tuple[tuple[int, bool, int, bool], ...]:
     """Return the small-batch profiles that bypass the native kernel."""
-    profiles = [
-        (num_blocks, False, -1, True) for num_blocks in range(2, max_blocks + 1)
-    ]
-    profiles.extend(
-        (block_write_idx, True, block_write_idx, True)
-        for block_write_idx in range(2, max_blocks)
-    )
+    profiles = [(num_blocks, False, -1, True) for num_blocks in range(2, max_blocks + 1)]
+    profiles.extend((block_write_idx, True, block_write_idx, True) for block_write_idx in range(2, max_blocks))
     profiles.append((max_blocks, True, -1, False))
     return tuple(profiles)
 
@@ -85,10 +80,7 @@ def _attn_res_kernel(
         )
     if WRITE_BLOCK:
         tl.store(
-            blocks_ptr
-            + row_idx * stride_block_m
-            + block_write_idx * stride_block_r
-            + d_offsets,
+            blocks_ptr + row_idx * stride_block_m + block_write_idx * stride_block_r + d_offsets,
             updated_prefix,
             mask=d_mask,
         )
@@ -99,9 +91,7 @@ def _attn_res_kernel(
         # Reloading avoids keeping the full prefix vector live across the loop.
         if HAS_DELTA:
             tl.debug_barrier()
-        input_qk_weight = tl.load(
-            norm_weight_ptr + d_offsets, mask=d_mask, other=0.0
-        ).to(tl.float32) * tl.load(
+        input_qk_weight = tl.load(norm_weight_ptr + d_offsets, mask=d_mask, other=0.0).to(tl.float32) * tl.load(
             qk_weight_ptr + d_offsets, mask=d_mask, other=0.0
         ).to(tl.float32)
         max_logit = tl.full((), -float("inf"), tl.float32)
@@ -114,17 +104,9 @@ def _attn_res_kernel(
             source_mask = source_offsets < num_sources
             is_prefix = source_offsets == num_blocks
             block_ptrs = (
-                blocks_ptr
-                + row_idx * stride_block_m
-                + source_offsets[:, None] * stride_block_r
-                + d_offsets[None, :]
+                blocks_ptr + row_idx * stride_block_m + source_offsets[:, None] * stride_block_r + d_offsets[None, :]
             )
-            prefix_ptrs = (
-                prefix_ptr
-                + row_idx * stride_prefix_m
-                + source_offsets[:, None] * 0
-                + d_offsets[None, :]
-            )
+            prefix_ptrs = prefix_ptr + row_idx * stride_prefix_m + source_offsets[:, None] * 0 + d_offsets[None, :]
             value_ptrs = tl.where(is_prefix[:, None], prefix_ptrs, block_ptrs)
             values = tl.load(
                 value_ptrs,
@@ -132,9 +114,7 @@ def _attn_res_kernel(
                 other=0.0,
                 eviction_policy="evict_first",
             ).to(tl.float32)
-            reciprocal_std = tl.rsqrt(
-                tl.sum(values * values, axis=1) * (1.0 / hidden_size) + eps
-            )
+            reciprocal_std = tl.rsqrt(tl.sum(values * values, axis=1) * (1.0 / hidden_size) + eps)
             logits = tl.sum(values * input_qk_weight[None, :], axis=1) * reciprocal_std
             scores = tl.where(source_mask, logits, -float("inf"))
 
@@ -153,12 +133,9 @@ def _attn_res_kernel(
 
     if APPLY_OUTPUT_NORM:
         output_reciprocal_std = tl.rsqrt(
-            tl.sum(tl.where(d_mask, mixed * mixed, 0.0), axis=0) * (1.0 / hidden_size)
-            + output_norm_eps
+            tl.sum(tl.where(d_mask, mixed * mixed, 0.0), axis=0) * (1.0 / hidden_size) + output_norm_eps
         )
-        output_norm_weight = tl.load(
-            output_norm_weight_ptr + d_offsets, mask=d_mask, other=0.0
-        ).to(tl.float32)
+        output_norm_weight = tl.load(output_norm_weight_ptr + d_offsets, mask=d_mask, other=0.0).to(tl.float32)
         output = mixed * output_reciprocal_std * output_norm_weight
     tl.store(
         output_ptr + row_idx * stride_output_m + d_offsets,

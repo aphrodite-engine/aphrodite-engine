@@ -69,12 +69,8 @@ def test_amd_attn_res_matches_reference(
         hidden_size,
         padding=row_padding,
     )
-    norm_weight = 1 + 0.1 * torch.randn(
-        hidden_size, device="cuda", dtype=torch.bfloat16
-    )
-    qk_weight = (
-        torch.randn(hidden_size, device="cuda", dtype=torch.bfloat16) / hidden_size**0.5
-    )
+    norm_weight = 1 + 0.1 * torch.randn(hidden_size, device="cuda", dtype=torch.bfloat16)
+    qk_weight = torch.randn(hidden_size, device="cuda", dtype=torch.bfloat16) / hidden_size**0.5
     expected = _reference(
         prefix,
         blocks,

@@ -177,6 +177,10 @@ mod tests {
             Ok(vec![])
         }
 
+        fn encode_ordinary(&self, text: &str) -> aphrodite_tokenizer::Result<Vec<u32>> {
+            self.encode(text, false)
+        }
+
         fn decode(
             &self,
             _token_ids: &[u32],
