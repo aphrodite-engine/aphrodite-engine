@@ -49,6 +49,7 @@ from aphrodite.v1.kv_offload.tiering.p2p.session.protocol import (
 from aphrodite.v1.kv_offload.tiering.p2p.session.server import (
     _CANCEL_DRAIN_TIMEOUT_S,
     _InflightXfer,
+    _OutboundRequestState,
 )
 from aphrodite.v1.kv_offload.tiering.p2p.session.session import (
     _MAX_CONSECUTIVE_DISPATCH_ERRORS,
@@ -311,10 +312,26 @@ def _activate(session: P2PSession, conn: FakeConnection, peer_id: str = "peer:80
 # either a missing entry or a None field. These helpers paper over that.
 
 
+def _client_load(session: P2PSession, kv_request_id: str):
+    """The single in-flight load of a kv_request_id (loads are per-round)."""
+    loads = session._client._requests[kv_request_id].loads
+    assert len(loads) == 1
+    return next(iter(loads.values()))
+
+
 def _srv_outbound(session: P2PSession, kv_request_id: str):
-    """Outbound serve state for a kv_request_id, or None (idle / GC'd)."""
+    """Serve-side round for a kv_request_id, or None (idle / GC'd).
+
+    Rounds are keyed by wire round_seq; surfaces the demanded round when
+    a fetch has bound one, else any parked supply round.
+    """
     st = session._server._requests.get(kv_request_id)
-    return st.outbound if st is not None else None
+    if st is None or not st.outbound:
+        return None
+    for rnd in st.outbound.values():
+        if rnd.demand_received:
+            return rnd
+    return next(iter(st.outbound.values()))
 
 
 def _srv_lookups(session: P2PSession) -> list:
@@ -324,8 +341,10 @@ def _srv_lookups(session: P2PSession) -> list:
 
 def _srv_abort_started(session: P2PSession, kv_request_id: str) -> float | None:
     """Pending-abort start time for a kv_request_id, or None."""
-    st = session._server._requests.get(kv_request_id)
-    return st.abort_started_at if st is not None else None
+    for (kv, _), started in session._server._pending_aborts.items():
+        if kv == kv_request_id:
+            return started
+    return None
 
 
 def _srv_inflight_count(session: P2PSession, kv_request_id: str) -> int:
@@ -467,6 +486,7 @@ class TestClientFlows:
         conn.enqueue(
             {
                 TYPE_KEY: TransferDoneMsg.TYPE,
+                TransferDoneMsg.ROUND_SEQ: 0,
                 TransferDoneMsg.KV_REQUEST_ID: "req-1",
                 TransferDoneMsg.SUCCESS: True,
             }
@@ -481,6 +501,7 @@ class TestClientFlows:
         conn.enqueue(
             {
                 TYPE_KEY: TransferDoneMsg.TYPE,
+                TransferDoneMsg.ROUND_SEQ: 0,
                 TransferDoneMsg.KV_REQUEST_ID: "req-1",
                 TransferDoneMsg.SUCCESS: False,
             }
@@ -520,6 +541,7 @@ class TestClientFlows:
         conn.enqueue(
             {
                 TYPE_KEY: TransferDoneMsg.TYPE,
+                TransferDoneMsg.ROUND_SEQ: 0,
                 TransferDoneMsg.KV_REQUEST_ID: "req-1",
                 TransferDoneMsg.SUCCESS: True,
             }
@@ -532,7 +554,7 @@ class TestClientFlows:
         session, conn, _ = _make_session()
         _activate(session, conn)
         session.request_blocks(job_id=1, kv_request_id="req-1", keys=[b"k"], block_ids=[0])
-        session._client._requests["req-1"].load.submitted_at = time.monotonic() - 60.0
+        _client_load(session, "req-1").submitted_at = time.monotonic() - 60.0
         session.poll()
         abort = conn._sent[-1]
         assert abort[TYPE_KEY] == AbortFetchMsg.TYPE
@@ -547,17 +569,17 @@ class TestClientFlows:
         _activate(session, conn)
         session.request_blocks(job_id=7, kv_request_id="req-7", keys=[b"k"], block_ids=[0])
         # 1) Trip the load timeout to send AbortFetch and stamp aborted_at.
-        session._client._requests["req-7"].load.submitted_at = time.monotonic() - _LOAD_TIMEOUT_S - 1.0
+        _client_load(session, "req-7").submitted_at = time.monotonic() - _LOAD_TIMEOUT_S - 1.0
         loads = session.poll().loads
         assert loads == []
         assert any(
             m.get(TYPE_KEY) == AbortFetchMsg.TYPE and m[AbortFetchMsg.KV_REQUEST_ID] == "req-7" for m in conn._sent
         )
-        assert session._client._requests["req-7"].load.aborted_at is not None
+        assert _client_load(session, "req-7").aborted_at is not None
 
         # 2) Now backdate aborted_at past the abort-ack timeout. No ack ever
         # arrived from the peer.
-        session._client._requests["req-7"].load.aborted_at = time.monotonic() - _ABORT_ACK_TIMEOUT_S - 1.0
+        _client_load(session, "req-7").aborted_at = time.monotonic() - _ABORT_ACK_TIMEOUT_S - 1.0
         loads = session.poll().loads
         assert loads == [LoadResult(job_id=7, kv_request_id="req-7", success=False)]
         assert "req-7" not in session._client._requests
@@ -569,15 +591,16 @@ class TestClientFlows:
         session, conn, _ = _make_session()
         _activate(session, conn)
         session.request_blocks(job_id=8, kv_request_id="req-8", keys=[b"k"], block_ids=[0])
-        session._client._requests["req-8"].load.submitted_at = time.monotonic() - _LOAD_TIMEOUT_S - 1.0
+        _client_load(session, "req-8").submitted_at = time.monotonic() - _LOAD_TIMEOUT_S - 1.0
         # First poll: AbortFetch goes out.
         session.poll()
-        assert session._client._requests["req-8"].load.aborted_at is not None
+        assert _client_load(session, "req-8").aborted_at is not None
 
         # Peer acks the abort.
         conn.enqueue(
             {
                 TYPE_KEY: AbortAckMsg.TYPE,
+                AbortAckMsg.ROUND_SEQ: 0,
                 AbortAckMsg.KV_REQUEST_ID: "req-8",
             }
         )
@@ -875,6 +898,7 @@ class TestLookupFlow:
         conn.enqueue(
             {
                 TYPE_KEY: LookupMsg.TYPE,
+                LookupMsg.ROUND_SEQ: 0,
                 LookupMsg.KV_REQUEST_ID: "req-1",
                 LookupMsg.KEYS: [b"hX", b"hY", b"hZ"],
             }
@@ -907,6 +931,7 @@ def _send_lookup(conn: FakeConnection, kv_request_id: str, keys: list[bytes]):
     conn.enqueue(
         {
             TYPE_KEY: LookupMsg.TYPE,
+            LookupMsg.ROUND_SEQ: 0,
             LookupMsg.KV_REQUEST_ID: kv_request_id,
             LookupMsg.KEYS: list(keys),
         }
@@ -1157,6 +1182,7 @@ class TestServerLookupHandling:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [],
                 FetchMsg.BLOCK_INDEXES: [],
@@ -1196,6 +1222,7 @@ class TestServerLookupHandling:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"hA", b"hB"],
                 FetchMsg.BLOCK_INDEXES: [20, 21],
@@ -1233,6 +1260,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1", b"k2"],
                 FetchMsg.BLOCK_INDEXES: [10, 11],
@@ -1251,6 +1279,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [5],
@@ -1269,6 +1298,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [5],
@@ -1287,6 +1317,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: AbortFetchMsg.TYPE,
+                AbortFetchMsg.ROUND_SEQ: 0,
                 AbortFetchMsg.KV_REQUEST_ID: "req-1",
             }
         )
@@ -1305,13 +1336,19 @@ class TestServerFlows:
         tid = 42
         session._server._inflight_add(
             tid,
-            _InflightXfer(kv_request_id="req-1", block_count=1, job_ids={1}),
+            _InflightXfer(
+                kv_request_id="req-1",
+                block_count=1,
+                job_ids={1},
+                round=_OutboundRequestState(inflight=1),
+            ),
         )
         transport._cancel_still_inflight.add(tid)
 
         conn.enqueue(
             {
                 TYPE_KEY: AbortFetchMsg.TYPE,
+                AbortFetchMsg.ROUND_SEQ: 0,
                 AbortFetchMsg.KV_REQUEST_ID: "req-1",
             }
         )
@@ -1332,13 +1369,19 @@ class TestServerFlows:
         tid = 42
         session._server._inflight_add(
             tid,
-            _InflightXfer(kv_request_id="req-1", block_count=1, job_ids={1}),
+            _InflightXfer(
+                kv_request_id="req-1",
+                block_count=1,
+                job_ids={1},
+                round=_OutboundRequestState(inflight=1),
+            ),
         )
         transport._cancel_still_inflight.add(tid)
 
         conn.enqueue(
             {
                 TYPE_KEY: AbortFetchMsg.TYPE,
+                AbortFetchMsg.ROUND_SEQ: 0,
                 AbortFetchMsg.KV_REQUEST_ID: "req-1",
             }
         )
@@ -1365,20 +1408,26 @@ class TestServerFlows:
         tid = 42
         session._server._inflight_add(
             tid,
-            _InflightXfer(kv_request_id="req-1", block_count=1, job_ids={1}),
+            _InflightXfer(
+                kv_request_id="req-1",
+                block_count=1,
+                job_ids={1},
+                round=_OutboundRequestState(inflight=1),
+            ),
         )
         transport._cancel_still_inflight.add(tid)
 
         conn.enqueue(
             {
                 TYPE_KEY: AbortFetchMsg.TYPE,
+                AbortFetchMsg.ROUND_SEQ: 0,
                 AbortFetchMsg.KV_REQUEST_ID: "req-1",
             }
         )
         session.poll()
         assert _srv_abort_started(session, "req-1") is not None
         # Backdate past the drain deadline.
-        session._server._requests["req-1"].abort_started_at = time.monotonic() - _CANCEL_DRAIN_TIMEOUT_S - 1.0
+        session._server._pending_aborts[("req-1", 0)] = time.monotonic() - _CANCEL_DRAIN_TIMEOUT_S - 1.0
         # Even if the transport still claims it can't cancel, the
         # session must force-pop and ack.
         transport._cancel_calls.clear()
@@ -1399,13 +1448,19 @@ class TestServerFlows:
         tid = 42
         session._server._inflight_add(
             tid,
-            _InflightXfer(kv_request_id="req-1", block_count=1, job_ids={1}),
+            _InflightXfer(
+                kv_request_id="req-1",
+                block_count=1,
+                job_ids={1},
+                round=_OutboundRequestState(inflight=1),
+            ),
         )
         transport._cancel_still_inflight.add(tid)
 
         conn.enqueue(
             {
                 TYPE_KEY: AbortFetchMsg.TYPE,
+                AbortFetchMsg.ROUND_SEQ: 0,
                 AbortFetchMsg.KV_REQUEST_ID: "req-1",
             }
         )
@@ -1417,6 +1472,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: AbortFetchMsg.TYPE,
+                AbortFetchMsg.ROUND_SEQ: 0,
                 AbortFetchMsg.KV_REQUEST_ID: "req-1",
             }
         )
@@ -1451,6 +1507,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [5],
@@ -1481,6 +1538,7 @@ class TestServerFlows:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [5],
@@ -1519,6 +1577,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [5],
@@ -1544,6 +1603,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1", b"k2"],
                 FetchMsg.BLOCK_INDEXES: [10, 11],
@@ -1579,6 +1639,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [10],
@@ -1613,6 +1674,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [10],
@@ -1634,6 +1696,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-2",
                 FetchMsg.KEYS: [b"k1", b"k2"],
                 FetchMsg.BLOCK_INDEXES: [10, 11],
@@ -1667,6 +1730,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"demand"],
                 FetchMsg.BLOCK_INDEXES: [5],
@@ -1701,6 +1765,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [10],
@@ -1738,6 +1803,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [10],
@@ -1772,6 +1838,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1", b"k2", b"k3"],
                 FetchMsg.BLOCK_INDEXES: [10, 11, 12],
@@ -1833,6 +1900,7 @@ class TestFinishRequestServerSide:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1", b"k2"],
                 FetchMsg.BLOCK_INDEXES: [10, 11],
@@ -1899,6 +1967,7 @@ class TestBidirectional:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-srv",
                 FetchMsg.KEYS: [b"served"],
                 FetchMsg.BLOCK_INDEXES: [7],
@@ -1924,6 +1993,7 @@ class TestBidirectional:
         conn.enqueue(
             {
                 TYPE_KEY: TransferDoneMsg.TYPE,
+                TransferDoneMsg.ROUND_SEQ: 0,
                 TransferDoneMsg.KV_REQUEST_ID: "req-cli",
                 TransferDoneMsg.SUCCESS: True,
             }
@@ -2111,6 +2181,7 @@ class TestAdversarial:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-bad",
                 FetchMsg.KEYS: [b"k1", b"k2"],
                 FetchMsg.BLOCK_INDEXES: [1],
@@ -2159,6 +2230,7 @@ class TestDispatchErrorHandling:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-bad",
                 FetchMsg.KEYS: [b"k1", b"k2"],
                 FetchMsg.BLOCK_INDEXES: [1],
@@ -2189,6 +2261,7 @@ class TestDispatchErrorHandling:
         conn.enqueue(
             {
                 TYPE_KEY: FetchMsg.TYPE,
+                FetchMsg.ROUND_SEQ: 0,
                 FetchMsg.KV_REQUEST_ID: "req-1",
                 FetchMsg.KEYS: [b"k1"],
                 FetchMsg.BLOCK_INDEXES: [0],
@@ -2212,6 +2285,7 @@ class TestDispatchErrorHandling:
             conn.enqueue(
                 {
                     TYPE_KEY: FetchMsg.TYPE,
+                    FetchMsg.ROUND_SEQ: 0,
                     FetchMsg.KV_REQUEST_ID: "req-1",
                     FetchMsg.KEYS: [b"k1"],
                     FetchMsg.BLOCK_INDEXES: [0],
@@ -2239,6 +2313,7 @@ class TestDispatchErrorHandling:
             conn.enqueue(
                 {
                     TYPE_KEY: FetchMsg.TYPE,
+                    FetchMsg.ROUND_SEQ: 0,
                     FetchMsg.KV_REQUEST_ID: "req-1",
                     FetchMsg.KEYS: [b"k1"],
                     FetchMsg.BLOCK_INDEXES: [0],
@@ -2284,6 +2359,7 @@ class TestInflightPerReqInvariant:
             conn.enqueue(
                 {
                     TYPE_KEY: FetchMsg.TYPE,
+                    FetchMsg.ROUND_SEQ: 0,
                     FetchMsg.KV_REQUEST_ID: kv_id,
                     FetchMsg.KEYS: keys,
                     FetchMsg.BLOCK_INDEXES: indexes,
@@ -2329,7 +2405,12 @@ class TestInflightPerReqInvariant:
                 tid = kv_id_idx * 10 + j
                 session._server._inflight_add(
                     tid,
-                    _InflightXfer(kv_request_id=kv_id, block_count=1, job_ids={tid}),
+                    _InflightXfer(
+                        kv_request_id=kv_id,
+                        block_count=1,
+                        job_ids={tid},
+                        round=_OutboundRequestState(inflight=1),
+                    ),
                 )
         assert _srv_total_inflight(session) == len(session._server._inflight)
         assert session._server._has_inflight_for("req-0")
@@ -2419,6 +2500,7 @@ class TestFetchMsgValidation:
     def _valid_msg(self) -> dict:
         return {
             TYPE_KEY: FetchMsg.TYPE,
+            FetchMsg.ROUND_SEQ: 0,
             FetchMsg.KV_REQUEST_ID: "req-1",
             FetchMsg.KEYS: [b"k1", b"k2"],
             FetchMsg.BLOCK_INDEXES: [0, 1],
@@ -2444,6 +2526,7 @@ class TestTransferDoneMsgValidation:
     def test_valid_message_passes(self):
         msg = {
             TYPE_KEY: TransferDoneMsg.TYPE,
+            TransferDoneMsg.ROUND_SEQ: 0,
             TransferDoneMsg.KV_REQUEST_ID: "req-1",
             TransferDoneMsg.SUCCESS: True,
         }
@@ -2452,6 +2535,7 @@ class TestTransferDoneMsgValidation:
     def test_success_wrong_type(self):
         msg = {
             TYPE_KEY: TransferDoneMsg.TYPE,
+            TransferDoneMsg.ROUND_SEQ: 0,
             TransferDoneMsg.KV_REQUEST_ID: "req-1",
             TransferDoneMsg.SUCCESS: 1,
         }
