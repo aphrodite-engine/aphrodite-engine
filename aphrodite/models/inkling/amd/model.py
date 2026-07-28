@@ -100,11 +100,7 @@ class InklingDecoderLayer(nn.Module):
         # streams (K/V/attn/mlp) are packed head-major into one block and share
         # it. Built first so the attention layer can wire its K/V sconv to it.
         self.conv_state = InklingConvState(
-            num_kv_heads=(
-                config.swa_num_key_value_heads
-                if is_local
-                else config.num_key_value_heads
-            ),
+            num_kv_heads=(config.swa_num_key_value_heads if is_local else config.num_key_value_heads),
             head_dim=config.swa_head_dim if is_local else config.head_dim,
             hidden_size=config.hidden_size,
             kernel_size=config.sconv_kernel_size,
@@ -113,16 +109,8 @@ class InklingDecoderLayer(nn.Module):
         self.attn_norm = InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.attn = InklingAttention(
             config,
-            num_heads=(
-                config.swa_num_attention_heads
-                if is_local
-                else config.num_attention_heads
-            ),
-            num_kv_heads=(
-                config.swa_num_key_value_heads
-                if is_local
-                else config.num_key_value_heads
-            ),
+            num_heads=(config.swa_num_attention_heads if is_local else config.num_attention_heads),
+            num_kv_heads=(config.swa_num_key_value_heads if is_local else config.num_key_value_heads),
             head_dim=config.swa_head_dim if is_local else config.head_dim,
             rel_extent=config.rel_extent,
             local_extent=config.sliding_window_size,
@@ -157,12 +145,8 @@ class InklingDecoderLayer(nn.Module):
         # rmsnorm via the Lamport P2P kernels for decode-sized batches.
         tp_size = get_tensor_model_parallel_world_size()
         sconv_dim = config.hidden_size // tp_size
-        self.attn_sconv = InklingShortConv(
-            sconv_dim, config.sconv_kernel_size, owner=self.conv_state, stream_idx=_ATTN
-        )
-        self.mlp_sconv = InklingShortConv(
-            sconv_dim, config.sconv_kernel_size, owner=self.conv_state, stream_idx=_MLP
-        )
+        self.attn_sconv = InklingShortConv(sconv_dim, config.sconv_kernel_size, owner=self.conv_state, stream_idx=_ATTN)
+        self.mlp_sconv = InklingShortConv(sconv_dim, config.sconv_kernel_size, owner=self.conv_state, stream_idx=_MLP)
 
     def forward(
         self,
@@ -172,9 +156,7 @@ class InklingDecoderLayer(nn.Module):
         defer_mlp_add: bool = False,
         attn_in: torch.Tensor | None = None,
         log_scaling: torch.Tensor | None = None,
-    ) -> (
-        torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor | None, InklingShortConv]]
-    ):
+    ) -> torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor | None, InklingShortConv]]:
         # The previous sublayer's (pre-reduce, pre-sconv) delta is folded in
         # fused with its RS/sconv/AG and this layer's pre-attention rmsnorm.
         # A None delta means the partials sit in the NVLS symm buffer.
@@ -184,22 +166,16 @@ class InklingDecoderLayer(nn.Module):
                 # the embedding gather (chain_weight in embed_rmsnorm).
                 attn_in = self.attn_norm(hidden_states)
         else:
-            attn_in, hidden_states = _sconv_add_norm(
-                pending[0], hidden_states, pending[1], self.attn_norm, positions
-            )
+            attn_in, hidden_states = _sconv_add_norm(pending[0], hidden_states, pending[1], self.attn_norm, positions)
         attn_output = self.attn(positions, attn_in, log_scaling)
-        mlp_in, hidden_states = _sconv_add_norm(
-            attn_output, hidden_states, self.attn_sconv, self.mlp_norm, positions
-        )
+        mlp_in, hidden_states = _sconv_add_norm(attn_output, hidden_states, self.attn_sconv, self.mlp_norm, positions)
         mlp_output = self.mlp(mlp_in)
         if defer_mlp_add:
             # Caller folds mlp_output (pre-reduce, pre-sconv) into the next
             # fused sconv+add+rmsnorm.
             return hidden_states, (mlp_output, self.mlp_sconv)
         # Standalone (MTP) tail: finish the sublayer without a norm.
-        return _sconv_add_norm(
-            mlp_output, hidden_states, self.mlp_sconv, None, positions
-        )[1]
+        return _sconv_add_norm(mlp_output, hidden_states, self.mlp_sconv, None, positions)[1]
 
 
 class InklingReplicatedEmbedding(nn.Module):
@@ -235,21 +211,13 @@ class InklingModel(nn.Module):
     ) -> None:
         super().__init__()
         self.config = config
-        self.embed_tokens = InklingReplicatedEmbedding(
-            config.padded_vocab_size, config.hidden_size
-        )
-        self.embed_norm = (
-            InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            if config.use_embed_norm
-            else None
-        )
+        self.embed_tokens = InklingReplicatedEmbedding(config.padded_vocab_size, config.hidden_size)
+        self.embed_norm = InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps) if config.use_embed_norm else None
         local_ids = set(config.local_layer_ids)
 
         def get_layer(prefix: str) -> InklingDecoderLayer:
             idx = _layer_id(prefix + ".") or int(prefix.split(".")[-1])
-            return InklingDecoderLayer(
-                config, idx, idx in local_ids, quant_config, prefix
-            )
+            return InklingDecoderLayer(config, idx, idx in local_ids, quant_config, prefix)
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers, get_layer, prefix=f"{prefix}.layers"
@@ -317,15 +285,11 @@ class InklingModel(nn.Module):
 
         if not get_pp_group().is_last_rank:
             if pending is not None:
-                hidden_states = _sconv_add_norm(
-                    pending[0], hidden_states, pending[1], None, positions
-                )[1]
+                hidden_states = _sconv_add_norm(pending[0], hidden_states, pending[1], None, positions)[1]
             return IntermediateTensors({"hidden_states": hidden_states})
         if pending is not None:
             # Final RS/sconv/AG + residual add fused with the final rmsnorm.
-            norm_out = _sconv_add_norm(
-                pending[0], hidden_states, pending[1], self.norm, positions
-            )[0]
+            norm_out = _sconv_add_norm(pending[0], hidden_states, pending[1], self.norm, positions)[0]
             assert norm_out is not None
             return norm_out
         return self.norm(hidden_states)
@@ -490,9 +454,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
 
     # -- multimodal embedding -------------------------------------------
 
-    def _process_image_input(
-        self, pixel_values: Any, num_patches: Any
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_image_input(self, pixel_values: Any, num_patches: Any) -> tuple[torch.Tensor, ...]:
         assert self.visual is not None
         # pixel_values is a list (per item) of [P_i, 2, P, P, 3] tensors,
         # or a single concatenated tensor. Normalize to a flat batch, run the
@@ -510,9 +472,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
         embeds = self.visual(patches)  # [total_patches, D]
         return tuple(embeds.split(sizes))
 
-    def _process_audio_input(
-        self, input_audio_features: Any, num_audio_tokens: Any
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_audio_input(self, input_audio_features: Any, num_audio_tokens: Any) -> tuple[torch.Tensor, ...]:
         assert self.audio is not None
         if isinstance(input_audio_features, (list, tuple)):
             if not input_audio_features:
@@ -553,9 +513,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
         if pixel_values is not None and self.visual is not None:
             embeddings += self._process_image_input(pixel_values, num_patches)
         if input_audio_features is not None and self.audio is not None:
-            embeddings += self._process_audio_input(
-                input_audio_features, num_audio_tokens
-            )
+            embeddings += self._process_audio_input(input_audio_features, num_audio_tokens)
         return embeddings
 
     def embed_input_ids(
@@ -595,9 +553,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
 # ===========================================================================
 
 
-_MOE_EXPERT_WEIGHT_RE = re.compile(
-    r"^(?P<mlp>.*\.mlp)\.(?P<rest>(?:shared_)?experts\..+)$"
-)
+_MOE_EXPERT_WEIGHT_RE = re.compile(r"^(?P<mlp>.*\.mlp)\.(?P<rest>(?:shared_)?experts\..+)$")
 
 
 def _is_peft_adapter_weight(name: str) -> bool:
@@ -609,9 +565,7 @@ def _load_inkling_weights(
     weights: Iterable[tuple[str, torch.Tensor]],
     config: InklingModelConfig,
 ) -> set[str]:
-    moe_modules = {
-        name: mod for name, mod in module.named_modules() if isinstance(mod, InklingMoE)
-    }
+    moe_modules = {name: mod for name, mod in module.named_modules() if isinstance(mod, InklingMoE)}
     loaded: set[str] = set()
     tp_size = get_tensor_model_parallel_world_size()
     tp_rank = get_tensor_model_parallel_rank()
@@ -626,19 +580,11 @@ def _load_inkling_weights(
                 continue
             shard_id = getattr(weight, "shard_id", None)
             # Replicate K/V conv-free GQA heads when tp_size > num_kv_heads.
-            if (
-                shard_id in (1, 2)
-                and name.endswith(".attn.qkvr.weight")
-                and weight.shape[0] > 0
-            ):
+            if shard_id in (1, 2) and name.endswith(".attn.qkvr.weight") and weight.shape[0] > 0:
                 lid = _layer_id(name)
                 if lid is not None:
                     is_local = lid in local_ids
-                    n_kv = (
-                        config.swa_num_key_value_heads
-                        if is_local
-                        else config.num_key_value_heads
-                    )
+                    n_kv = config.swa_num_key_value_heads if is_local else config.num_key_value_heads
                     head_dim = config.swa_head_dim if is_local else config.head_dim
                     if tp_size > n_kv and weight.shape[0] == n_kv * head_dim:
                         kv_idx = (tp_rank * n_kv) // tp_size

@@ -54,9 +54,7 @@ def _reference(
         k_pos = torch.arange(kv_len, device=q.device)[None, :]
         distance = q_pos - k_pos
         rel_idx = distance.clamp(0, rel_extent - 1)
-        bias = rel_req.permute(1, 0, 2).gather(
-            2, rel_idx[None].expand(num_heads, -1, -1)
-        )
+        bias = rel_req.permute(1, 0, 2).gather(2, rel_idx[None].expand(num_heads, -1, -1))
         in_rel_extent = (distance >= 0) & (distance < rel_extent)
         scores += torch.where(in_rel_extent[None], bias, 0.0)
 
@@ -176,15 +174,10 @@ def test_ragged_multi_page_relative_attention(
     )
     key_cache = torch.nn.functional.normalize(key_cache.float(), dim=-1).to(DTYPE)
     value_cache = torch.randn_like(key_cache)
-    rel_logits = torch.randn(
-        sum(q_lens), num_heads, rel_extent, device=device, dtype=DTYPE
-    )
+    rel_logits = torch.randn(sum(q_lens), num_heads, rel_extent, device=device, dtype=DTYPE)
 
     block_table = torch.stack(
-        [
-            torch.arange(1 + req * max_pages, 1 + (req + 1) * max_pages)
-            for req in range(len(q_lens))
-        ]
+        [torch.arange(1 + req * max_pages, 1 + (req + 1) * max_pages) for req in range(len(q_lens))]
     ).to(device=device, dtype=torch.int32)
     cu_seqlens_q = torch.tensor(
         [0, *torch.tensor(q_lens).cumsum(0).tolist()],

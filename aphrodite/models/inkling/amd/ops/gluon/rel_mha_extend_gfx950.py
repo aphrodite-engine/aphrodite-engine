@@ -163,27 +163,19 @@ class ExtendConfig:
         # load_threads is how many lanes span HEAD_DIM.
         load_vec = 16 if IS_FP8 else 8
         load_threads = HEAD_DIM // load_vec
-        load_layout = gl.BlockedLayout(
-            [1, load_vec], [64 // load_threads, load_threads], [NUM_WARPS, 1], [1, 0]
-        )
+        load_layout = gl.BlockedLayout([1, load_vec], [64 // load_threads, load_threads], [NUM_WARPS, 1], [1, 0])
         # Output is always 16-bit, so a 128-bit store has 8 elements.
         # store_threads is how many lanes span HEAD_DIM.
         store_vec = 8
         store_threads = HEAD_DIM // store_vec
-        store_layout = gl.BlockedLayout(
-            [1, store_vec], [64 // store_threads, store_threads], [NUM_WARPS, 1], [1, 0]
-        )
+        store_layout = gl.BlockedLayout([1, store_vec], [64 // store_threads, store_threads], [NUM_WARPS, 1], [1, 0])
         # Padding interval is 64 lanes * load_vec elems.
         pad_interval = 64 * load_vec
         # Empirically tuned.
         pad_k = 16 if IS_FP8 else 8
         pad_v = 16 if IS_FP8 else 32
-        k_smem_layout = gl.PaddedSharedLayout.with_identity_for(
-            [[pad_interval, pad_k]], [BLOCK_N, HEAD_DIM], [1, 0]
-        )
-        v_smem_layout = gl.PaddedSharedLayout.with_identity_for(
-            [[pad_interval, pad_v]], [BLOCK_N, HEAD_DIM], [1, 0]
-        )
+        k_smem_layout = gl.PaddedSharedLayout.with_identity_for([[pad_interval, pad_k]], [BLOCK_N, HEAD_DIM], [1, 0])
+        v_smem_layout = gl.PaddedSharedLayout.with_identity_for([[pad_interval, pad_v]], [BLOCK_N, HEAD_DIM], [1, 0])
 
         self.N_HEADS = gl.constexpr(N_HEADS)
         self.N_KV_HEADS = gl.constexpr(N_KV_HEADS)
@@ -324,9 +316,7 @@ class ExtendProgram:
     @gluon.jit
     def load_q(self):
         cfg = self.cfg
-        offs_m = self.q_start + gl.arange(
-            0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.q_layout)
-        )
+        offs_m = self.q_start + gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.q_layout))
         offs_d = gl.arange(0, cfg.HEAD_DIM, layout=gl.SliceLayout(0, cfg.q_layout))
         row = self.seq_base + offs_m
         offsets = cfg.q_strides.offsets(row[:, None], self.q_head, offs_d[None, :])
@@ -386,32 +376,22 @@ class ExtendProgram:
     @gluon.jit
     def compute_qk(self, q, k):
         cfg = self.cfg
-        qk = gl.zeros(
-            [cfg.BLOCK_M, cfg.BLOCK_N], dtype=gl.float32, layout=cfg.qk_layout
-        )
+        qk = gl.zeros([cfg.BLOCK_M, cfg.BLOCK_N], dtype=gl.float32, layout=cfg.qk_layout)
         return cdna4.mfma(q, k, qk)
 
     @gluon.jit
     def apply_rel_bias(self, qk, start_n):
         cfg = self.cfg
-        offs_m = self.q_start + gl.arange(
-            0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.qk_layout)
-        )
-        offs_n_abs = start_n + gl.arange(
-            0, cfg.BLOCK_N, layout=gl.SliceLayout(0, cfg.qk_layout)
-        )
+        offs_m = self.q_start + gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.qk_layout))
+        offs_n_abs = start_n + gl.arange(0, cfg.BLOCK_N, layout=gl.SliceLayout(0, cfg.qk_layout))
         q_pos = self.prefix + offs_m
         rel_dist = q_pos[:, None] - offs_n_abs[None, :]
         rel_valid = (rel_dist >= 0) & (rel_dist < cfg.REL_EXTENT)
         rel_idx = gl.where(rel_dist >= 0, rel_dist, 0)
         rel_idx = gl.where(rel_idx < cfg.REL_EXTENT, rel_idx, cfg.REL_EXTENT - 1)
-        offsets = cfg.rel_strides.offsets(
-            self.seq_base + offs_m[:, None], self.q_head, rel_idx
-        )
+        offsets = cfg.rel_strides.offsets(self.seq_base + offs_m[:, None], self.q_head, rel_idx)
         mask = (offs_m[:, None] < self.seq_len) & rel_valid
-        rel_bias = cdna4.buffer_load(
-            self.rel_logits_ptr, offsets, mask=mask, other=0.0
-        ).to(gl.float32)
+        rel_bias = cdna4.buffer_load(self.rel_logits_ptr, offsets, mask=mask, other=0.0).to(gl.float32)
         return qk + rel_bias * cfg.REL_BIAS_QK_SCALE
 
     @gluon.jit
@@ -433,9 +413,7 @@ class ExtendProgram:
             dtype=gl.float32,
             layout=gl.SliceLayout(1, cfg.pv_layout),
         )
-        acc = gl.zeros(
-            [cfg.BLOCK_M, cfg.HEAD_DIM], dtype=gl.float32, layout=cfg.pv_layout
-        )
+        acc = gl.zeros([cfg.BLOCK_M, cfg.HEAD_DIM], dtype=gl.float32, layout=cfg.pv_layout)
         return m_i, l_i, acc
 
     @gluon.jit
@@ -470,15 +448,11 @@ class ExtendProgram:
     @gluon.jit
     def store_output(self, output):
         cfg = self.cfg
-        offs_m = self.q_start + gl.arange(
-            0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.store_layout)
-        )
+        offs_m = self.q_start + gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.store_layout))
         offs_d = gl.arange(0, cfg.HEAD_DIM, layout=gl.SliceLayout(0, cfg.store_layout))
-        offsets = (
-            ((self.seq_base + offs_m[:, None]) * cfg.N_HEADS + self.q_head)
-            * cfg.HEAD_DIM
-            + offs_d[None, :]
-        ).to(gl.int32)
+        offsets = (((self.seq_base + offs_m[:, None]) * cfg.N_HEADS + self.q_head) * cfg.HEAD_DIM + offs_d[None, :]).to(
+            gl.int32
+        )
         mask = offs_m[:, None] < self.seq_len
         output = output.to(self.output_ptr.dtype.element_ty)
         cdna4.buffer_store(output, self.output_ptr, offsets, mask=mask)
@@ -487,12 +461,8 @@ class ExtendProgram:
     def store_lse(self, l_i, m_i):
         cfg = self.cfg
         if cfg.HAS_LSE:
-            offs_m = self.q_start + gl.arange(
-                0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.pv_layout)
-            )
-            offsets = ((self.seq_base + offs_m) * cfg.N_HEADS + self.q_head).to(
-                gl.int32
-            )
+            offs_m = self.q_start + gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.pv_layout))
+            offsets = ((self.seq_base + offs_m) * cfg.N_HEADS + self.q_head).to(gl.int32)
             mask = offs_m < self.seq_len
             lse_l_i = gl.where(l_i > 0.0, l_i, 1.0)
             # Softmax runs in base-2 (exp2 hardware fast path), so m_i*SM_SCALE +
@@ -579,19 +549,13 @@ def _rel_mha_extend_fp16(
     # Over-provisioned tile past this request's real query rows: nothing to do.
     if program.q_start >= program.seq_len:
         return
-    k_smem = gl.allocate_shared_memory(
-        k_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.k_smem_layout
-    )
-    v_smem = gl.allocate_shared_memory(
-        v_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.v_smem_layout
-    )
+    k_smem = gl.allocate_shared_memory(k_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.k_smem_layout)
+    v_smem = gl.allocate_shared_memory(v_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.v_smem_layout)
 
     q = program.load_q()
     m_i, l_i, acc = program.init_attention_state()
 
-    offs_m_q = program.q_start + gl.arange(
-        0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.qk_layout)
-    )
+    offs_m_q = program.q_start + gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.qk_layout))
     offs_n_q = gl.arange(0, cfg.BLOCK_N, layout=gl.SliceLayout(0, cfg.qk_layout))
     diag_row = program.prefix + offs_m_q
 
@@ -635,16 +599,12 @@ def _rel_mha_extend_fp16(
         elif IS_CAUSAL:
             if start_n + cfg.BLOCK_N > program.prefix + program.q_start:
                 offs_n_abs = start_n + offs_n_q
-                mask = (offs_n_abs[None, :] <= diag_row[:, None]) & (
-                    offs_n_abs[None, :] < program.cache_len
-                )
+                mask = (offs_n_abs[None, :] <= diag_row[:, None]) & (offs_n_abs[None, :] < program.cache_len)
                 qk = gl.where(mask, qk, -float("inf"))
         else:
             if start_n + cfg.BLOCK_N > program.cache_len:
                 offs_n_abs = start_n + offs_n_q
-                qk = gl.where(
-                    offs_n_abs[None, :] < program.cache_len, qk, -float("inf")
-                )
+                qk = gl.where(offs_n_abs[None, :] < program.cache_len, qk, -float("inf"))
 
         p, m_i, l_i, acc = program.softmax(qk, m_i, l_i, acc)
 
@@ -699,13 +659,8 @@ def gluon_rel_mha_extend_gfx950(
     is_fp8 = q.dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
     out_dtype = torch.bfloat16 if is_fp8 else q.dtype
     if page_size not in (64, 128, 256):
-        raise ValueError(
-            "gfx950 Gluon relative-attention extend requires page size "
-            f"64, 128, or 256; got {page_size}"
-        )
-    output = (
-        torch.empty(q.shape, device=q.device, dtype=out_dtype) if out is None else out
-    )
+        raise ValueError(f"gfx950 Gluon relative-attention extend requires page size 64, 128, or 256; got {page_size}")
+    output = torch.empty(q.shape, device=q.device, dtype=out_dtype) if out is None else out
     if return_lse:
         lse = torch.empty((q.shape[0], n_heads), device=q.device, dtype=torch.float32)
         lse_arg = lse

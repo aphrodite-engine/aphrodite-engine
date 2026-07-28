@@ -70,9 +70,7 @@ def test_embed_dual_rmsnorm_cat(n: int, t: int, ids_dtype: torch.dtype) -> None:
     _assert_bf16_close(out, _ref(hidden, w_h, w_e, emb))
 
     # Fused gather, no pre-norm (use_embed_norm=False).
-    out = embed_dual_rmsnorm_cat(
-        hidden, w_h, w_e, EPS, input_ids=ids, embed_table=table
-    )
+    out = embed_dual_rmsnorm_cat(hidden, w_h, w_e, EPS, input_ids=ids, embed_table=table)
     _assert_bf16_close(out, _ref(hidden, w_h, w_e, emb))
 
 

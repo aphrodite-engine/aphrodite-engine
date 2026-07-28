@@ -60,35 +60,23 @@ def attention_layouts(head_dim, block_n, is_fp8, dtype, num_warps, instr_shape):
     # load_vec = elems/lane (dtype-dependent, == qk_kw); load_threads span HEAD_DIM.
     load_vec = 16 if is_fp8 else 8
     load_threads = head_dim // load_vec
-    load_layout = gl.BlockedLayout(
-        [1, load_vec], [64 // load_threads, load_threads], [num_warps, 1], [1, 0]
-    )
+    load_layout = gl.BlockedLayout([1, load_vec], [64 // load_threads, load_threads], [num_warps, 1], [1, 0])
     # store_vec is always 16-bit (128 / 16 = 8) regardless of input dtype.
     store_vec = 8
     store_threads = head_dim // store_vec
-    store_layout = gl.BlockedLayout(
-        [1, store_vec], [64 // store_threads, store_threads], [num_warps, 1], [1, 0]
-    )
+    store_layout = gl.BlockedLayout([1, store_vec], [64 // store_threads, store_threads], [num_warps, 1], [1, 0])
     # Take only the built-in's padding, not its swizzle: the swizzle scatters
     # head_dim across banks, making the LDS write stride non-constant, so it can't
     # lower through async_copy's affine [1, 0] load. Padding-only is affine and
     # DMA-legal.
     # TODO(perf): to also use the swizzle, co-design a matched load layout so the
     # DMA stays legal.
-    k_api = gl.amd.cdna4.compute_efficient_padded_shared_layout(
-        k_layout, [block_n, head_dim], dtype, is_k_contig=True
-    )
-    v_api = gl.amd.cdna4.compute_efficient_padded_shared_layout(
-        v_layout, [block_n, head_dim], dtype, is_k_contig=False
-    )
-    assert k_api is not None and v_api is not None, (
-        "no CDNA4 padded shared layout for this operand/dtype"
-    )
+    k_api = gl.amd.cdna4.compute_efficient_padded_shared_layout(k_layout, [block_n, head_dim], dtype, is_k_contig=True)
+    v_api = gl.amd.cdna4.compute_efficient_padded_shared_layout(v_layout, [block_n, head_dim], dtype, is_k_contig=False)
+    assert k_api is not None and v_api is not None, "no CDNA4 padded shared layout for this operand/dtype"
     k_pairs = list(k_api.interval_padding_pairs)
     v_pairs = list(v_api.interval_padding_pairs)
-    assert len(k_pairs) == 1 and len(v_pairs) == 1, (
-        "expected a single interval padding pair from the built-in"
-    )
+    assert len(k_pairs) == 1 and len(v_pairs) == 1, "expected a single interval padding pair from the built-in"
     k_smem_layout = gl.PaddedSharedLayout.with_identity_for(
         [[int(k_pairs[0][0]), int(k_pairs[0][1])]], [block_n, head_dim], [1, 0]
     )
@@ -123,9 +111,7 @@ class InputStrides:
 
     @gluon.jit
     def offsets(self, token, head, dim):
-        return (token * self.stride_t + head * self.stride_h + dim * self.stride_d).to(
-            gl.int32
-        )
+        return (token * self.stride_t + head * self.stride_h + dim * self.stride_d).to(gl.int32)
 
 
 @aggregate

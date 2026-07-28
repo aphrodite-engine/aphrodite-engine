@@ -45,9 +45,7 @@ from .sconv_swa_attn import _K, _V, InklingConvState, InklingSconvMetadata
 from .short_conv import InklingShortConv
 
 
-def compute_log_scaling_tau(
-    positions: torch.Tensor, n_floor: int, alpha: float
-) -> torch.Tensor:
+def compute_log_scaling_tau(positions: torch.Tensor, n_floor: int, alpha: float) -> torch.Tensor:
     effective_n = (positions + 1).to(torch.float32)
     return 1.0 + alpha * torch.log(torch.clamp(effective_n / float(n_floor), min=1.0))
 
@@ -139,33 +137,21 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         # applied after the qkvr projection and before q/k norm.
         kv_conv_dim = self.num_kv_heads * head_dim
         self.conv_owner = conv_owner
-        self.k_sconv = InklingShortConv(
-            kv_conv_dim, config.sconv_kernel_size, owner=conv_owner, stream_idx=_K
-        )
-        self.v_sconv = InklingShortConv(
-            kv_conv_dim, config.sconv_kernel_size, owner=conv_owner, stream_idx=_V
-        )
+        self.k_sconv = InklingShortConv(kv_conv_dim, config.sconv_kernel_size, owner=conv_owner, stream_idx=_K)
+        self.v_sconv = InklingShortConv(kv_conv_dim, config.sconv_kernel_size, owner=conv_owner, stream_idx=_V)
 
         # FA4 left/right window; right=0 keeps it causal. local_extent-1 mirrors
         # the source (sliding_window_size - 1).
-        self.window_size: tuple[int, int] = (
-            (local_extent - 1, 0) if is_local else (-1, -1)
-        )
+        self.window_size: tuple[int, int] = (local_extent - 1, 0) if is_local else (-1, -1)
         # Static per-layer-type KV length bound for the split heuristic: local
         # layers never see more than the sliding window.
         vllm_config = get_current_aphrodite_config()
-        self._max_kv_len = (
-            local_extent if is_local else vllm_config.model_config.max_model_len
-        )
+        self._max_kv_len = local_extent if is_local else vllm_config.model_config.max_model_len
 
         # ---- KV-cache wiring (reuse FlashAttentionBackend for metadata) ----
         cache_config = vllm_config.cache_config
-        self.kv_cache_dtype = (
-            cache_config.cache_dtype if cache_config is not None else "auto"
-        )
-        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(
-            self.kv_cache_dtype, vllm_config.model_config
-        )
+        self.kv_cache_dtype = cache_config.cache_dtype if cache_config is not None else "auto"
+        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, vllm_config.model_config)
         self.register_buffer("k_scale", torch.ones((), dtype=torch.float32))
         self.register_buffer("v_scale", torch.ones((), dtype=torch.float32))
 
@@ -188,9 +174,7 @@ class InklingAttention(nn.Module, AttentionLayerBase):
                 kv_dtype=self.kv_cache_torch_dtype,
                 block_size=vllm_config.cache_config.block_size,
                 max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
-                max_num_batched_tokens=(
-                    vllm_config.scheduler_config.max_num_batched_tokens
-                ),
+                max_num_batched_tokens=(vllm_config.scheduler_config.max_num_batched_tokens),
             )
         )
 
@@ -216,9 +200,7 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         )
 
     def _split_kv_cache(self) -> tuple[torch.Tensor, torch.Tensor]:
-        key_cache, value_cache = self.kv_cache.transpose(1, 2).split(
-            self.head_dim, dim=-1
-        )
+        key_cache, value_cache = self.kv_cache.transpose(1, 2).split(self.head_dim, dim=-1)
         return (
             canonicalize_singleton_dim_strides(key_cache),
             canonicalize_singleton_dim_strides(value_cache),

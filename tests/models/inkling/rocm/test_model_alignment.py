@@ -16,9 +16,7 @@ from aphrodite.models.inkling.amd.mtp import InklingMTP
 def test_backend_neutral_definitions_match_nvidia_reference() -> None:
     inkling_dir = Path(amd_model.__file__).parents[1]
     for filename in ("logits_processor.py", "mtp.py"):
-        assert (inkling_dir / "amd" / filename).read_bytes() == (
-            inkling_dir / "nvidia" / filename
-        ).read_bytes()
+        assert (inkling_dir / "amd" / filename).read_bytes() == (inkling_dir / "nvidia" / filename).read_bytes()
 
 
 def test_rocm_exports_its_aligned_mtp_implementation() -> None:
@@ -45,11 +43,7 @@ def test_rocm_model_exposes_the_upstream_lora_contract() -> None:
 def test_lightseek_bundled_adapter_weights_remain_opt_in() -> None:
     mapper = amd_model._TmlForCausalLMBase.hf_to_vllm_mapper
     weight = torch.empty(1)
-    name, mapped_weight = next(
-        iter(
-            mapper.apply([("language_model.layers.3.attn.wq_du.lora_A.weight", weight)])
-        )
-    )
+    name, mapped_weight = next(iter(mapper.apply([("language_model.layers.3.attn.wq_du.lora_A.weight", weight)])))
 
     assert name == "model.layers.3.attn.qkvr.lora_A.weight"
     assert mapped_weight.shard_id == 0

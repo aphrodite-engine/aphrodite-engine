@@ -134,28 +134,20 @@ class AttentionConfig:
         # load_threads is how many lanes span HEAD_DIM.
         load_vec = 16 if IS_FP8 else 8
         load_threads = HEAD_DIM // load_vec
-        load_layout = gl.BlockedLayout(
-            [1, load_vec], [64 // load_threads, load_threads], [1, 1], [1, 0]
-        )
+        load_layout = gl.BlockedLayout([1, load_vec], [64 // load_threads, load_threads], [1, 1], [1, 0])
         # Output is always 16-bit, so a 128-bit store has 8 elements.
         # store_threads is how many lanes span HEAD_DIM.
         store_vec = 8
         store_threads = HEAD_DIM // store_vec
-        store_layout = gl.BlockedLayout(
-            [1, store_vec], [64 // store_threads, store_threads], [1, 1], [1, 0]
-        )
+        store_layout = gl.BlockedLayout([1, store_vec], [64 // store_threads, store_threads], [1, 1], [1, 0])
         reduce_layout = gl.BlockedLayout([1, HEAD_DIM // 64], [1, 64], [1, 1], [1, 0])
         # Padding interval is 64 lanes * load_vec elems.
         pad_interval = 64 * load_vec
         # Empirically tuned.
         pad_k = 16 if IS_FP8 else 8
         pad_v = 32
-        k_smem_layout = gl.PaddedSharedLayout.with_identity_for(
-            [[pad_interval, pad_k]], [BLOCK_N, HEAD_DIM], [1, 0]
-        )
-        v_smem_layout = gl.PaddedSharedLayout.with_identity_for(
-            [[pad_interval, pad_v]], [BLOCK_N, HEAD_DIM], [1, 0]
-        )
+        k_smem_layout = gl.PaddedSharedLayout.with_identity_for([[pad_interval, pad_k]], [BLOCK_N, HEAD_DIM], [1, 0])
+        v_smem_layout = gl.PaddedSharedLayout.with_identity_for([[pad_interval, pad_v]], [BLOCK_N, HEAD_DIM], [1, 0])
 
         self.SM_SCALE = gl.constexpr(SM_SCALE)
         self.PAGE_TABLE_STRIDE = gl.constexpr(PAGE_TABLE_STRIDE)
@@ -360,9 +352,7 @@ class AttentionProgram:
             dtype=gl.float32,
             layout=gl.SliceLayout(1, cfg.pv_layout),
         )
-        acc = gl.zeros(
-            [cfg.BLOCK_M, cfg.HEAD_DIM], dtype=gl.float32, layout=cfg.pv_layout
-        )
+        acc = gl.zeros([cfg.BLOCK_M, cfg.HEAD_DIM], dtype=gl.float32, layout=cfg.pv_layout)
         return m_i, l_i, acc
 
     @gluon.jit
@@ -417,26 +407,20 @@ class AttentionProgram:
     @gluon.jit
     def compute_qk(self, q, k):
         cfg = self.cfg
-        qk = gl.zeros(
-            [cfg.BLOCK_M, cfg.BLOCK_N], dtype=gl.float32, layout=cfg.qk_layout
-        )
+        qk = gl.zeros([cfg.BLOCK_M, cfg.BLOCK_N], dtype=gl.float32, layout=cfg.qk_layout)
         return cdna4.mfma(q, k, qk)
 
     @gluon.jit
     def apply_rel_bias(self, qk, start_n):
         cfg = self.cfg
         offs_m = gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.qk_layout))
-        offs_n = start_n + gl.arange(
-            0, cfg.BLOCK_N, layout=gl.SliceLayout(0, cfg.qk_layout)
-        )
+        offs_n = start_n + gl.arange(0, cfg.BLOCK_N, layout=gl.SliceLayout(0, cfg.qk_layout))
         q_heads = self.kv_head * cfg.GROUP_SIZE + self.group_start + offs_m
         rel_dist = (self.cache_len - 1) - offs_n
         rel_valid = (rel_dist >= 0) & (rel_dist < cfg.REL_EXTENT)
         rel_idx = gl.where(rel_dist >= 0, rel_dist, 0)
         rel_idx = gl.where(rel_idx < cfg.REL_EXTENT, rel_idx, cfg.REL_EXTENT - 1)
-        offsets = cfg.rel_strides.offsets(
-            self.q_index, q_heads[:, None], rel_idx[None, :]
-        )
+        offsets = cfg.rel_strides.offsets(self.q_index, q_heads[:, None], rel_idx[None, :])
         head_valid = (self.group_start + offs_m) < cfg.GROUP_SIZE
         rel_bias = cdna4.buffer_load(
             self.rel_logits_ptr,
@@ -482,9 +466,7 @@ class AttentionProgram:
         offs_m = gl.arange(0, cfg.BLOCK_M, layout=gl.SliceLayout(1, cfg.store_layout))
         offs_d = gl.arange(0, cfg.HEAD_DIM, layout=gl.SliceLayout(0, cfg.store_layout))
         q_heads = self.kv_head * cfg.GROUP_SIZE + self.group_start + offs_m
-        valid = ((self.group_start + offs_m) < cfg.GROUP_SIZE) & (
-            self.split_start < self.split_end
-        )
+        valid = ((self.group_start + offs_m) < cfg.GROUP_SIZE) & (self.split_start < self.split_end)
         acc = gl.convert_layout(acc, cfg.store_layout)
         l_i = gl.convert_layout(l_i, gl.SliceLayout(1, cfg.store_layout))
         m_i = gl.convert_layout(m_i, gl.SliceLayout(1, cfg.store_layout))
@@ -492,12 +474,9 @@ class AttentionProgram:
         part_o = acc * recip_l_i[:, None]
         part_lse = m_i * cfg.SM_SCALE + gl.log2(l_i)
         mid_o_offsets = (
-            (self.q_index * cfg.NUM_Q_HEADS + q_heads[:, None]) * cfg.NUM_KV_SPLITS
-            + self.split_id
+            (self.q_index * cfg.NUM_Q_HEADS + q_heads[:, None]) * cfg.NUM_KV_SPLITS + self.split_id
         ) * cfg.HEAD_DIM + offs_d[None, :]
-        mid_lse_offsets = (
-            self.q_index * cfg.NUM_Q_HEADS + q_heads
-        ) * cfg.NUM_KV_SPLITS + self.split_id
+        mid_lse_offsets = (self.q_index * cfg.NUM_Q_HEADS + q_heads) * cfg.NUM_KV_SPLITS + self.split_id
         cdna4.buffer_store(part_o, self.mid_o_ptr, mid_o_offsets, mask=valid[:, None])
         cdna4.buffer_store(part_lse, self.mid_lse_ptr, mid_lse_offsets, mask=valid)
 
@@ -594,12 +573,8 @@ def _rel_mha_decode_fp16(
         mid_o_ptr,
         mid_lse_ptr,
     )
-    k_smem = gl.allocate_shared_memory(
-        k_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.k_smem_layout
-    )
-    v_smem = gl.allocate_shared_memory(
-        v_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.v_smem_layout
-    )
+    k_smem = gl.allocate_shared_memory(k_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.k_smem_layout)
+    v_smem = gl.allocate_shared_memory(v_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.v_smem_layout)
 
     q = program.load_q()
     m_i, l_i, acc = program.init_state()
@@ -695,12 +670,8 @@ def _rel_mha_decode_sliding_fp16(
         out_ptr,
         out_ptr,
     )
-    k_smem = gl.allocate_shared_memory(
-        k_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.k_smem_layout
-    )
-    v_smem = gl.allocate_shared_memory(
-        v_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.v_smem_layout
-    )
+    k_smem = gl.allocate_shared_memory(k_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.k_smem_layout)
+    v_smem = gl.allocate_shared_memory(v_cache_ptr.dtype.element_ty, [cfg.BLOCK_N, cfg.HEAD_DIM], cfg.v_smem_layout)
 
     q = program.load_q()
     m_i, l_i, acc = program.init_state()
@@ -787,9 +758,7 @@ def _rel_mha_decode_reduce_fp16(
     # split_valid masks out empty splits and the power-of-2 padding tail.
     split_start_page = first_page + offs_s * pages_per_split
     split_end_page_raw = split_start_page + pages_per_split
-    split_end_page = gl.where(
-        split_end_page_raw < end_page, split_end_page_raw, end_page
-    )
+    split_end_page = gl.where(split_end_page_raw < end_page, split_end_page_raw, end_page)
     split_start_tok = split_start_page * cfg.PAGE_SIZE
     split_end_raw = split_end_page * cfg.PAGE_SIZE
     split_end_tok = gl.where(split_end_raw < cache_len, split_end_raw, cache_len)
@@ -885,9 +854,7 @@ def get_config(
     if softmax_scale is None:
         softmax_scale = 1.0 / math.sqrt(head_dim)
     sm_scale = softmax_scale
-    effective_seqlen_k = (
-        min(max_seqlen_k, window_left + 1) if is_sliding else max_seqlen_k
-    )
+    effective_seqlen_k = min(max_seqlen_k, window_left + 1) if is_sliding else max_seqlen_k
     num_pages = (effective_seqlen_k + page_size - 1) // page_size
     if is_sliding:
         num_kv_splits = 4
@@ -946,12 +913,9 @@ def gluon_rel_mha_decode_gfx950(
     out_dtype = torch.bfloat16 if is_fp8 else q.dtype
     if k_cache.shape[1] not in (64, 128, 256):
         raise ValueError(
-            "gfx950 Gluon relative-attention decode requires page size "
-            f"64, 128, or 256; got {k_cache.shape[1]}"
+            f"gfx950 Gluon relative-attention decode requires page size 64, 128, or 256; got {k_cache.shape[1]}"
         )
-    output = (
-        torch.empty(q.shape, device=q.device, dtype=out_dtype) if out is None else out
-    )
+    output = torch.empty(q.shape, device=q.device, dtype=out_dtype) if out is None else out
 
     # Always use split-k for full attention and for the small-batch sliding
     # decode path. Sliding uses a fixed 8 splits, one page per split for the

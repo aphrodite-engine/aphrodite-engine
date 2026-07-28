@@ -5,18 +5,11 @@ from typing import TYPE_CHECKING
 from aphrodite.platforms import current_platform
 
 if TYPE_CHECKING:
-    if current_platform.is_rocm():
-        from .amd.model import (
-            InklingForCausalLM,
-            InklingForConditionalGeneration,
-        )
-        from .amd.mtp import InklingMTP as InklingMTP
-    else:
-        from .nvidia.model import (
-            InklingForCausalLM,
-            InklingForConditionalGeneration,
-        )
-        from .nvidia.mtp import InklingMTP as InklingMTP
+    from .nvidia.model import (
+        InklingForCausalLM,
+        InklingForConditionalGeneration,
+    )
+    from .nvidia.mtp import InklingMTP
 
 __all__ = [
     "InklingForConditionalGeneration",

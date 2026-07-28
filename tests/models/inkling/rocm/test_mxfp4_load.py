@@ -15,9 +15,7 @@ def _fake_moe() -> tuple[InklingMoE, SimpleNamespace]:
     nn.Module.__init__(moe)
     moe.n_routed_experts = 4
     routed = SimpleNamespace(
-        moe_config=SimpleNamespace(
-            moe_parallel_config=SimpleNamespace(tp_rank=1, tp_size=2)
-        ),
+        moe_config=SimpleNamespace(moe_parallel_config=SimpleNamespace(tp_rank=1, tp_size=2)),
         # Logical intermediate per rank is 3; AITER pads it to 4.
         w13_weight=nn.Parameter(torch.zeros(4, 8, 2, dtype=torch.uint8), False),
         w2_weight=nn.Parameter(torch.zeros(4, 5, 3, dtype=torch.uint8), False),

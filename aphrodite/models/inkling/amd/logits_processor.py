@@ -71,9 +71,7 @@ class InklingLogitsProcessor(LogitsProcessor):
         # provides ``_get_logits``/``logits_as_input``; only ``_lora_forward``
         # lives on this class).
         if hasattr(self, "base_layer"):
-            return type(self.base_layer)._lora_forward(
-                self, lm_head, hidden_states, embedding_bias
-            )
+            return type(self.base_layer)._lora_forward(self, lm_head, hidden_states, embedding_bias)
         return self._base_forward(lm_head, hidden_states, embedding_bias)
 
     def _lora_forward(

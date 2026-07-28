@@ -92,23 +92,15 @@ class InklingMultiTokenPredictor(nn.Module):
     def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None
-        config: InklingModelConfig = (
-            vllm_config.speculative_config.draft_model_config.hf_config
-        )
+        config: InklingModelConfig = vllm_config.speculative_config.draft_model_config.hf_config
         self.config = config
         if vllm_config.speculative_config.num_speculative_tokens != 1:
-            raise ValueError(
-                "Inkling MTP currently supports exactly one speculative token"
-            )
+            raise ValueError("Inkling MTP currently supports exactly one speculative token")
         self.chain_hidden_post_norm = config.chain_hidden_post_norm
         local_ids = set(config.local_layer_ids)
-        self.layers = nn.ModuleDict(
-            {"0": InklingMTPDepthLayer(config, f"{prefix}.layers.0", 0 in local_ids)}
-        )
+        self.layers = nn.ModuleDict({"0": InklingMTPDepthLayer(config, f"{prefix}.layers.0", 0 in local_ids)})
         self.chain_norm = (
-            InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            if self.chain_hidden_post_norm
-            else None
+            InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps) if self.chain_hidden_post_norm else None
         )
         # The target's raw token embedding (pre embed_norm), attached by
         # load_eagle_model. Never materialized here: building our own
@@ -121,9 +113,7 @@ class InklingMultiTokenPredictor(nn.Module):
         # Weight loaded from the target's embed_norm.weight; gated like the
         # target's InklingModel.embed_norm.
         self.backbone_embed_norm = (
-            InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            if config.use_embed_norm
-            else None
+            InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps) if config.use_embed_norm else None
         )
 
     def embed_input_ids(
@@ -172,9 +162,7 @@ class InklingMultiTokenPredictor(nn.Module):
             # Draft prefill with target-merged MM embeddings (already
             # backbone-normed via embed_input_ids); only the depth embed_norm
             # remains.
-            return embed_dual_rmsnorm_cat(
-                previous_hidden, hidden_w, embed_w, eps, embeds=inputs_embeds
-            )
+            return embed_dual_rmsnorm_cat(previous_hidden, hidden_w, embed_w, eps, embeds=inputs_embeds)
         return embed_dual_rmsnorm_cat(
             previous_hidden,
             hidden_w,
@@ -182,11 +170,7 @@ class InklingMultiTokenPredictor(nn.Module):
             eps,
             input_ids=input_ids,
             embed_table=self.embed_tokens.weight,
-            pre_norm_weight=(
-                self.backbone_embed_norm.weight
-                if self.backbone_embed_norm is not None
-                else None
-            ),
+            pre_norm_weight=(self.backbone_embed_norm.weight if self.backbone_embed_norm is not None else None),
         )
 
     def forward(
@@ -204,9 +188,7 @@ class InklingMultiTokenPredictor(nn.Module):
         if spec_step_idx != 0:
             raise ValueError("Inkling MTP only supports spec_step_idx=0")
         layer = self.layers["0"]
-        combined = self.fused_input_cat(
-            layer, previous_hidden_states, input_ids, inputs_embeds
-        )
+        combined = self.fused_input_cat(layer, previous_hidden_states, input_ids, inputs_embeds)
         hidden = layer(combined, positions)
         if self.chain_norm is not None:
             hidden = self.chain_norm(hidden)
@@ -217,13 +199,9 @@ class InklingMTP(nn.Module):
     def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None
-        config: InklingModelConfig = (
-            vllm_config.speculative_config.draft_model_config.hf_config
-        )
+        config: InklingModelConfig = vllm_config.speculative_config.draft_model_config.hf_config
         self.config = config
-        self.model = InklingMultiTokenPredictor(
-            vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = InklingMultiTokenPredictor(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
         # The target's (vocab-sharded) LM head, attached by load_eagle_model;
         # never materialized here (same reasoning as model.embed_tokens).
         self.lm_head: ParallelLMHead = None  # type: ignore[assignment]
@@ -241,9 +219,7 @@ class InklingMTP(nn.Module):
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        return self.model.embed_input_ids(
-            input_ids, multimodal_embeddings, is_multimodal=is_multimodal
-        )
+        return self.model.embed_input_ids(input_ids, multimodal_embeddings, is_multimodal=is_multimodal)
 
     def forward(
         self,
@@ -361,15 +337,10 @@ def _load_inkling_mtp_weights(
         # model.mtp.chain_norm.weight -> model.chain_norm.weight
         # model.mtp.layers.{i}.X      -> model.layers.{i}.X
         original_name = name
-        name = name.replace(".mtp.layers.", ".layers.").replace(
-            ".mtp.chain_norm.", ".chain_norm."
-        )
+        name = name.replace(".mtp.layers.", ".layers.").replace(".mtp.chain_norm.", ".chain_norm.")
 
         if ".chain_norm." in name and module.model.chain_norm is None:
-            raise ValueError(
-                "Inkling checkpoint contains chain_norm weights but "
-                "chain_hidden_post_norm is disabled."
-            )
+            raise ValueError("Inkling checkpoint contains chain_norm weights but chain_hidden_post_norm is disabled.")
 
         # Fused attention qkvr (wq_du/wk_dv/wv_dv/wr_du -> qkvr).
         matched = False
@@ -394,16 +365,9 @@ def _load_inkling_mtp_weights(
             loaded_weight = _load(name, weight)
         if not loaded_weight:
             raise ValueError(f"Unexpected Inkling MTP weight: {original_name}")
-    required = {
-        name
-        for name in params
-        if name.startswith("model.layers.") or name.startswith("model.chain_norm.")
-    }
+    required = {name for name in params if name.startswith("model.layers.") or name.startswith("model.chain_norm.")}
     if (missing := sorted(required - loaded)) and is_mtp_completeness_check_enabled():
-        raise ValueError(
-            "Inkling MTP checkpoint is missing required parameters: "
-            + ", ".join(missing)
-        )
+        raise ValueError("Inkling MTP checkpoint is missing required parameters: " + ", ".join(missing))
     return loaded
 
 

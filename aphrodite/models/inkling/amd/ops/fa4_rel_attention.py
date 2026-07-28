@@ -28,9 +28,7 @@ def bucket_max_seqlen_q(max_seqlen_q: int) -> int:
     return 1 << max(0, max_seqlen_q - 1).bit_length()
 
 
-def use_gfx950_gluon_decode(
-    *, max_query_len: int, page_size: int, head_dim: int
-) -> bool:
+def use_gfx950_gluon_decode(*, max_query_len: int, page_size: int, head_dim: int) -> bool:
     """Use the vendored TokenSpeed CDNA4 decode kernel where it is supported."""
     return (
         os.getenv("INKLING_GFX950_GLUON", "1") == "1"
@@ -82,9 +80,7 @@ def inkling_fa4_num_splits(
     q_rows = max_query_len * (num_heads // num_kv_heads)
     q_tiles = (q_rows + 255) // 256
     base_ctas = batch_size * num_kv_heads * q_tiles
-    target_ctas = (
-        256 if q_tiles == 1 and batch_size == 1 else (128 if q_tiles == 1 else 64)
-    )
+    target_ctas = 256 if q_tiles == 1 and batch_size == 1 else (128 if q_tiles == 1 else 64)
     max_splits = 128
     if q_tiles == 1 and batch_size == 1:
         if num_kv_heads == 8:
@@ -103,9 +99,7 @@ def inkling_fa4_num_splits(
     {
         "BLOCK_D": lambda args: triton.next_power_of_2(args["head_dim"]),
         "BLOCK_H": lambda args: triton.next_power_of_2(args["gqa_group_size"]),
-        "BLOCK_QH": lambda args: (
-            args["BLOCK_Q"] * triton.next_power_of_2(args["gqa_group_size"])
-        ),
+        "BLOCK_QH": lambda args: (args["BLOCK_Q"] * triton.next_power_of_2(args["gqa_group_size"])),
     }
 )
 @triton.jit(do_not_specialize_on_alignment=["cache_seqlens", "cu_seqlens_q"])
@@ -216,10 +210,7 @@ def _inkling_rel_attention_kernel(
         off_h = tl.arange(0, BLOCK_H)
         rel_dist = dist[:, None, :]
         rel_valid = (
-            q_valid[:, None, None]
-            & (off_h[None, :, None] < gqa_group_size)
-            & (rel_dist >= 0)
-            & (rel_dist < rel_extent)
+            q_valid[:, None, None] & (off_h[None, :, None] < gqa_group_size) & (rel_dist >= 0) & (rel_dist < rel_extent)
         )
         safe_dist = tl.maximum(0, tl.minimum(rel_dist, rel_extent - 1))
         bias = tl.load(
@@ -307,8 +298,7 @@ def inkling_fa4_rel_attention(
         raise ValueError("expected q [T,H,D] and paged K/V [B,P,Hkv,D]")
     if rel_logits.shape != (q.shape[0], q.shape[1], rel_extent):
         raise ValueError(
-            f"relative logits have shape {tuple(rel_logits.shape)}, expected "
-            f"{(q.shape[0], q.shape[1], rel_extent)}"
+            f"relative logits have shape {tuple(rel_logits.shape)}, expected {(q.shape[0], q.shape[1], rel_extent)}"
         )
 
     num_kv_heads = key_cache.shape[2]

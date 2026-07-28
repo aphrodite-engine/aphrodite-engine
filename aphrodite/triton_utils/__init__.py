@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from aphrodite.triton_utils.importing import (
     HAS_TRITON,
     TritonLanguagePlaceholder,
     TritonPlaceholder,
 )
+
+gluon: Any
+gl: Any
+aggregate: Any
 
 if TYPE_CHECKING or HAS_TRITON:
     import triton
@@ -25,7 +29,7 @@ else:
     gl = TritonLanguagePlaceholder()
     aggregate = TritonLanguagePlaceholder()
 
-from aphrodite.triton_utils.tensor_descriptor import use_tensor_descriptor
+from aphrodite.triton_utils.tensor_descriptor import use_tensor_descriptor  # noqa: E402
 
 LOG2E = 1.4426950408889634
 LOGE2 = 0.6931471805599453

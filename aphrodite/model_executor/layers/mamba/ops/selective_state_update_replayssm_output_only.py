@@ -6,6 +6,7 @@ import torch
 
 from aphrodite.model_executor.layers.mamba.ops.mamba_ssm import convert_rs_fp16x2, softplus
 from aphrodite.model_executor.layers.mamba.ops.replayssm_config import get_replayssm_config
+from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
 from aphrodite.v1.attention.backends.utils import NULL_BLOCK_ID
 
@@ -190,6 +191,7 @@ def _replayssm_output_only_kernel(
     NF_NDS: tl.constexpr,
     FL_DSTATE_TILE: tl.constexpr,
     FL_NDS: tl.constexpr,
+    DOT_INPUT_PRECISION: tl.constexpr,
     USE_RS_ROUNDING: tl.constexpr,
     PHILOX_ROUNDS: tl.constexpr,
     # heuristic-computed
@@ -355,10 +357,11 @@ def _replayssm_output_only_kernel(
             )
             B_cur_tile = tl.load(B_ptr + offs_n_f * stride_B_dstate, mask=nmask_f, other=0.0)
             B_all_dot = tl.where(offs_k_dot[:, None] == write_pos, B_cur_tile[None, :], B_all_dot)
-            # tf32x3 keeps fp32 parity with the elementwise baseline (plain tf32 on
-            # fp32 inputs drifts ~1e-2); bf16/fp16 inputs are unaffected by this flag.
+            # CUDA uses tf32x3 to keep fp32 parity with the elementwise
+            # baseline. Other platforms use their backend default; bf16/fp16
+            # inputs are unaffected by this flag.
             B_scaled = (B_all_dot.to(tl.float32) * scale_dot[:, None]).to(x_ptr.dtype.element_ty)
-            delta_state = tl.dot(x_all_ty, B_scaled, input_precision="tf32x3")
+            delta_state = tl.dot(x_all_ty, B_scaled, input_precision=DOT_INPUT_PRECISION)
             state_ptrs = state_ptr + offs_m[:, None] * stride_state_dim + offs_n_f[None, :] * stride_state_dstate
             state_mask = (offs_m[:, None] < dim) & nmask_f[None, :]
             st_f = tl.load(state_ptrs, mask=state_mask, other=0.0)
@@ -502,6 +505,9 @@ def selective_state_update_replayssm_output_only(
     nf_nds = triton.cdiv(bs_dstate, nf_dstate_tile)
     fl_dstate_tile = max(16, min(fl_tile, bs_dstate))
     fl_nds = triton.cdiv(bs_dstate, fl_dstate_tile)
+    # AMD Triton does not support tf32x3, so use its backend default. CUDA
+    # retains tf32x3 to preserve fp32 parity with the elementwise baseline.
+    dot_input_precision = None if current_platform.is_rocm() else "tf32x3"
 
     grid = lambda META: (triton.cdiv(dim, META["BLOCK_SIZE_M"]), batch, nheads)
     z_strides = (z.stride(0), z.stride(1), z.stride(2)) if z is not None else (0, 0, 0)
@@ -620,6 +626,7 @@ def selective_state_update_replayssm_output_only(
             nf_nds,
             fl_dstate_tile,
             fl_nds,
+            dot_input_precision,
             enable_stochastic_rounding,
             cache_philox_rounds,
             num_warps=num_warps,
