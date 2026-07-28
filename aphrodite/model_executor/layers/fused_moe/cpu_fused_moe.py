@@ -362,6 +362,9 @@ class CPUFusedMOE:
         if not (w13_output_size % 32 == 0 and w2_output_size % 32 == 0):
             return False, "none"
 
+        if layer.activation == MoEActivation.SWIGLUOAI and w2_input_size % _MOE_GROUPED_GEMM_N_TILE != 0:
+            return False, "none"
+
         supports_neon = current_platform.get_cpu_architecture() == CpuArchEnum.ARM
         if supports_neon:
             if dtype == torch.bfloat16 and w13_input_size % 4 == 0 and w2_input_size % 4 == 0:
