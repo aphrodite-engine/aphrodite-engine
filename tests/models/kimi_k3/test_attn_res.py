@@ -76,23 +76,11 @@ def test_attn_res(
         pytest.skip("NVIDIA AttnRes requires the SM100 family")
 
     prefix = _randn_with_row_padding(num_tokens, HIDDEN_SIZE, padding=row_padding)
-    delta = (
-        _randn_with_row_padding(num_tokens, HIDDEN_SIZE, padding=row_padding)
-        if has_delta
-        else None
-    )
-    blocks = _randn_with_row_padding(
-        num_tokens, MAX_BLOCKS, HIDDEN_SIZE, padding=row_padding
-    )
-    norm_weight = 1 + 0.1 * torch.randn(
-        HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16
-    )
-    qk_weight = (
-        torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16) / HIDDEN_SIZE**0.5
-    )
-    output_norm_weight = 1 + 0.1 * torch.randn(
-        HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16
-    )
+    delta = _randn_with_row_padding(num_tokens, HIDDEN_SIZE, padding=row_padding) if has_delta else None
+    blocks = _randn_with_row_padding(num_tokens, MAX_BLOCKS, HIDDEN_SIZE, padding=row_padding)
+    norm_weight = 1 + 0.1 * torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
+    qk_weight = torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16) / HIDDEN_SIZE**0.5
+    output_norm_weight = 1 + 0.1 * torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
     original_blocks = blocks.clone()
     expected, expected_prefix = _reference(
         prefix.clone(),
@@ -129,13 +117,9 @@ def test_attn_res(
 @pytest.mark.parametrize("num_blocks", range(MAX_BLOCKS + 1))
 def test_attn_res_block_counts(num_blocks: int):
     prefix = torch.randn(1, HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
-    blocks = torch.randn(
-        1, MAX_BLOCKS, HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16
-    )
+    blocks = torch.randn(1, MAX_BLOCKS, HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
     norm_weight = torch.ones(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
-    qk_weight = (
-        torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16) / HIDDEN_SIZE**0.5
-    )
+    qk_weight = torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16) / HIDDEN_SIZE**0.5
     output_norm_weight = torch.ones_like(norm_weight)
     expected, _ = _reference(
         prefix.clone(),
@@ -166,16 +150,10 @@ def test_attn_res_block_counts(num_blocks: int):
 def test_attn_res_without_output_norm():
     prefix = torch.randn(7, HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
     delta = torch.randn_like(prefix)
-    blocks = torch.randn(
-        7, MAX_BLOCKS, HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16
-    )
+    blocks = torch.randn(7, MAX_BLOCKS, HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
     norm_weight = torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16)
-    qk_weight = (
-        torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16) / HIDDEN_SIZE**0.5
-    )
-    expected, _ = _reference(
-        prefix.clone(), delta, blocks, norm_weight, qk_weight, None, MAX_BLOCKS
-    )
+    qk_weight = torch.randn(HIDDEN_SIZE, device="cuda", dtype=torch.bfloat16) / HIDDEN_SIZE**0.5
+    expected, _ = _reference(prefix.clone(), delta, blocks, norm_weight, qk_weight, None, MAX_BLOCKS)
 
     actual = attn_res(
         prefix,
