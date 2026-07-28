@@ -60,7 +60,6 @@ from aphrodite.v1.worker.gpu.states import RequestState
 
 from .interfaces import (
     SupportsMultiModal,
-    SupportsPP,
     SupportsQuant,
 )
 
@@ -136,7 +135,6 @@ class DiffusionGemmaForConditionalGeneration(
     nn.Module,
     SupportsMultiModal,
     SupportsQuant,
-    SupportsPP,
 ):
     """DiffusionGemma for Aphrodite.
 
@@ -250,8 +248,6 @@ class DiffusionGemmaForConditionalGeneration(
             self_conditioning_size=sc_size,
             eps=getattr(text_config, "rms_norm_eps", 1e-6),
         )
-
-        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def compute_self_conditioning(
         self,
