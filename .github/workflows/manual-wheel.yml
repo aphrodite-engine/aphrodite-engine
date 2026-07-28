@@ -70,21 +70,27 @@ jobs:
           "$RUNNER_TEMP/rclone-bin/rclone" copyto "$wheel" "$remote" \
             --s3-upload-concurrency 8 \
             --s3-chunk-size 64M
-          wheel_url="$("$RUNNER_TEMP/rclone-bin/rclone" link "$remote" --expire 168h)"
-
-          python3 .github/scripts/generate_nightly_index.py \
-            --wheel "$wheel" \
-            --url "$wheel_url" \
-            --commit "$(git rev-parse HEAD)" \
-            --output manual-wheel-index/index.html
-
-          while IFS= read -r old_wheel; do
-            if [[ "$old_wheel" != "$wheel_name" ]]; then
-              "$RUNNER_TEMP/rclone-bin/rclone" deletefile \
-                "mega:${MEGA_S4_BUCKET}/wheels/${old_wheel}"
+          entries="$RUNNER_TEMP/aphrodite-wheel-index.tsv"
+          : > "$entries"
+          while IFS= read -r stored_wheel; do
+            stored_remote="mega:${MEGA_S4_BUCKET}/wheels/${stored_wheel}"
+            stored_url="$("$RUNNER_TEMP/rclone-bin/rclone" link \
+              "$stored_remote" --expire 168h)"
+            if [[ "$stored_wheel" == "$wheel_name" ]]; then
+              digest="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
+              printf '%s\t%s\t%s\n' \
+                "$stored_wheel" "$stored_url" "$digest" >> "$entries"
+            else
+              printf '%s\t%s\n' "$stored_wheel" "$stored_url" >> "$entries"
             fi
           done < <("$RUNNER_TEMP/rclone-bin/rclone" lsf \
-            "mega:${MEGA_S4_BUCKET}/wheels" --files-only --include '*.whl')
+            "mega:${MEGA_S4_BUCKET}/wheels" --files-only --include '*.whl' |
+            sort -r)
+
+          python3 .github/scripts/generate_nightly_index.py \
+            --entry-file "$entries" \
+            --commit "$(git rev-parse HEAD)" \
+            --output manual-wheel-index/index.html
 
       - name: Upload package index
         uses: actions/upload-artifact@v4
