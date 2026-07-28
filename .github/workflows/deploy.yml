@@ -29,6 +29,10 @@ jobs:
             --output docs/public/simple/aphrodite-engine/index.html \
             || printf '%s\n' '<!doctype html><html><body></body></html>' \
               > docs/public/simple/aphrodite-engine/index.html
+          mkdir -p docs/public/whl
+          cp \
+            docs/public/simple/aphrodite-engine/index.html \
+            docs/public/whl/index.html
       - name: Install, build, and upload your site
         uses: withastro/action@v3
         with:

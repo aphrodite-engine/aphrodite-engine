@@ -1,8 +1,6 @@
 #include <cuda_fp16.h>
 #include "exl3_gemm.cuh"
 
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 #include "../util.h"
@@ -118,8 +116,10 @@ void exl3_moe(const at::Tensor& hidden_state, const at::Tensor& output_state,
               const bool up_mul1, const bool down_mcg, const bool down_mul1,
 
               const float act_limit) {
-  const at::cuda::OptionalCUDAGuard device_guard(hidden_state.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      hidden_state.get_device_index());
+  cudaStream_t stream =
+      get_current_cuda_stream(hidden_state.get_device_index());
 
   // Validate args
   TORCH_CHECK_DTYPE(hidden_state, kHalf);

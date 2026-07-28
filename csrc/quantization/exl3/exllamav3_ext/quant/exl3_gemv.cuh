@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ATen/Tensor.h>
+#include "../util.h"
 
 void exl3_gemv(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                const c10::optional<at::Tensor>& suh,

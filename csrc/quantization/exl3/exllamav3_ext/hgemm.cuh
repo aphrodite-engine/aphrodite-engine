@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ATen/Tensor.h>
+#include "util.h"
 #include "graph.cuh"
 
 void hgemm_gr(at::Tensor a, at::Tensor b, at::Tensor c, Graph* graph);

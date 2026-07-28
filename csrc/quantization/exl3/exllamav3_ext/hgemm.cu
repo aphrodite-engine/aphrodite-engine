@@ -1,7 +1,5 @@
 #include <cuda_fp16.h>
 #include "hgemm.cuh"
-#include <c10/cuda/CUDAGuard.h>
-#include <ATen/cuda/CUDAContext.h>
 #include "util.h"
 #include "util.cuh"
 #include "quant/exl3_devctx.cuh"
@@ -18,12 +16,13 @@ accumulate)
 using bfloat16 = __nv_bfloat16;
 
 void hgemm_gr(at::Tensor a, at::Tensor b, at::Tensor c, Graph* graph) {
-  const at::cuda::OptionalCUDAGuard device_guard(a.device());
-  cudaStream_t stream =
-      graph ? graph->capture_stream : at::cuda::getCurrentCUDAStream().stream();
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      a.get_device_index());
+  cudaStream_t stream = graph ? graph->capture_stream
+                              : get_current_cuda_stream(a.get_device_index());
 
-  bool output_fp32 = c.dtype() == at::kFloat;
-  bool output_fp16 = c.dtype() == at::kHalf;
+  bool output_fp32 = c.scalar_type() == at::kFloat;
+  bool output_fp16 = c.scalar_type() == at::kHalf;
 
   TORCH_CHECK(output_fp32 || output_fp16, "c must be float32 or float16");
 
@@ -42,7 +41,7 @@ void hgemm_gr(at::Tensor a, at::Tensor b, at::Tensor c, Graph* graph) {
   int size_n = b.size(-1);
 
   // Set cuBLAS modes and workspace
-  cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
+  cublasHandle_t cublas_handle = get_current_cuda_blas_handle();
   cublasSetStream(cublas_handle, stream);
   cublasSetPointerMode(cublas_handle, CUBLAS_POINTER_MODE_HOST);
   int device;
