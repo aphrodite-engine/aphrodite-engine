@@ -40,25 +40,30 @@ from aphrodite.v1.kv_offload.tiering.obj.manager import ObjectStoreSecondaryTier
 # ---------------------------------------------------------------------------
 
 
-def _make_aphrodite_config():
+def _make_offloading_spec(enable_kv_cache_events: bool = False) -> SimpleNamespace:
     return SimpleNamespace(
-        model_config=SimpleNamespace(model="test/model"),
-        cache_config=SimpleNamespace(block_size=16, cache_dtype="float16"),
-        parallel_config=SimpleNamespace(
-            tensor_parallel_size=1,
-            pipeline_parallel_size=1,
-            prefill_context_parallel_size=1,
-            decode_context_parallel_size=1,
-            rank=0,
+        config=SimpleNamespace(
+            model=SimpleNamespace(name="test/model", dtype="float16"),
+            cache=SimpleNamespace(tokens_per_hash=16),
+            parallel=SimpleNamespace(
+                tp_size=1,
+                pp_size=1,
+                pcp_size=1,
+                dcp_size=1,
+                rank=0,
+                is_parallelism_agnostic=True,
+            ),
+            groups=(),
+            replicated_layout=False,
         ),
-        use_v2_model_runner=False,
+        blocks_per_chunk=1,
+        kv_events_config=SimpleNamespace(
+            enable_kv_cache_events=enable_kv_cache_events,
+        ),
     )
 
 
-_OFFLOADING_SPEC = SimpleNamespace(
-    aphrodite_config=_make_aphrodite_config(),
-    kv_cache_config=SimpleNamespace(kv_cache_groups=[]),
-)
+_OFFLOADING_SPEC = _make_offloading_spec()
 
 _STORE_CONFIG = {
     "bucket": "mock-bucket",
@@ -75,11 +80,7 @@ _CTX = ReqContext(req_id="test-req")
 
 def _make_events_spec(enable_kv_cache_events: bool) -> SimpleNamespace:
     """Offloading spec stub with an explicit global KV events flag."""
-    return SimpleNamespace(
-        aphrodite_config=_make_aphrodite_config(),
-        kv_cache_config=SimpleNamespace(kv_cache_groups=[]),
-        kv_events_config=SimpleNamespace(enable_kv_cache_events=enable_kv_cache_events),
-    )
+    return _make_offloading_spec(enable_kv_cache_events)
 
 
 def key(n: int) -> OffloadKey:
