@@ -7,6 +7,7 @@ import uuid
 import pytest
 import torch
 
+from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import round_up
 from aphrodite.utils.torch_utils import set_random_seed
@@ -16,6 +17,7 @@ from aphrodite.v1.kv_offload.base import (
     CanonicalKVCacheTensor,
     GPULoadStoreSpec,
 )
+from aphrodite.v1.kv_offload.cpu import gpu_worker
 from aphrodite.v1.kv_offload.cpu.common import CPULoadStoreSpec
 from aphrodite.v1.kv_offload.cpu.gpu_worker import CPUOffloadingWorker
 from aphrodite.v1.kv_offload.cpu.shared_offload_region import SharedOffloadRegion
@@ -30,6 +32,16 @@ DEVICE_TYPE = current_platform.device_type
 DEVICES = [f"{DEVICE_TYPE}:0"]
 NUM_MAPPINGS = [3]
 NUM_MAPPINGS_PER_GROUP = [2]
+
+
+@pytest.mark.skipif(not current_platform.is_rocm(), reason="ROCm-specific test")
+def test_rocm_cpu_to_gpu_uses_dma(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gpu_worker, "HAS_TRITON", True)
+    monkeypatch.setattr(gpu_worker.current_platform, "is_xpu", lambda: False)
+    monkeypatch.setattr(gpu_worker.current_platform, "is_rocm", lambda: True)
+
+    refs = [[CanonicalKVCacheRef(tensor_idx=0, page_size_bytes=512)]]
+    assert gpu_worker._select_swap_blocks_fn(refs, gpu_to_cpu=False) is (ops.swap_blocks_batch)
 
 
 @pytest.mark.parametrize("gpu_to_cpu", [True, False])
