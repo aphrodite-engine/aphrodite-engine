@@ -154,7 +154,7 @@ class TestGetMLAPrefillBackend:
 class TestAutoSelectMLAPrefillBackend:
     """Tests for fallback and error paths in auto-selection."""
 
-    def test_blackwell_glm_dimensions_fall_back_to_trtllm(self):
+    def test_blackwell_glm_dimensions_use_trtllm(self):
         capability = DeviceCapability(major=10, minor=0)
         selector_config = MLAPrefillSelectorConfig(
             dtype=torch.bfloat16,
@@ -175,10 +175,6 @@ class TestAutoSelectMLAPrefillBackend:
         with (
             patch("aphrodite.platforms.current_platform") as mock_platform,
             patch.object(flash_attn_cls, "is_available", return_value=True),
-            patch(
-                "aphrodite.v1.attention.backends.mla.prefill.flash_attn.get_flash_attn_version",
-                return_value=4,
-            ),
             patch.object(trtllm_cls, "validate_configuration", return_value=[]),
         ):
             # Force the non-ROCm priority on the Blackwell.
@@ -287,7 +283,14 @@ class TestROCmAiterFAPrefillSelection:
         """On ROCm, ROCM_AITER_FA is tried first, FLASH_ATTN as fallback."""
         with patch("aphrodite.platforms.current_platform") as mock_platform:
             mock_platform.is_rocm.return_value = True
-            priorities = _get_mla_prefill_backend_priorities(DeviceCapability(major=9, minor=5))
+            priorities = _get_mla_prefill_backend_priorities(
+                DeviceCapability(major=9, minor=5),
+                MLADimensions(
+                    qk_nope_head_dim=128,
+                    qk_rope_head_dim=64,
+                    v_head_dim=128,
+                ),
+            )
 
         assert priorities == [
             MLAPrefillBackendEnum.ROCM_AITER_FA,
