@@ -5,9 +5,10 @@
 import pytest
 import torch
 
+from aphrodite.platforms import current_platform
 from aphrodite.v1.worker.gpu.input_batch import InputBatch, InputBuffers
 
-DEVICE = "cuda"
+DEVICE = current_platform.device_type
 
 
 @pytest.mark.parametrize(
