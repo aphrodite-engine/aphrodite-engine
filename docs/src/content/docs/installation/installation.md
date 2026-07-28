@@ -137,7 +137,7 @@ docker run --runtime nvidia --gpus all \
     --model NousResearch/Meta-Llama-3.1-8B-Instruct
 ```
 
-See [Faster Startup](../usage/optimization/#faster-startup) for the mechanism and for what invalidates the cache.
+See [Faster Startup](/usage/optimization/#faster-startup) for the mechanism and for what invalidates the cache.
 
 ### Building via Docker image
 
