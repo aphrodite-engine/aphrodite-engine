@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from aphrodite.config import AphroditeConfig, AttentionConfig, ModelConfig
+from aphrodite.platforms import current_platform
 from aphrodite.platforms.interface import DeviceCapability
 from aphrodite.v1.attention.backends.mla.prefill.base import MLADimensions
 from aphrodite.v1.attention.backends.mla.prefill.registry import MLAPrefillBackendEnum
@@ -276,6 +277,11 @@ class TestBackendValidation:
             assert invalid_reasons == []
 
 
+@pytest.mark.skipif(
+    not current_platform.is_cuda_alike(),
+    reason="Imports aphrodite.platforms.rocm, whose module init requires a CUDA or "
+    "ROCm torch build; not importable on XPU/CPU/TPU.",
+)
 class TestROCmAiterFAPrefillSelection:
     """Tests for the ROCm AITER FlashAttention MLA prefill backend."""
 
