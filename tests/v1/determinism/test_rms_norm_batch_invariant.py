@@ -26,16 +26,18 @@ def _rms_norm_reference(
 
 
 @skip_if_not_cuda
-@pytest.mark.parametrize("batch_size", [1, 4, 16, 64])
+@pytest.mark.parametrize("batch_size", [1, 4, 64, 300])
 @pytest.mark.parametrize("hidden_size", [512, 2048, 4096, 8192])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("eps", [1e-6, 1e-5])
+@pytest.mark.parametrize("seed", list(range(4)))
 def test_rms_norm_batch_invariant_vs_reference(
     default_aphrodite_config,
     batch_size: int,
     hidden_size: int,
     dtype: torch.dtype,
     eps: float,
+    seed: int,
 ):
     """
     Compare batch-invariant Triton RMS norm against a PyTorch reference.
@@ -46,7 +48,7 @@ def test_rms_norm_batch_invariant_vs_reference(
     device = torch.device(DEVICE_TYPE)
 
     # Create test input and weight
-    torch.manual_seed(42)
+    torch.manual_seed(seed)
     input_tensor = torch.randn(batch_size, hidden_size, dtype=dtype, device=device)
     weight = torch.randn(hidden_size, dtype=dtype, device=device)
 
@@ -67,7 +69,9 @@ def test_rms_norm_batch_invariant_vs_reference(
         reference_output,
         rtol=rtol,
         atol=atol,
-        msg=f"RMS norm mismatch for batch_size={batch_size}, hidden_size={hidden_size}, dtype={dtype}, eps={eps}",
+        msg=f"RMS norm mismatch for batch_size={batch_size}, "
+        f"hidden_size={hidden_size}, "
+        f"dtype={dtype}, eps={eps}, seed={seed}",
     )
 
 
