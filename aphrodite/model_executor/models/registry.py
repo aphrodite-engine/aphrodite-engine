@@ -184,7 +184,6 @@ _TEXT_GENERATION_MODELS = {
     "OlmoeForCausalLM": ("olmoe", "OlmoeForCausalLM"),
     "OPTForCausalLM": ("opt", "OPTForCausalLM"),
     "OrionForCausalLM": ("orion", "OrionForCausalLM"),
-    "OuroForCausalLM": ("ouro", "OuroForCausalLM"),
     "PanguEmbeddedForCausalLM": ("openpangu", "PanguEmbeddedForCausalLM"),
     "PanguProMoEV2ForCausalLM": ("openpangu", "PanguProMoEV2ForCausalLM"),
     "PanguUltraMoEForCausalLM": ("openpangu", "PanguUltraMoEForCausalLM"),

@@ -398,7 +398,6 @@ _TEXT_GENERATION_EXAMPLE_MODELS = {
     "OlmoeForCausalLM": _HfExamplesInfo("allenai/OLMoE-1B-7B-0924-Instruct"),
     "OPTForCausalLM": _HfExamplesInfo("facebook/opt-125m", {"1b": "facebook/opt-iml-max-1.3b"}),
     "OrionForCausalLM": _HfExamplesInfo("OrionStarAI/Orion-14B-Chat", trust_remote_code=True),
-    "OuroForCausalLM": _HfExamplesInfo("ByteDance/Ouro-1.4B", trust_remote_code=True),
     "PanguEmbeddedForCausalLM": _HfExamplesInfo(
         "FreedomIntelligence/openPangu-Embedded-7B-V1.1", trust_remote_code=True
     ),
