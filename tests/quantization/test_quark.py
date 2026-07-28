@@ -147,7 +147,7 @@ def test_quark_int8_w_per_tensor_a_per_tensor(aphrodite_runner, tp):
 @pytest.mark.parametrize("tp", [1])
 def test_quark_int8_w8a8_moe(aphrodite_runner, tp):
     """Test W8A8 INT8 MoE quantization with a tiny Qwen3 MoE model."""
-    model_path = "nameistoken/tiny-qwen3-moe-w8a8-int8-quark"
+    model_path = "amd/tiny-qwen3-moe-w8a8-int8"
     with aphrodite_runner(
         model_path,
         enforce_eager=True,
