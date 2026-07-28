@@ -23,6 +23,7 @@ from aphrodite.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheGroupSpec,
     KVCacheTensor,
+    MambaSpec,
 )
 from aphrodite.v1.kv_offload.base import OffloadingHistogramMetadata, OffloadingSpec
 from aphrodite.v1.kv_offload.cpu.spec import CPUOffloadingSpec
@@ -155,6 +156,33 @@ def _make_hybrid_kv_cache_config():
                     num_kv_heads=num_kv_heads,
                     head_size=head_size,
                     dtype=dtype,
+                ),
+            ),
+        ],
+    )
+
+
+def _make_mamba_hybrid_kv_cache_config() -> KVCacheConfig:
+    return KVCacheConfig(
+        num_blocks=4,
+        kv_cache_tensors=[],
+        kv_cache_groups=[
+            KVCacheGroupSpec(
+                ["full_layer"],
+                FullAttentionSpec(
+                    block_size=16,
+                    num_kv_heads=1,
+                    head_size=1,
+                    dtype=torch.float32,
+                ),
+            ),
+            KVCacheGroupSpec(
+                ["mamba_layer"],
+                MambaSpec(
+                    block_size=16,
+                    shapes=((1, 1),),
+                    dtypes=(torch.float32,),
+                    mamba_cache_mode="align",
                 ),
             ),
         ],
@@ -337,6 +365,19 @@ def test_offloading_spec_accepts_blocks_per_chunk_for_heterogeneous_groups():
 
     assert spec.tokens_per_block == (12, 16)
     assert spec.blocks_per_chunk == 2
+
+
+def test_dcp_scales_attention_but_not_mamba_group_blocks():
+    config = _make_aphrodite_config(cpu_bytes_to_use=65536)
+    config.parallel_config.tensor_parallel_size = 2
+    config.parallel_config.decode_context_parallel_size = 2
+
+    offloading_config = build_offloading_config(config, _make_mamba_hybrid_kv_cache_config())
+
+    assert tuple(group.tokens_per_block for group in offloading_config.groups) == (
+        32,
+        16,
+    )
 
 
 def test_block_size_and_blocks_per_chunk_are_mutually_exclusive():
