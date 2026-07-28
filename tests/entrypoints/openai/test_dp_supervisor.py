@@ -197,6 +197,7 @@ def test_run_aphrodite_dp_server_uses_rust_frontend_when_enabled(monkeypatch):
     monkeypatch.setattr(dp_sup.os, "setpgrp", lambda: None)
     monkeypatch.setattr(dp_sup, "set_process_title", lambda *_args: None)
     monkeypatch.setattr(dp_sup, "decorate_logs", lambda *_args: None)
+    monkeypatch.setattr(dp_sup.envs, "APHRODITE_USE_RUST_FRONTEND", True, raising=False)
     monkeypatch.setattr(
         dp_sup.envs,
         "APHRODITE_RUST_FRONTEND_PATH",

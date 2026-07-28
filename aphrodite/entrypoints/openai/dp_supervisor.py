@@ -225,7 +225,7 @@ def _run_aphrodite_dp_server(child_args: argparse.Namespace) -> None:
     name = f"APIServer_DP{child_args.data_parallel_rank}"
     set_process_title(name)
     decorate_logs(name)
-    if envs.APHRODITE_RUST_FRONTEND_PATH:
+    if envs.APHRODITE_USE_RUST_FRONTEND and envs.APHRODITE_RUST_FRONTEND_PATH:
         _run_rust_aphrodite_dp_server(child_args)
     else:
         _run_python_aphrodite_dp_server(child_args)

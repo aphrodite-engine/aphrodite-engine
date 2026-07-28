@@ -74,6 +74,8 @@ class ServeSubcommand(CLISubcommand):
             uvloop.run(serve_grpc(args))
             return
 
+        rust_frontend_path = envs.APHRODITE_RUST_FRONTEND_PATH if envs.APHRODITE_USE_RUST_FRONTEND else None
+
         if args.headless:
             if args.api_server_count is not None and args.api_server_count > 0:
                 raise ValueError(
@@ -114,7 +116,7 @@ class ServeSubcommand(CLISubcommand):
         # - Hybrid LB: Use local DP size (internal LB for local ranks only)
         # - Internal LB: Use full DP size
         if args.api_server_count is None:
-            if is_multi_port or is_external_lb or envs.APHRODITE_RUST_FRONTEND_PATH:
+            if is_multi_port or is_external_lb or rust_frontend_path:
                 args.api_server_count = 1
             elif is_hybrid_lb:
                 args.api_server_count = args.data_parallel_size_local or 1
@@ -130,7 +132,7 @@ class ServeSubcommand(CLISubcommand):
                         "Defaulting api_server_count to data_parallel_size (%d).",
                         args.api_server_count,
                     )
-        elif envs.APHRODITE_RUST_FRONTEND_PATH and args.api_server_count > 1:
+        elif rust_frontend_path and args.api_server_count > 1:
             logger.warning(
                 "Ignoring --api-server-count=%d when using rust front-end process",
                 args.api_server_count,
@@ -150,7 +152,7 @@ class ServeSubcommand(CLISubcommand):
             run_dp_supervisor(args)
         elif args.api_server_count < 1:
             run_headless(args)
-        elif args.api_server_count > 1 or envs.APHRODITE_RUST_FRONTEND_PATH:
+        elif args.api_server_count > 1 or rust_frontend_path:
             run_multi_api_server(args)
         else:
             # Single API server (this process).
@@ -260,7 +262,7 @@ def run_headless(args: argparse.Namespace):
 
 def run_multi_api_server(args: argparse.Namespace):
     assert not args.headless
-    rust_frontend_path = envs.APHRODITE_RUST_FRONTEND_PATH
+    rust_frontend_path = envs.APHRODITE_RUST_FRONTEND_PATH if envs.APHRODITE_USE_RUST_FRONTEND else None
     num_api_servers: int = args.api_server_count
     assert num_api_servers > 0
 

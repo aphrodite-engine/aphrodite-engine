@@ -39,6 +39,8 @@ def main():
 
     cli_env_setup()
 
+    aphrodite.entrypoints.cli.benchmark.main.maybe_exec_rust_bench()
+
     # For 'aphrodite bench *': use CPU instead of UnspecifiedPlatform by default
     if len(sys.argv) > 1 and sys.argv[1] == "bench":
         logger.debug(

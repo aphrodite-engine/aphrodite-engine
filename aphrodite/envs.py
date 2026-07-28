@@ -153,6 +153,7 @@ if TYPE_CHECKING:
     K_SCALE_CONSTANT: int = 200
     V_SCALE_CONSTANT: int = 100
     APHRODITE_USE_RUST_FRONTEND: bool = False
+    APHRODITE_USE_RUST_BENCH: bool = False
     APHRODITE_RUST_FRONTEND_PATH: str | None = "auto"
     APHRODITE_SERVER_DEV_MODE: bool = False
     APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE: int = 128
@@ -536,22 +537,25 @@ def _deprecated_triton_attn_use_td() -> None:
     return None
 
 
-def _resolve_rust_frontend_path() -> str | None:
-    """Resolve the Rust frontend binary path.
+def _resolve_rust_cli_path() -> str | None:
+    """Resolve the aphrodite-rs binary path.
 
-    Returns None if APHRODITE_USE_RUST_FRONTEND is not enabled.
+    Returns None unless APHRODITE_USE_RUST_FRONTEND or
+    APHRODITE_USE_RUST_BENCH is enabled.
     When enabled, resolves APHRODITE_RUST_FRONTEND_PATH ("auto" by default)
     to the actual binary path.
     """
-    use_rust = bool(int(os.environ.get("APHRODITE_USE_RUST_FRONTEND", "0")))
+    use_rust = bool(int(os.environ.get("APHRODITE_USE_RUST_FRONTEND", "0"))) or bool(
+        int(os.environ.get("APHRODITE_USE_RUST_BENCH", "0"))
+    )
     raw = os.environ.get("APHRODITE_RUST_FRONTEND_PATH", "auto")
 
     if not use_rust:
         if os.environ.get("APHRODITE_RUST_FRONTEND_PATH") is not None:
             logger.warning(
-                "APHRODITE_RUST_FRONTEND_PATH is set but APHRODITE_USE_RUST_FRONTEND "
-                "is not enabled. The Rust frontend will not be used. "
-                "Set APHRODITE_USE_RUST_FRONTEND=1 to enable it."
+                "APHRODITE_RUST_FRONTEND_PATH is set without enabling "
+                "APHRODITE_USE_RUST_FRONTEND or APHRODITE_USE_RUST_BENCH. "
+                "Set one of them to 1 to use the aphrodite-rs binary."
             )
         return None
 
@@ -1202,10 +1206,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, use the Rust frontend binary instead of the Python API server
     # process(es).
     "APHRODITE_USE_RUST_FRONTEND": lambda: bool(int(os.getenv("APHRODITE_USE_RUST_FRONTEND", "0"))),
-    # Path to the Rust frontend binary. Defaults to "auto" which discovers
-    # the binary installed with the aphrodite package. Only used when
-    # APHRODITE_USE_RUST_FRONTEND=1.
-    "APHRODITE_RUST_FRONTEND_PATH": lambda: _resolve_rust_frontend_path(),
+    # If set, use the packaged Rust client for `aphrodite bench serve`.
+    "APHRODITE_USE_RUST_BENCH": lambda: bool(int(os.getenv("APHRODITE_USE_RUST_BENCH", "0"))),
+    # Path to the aphrodite-rs binary. Defaults to "auto" which discovers
+    # the binary installed with the aphrodite package. Used when
+    # APHRODITE_USE_RUST_FRONTEND=1 or APHRODITE_USE_RUST_BENCH=1.
+    "APHRODITE_RUST_FRONTEND_PATH": lambda: _resolve_rust_cli_path(),
     # If set, aphrodite will run in development mode, which will enable
     # some additional endpoints for developing and debugging,
     # e.g. `/reset_prefix_cache`
