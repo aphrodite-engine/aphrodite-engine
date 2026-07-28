@@ -1,6 +1,10 @@
 name: Build wheel
 
 on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       storage_check_only:
@@ -15,7 +19,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: wheel-main
   cancel-in-progress: false
 
 jobs:
@@ -34,10 +38,10 @@ jobs:
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
     steps:
-      - name: Check out latest main
+      - name: Check out target main revision
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Install rclone
@@ -70,94 +74,15 @@ jobs:
             --retry-delay 3 \
             "$public_test_url")" = "nightly storage preflight"
 
-      - name: Compute wheel version
-        if: ${{ !inputs.storage_check_only }}
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
-          release="${tag#v}"
-          IFS=. read -r major minor patch <<< "$release"
-          version="${major}.${minor}.$((patch + 1)).dev$(date -u +%Y%m%d%H%M)+cu130.g$(git rev-parse --short=9 HEAD)"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Building ${version} from $(git rev-parse HEAD)"
-
-      - name: Build CUDA wheel
+      - name: Build and publish missing main commit wheels
         if: ${{ !inputs.storage_check_only }}
         env:
-          APHRODITE_VERSION_OVERRIDE: ${{ steps.version.outputs.version }}
+          PUSH_BEFORE: ${{ github.event.before }}
           MAX_JOBS: "64"
           NVCC_THREADS: "4"
           CUDA_VERSION: "13.0.2"
           TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
-        run: ./docker/export_wheels.sh
-
-      - name: Upload wheel and generate package index
-        if: ${{ !inputs.storage_check_only }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
-          test -n "$wheel"
-          wheel_name="$(basename "$wheel")"
-          remote="b2:${B2_S3_BUCKET}/wheels/${wheel_name}"
-
-          upload_succeeded=false
-          for attempt in {1..5}; do
-            echo "Uploading ${wheel_name} (attempt ${attempt}/5)"
-            if timeout --signal=TERM --kill-after=30s 20m \
-              "$RUNNER_TEMP/rclone-bin/rclone" copyto "$wheel" "$remote" \
-                --s3-upload-cutoff 16M \
-                --s3-chunk-size 16M \
-                --s3-upload-concurrency 8 \
-                --retries 5 \
-                --low-level-retries 10 \
-                --retries-sleep 5s \
-                --progress \
-                --stats 30s \
-                --stats-one-line; then
-              upload_succeeded=true
-              break
-            fi
-            echo "Upload attempt ${attempt}/5 failed; retrying in 15 seconds"
-            sleep 15
-          done
-          if [[ "$upload_succeeded" != true ]]; then
-            echo "::error::Wheel upload failed after 5 attempts"
-            exit 1
-          fi
-
-          public_wheel_name="${wheel_name//+/%2B}"
-          public_wheel_url="${B2_PUBLIC_BASE_URL%/}/wheels/${public_wheel_name}"
-          curl --fail --silent --show-error --location \
-            --retry 10 \
-            --retry-all-errors \
-            --retry-delay 3 \
-            --range 0-0 \
-            --output /dev/null \
-            "$public_wheel_url"
-
-          entries="$RUNNER_TEMP/aphrodite-wheel-index.tsv"
-          : > "$entries"
-          while IFS= read -r stored_wheel; do
-            public_stored_wheel="${stored_wheel//+/%2B}"
-            stored_url="${B2_PUBLIC_BASE_URL%/}/wheels/${public_stored_wheel}"
-            if [[ "$stored_wheel" == "$wheel_name" ]]; then
-              digest="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
-              printf '%s\t%s\t%s\n' \
-                "$stored_wheel" "$stored_url" "$digest" >> "$entries"
-            else
-              printf '%s\t%s\n' "$stored_wheel" "$stored_url" >> "$entries"
-            fi
-          done < <("$RUNNER_TEMP/rclone-bin/rclone" lsf \
-            "b2:${B2_S3_BUCKET}/wheels" --files-only --include '*.whl' |
-            sort -r)
-
-          python3 .github/scripts/generate_nightly_index.py \
-            --entry-file "$entries" \
-            --commit "$(git rev-parse HEAD)" \
-            --output manual-wheel-index/index.html
+        run: ./.github/scripts/build_nightly_commits.sh
 
       - name: Upload package index
         if: ${{ !inputs.storage_check_only }}
@@ -211,6 +136,9 @@ jobs:
     if: ${{ !inputs.storage_check_only }}
     needs: build-pages
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
