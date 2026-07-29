@@ -1347,3 +1347,102 @@ def test_logical_to_kernel_block_ids_with_remote_ratio(
         remote_physical_per_logical,
     )
     assert list(result) == expected_kernel_block_ids, f"Expected {expected_kernel_block_ids}, got {result}"
+
+
+def _make_hybrid_mla_kv_cache_config(num_blocks: int = 4):
+    """Build a KimiLinear-shaped config with one MLA and two KDA groups."""
+    from aphrodite.v1.attention.backends.registry import MambaAttentionBackendEnum
+    from aphrodite.v1.kv_cache_interface import (
+        KVCacheConfig,
+        KVCacheGroupSpec,
+        KVCacheTensor,
+        MambaSpec,
+        MLAAttentionSpec,
+    )
+
+    mla_spec = MLAAttentionSpec(block_size=12, num_kv_heads=1, head_size=6, dtype=torch.float16)
+    unified_page = mla_spec.page_size_bytes
+    kda_spec = MambaSpec(
+        block_size=12,
+        shapes=((8, 3), (1, 4, 4)),
+        dtypes=(torch.float16, torch.float32),
+        page_size_padded=unified_page,
+        mamba_type=MambaAttentionBackendEnum.GDN_ATTN,
+    )
+    assert kda_spec.page_size_bytes == unified_page
+    return KVCacheConfig(
+        num_blocks=num_blocks,
+        kv_cache_tensors=[
+            KVCacheTensor(
+                size=num_blocks * unified_page,
+                shared_by=[f"mla.{i}", f"kda_a.{i}", f"kda_b.{i}"],
+            )
+            for i in range(2)
+        ],
+        kv_cache_groups=[
+            KVCacheGroupSpec(["mla.0", "mla.1"], mla_spec),
+            KVCacheGroupSpec(["kda_a.0", "kda_a.1"], kda_spec),
+            KVCacheGroupSpec(["kda_b.0", "kda_b.1"], kda_spec),
+        ],
+    )
+
+
+@pytest.mark.cpu_test
+def test_push_write_hybrid_mla_replicates_attention():
+    """Hybrid MLA+SSM push replicates attention while SSM stays sharded."""
+    import threading
+    from collections import defaultdict
+
+    from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl.push_worker import (
+        NixlPushConnectorWorker,
+    )
+    from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl.tp_mapping import (
+        TPMapping,
+    )
+    from aphrodite.v1.kv_cache_interface import MambaSpec, MLAAttentionSpec
+
+    worker = object.__new__(NixlPushConnectorWorker)
+    worker.shutdown = lambda: None
+    worker.use_mla = True
+    worker._has_mamba = True
+    worker._group_spec_types = (MLAAttentionSpec, MambaSpec)
+    worker.transfer_topo = MagicMock()
+    worker.transfer_topo.tp_ratio.return_value = -2
+    remote_info = MagicMock()
+    remote_info.remote_physical_blocks_per_logical = 1
+    remote_info.remote_block_size = 4
+    worker.transfer_topo.get_engine_info.return_value = remote_info
+
+    engine_id = "remote-engine"
+    worker.tp_mappings = {
+        engine_id: TPMapping(
+            source_ranks_per_group=((0,), (0, 1)),
+            all_source_ranks=(0, 1),
+            rank_to_attention_slot={0: 0, 1: 0},
+            rank_offset_factor=0,
+        )
+    }
+    worker.dst_xfer_side_handles = {engine_id: {0: 100, 1: 101}}
+    worker.src_xfer_handles_by_tp_ratio = {(-2, 4): [200, 201]}
+    worker.src_xfer_handles_by_block_size = {4: 300}
+    worker._sending_transfers = defaultdict(list)
+    worker._sending_transfers_lock = threading.Lock()
+    worker.kv_cache_config = _make_hybrid_mla_kv_cache_config()
+    worker._xfer_blocks = MagicMock(return_value=1)
+
+    meta = MagicMock()
+    meta.remote.engine_id = engine_id
+    meta.remote.block_ids = [[7, 8], [3]]
+    meta.local_physical_block_ids = [[1, 2], [5]]
+
+    worker._xfer_blocks_for_req("req-1", meta)
+
+    calls = worker._xfer_blocks.call_args_list
+    assert len(calls) == 2
+    for call, rank, local_handle, remote_handle in zip(calls, (0, 1), (200, 201), (100, 101)):
+        spec = call.kwargs["read_spec"]
+        assert spec.remote_rank == rank
+        assert spec.local_block_ids == [[1, 2], [5]]
+        assert spec.remote_block_ids == [[7, 8], [3]]
+        assert call.kwargs["local_xfer_side_handle"] == local_handle
+        assert call.kwargs["remote_xfer_side_handle"] == remote_handle

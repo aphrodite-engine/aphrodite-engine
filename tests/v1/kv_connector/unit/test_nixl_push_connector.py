@@ -43,6 +43,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl.push_worker import (
 from aphrodite.distributed.kv_transfer.kv_connector.v1.nixl.utils import (
     get_base_request_id,
 )
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec
 from aphrodite.v1.outputs import KVConnectorOutput
 
 from .utils import make_nixl_push_scheduler
@@ -323,6 +324,9 @@ class _StubWriterWorker(NixlPushConnectorWorker):
         w.engine_id = "test-decode-engine"
         w._remote_agents = {}
         w._physical_blocks_per_logical_kv_block = 1
+        # Single non-hybrid attention group, matching the stub block id lists.
+        w._has_mamba = False
+        w._group_spec_types = (FullAttentionSpec,)
 
         # Track _do_start_push_kv invocations.
         calls: list[tuple[str, Any, dict[str, Any]]] = []
