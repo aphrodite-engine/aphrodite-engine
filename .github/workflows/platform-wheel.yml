@@ -1,82 +1,24 @@
-name: Build release wheel
+name: Build platform wheels
 
 on:
   push:
-    tags:
-      - "v[0-9]*"
+    branches: [main]
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
   pages: write
+  id-token: write
 
 concurrency:
-  group: wheel-main
+  group: platform-wheels-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
-    timeout-minutes: 720
-    env:
-      DOCKER_HOST: tcp://127.0.0.1:23750
-      MAX_JOBS: "64"
-      NVCC_THREADS: "4"
-      CUDA_VERSION: "13.0.2"
-      TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
-    steps:
-      - name: Check out release tag
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 0
-
-      - name: Build release wheel
-        run: ./docker/export_wheels.sh
-
-      - name: Verify release version
-        shell: bash
-        run: |
-          set -euo pipefail
-          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
-          test -n "$wheel"
-          python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}"
-
-      - name: Generate release notes
-        run: |
-          python3 .github/scripts/generate_release_notes.py \
-            --tag "$GITHUB_REF_NAME" \
-            --output release-notes.md
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Publish wheel to PyPI
-        run: |
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/aphrodite-engine/ \
-            wheels/main/*.whl
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release-notes.md
-          generate_release_notes: false
-          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
-
-      - name: Reclaim wheel build storage
-        if: ${{ always() }}
-        shell: bash
-        run: |
-          rm -f wheels/main/*.whl
-          docker buildx prune --force \
-            --filter type=regular \
-            --max-used-space 25gb
-
   cpu-wheel:
-    name: CPU wheel (${{ matrix.architecture }})
+    name: CPU nightly (${{ matrix.architecture }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     strategy:
@@ -90,10 +32,10 @@ jobs:
             runner: ubuntu-24.04-arm
             platform: linux/arm64
     steps:
-      - name: Check out release tag
+      - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Configure Docker Buildx
@@ -101,21 +43,12 @@ jobs:
 
       - name: Build CPU wheel
         env:
-          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}
           TARGET_PLATFORM: ${{ matrix.platform }}
           PYTHON_VERSION: "3.13"
           CACHE_SCOPE: cpu-${{ matrix.architecture }}
         run: |
-          APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
-            .github/scripts/build_cpu_wheel.sh \
+          .github/scripts/build_cpu_wheel.sh \
             "dist/cpu-${{ matrix.architecture }}"
-
-      - name: Verify CPU wheel
-        run: |
-          wheel="$(find "dist/cpu-${{ matrix.architecture }}" \
-            -maxdepth 1 -type f -name '*.whl' -print -quit)"
-          python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}+cpu"
 
       - name: Upload CPU wheel
         uses: actions/upload-artifact@v4
@@ -125,14 +58,14 @@ jobs:
           if-no-files-found: error
 
   metal-wheel:
-    name: Metal wheel (Apple Silicon)
+    name: Metal nightly (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 180
     steps:
-      - name: Check out release tag
+      - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Install build tools
@@ -160,18 +93,13 @@ jobs:
         env:
           APHRODITE_TARGET_DEVICE: metal
           APHRODITE_REQUIRE_RUST_FRONTEND: "1"
-          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}
           MACOSX_DEPLOYMENT_TARGET: "14.0"
-        run: |
-          APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
-            uv build --wheel --out-dir dist/metal-aarch64
+        run: uv build --wheel --out-dir dist/metal-aarch64
 
-      - name: Verify and install Metal wheel
+      - name: Install and import Metal wheel
         run: |
           wheel="$(find dist/metal-aarch64 -maxdepth 1 \
             -type f -name '*.whl' -print -quit)"
-          python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}+metal"
           uv venv --python 3.13 .wheel-test
           uv pip install --python .wheel-test/bin/python "$wheel"
           .wheel-test/bin/python -c \
@@ -185,9 +113,9 @@ jobs:
           path: dist/metal-aarch64/*.whl
           if-no-files-found: error
 
-  publish-platform-wheels:
-    name: Publish platform wheels
-    needs: [release, cpu-wheel, metal-wheel]
+  publish:
+    name: Publish platform nightlies
+    needs: [cpu-wheel, metal-wheel]
     runs-on: ubuntu-24.04
     env:
       RCLONE_CONFIG_B2_TYPE: s3
@@ -200,10 +128,10 @@ jobs:
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
     steps:
-      - name: Check out release tag
+      - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Download CPU wheels
         uses: actions/download-artifact@v4
@@ -226,16 +154,11 @@ jobs:
         run: |
           set -euo pipefail
           .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/cpu-x86_64 release cpu x86_64 page-index
+            platform-wheels/cpu-x86_64 nightly cpu x86_64 page-index
           .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/cpu-aarch64 release cpu aarch64 page-index
+            platform-wheels/cpu-aarch64 nightly cpu aarch64 page-index
           .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/metal-aarch64 release metal aarch64 page-index
-
-      - name: Attach platform wheels to GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" platform-wheels/*/*.whl --clobber
+            platform-wheels/metal-aarch64 nightly metal aarch64 page-index
 
       - name: Upload platform indexes
         uses: actions/upload-artifact@v4
@@ -246,14 +169,14 @@ jobs:
           retention-days: 1
 
   build-pages:
-    name: Build documentation with release indexes
-    needs: publish-platform-wheels
+    name: Build documentation with nightly indexes
+    needs: publish
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out release tag
+      - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Preserve existing wheel indexes
         run: ./.github/scripts/preserve_wheel_indexes.sh docs/public
@@ -271,8 +194,8 @@ jobs:
           node-version: 22
           package-manager: pnpm@9.15.8
 
-  deploy-pages:
-    name: Deploy documentation with release indexes
+  deploy:
+    name: Deploy documentation with nightly indexes
     needs: build-pages
     runs-on: ubuntu-24.04
     concurrency:

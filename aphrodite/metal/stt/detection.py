@@ -11,7 +11,7 @@ from pathlib import Path
 try:
     from aphrodite.transformers_utils.repo_utils import hf_api
 except ImportError:  # pragma: no cover
-    hf_hub_download = None
+    hf_api = None
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _resolve_config_file(model_path: str) -> Path | None:
             return config_file
         logger.debug("No config.json found in local model directory: %s", model_path)
 
-    if hf_hub_download is None:
+    if hf_api is None:
         logger.debug(
             "huggingface_hub not installed; cannot resolve remote model config: %s",
             model_path,

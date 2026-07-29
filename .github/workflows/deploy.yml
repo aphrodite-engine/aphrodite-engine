@@ -23,12 +23,12 @@ jobs:
       - name: Preserve the wheel package index
         shell: bash
         run: |
-          mkdir -p docs/public/nightly/aphrodite-engine
-          curl --fail --location --silent --show-error \
-            https://sonar.dphn.ai/nightly/aphrodite-engine/ \
-            --output docs/public/nightly/aphrodite-engine/index.html \
-            || printf '%s\n' '<!doctype html><html><body></body></html>' \
+          ./.github/scripts/preserve_wheel_indexes.sh docs/public
+          if [[ ! -f docs/public/nightly/aphrodite-engine/index.html ]]; then
+            mkdir -p docs/public/nightly/aphrodite-engine
+            printf '%s\n' '<!doctype html><html><body></body></html>' \
               > docs/public/nightly/aphrodite-engine/index.html
+          fi
           mkdir -p docs/public/whl docs/public/simple/aphrodite-engine
           cp \
             docs/public/nightly/aphrodite-engine/index.html \

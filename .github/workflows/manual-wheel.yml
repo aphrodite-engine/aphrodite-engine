@@ -112,6 +112,9 @@ jobs:
         with:
           ref: main
 
+      - name: Preserve platform wheel indexes
+        run: ./.github/scripts/preserve_wheel_indexes.sh docs/public
+
       - name: Download package index
         uses: actions/download-artifact@v4
         with:

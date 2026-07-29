@@ -1,4 +1,9 @@
 conda/
 build/
+dist/
+rust/target/
+.venv/
 venv/
+docs/node_modules/
+docs/dist/
 csrc/xqa/cubin/
