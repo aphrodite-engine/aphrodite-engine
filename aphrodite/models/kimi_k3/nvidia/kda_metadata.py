@@ -251,7 +251,7 @@ class KimiK3KDAMetadataBuilder(GDNAttentionMetadataBuilder):
             m.block_table_tensor,
             m.seq_lens,
             self.kv_cache_spec,
-            self.vllm_config.cache_config.mamba_cache_mode,
+            self.aphrodite_config.cache_config.mamba_cache_mode,
         )
 
         if not self.use_spec_decode or num_decode_draft_tokens_cpu is None:

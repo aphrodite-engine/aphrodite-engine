@@ -28,8 +28,8 @@ from aphrodite.v1.attention.backends.utils import (
 from aphrodite.v1.kv_cache_interface import MambaSpec
 from tests.v1.attention.utils import (
     BatchSpec,
+    create_aphrodite_config,
     create_common_attn_metadata,
-    create_vllm_config,
 )
 
 BLOCK_SIZE = 16
@@ -77,7 +77,7 @@ def _make_builder(
     device: torch.device = DEVICE,
     mamba_cache_mode: str = "none",
 ) -> AttentionMetadataBuilder:
-    vllm_config = create_vllm_config(
+    vllm_config = create_aphrodite_config(
         model_name="Qwen/Qwen3.5-0.8B",
         block_size=BLOCK_SIZE,
     )

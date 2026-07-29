@@ -8,7 +8,7 @@ from collections.abc import Iterable
 import torch
 import torch.nn as nn
 
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_moe import (
     fused_moe_make_expert_params_mapping,

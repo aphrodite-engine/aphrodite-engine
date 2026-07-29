@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import aphrodite._custom_ops as ops
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import ReplicatedLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor

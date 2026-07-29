@@ -8,7 +8,7 @@ from typing import cast
 import torch
 from torch import nn
 
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.layers.quantization.compressed_tensors import (
     compressed_tensors,

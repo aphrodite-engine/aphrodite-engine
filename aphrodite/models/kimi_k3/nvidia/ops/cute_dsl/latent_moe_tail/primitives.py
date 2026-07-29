@@ -35,9 +35,7 @@ class CUDAGraphCompatibleWrapper:
 
 
 def to_cute(tensor: torch.Tensor, assumed_align: int = 16) -> cute.Tensor:
-    return from_dlpack(
-        CUDAGraphCompatibleWrapper(tensor.detach()), assumed_align=assumed_align
-    )
+    return from_dlpack(CUDAGraphCompatibleWrapper(tensor.detach()), assumed_align=assumed_align)
 
 
 def to_cute_dynamic_m(
@@ -188,9 +186,7 @@ def store_lamport_sentinel_128(pointer: cute.Pointer, *, loc=None, ip=None) -> N
 
 
 @dsl_user_op
-def red_async_release_gpu_add_u32(
-    pointer: cute.Pointer, value: Uint32, *, loc=None, ip=None
-) -> None:
+def red_async_release_gpu_add_u32(pointer: cute.Pointer, value: Uint32, *, loc=None, ip=None) -> None:
     """The exact SM100 arrival primitive used by upstream LamportFlags."""
 
     address = pointer.toint(loc=loc, ip=ip)
@@ -419,9 +415,7 @@ def block_sum_specialized(
 
     lane = cute.arch.lane_idx()
     warp_idx = cute.arch.warp_idx()
-    value = warp_sum_specialized(
-        value, warp_idx, lane, warps, last_warp_lanes, last_warp_mask
-    )
+    value = warp_sum_specialized(value, warp_idx, lane, warps, last_warp_lanes, last_warp_mask)
     if lane == 0:
         warp_sums[warp_idx] = value
     cute.arch.barrier()
