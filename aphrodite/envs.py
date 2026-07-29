@@ -87,6 +87,9 @@ if TYPE_CHECKING:
     APHRODITE_MM_HASHER_ALGORITHM: str = "blake3"
     APHRODITE_TARGET_DEVICE: str = "cuda"
     APHRODITE_USE_PRECOMPILED: bool = False
+    APHRODITE_PRECOMPILED_WHEEL_LOCATION: str | None = None
+    APHRODITE_PRECOMPILED_WHEEL_COMMIT: str | None = None
+    APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX: bool = False
     APHRODITE_MAIN_CUDA_VERSION: str = "13.0"
     APHRODITE_FLOAT32_MATMUL_PRECISION: Literal["highest", "high", "medium"] = "highest"
     APHRODITE_BATCH_INVARIANT: bool = False
@@ -579,10 +582,20 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # rocm, cpu]
     "APHRODITE_TARGET_DEVICE": lambda: os.getenv("APHRODITE_TARGET_DEVICE", "cuda").lower(),
     # Build-time only: skip all native builds (CMake/CUDA and Rust); binaries must
-    # already exist in the source tree — nothing is downloaded.
+    # be downloaded from the matching main-branch wheel.
     "APHRODITE_USE_PRECOMPILED": lambda: os.getenv("APHRODITE_USE_PRECOMPILED", "").lower() in ("1", "true", "yes"),
+    # Exact local path or URL to use instead of resolving a per-commit wheel.
+    "APHRODITE_PRECOMPILED_WHEEL_LOCATION": lambda: os.getenv("APHRODITE_PRECOMPILED_WHEEL_LOCATION"),
+    # Full main-branch commit SHA, or "nightly", used instead of the checkout's
+    # merge-base with main.
+    "APHRODITE_PRECOMPILED_WHEEL_COMMIT": lambda: os.getenv("APHRODITE_PRECOMPILED_WHEEL_COMMIT"),
+    # Preserve the source-derived version in packaging contexts that consume
+    # precompiled artifacts internally.
+    "APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX": lambda: (
+        os.getenv("APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX", "").lower() in ("1", "true", "yes")
+    ),
     # Main CUDA version of Aphrodite. This follows PyTorch but can be overridden.
-    "APHRODITE_MAIN_CUDA_VERSION": lambda: (os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "13.0"),
+    "APHRODITE_MAIN_CUDA_VERSION": lambda: os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "13.0",
     # Controls PyTorch float32 matmul precision mode within Aphrodite workers.
     # Valid options mirror torch.set_float32_matmul_precision
     "APHRODITE_FLOAT32_MATMUL_PRECISION": env_with_choices(
@@ -670,7 +683,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_RPC_BASE_PATH": lambda: os.getenv("APHRODITE_RPC_BASE_PATH", tempfile.gettempdir()),
     # If true, will load models from ModelScope instead of Hugging Face Hub.
     # note that the value is true or false, not numbers
-    "APHRODITE_USE_MODELSCOPE": lambda: (os.environ.get("APHRODITE_USE_MODELSCOPE", "False").lower() == "true"),
+    "APHRODITE_USE_MODELSCOPE": lambda: os.environ.get("APHRODITE_USE_MODELSCOPE", "False").lower() == "true",
     # If true, replace the Rust BPE backend that powers HF fast tokenizers
     # with the `fastokens` (https://github.com/crusoecloud/fastokens) shim.
     # Available in Aphrodite v0.23.0 and later. If your installed Aphrodite
@@ -695,16 +708,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Feature flag to enable/disable Inductor standalone compile.
     # In torch <= 2.7 we ignore this flag; in torch >= 2.9 this is
     # enabled by default.
-    "APHRODITE_USE_STANDALONE_COMPILE": lambda: (os.environ.get("APHRODITE_USE_STANDALONE_COMPILE", "1") == "1"),
+    "APHRODITE_USE_STANDALONE_COMPILE": lambda: os.environ.get("APHRODITE_USE_STANDALONE_COMPILE", "1") == "1",
     # Inductor's pre-grad passes don't do anything for Aphrodite.
     # The pre-grad passes get run even on cache-hit and negatively impact
     # aphrodite cold compile times by O(1s)
     # Can remove this after the following issue gets fixed
     # TODO(luka): maybe_inplace requires this
     # https://github.com/pytorch/pytorch/issues/174502
-    "APHRODITE_ENABLE_PREGRAD_PASSES": lambda: (os.environ.get("APHRODITE_ENABLE_PREGRAD_PASSES", "1") == "1"),
+    "APHRODITE_ENABLE_PREGRAD_PASSES": lambda: os.environ.get("APHRODITE_ENABLE_PREGRAD_PASSES", "1") == "1",
     # Experimental: breakable cudagraph does not rely on torch.compile
-    "APHRODITE_USE_BREAKABLE_CUDAGRAPH": lambda: (os.environ.get("APHRODITE_USE_BREAKABLE_CUDAGRAPH", "0") == "1"),
+    "APHRODITE_USE_BREAKABLE_CUDAGRAPH": lambda: os.environ.get("APHRODITE_USE_BREAKABLE_CUDAGRAPH", "0") == "1",
     # Debug pattern matching inside custom passes.
     # Should be set to the fx.Node name (e.g. 'getitem_34' or 'scaled_mm_3').
     "APHRODITE_PATTERN_MATCH_DEBUG": lambda: os.environ.get("APHRODITE_PATTERN_MATCH_DEBUG", None),
@@ -1049,10 +1062,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
         int(os.getenv("APHRODITE_ENABLE_FLA_PACKED_RECURRENT_DECODE", "1"))
     ),
     # Disable pynccl (using torch.distributed instead)
-    "APHRODITE_DISABLE_PYNCCL": lambda: (os.getenv("APHRODITE_DISABLE_PYNCCL", "False").lower() in ("true", "1")),
+    "APHRODITE_DISABLE_PYNCCL": lambda: os.getenv("APHRODITE_DISABLE_PYNCCL", "False").lower() in ("true", "1"),
     # Optional: enable external Oink custom ops (e.g., Blackwell RMSNorm).
     # Disabled by default.
-    "APHRODITE_USE_OINK_OPS": lambda: (os.getenv("APHRODITE_USE_OINK_OPS", "False").lower() in ("true", "1")),
+    "APHRODITE_USE_OINK_OPS": lambda: os.getenv("APHRODITE_USE_OINK_OPS", "False").lower() in ("true", "1"),
     # Disable aiter ops unless specifically enabled.
     # Acts as a parent switch to enable the rest of the other operations.
     # On hardware without a native MXFP8 kernel (e.g. ROCm gfx942 / MI300), the
@@ -1063,7 +1076,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_MXFP8_EMULATION_DEQUANT_AT_LOAD": lambda: (
         os.getenv("APHRODITE_MXFP8_EMULATION_DEQUANT_AT_LOAD", "True").lower() in ("true", "1")
     ),
-    "APHRODITE_ROCM_USE_AITER": lambda: (os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in ("true", "1")),
+    "APHRODITE_ROCM_USE_AITER": lambda: os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in ("true", "1"),
     # Use AITER's CustomAllreduce as the custom-allreduce backend inside
     # Aphrodite's CudaCommunicator on ROCm.
     "APHRODITE_ROCM_USE_AITER_CUSTOM_AR": lambda: (
@@ -1081,9 +1094,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Whether to use aiter moe ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MOE": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER_MOE": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in ("true", "1"),
     # MoE sorting dispatch policy for AITER fused MoE kernels.
     #   0 = auto (default): single-pass for small batches, multi-pass
     #       for large batches
@@ -1099,14 +1110,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Whether to use aiter mla ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MLA": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_MLA", "True").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER_MLA": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MLA", "True").lower() in ("true", "1"),
     # Whether to use aiter mha ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MHA": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_MHA", "True").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER_MHA": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MHA", "True").lower() in ("true", "1"),
     # Whether to use aiter fp4 gemm asm.
     # By default is disabled.
     "APHRODITE_ROCM_USE_AITER_FP4_ASM_GEMM": lambda: (
@@ -1252,7 +1259,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Port of the master node in the data parallel setting
     "APHRODITE_DP_MASTER_PORT": lambda: int(os.getenv("APHRODITE_DP_MASTER_PORT", "0")),
     # Randomize inputs during dummy runs when using Data Parallel
-    "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS": lambda: (os.environ.get("APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS", "0") == "1"),
+    "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS": lambda: os.environ.get("APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS", "0") == "1",
     # Strategy to pack the data parallel ranks for Ray.
     # Available options:
     # - "fill":
@@ -1289,7 +1296,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # meta-llama/Llama-3.2-1B   /tmp/Llama-3.2-1B
     "APHRODITE_MODEL_REDIRECT_PATH": lambda: os.environ.get("APHRODITE_MODEL_REDIRECT_PATH", None),
     # Whether to use atomicAdd reduce in gptq/awq marlin kernel.
-    "APHRODITE_MARLIN_USE_ATOMIC_ADD": lambda: (os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1"),
+    "APHRODITE_MARLIN_USE_ATOMIC_ADD": lambda: os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1",
     # The activation dtype for marlin kernel
     "APHRODITE_MARLIN_INPUT_DTYPE": env_with_choices("APHRODITE_MARLIN_INPUT_DTYPE", None, ["int8", "fp8"]),
     # The online quantization dtype for humming kernel
@@ -1316,7 +1323,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Whether to turn on the outlines cache for V1
     # This cache is unbounded and on disk, so it's not safe to use in
     # an environment with potentially malicious users.
-    "APHRODITE_V1_USE_OUTLINES_CACHE": lambda: (os.environ.get("APHRODITE_V1_USE_OUTLINES_CACHE", "0") == "1"),
+    "APHRODITE_V1_USE_OUTLINES_CACHE": lambda: os.environ.get("APHRODITE_V1_USE_OUTLINES_CACHE", "0") == "1",
     # Whether using Pathways
     "APHRODITE_TPU_USING_PATHWAYS": lambda: bool("proxy" in os.getenv("JAX_PLATFORMS", "").lower()),
     # Allow use of DeepGemm kernels for fused moe ops.
