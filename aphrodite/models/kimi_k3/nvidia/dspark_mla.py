@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import aphrodite._custom_ops as ops
-from aphrodite.config import AphroditeConfig as VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import ReplicatedLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
@@ -49,14 +49,14 @@ class K3DSparkDecoderLayer(nn.Module):
     def __init__(
         self,
         *,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         config,
         layer_idx: int,
         start_layer_id: int,
         prefix: str,
     ) -> None:
         super().__init__()
-        quant_config = get_draft_quant_config(vllm_config)
+        quant_config = get_draft_quant_config(aphrodite_config)
         self.self_attn = MultiHeadLatentAttention(
             config=config,
             hidden_size=config.hidden_size,
@@ -66,7 +66,7 @@ class K3DSparkDecoderLayer(nn.Module):
             v_head_dim=config.v_head_dim,
             q_lora_rank=config.q_lora_rank,
             kv_lora_rank=config.kv_lora_rank,
-            cache_config=vllm_config.cache_config,
+            cache_config=aphrodite_config.cache_config,
             quant_config=quant_config,
             prefix=maybe_prefix(prefix, f"layers.{start_layer_id + layer_idx}.self_attn"),
             use_rope=True,
@@ -107,14 +107,14 @@ class K3DSparkModel(nn.Module):
     def __init__(
         self,
         *,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         start_layer_id: int,
         prefix: str,
     ) -> None:
         super().__init__()
-        assert vllm_config.speculative_config is not None
-        self.config = vllm_config.speculative_config.draft_model_config.hf_config
-        self.quant_config = get_draft_quant_config(vllm_config)
+        assert aphrodite_config.speculative_config is not None
+        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        self.quant_config = get_draft_quant_config(aphrodite_config)
 
         # The frozen target embedding is aliased after the draft checkpoint loads.
         self.embed_tokens: nn.Module | None = None
@@ -132,7 +132,7 @@ class K3DSparkModel(nn.Module):
         self.layers = nn.ModuleList(
             [
                 K3DSparkDecoderLayer(
-                    vllm_config=vllm_config,
+                    aphrodite_config=aphrodite_config,
                     config=self.config,
                     layer_idx=layer_idx,
                     start_layer_id=start_layer_id,
@@ -149,7 +149,7 @@ class K3DSparkModel(nn.Module):
             prefix=maybe_prefix(prefix, "markov_head"),
         )
         self._context_kv_fusion_available: bool | None = None
-        self._max_num_context_tokens = vllm_config.scheduler_config.max_num_batched_tokens
+        self._max_num_context_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         assert self.embed_tokens is not None
@@ -424,14 +424,14 @@ class K3DSparkForCausalLM(nn.Module):
         },
     )
 
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        assert vllm_config.speculative_config is not None
-        self.draft_model_config = vllm_config.speculative_config.draft_model_config
+        assert aphrodite_config.speculative_config is not None
+        self.draft_model_config = aphrodite_config.speculative_config.draft_model_config
         self.config = self.draft_model_config.hf_config
-        target_layer_num = vllm_config.model_config.get_num_layers(vllm_config.parallel_config)
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
         self.model = K3DSparkModel(
-            vllm_config=vllm_config,
+            aphrodite_config=aphrodite_config,
             start_layer_id=target_layer_num,
             prefix=maybe_prefix(prefix, "model"),
         )

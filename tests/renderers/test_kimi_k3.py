@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from aphrodite.exceptions import VLLMValidationError
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.renderers import ChatParams
 from aphrodite.renderers.kimi_k3 import KimiK3Renderer, _merge_k3_media_io_kwargs
 from aphrodite.renderers.registry import RENDERER_REGISTRY
@@ -140,7 +140,7 @@ def test_apply_chat_template_rejects_unsupported_reasoning_effort(
     renderer = _make_renderer(tokenizer)
     params = ChatParams(chat_template_kwargs={"reasoning_effort": reasoning_effort})
 
-    with pytest.raises(VLLMValidationError, match="thinking_effort") as exc_info:
+    with pytest.raises(AphroditeValidationError, match="thinking_effort") as exc_info:
         renderer._apply_chat_template([{"role": "user", "content": "hi"}], params)
 
     assert exc_info.value.parameter == "thinking_effort"
@@ -171,7 +171,7 @@ def test_apply_chat_template_rejects_unsupported_native_thinking_effort(
     renderer = _make_renderer(tokenizer)
     params = ChatParams(chat_template_kwargs={"thinking_effort": thinking_effort})
 
-    with pytest.raises(VLLMValidationError, match="thinking_effort") as exc_info:
+    with pytest.raises(AphroditeValidationError, match="thinking_effort") as exc_info:
         renderer._apply_chat_template([{"role": "user", "content": "hi"}], params)
 
     assert exc_info.value.parameter == "thinking_effort"

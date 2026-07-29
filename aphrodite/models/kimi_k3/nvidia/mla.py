@@ -36,13 +36,11 @@ from torch import nn
 
 from aphrodite.compilation.breakable_cudagraph import eager_break_during_capture
 from aphrodite.config import (
-    AphroditeConfig as VllmConfig,
-)
-from aphrodite.config import (
+    AphroditeConfig,
     CacheConfig,
 )
 from aphrodite.config import (
-    get_current_aphrodite_config as get_current_vllm_config,
+    get_current_aphrodite_config as get_current_aphrodite_config,
 )
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.forward_context import get_forward_context
@@ -302,22 +300,22 @@ class MultiHeadLatentAttention(nn.Module, AttentionLayerBase):
         )
         self.q_pad_num_heads = getattr(self.impl, "q_pad_num_heads", None)
 
-        vllm_config = get_current_vllm_config()
-        parallel_config = vllm_config.parallel_config
+        aphrodite_config = get_current_aphrodite_config()
+        parallel_config = aphrodite_config.parallel_config
         assert (
             parallel_config.decode_context_parallel_size <= 1 and parallel_config.prefill_context_parallel_size <= 1
         ), "Kimi-K3 MultiHeadLatentAttention does not support context parallelism."
-        self.prefill_backend = get_mla_prefill_backend(vllm_config)(
+        self.prefill_backend = get_mla_prefill_backend(aphrodite_config)(
             num_heads=self.num_local_heads,
             scale=self.scale,
             kv_lora_rank=self.kv_lora_rank,
             qk_nope_head_dim=self.qk_nope_head_dim,
             qk_rope_head_dim=self.qk_rope_head_dim,
             v_head_dim=self.v_head_dim,
-            aphrodite_config=vllm_config,
+            aphrodite_config=aphrodite_config,
         )
 
-        compilation_config = vllm_config.compilation_config
+        compilation_config = aphrodite_config.compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
@@ -329,11 +327,11 @@ class MultiHeadLatentAttention(nn.Module, AttentionLayerBase):
     def get_attn_backend(self) -> type[AttentionBackend]:
         return self.attn_backend
 
-    def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
-        kv_cache_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, vllm_config.model_config)
+    def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec:
+        kv_cache_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, aphrodite_config.model_config)
         # TODO: Remove this mypy workaround once the K3 PR is fully merged.
         return MLAAttentionSpec(  # type: ignore[call-arg]
-            block_size=vllm_config.cache_config.block_size,
+            block_size=aphrodite_config.cache_config.block_size,
             num_kv_heads=1,
             head_size=self.head_size,
             dtype=kv_cache_dtype,
