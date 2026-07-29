@@ -51,7 +51,7 @@ from aphrodite.entrypoints.openai.engine.protocol import (
     ToolCall,
 )
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
-from aphrodite.exceptions import VLLMValidationError
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.logger import init_logger
 from aphrodite.tokenizers import TokenizerLike
 from aphrodite.tool_parsers.abstract_tool_parser import Tool, ToolParser
@@ -147,7 +147,7 @@ class KimiK3ToolParser(ToolParser):
             # Without the XTML structural tag there is no way to force the
             # named call (the generic JSON guided-decoding path conflicts
             # with the XTML channel format).
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "Named tool choice for Kimi K3 requires strict tool calling "
                 "(VLLM_ENFORCE_STRICT_TOOL_CALLING) so the XTML structural "
                 "tag can force the call. Otherwise use `tool_choice` set to "
