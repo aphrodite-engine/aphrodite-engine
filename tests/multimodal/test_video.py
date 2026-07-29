@@ -14,6 +14,7 @@ from transformers import AutoVideoProcessor
 from transformers.video_utils import VideoMetadata
 
 from aphrodite.assets.base import get_aphrodite_public_assets
+from aphrodite.models.minimax_m3.common.mm_preprocess import MiniMaxM3VideoBackend
 from aphrodite.multimodal.video import (
     PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
     PYNVVIDEOCODEC_VIDEO_BACKEND,
@@ -378,6 +379,12 @@ def test_cosmos3_edge_uses_qwen3_vl_video_backend():
             Qwen2VLVideoBackend,
             {"fps": 2},
             id="qwen2_5_vl",
+        ),
+        pytest.param(
+            "MiniMaxAI/MiniMax-M3",
+            MiniMaxM3VideoBackend,
+            None,
+            id="minimax_m3_vl",
         ),
     ],
 )
