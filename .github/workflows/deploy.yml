@@ -23,16 +23,19 @@ jobs:
       - name: Preserve the wheel package index
         shell: bash
         run: |
-          mkdir -p docs/public/simple/aphrodite-engine
+          mkdir -p docs/public/nightly/aphrodite-engine
           curl --fail --location --silent --show-error \
-            https://aphrodite.pygmalion.chat/simple/aphrodite-engine/ \
-            --output docs/public/simple/aphrodite-engine/index.html \
+            https://sonar.dphn.ai/nightly/aphrodite-engine/ \
+            --output docs/public/nightly/aphrodite-engine/index.html \
             || printf '%s\n' '<!doctype html><html><body></body></html>' \
-              > docs/public/simple/aphrodite-engine/index.html
-          mkdir -p docs/public/whl
+              > docs/public/nightly/aphrodite-engine/index.html
+          mkdir -p docs/public/whl docs/public/simple/aphrodite-engine
           cp \
-            docs/public/simple/aphrodite-engine/index.html \
+            docs/public/nightly/aphrodite-engine/index.html \
             docs/public/whl/index.html
+          cp \
+            docs/public/nightly/aphrodite-engine/index.html \
+            docs/public/simple/aphrodite-engine/index.html
       - name: Install, build, and upload your site
         uses: withastro/action@v3
         with:
