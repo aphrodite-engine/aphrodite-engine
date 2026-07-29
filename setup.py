@@ -39,9 +39,13 @@ envs = load_module_from_path("envs", os.path.join(ROOT_DIR, "aphrodite", "envs.p
 
 APHRODITE_TARGET_DEVICE = envs.APHRODITE_TARGET_DEVICE
 
-# Skips all native builds (CMake/CUDA and Rust); binaries must already exist in the
-# source tree — nothing is downloaded.
+# Skips all native builds (CMake/CUDA and Rust) and extracts binaries from the
+# matching per-commit wheel.
 APHRODITE_USE_PRECOMPILED = envs.APHRODITE_USE_PRECOMPILED
+precompiled_wheel = load_module_from_path(
+    "precompiled_wheel",
+    os.path.join(ROOT_DIR, "aphrodite", "build_utils", "precompiled.py"),
+)
 
 
 def should_require_rust_frontend() -> bool:
@@ -523,12 +527,16 @@ def get_aphrodite_version() -> str:
         if envs.APHRODITE_TARGET_DEVICE == "empty":
             version += f"{sep}empty"
     elif _is_cuda():
-        cuda_version = str(get_nvcc_cuda_version())
-        if cuda_version != envs.APHRODITE_MAIN_CUDA_VERSION:
-            cuda_version_str = cuda_version.replace(".", "")[:3]
-            # skip this for source tarball, required for pypi
-            if "sdist" not in sys.argv:
-                version += f"{sep}cu{cuda_version_str}"
+        if APHRODITE_USE_PRECOMPILED:
+            if not envs.APHRODITE_SKIP_PRECOMPILED_VERSION_SUFFIX:
+                version += f"{sep}precompiled"
+        else:
+            cuda_version = str(get_nvcc_cuda_version())
+            if cuda_version != envs.APHRODITE_MAIN_CUDA_VERSION:
+                cuda_version_str = cuda_version.replace(".", "")[:3]
+                # skip this for source tarball, required for pypi
+                if "sdist" not in sys.argv:
+                    version += f"{sep}cu{cuda_version_str}"
     elif _is_hip():
         # Get the Rocm Version
         rocm_version = get_rocm_version() or torch.version.hip
@@ -711,25 +719,19 @@ if _no_device():
     ext_modules = []
 
 if APHRODITE_USE_PRECOMPILED:
-    prebuilt = sorted(
-        p.relative_to(ROOT_DIR / "aphrodite")
-        for pattern in ("*.so", "vllm_flash_attn/*.so", "third_party/deep_gemm/*.so", "metal/metal/*.so")
-        for p in (ROOT_DIR / "aphrodite").glob(pattern)
+    wheel = precompiled_wheel.determine_wheel(
+        ROOT_DIR,
+        location=envs.APHRODITE_PRECOMPILED_WHEEL_LOCATION,
+        commit=envs.APHRODITE_PRECOMPILED_WHEEL_COMMIT,
     )
-    if prebuilt:
-        logger.info(
-            "APHRODITE_USE_PRECOMPILED=1: skipping native builds; reusing %d prebuilt "
-            "extension(s) found in the source tree",
-            len(prebuilt),
-        )
-        for rel in prebuilt:
-            add_aphrodite_package_data(str(rel))
-    else:
-        logger.warning(
-            "APHRODITE_USE_PRECOMPILED=1 but no prebuilt extensions (*.so) were found "
-            "in the source tree — the resulting install will have no native ops. "
-            "Run a normal build first if that is not what you want."
-        )
+    package_data_patch = precompiled_wheel.extract_precompiled_wheel(
+        ROOT_DIR,
+        wheel,
+        extract_extensions=True,
+        extract_rust=True,
+    )
+    for package, files in package_data_patch.items():
+        package_data.setdefault(package, []).extend(files)
     ext_modules = []
 
 if not ext_modules:

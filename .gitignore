@@ -217,6 +217,7 @@ images/
 # generated files
 **/generated/**
 aphrodite/_version.py
+aphrodite/.precompiled-wheel-manifest.json
 shellcheck-stable/
 ep_kernels_workspace/
 CMakeUserPresets.json

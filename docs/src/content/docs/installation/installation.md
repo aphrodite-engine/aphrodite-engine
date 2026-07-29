@@ -61,6 +61,43 @@ cd ../
 uv pip install -e .
 ```
 
+### Python-only editable installs
+
+The nightly wheel repository contains a CUDA wheel for each commit on `main`.
+You can reuse its native extensions while editing Python code:
+
+```sh
+APHRODITE_USE_PRECOMPILED=1 \
+  uv pip install --editable . --torch-backend=auto
+```
+
+The installer finds the checkout's merge-base with `main`, downloads that
+commit's wheel, verifies its SHA-256 digest, and extracts the native extensions
+into the checkout. The editable install continues to use Python files from your
+working tree.
+
+Use a specific main commit or the latest completed nightly build with:
+
+```sh
+APHRODITE_USE_PRECOMPILED=1 \
+APHRODITE_PRECOMPILED_WHEEL_COMMIT=<full-main-commit-sha> \
+  uv pip install --editable . --torch-backend=auto
+
+APHRODITE_USE_PRECOMPILED=1 \
+APHRODITE_PRECOMPILED_WHEEL_COMMIT=nightly \
+  uv pip install --editable . --torch-backend=auto
+```
+
+You can also provide an exact wheel URL or local path through
+`APHRODITE_PRECOMPILED_WHEEL_LOCATION`.
+
+:::warning
+Use a local native build after changing `csrc/`, CMake files, bundled native
+dependencies, or Rust code. A wheel from the merge-base does not contain those
+changes. The installer stops if the matching wheel is unavailable and does not
+silently substitute another commit.
+:::
+
 :::warning
 If you don't have enough RAM when building the kernels, you may need to run `export MAX_JOBS=n`, where `n` is the number of jobs.
 :::
