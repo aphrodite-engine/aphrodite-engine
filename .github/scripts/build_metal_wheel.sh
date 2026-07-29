@@ -8,6 +8,11 @@ output_dir="${1:?usage: build_metal_wheel.sh OUTPUT_DIR}"
 mkdir -p "$output_dir"
 rm -f "$output_dir"/*.whl
 
+# uv creates a new isolated build environment for every wheel. CMake otherwise
+# keeps Torch paths from the previous environment, which uv removes after the
+# build. Refresh only CMake's path cache and retain incremental build outputs.
+find build -type f -name CMakeCache.txt -delete 2>/dev/null || true
+
 APHRODITE_TARGET_DEVICE=metal \
 APHRODITE_REQUIRE_RUST_FRONTEND=1 \
 MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
