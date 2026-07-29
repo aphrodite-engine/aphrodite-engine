@@ -73,6 +73,7 @@ from .utils import (
     make_empty_intermediate_tensors_factory,
     make_layers,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 
@@ -451,6 +452,8 @@ class LlamaForCausalLM(
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
         self.config = config
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
+
         self.model = self._init_model(
             aphrodite_config=aphrodite_config,
             prefix=maybe_prefix(prefix, "model"),
@@ -464,7 +467,7 @@ class LlamaForCausalLM(
                 quant_config=quant_config,
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
-            if config.tie_word_embeddings:
+            if self.use_tied_lm_head:
                 self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 
             logit_scale = getattr(config, "logit_scale", 1.0)
@@ -505,7 +508,7 @@ class LlamaForCausalLM(
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
+            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
         )
         return loader.load_weights(weights)
 

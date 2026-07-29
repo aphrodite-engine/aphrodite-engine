@@ -62,6 +62,7 @@ from .utils import (
     PPMissingLayer,
     extract_layer_index,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 logger = init_logger(__name__)
@@ -285,8 +286,9 @@ class Qwen3ForCausalLM(LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, Su
         self.quant_config = quant_config
         self.model = Qwen3Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
+        use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
         if get_pp_group().is_last_rank:
-            if config.tie_word_embeddings:
+            if use_tied_lm_head:
                 self.lm_head = self.model.embed_tokens
             else:
                 self.lm_head = ParallelLMHead(
@@ -325,6 +327,6 @@ class Qwen3ForCausalLM(LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, Su
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
+            skip_prefixes=(["lm_head."] if self.lm_head is self.model.embed_tokens else None),
         )
         return loader.load_weights(weights)

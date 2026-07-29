@@ -96,6 +96,7 @@ from .utils import (
     make_layers,
     maybe_fuse_shared_experts,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 logger = init_logger(__name__)
@@ -306,10 +307,11 @@ class Qwen3_5ForCausalLMBase(
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, self.quant_config)
         self.model = Qwen3_5Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
-            if config.tie_word_embeddings:
+            if self.use_tied_lm_head:
                 self.lm_head = self.model.embed_tokens
             else:
                 self.lm_head = ParallelLMHead(
@@ -353,9 +355,12 @@ class Qwen3_5ForCausalLMBase(
         return self.logits_processor(self.lm_head, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        skip_prefixes = ["mtp."]
+        if self.use_tied_lm_head:
+            skip_prefixes.append("lm_head.")
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=["mtp."],
+            skip_prefixes=skip_prefixes,
         )
         return loader.load_weights(weights)
 
@@ -497,9 +502,12 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        skip_prefixes = ["mtp."]
+        if self.language_model.use_tied_lm_head:
+            skip_prefixes.append("language_model.lm_head.")
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=["mtp."],
+            skip_prefixes=skip_prefixes,
         )
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 

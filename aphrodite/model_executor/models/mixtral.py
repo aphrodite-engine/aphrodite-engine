@@ -65,6 +65,7 @@ from .utils import (
     make_empty_intermediate_tensors_factory,
     make_layers,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 
@@ -393,6 +394,8 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
         self.config = config
 
         self.quant_config = quant_config
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
+
         self.model = MixtralModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.lm_head = ParallelLMHead(
@@ -401,7 +404,7 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
             quant_config=quant_config,
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        if self.config.tie_word_embeddings:
+        if self.use_tied_lm_head:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
@@ -470,6 +473,6 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
+            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
         )
         return loader.load_weights(weights)

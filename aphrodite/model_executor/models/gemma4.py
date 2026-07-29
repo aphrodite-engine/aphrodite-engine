@@ -80,6 +80,7 @@ from .utils import (
     is_pp_missing_parameter,
     make_layers,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 logger = init_logger(__name__)
@@ -1435,6 +1436,7 @@ class Gemma4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts, S
         super().__init__()
         self.config = config
         self.quant_config = quant_config
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
         self.model = Gemma4Model(
             aphrodite_config=aphrodite_config,
             prefix=maybe_prefix(prefix, "model"),
@@ -1446,7 +1448,7 @@ class Gemma4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts, S
             quant_config=quant_config,
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        if config.tie_word_embeddings:
+        if self.use_tied_lm_head:
             self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 
         self.logits_processor = LogitsProcessor(
@@ -1600,7 +1602,7 @@ class Gemma4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts, S
             "embed_audio.",
             "embed_vision.",
         ]
-        if self.config.tie_word_embeddings:
+        if self.use_tied_lm_head:
             skip.append("lm_head.")
 
         loader = AutoWeightsLoader(self, skip_substrs=skip)
