@@ -1,55 +1,57 @@
 ---
-title: Aphrodite Engine
-description: Breathing Life Into Language 
+title: Sonar
+description: High-throughput inference for Hugging Face models
 template: splash
 hero:
-  tagline: Breathing Life Into Language
+  tagline: Serve Hugging Face models with an OpenAI-compatible API or a Python API.
   image:
     file: ../../assets/logo.svg
   actions:
     - text: Get Started
-      link: /installation/installation
+      link: /getting-started/installation
       icon: right-arrow
     - text: View Source Code
-      link: https://github.com/aphrodite-engine/aphrodite-engine
+      link: https://github.com/dphnAI/sonar
       icon: external
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-## Features
+## Start here
+
+If you do not know which workflow applies, start with
+[Choose a path](/getting-started/choose-a-path/).
 
 <CardGrid stagger>
-	<Card title="Paged Attention" icon="right-caret">
-		Efficiently manage KV cache using Aphrodite's Paged Attention kernels.
-	</Card>
-
-	<Card title="Continuous Batching" icon="right-caret">
-		Continuously batch incoming requests in the Async server.
-	</Card>
-
-	<Card title="Hugging Face Integration" icon="right-caret">
-		Run almost any Hugging Face format LLM seamlessly.
-	</Card>
-
-	<Card title="Quantization Support" icon="right-caret">
-		Support for almost all quantization formats, with optimized kernels for efficient deployment.
-	</Card>
-
-	<Card title="OpenAI-compatible API" icon="right-caret">
-		Quickly deploy models with the integrated OpenAI API, supporting Text/Chat Completions, Vision, and Batch API.
-	</Card>
-
-	<Card title="Speculative Decoding" icon="right-caret">
-		Accelerate inference using various state-of-the-art spec-decoding methods.
-	</Card>
-
-	<Card title="Adapters" icon="right-caret">
-		Deploy hundreds or thousands of LoRAs efficiently using Punica, and PEFT-style Prompt adapters.
-	</Card>
-
-	<Card title="Hardware Support" icon="right-caret">
-		Aphrodite supports NVIDIA & AMD GPUs, Intel XPUs, Google TPUs, AWS Inferentia/Trainium, AVX2/AVX512/ppc64le CPUs.
-	</Card>
+	<LinkCard
+		title="Install Sonar"
+		href="/getting-started/installation/"
+		description="Choose an installation procedure for your accelerator."
+	/>
+	<LinkCard
+		title="Start an API server"
+		href="/serving/openai/"
+		description="Serve a model through OpenAI-compatible HTTP endpoints."
+	/>
+	<LinkCard
+		title="Use the Python API"
+		href="/guides/offline-inference/"
+		description="Run local and batched inference with the LLM class."
+	/>
+	<LinkCard
+		title="Choose parallelism"
+		href="/deployment/parallelism/"
+		description="Select a layout for one GPU, one node, or multiple nodes."
+	/>
+	<LinkCard
+		title="Optimize a deployment"
+		href="/deployment/optimization/"
+		description="Tune memory use, batching, startup time, and request latency."
+	/>
+	<LinkCard
+		title="Check model support"
+		href="/reference/models/"
+		description="Read model and quantization tables generated from the source tree."
+	/>
 </CardGrid>

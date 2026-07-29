@@ -22,41 +22,70 @@ export default defineConfig({
 					},
 				},
 			],
-			title: 'Aphrodite Engine',
+			title: 'Sonar',
 			social: {
-				github: 'https://github.com/aphrodite-engine/aphrodite-engine',
+				github: 'https://github.com/dphnAI/sonar',
 			},
 			sidebar: [
 				{
-					label: 'Installation',
-					autogenerate: { directory: 'installation' },
-
+					label: 'Start',
+					items: [
+						{ label: 'Choose a path', slug: 'getting-started/choose-a-path' },
+						{ label: 'Install Sonar', slug: 'getting-started/installation' },
+						{ label: 'Quickstart', slug: 'getting-started/quickstart' },
+						{ label: 'Upgrade Sonar', slug: 'getting-started/upgrading' },
+					],
 				},
 				{
-					label: 'Usage',
-					autogenerate: { directory: 'usage' },
+					label: 'Use Sonar',
+					items: [
+						{ label: 'Python LLM API', slug: 'guides/offline-inference' },
+						{ label: 'Sampling and structured output', slug: 'guides/sampling-and-structured-output' },
+						{ label: 'OpenAI-compatible API', slug: 'serving/openai' },
+						{ label: 'Other APIs', slug: 'serving/other-apis' },
+					],
 				},
 				{
-
-					label: 'Adapters',
-					autogenerate: { directory: 'adapters' },
+					label: 'Deploy',
+					items: [
+						{ label: 'Optimize a deployment', slug: 'deployment/optimization' },
+						{ label: 'Benchmarking', slug: 'deployment/benchmarking' },
+						{ label: 'Choose parallelism', slug: 'deployment/parallelism' },
+						{ label: 'Distributed deployment', slug: 'deployment/distributed' },
+						{ label: 'Production deployment', slug: 'deployment/production' },
+						{ label: 'Deployment recipes', slug: 'deployment/recipes' },
+						{ label: 'Model loading and storage', slug: 'deployment/model-storage' },
+						{ label: 'Security', slug: 'deployment/security' },
+						{ label: 'Observability', slug: 'features/observability' },
+					],
 				},
 				{
-					label: 'Developer',
-					autogenerate: { directory: 'developer' },
+					label: 'Features',
+					items: [
+						{ label: 'Feature guide', slug: 'features' },
+						{ label: 'LoRA adapters', slug: 'features/lora' },
+						{ label: 'Prefix caching', slug: 'features/prefix-caching' },
+						{ label: 'Speculative decoding', slug: 'features/speculative-decoding' },
+						{ label: 'Tool calling', slug: 'features/tool-calling' },
+						{ label: 'Reasoning and tool parsers', slug: 'features/reasoning-and-tools' },
+						{ label: 'Multimodal inputs', slug: 'features/multimodal' },
+						{ label: 'Observability', slug: 'features/observability' },
+					],
 				},
 				{
-					label: 'Prompt Caching',
-					autogenerate: { directory: 'prompt-caching' },
+					label: 'Help',
+					items: [
+						{ label: 'Troubleshooting', slug: 'troubleshooting' },
+					],
 				},
 				{
-					label: 'Quantization',
-					autogenerate: { directory: 'quantization' },
+					label: 'Reference',
+					items: [
+						{ label: 'Supported models', slug: 'reference/models' },
+						{ label: 'Quantization support', slug: 'reference/quantization' },
+						{ label: 'Server arguments', slug: 'reference/server-arguments' },
+					],
 				},
-				{
-					label: 'Spec Decoding',
-					autogenerate: { directory: 'spec-decoding' },
-				},		
 			],
 		}),
 	],
