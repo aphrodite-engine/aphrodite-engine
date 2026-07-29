@@ -103,15 +103,27 @@ fi
 
 base_commit=""
 if [[ "$last_built" =~ ^[0-9a-f]{40}$ ]] &&
-  git cat-file -e "${last_built}^{commit}" 2>/dev/null &&
-  git merge-base --is-ancestor "$last_built" "$target_commit"; then
-  base_commit="$last_built"
-elif [[ "${PUSH_BEFORE:-}" =~ ^[0-9a-f]{40}$ ]] &&
+  git cat-file -e "${last_built}^{commit}" 2>/dev/null; then
+  if git merge-base --is-ancestor "$last_built" "$target_commit"; then
+    base_commit="$last_built"
+  else
+    # A force-push can replace already-built commits with equivalent commits
+    # that have new IDs. Resume from the histories' common ancestor so every
+    # replacement commit receives a wheel.
+    base_commit="$(git merge-base "$last_built" "$target_commit" || true)"
+  fi
+fi
+
+if [[ -z "$base_commit" ]] &&
+  [[ "${PUSH_BEFORE:-}" =~ ^[0-9a-f]{40}$ ]] &&
   [[ ! "${PUSH_BEFORE}" =~ ^0+$ ]] &&
   git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null &&
   git merge-base --is-ancestor "$PUSH_BEFORE" "$target_commit"; then
   base_commit="$PUSH_BEFORE"
-elif git rev-parse "${target_commit}^" >/dev/null 2>&1; then
+fi
+
+if [[ -z "$base_commit" ]] &&
+  git rev-parse "${target_commit}^" >/dev/null 2>&1; then
   base_commit="$(git rev-parse "${target_commit}^")"
 fi
 
