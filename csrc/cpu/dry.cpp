@@ -1,9 +1,8 @@
-#include "libtorch_stable/torch_utils.h"
-
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
+#include <torch/headeronly/util/shim_utils.h>
 
 #include <algorithm>
 #include <cstdint>

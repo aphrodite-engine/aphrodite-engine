@@ -3,7 +3,7 @@ ARG REMOTE_APHRODITE="0"
 ARG APHRODITE_REPO="https://github.com/aphrodite-engine/aphrodite-engine.git"
 ARG APHRODITE_BRANCH="main"
 ARG COMMON_WORKDIR=/app
-ARG BASE_IMAGE=rocm/aphrodite-dev:base
+ARG BASE_IMAGE=rocm/vllm-dev:base
 
 # Sccache configuration (only used in release pipeline)
 ARG USE_SCCACHE
@@ -23,7 +23,7 @@ ENV PYTORCH_ROCM_ARCH=${ARG_PYTORCH_ROCM_ARCH:-${PYTORCH_ROCM_ARCH}}
 # the base image.
 RUN apt-get update -q -y && apt-get install -q -y --no-install-recommends \
     sqlite3 libsqlite3-dev libfmt-dev libmsgpack-dev libsuitesparse-dev \
-    apt-transport-https ca-certificates wget curl git libnuma-dev unzip \
+    apt-transport-https ca-certificates wget curl git libnuma-dev unzip ccache \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --upgrade pip
@@ -48,6 +48,8 @@ RUN curl -LsSf --retry 3 --retry-delay 5 https://astral.sh/uv/install.sh -o /tmp
 ENV UV_HTTP_TIMEOUT=500
 ENV UV_INDEX_STRATEGY=unsafe-best-match
 ENV UV_LINK_MODE=copy
+ENV CCACHE_DIR=/root/.cache/ccache
+ENV CCACHE_COMPILERCHECK=content
 
 # Install sccache if USE_SCCACHE is enabled.
 ARG USE_SCCACHE
@@ -145,20 +147,29 @@ FROM base AS rust-build
 ARG COMMON_WORKDIR
 ARG USE_SCCACHE
 ARG SCCACHE_ENDPOINT
+ARG MAX_JOBS=4
 
 # Cap cargo parallelism to avoid exhausting the AMD CI host's open-file limit
 # (rustc spawns enough concurrent processes to hit RLIMIT_NOFILE otherwise).
 ENV CARGO_BUILD_JOBS=4
 ENV CARGO_NET_RETRY=10
 ENV RUSTUP_MAX_RETRIES=10
+ENV CARGO_HOME=/root/.cargo
+ENV RUSTUP_HOME=/root/.rustup
+ENV PATH=${CARGO_HOME}/bin:${PATH}
 
 WORKDIR ${COMMON_WORKDIR}/aphrodite
 
 COPY --from=rust-input /rust-input/aphrodite/requirements/build/rust.txt requirements/build/rust.txt
 
 RUN apt-get update -q -y && apt-get install -q -y --no-install-recommends \
-        protobuf-compiler \
+        protobuf-compiler libprotobuf-dev curl \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain stable \
+    && rustc --version \
+    && cargo --version
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements/build/rust.txt
@@ -174,6 +185,7 @@ ENV SCCACHE_SERVER_PORT=4227
 # shared workers, so lock those cache mounts while cargo is running.
 RUN --mount=type=cache,id=aphrodite-rocm-cargo-registry,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,id=aphrodite-rocm-cargo-git,target=/root/.cargo/git,sharing=locked \
+    --mount=type=cache,id=aphrodite-rocm-cargo-target,target=/app/aphrodite/rust/target,sharing=locked \
     if [ "$USE_SCCACHE" = "1" ]; then \
         if [ -n "${SCCACHE_ENDPOINT}" ]; then export SCCACHE_ENDPOINT="${SCCACHE_ENDPOINT}"; fi; \
         export RUSTC_WRAPPER=sccache; \
@@ -190,12 +202,22 @@ RUN --mount=type=cache,id=aphrodite-rocm-cargo-registry,target=/root/.cargo/regi
 FROM fetch_aphrodite AS build_aphrodite
 ARG USE_SCCACHE
 ARG SCCACHE_ENDPOINT
+ARG MAX_JOBS=12
+ARG APHRODITE_VERSION_OVERRIDE=""
+ENV MAX_JOBS=${MAX_JOBS}
+ENV APHRODITE_VERSION_OVERRIDE=${APHRODITE_VERSION_OVERRIDE}
 
-COPY --from=rust-build ${COMMON_WORKDIR}/aphrodite/aphrodite/aphrodite-rs aphrodite/aphrodite-rs
-COPY --from=rust-build ${COMMON_WORKDIR}/aphrodite/aphrodite/_rust_*.so aphrodite/
+# Remove Rust artifacts copied from the host before adding the separately built
+# versions. Build and distribution directories are excluded by .dockerignore.
+RUN rm -f aphrodite/aphrodite/aphrodite-rs aphrodite/aphrodite/_rust_*.so
+
+COPY --from=rust-build ${COMMON_WORKDIR}/aphrodite/aphrodite/aphrodite-rs aphrodite/aphrodite/aphrodite-rs
+COPY --from=rust-build ${COMMON_WORKDIR}/aphrodite/aphrodite/_rust_*.so aphrodite/aphrodite/
 
 # Build Aphrodite. setup.py auto-detects sccache in PATH.
 RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,id=aphrodite-rocm-ccache,target=/root/.cache/ccache,sharing=locked \
+    --mount=type=cache,id=aphrodite-rocm-deps,target=${COMMON_WORKDIR}/aphrodite/.deps,sharing=locked \
     --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
     cd aphrodite \
     && if [ "$USE_SCCACHE" = "1" ]; then \
@@ -205,8 +227,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     fi \
     && uv pip install --system -r requirements/rocm.txt \
     && export APHRODITE_USE_PRECOMPILED_RUST=1 \
-    && python3 setup.py clean --all \
-    && python3 setup.py bdist_wheel --dist-dir=dist \
+    && python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 \
     && if [ "$USE_SCCACHE" = "1" ]; then \
         sccache --show-stats; \
     fi
