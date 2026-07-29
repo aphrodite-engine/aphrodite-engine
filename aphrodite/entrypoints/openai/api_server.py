@@ -28,7 +28,6 @@ from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.chat_utils import load_chat_template
 from aphrodite.entrypoints.launcher import serve_http
 from aphrodite.entrypoints.openai.cli_args import make_arg_parser, validate_parsed_serve_args
-from aphrodite.entrypoints.openai.engine.protocol import GenerationError
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.serve.elastic_ep.middleware import ScalingMiddleware
@@ -42,20 +41,15 @@ from aphrodite.entrypoints.serve.utils.api_utils import (
 )
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.entrypoints.serve.utils.server_utils import (
-    engine_error_handler,
+    aphrodite_error_handler,
     exception_handler,
-    generation_error_handler,
     get_uvicorn_log_config,
     http_exception_handler,
     lifespan,
     log_response,
     validation_exception_handler,
 )
-from aphrodite.exceptions import (
-    APHRODITENotFoundError,
-    APHRODITEUnprocessableEntityError,
-    APHRODITEValidationError,
-)
+from aphrodite.exceptions import APHRODITEError
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.renderers.online_derenderer import OnlineDerenderer
@@ -67,7 +61,6 @@ from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.network_utils import is_valid_ipv6_address
 from aphrodite.utils.system_utils import decorate_logs, set_ulimit
-from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
 prometheus_multiproc_dir: tempfile.TemporaryDirectory
@@ -284,17 +277,8 @@ def build_app(
 
     app.exception_handler(HTTPException)(http_exception_handler)
     app.exception_handler(RequestValidationError)(validation_exception_handler)
-    app.exception_handler(EngineGenerateError)(engine_error_handler)
-    app.exception_handler(EngineDeadError)(engine_error_handler)
-    app.exception_handler(GenerationError)(generation_error_handler)
-    # Register specific exception types so they are handled by
-    # ExceptionMiddleware (inside the Prometheus middleware) rather than
-    # ServerErrorMiddleware (outside it). Without this, these exceptions
-    # propagate through Prometheus as unhandled and get recorded as 5xx
-    # even though they result in 4xx responses to the client.
-    app.exception_handler(APHRODITEValidationError)(exception_handler)
-    app.exception_handler(APHRODITEUnprocessableEntityError)(exception_handler)
-    app.exception_handler(APHRODITENotFoundError)(exception_handler)
+    app.exception_handler(APHRODITEError)(aphrodite_error_handler)
+    # Fallback handlers for raw exceptions not yet migrated to AphroditeError.
     app.exception_handler(ValueError)(exception_handler)
     app.exception_handler(TypeError)(exception_handler)
     app.exception_handler(OverflowError)(exception_handler)

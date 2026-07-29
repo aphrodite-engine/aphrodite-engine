@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.logits_process import LogitsProcessor as RequestLogitsProcessor
 from aphrodite.sampling_params import SamplingParams
@@ -211,7 +212,10 @@ def validate_logits_processors_parameters(
 ):
     logits_processors = tuple(logits_processors) if logits_processors is not None else None
     for logits_procs in cached_load_custom_logitsprocs(logits_processors):
-        logits_procs.validate_params(sampling_params)
+        try:
+            logits_procs.validate_params(sampling_params)
+        except ValueError as e:
+            raise APHRODITEValidationError(str(e)) from e
 
 
 class AdapterLogitsProcessor(LogitsProcessor):

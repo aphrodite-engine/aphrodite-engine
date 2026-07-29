@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-class EngineGenerateError(Exception):
+from aphrodite.exceptions import APHRODITEServerError
+
+
+class EngineGenerateError(APHRODITEServerError):
     """Raised when a AsyncLLM.generate() fails. Recoverable."""
 
     pass
 
 
-class EngineDeadError(Exception):
+class EngineDeadError(APHRODITEServerError):
     """Raised when the EngineCore dies. Unrecoverable."""
 
     def __init__(self, *args, suppress_context: bool = False, **kwargs):
