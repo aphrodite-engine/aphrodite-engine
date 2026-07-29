@@ -8,7 +8,7 @@ from typing import cast
 import torch
 from torch import nn
 
-from aphrodite.config import AphroditeConfig as VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.layers.quantization.compressed_tensors import (
     compressed_tensors,
@@ -82,14 +82,14 @@ class KimiK3ForConditionalGeneration(
 
     def __init__(
         self,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
     ) -> None:
         super().__init__()
-        model_config = vllm_config.model_config
+        model_config = aphrodite_config.model_config
         config: KimiK3Config = model_config.hf_config
         self.config = config
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
 
         multimodal_config = model_config.multimodal_config
         assert multimodal_config is not None
@@ -97,7 +97,7 @@ class KimiK3ForConditionalGeneration(
         self.hidden_size = config.text_config.hidden_size
         self.device = current_platform.current_device()
 
-        with self._mark_tower_model(vllm_config, "image"):
+        with self._mark_tower_model(aphrodite_config, "image"):
             self.vision_tower = MoonViT3dPretrainedModel(
                 config.vision_config,
                 quant_config=self._maybe_ignore_quant_config(quant_config),
@@ -117,9 +117,9 @@ class KimiK3ForConditionalGeneration(
             self.mm_projector = self.mm_projector.to(device=self.device, dtype=model_config.dtype)
 
         self.quant_config = quant_config
-        with self._mark_language_model(vllm_config):
+        with self._mark_language_model(aphrodite_config):
             self.language_model = init_vllm_registered_model(
-                vllm_config=vllm_config,
+                aphrodite_config=aphrodite_config,
                 hf_config=config.text_config,
                 prefix=maybe_prefix(prefix, "language_model"),
                 architectures=["KimiLinearForCausalLM"],
@@ -204,15 +204,15 @@ class KimiK3ForConditionalGeneration(
         return self.language_model.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
     @classmethod
-    def get_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig):
-        text_config = vllm_config.model_config.hf_config.text_config
-        temp_vllm_config = vllm_config.with_hf_config(text_config)
+    def get_mamba_state_dtype_from_config(cls, aphrodite_config: AphroditeConfig):
+        text_config = aphrodite_config.model_config.hf_config.text_config
+        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
         return KimiLinearForCausalLM.get_mamba_state_dtype_from_config(temp_vllm_config)
 
     @classmethod
-    def get_mamba_state_shape_from_config(cls, vllm_config: VllmConfig):
-        text_config = vllm_config.model_config.hf_config.text_config
-        temp_vllm_config = vllm_config.with_hf_config(text_config)
+    def get_mamba_state_shape_from_config(cls, aphrodite_config: AphroditeConfig):
+        text_config = aphrodite_config.model_config.hf_config.text_config
+        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
         return KimiLinearForCausalLM.get_mamba_state_shape_from_config(temp_vllm_config)
 
     @classmethod

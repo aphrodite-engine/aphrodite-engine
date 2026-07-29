@@ -74,7 +74,7 @@ class KimiK3ToolParser(ToolParser):
     supports_required_and_named = False
     # Enables the Aphrodite-side XTML structural tag builder
     # (``get_kimi_k3_structural_tag`` in ``structural_tag_registry``). With
-    # ``VLLM_ENFORCE_STRICT_TOOL_CALLING`` on (default), ``_apply_structural_tag``
+    # ``APHRODITE_ENFORCE_STRICT_TOOL_CALLING`` on (default), ``_apply_structural_tag``
     # constrains generation to K3's ``<|open|>tools<|sep|>`` channel for
     # ``required`` (and ``auto`` when a tool sets ``strict``) instead of the
     # generic JSON guided decoding, which conflicts with the XTML format.
@@ -149,7 +149,7 @@ class KimiK3ToolParser(ToolParser):
             # with the XTML channel format).
             raise AphroditeValidationError(
                 "Named tool choice for Kimi K3 requires strict tool calling "
-                "(VLLM_ENFORCE_STRICT_TOOL_CALLING) so the XTML structural "
+                "(APHRODITE_ENFORCE_STRICT_TOOL_CALLING) so the XTML structural "
                 "tag can force the call. Otherwise use `tool_choice` set to "
                 '"auto", "required", or "none".',
                 parameter="tool_choice",

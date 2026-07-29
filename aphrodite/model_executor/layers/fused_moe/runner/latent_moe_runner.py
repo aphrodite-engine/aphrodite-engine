@@ -3,7 +3,7 @@
 import torch
 
 import aphrodite.envs as envs
-from aphrodite.config import get_current_aphrodite_config as get_current_vllm_config
+from aphrodite.config import get_current_aphrodite_config as get_current_aphrodite_config
 from aphrodite.distributed import tensor_model_parallel_all_reduce
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_allreduce_gemma_rms_norm import (
@@ -52,10 +52,10 @@ class LatentMoERunner(MoERunner):
             self.enable_k3_latent_moe_tail_fusion = False
 
         if self.enable_k3_latent_moe_tail_fusion and use_fused_path:
-            vllm_config = get_current_vllm_config()
-            if vllm_config.parallel_config.use_ubatching:
+            aphrodite_config = get_current_aphrodite_config()
+            if aphrodite_config.parallel_config.use_ubatching:
                 raise ValueError("K3 latent-MoE tail fusion does not support DBO or ubatching.")
-            if vllm_config.model_config.enable_sleep_mode:
+            if aphrodite_config.model_config.enable_sleep_mode:
                 raise ValueError("K3 latent-MoE tail fusion does not support sleep mode.")
             transform = self.routed_output_transform
             assert transform is not None

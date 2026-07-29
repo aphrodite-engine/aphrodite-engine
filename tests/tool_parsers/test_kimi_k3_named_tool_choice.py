@@ -8,7 +8,7 @@ import pytest
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
-from aphrodite.exceptions import VLLMValidationError
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.sampling_params import StructuredOutputsParams
 
 
@@ -56,5 +56,5 @@ def test_named_choice_allowed_with_structural_tag():
 
 
 def test_named_choice_rejected_without_structural_tag():
-    with pytest.raises(VLLMValidationError):
+    with pytest.raises(AphroditeValidationError):
         _parser().adjust_request(_request(with_tag=False))

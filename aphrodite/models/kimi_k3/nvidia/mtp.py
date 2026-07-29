@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 import aphrodite.envs as envs
-from aphrodite.config import AphroditeConfig as VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.forward_context import get_forward_context, is_forward_context_available
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_moe import (
@@ -67,12 +67,12 @@ class KimiK3MultiTokenPredictorLayer(nn.Module):
     def __init__(
         self,
         config: KimiLinearConfig,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         prefix: str,
     ) -> None:
         super().__init__()
         self.config = config
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
 
         self.enorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.hnorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -87,7 +87,7 @@ class KimiK3MultiTokenPredictorLayer(nn.Module):
         # Own aux stream for the MLA g_proj output-gate overlap (DeepseekV4
         # convention: the MTP block creates its own stream).
         aux_stream = torch.cuda.Stream()
-        self.mtp_block = KimiDecoderLayer(block_config, vllm_config, prefix=prefix, aux_stream=aux_stream)
+        self.mtp_block = KimiDecoderLayer(block_config, aphrodite_config, prefix=prefix, aux_stream=aux_stream)
 
     def forward(
         self,
@@ -133,16 +133,16 @@ class KimiK3MultiTokenPredictorLayer(nn.Module):
 
 
 class KimiK3MultiTokenPredictor(nn.Module):
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-        config: KimiLinearConfig = vllm_config.model_config.hf_text_config
+        config: KimiLinearConfig = aphrodite_config.model_config.hf_text_config
         self.config = config
         self.mtp_start_layer_idx = config.num_hidden_layers
         self.num_mtp_layers = config.num_nextn_predict_layers
 
         self.layers = torch.nn.ModuleDict(
             {
-                str(idx): KimiK3MultiTokenPredictorLayer(config, vllm_config, f"{prefix}.layers.{idx}")
+                str(idx): KimiK3MultiTokenPredictorLayer(config, aphrodite_config, f"{prefix}.layers.{idx}")
                 for idx in range(
                     self.mtp_start_layer_idx,
                     self.mtp_start_layer_idx + self.num_mtp_layers,
@@ -190,12 +190,12 @@ class KimiK3MultiTokenPredictor(nn.Module):
 
 
 class KimiK3MTP(nn.Module):
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-        self.config = vllm_config.model_config.hf_text_config
-        self.quant_config = vllm_config.quant_config
-        self.model = KimiK3MultiTokenPredictor(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
-        enable_kimi_k3_low_latency_gemm(self, vllm_config.model_config.dtype)
+        self.config = aphrodite_config.model_config.hf_text_config
+        self.quant_config = aphrodite_config.quant_config
+        self.model = KimiK3MultiTokenPredictor(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
+        enable_kimi_k3_low_latency_gemm(self, aphrodite_config.model_config.dtype)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)

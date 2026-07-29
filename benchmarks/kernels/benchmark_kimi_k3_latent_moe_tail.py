@@ -777,9 +777,9 @@ def main() -> None:
         benchmark_up_projection(args)
         return
 
-    from aphrodite.config import VllmConfig, set_current_vllm_config
+    from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 
-    with set_current_vllm_config(VllmConfig()):
+    with set_current_aphrodite_config(AphroditeConfig()):
         benchmark_whole_tail(args)
 
 

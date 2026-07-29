@@ -77,19 +77,19 @@ def _make_builder(
     device: torch.device = DEVICE,
     mamba_cache_mode: str = "none",
 ) -> AttentionMetadataBuilder:
-    vllm_config = create_aphrodite_config(
+    aphrodite_config = create_aphrodite_config(
         model_name="Qwen/Qwen3.5-0.8B",
         block_size=BLOCK_SIZE,
     )
     if num_speculative_tokens:
-        vllm_config.speculative_config = SpeculativeConfig(
+        aphrodite_config.speculative_config = SpeculativeConfig(
             method="ngram",
             num_speculative_tokens=num_speculative_tokens,
         )
-    vllm_config.compilation_config.cudagraph_mode = (
+    aphrodite_config.compilation_config.cudagraph_mode = (
         CUDAGraphMode.FULL_AND_PIECEWISE if full_cuda_graph else CUDAGraphMode.NONE
     )
-    vllm_config.cache_config.mamba_cache_mode = mamba_cache_mode
+    aphrodite_config.cache_config.mamba_cache_mode = mamba_cache_mode
     return builder_cls(
         kv_cache_spec=MambaSpec(
             block_size=BLOCK_SIZE,
@@ -98,7 +98,7 @@ def _make_builder(
             num_speculative_blocks=num_speculative_tokens,
         ),
         layer_names=["layer.0"],
-        vllm_config=vllm_config,
+        aphrodite_config=aphrodite_config,
         device=device,
     )
 

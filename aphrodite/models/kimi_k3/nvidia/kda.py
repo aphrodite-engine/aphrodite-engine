@@ -10,7 +10,7 @@ from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
 from aphrodite.compilation.breakable_cudagraph import eager_break_during_capture
-from aphrodite.config import AphroditeConfig as VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import divide, get_tensor_model_parallel_rank
 from aphrodite.forward_context import get_forward_context
 from aphrodite.logger import init_logger
@@ -301,10 +301,10 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
     def __init__(
         self,
         config: KimiLinearConfig,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
     ) -> None:
-        super().__init__(config, vllm_config, prefix)
+        super().__init__(config, aphrodite_config, prefix)
 
         kda_config = config.linear_attn_config  # type: ignore[attr-defined]
         assert kda_config is not None, "linear_attn_config must be set"
@@ -369,7 +369,7 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
             self.head_dim,
             self.conv_size,
             self.num_spec,
-            vllm_config.model_config.dtype,
+            aphrodite_config.model_config.dtype,
             conv_state_dtype,
         ):
             logger.info_once("Fused KDA decode kernel (conv+KDA+norm) is enabled.")
@@ -403,14 +403,14 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
                 f"KDA gate lower bound must be in [{_KDA_GATE_LOGBOUND_MIN}, 0). Got {self.gate_lower_bound}."
             )
 
-        additional_config = vllm_config.additional_config
+        additional_config = aphrodite_config.additional_config
         backend = (
             additional_config.get("kda_prefill_backend", "auto") if isinstance(additional_config, dict) else "auto"
         )
         self.kda_prefill_backend = resolve_kda_prefill_backend(
             backend,
             self.head_dim,
-            vllm_config.model_config.dtype,
+            aphrodite_config.model_config.dtype,
             self.gate_lower_bound,
         )
 
@@ -440,7 +440,7 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
             prefix=f"{prefix}.o_proj",
         )
 
-        compilation_config = vllm_config.compilation_config
+        compilation_config = aphrodite_config.compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self

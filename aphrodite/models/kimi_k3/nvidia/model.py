@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 import aphrodite.envs as envs
-from aphrodite.config import AphroditeConfig as VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (
     get_ep_group,
     get_pp_group,
@@ -385,7 +385,7 @@ class KimiMoE(nn.Module):
     def __init__(
         self,
         config: KimiLinearConfig,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
         layer_idx: int = 0,
@@ -413,8 +413,8 @@ class KimiMoE(nn.Module):
         self.moe_router_activation_func = config.moe_router_activation_func
         self.num_shared_experts = config.num_shared_experts
         self.layer_idx = layer_idx
-        self.use_mega_moe = vllm_config.kernel_config.moe_backend == "deep_gemm_mega_moe"
-        if self.use_mega_moe and not vllm_config.parallel_config.enable_expert_parallel:
+        self.use_mega_moe = aphrodite_config.kernel_config.moe_backend == "deep_gemm_mega_moe"
+        if self.use_mega_moe and not aphrodite_config.parallel_config.enable_expert_parallel:
             raise NotImplementedError(
                 "Kimi K3 MegaMoE requires expert parallel. Enable it with --enable-expert-parallel."
             )
@@ -513,7 +513,7 @@ class KimiMoE(nn.Module):
                 raise ValueError(f"Kimi K3 num_experts={num_experts} must be divisible by EP size {ep_size}.")
             num_local_experts = num_experts // ep_size
             self.experts = KimiK3MegaMoEExperts(
-                vllm_config,
+                aphrodite_config,
                 num_experts=num_experts,
                 num_local_experts=num_local_experts,
                 experts_start_idx=ep_rank * num_local_experts,
@@ -656,7 +656,7 @@ class KimiDecoderLayer(nn.Module):
     def __init__(
         self,
         config: KimiLinearConfig,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
         aux_stream: torch.cuda.Stream | None = None,
     ) -> None:
@@ -666,9 +666,9 @@ class KimiDecoderLayer(nn.Module):
 
         self.is_moe = config.is_moe
         layer_idx = self.layer_idx
-        cache_config = vllm_config.cache_config
-        quant_config = vllm_config.quant_config
-        parallel_config = vllm_config.parallel_config
+        cache_config = aphrodite_config.cache_config
+        quant_config = aphrodite_config.quant_config
+        parallel_config = aphrodite_config.parallel_config
         self.is_moe_layer = (
             self.is_moe
             and config.num_experts is not None
@@ -676,7 +676,7 @@ class KimiDecoderLayer(nn.Module):
             and layer_idx % config.moe_layer_freq == 0
         )
 
-        use_mega_moe = vllm_config.kernel_config.moe_backend == "deep_gemm_mega_moe"
+        use_mega_moe = aphrodite_config.kernel_config.moe_backend == "deep_gemm_mega_moe"
         self.use_sequence_parallel = (
             parallel_config.pipeline_parallel_size == 1
             and parallel_config.enable_expert_parallel
@@ -691,14 +691,14 @@ class KimiDecoderLayer(nn.Module):
             if kda_config.get("use_full_rank_gate", False):
                 self.self_attn = KimiK3DeltaAttention(
                     config,
-                    vllm_config,
+                    aphrodite_config,
                     prefix=f"{prefix}.self_attn",
                 )
                 self._self_attn_writes_output = False
             else:
                 self.self_attn = KimiLinearGatedDeltaNetAttention(
                     config,
-                    vllm_config,
+                    aphrodite_config,
                     prefix=f"{prefix}.self_attn",
                 )
                 self._self_attn_writes_output = True
@@ -738,7 +738,7 @@ class KimiDecoderLayer(nn.Module):
         if self.is_moe_layer:
             self.block_sparse_moe = KimiMoE(
                 config=config,
-                vllm_config=vllm_config,
+                aphrodite_config=aphrodite_config,
                 quant_config=quant_config,
                 prefix=f"{prefix}.block_sparse_moe",
                 layer_idx=layer_idx,
@@ -895,15 +895,15 @@ class KimiDecoderLayer(nn.Module):
 
 
 class KimiLinearModel(nn.Module, EagleModelMixin):
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
-        config = vllm_config.model_config.hf_text_config
+        config = aphrodite_config.model_config.hf_text_config
         self.config = config
         self.attn_res_block_size: int | None = config.attn_res_block_size
         self.use_attn_res = self.attn_res_block_size is not None
-        parallel_config = vllm_config.parallel_config
-        use_mega_moe = vllm_config.kernel_config.moe_backend == "deep_gemm_mega_moe"
+        parallel_config = aphrodite_config.parallel_config
+        use_mega_moe = aphrodite_config.kernel_config.moe_backend == "deep_gemm_mega_moe"
         self.use_sequence_parallel = (
             parallel_config.pipeline_parallel_size == 1
             and parallel_config.enable_expert_parallel
@@ -930,7 +930,7 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
         def get_layer(prefix: str):
             return KimiDecoderLayer(
                 config,
-                vllm_config,
+                aphrodite_config,
                 prefix,
                 aux_stream=aux_stream,
             )
@@ -1233,14 +1233,14 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
 
 
 class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExperts, IsHybrid):
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-        self.model_config = vllm_config.model_config
-        self.vllm_config = vllm_config
+        self.model_config = aphrodite_config.model_config
+        self.aphrodite_config = aphrodite_config
         self.config = self.model_config.hf_config
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
         self.quant_config = quant_config
-        self.model = KimiLinearModel(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
+        self.model = KimiLinearModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:
             self.lm_head = ParallelLMHead(
                 self.config.vocab_size,
@@ -1278,20 +1278,22 @@ class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExper
     @classmethod
     def get_mamba_state_dtype_from_config(
         cls,
-        vllm_config: "VllmConfig",
+        aphrodite_config: "AphroditeConfig",
     ) -> tuple[torch.dtype, torch.dtype]:
         return MambaStateDtypeCalculator.kda_state_dtype(
-            vllm_config.model_config.dtype, vllm_config.cache_config.mamba_cache_dtype
+            aphrodite_config.model_config.dtype, aphrodite_config.cache_config.mamba_cache_dtype
         )
 
     @classmethod
     def get_mamba_state_shape_from_config(
-        cls, vllm_config: "VllmConfig"
+        cls, aphrodite_config: "AphroditeConfig"
     ) -> tuple[tuple[int, int], tuple[int, int, int]]:
-        parallel_config = vllm_config.parallel_config
-        hf_config = vllm_config.model_config.hf_config
+        parallel_config = aphrodite_config.parallel_config
+        hf_config = aphrodite_config.model_config.hf_config
         tp_size = parallel_config.tensor_parallel_size
-        num_spec = vllm_config.speculative_config.num_speculative_tokens if vllm_config.speculative_config else 0
+        num_spec = (
+            aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
+        )
         return MambaStateShapeCalculator.kda_state_shape(
             tp_size,
             hf_config.linear_attn_config["num_heads"],
@@ -1376,15 +1378,15 @@ class KimiK3ForConditionalGeneration(
 
     def __init__(
         self,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
     ) -> None:
         super().__init__()
-        model_config = vllm_config.model_config
+        model_config = aphrodite_config.model_config
         config: KimiK3Config = model_config.hf_config
         self.config = config
         self.model_config = model_config
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
 
         multimodal_config = model_config.multimodal_config
         assert multimodal_config is not None
@@ -1392,7 +1394,7 @@ class KimiK3ForConditionalGeneration(
         self.hidden_size = config.text_config.hidden_size
         self.device = current_platform.current_device()
 
-        with self._mark_tower_model(vllm_config, "image"):
+        with self._mark_tower_model(aphrodite_config, "image"):
             self.vision_tower = MoonViT3dPretrainedModel(
                 config.vision_config,
                 quant_config=self._maybe_ignore_quant_config(quant_config),
@@ -1419,10 +1421,10 @@ class KimiK3ForConditionalGeneration(
                         head_dim=vision_attn.head_size,
                         dtype=vision_attn.dtype,
                         max_batch_size=(
-                            vllm_config.scheduler_config.max_num_seqs * mm_config.get_limit_per_prompt("image")
+                            aphrodite_config.scheduler_config.max_num_seqs * mm_config.get_limit_per_prompt("image")
                         ),
                         max_seqlen=(
-                            vllm_config.scheduler_config.max_num_encoder_input_tokens * merge_height * merge_width
+                            aphrodite_config.scheduler_config.max_num_encoder_input_tokens * merge_height * merge_width
                         ),
                     )
                 )
@@ -1436,9 +1438,9 @@ class KimiK3ForConditionalGeneration(
             self.mm_projector = self.mm_projector.to(device=self.device, dtype=model_config.dtype)
 
         self.quant_config = quant_config
-        with self._mark_language_model(vllm_config):
+        with self._mark_language_model(aphrodite_config):
             self.language_model = init_vllm_registered_model(
-                vllm_config=vllm_config,
+                aphrodite_config=aphrodite_config,
                 hf_config=config.text_config,
                 prefix=maybe_prefix(prefix, "language_model"),
                 architectures=["KimiLinearForCausalLM"],
@@ -1467,10 +1469,10 @@ class KimiK3ForConditionalGeneration(
             out_hidden_size=self.hidden_size,
         )
 
-    def get_encoder_cudagraph_budget_range(self, vllm_config: VllmConfig) -> tuple[int, int]:
+    def get_encoder_cudagraph_budget_range(self, aphrodite_config: AphroditeConfig) -> tuple[int, int]:
         min_budget = 64
         max_budget = min(
-            vllm_config.scheduler_config.max_num_batched_tokens,
+            aphrodite_config.scheduler_config.max_num_batched_tokens,
             self.model_config.max_model_len,
         )
         return min_budget, max_budget
@@ -1700,15 +1702,15 @@ class KimiK3ForConditionalGeneration(
         return self.language_model.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
     @classmethod
-    def get_mamba_state_dtype_from_config(cls, vllm_config: VllmConfig):
-        text_config = vllm_config.model_config.hf_config.text_config
-        temp_vllm_config = vllm_config.with_hf_config(text_config)
+    def get_mamba_state_dtype_from_config(cls, aphrodite_config: AphroditeConfig):
+        text_config = aphrodite_config.model_config.hf_config.text_config
+        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
         return KimiLinearForCausalLM.get_mamba_state_dtype_from_config(temp_vllm_config)
 
     @classmethod
-    def get_mamba_state_shape_from_config(cls, vllm_config: VllmConfig):
-        text_config = vllm_config.model_config.hf_config.text_config
-        temp_vllm_config = vllm_config.with_hf_config(text_config)
+    def get_mamba_state_shape_from_config(cls, aphrodite_config: AphroditeConfig):
+        text_config = aphrodite_config.model_config.hf_config.text_config
+        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
         return KimiLinearForCausalLM.get_mamba_state_shape_from_config(temp_vllm_config)
 
     @classmethod

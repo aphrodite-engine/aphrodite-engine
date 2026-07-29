@@ -7,8 +7,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from aphrodite.config import AphroditeConfig as VllmConfig
-from aphrodite.config import CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (
     get_pp_group,
     get_tensor_model_parallel_world_size,
@@ -432,7 +431,7 @@ class KimiDecoderLayer(nn.Module):
     def __init__(
         self,
         config: KimiLinearConfig,
-        vllm_config: VllmConfig,
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
     ) -> None:
         super().__init__()
@@ -441,14 +440,14 @@ class KimiDecoderLayer(nn.Module):
 
         self.is_moe = config.is_moe
         layer_idx = self.layer_idx
-        model_config = vllm_config.model_config
-        cache_config = vllm_config.cache_config
-        quant_config = vllm_config.quant_config
+        model_config = aphrodite_config.model_config
+        cache_config = aphrodite_config.cache_config
+        quant_config = aphrodite_config.quant_config
 
         if config.is_kda_layer(layer_idx):
             self.self_attn = KimiGatedDeltaNetAttention(
                 config,
-                vllm_config,
+                aphrodite_config,
                 prefix=f"{prefix}.self_attn",
             )
         else:
@@ -610,10 +609,10 @@ class KimiDecoderLayer(nn.Module):
 
 
 class KimiLinearModel(nn.Module, EagleModelMixin):
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
-        config = vllm_config.model_config.hf_text_config
+        config = aphrodite_config.model_config.hf_text_config
         self.config = config
 
         self.vocab_size = config.vocab_size
@@ -630,7 +629,7 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
         def get_layer(prefix: str):
             return KimiDecoderLayer(
                 config,
-                vllm_config,
+                aphrodite_config,
                 prefix,
             )
 
@@ -904,14 +903,14 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
 
 
 class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExperts, IsHybrid):
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-        self.model_config = vllm_config.model_config
-        self.vllm_config = vllm_config
+        self.model_config = aphrodite_config.model_config
+        self.aphrodite_config = aphrodite_config
         self.config = self.model_config.hf_config
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
         self.quant_config = quant_config
-        self.model = KimiLinearModel(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
+        self.model = KimiLinearModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if get_pp_group().is_last_rank:
             self.lm_head = ParallelLMHead(
                 self.config.vocab_size,
@@ -949,20 +948,22 @@ class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExper
     @classmethod
     def get_mamba_state_dtype_from_config(
         cls,
-        vllm_config: "VllmConfig",
+        aphrodite_config: "AphroditeConfig",
     ) -> tuple[torch.dtype, torch.dtype]:
         return MambaStateDtypeCalculator.kda_state_dtype(
-            vllm_config.model_config.dtype, vllm_config.cache_config.mamba_cache_dtype
+            aphrodite_config.model_config.dtype, aphrodite_config.cache_config.mamba_cache_dtype
         )
 
     @classmethod
     def get_mamba_state_shape_from_config(
-        cls, vllm_config: "VllmConfig"
+        cls, aphrodite_config: "AphroditeConfig"
     ) -> tuple[tuple[int, int], tuple[int, int, int]]:
-        parallel_config = vllm_config.parallel_config
-        hf_config = vllm_config.model_config.hf_config
+        parallel_config = aphrodite_config.parallel_config
+        hf_config = aphrodite_config.model_config.hf_config
         tp_size = parallel_config.tensor_parallel_size
-        num_spec = vllm_config.speculative_config.num_speculative_tokens if vllm_config.speculative_config else 0
+        num_spec = (
+            aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
+        )
         return MambaStateShapeCalculator.kda_state_shape(
             tp_size,
             hf_config.linear_attn_config["num_heads"],

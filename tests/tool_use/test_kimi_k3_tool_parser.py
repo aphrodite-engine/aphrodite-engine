@@ -11,7 +11,7 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
 from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.entrypoints.openai.responses.utils import build_response_output_items
-from aphrodite.exceptions import VLLMValidationError
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.parser.kimi_k3 import KimiK3Parser
 from aphrodite.parser.parser_manager import ParserManager
 from aphrodite.reasoning.kimi_k3_reasoning_parser import KimiK3ReasoningParser
@@ -448,7 +448,7 @@ def test_adjust_request_required_uses_xtml_parser_not_json_guidance():
 def test_adjust_request_rejects_named_tool_choice(tool_request):
     parser = KimiK3ToolParser(DummyTokenizer())
 
-    with pytest.raises(VLLMValidationError) as exc_info:
+    with pytest.raises(AphroditeValidationError) as exc_info:
         parser.adjust_request(tool_request)
 
     assert exc_info.value.parameter == "tool_choice"
