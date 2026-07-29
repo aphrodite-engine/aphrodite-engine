@@ -275,6 +275,7 @@ class Qwen3_5Model(Qwen3NextModel):
 class Qwen3_5ForCausalLMBase(
     nn.Module,
     HasInnerState,
+    IsHybrid,
     SupportsEagle3,
     SupportsLoRA,
     SupportsPP,
@@ -347,6 +348,43 @@ class Qwen3_5ForCausalLMBase(
         hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
+
+    @classmethod
+    def get_mamba_state_dtype_from_config(
+        cls,
+        aphrodite_config: AphroditeConfig,
+    ) -> tuple[torch.dtype, torch.dtype]:
+        return MambaStateDtypeCalculator.gated_delta_net_state_dtype(
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
+        )
+
+    @classmethod
+    def get_mamba_state_shape_from_config(
+        cls, aphrodite_config: AphroditeConfig
+    ) -> tuple[tuple[int, int], tuple[int, int]]:
+        parallel_config = aphrodite_config.parallel_config
+        hf_config = aphrodite_config.model_config.hf_text_config
+        tp_size = parallel_config.tensor_parallel_size
+        num_spec = (
+            aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
+        )
+        return MambaStateShapeCalculator.gated_delta_net_state_shape(
+            tp_size,
+            hf_config.linear_num_key_heads,
+            hf_config.linear_num_value_heads,
+            hf_config.linear_key_head_dim,
+            hf_config.linear_value_head_dim,
+            hf_config.linear_conv_kernel_dim,
+            num_spec,
+        )
+
+    @classmethod
+    def get_mamba_state_copy_func(
+        cls,
+    ) -> tuple[MambaStateCopyFunc, MambaStateCopyFunc]:
+        return MambaStateCopyFuncCalculator.gated_delta_net_state_copy_func()
 
     def compute_logits(
         self,
