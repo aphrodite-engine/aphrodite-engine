@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 
+import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
+from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
     per_token_group_quant_fp8,
 )
@@ -38,6 +40,8 @@ from aphrodite.utils.math_utils import cdiv
 
 if TYPE_CHECKING:
     from aphrodite.model_executor.layers.fused_moe.config import FusedMoEConfig
+
+logger = init_logger(__name__)
 
 
 @triton.jit
@@ -570,3 +574,52 @@ def swiglu_limit_func(
 @functools.lru_cache
 def enable_swap_ab(BLOCK_SIZE_M: int, BLOCK_SIZE_N: int) -> bool:
     return current_platform.is_device_capability(90) and BLOCK_SIZE_M < 64 and BLOCK_SIZE_N >= 64
+
+
+def moe_use_td_hw_supported() -> bool:
+    """Return whether the current device supports the fused MoE TD path."""
+    if current_platform.is_xpu():
+        return True
+    if current_platform.is_cuda():
+        return current_platform.has_device_capability(100)
+    return False
+
+
+def resolve_moe_use_td() -> bool:
+    """Resolve the tri-state ``APHRODITE_TRITON_USE_TD`` setting for MoE."""
+    override = envs.APHRODITE_TRITON_USE_TD
+    if override is None:
+        return current_platform.is_xpu()
+    return override
+
+
+_warned_moe_use_td_ineffective = False
+
+
+def warn_if_moe_use_td_ineffective(active_backend: str, is_quantized: bool = False) -> None:
+    """Warn once when the tensor-descriptor override cannot take effect."""
+    global _warned_moe_use_td_ineffective
+    if _warned_moe_use_td_ineffective:
+        return
+    if envs.APHRODITE_TRITON_USE_TD is None:
+        return
+    is_triton = active_backend.upper() == "TRITON"
+    if is_triton and not is_quantized:
+        return
+    if not is_triton:
+        reason = (
+            f"the active MoE backend is {active_backend!r}; pass "
+            "`--moe-backend triton` to enable the tensor-descriptor path"
+        )
+    else:
+        reason = (
+            "the model uses quantized MoE weights; the TD path is "
+            "currently restricted to non-quantized weights and falls "
+            "back to the pointer path"
+        )
+    logger.warning(
+        "APHRODITE_TRITON_USE_TD is set to %s but %s.",
+        envs.APHRODITE_TRITON_USE_TD,
+        reason,
+    )
+    _warned_moe_use_td_ineffective = True
