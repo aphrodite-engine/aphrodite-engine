@@ -59,9 +59,7 @@ from .primitives import CUDAGraphCompatibleWrapper
 
 
 def _as_cute(tensor: torch.Tensor, *, dynamic_m: bool = False):
-    converted = from_dlpack(
-        CUDAGraphCompatibleWrapper(tensor.detach()), assumed_align=16
-    )
+    converted = from_dlpack(CUDAGraphCompatibleWrapper(tensor.detach()), assumed_align=16)
     if dynamic_m:
         converted = converted.mark_compact_shape_dynamic(
             mode=1,
@@ -155,13 +153,9 @@ def _epilogue_tma_store_add_shared(
     bSG_gC = bSG_gC_partitioned[(None, None, None, *mma_tile_coord_mnl)]
     tTR_tAcc = tTR_tAcc_base[(None, None, None, None, None, acc_consumer_state.index)]
     thr_copy_t2r = tiled_copy_t2r.get_slice(epi_tidx)
-    tTR_gShared_partitioned = thr_copy_t2r.partition_D(
-        cute.flat_divide(tCgShared, epi_tile)
-    )
+    tTR_gShared_partitioned = thr_copy_t2r.partition_D(cute.flat_divide(tCgShared, epi_tile))
     tTR_cC_partitioned = thr_copy_t2r.partition_D(cute.flat_divide(tCcC, epi_tile))
-    tTR_gShared = tTR_gShared_partitioned[
-        (None, None, None, None, None, *mma_tile_coord_mnl)
-    ]
+    tTR_gShared = tTR_gShared_partitioned[(None, None, None, None, None, *mma_tile_coord_mnl)]
     tTR_cC = tTR_cC_partitioned[(None, None, None, None, None, *mma_tile_coord_mnl)]
 
     exemplar = tTR_gShared_partitioned[(None, None, None, 0, 0, 0, 0, 0)]
@@ -193,9 +187,7 @@ def _epilogue_tma_store_add_shared(
         pred = cute.make_rmem_tensor(pred_shape, cutlass.Boolean)
         for m_idx in range(tTR_cC_subtile.shape[1]):
             for n_idx in range(tTR_cC_subtile.shape[2]):
-                pred[(0, m_idx, n_idx)] = cute.elem_less(
-                    tTR_cC_subtile[(0, m_idx, n_idx)], mC_mnl.shape
-                )
+                pred[(0, m_idx, n_idx)] = cute.elem_less(tTR_cC_subtile[(0, m_idx, n_idx)], mC_mnl.shape)
         tTR_rShared.store(cute.zeros_like(tTR_rShared, dtype=gemm_kernel.c_dtype))
         cute.copy(
             shared_g2r_atom,
@@ -212,9 +204,7 @@ def _epilogue_tma_store_add_shared(
 
         gemm_vec = tiled_copy_r2s.retile(tTR_rAcc).load().to(gemm_kernel.c_dtype)
         shared_vec = tiled_copy_r2s.retile(tTR_rShared).load()
-        fused_vec = (gemm_vec.to(cutlass.Float32) + shared_vec.to(cutlass.Float32)).to(
-            gemm_kernel.c_dtype
-        )
+        fused_vec = (gemm_vec.to(cutlass.Float32) + shared_vec.to(cutlass.Float32)).to(gemm_kernel.c_dtype)
         # The symmetric output is an in-band Lamport mailbox whose empty
         # marker contains BF16 -0. Normalize either signed zero to +0 so a
         # legitimate result can never be mistaken for an unwritten fragment.
@@ -258,27 +248,19 @@ def _compute_stages(
     """Choose accumulator, mainloop, and epilogue stage counts."""
     num_acc_stage = 2
     num_c_stage = 2
-    a_smem_layout_stage_one = utils.sm100.make_smem_layout_a(
-        tiled_mma, mma_tiler_mnk, a_dtype, 1
-    )
-    b_smem_layout_staged_one = utils.sm100.make_smem_layout_b(
-        tiled_mma, mma_tiler_mnk, b_dtype, 1
-    )
+    a_smem_layout_stage_one = utils.sm100.make_smem_layout_a(tiled_mma, mma_tiler_mnk, a_dtype, 1)
+    b_smem_layout_staged_one = utils.sm100.make_smem_layout_b(tiled_mma, mma_tiler_mnk, b_dtype, 1)
 
-    ab_bytes_per_stage = cute.size_in_bytes(
-        a_dtype, a_smem_layout_stage_one
-    ) + cute.size_in_bytes(b_dtype, b_smem_layout_staged_one)
+    ab_bytes_per_stage = cute.size_in_bytes(a_dtype, a_smem_layout_stage_one) + cute.size_in_bytes(
+        b_dtype, b_smem_layout_staged_one
+    )
     mbar_helpers_bytes = 1024
 
     c_bytes_per_stage = cute.size_in_bytes(c_dtype, c_smem_layout)
     c_bytes = c_bytes_per_stage * num_c_stage
-    num_ab_stage = (
-        smem_capacity - (mbar_helpers_bytes + c_bytes)
-    ) // ab_bytes_per_stage
+    num_ab_stage = (smem_capacity - (mbar_helpers_bytes + c_bytes)) // ab_bytes_per_stage
     num_c_stage += (
-        smem_capacity
-        - ab_bytes_per_stage * num_ab_stage
-        - (mbar_helpers_bytes + c_bytes)
+        smem_capacity - ab_bytes_per_stage * num_ab_stage - (mbar_helpers_bytes + c_bytes)
     ) // c_bytes_per_stage
     return num_acc_stage, num_ab_stage, num_c_stage
 
@@ -305,9 +287,7 @@ class FusedAddMulticastGemm:
         self.epilogue_warp_id = (0, 1, 2, 3)
         self.mma_warp_id = 4
         self.tma_warp_id = 5
-        self.threads_per_cta = 32 * len(
-            (self.mma_warp_id, self.tma_warp_id, *self.epilogue_warp_id)
-        )
+        self.threads_per_cta = 32 * len((self.mma_warp_id, self.tma_warp_id, *self.epilogue_warp_id))
         self.epilog_sync_bar_id = 1
         self.tmem_alloc_sync_bar_id = 2
 
@@ -354,9 +334,7 @@ class FusedAddMulticastGemm:
             self.c_layout,
             self.c_dtype,
         )
-        c_smem_layout = utils.sm100.make_smem_layout_epi(
-            self.c_dtype, self.c_layout, self.epi_tile, 1
-        )
+        c_smem_layout = utils.sm100.make_smem_layout_epi(self.c_dtype, self.c_layout, self.epi_tile, 1)
 
         self.num_acc_stage, self.num_ab_stage, self.num_c_stage = _compute_stages(
             tiled_mma,
@@ -422,15 +400,11 @@ class FusedAddMulticastGemm:
 
         self._setup_attributes()
         if cutlass.const_expr(self.b_prime_stages > self.num_ab_stage):
-            raise ValueError(
-                "b_prime_stages exceeds the compiled A/B pipeline stage count"
-            )
+            raise ValueError("b_prime_stages exceeds the compiled A/B pipeline stage count")
 
         atom_thr_size = cute.size(tiled_mma.thr_id.shape)
 
-        a_op = utils.sm100.cluster_shape_to_tma_atom_A(
-            self.cluster_shape_mn, tiled_mma.thr_id
-        )
+        a_op = utils.sm100.cluster_shape_to_tma_atom_A(self.cluster_shape_mn, tiled_mma.thr_id)
         a_smem_layout = cute.slice_(self.a_smem_layout_staged, (None, None, None, 0))
         tma_atom_a, tma_tensor_a = cute.nvgpu.make_tiled_tma_atom_A(
             a_op,
@@ -439,14 +413,10 @@ class FusedAddMulticastGemm:
             self.mma_tiler,
             tiled_mma,
             self.cluster_layout_vmnk.shape,
-            internal_type=(
-                cutlass.TFloat32 if a.element_type is cutlass.Float32 else None
-            ),
+            internal_type=(cutlass.TFloat32 if a.element_type is cutlass.Float32 else None),
         )
 
-        b_op = utils.sm100.cluster_shape_to_tma_atom_B(
-            self.cluster_shape_mn, tiled_mma.thr_id
-        )
+        b_op = utils.sm100.cluster_shape_to_tma_atom_B(self.cluster_shape_mn, tiled_mma.thr_id)
         b_smem_layout = cute.slice_(self.b_smem_layout_staged, (None, None, None, 0))
         tma_atom_b, tma_tensor_b = cute.nvgpu.make_tiled_tma_atom_B(
             b_op,
@@ -455,9 +425,7 @@ class FusedAddMulticastGemm:
             self.mma_tiler,
             tiled_mma,
             self.cluster_layout_vmnk.shape,
-            internal_type=(
-                cutlass.TFloat32 if b.element_type is cutlass.Float32 else None
-            ),
+            internal_type=(cutlass.TFloat32 if b.element_type is cutlass.Float32 else None),
         )
 
         a_copy_size = cute.size_in_bytes(self.a_dtype, a_smem_layout)
@@ -560,20 +528,14 @@ class FusedAddMulticastGemm:
         bidx, bidy, bidz = cute.arch.block_idx()
         mma_tile_coord_v = bidx % cute.size(tiled_mma.thr_id.shape)
         is_leader_cta = mma_tile_coord_v == 0
-        cta_rank_in_cluster = cute.arch.make_warp_uniform(
-            cute.arch.block_idx_in_cluster()
-        )
-        block_in_cluster_coord_vmnk = cluster_layout_vmnk.get_flat_coord(
-            cta_rank_in_cluster
-        )
+        cta_rank_in_cluster = cute.arch.make_warp_uniform(cute.arch.block_idx_in_cluster())
+        block_in_cluster_coord_vmnk = cluster_layout_vmnk.get_flat_coord(cta_rank_in_cluster)
         tidx, _, _ = cute.arch.thread_idx()
 
         @cute.struct
         class SharedStorage:
             ab_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_ab_stage * 2]
-            acc_full_mbar_ptr: cute.struct.MemRange[
-                cutlass.Int64, self.num_acc_stage * 2
-            ]
+            acc_full_mbar_ptr: cute.struct.MemRange[cutlass.Int64, self.num_acc_stage * 2]
             tmem_dealloc_mbar_ptr: cutlass.Int64
             tmem_holding_buf: cutlass.Int32
 
@@ -582,9 +544,7 @@ class FusedAddMulticastGemm:
 
         ab_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
         num_tma_producer = self.num_mcast_ctas_a + self.num_mcast_ctas_b - 1
-        ab_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_tma_producer
-        )
+        ab_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread, num_tma_producer)
         ab_pipeline = pipeline.PipelineTmaUmma.create(
             barrier_storage=storage.ab_full_mbar_ptr.data_ptr(),
             num_stages=self.num_ab_stage,
@@ -598,9 +558,7 @@ class FusedAddMulticastGemm:
 
         acc_pipeline_producer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
         num_acc_consumer_threads = len(self.epilogue_warp_id)
-        acc_pipeline_consumer_group = pipeline.CooperativeGroup(
-            pipeline.Agent.Thread, num_acc_consumer_threads
-        )
+        acc_pipeline_consumer_group = pipeline.CooperativeGroup(pipeline.Agent.Thread, num_acc_consumer_threads)
         acc_pipeline = pipeline.PipelineUmmaAsync.create(
             barrier_storage=storage.acc_full_mbar_ptr.data_ptr(),
             num_stages=self.num_acc_stage,
@@ -647,15 +605,9 @@ class FusedAddMulticastGemm:
                 cluster_layout_vmnk, block_in_cluster_coord_vmnk, mcast_mode=1
             )
 
-        gA_mkl = cute.local_tile(
-            mA_mkl, cute.slice_(self.mma_tiler, (None, 0, None)), (None, None, None)
-        )
-        gB_nkl = cute.local_tile(
-            mB_nkl, cute.slice_(self.mma_tiler, (0, None, None)), (None, None, None)
-        )
-        gC_mnl = cute.local_tile(
-            mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
-        )
+        gA_mkl = cute.local_tile(mA_mkl, cute.slice_(self.mma_tiler, (None, 0, None)), (None, None, None))
+        gB_nkl = cute.local_tile(mB_nkl, cute.slice_(self.mma_tiler, (0, None, None)), (None, None, None))
+        gC_mnl = cute.local_tile(mC_mnl, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None))
         # Shared shard is physically [M, shard_dim]. Give it the same logical MNL
         # view as C so its epilogue partition is coordinate-identical.
         mShared_mnl = cute.make_tensor(
@@ -677,14 +629,10 @@ class FusedAddMulticastGemm:
 
         # Predicate the partial M tile when M is smaller than the MMA tile.
         idC = cute.make_identity_tensor(mC_mnl.shape)
-        cC_mnl = cute.local_tile(
-            idC, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None)
-        )
+        cC_mnl = cute.local_tile(idC, cute.slice_(self.mma_tiler, (None, None, 0)), (None, None, None))
         tCcC = thr_mma.partition_C(cC_mnl)
 
-        a_cta_layout = cute.make_layout(
-            cute.slice_(cluster_layout_vmnk, (0, 0, None, 0)).shape
-        )
+        a_cta_layout = cute.make_layout(cute.slice_(cluster_layout_vmnk, (0, 0, None, 0)).shape)
         tAsA, tAgA = cpasync.tma_partition(
             tma_atom_a,
             block_in_cluster_coord_vmnk[2],
@@ -692,9 +640,7 @@ class FusedAddMulticastGemm:
             cute.group_modes(sA, 0, 3),
             cute.group_modes(tCgA, 0, 3),
         )
-        b_cta_layout = cute.make_layout(
-            cute.slice_(cluster_layout_vmnk, (0, None, 0, 0)).shape
-        )
+        b_cta_layout = cute.make_layout(cute.slice_(cluster_layout_vmnk, (0, None, 0, 0)).shape)
         tBsB, tBgB = cpasync.tma_partition(
             tma_atom_b,
             block_in_cluster_coord_vmnk[1],
@@ -706,9 +652,7 @@ class FusedAddMulticastGemm:
         tCrA = tiled_mma.make_fragment_A(sA)
         tCrB = tiled_mma.make_fragment_B(sB)
         acc_shape = tiled_mma.partition_shape_C(self.mma_tiler[:2])
-        tCtAcc_fake = tiled_mma.make_fragment_C(
-            cute.append(acc_shape, self.num_acc_stage)
-        )
+        tCtAcc_fake = tiled_mma.make_fragment_C(cute.append(acc_shape, self.num_acc_stage))
 
         pipeline_init_wait(cluster_shape_mn=cluster_layout_vmnk)
 
@@ -733,12 +677,8 @@ class FusedAddMulticastGemm:
                     cur_tile_coord[2],
                 )
 
-                tAgA_slice = tAgA[
-                    (None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])
-                ]
-                tBgB_slice = tBgB[
-                    (None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])
-                ]
+                tAgA_slice = tAgA[(None, mma_tile_coord_mnl[0], None, mma_tile_coord_mnl[2])]
+                tBgB_slice = tBgB[(None, mma_tile_coord_mnl[1], None, mma_tile_coord_mnl[2])]
 
                 # Prime a short prefix of the existing combined A+B ring with
                 # B only.  Its barrier still expects A+B bytes, so the MMA
@@ -763,9 +703,7 @@ class FusedAddMulticastGemm:
 
                 # Supply A to the very same stages after the producer AR has
                 # programmatically released this dependent kernel.
-                a_fill_state = pipeline.make_pipeline_state(
-                    pipeline.PipelineUserType.Producer, self.num_ab_stage
-                )
+                a_fill_state = pipeline.make_pipeline_state(pipeline.PipelineUserType.Producer, self.num_ab_stage)
                 for k_tile in cutlass.range(0, self.b_prime_stages, 1, unroll=1):
                     a_barrier = ab_pipeline.producer_get_barrier(a_fill_state)
                     cute.copy(
@@ -779,9 +717,7 @@ class FusedAddMulticastGemm:
 
                 peek_ab_empty_status = ab_producer.try_acquire()
 
-                for k_tile in cutlass.range(
-                    self.b_prime_stages, k_tile_cnt, 1, unroll=1
-                ):
+                for k_tile in cutlass.range(self.b_prime_stages, k_tile_cnt, 1, unroll=1):
                     handle = ab_producer.acquire_and_advance(peek_ab_empty_status)
 
                     cute.copy(
@@ -813,9 +749,7 @@ class FusedAddMulticastGemm:
             tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
             tCtAcc_base = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
 
-            acc_producer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Producer, self.num_acc_stage
-            )
+            acc_producer_state = pipeline.make_pipeline_state(pipeline.PipelineUserType.Producer, self.num_acc_stage)
 
             while work_tile.is_valid_tile:
                 cur_tile_coord = work_tile.tile_idx
@@ -883,16 +817,12 @@ class FusedAddMulticastGemm:
             tmem_ptr = tmem.retrieve_ptr(self.acc_dtype)
             tCtAcc_base = cute.make_tensor(tmem_ptr, tCtAcc_fake.layout)
 
-            acc_consumer_state = pipeline.make_pipeline_state(
-                pipeline.PipelineUserType.Consumer, self.num_acc_stage
-            )
+            acc_consumer_state = pipeline.make_pipeline_state(pipeline.PipelineUserType.Consumer, self.num_acc_stage)
             c_producer_group = pipeline.CooperativeGroup(
                 pipeline.Agent.Thread,
                 32 * len(self.epilogue_warp_id),
             )
-            c_pipeline = pipeline.PipelineTmaStore.create(
-                num_stages=self.num_c_stage, producer_group=c_producer_group
-            )
+            c_pipeline = pipeline.PipelineTmaStore.create(num_stages=self.num_c_stage, producer_group=c_producer_group)
             while work_tile.is_valid_tile:
                 cur_tile_coord = work_tile.tile_idx
                 mma_tile_coord_mnl = (
@@ -947,12 +877,8 @@ class FusedAddMulticastGemm:
         num_ctas_mnl = gc[(0, (None, None, None))].shape
         cluster_shape_mnl = (*cluster_shape_mn, 1)
 
-        tile_sched_params = utils.PersistentTileSchedulerParams(
-            num_ctas_mnl, cluster_shape_mnl
-        )
-        grid = utils.StaticPersistentTileScheduler.get_grid_shape(
-            tile_sched_params, max_active_clusters
-        )
+        tile_sched_params = utils.PersistentTileSchedulerParams(num_ctas_mnl, cluster_shape_mnl)
+        grid = utils.StaticPersistentTileScheduler.get_grid_shape(tile_sched_params, max_active_clusters)
 
         return tile_sched_params, grid
 
@@ -1133,9 +1059,7 @@ class AdaptiveUpProjectionKernel:
             b_prime_stages=b_prime_stages,
         )
         if skinny_max_m and self.latent_dim % (224 * 8):
-            raise ValueError(
-                "Skinny up-projection requires latent_dim divisible by 1792."
-            )
+            raise ValueError("Skinny up-projection requires latent_dim divisible by 1792.")
 
         self._mailbox = symm_mem.empty(
             (1, max_m, hidden_dim),
@@ -1150,9 +1074,7 @@ class AdaptiveUpProjectionKernel:
         self._mailbox_multicast_ptr = int(multicast_ptr)
 
         cluster_size = math.prod(cluster_shape_mn)
-        self._max_active_clusters = utils.HardwareInfo().get_max_active_clusters(
-            cluster_size
-        )
+        self._max_active_clusters = utils.HardwareInfo().get_max_active_clusters(cluster_size)
         self._mailbox_c = _as_cute(self._mailbox)
 
     def compile_dynamic(self) -> None:
@@ -1198,9 +1120,7 @@ class AdaptiveUpProjectionKernel:
 
     def compile_skinny(self, m: int) -> None:
         if not 1 <= m <= self.skinny_max_m:
-            raise ValueError(
-                f"Skinny up-projection requires M in [1, {self.skinny_max_m}]."
-            )
+            raise ValueError(f"Skinny up-projection requires M in [1, {self.skinny_max_m}].")
         if m in self._skinny_by_m:
             return
         with torch.accelerator.device_index(self._device.index):
@@ -1244,17 +1164,9 @@ class AdaptiveUpProjectionKernel:
             ),
         )
         for tensor, shape, name in expected:
-            if (
-                tensor.shape != shape
-                or tensor.dtype != torch.bfloat16
-                or tensor.device != device
-            ):
+            if tensor.shape != shape or tensor.dtype != torch.bfloat16 or tensor.device != device:
                 raise ValueError(f"{name} must be CUDA torch.bfloat16 {list(shape)}")
-        if (
-            not latent.is_contiguous()
-            or not weight.is_contiguous()
-            or shared_shard.stride() != (self.hidden_dim, 1)
-        ):
+        if not latent.is_contiguous() or not weight.is_contiguous() or shared_shard.stride() != (self.hidden_dim, 1):
             raise ValueError("up-projection inputs have unsupported strides")
         if not 1 <= m <= self.max_m:
             raise ValueError(f"runtime M={m} must be in [1, {self.max_m}]")
@@ -1262,9 +1174,7 @@ class AdaptiveUpProjectionKernel:
         if m <= self.skinny_max_m:
             skinny = self._skinny_by_m.get(m)
             if skinny is None:
-                raise RuntimeError(
-                    f"Skinny up-projection M={m} was not compiled before launch."
-                )
+                raise RuntimeError(f"Skinny up-projection M={m} was not compiled before launch.")
             return skinny(
                 latent,
                 weight,
@@ -1283,9 +1193,7 @@ class AdaptiveUpProjectionKernel:
                 self._mailbox_c,
                 _as_cute(shared_shard),
                 cutlass.Int64(m),
-                cutlass.Int64(
-                    self._mailbox_multicast_ptr + self.rank * self.shard_dim * 2
-                ),
+                cutlass.Int64(self._mailbox_multicast_ptr + self.rank * self.shard_dim * 2),
                 stream,
             )
         return self._mailbox

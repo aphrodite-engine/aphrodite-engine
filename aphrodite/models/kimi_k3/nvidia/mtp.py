@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 import aphrodite.envs as envs
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
 from aphrodite.forward_context import get_forward_context, is_forward_context_available
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_moe import (

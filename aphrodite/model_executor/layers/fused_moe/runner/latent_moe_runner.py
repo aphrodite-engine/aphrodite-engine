@@ -3,7 +3,7 @@
 import torch
 
 import aphrodite.envs as envs
-from aphrodite.config import get_current_vllm_config
+from aphrodite.config import get_current_aphrodite_config as get_current_vllm_config
 from aphrodite.distributed import tensor_model_parallel_all_reduce
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.fused_allreduce_gemma_rms_norm import (

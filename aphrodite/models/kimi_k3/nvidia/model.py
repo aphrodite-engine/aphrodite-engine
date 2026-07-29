@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 import aphrodite.envs as envs
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
 from aphrodite.distributed import (
     get_ep_group,
     get_pp_group,

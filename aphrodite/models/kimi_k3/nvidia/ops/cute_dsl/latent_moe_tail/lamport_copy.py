@@ -115,9 +115,7 @@ def compile_kernel(
     if not 1 <= threads <= 1024:
         raise ValueError("Lamport copy threads must be in [1, 1024]")
     with torch.accelerator.device_index(device_index):
-        mailbox = make_fake_compact_tensor(
-            cutlass.BFloat16, (max_m * hidden_dim,), assumed_align=16
-        )
+        mailbox = make_fake_compact_tensor(cutlass.BFloat16, (max_m * hidden_dim,), assumed_align=16)
         output = make_fake_compact_tensor(
             cutlass.BFloat16,
             (cute.sym_int32(divisibility=VEC_BF16),),
@@ -152,9 +150,7 @@ def launch(
         or symmetric_mailbox.shape[0] != 1
         or symmetric_mailbox.shape[2] != hidden_dim
     ):
-        raise ValueError(
-            f"symmetric_mailbox must be contiguous CUDA BF16 [1,M,{hidden_dim}]"
-        )
+        raise ValueError(f"symmetric_mailbox must be contiguous CUDA BF16 [1,M,{hidden_dim}]")
     if symmetric_mailbox.shape[1] != max_m:
         raise ValueError("symmetric mailbox must retain its full max_m capacity")
     if (
@@ -166,9 +162,7 @@ def launch(
         raise ValueError("local_output must be contiguous CUDA BF16 [1,M,H]")
 
     device_index = symmetric_mailbox.device.index
-    stream = cuda.CUstream(
-        torch.cuda.current_stream(symmetric_mailbox.device).cuda_stream
-    )
+    stream = cuda.CUstream(torch.cuda.current_stream(symmetric_mailbox.device).cuda_stream)
     compile_kernel(hidden_dim, max_m, ctas, threads, device_index)(
         to_cute(symmetric_mailbox.flatten(), 16),
         to_cute_dynamic_m(
