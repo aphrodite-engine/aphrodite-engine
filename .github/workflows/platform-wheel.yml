@@ -175,7 +175,10 @@ jobs:
           fetch-depth: 0
 
       - name: Install build tools
-        run: brew install protobuf
+        run: |
+          brew install ninja protobuf
+          echo "CMAKE_ARGS=-DCMAKE_MAKE_PROGRAM=$(command -v ninja)" \
+            >> "$GITHUB_ENV"
 
       - name: Install uv and Python
         uses: astral-sh/setup-uv@v7
@@ -191,12 +194,11 @@ jobs:
           path: |
             .cache/uv
             .deps
-            build
             ~/.cargo/git
             ~/.cargo/registry
             rust/target
-          key: metal-build-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: metal-build-${{ runner.os }}-
+          key: metal-build-v2-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: metal-build-v2-${{ runner.os }}-
 
       - name: Install rclone
         run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
