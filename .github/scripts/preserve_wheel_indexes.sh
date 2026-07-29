@@ -22,6 +22,7 @@ preserve "simple/aphrodite-engine"
 
 for channel in release nightly; do
   for platform in \
+    cuda/x86_64 \
     cpu/x86_64 \
     cpu/aarch64 \
     rocm/x86_64 \
@@ -29,5 +30,8 @@ for channel in release nightly; do
     metal/aarch64; do
     preserve "whl/${channel}/${platform}"
     preserve "whl/${channel}/${platform}/simple/aphrodite-engine"
+    if [[ "$channel" == "nightly" ]]; then
+      preserve "nightly/${platform}"
+    fi
   done
 done

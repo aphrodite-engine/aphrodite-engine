@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 set -euo pipefail
 
@@ -8,16 +7,25 @@ set -euo pipefail
 : "${B2_PUBLIC_BASE_URL:?B2_PUBLIC_BASE_URL is required}"
 : "${GITHUB_SHA:?GITHUB_SHA is required}"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
+: "${PLATFORM_BACKEND:?PLATFORM_BACKEND is required}"
+: "${PLATFORM_ARCHITECTURE:?PLATFORM_ARCHITECTURE is required}"
+: "${PLATFORM_VERSION_LOCAL:?PLATFORM_VERSION_LOCAL is required}"
+: "${PLATFORM_BUILD_SCRIPT:?PLATFORM_BUILD_SCRIPT is required}"
 
+output_dir="${1:?usage: reconcile_platform_wheels.sh OUTPUT_DIR INDEX_DIR}"
+index_root="${2:?missing index output directory}"
 rclone="${RUNNER_TEMP}/rclone-bin/rclone"
-bucket="b2:${B2_S3_BUCKET}"
-public_base="${B2_PUBLIC_BASE_URL%/}"
-state_remote="${bucket}/_ci/last-built-main.txt"
+remote_root="b2:${B2_S3_BUCKET}/platform-wheels/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
+public_root="${B2_PUBLIC_BASE_URL%/}/platform-wheels/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
+state_remote="${remote_root}/_ci/last-built-main.txt"
 target_commit="${GITHUB_SHA}"
-index_root="${1:-manual-wheel-index}"
 
 if [[ ! -x "$rclone" ]]; then
   echo "::error::rclone is not installed at ${rclone}"
+  exit 1
+fi
+if [[ ! -x "$PLATFORM_BUILD_SCRIPT" ]]; then
+  echo "::error::Platform build script is not executable: ${PLATFORM_BUILD_SCRIPT}"
   exit 1
 fi
 
@@ -29,21 +37,30 @@ upload_wheel() {
   local wheel="$1"
   local remote="$2"
   local wheel_name
+  local -a upload_command
   wheel_name="$(basename "$wheel")"
 
   for attempt in {1..5}; do
     echo "Uploading ${wheel_name} (attempt ${attempt}/5)"
-    if timeout --signal=TERM --kill-after=30s 20m \
-      "$rclone" copyto "$wheel" "$remote" \
-        --s3-upload-cutoff 16M \
-        --s3-chunk-size 16M \
-        --s3-upload-concurrency 8 \
-        --retries 5 \
-        --low-level-retries 10 \
-        --retries-sleep 5s \
-        --progress \
-        --stats 30s \
-        --stats-one-line; then
+    upload_command=(
+      "$rclone" copyto "$wheel" "$remote"
+      --s3-upload-cutoff 16M
+      --s3-chunk-size 16M
+      --s3-upload-concurrency 8
+      --retries 5
+      --low-level-retries 10
+      --retries-sleep 5s
+      --progress
+      --stats 30s
+      --stats-one-line
+    )
+    if command -v timeout >/dev/null 2>&1; then
+      upload_command=(
+        timeout --signal=TERM --kill-after=30s 20m
+        "${upload_command[@]}"
+      )
+    fi
+    if "${upload_command[@]}"; then
       return 0
     fi
     echo "Upload attempt ${attempt}/5 failed; retrying in 15 seconds"
@@ -54,45 +71,49 @@ upload_wheel() {
   return 1
 }
 
+find_commit_wheel() {
+  local commit="$1"
+  "$rclone" lsf \
+    "${remote_root}/commits/${commit}" \
+    --files-only \
+    --include '*.whl' 2>/dev/null |
+    head -n 1 || true
+}
+
 write_commit_index() {
   local commit="$1"
   local wheel_name="$2"
   local digest="${3:-}"
-  local encoded_name
   local entries
   local output
+  local encoded_name
 
+  entries="$(mktemp "${RUNNER_TEMP}/sonar-platform-entries.XXXXXX")"
+  output="$(mktemp "${RUNNER_TEMP}/sonar-platform-index.XXXXXX")"
   encoded_name="$(encode_path "$wheel_name")"
-  entries="$(mktemp "${RUNNER_TEMP}/aphrodite-commit-entries.XXXXXX")"
-  output="$(mktemp "${RUNNER_TEMP}/aphrodite-commit-index.XXXXXX")"
   if [[ -n "$digest" ]]; then
     printf '%s\t%s\t%s\n' \
       "$wheel_name" \
-      "${public_base}/commits/${commit}/${encoded_name}" \
+      "${public_root}/commits/${commit}/${encoded_name}" \
       "$digest" >"$entries"
   else
     printf '%s\t%s\n' \
       "$wheel_name" \
-      "${public_base}/commits/${commit}/${encoded_name}" >"$entries"
+      "${public_root}/commits/${commit}/${encoded_name}" >"$entries"
   fi
 
   python3 .github/scripts/generate_nightly_index.py \
     --entry-file "$entries" \
     --commit "$commit" \
+    --title "Sonar ${PLATFORM_BACKEND} wheel for ${commit:0:12}" \
+    --description "Precompiled ${PLATFORM_BACKEND} wheel for ${PLATFORM_ARCHITECTURE} at commit ${commit}." \
+    --install-command \
+    "uv pip install aphrodite-engine --extra-index-url ${public_root}/commits/${commit}/aphrodite-engine --index-strategy first-index" \
     --output "$output"
   "$rclone" copyto \
     "$output" \
-    "${bucket}/commits/${commit}/aphrodite-engine/index.html"
+    "${remote_root}/commits/${commit}/aphrodite-engine/index.html"
   rm -f "$entries" "$output"
-}
-
-find_commit_wheel() {
-  local commit="$1"
-  "$rclone" lsf \
-    "${bucket}/commits/${commit}" \
-    --files-only \
-    --include '*.whl' 2>/dev/null |
-    head -n 1 || true
 }
 
 last_built=""
@@ -116,12 +137,16 @@ elif git rev-parse "${target_commit}^" >/dev/null 2>&1; then
 fi
 
 if [[ -n "$base_commit" ]]; then
-  mapfile -t commits < <(git rev-list --reverse "${base_commit}..${target_commit}")
+  commits=()
+  while IFS= read -r commit; do
+    commits+=("$commit")
+  done < <(git rev-list --reverse "${base_commit}..${target_commit}")
 else
   commits=("$target_commit")
 fi
 
 echo "Target main commit: ${target_commit}"
+echo "Platform: ${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
 echo "Last contiguous build: ${last_built:-none}"
 echo "Commits requiring reconciliation: ${#commits[@]}"
 
@@ -138,35 +163,37 @@ for commit in "${commits[@]}"; do
     IFS=. read -r major minor patch <<<"$release"
     timestamp="$(date -u +%Y%m%d%H%M%S)"
     short_commit="$(git rev-parse --short=9 "$commit")"
-    version="${major}.${minor}.$((patch + 1)).dev${timestamp}+cu130.g${short_commit}"
+    version="${major}.${minor}.$((patch + 1)).dev${timestamp}+${PLATFORM_VERSION_LOCAL}.g${short_commit}"
     echo "Building ${version} from ${commit}"
 
-    APHRODITE_VERSION_OVERRIDE="$version" ./docker/export_wheels.sh
-    wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
+    APHRODITE_VERSION_OVERRIDE="$version" \
+      "$PLATFORM_BUILD_SCRIPT" "$output_dir"
+    wheel="$(find "$output_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)"
     if [[ -z "$wheel" ]]; then
       echo "::error::The build did not export a wheel for ${commit}"
       exit 1
     fi
 
     wheel_name="$(basename "$wheel")"
-    wheel_remote="${bucket}/commits/${commit}/${wheel_name}"
-    digest="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
-    upload_wheel "$wheel" "$wheel_remote"
+    if command -v sha256sum >/dev/null 2>&1; then
+      digest="$(sha256sum "$wheel" | cut -d ' ' -f 1)"
+    else
+      digest="$(shasum -a 256 "$wheel" | cut -d ' ' -f 1)"
+    fi
+    upload_wheel \
+      "$wheel" \
+      "${remote_root}/commits/${commit}/${wheel_name}"
 
-    encoded_name="$(encode_path "$wheel_name")"
     curl --fail --silent --show-error --location \
       --retry 10 \
       --retry-all-errors \
       --retry-delay 3 \
       --range 0-0 \
       --output /dev/null \
-      "${public_base}/commits/${commit}/${encoded_name}"
+      "${public_root}/commits/${commit}/$(encode_path "$wheel_name")"
 
     write_commit_index "$commit" "$wheel_name" "$digest"
     rm -f "$wheel"
-    docker buildx prune --force \
-      --filter type=regular \
-      --max-used-space 25gb
   fi
 
   printf '%s\n' "$commit" | "$rclone" rcat "$state_remote"
@@ -174,24 +201,23 @@ done
 
 git checkout --detach "$target_commit"
 
-entries="${RUNNER_TEMP}/aphrodite-wheel-index.tsv"
+entries="${RUNNER_TEMP}/sonar-${PLATFORM_BACKEND}-${PLATFORM_ARCHITECTURE}.tsv"
 : >"$entries"
 while IFS= read -r stored_path; do
   [[ -n "$stored_path" ]] || continue
   wheel_name="$(basename "$stored_path")"
-  encoded_path="$(encode_path "$stored_path")"
   printf '%s\t%s\n' \
     "$wheel_name" \
-    "${public_base}/${encoded_path}" >>"$entries"
+    "${public_root}/$(encode_path "$stored_path")" >>"$entries"
 done < <(
   {
     "$rclone" lsf \
-      "${bucket}/wheels" \
+      "${remote_root}/wheels" \
       --files-only \
       --include '*.whl' 2>/dev/null |
       sed 's#^#wheels/#'
     "$rclone" lsf \
-      "${bucket}/commits" \
+      "${remote_root}/commits" \
       --recursive \
       --files-only \
       --include '*.whl' 2>/dev/null |
@@ -199,40 +225,27 @@ done < <(
   } | sort -r
 )
 
-index_dir="${index_root}/whl/nightly/cuda/x86_64"
+index_dir="${index_root}/whl/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
 package_dir="${index_dir}/simple/aphrodite-engine"
-legacy_nightly_dir="${index_root}/nightly/aphrodite-engine"
-legacy_simple_dir="${index_root}/simple/aphrodite-engine"
-nightly_cuda_dir="${index_root}/nightly/cuda/x86_64"
-mkdir -p \
-  "$package_dir" \
-  "$legacy_nightly_dir" \
-  "$legacy_simple_dir" \
-  "$nightly_cuda_dir"
-
+nightly_dir="${index_root}/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
+mkdir -p "$package_dir" "$nightly_dir"
 python3 .github/scripts/generate_nightly_index.py \
   --entry-file "$entries" \
   --commit "$target_commit" \
-  --title "Sonar nightly CUDA wheels" \
-  --description "Precompiled CUDA 13.0 wheels for x86_64 from every commit on main." \
+  --title "Sonar nightly ${PLATFORM_BACKEND} wheels" \
+  --description "Precompiled ${PLATFORM_BACKEND} wheels for ${PLATFORM_ARCHITECTURE} from every commit on main." \
   --install-command \
-  "uv pip install aphrodite-engine --extra-index-url https://sonar.dphn.ai/whl/nightly/cuda/x86_64/simple --index-strategy first-index" \
+  "uv pip install aphrodite-engine --extra-index-url https://sonar.dphn.ai/whl/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}/simple --index-strategy first-index" \
   --output "${index_dir}/index.html"
 cp "${index_dir}/index.html" "${package_dir}/index.html"
-cp "${index_dir}/index.html" "${legacy_nightly_dir}/index.html"
-cp "${index_dir}/index.html" "${legacy_simple_dir}/index.html"
-cp "${index_dir}/index.html" "${nightly_cuda_dir}/index.html"
-mkdir -p "${index_root}/whl"
-cp "${index_dir}/index.html" "${index_root}/whl/index.html"
-"$rclone" copyto \
-  "${index_dir}/index.html" \
-  "${bucket}/platform-wheels/nightly/cuda/x86_64/index.html"
+cp "${index_dir}/index.html" "${nightly_dir}/index.html"
+"$rclone" copyto "${index_dir}/index.html" "${remote_root}/index.html"
 
 tip_wheel="$(find_commit_wheel "$target_commit")"
 if [[ -z "$tip_wheel" ]]; then
-  echo "::error::No wheel is available for target commit ${target_commit}"
+  echo "::error::No ${PLATFORM_BACKEND} wheel is available for ${target_commit}"
   exit 1
 fi
 "$rclone" copyto \
-  "${bucket}/commits/${target_commit}/aphrodite-engine/index.html" \
-  "${bucket}/nightly/aphrodite-engine/index.html"
+  "${remote_root}/commits/${target_commit}/aphrodite-engine/index.html" \
+  "${remote_root}/aphrodite-engine/index.html"

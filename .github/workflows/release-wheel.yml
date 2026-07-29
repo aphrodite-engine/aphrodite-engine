@@ -15,7 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  cuda-wheel:
+    name: CUDA wheel (x86_64)
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
@@ -187,6 +188,8 @@ jobs:
 
   rocm-wheel:
     name: ROCm wheel (x86_64)
+    needs: cuda-wheel
+    if: ${{ always() }}
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
@@ -230,7 +233,7 @@ jobs:
 
   publish-platform-wheels:
     name: Publish platform wheels
-    needs: [release, cpu-wheel, metal-wheel, rocm-wheel]
+    needs: [cuda-wheel, cpu-wheel, metal-wheel, rocm-wheel]
     runs-on: ubuntu-24.04
     env:
       RCLONE_CONFIG_B2_TYPE: s3
