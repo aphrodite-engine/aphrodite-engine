@@ -3,14 +3,14 @@
 # SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
 from typing import Any, cast
 
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.entrypoints.chat_utils import (
     ChatCompletionMessageParam,
     ConversationMessage,
     parse_chat_messages,
     parse_chat_messages_async,
 )
-from aphrodite.exceptions import VLLMValidationError
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.multimodal.media.connector import merge_media_io_kwargs
 from aphrodite.tokenizers.hf import HfTokenizer
 from aphrodite.utils.async_utils import make_async
@@ -58,7 +58,7 @@ def _apply_k3_thinking_kwargs(kwargs: dict[str, Any]) -> None:
     thinking_effort = kwargs.get("thinking_effort")
     if thinking_effort is not None and thinking_effort not in _K3_THINKING_EFFORTS:
         supported = ", ".join(_K3_THINKING_EFFORTS)
-        raise VLLMValidationError(
+        raise AphroditeValidationError(
             f"Kimi K3 supports thinking_effort values: {supported}",
             parameter="thinking_effort",
             value=thinking_effort,
@@ -145,7 +145,7 @@ class KimiK3Renderer(BaseRenderer[HfTokenizer]):
     their special-token ids while user- and tool-supplied text stays ordinary.
     """
 
-    def __init__(self, config: VllmConfig, tokenizer: HfTokenizer | None) -> None:
+    def __init__(self, config: AphroditeConfig, tokenizer: HfTokenizer | None) -> None:
         super().__init__(config, tokenizer)
 
         self._apply_chat_template_async = make_async(self._apply_chat_template, executor=self._executor)
