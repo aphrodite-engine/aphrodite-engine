@@ -1,0 +1,89 @@
+name: Build release wheel
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: wheel-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
+    timeout-minutes: 720
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      MAX_JOBS: "64"
+      NVCC_THREADS: "4"
+      CUDA_VERSION: "13.0.2"
+      TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Build release wheel
+        run: ./docker/export_wheels.sh
+
+      - name: Verify release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          python3 - "$wheel" "${GITHUB_REF_NAME#v}" <<'PY'
+          import sys
+          import zipfile
+          from email.parser import Parser
+          from pathlib import Path
+
+          wheel = Path(sys.argv[1])
+          expected = sys.argv[2]
+          with zipfile.ZipFile(wheel) as archive:
+              metadata_path = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+              metadata = Parser().parsestr(archive.read(metadata_path).decode())
+          actual = metadata["Version"]
+          if actual != expected:
+              raise SystemExit(f"Wheel version {actual!r} does not match tag version {expected!r}")
+          print(f"Verified {wheel.name}: version {actual}")
+          PY
+
+      - name: Generate release notes
+        run: |
+          python3 .github/scripts/generate_release_notes.py \
+            --tag "$GITHUB_REF_NAME" \
+            --output release-notes.md
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Publish wheel to PyPI
+        run: |
+          uv publish \
+            --trusted-publishing always \
+            --check-url https://pypi.org/simple/aphrodite-engine/ \
+            wheels/main/*.whl
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          generate_release_notes: false
+          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
+
+      - name: Reclaim wheel build storage
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f wheels/main/*.whl
+          docker buildx prune --force \
+            --filter type=regular \
+            --max-used-space 25gb
