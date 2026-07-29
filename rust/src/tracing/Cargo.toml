@@ -1,0 +1,14 @@
+[package]
+name = "aphrodite-tracing"
+version.workspace = true
+edition.workspace = true
+description = "Shared tracing subscriber and log formatting for Aphrodite Rust binaries"
+license.workspace = true
+
+[dependencies]
+time.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

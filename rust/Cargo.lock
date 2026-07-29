@@ -131,6 +131,7 @@ name = "aphrodite-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aphrodite-tracing",
  "base64 0.22.1",
  "bytes",
  "chrono",
@@ -156,7 +157,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -217,6 +217,7 @@ dependencies = [
  "aphrodite-engine-core-client",
  "aphrodite-managed-engine",
  "aphrodite-server",
+ "aphrodite-tracing",
  "clap",
  "educe",
  "expect-test",
@@ -227,11 +228,9 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror-ext",
- "time",
  "tokio",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -466,6 +465,15 @@ dependencies = [
  "tokenizers",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "aphrodite-tracing"
+version = "0.1.0"
+dependencies = [
+ "time",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
