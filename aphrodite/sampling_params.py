@@ -127,12 +127,12 @@ class StructuredOutputsParams:
             ]
         )
         if count > 1:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "You can only use one kind of structured outputs constraint "
                 f"but multiple are specified: {self.__dict__}"
             )
         if count < 1:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"You must use one kind of structured outputs constraint but none are specified: {self.__dict__}"
             )
 
@@ -188,13 +188,13 @@ class RepetitionDetectionParams:
 
     def __post_init__(self):
         if self.max_pattern_size < 0 or self.min_pattern_size < 0 or self.min_pattern_size > self.max_pattern_size:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "max_pattern_size, min_pattern_size must be >=0, "
                 "with min_pattern_size <= max_pattern_size. "
                 "Set both to 0 to disable repetitive pattern detection."
             )
         if self.max_pattern_size > 0 and self.min_count < 2:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "min_count must be >= 2 to detect repetitive patterns "
                 "in engine output. If you do not wish to detect repetitive "
                 "patterns, set max_pattern_size to 0."
@@ -643,12 +643,12 @@ class SamplingParams(
 
     def _verify_args(self) -> None:
         if not isinstance(self.n, int):
-            raise ValueError(f"n must be an int, but is of type {type(self.n)}")
+            raise APHRODITEValidationError(f"n must be an int, but is of type {type(self.n)}")
         if self.n < 1:
-            raise ValueError(f"n must be at least 1, got {self.n}.")
+            raise APHRODITEValidationError(f"n must be at least 1, got {self.n}.")
         max_n = envs.APHRODITE_MAX_N_SEQUENCES
         if self.n > max_n:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"n must be at most {max_n}, got {self.n}. "
                 "To increase this limit, set the APHRODITE_MAX_N_SEQUENCES "
                 "environment variable."
@@ -687,9 +687,9 @@ class SamplingParams(
             )
         # quietly accept -1 as disabled, but prefer 0
         if self.top_k < -1:
-            raise ValueError(f"top_k must be 0 (disable), or at least 1, got {self.top_k}.")
+            raise APHRODITEValidationError(f"top_k must be 0 (disable), or at least 1, got {self.top_k}.")
         if not isinstance(self.top_k, int):
-            raise TypeError(f"top_k must be an integer, got {type(self.top_k).__name__}")
+            raise APHRODITEValidationError(f"top_k must be an integer, got {type(self.top_k).__name__}")
         if self.no_repeat_ngram_size < 0:
             raise ValueError(f"no_repeat_ngram_size must be non-negative, got {self.no_repeat_ngram_size}.")
         if self.dynatemp_min < 0.0 or self.dynatemp_max < 0.0:
@@ -699,7 +699,7 @@ class SamplingParams(
         if self.top_a < 0.0:
             raise ValueError(f"top_a must be non-negative, got {self.top_a}.")
         if not 0.0 <= self.min_p <= 1.0:
-            raise ValueError(f"min_p must be in [0, 1], got {self.min_p}.")
+            raise APHRODITEValidationError(f"min_p must be in [0, 1], got {self.min_p}.")
         if not 0.0 < self.tfs <= 1.0:
             raise ValueError(f"tfs must be in (0, 1], got {self.tfs}.")
         if self.eta_cutoff < 0.0:
@@ -715,9 +715,9 @@ class SamplingParams(
                 value=self.max_tokens,
             )
         if self.min_tokens < 0:
-            raise ValueError(f"min_tokens must be greater than or equal to 0, got {self.min_tokens}.")
+            raise APHRODITEValidationError(f"min_tokens must be greater than or equal to 0, got {self.min_tokens}.")
         if self.max_tokens is not None and self.min_tokens > self.max_tokens:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"min_tokens must be less than or equal to max_tokens={self.max_tokens}, got {self.min_tokens}."
             )
         if self.stream_interval is not None and self.stream_interval < 1:
@@ -740,12 +740,12 @@ class SamplingParams(
             )
         assert isinstance(self.stop_token_ids, list)
         if not all(isinstance(st_id, int) for st_id in self.stop_token_ids):
-            raise ValueError(f"stop_token_ids must contain only integers, got {self.stop_token_ids}.")
+            raise APHRODITEValidationError(f"stop_token_ids must contain only integers, got {self.stop_token_ids}.")
         assert isinstance(self.stop, list)
         if any(not stop_str for stop_str in self.stop):
-            raise ValueError("stop cannot contain an empty string.")
+            raise APHRODITEValidationError("stop cannot contain an empty string.")
         if self.stop and not self.detokenize:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "stop strings are only supported when detokenize is True. Set detokenize=True to use stop."
             )
         if self.xtc_threshold < 0.0:
@@ -772,11 +772,11 @@ class SamplingParams(
             raise ValueError("dry_early_exit_match_len must be non-negative.")
         assert isinstance(self.bad_words, list)
         if any(not bad_word for bad_word in self.bad_words):
-            raise ValueError(f"bad_words cannot contain an empty string. Got bad_words={self.bad_words}")
+            raise APHRODITEValidationError(f"bad_words cannot contain an empty string. Got bad_words={self.bad_words}")
 
     def _verify_greedy_sampling(self) -> None:
         if self.n > 1:
-            raise ValueError(f"n must be 1 when using greedy sampling, got {self.n}.")
+            raise APHRODITEValidationError(f"n must be 1 when using greedy sampling, got {self.n}.")
 
     def update_from_generation_config(
         self,

@@ -19,7 +19,7 @@ from pydantic import (
 
 from aphrodite.config.utils import replace
 from aphrodite.entrypoints.chat_utils import make_tool_call_id
-from aphrodite.exceptions import APHRODITEValidationError
+from aphrodite.exceptions import APHRODITEServerError, APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import StructuredOutputsParams
 from aphrodite.utils import random_uuid
@@ -387,7 +387,7 @@ class DeltaMessage(OpenAIBaseModel):
         return data
 
 
-class GenerationError(Exception):
+class GenerationError(APHRODITEServerError):
     """raised when finish_reason indicates internal server error (500)"""
 
     def __init__(self, message: str = "Internal server error"):

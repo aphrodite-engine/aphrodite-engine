@@ -7,6 +7,7 @@ from typing import Any
 import msgspec
 
 from aphrodite.config import ModelConfig, PoolerConfig
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import RequestOutputKind
 from aphrodite.tasks import PoolingTask, check_removed_pooling_task
@@ -145,7 +146,7 @@ class PoolingParams(
                     invalid_parameters.append(k)
 
             if invalid_parameters:
-                raise ValueError(
+                raise APHRODITEValidationError(
                     f"Task {self.task} only supports {valid_parameters} "
                     f"parameters, does not support "
                     f"{invalid_parameters} parameters"
@@ -170,20 +171,20 @@ class PoolingParams(
                 valid_range = f"[1, {embedding_size}]"
                 dimensions_in_range = 1 <= dimensions <= embedding_size
                 if not model_config.is_matryoshka:
-                    raise ValueError(
+                    raise APHRODITEValidationError(
                         f"Model {model_name!r} does not support Matryoshka "
                         f"embeddings; dimensions must be unset "
                         f"(received dimensions={dimensions})."
                     )
 
                 if not dimensions_in_range:
-                    raise ValueError(
+                    raise APHRODITEValidationError(
                         f"Model {model_name!r} only supports dimensions in range {valid_range}, got {dimensions}."
                     )
 
                 mds = model_config.matryoshka_dimensions
                 if mds is not None and dimensions not in mds:
-                    raise ValueError(
+                    raise APHRODITEValidationError(
                         f"Model {model_name!r} only supports Matryoshka dimensions {str(mds)}, got {dimensions}."
                     )
 
@@ -206,7 +207,7 @@ class PoolingParams(
                 invalid_parameters.append(k)
 
         if invalid_parameters:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"Task {self.task!r} only supports {valid_parameters} "
                 f"parameters, does not support "
                 f"{invalid_parameters} parameters"
@@ -229,4 +230,4 @@ class PoolingParams(
     def __post_init__(self) -> None:
         check_removed_pooling_task(self.task)
         if self.output_kind != RequestOutputKind.FINAL_ONLY:
-            raise ValueError(f"For pooling output_kind has to be FINAL_ONLY, got {self.output_kind!r}")
+            raise APHRODITEValidationError(f"For pooling output_kind has to be FINAL_ONLY, got {self.output_kind!r}")

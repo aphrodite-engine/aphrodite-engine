@@ -21,6 +21,7 @@ from aphrodite.distributed.weight_transfer.base import (
 from aphrodite.engine.arg_utils import AsyncEngineArgs
 from aphrodite.engine.protocol import EngineClient, StreamingInput
 from aphrodite.entrypoints.serve.elastic_ep.middleware import set_scaling_elastic_ep
+from aphrodite.exceptions import APHRODITEClientError, APHRODITEValidationError
 from aphrodite.inputs import EngineInput, PromptType
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
@@ -302,7 +303,7 @@ class AsyncLLM(EngineClient):
         is_pooling = isinstance(params, PoolingParams)
 
         if self.aphrodite_config.cache_config.kv_sharing_fast_prefill and not is_pooling and params.prompt_logprobs:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "--kv-sharing-fast-prefill produces incorrect logprobs for "
                 "prompt tokens, please disable it when the requests need "
                 "prompt logprobs"
@@ -467,7 +468,7 @@ class AsyncLLM(EngineClient):
                     )
                     req.external_req_id = request_id
                     if req.prompt_embeds is not None:
-                        raise ValueError("prompt_embeds not supported for streaming inputs")
+                        raise APHRODITEValidationError("prompt_embeds not supported for streaming inputs")
                     prompt_text, _, _ = extract_prompt_components(self.model_config, input_chunk.prompt)
                     await self._add_request(req, prompt_text, None, 0, queue)
             except (asyncio.CancelledError, GeneratorExit):
@@ -499,7 +500,7 @@ class AsyncLLM(EngineClient):
             or params.output_kind == RequestOutputKind.FINAL_ONLY
             or params.stop
         ):
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "Input streaming not currently supported "
                 "for pooling models, n > 1, request_kind = FINAL_ONLY "
                 "or with stop strings."
@@ -588,7 +589,7 @@ class AsyncLLM(EngineClient):
             raise
 
         # Request validation error.
-        except ValueError as e:
+        except APHRODITEClientError as e:
             if self.log_requests:
                 logger.info("Request %s failed (bad request): %s.", request_id, e)
             raise
@@ -841,7 +842,7 @@ class AsyncLLM(EngineClient):
             raise
 
         # Request validation error.
-        except ValueError:
+        except APHRODITEClientError:
             if self.log_requests:
                 logger.info("Request %s failed (bad request).", request_id)
             raise

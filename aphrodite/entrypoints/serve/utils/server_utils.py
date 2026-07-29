@@ -31,7 +31,7 @@ from aphrodite.entrypoints.serve.utils.error_response import (
     create_error_response,
     sanitize_message,
 )
-from aphrodite.exceptions import APHRODITEValidationError
+from aphrodite.exceptions import APHRODITEError, APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.utils.gc_utils import freeze_gc_heap
 from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError
@@ -314,6 +314,15 @@ async def log_response(request: Request, call_next):
     else:
         _log_non_streaming_response(response_body)
     return response
+
+
+async def aphrodite_error_handler(req: Request, exc: APHRODITEError):
+    """Dispatch an Aphrodite-specific error to the appropriate handler."""
+    if isinstance(exc, (EngineGenerateError, EngineDeadError)):
+        return await engine_error_handler(req, exc)
+    if isinstance(exc, GenerationError):
+        return await generation_error_handler(req, exc)
+    return await exception_handler(req, exc)
 
 
 async def engine_error_handler(req: Request, exc: EngineDeadError | EngineGenerateError):

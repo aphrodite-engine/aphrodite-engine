@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.inputs import (
     EngineInput,
     PromptType,
@@ -86,7 +87,7 @@ class InputProcessor:
         if isinstance(params, SamplingParams):
             supported_generation_tasks = [task for task in supported_tasks if task in GENERATION_TASKS]
             if not supported_generation_tasks:
-                raise ValueError("This model does not support generation")
+                raise APHRODITEValidationError("This model does not support generation")
 
             params.verify(
                 self.model_config,
@@ -97,13 +98,13 @@ class InputProcessor:
 
             if params.thinking_token_budget is not None:
                 if self.aphrodite_config.reasoning_config is None or not self.aphrodite_config.reasoning_config.enabled:
-                    raise ValueError(
+                    raise APHRODITEValidationError(
                         "thinking_token_budget is set but reasoning_config is "
                         "not configured. Please set --reasoning-parser "
                         "and/or --reasoning-config to use thinking_token_budget."
                     )
                 if self.use_v2_model_runner:
-                    raise ValueError(
+                    raise APHRODITEValidationError(
                         "thinking_token_budget is not yet supported by the V2 "
                         "model runner. Run Aphrodite with APHRODITE_USE_V2_MODEL_RUNNER=0 "
                         "to use thinking_token_budget."
@@ -111,7 +112,7 @@ class InputProcessor:
         elif isinstance(params, PoolingParams):
             supported_pooling_tasks = [task for task in supported_tasks if task in POOLING_TASKS]
             if not supported_pooling_tasks:
-                raise ValueError("This model does not support pooling")
+                raise APHRODITEValidationError("This model does not support pooling")
 
             if params.task is None:
                 if "token_embed" in supported_pooling_tasks:
@@ -122,7 +123,9 @@ class InputProcessor:
                     params.task = "plugin"
 
             if params.task not in supported_pooling_tasks:
-                raise ValueError(f"Unsupported task: {params.task!r} Supported tasks: {supported_pooling_tasks}")
+                raise APHRODITEValidationError(
+                    f"Unsupported task: {params.task!r} Supported tasks: {supported_pooling_tasks}"
+                )
 
             params.verify(self.model_config)
         else:
@@ -134,7 +137,7 @@ class InputProcessor:
 
         # LoRA request passed in while LoRA is not enabled
         if not self.lora_config:
-            raise ValueError(f"Got lora_request {lora_request} but LoRA is not enabled!")
+            raise APHRODITEValidationError(f"Got lora_request {lora_request} but LoRA is not enabled!")
 
         if self.tokenizer is not None:
             logger.warning_once(
@@ -240,7 +243,7 @@ class InputProcessor:
         dp_local_size = parallel_config.data_parallel_size_local
         num_ranks = dp_local_size if parallel_config.local_engines_only else dp_size
         if data_parallel_rank is not None and not (0 <= data_parallel_rank < num_ranks):
-            raise ValueError(f"data_parallel_rank {data_parallel_rank} is out of range [0, {num_ranks}).")
+            raise APHRODITEValidationError(f"data_parallel_rank {data_parallel_rank} is out of range [0, {num_ranks}).")
 
         if isinstance(prompt, dict) and "type" in prompt:
             if tokenization_kwargs:
@@ -365,7 +368,7 @@ class InputProcessor:
             return
 
         if prompt_len == 0 and prompt_type == "decoder":
-            raise ValueError(f"The {prompt_type} prompt cannot be empty")
+            raise APHRODITEValidationError(f"The {prompt_type} prompt cannot be empty")
 
         model_config = self.model_config
         max_prompt_len = model_config.max_model_len if prompt_type == "decoder" else self.mm_encoder_cache_size
@@ -380,7 +383,7 @@ class InputProcessor:
             else:
                 suggestion = "Make sure that `max_model_len` is no smaller than the number of text tokens."
 
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"The {prompt_type} prompt (length {prompt_len}) is "
                 f"longer than the maximum model length of {max_prompt_len}. "
                 f"{suggestion}"
@@ -390,7 +393,7 @@ class InputProcessor:
                 "Make sure that `max_model_len` is no smaller than the "
                 "number of text tokens (prompt + requested output tokens)."
             )
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"The {prompt_type} prompt (length {prompt_len}) plus the number of "
                 f"requested output tokens (at least 1) is longer than the maximum "
                 f"model length of {max_prompt_len}. {suggestion}"
@@ -416,7 +419,7 @@ class InputProcessor:
                 for mm_position in mm_positions:
                     num_embeds = mm_position.get_num_embeds()
                     if num_embeds > self.mm_encoder_cache_size:
-                        raise ValueError(
+                        raise APHRODITEValidationError(
                             f"The {prompt_type} prompt contains a(n) {modality} item "
                             f"with {num_embeds} embedding tokens, which exceeds the "
                             f"pre-allocated encoder cache size "
@@ -440,7 +443,7 @@ class InputProcessor:
             # truly out-of-vocabulary.
             model_vocab_size = model_config.get_vocab_size()
             if max_input_id > max(tokenizer.max_token_id, model_vocab_size - 1):
-                raise ValueError(f"Token id {max_input_id} is out of vocabulary")
+                raise APHRODITEValidationError(f"Token id {max_input_id} is out of vocabulary")
 
     def _validate_model_inputs(
         self,

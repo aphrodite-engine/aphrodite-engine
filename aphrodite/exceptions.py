@@ -6,7 +6,19 @@
 from typing import Any
 
 
-class AphroditeValidationError(ValueError):
+class AphroditeError(Exception):
+    """Base class for all Aphrodite-specific errors."""
+
+
+class AphroditeClientError(AphroditeError):
+    """Base class for errors caused by the client request (4xx)."""
+
+
+class AphroditeServerError(AphroditeError):
+    """Base class for errors caused by the server (5xx)."""
+
+
+class AphroditeValidationError(AphroditeClientError):
     """Aphrodite-specific validation error for request validation failures.
 
     Args:
@@ -36,7 +48,7 @@ class AphroditeValidationError(ValueError):
         return f"{base} ({', '.join(extras)})" if extras else base
 
 
-class AphroditeNotFoundError(Exception):
+class AphroditeNotFoundError(AphroditeClientError):
     """Aphrodite-specific NotFoundError"""
 
     pass
@@ -66,7 +78,7 @@ class LoRAAdapterNotFoundError(AphroditeNotFoundError):
         return self.message
 
 
-class AphroditeUnprocessableEntityError(ValueError):
+class AphroditeUnprocessableEntityError(AphroditeClientError):
     """Aphrodite-specific error for unprocessable entity requests.
 
     Args:
@@ -97,6 +109,9 @@ class AphroditeUnprocessableEntityError(ValueError):
 
 
 # Backward compatibility with older upstream-derived imports.
+APHRODITEError = AphroditeError
+APHRODITEClientError = AphroditeClientError
+APHRODITEServerError = AphroditeServerError
 APHRODITEValidationError = AphroditeValidationError
 APHRODITENotFoundError = AphroditeNotFoundError
 APHRODITEUnprocessableEntityError = AphroditeUnprocessableEntityError
