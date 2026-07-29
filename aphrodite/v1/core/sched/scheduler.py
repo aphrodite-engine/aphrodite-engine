@@ -2120,6 +2120,7 @@ class Scheduler(SchedulerInterface):
             self.has_unfinished_requests()
             or self.has_finished_requests()
             or (self.connector is not None and self.connector.has_pending_push_work())
+            or (self.ec_connector is not None and self.ec_connector.has_pending_push_work())
         )
 
     def reset_prefix_cache(self, reset_running_requests: bool = False, reset_connector: bool = False) -> bool:
