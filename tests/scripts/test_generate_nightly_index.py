@@ -39,3 +39,11 @@ def test_generate_nightly_index_lists_all_wheels(tmp_path: Path) -> None:
     assert document.count(current) == 1
     assert document.count(previous) == 1
     assert "Latest build from deadbeef" in document
+    assert "Available builds" in document
+    assert "2 wheels" in document
+    assert "uv pip install aphrodite-engine --index-url https://sonar.dphn.ai/nightly" in document
+    assert 'data-requires-python="&gt;=3.10,&lt;3.15"' in document
+    assert "0.2.dev2+cu130" in document
+    assert "linux x86_64" in document
+    assert 'id="pagination"' in document
+    assert "const pageSize = 50" in document
