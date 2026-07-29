@@ -1,5 +1,9 @@
 -r common.txt
 
+# PyTorch remains the tensor and model-loading interface for the Metal backend.
+torch==2.13.0; platform_system == "Darwin" and platform_machine == "arm64"
+torchvision==0.28.0; platform_system == "Darwin" and platform_machine == "arm64"
+
 # MLX - Required for Apple Silicon GPU acceleration.
 # Upper-bound: csrc/metal/paged_ops.cpp uses MLX private Metal APIs.
 mlx>=0.31.0,<0.32.0; platform_system == "Darwin" and platform_machine == "arm64"

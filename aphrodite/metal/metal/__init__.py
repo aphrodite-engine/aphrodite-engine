@@ -17,9 +17,10 @@ import importlib
 import importlib.util
 import logging
 import os
-import re
 from pathlib import Path
 from types import ModuleType
+
+import regex as re
 
 from aphrodite.metal.metal.constants import PARTITION_SIZE, PARTITION_THRESHOLD
 
@@ -27,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 _THIS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _THIS_DIR.parents[2]
-_SOURCE_DIR = Path(os.getenv("APHRODITE_METAL_SOURCE_DIR", str(_REPO_ROOT / "csrc" / "metal"))).expanduser()
+_PACKAGED_SOURCE_DIR = _THIS_DIR
+_REPOSITORY_SOURCE_DIR = _REPO_ROOT / "csrc" / "metal"
+_DEFAULT_SOURCE_DIR = _PACKAGED_SOURCE_DIR if (_PACKAGED_SOURCE_DIR / "kernels_v1").is_dir() else _REPOSITORY_SOURCE_DIR
+_SOURCE_DIR = Path(os.getenv("APHRODITE_METAL_SOURCE_DIR", str(_DEFAULT_SOURCE_DIR))).expanduser()
 _KERNELS_DIR = _SOURCE_DIR / "kernels_v1"
 _KERNELS_V2_DIR = _SOURCE_DIR / "kernels_v2"
 

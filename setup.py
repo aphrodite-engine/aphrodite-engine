@@ -17,6 +17,7 @@ import torch
 from packaging.version import Version, parse
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+from setuptools.command.build_py import build_py
 from setuptools_scm import get_version
 from torch.utils.cpp_extension import CUDA_HOME, ROCM_HOME
 
@@ -170,6 +171,23 @@ class CMakeExtension(Extension):
         kwa.setdefault("py_limited_api", not is_freethreaded())
         super().__init__(name, sources=[], **kwa)
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
+
+
+class aphrodite_build_py(build_py):
+    """Copy runtime Metal shaders into wheel builds."""
+
+    def run(self) -> None:
+        super().run()
+        if not _is_metal():
+            return
+
+        destination = Path(self.build_lib) / "aphrodite" / "metal" / "metal"
+        for directory in ("kernels_v1", "kernels_v2"):
+            shutil.copytree(
+                ROOT_DIR / "csrc" / "metal" / directory,
+                destination / directory,
+                dirs_exist_ok=True,
+            )
 
 
 class cmake_build_ext(build_ext):
@@ -734,10 +752,9 @@ if APHRODITE_USE_PRECOMPILED:
         package_data.setdefault(package, []).extend(files)
     ext_modules = []
 
-if not ext_modules:
-    cmdclass = {}
-else:
-    cmdclass = {"build_ext": cmake_build_ext}
+cmdclass = {"build_py": aphrodite_build_py}
+if ext_modules:
+    cmdclass["build_ext"] = cmake_build_ext
 
 # Rust artifacts, built via setuptools-rust and installed into the package
 # directory alongside the Python modules. Imported lazily: setuptools-rust does
