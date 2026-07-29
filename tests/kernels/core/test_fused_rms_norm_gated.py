@@ -7,7 +7,9 @@ matching the eager triton kernel output."""
 import pytest
 import torch
 
-from aphrodite.third_party.flash_linear_attention.ops.kda import FusedRMSNormGated
+from aphrodite.third_party.flash_linear_attention.ops.fused_norm_gate import (
+    FusedRMSNormGated,
+)
 from aphrodite.utils.torch_utils import set_random_seed
 
 DTYPES = [torch.bfloat16]
