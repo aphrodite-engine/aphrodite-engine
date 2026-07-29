@@ -53,6 +53,7 @@ export default defineConfig({
 						{ label: 'Choose parallelism', slug: 'deployment/parallelism' },
 						{ label: 'Distributed deployment', slug: 'deployment/distributed' },
 						{ label: 'Production deployment', slug: 'deployment/production' },
+						{ label: 'Rust frontend', slug: 'deployment/rust-frontend' },
 						{ label: 'Deployment recipes', slug: 'deployment/recipes' },
 						{ label: 'Model loading and storage', slug: 'deployment/model-storage' },
 						{ label: 'Security', slug: 'deployment/security' },

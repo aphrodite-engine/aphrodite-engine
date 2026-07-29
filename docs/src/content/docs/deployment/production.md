@@ -24,6 +24,10 @@ See [Choose parallelism](/deployment/parallelism/) before you split one replica
 across GPUs. See [Distributed deployment](/deployment/distributed/) for
 multi-node launch commands.
 
+Use the [Rust frontend](/deployment/rust-frontend/) when you want to evaluate
+the experimental Rust HTTP serving layer. Check its route and option
+compatibility before production use.
+
 ## Start a private server
 
 ```bash
