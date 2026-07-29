@@ -28,9 +28,7 @@ class _DummyCachePolicy(CachePolicy):
     def touch(self, keys: Iterable[OffloadKey], req_context: ReqContext) -> None:
         pass
 
-    def evict(
-        self, n: int, protected: set[OffloadKey]
-    ) -> list[tuple[OffloadKey, BlockStatus]] | None:
+    def evict(self, n: int, protected: set[OffloadKey]) -> list[tuple[OffloadKey, BlockStatus]] | None:
         return None
 
     def clear(self) -> None:
