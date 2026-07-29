@@ -177,7 +177,9 @@ def _compatible_candidate(index_url: str, html: str) -> WheelCandidate:
     available: list[str] = []
 
     for href, link_text in parser.links:
-        filename = unquote(link_text or Path(urlparse(href).path).name)
+        filename = unquote(Path(urlparse(href).path).name)
+        if not filename.endswith(".whl"):
+            filename = unquote(link_text)
         if not filename.endswith(".whl"):
             continue
         available.append(filename)

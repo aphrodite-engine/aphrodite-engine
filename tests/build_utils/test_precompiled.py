@@ -34,7 +34,10 @@ def test_compatible_candidate_ignores_non_wheel_links(monkeypatch: pytest.Monkey
     )
     html = f"""
     <a href="/cdn-cgi/content?id=canary" style="display: none"></a>
-    <a href="../{WHEEL_NAME}#sha256={digest}">{WHEEL_NAME}</a>
+    <a href="../{WHEEL_NAME}#sha256={digest}">
+      <span class="filename">{WHEEL_NAME}</span>
+      <span class="icon">↓</span>
+    </a>
     """
 
     candidate = precompiled._compatible_candidate("https://example.test/commit/aphrodite-engine/index.html", html)
