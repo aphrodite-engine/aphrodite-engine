@@ -22,6 +22,7 @@ preserve "simple/aphrodite-engine"
 
 for channel in release nightly; do
   for platform in \
+    cuda/x86_64 \
     cpu/x86_64 \
     cpu/aarch64 \
     rocm/x86_64 \

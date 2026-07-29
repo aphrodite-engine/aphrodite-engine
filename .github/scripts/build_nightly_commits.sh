@@ -14,6 +14,7 @@ bucket="b2:${B2_S3_BUCKET}"
 public_base="${B2_PUBLIC_BASE_URL%/}"
 state_remote="${bucket}/_ci/last-built-main.txt"
 target_commit="${GITHUB_SHA}"
+index_root="${1:-manual-wheel-index}"
 
 if [[ ! -x "$rclone" ]]; then
   echo "::error::rclone is not installed at ${rclone}"
@@ -198,10 +199,31 @@ done < <(
   } | sort -r
 )
 
+index_dir="${index_root}/whl/nightly/cuda/x86_64"
+package_dir="${index_dir}/simple/aphrodite-engine"
+legacy_nightly_dir="${index_root}/nightly/aphrodite-engine"
+legacy_simple_dir="${index_root}/simple/aphrodite-engine"
+mkdir -p \
+  "$package_dir" \
+  "$legacy_nightly_dir" \
+  "$legacy_simple_dir"
+
 python3 .github/scripts/generate_nightly_index.py \
   --entry-file "$entries" \
   --commit "$target_commit" \
-  --output manual-wheel-index/index.html
+  --title "Sonar nightly CUDA wheels" \
+  --description "Precompiled CUDA 13.0 wheels for x86_64 from every commit on main." \
+  --install-command \
+  "uv pip install aphrodite-engine --extra-index-url https://sonar.dphn.ai/whl/nightly/cuda/x86_64/simple --index-strategy first-index" \
+  --output "${index_dir}/index.html"
+cp "${index_dir}/index.html" "${package_dir}/index.html"
+cp "${index_dir}/index.html" "${legacy_nightly_dir}/index.html"
+cp "${index_dir}/index.html" "${legacy_simple_dir}/index.html"
+mkdir -p "${index_root}/whl"
+cp "${index_dir}/index.html" "${index_root}/whl/index.html"
+"$rclone" copyto \
+  "${index_dir}/index.html" \
+  "${bucket}/platform-wheels/nightly/cuda/x86_64/index.html"
 
 tip_wheel="$(find_commit_wheel "$target_commit")"
 if [[ -z "$tip_wheel" ]]; then
