@@ -13,6 +13,9 @@ from aphrodite.model_executor.layers.fused_moe.config import (
 from aphrodite.model_executor.layers.fused_moe.topk_weight_and_reduce import (
     TopKWeightAndReduceNoOP,
 )
+from aphrodite.model_executor.layers.quantization.utils.flashinfer_utils import (
+    activation_to_flashinfer_int,
+)
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     QuantKey,
     kNvfp4Dynamic,
@@ -68,7 +71,7 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_no_act_and_mul() -> bool:
-        return False
+        return True
 
     @staticmethod
     def _supports_quant_scheme(
@@ -82,7 +85,7 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
-        return activation == MoEActivation.SILU
+        return activation in (MoEActivation.SILU, MoEActivation.RELU2_NO_MUL)
 
     @staticmethod
     def _supports_parallel_config(
@@ -155,4 +158,5 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
             num_local_experts=self.local_num_experts,
             local_expert_offset=self.local_expert_offset,
             moe_output=output,
+            activation_type=activation_to_flashinfer_int(activation),
         )
