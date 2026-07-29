@@ -203,10 +203,12 @@ index_dir="${index_root}/whl/nightly/cuda/x86_64"
 package_dir="${index_dir}/simple/aphrodite-engine"
 legacy_nightly_dir="${index_root}/nightly/aphrodite-engine"
 legacy_simple_dir="${index_root}/simple/aphrodite-engine"
+nightly_cuda_dir="${index_root}/nightly/cuda/x86_64"
 mkdir -p \
   "$package_dir" \
   "$legacy_nightly_dir" \
-  "$legacy_simple_dir"
+  "$legacy_simple_dir" \
+  "$nightly_cuda_dir"
 
 python3 .github/scripts/generate_nightly_index.py \
   --entry-file "$entries" \
@@ -219,6 +221,7 @@ python3 .github/scripts/generate_nightly_index.py \
 cp "${index_dir}/index.html" "${package_dir}/index.html"
 cp "${index_dir}/index.html" "${legacy_nightly_dir}/index.html"
 cp "${index_dir}/index.html" "${legacy_simple_dir}/index.html"
+cp "${index_dir}/index.html" "${nightly_cuda_dir}/index.html"
 mkdir -p "${index_root}/whl"
 cp "${index_dir}/index.html" "${index_root}/whl/index.html"
 "$rclone" copyto \

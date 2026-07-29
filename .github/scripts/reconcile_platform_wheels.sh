@@ -227,7 +227,8 @@ done < <(
 
 index_dir="${index_root}/whl/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
 package_dir="${index_dir}/simple/aphrodite-engine"
-mkdir -p "$package_dir"
+nightly_dir="${index_root}/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}"
+mkdir -p "$package_dir" "$nightly_dir"
 python3 .github/scripts/generate_nightly_index.py \
   --entry-file "$entries" \
   --commit "$target_commit" \
@@ -237,6 +238,7 @@ python3 .github/scripts/generate_nightly_index.py \
   "uv pip install aphrodite-engine --extra-index-url https://sonar.dphn.ai/whl/nightly/${PLATFORM_BACKEND}/${PLATFORM_ARCHITECTURE}/simple --index-strategy first-index" \
   --output "${index_dir}/index.html"
 cp "${index_dir}/index.html" "${package_dir}/index.html"
+cp "${index_dir}/index.html" "${nightly_dir}/index.html"
 "$rclone" copyto "${index_dir}/index.html" "${remote_root}/index.html"
 
 tip_wheel="$(find_commit_wheel "$target_commit")"

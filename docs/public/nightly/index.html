@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sonar nightly wheels</title>
+    <meta name="description" content="Nightly Sonar wheels by platform and architecture.">
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fff;
+        --text: #1f2328;
+        --muted: #656d76;
+        --line: #d8dee4;
+        --row: #f6f8fa;
+        --accent: #0969da;
+      }
+      * { box-sizing: border-box }
+      body {
+        margin: 0;
+        color: var(--text);
+        background: var(--bg);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        width: min(840px, calc(100% - 32px));
+        margin: auto;
+        padding: 48px 0 72px;
+      }
+      header {
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--line);
+      }
+      .eyebrow {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      h1 {
+        margin: 4px 0 0;
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: -.02em;
+      }
+      p {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+      .directories {
+        overflow: hidden;
+        margin-top: 28px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+      .directory {
+        display: grid;
+        grid-template-columns: minmax(160px, .55fr) minmax(0, 1fr);
+        align-items: center;
+        color: inherit;
+        border-bottom: 1px solid var(--line);
+        text-decoration: none;
+      }
+      .directory:last-child { border-bottom: 0 }
+      .directory:hover { background: var(--row) }
+      .name {
+        padding: 13px 16px;
+        color: var(--accent);
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+      .description {
+        padding: 13px 16px;
+        color: var(--muted);
+        border-left: 1px solid var(--line);
+      }
+      footer {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      @media (max-width: 600px) {
+        main { padding-top: 28px }
+        .directory { grid-template-columns: 1fr }
+        .description {
+          padding-top: 0;
+          border-left: 0;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111315;
+          --text: #e6e8eb;
+          --muted: #9299a1;
+          --line: #30363d;
+          --row: #191c20;
+          --accent: #58a6ff;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="eyebrow">sonar.dphn.ai / nightly</div>
+        <h1>Nightly wheels</h1>
+        <p>Select the platform and architecture for your system.</p>
+      </header>
+      <nav class="directories" aria-label="Nightly wheel directories">
+        <a class="directory" href="/nightly/cuda/x86_64/">
+          <span class="name">cuda/x86_64/</span>
+          <span class="description">CUDA 13.0 for Linux x86_64</span>
+        </a>
+        <a class="directory" href="/nightly/rocm/x86_64/">
+          <span class="name">rocm/x86_64/</span>
+          <span class="description">ROCm 7.2 for Linux x86_64</span>
+        </a>
+        <a class="directory" href="/nightly/cpu/x86_64/">
+          <span class="name">cpu/x86_64/</span>
+          <span class="description">CPU for Linux x86_64</span>
+        </a>
+        <a class="directory" href="/nightly/cpu/aarch64/">
+          <span class="name">cpu/aarch64/</span>
+          <span class="description">CPU for Linux ARM64</span>
+        </a>
+        <a class="directory" href="/nightly/metal/aarch64/">
+          <span class="name">metal/aarch64/</span>
+          <span class="description">Metal for Apple silicon</span>
+        </a>
+      </nav>
+      <footer>Development snapshots from commits on the main branch.</footer>
+    </main>
+  </body>
+</html>

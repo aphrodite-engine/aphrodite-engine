@@ -30,5 +30,8 @@ for channel in release nightly; do
     metal/aarch64; do
     preserve "whl/${channel}/${platform}"
     preserve "whl/${channel}/${platform}/simple/aphrodite-engine"
+    if [[ "$channel" == "nightly" ]]; then
+      preserve "nightly/${platform}"
+    fi
   done
 done
