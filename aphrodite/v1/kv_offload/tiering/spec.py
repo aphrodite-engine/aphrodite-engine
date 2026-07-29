@@ -13,8 +13,13 @@ Configuration via kv_connector_extra_config:
   - blocks_per_chunk: (optional) Chunk size in GPU blocks (default: 1).
     Must be greater than 0. Use this instead of block_size when KV cache
     groups have different block sizes.
-  - eviction_policy: (optional) Primary tier eviction policy: "lru" or
-    "arc" (default: "lru")
+  - eviction_policy: (optional) Primary tier eviction policy: built-in "lru"/
+    "arc", or the name of a policy registered via CachePolicyFactory, or an
+    out-of-tree CachePolicy class name paired with cache_policy_module_path
+    (default: "lru")
+  - cache_policy_module_path: (optional) Python import path to load
+    eviction_policy from when it names an out-of-tree CachePolicy not
+    registered via CachePolicyFactory
   - secondary_tiers: (optional) List of secondary tier configurations
     Each secondary tier config is a dict with:
       - type: (required) Type of secondary tier (e.g., "example", "storage", "network")
@@ -176,7 +181,8 @@ class TieringOffloadingSpec(CPUOffloadingSpec):
             # Create primary tier (CPU-based)
             primary_tier = CPUPrimaryTierOffloadingManager(
                 num_blocks=self.num_blocks,
-                cache_policy=self.eviction_policy,  # type: ignore[arg-type]
+                cache_policy=self.eviction_policy,
+                cache_policy_module_path=self.cache_policy_module_path,
                 enable_events=self.kv_events_config.enable_kv_cache_events,
                 mmap_region=scheduler_mmap,
             )
