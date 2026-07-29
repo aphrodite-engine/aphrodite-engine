@@ -6,6 +6,36 @@ description: Install Sonar on NVIDIA, AMD, Intel, CPU, Apple, and TPU systems.
 Sonar supports Linux and macOS. Use WSL 2 to run Sonar on Windows. Native
 Windows builds are not supported.
 
+## Automatic installer
+
+The installer detects the operating system, CPU architecture, and accelerator.
+It selects a release or nightly wheel for that platform.
+
+```bash
+curl -LsSf https://sonar.dphn.ai/install.sh | sh
+```
+
+The installer can create `~/.sonar_venv` with CPython 3.13. You can also select
+an existing virtual environment. The installer checks its Python version and
+architecture before it changes the environment.
+
+Use explicit options for unattended installation.
+
+```bash
+curl -LsSf https://sonar.dphn.ai/install.sh | sh -s -- \
+  --yes \
+  --channel release \
+  --venv ~/.sonar_venv
+```
+
+Use `--backend` to override hardware detection. Accepted values are `cuda`,
+`rocm`, `xpu`, `metal`, and `cpu`. Run the installer with `--help` to see all
+options.
+
+Linux CPU wheels require the `libnuma` runtime library. The installer supports
+APT, DNF, YUM, Zypper, and Pacman. It asks before it uses `sudo`. If `sudo` is
+not available, it prints the required package-manager command and exits.
+
 ## NVIDIA CUDA
 
 The published wheel supports Linux x86-64, Python 3.10-3.13, and NVIDIA GPUs

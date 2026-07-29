@@ -1,0 +1,320 @@
+name: Build platform wheels
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: platform-wheels-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cuda-wheel:
+    name: CUDA nightly (x86_64)
+    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
+    timeout-minutes: 720
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      RCLONE_CONFIG_B2_TYPE: s3
+      RCLONE_CONFIG_B2_PROVIDER: Other
+      RCLONE_CONFIG_B2_ACCESS_KEY_ID: ${{ secrets.B2_S3_KEY_ID }}
+      RCLONE_CONFIG_B2_SECRET_ACCESS_KEY: ${{ secrets.B2_S3_APPLICATION_KEY }}
+      RCLONE_CONFIG_B2_REGION: ${{ vars.B2_S3_REGION }}
+      RCLONE_CONFIG_B2_ENDPOINT: ${{ vars.B2_S3_ENDPOINT }}
+      RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
+      B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
+      B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+    steps:
+      - name: Check out target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install rclone
+        run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+
+      - name: Validate nightly storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${RCLONE_CONFIG_B2_ACCESS_KEY_ID:?B2_S3_KEY_ID secret is not configured}"
+          : "${RCLONE_CONFIG_B2_SECRET_ACCESS_KEY:?B2_S3_APPLICATION_KEY secret is not configured}"
+          : "${RCLONE_CONFIG_B2_REGION:?B2_S3_REGION variable is not configured}"
+          : "${RCLONE_CONFIG_B2_ENDPOINT:?B2_S3_ENDPOINT variable is not configured}"
+          : "${B2_S3_BUCKET:?B2_S3_BUCKET variable is not configured}"
+          : "${B2_PUBLIC_BASE_URL:?B2_PUBLIC_BASE_URL variable is not configured}"
+
+          test_object="_ci/preflight-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          remote="b2:${B2_S3_BUCKET}/${test_object}"
+          trap '"$RUNNER_TEMP/rclone-bin/rclone" deletefile "$remote" >/dev/null 2>&1 || true' EXIT
+
+          printf 'nightly storage preflight\n' |
+            "$RUNNER_TEMP/rclone-bin/rclone" rcat "$remote"
+          "$RUNNER_TEMP/rclone-bin/rclone" cat "$remote" >/dev/null
+          public_test_url="${B2_PUBLIC_BASE_URL%/}/${test_object}"
+          test "$(curl --fail --silent --show-error --location \
+            --retry 10 \
+            --retry-all-errors \
+            --retry-delay 3 \
+            "$public_test_url")" = "nightly storage preflight"
+
+      - name: Build and publish missing CUDA wheels
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          MAX_JOBS: "64"
+          NVCC_THREADS: "4"
+          CUDA_VERSION: "13.0.2"
+          TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
+        run: ./.github/scripts/build_nightly_commits.sh page-index
+
+      - name: Upload CUDA index
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-index-cuda-x86_64
+          path: page-index
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Reclaim old CUDA build snapshots
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f wheels/main/*.whl
+          docker buildx prune --force \
+            --filter type=regular \
+            --max-used-space 25gb
+
+  cpu-wheel:
+    name: CPU nightly (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 720
+    env:
+      RCLONE_CONFIG_B2_TYPE: s3
+      RCLONE_CONFIG_B2_PROVIDER: Other
+      RCLONE_CONFIG_B2_ACCESS_KEY_ID: ${{ secrets.B2_S3_KEY_ID }}
+      RCLONE_CONFIG_B2_SECRET_ACCESS_KEY: ${{ secrets.B2_S3_APPLICATION_KEY }}
+      RCLONE_CONFIG_B2_REGION: ${{ vars.B2_S3_REGION }}
+      RCLONE_CONFIG_B2_ENDPOINT: ${{ vars.B2_S3_ENDPOINT }}
+      RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
+      B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
+      B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Check out target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Configure Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install rclone
+        run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+
+      - name: Build and publish missing CPU wheels
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          PYTHON_VERSION: "3.13"
+          CACHE_SCOPE: cpu-${{ matrix.architecture }}
+          PLATFORM_BACKEND: cpu
+          PLATFORM_ARCHITECTURE: ${{ matrix.architecture }}
+          PLATFORM_VERSION_LOCAL: cpu
+          PLATFORM_BUILD_SCRIPT: .github/scripts/build_cpu_wheel.sh
+        run: |
+          .github/scripts/reconcile_platform_wheels.sh \
+            "dist/cpu-${{ matrix.architecture }}" page-index
+
+      - name: Upload CPU index
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-index-cpu-${{ matrix.architecture }}
+          path: page-index
+          if-no-files-found: error
+          retention-days: 1
+
+  metal-wheel:
+    name: Metal nightly (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 720
+    env:
+      RCLONE_CONFIG_B2_TYPE: s3
+      RCLONE_CONFIG_B2_PROVIDER: Other
+      RCLONE_CONFIG_B2_ACCESS_KEY_ID: ${{ secrets.B2_S3_KEY_ID }}
+      RCLONE_CONFIG_B2_SECRET_ACCESS_KEY: ${{ secrets.B2_S3_APPLICATION_KEY }}
+      RCLONE_CONFIG_B2_REGION: ${{ vars.B2_S3_REGION }}
+      RCLONE_CONFIG_B2_ENDPOINT: ${{ vars.B2_S3_ENDPOINT }}
+      RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
+      B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
+      B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+      UV_CACHE_DIR: ${{ github.workspace }}/.cache/uv
+    steps:
+      - name: Check out target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: brew install protobuf
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Restore Metal build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/uv
+            .deps
+            build
+            ~/.cargo/git
+            ~/.cargo/registry
+            rust/target
+          key: metal-build-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: metal-build-${{ runner.os }}-
+
+      - name: Install rclone
+        run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+
+      - name: Build and publish missing Metal wheels
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+          PLATFORM_BACKEND: metal
+          PLATFORM_ARCHITECTURE: aarch64
+          PLATFORM_VERSION_LOCAL: metal
+          PLATFORM_BUILD_SCRIPT: .github/scripts/build_metal_wheel.sh
+        run: |
+          .github/scripts/reconcile_platform_wheels.sh \
+            dist/metal-aarch64 page-index
+
+      - name: Upload Metal index
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-index-metal-aarch64
+          path: page-index
+          if-no-files-found: error
+          retention-days: 1
+
+  rocm-wheel:
+    name: ROCm nightly (x86_64)
+    needs: cuda-wheel
+    if: ${{ always() }}
+    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
+    timeout-minutes: 720
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      MAX_JOBS: "64"
+      PYTORCH_ROCM_ARCH: "gfx90a;gfx942;gfx950"
+      RCLONE_CONFIG_B2_TYPE: s3
+      RCLONE_CONFIG_B2_PROVIDER: Other
+      RCLONE_CONFIG_B2_ACCESS_KEY_ID: ${{ secrets.B2_S3_KEY_ID }}
+      RCLONE_CONFIG_B2_SECRET_ACCESS_KEY: ${{ secrets.B2_S3_APPLICATION_KEY }}
+      RCLONE_CONFIG_B2_REGION: ${{ vars.B2_S3_REGION }}
+      RCLONE_CONFIG_B2_ENDPOINT: ${{ vars.B2_S3_ENDPOINT }}
+      RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
+      B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
+      B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+    steps:
+      - name: Check out target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Start RAM-backed ROCm builder
+        run: .github/scripts/ensure_rocm_builder.sh
+
+      - name: Install rclone
+        run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+
+      - name: Build and publish missing ROCm wheels
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PLATFORM_BACKEND: rocm
+          PLATFORM_ARCHITECTURE: x86_64
+          PLATFORM_VERSION_LOCAL: rocm723
+          PLATFORM_BUILD_SCRIPT: .github/scripts/build_rocm_wheel.sh
+        run: |
+          .github/scripts/reconcile_platform_wheels.sh \
+            dist/rocm-x86_64 page-index
+
+      - name: Upload ROCm index
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-index-rocm-x86_64
+          path: page-index
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Limit ROCm build cache
+        if: ${{ always() }}
+        run: docker buildx prune --force --max-used-space 300gb
+
+  build-pages:
+    name: Build documentation with nightly indexes
+    needs: [cuda-wheel, cpu-wheel, metal-wheel, rocm-wheel]
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Preserve existing wheel indexes
+        run: ./.github/scripts/preserve_wheel_indexes.sh docs/public
+
+      - name: Download new platform indexes
+        uses: actions/download-artifact@v4
+        with:
+          pattern: platform-index-*
+          path: docs/public
+          merge-multiple: true
+
+      - name: Build and upload site
+        uses: withastro/action@v3
+        with:
+          path: ./docs
+          node-version: 22
+          package-manager: pnpm@9.15.8
+
+  deploy:
+    name: Deploy documentation with nightly indexes
+    needs: build-pages
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

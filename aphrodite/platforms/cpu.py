@@ -416,7 +416,7 @@ class CpuPlatform(Platform):
             # a solution.
             ignored_msg = "dynamic module does not define module export function"
             if torch.cpu._is_avx512_supported():
-                if torch.cpu._is_avx512_bf16_supported():
+                if torch.cpu._is_avx512_bf16_supported() and torch.cpu._is_amx_tile_supported():
                     try:
                         import aphrodite._C  # noqa: F401
                     except ImportError as e:

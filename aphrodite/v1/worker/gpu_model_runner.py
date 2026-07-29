@@ -6782,7 +6782,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
             corresponding memory buffer for KV cache.
         """
         kv_caches: dict[str, torch.Tensor] = {}
-        has_attn = False
+        has_attn, has_mamba = False, False
 
         # Map layer names to (offset, block_stride) within the packed
         # backing tensor so we can create strided views per layer.
@@ -6844,6 +6844,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
                     )
 
                 elif isinstance(kv_cache_spec, MambaSpec):
+                    has_mamba = True
                     raw_tensor = kv_cache_raw_tensors[layer_name]
                     page_size_bytes = kv_cache_spec.page_size_bytes
                     # Hold a single contiguous [num_blocks, 1, 1, page_size_bytes]
@@ -6861,7 +6862,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         # attention/mamba models, and by encoder-decoder models whose shared
         # decoder/cross-attention allocation mixes K/V-first and blocks-first
         # backends (see _has_mixed_attention_kv_layout).
-        if has_attn and self._has_mixed_attention_kv_layout(kernel_block_sizes):
+        if has_attn and (has_mamba or self._has_mixed_attention_kv_layout(kernel_block_sizes)):
             self._update_hybrid_attention_mamba_layout(kv_caches, kernel_block_sizes)
 
         return kv_caches

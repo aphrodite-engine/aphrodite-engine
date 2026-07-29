@@ -16,6 +16,16 @@ def main() -> None:
     )
     parser.add_argument("--commit", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--title", default="Sonar nightly wheels")
+    parser.add_argument(
+        "--description",
+        default="Precompiled CUDA wheels from every commit on main. "
+        "These are development snapshots and may change without notice.",
+    )
+    parser.add_argument(
+        "--install-command",
+        default="uv pip install aphrodite-engine --index-url https://sonar.dphn.ai/nightly",
+    )
     args = parser.parse_args()
 
     cards = []
@@ -60,8 +70,8 @@ def main() -> None:
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sonar nightly wheels</title>
-    <meta name="description" content="Precompiled nightly wheels for Sonar">
+    <title>{html.escape(args.title)}</title>
+    <meta name="description" content="{html.escape(args.description, quote=True)}">
     <style>
       :root {{
         color-scheme: light dark;
@@ -155,11 +165,10 @@ def main() -> None:
     <main>
       <header>
         <div class="eyebrow">sonar.dphn.ai / whl</div>
-        <h1>Sonar nightly wheels</h1>
-        <p class="lede">Precompiled CUDA wheels from every commit on <code>main</code>.
-          These are development snapshots and may change without notice.</p>
+        <h1>{html.escape(args.title)}</h1>
+        <p class="lede">{html.escape(args.description)}</p>
         <div class="install">
-          <code id="command">uv pip install aphrodite-engine --index-url https://sonar.dphn.ai/nightly</code>
+          <code id="command">{html.escape(args.install_command)}</code>
           <button id="copy" type="button">Copy</button>
         </div>
       </header>

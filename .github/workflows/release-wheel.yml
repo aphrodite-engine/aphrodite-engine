@@ -8,13 +8,15 @@ on:
 permissions:
   contents: write
   id-token: write
+  pages: write
 
 concurrency:
   group: wheel-main
   cancel-in-progress: false
 
 jobs:
-  release:
+  cuda-wheel:
+    name: CUDA wheel (x86_64)
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
@@ -39,22 +41,8 @@ jobs:
           set -euo pipefail
           wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
           test -n "$wheel"
-          python3 - "$wheel" "${GITHUB_REF_NAME#v}" <<'PY'
-          import sys
-          import zipfile
-          from email.parser import Parser
-          from pathlib import Path
-
-          wheel = Path(sys.argv[1])
-          expected = sys.argv[2]
-          with zipfile.ZipFile(wheel) as archive:
-              metadata_path = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
-              metadata = Parser().parsestr(archive.read(metadata_path).decode())
-          actual = metadata["Version"]
-          if actual != expected:
-              raise SystemExit(f"Wheel version {actual!r} does not match tag version {expected!r}")
-          print(f"Verified {wheel.name}: version {actual}")
-          PY
+          python3 .github/scripts/verify_wheel_version.py \
+            "$wheel" "${GITHUB_REF_NAME#v}"
 
       - name: Generate release notes
         run: |
@@ -87,3 +75,267 @@ jobs:
           docker buildx prune --force \
             --filter type=regular \
             --max-used-space 25gb
+
+  cpu-wheel:
+    name: CPU wheel (${{ matrix.architecture }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Configure Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build CPU wheel
+        env:
+          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}+cpu
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          PYTHON_VERSION: "3.13"
+          CACHE_SCOPE: cpu-${{ matrix.architecture }}
+        run: |
+          APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
+            .github/scripts/build_cpu_wheel.sh \
+            "dist/cpu-${{ matrix.architecture }}"
+
+      - name: Verify CPU wheel
+        run: |
+          wheel="$(find "dist/cpu-${{ matrix.architecture }}" \
+            -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          python3 .github/scripts/verify_wheel_version.py \
+            "$wheel" "${GITHUB_REF_NAME#v}+cpu"
+
+      - name: Upload CPU wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu-${{ matrix.architecture }}
+          path: dist/cpu-${{ matrix.architecture }}/*.whl
+          if-no-files-found: error
+
+  metal-wheel:
+    name: Metal wheel (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: brew install protobuf
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Restore Cargo build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            rust/target
+          key: metal-cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: metal-cargo-${{ runner.os }}-
+
+      - name: Build Metal wheel
+        env:
+          APHRODITE_TARGET_DEVICE: metal
+          APHRODITE_REQUIRE_RUST_FRONTEND: "1"
+          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}+metal
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
+            uv build --wheel --out-dir dist/metal-aarch64
+
+      - name: Verify and install Metal wheel
+        run: |
+          wheel="$(find dist/metal-aarch64 -maxdepth 1 \
+            -type f -name '*.whl' -print -quit)"
+          python3 .github/scripts/verify_wheel_version.py \
+            "$wheel" "${GITHUB_REF_NAME#v}+metal"
+          uv venv --python 3.13 .wheel-test
+          uv pip install --python .wheel-test/bin/python "$wheel"
+          .wheel-test/bin/python -c \
+            "import aphrodite; from aphrodite.metal.metal import get_ops; get_ops()"
+          test -x .wheel-test/lib/python3.13/site-packages/aphrodite/aphrodite-rs
+
+      - name: Upload Metal wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-aarch64
+          path: dist/metal-aarch64/*.whl
+          if-no-files-found: error
+
+  rocm-wheel:
+    name: ROCm wheel (x86_64)
+    needs: cuda-wheel
+    if: ${{ always() }}
+    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
+    timeout-minutes: 720
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      MAX_JOBS: "64"
+      PYTORCH_ROCM_ARCH: "gfx90a;gfx942;gfx950"
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Start RAM-backed ROCm builder
+        run: .github/scripts/ensure_rocm_builder.sh
+
+      - name: Build ROCm wheel
+        env:
+          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}+rocm723
+        run: |
+          APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
+            .github/scripts/build_rocm_wheel.sh dist/rocm-x86_64
+
+      - name: Verify ROCm wheel
+        run: |
+          wheel="$(find dist/rocm-x86_64 -maxdepth 1 \
+            -type f -name '*.whl' -print -quit)"
+          python3 .github/scripts/verify_wheel_version.py \
+            "$wheel" "${GITHUB_REF_NAME#v}+rocm723"
+
+      - name: Upload ROCm wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocm-x86_64
+          path: dist/rocm-x86_64/*.whl
+          if-no-files-found: error
+
+      - name: Limit ROCm build cache
+        if: ${{ always() }}
+        run: docker buildx prune --force --max-used-space 300gb
+
+  publish-platform-wheels:
+    name: Publish platform wheels
+    needs: [cuda-wheel, cpu-wheel, metal-wheel, rocm-wheel]
+    runs-on: ubuntu-24.04
+    env:
+      RCLONE_CONFIG_B2_TYPE: s3
+      RCLONE_CONFIG_B2_PROVIDER: Other
+      RCLONE_CONFIG_B2_ACCESS_KEY_ID: ${{ secrets.B2_S3_KEY_ID }}
+      RCLONE_CONFIG_B2_SECRET_ACCESS_KEY: ${{ secrets.B2_S3_APPLICATION_KEY }}
+      RCLONE_CONFIG_B2_REGION: ${{ vars.B2_S3_REGION }}
+      RCLONE_CONFIG_B2_ENDPOINT: ${{ vars.B2_S3_ENDPOINT }}
+      RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
+      B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
+      B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Download CPU wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "cpu-*"
+          path: platform-wheels
+
+      - name: Download Metal wheel
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "metal-*"
+          path: platform-wheels
+
+      - name: Download ROCm wheel
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "rocm-*"
+          path: platform-wheels
+
+      - name: Install rclone
+        run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+
+      - name: Upload wheels and generate indexes
+        env:
+          RCLONE_BIN: ${{ runner.temp }}/rclone-bin/rclone
+        run: |
+          set -euo pipefail
+          .github/scripts/publish_platform_wheels.sh \
+            platform-wheels/cpu-x86_64 release cpu x86_64 page-index
+          .github/scripts/publish_platform_wheels.sh \
+            platform-wheels/cpu-aarch64 release cpu aarch64 page-index
+          .github/scripts/publish_platform_wheels.sh \
+            platform-wheels/metal-aarch64 release metal aarch64 page-index
+          .github/scripts/publish_platform_wheels.sh \
+            platform-wheels/rocm-x86_64 release rocm x86_64 page-index
+
+      - name: Attach platform wheels to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" platform-wheels/*/*.whl --clobber
+
+      - name: Upload platform indexes
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-wheel-indexes
+          path: page-index
+          if-no-files-found: error
+          retention-days: 1
+
+  build-pages:
+    name: Build documentation with release indexes
+    needs: publish-platform-wheels
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Preserve existing wheel indexes
+        run: ./.github/scripts/preserve_wheel_indexes.sh docs/public
+
+      - name: Download new platform indexes
+        uses: actions/download-artifact@v4
+        with:
+          name: platform-wheel-indexes
+          path: docs/public
+
+      - name: Build and upload site
+        uses: withastro/action@v3
+        with:
+          path: ./docs
+          node-version: 22
+          package-manager: pnpm@9.15.8
+
+  deploy-pages:
+    name: Deploy documentation with release indexes
+    needs: build-pages
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
