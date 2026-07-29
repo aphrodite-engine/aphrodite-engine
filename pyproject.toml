@@ -137,9 +137,11 @@ extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*", "tests/tokenizer
     "examples/pooling/token_embed/*", "tests/models/language/pooling/*",
     "aphrodite/third_party/*", "aphrodite/entrypoints/serve/instrumentator/static/*", "tests/entrypoints/openai/speech_to_text/test_transcription_validation.py",
     "tests/entrypoints/speech_to_text/transcription/test_transcription_validation.py",
-    "rust/src/chat/src/renderer/deepseek_v32/fixtures/*",
+    "rust/src/chat/src/renderer/deepseek_v32/fixtures/*", "rust/src/parser/**",
     "docs/governance/process.md", "docs/assets/contributing/aphrodite_bench_serve_timeline.html",
-    "tests/v1/engine/test_fast_incdec_prefix_err.py", ".git/*"]
+    "tests/v1/engine/test_fast_incdec_prefix_err.py", ".git/*",
+    "rust/src/text/src/output/decoded.rs",
+    "rust/src/tokenizer/src/incremental.rs"]
 ignore-hidden = false
 
 [tool.typos.default]
