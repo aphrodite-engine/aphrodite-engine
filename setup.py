@@ -659,6 +659,8 @@ if _is_cuda():
         # not targeting a hopper system
         ext_modules.append(CMakeExtension(name="aphrodite._flashmla_C", optional=True))
         ext_modules.append(CMakeExtension(name="aphrodite._flashmla_extension_C", optional=True))
+    if CUDA_HOME and get_nvcc_cuda_version() >= Version("12.0"):
+        ext_modules.append(CMakeExtension(name="aphrodite._flashkda_C", optional=True))
     if CUDA_HOME and get_nvcc_cuda_version() >= Version("12.3"):
         # DeepGEMM requires CUDA 12.3+ (SM90/SM100)
         # Optional since it won't build on unsupported architectures
