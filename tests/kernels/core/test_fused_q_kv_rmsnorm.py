@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from aphrodite.models.deepseek_v4.common.ops import fused_q_kv_rmsnorm
+from aphrodite.models.common.ops import fused_q_kv_rmsnorm
 from aphrodite.platforms import current_platform
 
 pytestmark = pytest.mark.skipif(
