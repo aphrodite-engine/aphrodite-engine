@@ -113,9 +113,41 @@ jobs:
           path: dist/metal-aarch64/*.whl
           if-no-files-found: error
 
+  rocm-wheel:
+    name: ROCm nightly (x86_64)
+    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
+    timeout-minutes: 720
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      MAX_JOBS: "64"
+      PYTORCH_ROCM_ARCH: "gfx90a;gfx942;gfx950"
+    steps:
+      - name: Check out target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Start RAM-backed ROCm builder
+        run: .github/scripts/ensure_rocm_builder.sh
+
+      - name: Build ROCm wheel
+        run: .github/scripts/build_rocm_wheel.sh dist/rocm-x86_64
+
+      - name: Upload ROCm wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocm-x86_64
+          path: dist/rocm-x86_64/*.whl
+          if-no-files-found: error
+
+      - name: Limit ROCm build cache
+        if: ${{ always() }}
+        run: docker buildx prune --force --max-used-space 300gb
+
   publish:
     name: Publish platform nightlies
-    needs: [cpu-wheel, metal-wheel]
+    needs: [cpu-wheel, metal-wheel, rocm-wheel]
     runs-on: ubuntu-24.04
     env:
       RCLONE_CONFIG_B2_TYPE: s3
@@ -145,6 +177,12 @@ jobs:
           pattern: "metal-*"
           path: platform-wheels
 
+      - name: Download ROCm wheel
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "rocm-*"
+          path: platform-wheels
+
       - name: Install rclone
         run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
 
@@ -159,6 +197,8 @@ jobs:
             platform-wheels/cpu-aarch64 nightly cpu aarch64 page-index
           .github/scripts/publish_platform_wheels.sh \
             platform-wheels/metal-aarch64 nightly metal aarch64 page-index
+          .github/scripts/publish_platform_wheels.sh \
+            platform-wheels/rocm-x86_64 nightly rocm x86_64 page-index
 
       - name: Upload platform indexes
         uses: actions/upload-artifact@v4
