@@ -80,9 +80,7 @@ def _select_routed_schedule(
     """Match upstream MNNVL's one-cluster-per-token occupancy policy."""
 
     _, cluster_ctas, threads, _ = _mapping(tp_size, latent_dim, hidden_dim)
-    sm_count = torch.cuda.get_device_properties(
-        torch.accelerator.current_device_index()
-    ).multi_processor_count
+    sm_count = torch.cuda.get_device_properties(torch.accelerator.current_device_index()).multi_processor_count
     while max_m * cluster_ctas > sm_count and cluster_ctas > 1 and threads <= 512:
         cluster_ctas //= 2
         threads *= 2
@@ -128,9 +126,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
             self.cluster_ctas = mapped_cluster
             self.threads = mapped_threads
         else:
-            self.threads, self.cluster_ctas = _select_routed_schedule(
-                tp_size, latent_dim, hidden_dim, max_m
-            )
+            self.threads, self.cluster_ctas = _select_routed_schedule(tp_size, latent_dim, hidden_dim, max_m)
         # Diagnostic specialization: a one-role grid executes only the routed
         # AllReduce/RMSNorm path.  Keep this compile-time so the production
         # fused path is unchanged when include_reduce_scatter=True.
@@ -147,9 +143,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
         # token.  Keep that exact ownership in the routed-only diagnostic;
         # reusing a cluster for multiple token waves allows the Lamport
         # generation metadata to change between waves.
-        self.token_ctas = (
-            min(max_m, max_token_ctas) if include_reduce_scatter else max_m
-        )
+        self.token_ctas = min(max_m, max_token_ctas) if include_reduce_scatter else max_m
         self.fp32_internal = fp32_internal
         self.include_reduce_scatter = include_reduce_scatter
         self.include_routed = include_routed
@@ -273,23 +267,13 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
         if role == 0:
             # ---------------- routed AllReduce + RMSNorm ----------------
             packed_idx = cluster_rank * self.threads + tidx
-            element_offset = (
-                Int64(token) * self.latent_dim + Int64(packed_idx) * VEC_BF16
-            )
+            element_offset = Int64(token) * self.latent_dim + Int64(packed_idx) * VEC_BF16
             current_index = cute.arch.load((latent_flags.iterator + 0).llvm_ptr, Uint32)
             dirty_index = cute.arch.load((latent_flags.iterator + 1).llvm_ptr, Uint32)
-            bytes_per_buffer = cute.arch.load(
-                (latent_flags.iterator + 2).llvm_ptr, Uint32
-            )
-            dirty_num_stages = cute.arch.load(
-                (latent_flags.iterator + 3).llvm_ptr, Uint32
-            )
-            bytes_to_clear = cute.arch.load(
-                (latent_flags.iterator + 4).llvm_ptr, Uint32
-            )
-            current_elements = Int64(current_index) * (
-                Int64(bytes_per_buffer) // Int64(2)
-            )
+            bytes_per_buffer = cute.arch.load((latent_flags.iterator + 2).llvm_ptr, Uint32)
+            dirty_num_stages = cute.arch.load((latent_flags.iterator + 3).llvm_ptr, Uint32)
+            bytes_to_clear = cute.arch.load((latent_flags.iterator + 4).llvm_ptr, Uint32)
+            current_elements = Int64(current_index) * (Int64(bytes_per_buffer) // Int64(2))
             dirty_elements = Int64(dirty_index) * (Int64(bytes_per_buffer) // Int64(2))
 
             local_ptr = cute.make_ptr(
@@ -298,16 +282,10 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 cute.AddressSpace.gmem,
                 assumed_align=16,
             )
-            local_packed = sanitize_negative_zero(
-                load_global_u32x4(local_ptr, volatile=False)
-            )
+            local_packed = sanitize_negative_zero(load_global_u32x4(local_ptr, volatile=False))
             multicast_offset = (
                 Int64(current_index) * Int64(bytes_per_buffer)
-                + (
-                    (Int64(token) * self.tp_size + self.rank) * self.latent_dim
-                    + Int64(packed_idx) * VEC_BF16
-                )
-                * 2
+                + ((Int64(token) * self.tp_size + self.rank) * self.latent_dim + Int64(packed_idx) * VEC_BF16) * 2
             )
             store_global_u32x4(
                 latent_multicast_ptr + multicast_offset,
@@ -321,9 +299,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 if tidx == 0:
                     red_async_release_gpu_add_u32(latent_flags.iterator + 8, Uint32(1))
 
-            global_tid = (
-                Int64(token) * self.cluster_ctas + Int64(cta_y)
-            ) * self.threads + Int64(tidx)
+            global_tid = (Int64(token) * self.cluster_ctas + Int64(cta_y)) * self.threads + Int64(tidx)
             total_threads = Int64(m) * self.cluster_ctas * self.threads
             clear_fragments = (Int64(bytes_to_clear) + PACKED_BYTES - 1) // PACKED_BYTES
             clear_idx = global_tid
@@ -331,20 +307,14 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 while clear_idx < clear_fragments:
                     clear_ptr = cute.make_ptr(
                         BFloat16,
-                        (
-                            routed_workspace.iterator
-                            + dirty_elements
-                            + clear_idx * VEC_BF16
-                        ).llvm_ptr,
+                        (routed_workspace.iterator + dirty_elements + clear_idx * VEC_BF16).llvm_ptr,
                         cute.AddressSpace.gmem,
                         assumed_align=16,
                     )
                     store_lamport_sentinel_128(clear_ptr)
                     clear_idx = clear_idx + total_threads
 
-            rank_words = cute.make_rmem_tensor(
-                cute.make_layout((self.tp_size, 4), stride=(4, 1)), Uint32
-            )
+            rank_words = cute.make_rmem_tensor(cute.make_layout((self.tp_size, 4), stride=(4, 1)), Uint32)
             for word in cutlass.range_constexpr(4):
                 rank_words[self.rank, word] = local_packed[word]
             valid = False
@@ -353,9 +323,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 for source_rank in cutlass.range_constexpr(self.tp_size):
                     if cutlass.const_expr(source_rank != self.rank):
                         remote_element = current_elements + (
-                            (Int64(token) * self.tp_size + source_rank)
-                            * self.latent_dim
-                            + Int64(packed_idx) * VEC_BF16
+                            (Int64(token) * self.tp_size + source_rank) * self.latent_dim + Int64(packed_idx) * VEC_BF16
                         )
                         remote_ptr = cute.make_ptr(
                             BFloat16,
@@ -372,9 +340,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
             for element in cutlass.range_constexpr(VEC_BF16):
                 accum[element] = Float32(0.0)
             for source_rank in cutlass.range_constexpr(self.tp_size):
-                values = packed_u32x4_to_bf16x8(
-                    rank_words[source_rank, None].load()
-                ).to(Float32)
+                values = packed_u32x4_to_bf16x8(rank_words[source_rank, None].load()).to(Float32)
                 for element in cutlass.range_constexpr(VEC_BF16):
                     accum[element] = accum[element] + values[element]
 
@@ -398,9 +364,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 reduction_profile=0,
             )
             smem = cutlass.utils.SmemAllocator()
-            warp_sums = smem.allocate_tensor(
-                Float32, cute.make_layout((self.warps,)), byte_alignment=4
-            )
+            warp_sums = smem.allocate_tensor(Float32, cute.make_layout((self.warps,)), byte_alignment=4)
             cluster_sums = smem.allocate_tensor(
                 Float32,
                 cute.make_layout((self.cluster_ctas,)),
@@ -424,18 +388,14 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
             full_sum = Float32(0.0)
             for peer in cutlass.range_constexpr(self.cluster_ctas):
                 full_sum = full_sum + cluster_sums[peer]
-            inv_rms = cute.math.rsqrt(
-                full_sum / Float32(self.latent_dim) + epsilon, fastmath=True
-            )
+            inv_rms = cute.math.rsqrt(full_sum / Float32(self.latent_dim) + epsilon, fastmath=True)
             gamma_ptr = cute.make_ptr(
                 BFloat16,
                 (gamma.iterator + Int64(packed_idx) * VEC_BF16).llvm_ptr,
                 cute.AddressSpace.gmem,
                 assumed_align=16,
             )
-            gamma_values = packed_u32x4_to_bf16x8(
-                load_global_u32x4(gamma_ptr, volatile=False)
-            )
+            gamma_values = packed_u32x4_to_bf16x8(load_global_u32x4(gamma_ptr, volatile=False))
             result = (norm_input * inv_rms * gamma_values.to(Float32)).to(BFloat16)
             store_global_u32x4(
                 Int64((latent_output.iterator + element_offset).toint()),
@@ -446,12 +406,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
             # The x=0 CTA rotates only after reaching its final token wave.
             # Waiting for all M arrivals then guarantees every token-wave CTA
             # loaded the current generation before the metadata is advanced.
-            if (
-                token_cta == 0
-                and token + self.token_ctas >= m
-                and cta_y == 0
-                and tidx == 0
-            ):
+            if token_cta == 0 and token + self.token_ctas >= m and cta_y == 0 and tidx == 0:
                 access_counter = latent_flags.iterator + 8
                 arrived = load_volatile_u32(access_counter)
                 while arrived < Uint32(m):
@@ -479,24 +434,14 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
             destination = shared_group * self.cluster_ctas + cluster_rank
             current_index = cute.arch.load((shared_flags.iterator + 0).llvm_ptr, Uint32)
             dirty_index = cute.arch.load((shared_flags.iterator + 1).llvm_ptr, Uint32)
-            bytes_per_buffer = cute.arch.load(
-                (shared_flags.iterator + 2).llvm_ptr, Uint32
-            )
-            dirty_num_stages = cute.arch.load(
-                (shared_flags.iterator + 3).llvm_ptr, Uint32
-            )
-            bytes_to_clear = cute.arch.load(
-                (shared_flags.iterator + 4).llvm_ptr, Uint32
-            )
-            current_elements = Int64(current_index) * (
-                Int64(bytes_per_buffer) // Int64(2)
-            )
+            bytes_per_buffer = cute.arch.load((shared_flags.iterator + 2).llvm_ptr, Uint32)
+            dirty_num_stages = cute.arch.load((shared_flags.iterator + 3).llvm_ptr, Uint32)
+            bytes_to_clear = cute.arch.load((shared_flags.iterator + 4).llvm_ptr, Uint32)
+            current_elements = Int64(current_index) * (Int64(bytes_per_buffer) // Int64(2))
             dirty_elements = Int64(dirty_index) * (Int64(bytes_per_buffer) // Int64(2))
 
             source_element = (
-                Int64(token) * self.hidden_dim
-                + Int64(destination) * self.shard_dim
-                + Int64(tidx) * VEC_BF16
+                Int64(token) * self.hidden_dim + Int64(destination) * self.shard_dim + Int64(tidx) * VEC_BF16
             )
             source_ptr = cute.make_ptr(
                 BFloat16,
@@ -504,16 +449,13 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 cute.AddressSpace.gmem,
                 assumed_align=16,
             )
-            local_packed = sanitize_negative_zero(
-                load_global_u32x4(source_ptr, volatile=False)
-            )
+            local_packed = sanitize_negative_zero(load_global_u32x4(source_ptr, volatile=False))
             peer_base = cute.arch.load(
                 (shared_peer_ptrs.iterator + destination).llvm_ptr,
                 Int64,
             )
             destination_element = current_elements + (
-                (Int64(token) * self.tp_size + self.rank) * self.shard_dim
-                + Int64(tidx) * VEC_BF16
+                (Int64(token) * self.tp_size + self.rank) * self.shard_dim + Int64(tidx) * VEC_BF16
             )
             store_global_u32x4(
                 peer_base + destination_element * 2,
@@ -528,9 +470,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 if tidx == 0:
                     red_async_release_gpu_add_u32(shared_flags.iterator + 8, Uint32(1))
 
-            global_tid = (
-                Int64(token) * self.tp_size + Int64(destination)
-            ) * self.threads + Int64(tidx)
+            global_tid = (Int64(token) * self.tp_size + Int64(destination)) * self.threads + Int64(tidx)
             total_threads = Int64(m) * self.tp_size * self.threads
             clear_fragments = (Int64(bytes_to_clear) + PACKED_BYTES - 1) // PACKED_BYTES
             clear_idx = global_tid
@@ -538,11 +478,7 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 while clear_idx < clear_fragments:
                     clear_ptr = cute.make_ptr(
                         BFloat16,
-                        (
-                            shared_workspace.iterator
-                            + dirty_elements
-                            + clear_idx * VEC_BF16
-                        ).llvm_ptr,
+                        (shared_workspace.iterator + dirty_elements + clear_idx * VEC_BF16).llvm_ptr,
                         cute.AddressSpace.gmem,
                         assumed_align=16,
                     )
@@ -550,16 +486,13 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                     clear_idx = clear_idx + total_threads
 
             if destination == self.rank:
-                rank_words = cute.make_rmem_tensor(
-                    cute.make_layout((self.tp_size, 4), stride=(4, 1)), Uint32
-                )
+                rank_words = cute.make_rmem_tensor(cute.make_layout((self.tp_size, 4), stride=(4, 1)), Uint32)
                 valid = False
                 while not valid:
                     valid = True
                     for source_rank in cutlass.range_constexpr(self.tp_size):
                         remote_element = current_elements + (
-                            (Int64(token) * self.tp_size + source_rank) * self.shard_dim
-                            + Int64(tidx) * VEC_BF16
+                            (Int64(token) * self.tp_size + source_rank) * self.shard_dim + Int64(tidx) * VEC_BF16
                         )
                         remote_ptr = cute.make_ptr(
                             BFloat16,
@@ -576,17 +509,11 @@ class AllReduceRMSNormWithReduceScatterEarlyExit:
                 for element in cutlass.range_constexpr(VEC_BF16):
                     accum[element] = Float32(0.0)
                 for source_rank in cutlass.range_constexpr(self.tp_size):
-                    values = packed_u32x4_to_bf16x8(
-                        rank_words[source_rank, None].load()
-                    ).to(Float32)
+                    values = packed_u32x4_to_bf16x8(rank_words[source_rank, None].load()).to(Float32)
                     for element in cutlass.range_constexpr(VEC_BF16):
                         accum[element] = accum[element] + values[element]
                 result = accum.load().to(BFloat16)
-                output_element = (
-                    Int64(token) * self.hidden_dim
-                    + self.rank * self.shard_dim
-                    + Int64(tidx) * VEC_BF16
-                )
+                output_element = Int64(token) * self.hidden_dim + self.rank * self.shard_dim + Int64(tidx) * VEC_BF16
                 store_global_u32x4(
                     Int64((shared_output.iterator + output_element).toint()),
                     bf16x8_to_packed_u32x4(result),
@@ -877,9 +804,7 @@ class CollectiveKernel:
         )
         self._routed_symm_mem = symm_mem.rendezvous(self._routed_workspace, group)
         self._routed_workspace.fill_(-0.0)
-        actual_bytes_per_buffer = (
-            self._routed_symm_mem.buffer_size // NUM_LAMPORT_BUFFERS // 16 * 16
-        )
+        actual_bytes_per_buffer = self._routed_symm_mem.buffer_size // NUM_LAMPORT_BUFFERS // 16 * 16
         if actual_bytes_per_buffer < bytes_per_routed_buffer:
             raise RuntimeError("routed symmetric workspace is too small")
         self._routed_flags = torch.tensor(
@@ -892,12 +817,8 @@ class CollectiveKernel:
             raise RuntimeError("routed NVLS multicast mapping is unavailable")
         self._routed_multicast_ptr = int(routed_multicast_ptr)
 
-        self._latent_output = torch.empty(
-            (max_m, latent_dim), dtype=torch.bfloat16, device=device
-        )
-        self._shared_output = torch.empty(
-            (max_m, hidden_dim), dtype=torch.bfloat16, device=device
-        )
+        self._latent_output = torch.empty((max_m, latent_dim), dtype=torch.bfloat16, device=device)
+        self._shared_output = torch.empty((max_m, hidden_dim), dtype=torch.bfloat16, device=device)
         shard_start = rank * self.shard_dim
         shard_end = shard_start + self.shard_dim
         self._shared_shard = self._shared_output[:, shard_start:shard_end]
@@ -922,9 +843,7 @@ class CollectiveKernel:
         ]
         if any(pointer == 0 for pointer in peer_ptrs):
             raise RuntimeError("shared LSA peer mapping is unavailable")
-        self._shared_peer_ptrs = torch.tensor(
-            peer_ptrs, dtype=torch.int64, device=device
-        )
+        self._shared_peer_ptrs = torch.tensor(peer_ptrs, dtype=torch.int64, device=device)
 
         torch.accelerator.synchronize(device)
         dist.barrier(group=group, device_ids=[device.index])

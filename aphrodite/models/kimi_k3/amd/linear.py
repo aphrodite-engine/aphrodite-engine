@@ -7,7 +7,8 @@ from typing import Any
 import torch
 from torch import nn
 
-from aphrodite.config import CacheConfig, VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
+from aphrodite.config import CacheConfig
 from aphrodite.distributed import (
     get_pp_group,
     get_tensor_model_parallel_world_size,

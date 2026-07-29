@@ -35,7 +35,15 @@ import torch
 from torch import nn
 
 from aphrodite.compilation.breakable_cudagraph import eager_break_during_capture
-from aphrodite.config import CacheConfig, VllmConfig, get_current_vllm_config
+from aphrodite.config import (
+    AphroditeConfig as VllmConfig,
+)
+from aphrodite.config import (
+    CacheConfig,
+)
+from aphrodite.config import (
+    get_current_aphrodite_config as get_current_vllm_config,
+)
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.forward_context import get_forward_context
 from aphrodite.logger import init_logger
@@ -306,7 +314,7 @@ class MultiHeadLatentAttention(nn.Module, AttentionLayerBase):
             qk_nope_head_dim=self.qk_nope_head_dim,
             qk_rope_head_dim=self.qk_rope_head_dim,
             v_head_dim=self.v_head_dim,
-            vllm_config=vllm_config,
+            aphrodite_config=vllm_config,
         )
 
         compilation_config = vllm_config.compilation_config

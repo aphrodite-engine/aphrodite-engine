@@ -44,9 +44,7 @@ def _fused_mtp_input_kernel(
         weight = tl.load(enorm_weight_ptr + offsets, mask=mask, other=0.0)
     else:
         values = tl.load(
-            previous_hidden_states_ptr
-            + token_idx * previous_hidden_states_stride
-            + offsets,
+            previous_hidden_states_ptr + token_idx * previous_hidden_states_stride + offsets,
             mask=mask,
             other=0.0,
         )

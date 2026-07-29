@@ -194,9 +194,7 @@ class FusedAddMulticastSkinnyGemm:
         for vi in cutlass.range_constexpr(vector_width):
             for mi in cutlass.range_constexpr(num_rows):
                 for ni in cutlass.range_constexpr(outputs_per_block):
-                    acc[mi, ni] = acc[mi, ni] + a_regs[mi, vi].to(Float32) * b_regs[
-                        ni, vi
-                    ].to(Float32)
+                    acc[mi, ni] = acc[mi, ni] + a_regs[mi, vi].to(Float32) * b_regs[ni, vi].to(Float32)
 
         for k_tile in cutlass.range(1, num_k_tiles, unroll=self.k_unroll):
             for mi in cutlass.range_constexpr(num_rows):
@@ -211,9 +209,7 @@ class FusedAddMulticastSkinnyGemm:
             for vi in cutlass.range_constexpr(vector_width):
                 for mi in cutlass.range_constexpr(num_rows):
                     for ni in cutlass.range_constexpr(outputs_per_block):
-                        acc[mi, ni] = acc[mi, ni] + a_regs[mi, vi].to(Float32) * b_regs[
-                            ni, vi
-                        ].to(Float32)
+                        acc[mi, ni] = acc[mi, ni] + a_regs[mi, vi].to(Float32) * b_regs[ni, vi].to(Float32)
 
         for mi in cutlass.range_constexpr(num_rows):
             for ni in cutlass.range_constexpr(outputs_per_block):
@@ -252,9 +248,7 @@ class FusedAddMulticastSkinnyGemm:
                         )
                     )
                     gemm_value = Float32(total).to(BFloat16)
-                    fused[ni] = (
-                        gemm_value.to(Float32) + gShared[mi, n_base + ni].to(Float32)
-                    ).to(BFloat16)
+                    fused[ni] = (gemm_value.to(Float32) + gShared[mi, n_base + ni].to(Float32)).to(BFloat16)
                 output_offset = Int64((mi * self.hidden_dim + n_base) * 2)
                 if const_expr(outputs_per_block == 2):
                     packed = sanitize_negative_zero_u32(bf16x2_to_u32(fused.load()))
@@ -263,17 +257,13 @@ class FusedAddMulticastSkinnyGemm:
                         packed,
                     )
                 elif const_expr(outputs_per_block == 4):
-                    packed = sanitize_negative_zero_u32x2(
-                        bf16x4_to_packed_u32x2(fused.load())
-                    )
+                    packed = sanitize_negative_zero_u32x2(bf16x4_to_packed_u32x2(fused.load()))
                     store_global_u32x2(
                         output_multicast_ptr + output_offset,
                         packed,
                     )
                 else:
-                    packed = sanitize_negative_zero(
-                        bf16x8_to_packed_u32x4(fused.load())
-                    )
+                    packed = sanitize_negative_zero(bf16x8_to_packed_u32x4(fused.load()))
                     store_global_u32x4(
                         output_multicast_ptr + output_offset,
                         packed,
@@ -411,11 +401,7 @@ class FusedAddMulticastSkinnyGemmKernel:
             ),
         )
         for tensor, shape, dtype, name in expected:
-            if (
-                tensor.shape != shape
-                or tensor.dtype != dtype
-                or tensor.device != device
-            ):
+            if tensor.shape != shape or tensor.dtype != dtype or tensor.device != device:
                 raise ValueError(f"{name} must be CUDA {dtype} {list(shape)}")
         if (
             not latent.is_contiguous()

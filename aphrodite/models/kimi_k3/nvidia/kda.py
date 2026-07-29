@@ -10,7 +10,7 @@ from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
 from aphrodite.compilation.breakable_cudagraph import eager_break_during_capture
-from aphrodite.config import VllmConfig
+from aphrodite.config import AphroditeConfig as VllmConfig
 from aphrodite.distributed import divide, get_tensor_model_parallel_rank
 from aphrodite.forward_context import get_forward_context
 from aphrodite.logger import init_logger
@@ -36,7 +36,7 @@ from aphrodite.model_executor.model_loader.weight_utils import (
     default_weight_loader,
     sharded_weight_loader,
 )
-from aphrodite.model_executor.parameter import BasevLLMParameter
+from aphrodite.model_executor.parameter import BaseAphroditeParameter as BasevLLMParameter
 from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.models.kimi_k3.nvidia.kda_metadata import (
     KimiK3KDAAttentionBackend,

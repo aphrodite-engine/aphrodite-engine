@@ -43,10 +43,7 @@ def navit_resize_image(
     fixed_output_tokens: int | None,
 ):
     # Apply the patch limits.
-    s1 = math.sqrt(
-        in_patch_limit
-        / (max(1.0, width // patch_size) * max(1.0, height // patch_size))
-    )
+    s1 = math.sqrt(in_patch_limit / (max(1.0, width // patch_size) * max(1.0, height // patch_size)))
     s2 = patch_limit_on_one_side * patch_size / width
     s3 = patch_limit_on_one_side * patch_size / height
     scale = min(1.0, s1, s2, s3)
@@ -176,9 +173,7 @@ class KimiK3ProcessingInfo(BaseProcessingInfo):
                     fixed_output_tokens,
                 )
                 padded_width = resize_config["new_width"] + resize_config["pad_width"]
-                padded_height = (
-                    resize_config["new_height"] + resize_config["pad_height"]
-                )
+                padded_height = resize_config["new_height"] + resize_config["pad_height"]
                 num_patches = padded_width // patch_size * (padded_height // patch_size)
                 score = (resize_config["num_tokens"], num_patches)
                 if score > best_score:
@@ -300,9 +295,7 @@ class KimiK3MultiModalProcessor(BaseMultiModalProcessor[KimiK3ProcessingInfo]):
 
             # The checkpoint image processor works on media dicts, so wrap the
             # PIL image before asking it for the token count.
-            num_media_token = self.info.media_tokens_calculator(
-                {"type": "image", "image": image}
-            )
+            num_media_token = self.info.media_tokens_calculator({"type": "image", "image": image})
             pads = media_token * num_media_token
 
             # NOTE: `width`/`height` are the ORIGINAL upload dimensions, not the
@@ -314,10 +307,7 @@ class KimiK3MultiModalProcessor(BaseMultiModalProcessor[KimiK3ProcessingInfo]):
             # which also builds the prompt from the original `img.size`. The
             # resize is reflected only in the pad count above.
             width, height = images.get_image_size(item_idx)
-            full = (
-                f"<|media_begin|>image {width}x{height}<|media_content|>"
-                f"{pads}<|media_end|>"
-            )
+            full = f"<|media_begin|>image {width}x{height}<|media_content|>{pads}<|media_end|>"
 
             return PromptUpdateDetails.select_token_id(full, media_token_id)
 
