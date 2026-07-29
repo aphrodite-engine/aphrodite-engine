@@ -386,7 +386,7 @@ class ModelConfig:
     interleave_mm_strings: InitVar[bool | None] = cast(InitVar[bool | None], None)
     skip_mm_profiling: InitVar[bool | None] = cast(InitVar[bool | None], None)
     video_pruning_rate: InitVar[float | None] = cast(InitVar[float | None], None)
-    video_pruning_method: InitVar[str | None] = None
+    video_pruning_method: InitVar[str | None] = cast(InitVar[str | None], None)
     mm_tensor_ipc: InitVar[MMTensorIPC | None] = cast(InitVar[MMTensorIPC | None], None)
     mm_ipc_gpu_memory_gb: InitVar[float | None] = cast(InitVar[float | None], None)
 
