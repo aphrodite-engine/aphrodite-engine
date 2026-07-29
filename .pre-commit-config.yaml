@@ -126,6 +126,21 @@ repos:
     language: system
     always_run: true
     pass_filenames: false
+  - id: check-patch-artifacts
+    name: Reject patch backup files
+    entry: bash
+    args:
+      - -c
+      - |
+        artifacts="$(git ls-files | grep -E '(\.orig|\.rej|\.bak|~)$' || true)"
+        if [[ -n "$artifacts" ]]; then
+          echo "Patch backup files must not be committed:"
+          echo "$artifacts"
+          exit 1
+        fi
+    language: system
+    always_run: true
+    pass_filenames: false
   - id: enforce-import-regex-instead-of-re
     name: Enforce import regex as re
     entry: python tools/pre_commit/enforce_regex_import.py
