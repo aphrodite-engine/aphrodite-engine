@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import gc
 import tempfile
 from contextlib import contextmanager
 
 import pytest
 import torch
 
-from aphrodite import LLM, SamplingParams
+from aphrodite import SamplingParams
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CompilationConfig, set_current_aphrodite_config
 from aphrodite.config.compilation import (
@@ -19,7 +18,6 @@ from aphrodite.config.compilation import (
 from aphrodite.forward_context import set_forward_context
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 from tests.models.utils import check_logprobs_close
-from tests.utils import wait_for_rocm_memory_to_settle
 
 
 def get_test_models():
@@ -49,6 +47,7 @@ def get_test_models():
 @pytest.mark.skipif(not is_torch_equal_or_newer("2.10.0"), reason="requires torch 2.10")
 def test_dynamic_shapes_compilation(
     monkeypatch,
+    aphrodite_runner,
     model_name,
     shapes_type,
     use_aot_compile,
@@ -77,9 +76,13 @@ def test_dynamic_shapes_compilation(
 
     print(f"Testing {shapes_type.name} dynamic shapes...")
 
-    # Initialize the model with specific dynamic shapes configuration
-    model = LLM(
-        model=model_name,
+    sampling_params = SamplingParams(max_tokens=5, temperature=0, logprobs=10)
+    test_prompts = [prompt, "The capital of France is"]
+
+    # AphroditeRunner shuts down the engine core on exit, so the eager model
+    # below never races a lingering compiled engine for GPU memory.
+    with aphrodite_runner(
+        model_name,
         compilation_config={
             "mode": CompilationMode.APHRODITE_COMPILE,
             "dynamic_shapes_config": {
@@ -88,33 +91,25 @@ def test_dynamic_shapes_compilation(
             },
         },
         max_model_len=1024,
-    )
+        enable_chunked_prefill=None,
+    ) as aphrodite_model:
+        compiled_outputs = []
+        for p in test_prompts:
+            output = aphrodite_model.llm.generate(p, sampling_params)[0].outputs[0]
+            assert len(output.text.strip()) > 0, "Compiled model produced empty output"
+            compiled_outputs.append((output.token_ids, output.text, output.logprobs))
 
-    sampling_params = SamplingParams(max_tokens=5, temperature=0, logprobs=10)
-    test_prompts = [prompt, "The capital of France is"]
-
-    compiled_outputs = []
-    for p in test_prompts:
-        output = model.generate(p, sampling_params)[0].outputs[0]
-        assert len(output.text.strip()) > 0, "Compiled model produced empty output"
-        compiled_outputs.append((output.token_ids, output.text, output.logprobs))
-
-    del model
-    gc.collect()
-    torch.accelerator.empty_cache()
-    torch.accelerator.synchronize()
-    wait_for_rocm_memory_to_settle()
-
-    eager_model = LLM(model=model_name, enforce_eager=True, max_model_len=1024)
-    eager_outputs = []
-    for p in test_prompts:
-        output = eager_model.generate(p, sampling_params)[0].outputs[0]
-        assert len(output.text.strip()) > 0, "Eager model produced empty output"
-        eager_outputs.append((output.token_ids, output.text, output.logprobs))
-    del eager_model
-    gc.collect()
-    torch.accelerator.empty_cache()
-    torch.accelerator.synchronize()
+    with aphrodite_runner(
+        model_name,
+        enforce_eager=True,
+        max_model_len=1024,
+        enable_chunked_prefill=None,
+    ) as aphrodite_model:
+        eager_outputs = []
+        for p in test_prompts:
+            output = aphrodite_model.llm.generate(p, sampling_params)[0].outputs[0]
+            assert len(output.text.strip()) > 0, "Eager model produced empty output"
+            eager_outputs.append((output.token_ids, output.text, output.logprobs))
 
     check_logprobs_close(
         outputs_0_lst=eager_outputs,
@@ -228,44 +223,35 @@ def test_model_specialization_with_evaluate_guards(monkeypatch, use_aot_compile,
 
 
 @pytest.mark.skipif(not is_torch_equal_or_newer("2.10.0"), reason="requires torch 2.10")
-def test_piecewise_backend_empty_sym_shape_indices():
+def test_piecewise_backend_empty_sym_shape_indices(aphrodite_runner):
     """Test that PiecewiseBackend handles empty sym_shape_indices correctly.
 
     When all inputs have static shapes (no torch.SymInt), sym_shape_indices
     will be empty. The fix in PiecewiseBackend.__call__ handles this case
     by using the first compiled range_entry.
     """
-    gc.collect()
-    torch.accelerator.empty_cache()
-    torch.accelerator.synchronize()
-
     # Use small max_model_len and max_num_batched_tokens to encourage
     # static shape compilation with empty sym_shape_indices
-    llm = LLM(
-        model="Qwen/Qwen3-0.6B",
+    with aphrodite_runner(
+        "Qwen/Qwen3-0.6B",
         max_model_len=512,
         max_num_batched_tokens=1,
+        enable_chunked_prefill=None,
         compilation_config={
             "mode": CompilationMode.APHRODITE_COMPILE,
             "dynamic_shapes_config": {
                 "type": DynamicShapesType.BACKED.value,
             },
         },
-    )
+    ) as aphrodite_model:
+        sampling_params = SamplingParams(temperature=0, top_p=0.95, max_tokens=10)
 
-    sampling_params = SamplingParams(temperature=0, top_p=0.95, max_tokens=10)
+        # Generate with static shape inputs
+        output = aphrodite_model.llm.generate("Hello, my name is", sampling_params=sampling_params)
+        result = output[0].outputs[0].text
+        assert len(result) > 0, "Should generate non-empty output"
 
-    # Generate with static shape inputs
-    output = llm.generate("Hello, my name is", sampling_params=sampling_params)
-    result = output[0].outputs[0].text
-    assert len(result) > 0, "Should generate non-empty output"
-
-    # Generate again to verify compilation works with empty sym_shape_indices
-    output = llm.generate("The capital of France is", sampling_params=sampling_params)
-    result = output[0].outputs[0].text
-    assert len(result) > 0, "Should generate non-empty output on second run"
-
-    del llm
-    gc.collect()
-    torch.accelerator.empty_cache()
-    torch.accelerator.synchronize()
+        # Generate again to verify compilation works with empty sym_shape_indices
+        output = aphrodite_model.llm.generate("The capital of France is", sampling_params=sampling_params)
+        result = output[0].outputs[0].text
+        assert len(result) > 0, "Should generate non-empty output on second run"
