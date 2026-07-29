@@ -1,88 +1,99 @@
-<h1 align="center">
-Breathing Life into Language
-</h1>
+<h1 align="center">Sonar</h1>
 
-![sonar](assets/sonar.jpg)
+![Sonar](assets/sonar.jpg)
 
-Sonar (formerly Aphrodite Engine) is an inference engine that optimizes the serving of HuggingFace-compatible models at scale. Built on vLLM's Paged Attention technology, it delivers high-performance model inference for multiple concurrent users. Sonar serves as the backend engine powering the [Dolphin Inference Network](https://datagen.dphn.ai) and [PygmalionAI](https://pygmalion.chat)'s chat platforms and API infrastructure.
+Sonar is an inference engine for Hugging Face-compatible language and
+multimodal models. It provides continuous batching, paged KV-cache management,
+optimized kernels, quantization, speculative decoding, and distributed
+serving.
 
-Sonar builds upon and integrates the exceptional work from [various projects](#acknowledgements), primarily [vLLM](https://vllm.ai).
+Sonar is based on [vLLM](https://github.com/vllm-project/vllm). It includes
+additional model and quantization formats, sampling methods, kernels, platforms,
+and deployment features.
+It serves production workloads for the
+[Dolphin Inference Network](https://datagen.dphn.ai) and
+[PygmalionAI](https://pygmalion.chat).
 
-## Features
+## Documentation
 
-- Continuous Batching
-- Efficient K/V management with [PagedAttention](https://vllm.ai) from vLLM
-- Optimized CUDA kernels for improved inference
-- Quantization support via [AQLM](https://arxiv.org/abs/2401.06118), [AutoRound](https://arxiv.org/abs/2309.05516), [AWQ](https://arxiv.org/abs/2306.00978), [BitNet](https://arxiv.org/abs/2310.11453), [Bitsandbytes](https://arxiv.org/abs/2208.07339), [ExLlamaV3](https://github.com/turboderp-org/exllamav3), [GGUF](https://github.com/ggml-org/llama.cpp), [GPTQ](https://arxiv.org/abs/2210.17323), [QuIP#](https://arxiv.org/abs/2402.04396), [SqueezeLLM](https://arxiv.org/abs/2306.07629), [Marlin](https://arxiv.org/abs/2408.11743), [[2]](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/fp8_primer.html) [[3]](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/), [NVIDIA ModelOpt](https://github.com/NVIDIA/TensorRT-Model-Optimizer), [TorchAO](https://github.com/pytorch/ao), [VPTQ](https://arxiv.org/abs/2409.17066), [compressed_tensors](https://github.com/vllm-project/llm-compressor), [MXFP4](https://huggingface.co/blog/RakshitAralimatti/learn-ai-with-me), and more.
-- Distributed inference
-- Quantized KV cache using scaled and scale-less FP8, and TurboQuant
-- Support for modern samplers such as DRY, XTC, Mirostat, and more
-- Disaggregated inference
-- Speculative decoding, including EAGLE, DFlash, ngram, MTP, and more
-- Multimodal support
-- Multi-LoRA support
+Read the documentation at [sonar.dphn.ai](https://sonar.dphn.ai/).
 
-## Quickstart
+- [Installation](https://sonar.dphn.ai/getting-started/installation/)
+- [Supported models](https://sonar.dphn.ai/reference/models/)
+- [Quantization support](https://sonar.dphn.ai/reference/quantization/)
+- [Server arguments](https://sonar.dphn.ai/reference/server-arguments/)
+- [Optimization](https://sonar.dphn.ai/deployment/optimization/)
+- [Parallelism](https://sonar.dphn.ai/deployment/parallelism/)
+- [Production deployment](https://sonar.dphn.ai/deployment/production/)
 
-Install the engine (the Python package and CLI keep the historical `aphrodite` name for now):
+The model, quantization, and server-argument references are generated from the
+current source tree.
 
-```sh
-pip install -U aphrodite-engine
+## Install
+
+The published NVIDIA wheel supports Linux x86-64, Python 3.10-3.13, and NVIDIA
+GPUs with compute capability 8.0 or newer.
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then
+create an environment:
+
+```bash
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install aphrodite-engine --torch-backend=cu130
 ```
 
-Then launch a model:
+Use the [complete installation guide](https://sonar.dphn.ai/getting-started/installation/)
+for AMD ROCm, Intel XPU, CPU, Apple silicon, Google TPU, Docker, WSL 2, source
+builds, and nightly wheels.
 
-```sh
-aphrodite run Qwen/Qwen3.5-0.8B
+## Serve a model
+
+```bash
+aphrodite serve Qwen/Qwen3-0.6B \
+  --served-model-name qwen3
 ```
 
-This will create a [OpenAI](https://platform.openai.com/docs/api-reference/)-compatible API server that can be accessed at port 2242 of the localhost. You can plug in the API into a UI that supports OpenAI, such as [SillyTavern](https://github.com/SillyTavern/SillyTavern).
+The server listens on `http://127.0.0.1:2242` by default. It provides
+OpenAI-compatible APIs, health checks, metrics, and an OpenAPI schema.
 
-## Requirements
+See the [OpenAI-compatible API guide](https://sonar.dphn.ai/serving/openai/)
+for streaming, embeddings, tool calls, reasoning output, and Sonar request
+parameters.
 
-- Operating System: Linux, Windows (WSL2)
-- Python: 3.10 to 3.13 (build from source for 3.14)
+## Key features
 
-#### Build Requirements
+- Continuous batching and paged KV-cache management
+- Prefix caching enabled by default
+- Tensor, pipeline, data, and expert parallelism
+- Multi-node multiprocessing without a Ray cluster
+- Prefill/decode disaggregation through NIXL and other KV connectors
+- Quantized weights and FP8 KV cache
+- Speculative decoding with MTP, EAGLE, DSpark, DFlash, n-gram, and other
+  methods
+- Structured output, reasoning parsers, and automatic tool calling
+- Image, audio, and video model support
+- LoRA adapter serving
+- Prometheus metrics and health endpoints
+- OpenAI, Anthropic, pooling, scoring, reranking, transcription, and Kobold
+  APIs
 
-- CUDA >= 12
+Support depends on the model, device, data type, and quantization method. Check
+the generated [model matrix](https://sonar.dphn.ai/reference/models/) and
+[quantization matrix](https://sonar.dphn.ai/reference/quantization/) before
+deployment.
 
-### Notes
+Read the [optimization guide](https://sonar.dphn.ai/deployment/optimization/)
+before you tune scheduler, cache, compilation, quantization, or speculative
+decoding settings.
 
-1. By design, Sonar takes up 92% of your GPU's VRAM. If you're not serving an LLM at scale, you may want to limit the amount of memory it takes up. You can do this in the API example by launching the server with the `--gpu-memory-utilization 0.6` (0.6 means 60%).
+## Development
 
-2. You can view the full list of commands by running `aphrodite run --help`.
-
-## Acknowledgements
-
-Sonar would have not been possible without the phenomenal work of other open-source projects. A (non-exhaustive) list:
-
-- [vLLM](https://github.com/vllm-project/vllm)
-- [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
-- [xFormers](https://github.com/facebookresearch/xformers)
-- [Flash Attention](https://github.com/Dao-AILab/flash-attention)
-- [llama.cpp](https://github.com/ggerganov/llama.cpp)
-- [AutoAWQ](https://github.com/casper-hansen/AutoAWQ)
-- [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ)
-- [SqueezeLLM](https://github.com/SqueezeAILab/SqueezeLLM/)
-- [Exllamav2](https://github.com/turboderp/exllamav2)
-- [TabbyAPI](https://github.com/theroyallab/tabbyAPI)
-- [AQLM](https://github.com/Vahe1994/AQLM)
-- [KoboldAI](https://github.com/henk717/KoboldAI)
-- [Text Generation WebUI](https://github.com/oobabooga/text-generation-webui)
-- [Megatron-LM](https://github.com/NVIDIA/Megatron-LM)
-- [Ray](https://github.com/ray-project/ray)
-
-### Sponsors
-
-Past and present, in alphabetical order:
-
-- [Arc Compute](https://www.arccompute.io/)
-- [Lium](https://lium.io)
-- [Prime Intellect](https://www.primeintellect.ai/)
-- [PygmalionAI](https://pygmalion.chat)
-- [Ruliad AI](https://ruliad.ai)
-
-## Contributing
-
-Everyone is welcome to contribute. You can support the project by opening Pull Requests for new features, fixes, or general UX improvements.
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+uv venv --python 3.13 --seed --prompt sonar
+source .venv/bin/activate
+APHRODITE_USE_PRECOMPILED=1 \
+  uv pip install --editable . --torch-backend=cu130
+```

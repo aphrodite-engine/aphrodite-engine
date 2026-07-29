@@ -1,0 +1,171 @@
+---
+title: Install Sonar
+description: Install Sonar on NVIDIA, AMD, Intel, CPU, Apple, and TPU systems.
+---
+
+Sonar supports Linux and macOS. Use WSL 2 to run Sonar on Windows. Native
+Windows builds are not supported.
+
+## NVIDIA CUDA
+
+The published wheel supports Linux x86-64, Python 3.10-3.13, and NVIDIA GPUs
+with compute capability 8.0 or newer.
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/). Then
+create an environment and install Sonar.
+
+```bash
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install aphrodite-engine --torch-backend=cu130
+```
+
+The package name remains `aphrodite-engine`. The command name remains
+`aphrodite`.
+
+Use a nightly build when you need the latest commit.
+
+```bash
+uv pip install aphrodite-engine \
+  --extra-index-url https://sonar.dphn.ai/nightly
+```
+
+### Develop with precompiled extensions
+
+Use the per-commit nightly wheel when you change Python files only. Sonar takes
+the native extensions from the wheel for the current Git commit and installs
+the Python source in editable mode.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+APHRODITE_USE_PRECOMPILED=1 \
+  uv pip install --editable . --torch-backend=cu130
+```
+
+The commit must have a compatible wheel at
+`https://sonar.dphn.ai/commits/<commit>/`. Build the native extensions when you
+change `csrc/`, CMake, Rust, or a bundled native dependency.
+
+### Build native extensions incrementally
+
+Install the development environment first. Then generate a CMake preset from
+the active virtual environment.
+
+```bash
+python tools/generate_cmake_presets.py
+cmake --preset release
+cmake --build --preset release --target install
+```
+
+The generator detects Python, CUDA, Ninja, the available CPU cores, and
+`ccache` or `sccache`. It stores the configuration in
+`CMakeUserPresets.json`. CMake stores the build state in
+`cmake-build-release/`.
+
+After you change native code, run only the build command:
+
+```bash
+cmake --build --preset release --target install
+```
+
+Ninja recompiles the affected files and reuses the other objects. The
+`install` target places the updated extensions in the source tree.
+
+Use `uv pip install --editable .` to create the development environment. Do not
+use it as the normal native-code rebuild command. It runs the Python packaging
+backend and repeats package build work. A direct CMake build keeps one
+configured build tree, exposes incremental build output, and gives more
+consistent rebuild times.
+
+## Docker
+
+Build the serving image from the current source tree.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+docker build -f docker/Dockerfile -t sonar .
+docker run --rm --gpus all --ipc=host \
+  -p 2242:2242 \
+  sonar \
+  --model Qwen/Qwen3-0.6B
+```
+
+## AMD ROCm
+
+ROCm support is source-based. Use the ROCm requirements and select the ROCm
+target.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install -r requirements/build.txt -r requirements/rocm.txt
+APHRODITE_TARGET_DEVICE=rocm uv pip install . --no-build-isolation
+```
+
+Install a compatible ROCm and PyTorch build before this procedure. The supported
+GPU architectures follow the versions pinned in `requirements/rocm.txt`.
+
+## Intel XPU
+
+Install the Intel GPU driver and oneAPI. Then build with the XPU requirements.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+source /opt/intel/oneapi/setvars.sh
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install -r requirements/build.txt -r requirements/xpu.txt
+APHRODITE_TARGET_DEVICE=xpu uv pip install . --no-build-isolation
+```
+
+## CPU
+
+The CPU backend supports Linux x86-64 and Arm64. Build it from source.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install -r requirements/build/cpu.txt -r requirements/cpu.txt
+APHRODITE_TARGET_DEVICE=cpu uv pip install . --no-build-isolation
+```
+
+Set `APHRODITE_CPU_KVCACHE_SPACE` to the KV cache size in GiB. Start with a
+conservative value if other processes use the same host.
+
+## Apple silicon
+
+The Metal backend requires an Apple silicon Mac.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install -r requirements/metal.txt
+APHRODITE_TARGET_DEVICE=metal uv pip install . --no-build-isolation
+```
+
+## Google TPU
+
+TPU support requires a TPU VM and a compatible PyTorch XLA installation.
+
+```bash
+git clone https://github.com/dphnAI/sonar.git
+cd sonar
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install -r requirements/tpu.txt
+APHRODITE_TARGET_DEVICE=tpu uv pip install . --no-build-isolation
+```
+
+Use the PyTorch XLA installation procedure for your TPU image before you build
+Sonar.
