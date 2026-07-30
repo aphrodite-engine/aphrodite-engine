@@ -17,7 +17,13 @@ from aphrodite.model_executor.layers.quantization.utils.int8_utils import (
 )
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import set_random_seed
-from tests.kernels.utils import fp8_ulp_distance, opcheck
+from tests.kernels.utils import fp8_allclose, fp8_ulp_distance, opcheck
+
+ON_GFX950 = False
+if current_platform.is_rocm():
+    from aphrodite.platforms.rocm import on_gfx950
+
+    ON_GFX950 = on_gfx950()
 
 DTYPES = [torch.bfloat16, torch.float]
 QUANT_DTYPES = [torch.int8, current_platform.fp8_dtype()]
@@ -284,6 +290,13 @@ def test_rms_norm(
     # whose abs-max flips by one ULP between the fused and reference paths. The
     # per-token and fp32 paths stay strict.
     relax_block_rocm = group_size is not None and dtype == torch.bfloat16 and current_platform.is_rocm()
+    use_gfx950_fp8_allclose = (
+        current_platform.is_rocm()
+        and ON_GFX950
+        and group_size is None
+        and dtype == torch.bfloat16
+        and quant_dtype == current_platform.fp8_dtype()
+    )
 
     def scales_close(rtol: float, atol: float) -> bool:
         if torch.allclose(ref_scales, ops_scales, rtol=rtol, atol=atol):
@@ -306,6 +319,10 @@ def test_rms_norm(
                 ulp = fp8_ulp_distance(ref_out, ops_out)
                 max_outliers = ulp.numel() // 100_000 + 8
                 ok = int((ulp > 0).sum().item()) <= max_outliers
+            elif use_gfx950_fp8_allclose:
+                # Valid gfx950 reduction trees can straddle an E4M3 boundary.
+                ok = fp8_allclose(ops_out, ref_out, rtol=0.125, atol=2e-3)
+                ok = ok and int(fp8_ulp_distance(ops_out, ref_out).max()) <= 1
             else:
                 # CUDA (& non-bf16): compare dequantized values with relaxed tolerance.
                 if group_size is None:
