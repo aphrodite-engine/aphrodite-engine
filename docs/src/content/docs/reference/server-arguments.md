@@ -185,7 +185,7 @@ Default: `False`.
 
 ### `--tool-call-parser`
 
-`--tool-call-parser {apertus,cohere_command3,cohere_command4,deepseek_v3,deepseek_v31,deepseek_v32,deepseek_v4,ernie45,functiongemma,gemma4,gigachat3,glm45,glm47,granite,granite-20b-fc,granite4,hermes,hunyuan_a13b,hy_v3,inkling,internlm,jamba,kimi_k2,lfm2,llama3_json,llama4_json,llama4_pythonic,longcat,mimo,minicpm5,minimax_m2,minimax_m3,mistral,olmo3,openai,phi4_mini_json,poolside_v1,pythonic,qwen3_coder,qwen3_xml,seed_oss,step3,step3p5,xlam} or name registered in --tool-parser-plugin`
+`--tool-call-parser {apertus,cohere_command3,cohere_command4,deepseek_v3,deepseek_v31,deepseek_v32,deepseek_v4,ernie45,functiongemma,gemma4,gigachat3,glm45,glm47,granite,granite-20b-fc,granite4,hermes,hunyuan_a13b,hy_v3,inkling,internlm,jamba,kimi_k2,kimi_k3,lfm2,llama3_json,llama4_json,llama4_pythonic,longcat,mimo,minicpm5,minimax_m2,minimax_m3,mistral,olmo3,openai,phi4_mini_json,poolside_v1,pythonic,qwen3_coder,qwen3_xml,seed_oss,step3,step3p5,xlam} or name registered in --tool-parser-plugin`
 
 Select the tool call parser depending on the model that you're using.
 This is used to parse the model-generated tool call into OpenAI API format.
@@ -608,7 +608,7 @@ name or path will be used.
 
 ### `--tokenizer-mode`
 
-`--tokenizer-mode ['auto', 'deepseek_v32', 'deepseek_v4', 'hf', 'inkling', 'mistral', 'slow']`
+`--tokenizer-mode ['auto', 'deepseek_v32', 'deepseek_v4', 'hf', 'inkling', 'kimi_k3', 'mistral', 'slow']`
 
 Tokenizer mode:
 
@@ -624,6 +624,9 @@ Tokenizer mode:
 - "deepseek_v32" will always use the tokenizer from `deepseek_v32`.
 
 - "deepseek_v4" will always use the tokenizer from `deepseek_v4`.
+
+- "kimi_k3" will always use the "hf" tokenizer but render chat prompts
+  with Kimi K3's Python XTML encoding instead of a Jinja template.
 
 - Other custom values can be supported via plugins.
 
@@ -2251,9 +2254,10 @@ using vision transformers. Accepts any value from
 `--mm-encoder-attn-dtype MM_ENCODER_ATTN_DTYPE`
 
 Optional dtype override for ViT encoder attention. Set to `"fp8"` to
-enable FP8 quantization via the FlashInfer cuDNN backend. When set to
-`"fp8"` without a scale file, dynamic scaling is used automatically.
-See docs/features/quantization/fp8_vit_attn.md for details.
+enable FP8 quantization through FlashInfer cuDNN on NVIDIA GPUs or AITER
+on supported AMD GPUs. When set to `"fp8"` without a scale file, dynamic
+scaling is used automatically. See
+docs/src/content/docs/features/fp8-vit-attention.md for details.
 
 Choices: `fp8`, `None`.
 

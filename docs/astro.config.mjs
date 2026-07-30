@@ -70,6 +70,7 @@ export default defineConfig({
 						{ label: 'Tool calling', slug: 'features/tool-calling' },
 						{ label: 'Reasoning and tool parsers', slug: 'features/reasoning-and-tools' },
 						{ label: 'Multimodal inputs', slug: 'features/multimodal' },
+						{ label: 'FP8 vision attention', slug: 'features/fp8-vit-attention' },
 						{ label: 'Observability', slug: 'features/observability' },
 					],
 				},
