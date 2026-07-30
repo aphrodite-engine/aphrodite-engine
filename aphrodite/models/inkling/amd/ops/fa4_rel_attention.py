@@ -5,7 +5,7 @@
 The NVIDIA implementation uses the score-mod hook in tml-fa4.  ROCm Flash
 Attention and AITER do not expose an equivalent hook, so this module implements
 the same operation directly in Triton.  Query heads belonging to one KV head
-are processed together and KV pages are gathered through vLLM's block table.
+are processed together and KV pages are gathered through Sonar's block table.
 """
 
 from __future__ import annotations

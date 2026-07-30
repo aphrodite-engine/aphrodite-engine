@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Prefill == decode equivalence for the Mamba2 ReplaySSM kernels.
 
-The SSM recurrence is path-independent: vLLM's chunked prefill (the SSD kernel
+The SSM recurrence is path-independent: Sonar's chunked prefill (the SSD kernel
 ``mamba_chunk_scan_combined_varlen``) and step-by-step decode must produce the
 same per-position outputs and final state over a sequence. This file feeds one
 set of inputs through the production dt flow (raw dt + softplus + a per-head

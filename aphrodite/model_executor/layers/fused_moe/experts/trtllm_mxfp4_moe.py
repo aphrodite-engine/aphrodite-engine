@@ -82,7 +82,7 @@ class TrtLlmMxfp4ExpertsBase:
         # SITU (SituGLU) TRTLLM-Gen kernel computes
         #   left  = alpha * tanh(x0 / alpha) * sigmoid(x0)   # gate (x0)
         #   right = beta  * tanh(x1 / beta)                  # up   (x1)
-        # which matches vLLM's situ_and_mul with (beta, linear_beta), so map
+        # which matches Sonar's situ_and_mul with (beta, linear_beta), so map
         # situ beta -> gatedActAlpha (gemm1_alpha) and situ linear_beta ->
         # gatedActBeta (gemm1_beta). Both must be > 0.
         if moe_config.activation == MoEActivation.SITU:

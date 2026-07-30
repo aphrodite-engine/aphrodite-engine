@@ -109,7 +109,7 @@ class TrtLlmNvFp4ExpertsBase:
 
         # SITU (Kimi SituGLU) TRTLLM-Gen kernel computes
         # left=alpha*tanh(x0/alpha)*sigmoid(x0), right=beta*tanh(x1/beta),
-        # matching vLLM's situ_and_mul, so map situ beta -> gatedActAlpha
+        # matching Sonar's situ_and_mul, so map situ beta -> gatedActAlpha
         # (gemm1_alpha) and situ linear_beta -> gatedActBeta (gemm1_beta).
         # These operate on the dequantized gate/up, so they are NOT folded by
         # g1_alphas in process_weights_after_loading.

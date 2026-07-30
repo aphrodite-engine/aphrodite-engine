@@ -283,7 +283,7 @@ class BloomModel(nn.Module):
 
     def _repack_qkv(self, weights: Iterable[tuple[str, torch.Tensor]]) -> Iterable[tuple[str, torch.Tensor]]:
         # BLOOM's fused QKV is laid out as (num_heads * 3 * head_size) on its
-        # output dim (0), while vLLM expects (3 * num_heads * head_size).
+        # output dim (0), while Sonar expects (3 * num_heads * head_size).
         num_heads = self.config.num_attention_heads
         for name, loaded_weight in weights:
             if "query_key_value" in name:

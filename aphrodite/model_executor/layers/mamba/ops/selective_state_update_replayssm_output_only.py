@@ -430,7 +430,7 @@ def selective_state_update_replayssm_output_only(
     enable_stochastic_rounding: bool = False,
     cache_philox_rounds: int = 0,
 ) -> torch.Tensor:
-    """Cached-bc SSM update for vLLM's autoregressive Mamba2 decode path."""
+    """Cached-bc SSM update for Sonar's autoregressive Mamba2 decode path."""
     has_heads = state.dim() > 3
     if state.dim() == 3:
         state = state.unsqueeze(1)

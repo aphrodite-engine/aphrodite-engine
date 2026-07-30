@@ -322,7 +322,7 @@ void sample_recovered_tokens_kernel_impl(
 }  // namespace cpu_utils
 
 TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
-  // vLLM custom ops
+  // Sonar custom ops.
 
   ops.def(
       "dynamic_4bit_int_moe("

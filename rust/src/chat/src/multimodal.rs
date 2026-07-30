@@ -65,7 +65,7 @@ pub type MmLimitPerPrompt = HashMap<MmLimitModality, MmLimitSpec>;
 /// Modalities that `--limit-mm-per-prompt` can be keyed by.
 ///
 /// Closed on purpose: these are exactly the keys Python accepts, per
-/// `MultiModalDummyOptionsBuiltins` in `vllm/config/multimodal.py`.
+/// `MultiModalDummyOptionsBuiltins` in `aphrodite/config/multimodal.py`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MmLimitModality {
@@ -650,7 +650,7 @@ fn input_audio_data_url(data: &str, format: Option<&str>) -> Result<String> {
 ///
 /// Embedding inputs share their base modality's budget rather than getting one
 /// of their own, matching Python's `modality.replace("_embeds", "")` in
-/// `vllm/entrypoints/chat_utils.py`.
+/// `aphrodite/entrypoints/chat_utils.py`.
 fn media_part_limit_modality(part: &MediaContentPart) -> Option<MmLimitModality> {
     match part {
         MediaContentPart::Text { .. } => None,

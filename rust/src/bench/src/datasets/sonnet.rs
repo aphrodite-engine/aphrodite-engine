@@ -26,7 +26,8 @@ const BUILTIN_SONNET: &str = include_str!("sonnet.txt");
 /// Load the sonnet dataset and generate `num_requests` prompts targeting `input_len`
 /// total prompt tokens.
 ///
-/// Mirrors Python's `SonnetDataset.sample()` from `vllm/benchmarks/datasets/datasets.py`.
+/// Mirrors Python's `SonnetDataset.sample()` from
+/// `aphrodite/benchmarks/datasets/datasets.py`.
 /// The Rust port skips `apply_chat_template` (no Jinja runtime here): `base_offset`
 /// and `prompt_len` are computed from the raw text. The resulting prompts are slightly
 /// shorter than Python's chat-template-formatted version (off by the chat scaffolding

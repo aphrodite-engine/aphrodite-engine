@@ -489,7 +489,8 @@ __launch_bounds__(NUM_THREADS, 5) void paged_attention_ll4mi_QKV_mfma16_kernel(
   }
 
   constexpr int KX =
-      16 / sizeof(cache_t);  // vLLM defines x as 16 Bytes of kv cache elements
+      16 /
+      sizeof(cache_t);  // Sonar defines x as 16 bytes of KV cache elements.
   const cache_t* k_ptr = k_cache + wg_start_kv_head_idx * kv_head_stride;
 
   const int row_head_elem = rowid * CONTIGUOUS_KV_ELEMS_16B_LOAD;

@@ -29,7 +29,7 @@ message(STATUS "tml-fa4 is available at ${tml_fa4_SOURCE_DIR}")
 add_custom_target(tml_fa4)
 
 # Install into a private namespace so this implementation cannot shadow the
-# flash_attn package used by vLLM's standard attention backends.
+# flash_attn package used by Sonar's standard attention backends.
 install(CODE "
   file(GLOB_RECURSE TML_FA4_PY_FILES
     \"${tml_fa4_SOURCE_DIR}/flash_attn/cute/*.py\")

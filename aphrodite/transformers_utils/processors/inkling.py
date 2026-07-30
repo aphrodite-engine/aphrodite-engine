@@ -6,7 +6,7 @@ Implements the image processor (numba patchifier), the audio feature extractor
 (STFT/dMel path), the composite processor, and the MM token-id constants.
 
 Besides raw bytes / file paths, the extractors also accept the dummy inputs
-vLLM generates during profiling (PIL images / numpy audio arrays).
+Sonar generates during profiling (PIL images and NumPy audio arrays).
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def _scaled_image_dimensions(
 def _load_image_bytes(image) -> bytes:
     """Encode a PIL image as raw PNG bytes for preprocessing.
 
-    The HF processor is always handed ``PIL.Image`` instances by vLLM, so no
+    Sonar always gives the HF processor ``PIL.Image`` instances, so no
     other input types need to be supported here.
     """
     if image.mode != "RGB":
@@ -408,7 +408,7 @@ class InklingAudioFeatureExtractor(FeatureExtractionMixin):
         self.params = merged
 
     def _decode_one(self, audio) -> torch.Tensor:
-        # vLLM hands the feature extractor numpy arrays (the dummy-input builder
+        # Sonar gives the feature extractor NumPy arrays (the dummy-input builder
         # during profiling, and MultiModalDataParser after resampling to the
         # target sample rate), so no other input types need to be supported.
         return torch.from_numpy(np.ascontiguousarray(audio.astype(np.float32, copy=False))).flatten()

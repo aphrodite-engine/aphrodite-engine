@@ -148,7 +148,7 @@ class TopKTopPSampler(nn.Module):
     ) -> torch.Tensor | None:
         """Sample from a small top-k slice instead of the full vocabulary.
 
-        This preserves the normal Aphrodite/vLLM order for the common case:
+        This preserves Sonar's normal order for the common case:
         temperature/logit processors first, then top-k, then top-p, then random
         sampling. It avoids full-vocab softmax and Gumbel argmax when k is
         small, which matters for single-request decode throughput.

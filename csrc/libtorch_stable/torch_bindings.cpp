@@ -210,7 +210,7 @@ STABLE_TORCH_LIBRARY_FRAGMENT(_C, ops) {
       "                        bool is_gated) -> ()");
 
   // compute per-expert problem sizes from expert_first_token_offset
-  // produced by vLLM's moe_permute kernel
+  // produced by Sonar's moe_permute kernel.
   ops.def(
       "get_cutlass_moe_mm_problem_sizes_from_expert_offsets("
       "    Tensor expert_first_token_offset, "

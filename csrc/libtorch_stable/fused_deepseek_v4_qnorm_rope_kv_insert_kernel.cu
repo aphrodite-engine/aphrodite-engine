@@ -92,7 +92,7 @@ constexpr int kNumQuantBlocks = kNopeDim / kQuantBlock;   // 7
 constexpr int kScaleBytesPerToken = kNumQuantBlocks + 1;  // 8 (7 real + 1 pad)
 constexpr int kTokenDataBytes = kNopeDim + kRopeDim * 2;  // 448 + 128 = 576
 // FNUZ on gfx942 / OCP elsewhere. FNUZ uses 224.0 (not the dtype's raw
-// 240.0) to match the rest of vLLM's FNUZ pipeline.
+// 240.0) to match the rest of Sonar's FNUZ pipeline.
 #if defined(USE_ROCM) && defined(__gfx942__)
 constexpr float kFp8Max = 224.0f;
 #else

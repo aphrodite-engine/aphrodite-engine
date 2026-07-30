@@ -70,7 +70,7 @@ if _SPEC:
     def _hook(name, *a, **k):
         module = _real_import(name, *a, **k)
         m = sys.modules.get(_MODULE)
-        # During vLLM's circular import the module lands in sys.modules before
+        # During Sonar's circular import, the module enters sys.modules before
         # its functions are defined; hasattr guards against patching too early.
         if (
             m is not None
@@ -89,7 +89,7 @@ def _install_fault_injection(monkeypatch, tmp_path, rank: int, step: int) -> Non
     """Arrange for the DP-sync fn to raise on ``rank`` at serving ``step``.
 
     Writes a ``sitecustomize.py`` and prepends its dir to PYTHONPATH so every
-    vLLM subprocess picks it up; the fault spec is read from the environment.
+    Sonar subprocess picks it up. The fault spec is read from the environment.
     """
     site_dir = tmp_path / "ft_inject"
     site_dir.mkdir()

@@ -21,7 +21,7 @@ use crate::error::{Error, Result, bail_multimodal, multimodal};
 
 /// Forward-kwargs name of the primary video encoder input.
 ///
-/// Video-capable vLLM models read `pixel_values_videos` alongside
+/// Video-capable Sonar models read `pixel_values_videos` alongside
 /// `video_grid_thw`, mirroring the HF processor output naming.
 pub(super) const VIDEO_PRIMARY_KEY: &str = "pixel_values_videos";
 
@@ -113,7 +113,7 @@ impl MultimodalModelInfo {
 ///
 /// The clip is a batch of one, so no per-item slicing is required: the
 /// primary tensor ships as a full-range flat field (the engine re-batches
-/// flat fields by concatenating along the declared dim, matching vLLM's
+/// flat fields by concatenating along the declared dim, matching Sonar's
 /// `flat_from_sizes` treatment of video patches), and batched metadata
 /// tensors drop their singleton batch axis.
 fn build_video_item(

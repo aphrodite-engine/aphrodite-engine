@@ -228,11 +228,11 @@ void concat_and_cache_mla_rope_fused(
         kv_cache,  // [num_blocks, block_size, (kv_lora_rank + rot_dim)]
     const std::string& kv_cache_dtype,
     torch::stable::Tensor& kv_cache_quant_scale) {
-  // NOTE(woosuk): In vLLM V1, query/key/position.size(0) can be different from
+  // NOTE(woosuk): In Sonar V1, query/key/position.size(0) can be different from
   // slot_mapping.size(0) because of padding for CUDA graphs.
-  // In vLLM V0, key.size(0) is always equal to slot_mapping.size(0)
+  // In Sonar V0, key.size(0) is always equal to slot_mapping.size(0)
   // because both include padding.
-  // In vLLM V1, however, key.size(0) can be larger than
+  // In Sonar V1, however, key.size(0) can be larger than
   // slot_mapping.size(0) since key includes padding for CUDA graphs,
   // while slot_mapping does not. In this case,
   // slot_mapping.size(0) represents the actual number of tokens

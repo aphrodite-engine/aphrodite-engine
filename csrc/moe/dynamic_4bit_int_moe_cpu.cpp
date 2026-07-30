@@ -144,7 +144,7 @@ torch::Tensor dynamic_4bit_int_moe_cpu(
         auto up_c = at::clamp(u_part, -kLimit, kLimit);
         auto glu = gate_c.mul(at::sigmoid(gate_c.mul(kAlpha)));
         act = up_c.add(1.0).mul(glu);
-      } else {  // SiLU , SwiGLU_GU, vLLM maps silu to SiluAndMul()
+      } else {  // Sonar maps SiLU and SwiGLU_GU to SiluAndMul.
         act = at::silu(g_part).mul(u_part);
       }
 
