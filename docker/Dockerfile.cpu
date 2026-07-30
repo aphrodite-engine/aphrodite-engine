@@ -83,8 +83,6 @@ RUN echo 'ulimit -c 0' >> ~/.bashrc
 FROM base AS aphrodite-build
 
 ARG GIT_REPO_CHECK=0
-ARG APHRODITE_VERSION_OVERRIDE
-ENV APHRODITE_VERSION_OVERRIDE=${APHRODITE_VERSION_OVERRIDE}
 ENV APHRODITE_REQUIRE_RUST_FRONTEND=1
 ARG MAX_JOBS=4
 ENV MAX_JOBS=${MAX_JOBS}
@@ -109,6 +107,7 @@ COPY . .
 RUN --mount=type=bind,source=.git,target=.git \
     if [ "$GIT_REPO_CHECK" != 0 ]; then bash tools/check_repo.sh ; fi
 
+ARG APHRODITE_VERSION_OVERRIDE
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/workspace/aphrodite/.deps,sharing=locked \
@@ -116,7 +115,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
     --mount=type=cache,target=/workspace/aphrodite/rust/target,sharing=locked \
     --mount=type=bind,source=.git,target=.git \
-    APHRODITE_TARGET_DEVICE=cpu python3 setup.py bdist_wheel 
+    APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE}" \
+    APHRODITE_TARGET_DEVICE=cpu python3 setup.py bdist_wheel
 
 RUN wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)" \
     && test -n "$wheel" \
