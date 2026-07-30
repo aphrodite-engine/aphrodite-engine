@@ -220,7 +220,7 @@ def _deepgemm_fp8_gemm_nt_warmup(
 
     device = w.device
     a1q = torch.empty((max_tokens, k), device=device, dtype=torch.float8_e4m3fn)
-    a1q_scales = torch.empty((max_tokens, k // block_m), device=device, dtype=torch.float32)
+    a1q_scales = torch.zeros((max_tokens, k // block_m), device=device, dtype=torch.float32)
     out = torch.empty((max_tokens, n), device=device, dtype=torch.bfloat16)
 
     m_values = _get_fp8_gemm_nt_m_values(w, max_tokens)
@@ -313,7 +313,7 @@ def _deepgemm_grouped_fp8_gemm_nt_contiguous_warmup(
     def _warmup(w: torch.Tensor, w_scale: torch.Tensor):
         _, n, k = w.size()
         a1q = torch.empty((MAX_M, k), device=device, dtype=torch.float8_e4m3fn)
-        a1q_scales = torch.empty((MAX_M, k // block_m), device=device, dtype=torch.float32)
+        a1q_scales = torch.zeros((MAX_M, k // block_m), device=device, dtype=torch.float32)
         out = torch.empty((MAX_M, n), device=device, dtype=torch.bfloat16)
 
         for num_tokens, align_used, expert_ids in warmup_cases:

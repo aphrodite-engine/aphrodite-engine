@@ -16,10 +16,9 @@ import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig, ModelConfig, set_current_aphrodite_config
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.attention import (
-    Attention,
-    MLAAttention,
     MMEncoderAttention,
 )
+from aphrodite.model_executor.layers.attention_layer_base import AttentionLayerBase
 from aphrodite.model_executor.layers.hpc import HpcModule
 from aphrodite.model_executor.layers.quantization.base_config import (
     QuantizationConfig,
@@ -120,10 +119,11 @@ def process_weights_after_loading(model: nn.Module, model_config: ModelConfig, t
             # the caching allocator, which starves the OS on UMA devices.
             release_device_memory_under_pressure(target_device)
 
-    # Initialize post-load attention weights for Attention, MLA, and MM encoder.
-    # NOTE: Happens after other modules so we can easily decompress weights.
+    # Initialize post-load attention weights for any attention layer and MM
+    # encoder. NOTE: Happens after other modules so we can easily decompress
+    # weights.
     for _, module in model.named_modules():
-        if isinstance(module, (Attention, MLAAttention, MMEncoderAttention)) and hasattr(
+        if isinstance(module, (AttentionLayerBase, MMEncoderAttention)) and hasattr(
             module, "process_weights_after_loading"
         ):
             # TODO(lucas): see if there is a way to unify the signatures

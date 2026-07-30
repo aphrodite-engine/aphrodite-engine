@@ -194,6 +194,8 @@ thi = "thi"
 tru = "tru"
 
 [tool.typos.default.extend-words]
+Hel = "Hel"
+wether = "wether"
 iy = "iy"
 indx = "indx"
 # intel cpu features

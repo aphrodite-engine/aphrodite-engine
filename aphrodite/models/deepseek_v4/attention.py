@@ -22,9 +22,9 @@ from aphrodite.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from aphrodite.model_executor.layers.sparse_attn_indexer import SparseAttnIndexer
+from aphrodite.models.common.ops import fused_q_kv_rmsnorm
 from aphrodite.models.deepseek_v4.common.ops import (
     fused_indexer_q_rope_quant,
-    fused_q_kv_rmsnorm,
 )
 from aphrodite.models.deepseek_v4.common.ops.fused_indexer_q import MXFP4_BLOCK_SIZE
 
