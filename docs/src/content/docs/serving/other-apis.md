@@ -58,6 +58,30 @@ Audio transcription models expose `/v1/audio/transcriptions`. Use multipart
 form data as required by the OpenAI-compatible transcription schema. Check the
 [model matrix](/reference/models/) before you select a model.
 
+The supported response formats are `json`, `text`, `verbose_json`, and, for
+models with diarization support, `diarized_json`. The diarized format returns
+speaker-attributed segments and is currently supported by
+`OpenMOSS-Team/MOSS-Transcribe-Diarize`:
+
+```json
+{
+  "task": "transcribe",
+  "duration": 6.1,
+  "text": "Hello. Hi, how are you?",
+  "segments": [
+    {
+      "type": "transcript.text.segment",
+      "id": "seg_0",
+      "start": 0.0,
+      "end": 2.8,
+      "text": "Hello.",
+      "speaker": "S01"
+    }
+  ],
+  "usage": {"type": "duration", "seconds": 7}
+}
+```
+
 ## Kobold API
 
 Use `--launch-kobold-api` to enable the Kobold-compatible routes. Check the
