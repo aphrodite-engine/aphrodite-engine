@@ -80,6 +80,16 @@ find_commit_wheel() {
     head -n 1 || true
 }
 
+restore_tracked_build_changes() {
+  if git diff --quiet && git diff --cached --quiet; then
+    return
+  fi
+
+  echo "Restoring tracked files modified by the previous build:"
+  git status --short --untracked-files=no
+  git restore --source=HEAD --staged --worktree -- .
+}
+
 write_commit_index() {
   local commit="$1"
   local wheel_name="$2"
@@ -163,6 +173,7 @@ echo "Last contiguous build: ${last_built:-none}"
 echo "Commits requiring reconciliation: ${#commits[@]}"
 
 for commit in "${commits[@]}"; do
+  restore_tracked_build_changes
   git checkout --detach "$commit"
   wheel_name="$(find_commit_wheel "$commit")"
 
@@ -211,6 +222,7 @@ for commit in "${commits[@]}"; do
   printf '%s\n' "$commit" | "$rclone" rcat "$state_remote"
 done
 
+restore_tracked_build_changes
 git checkout --detach "$target_commit"
 
 entries="${RUNNER_TEMP}/sonar-${PLATFORM_BACKEND}-${PLATFORM_ARCHITECTURE}.tsv"
