@@ -31,17 +31,14 @@ current source tree.
 
 ## Install
 
-The published NVIDIA wheel supports Linux x86-64, Python 3.10-3.13, and NVIDIA
-GPUs with compute capability 8.0 or newer.
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then
-create an environment:
+Run the automatic installer:
 
 ```bash
-uv venv --python 3.12 --seed
-source .venv/bin/activate
-uv pip install aphrodite-engine --torch-backend=cu130
+curl -fsSL https://sonar.dphn.ai/install.sh | bash
 ```
+
+The installer detects the platform and accelerator. It can create a Python
+environment and install a release or nightly build.
 
 Use the [complete installation guide](https://sonar.dphn.ai/getting-started/installation/)
 for AMD ROCm, Intel XPU, CPU, Apple silicon, Google TPU, Docker, WSL 2, source

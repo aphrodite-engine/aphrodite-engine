@@ -5,7 +5,7 @@ template: splash
 hero:
   tagline: Serve Hugging Face models with an OpenAI-compatible API or a Python API.
   image:
-    file: ../../assets/logo.svg
+    file: ../../assets/dphn.png
   actions:
     - text: Get Started
       link: /getting-started/installation
@@ -17,6 +17,15 @@ hero:
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Install
+
+```bash
+curl -fsSL https://sonar.dphn.ai/install.sh | bash
+```
+
+The installer detects the platform and accelerator. It can create a Python
+environment and install a release or nightly build.
 
 ## Start here
 
