@@ -364,3 +364,57 @@ def test_no_placeholder_underflow_on_stale_spec_frame():
     assert req.num_stale_output_tokens == 0
     assert req.output_token_ids == [999]
     assert req.status == RequestStatus.PREEMPTED
+
+
+def test_requires_kv_delivery_defaults_to_producer_role():
+    # No connector: nothing is handed off, so keep the lossless deliver-stale
+    # path on preemption.
+    assert create_scheduler(async_scheduling=True).requires_kv_delivery is False
+    # Only a producer hands KV off when a request completes.
+    for role, expected in (
+        ("kv_producer", True),
+        ("kv_both", True),
+        ("kv_consumer", False),
+    ):
+        scheduler = create_scheduler(async_scheduling=True, use_kv_connector=True, kv_role=role)
+        assert scheduler.requires_kv_delivery is expected, role
+
+
+@pytest.mark.parametrize("kv_role", ["kv_producer", "kv_consumer"])
+def test_kv_pressure_preempt_mid_handoff(kv_role: str):
+    """Test KV-pressure preemption during the final prefill hand-off."""
+    is_producer = kv_role == "kv_producer"
+    scheduler = create_scheduler(
+        async_scheduling=True,
+        use_kv_connector=True,
+        kv_role=kv_role,
+        num_blocks=5,
+        block_size=16,
+        max_num_batched_tokens=512,
+    )
+    assert scheduler.requires_kv_delivery is is_producer
+
+    decoder = create_requests(num_requests=1, num_tokens=32, max_tokens=8, req_ids=["decoder"])[0]
+    handoff = create_requests(num_requests=1, num_tokens=32, max_tokens=1, req_ids=["handoff"])[0]
+    scheduler.add_request(decoder)
+    scheduler.add_request(handoff)
+    sched_output = scheduler.schedule()
+    assert handoff.status == RequestStatus.RUNNING
+    assert handoff.num_output_placeholders == 1
+
+    scheduler.schedule()
+    assert handoff.status == RequestStatus.PREEMPTED
+    assert handoff.num_stale_output_tokens == handoff.num_prompt_tokens
+    assert handoff.drop_stale_output is is_producer
+
+    scheduler.update_from_output(sched_output, _make_model_runner_output(sched_output))
+
+    assert handoff.num_stale_output_tokens == 0
+    if is_producer:
+        assert not handoff.is_finished()
+        assert handoff.status == RequestStatus.PREEMPTED
+        assert handoff.num_output_tokens == 0
+        assert handoff.request_id in scheduler.requests
+    else:
+        assert handoff.is_finished()
+        assert handoff.num_output_tokens == 1
