@@ -59,6 +59,71 @@ can impose a lower limit.
 settings documented by the model implementation. Image resolution, video frame
 count, and audio duration affect both latency and memory.
 
+## Configure video decoding
+
+Aphrodite decodes video bytes into frames using a selectable decoding backend.
+
+| Backend | Device | Description |
+| --- | --- | --- |
+| `opencv` (default) | CPU | OpenCV-based decoder |
+| `pyav` | CPU | PyAV decoder |
+| `torchcodec` | CPU | TorchCodec (PyTorch-native) decoder |
+| `pynvvideocodec` | GPU | NVIDIA PyNvVideoCodec decoder |
+| `deepstream` | GPU | NVIDIA DeepStream decoder |
+
+The three CPU backends are ultimately backed by FFmpeg. `torchcodec` lets you
+choose which FFmpeg version is used, while `opencv` and `pyav` rely on the
+FFmpeg build they were linked against.
+
+Select the decoder with `--media-io-kwargs`:
+
+```bash
+aphrodite serve Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --media-io-kwargs '{"video": {"backend": "torchcodec"}}'
+```
+
+### GPU video decoding with PyNvVideoCodec
+
+The `pynvvideocodec` backend uses NVIDIA NVDEC to decode sampled video frames
+on the GPU before copying them into host memory for multimodal preprocessing.
+For workloads with large videos and relatively light inference, such as video
+tagging, this can alleviate bottlenecks in CPU-based video decoders.
+
+> **Warning:** [CUDA Multi-Process Service
+> (MPS)](https://docs.nvidia.com/deploy/mps/quick-start.html) is required when
+> using this backend. Video decoding runs in the API server process while model
+> serving runs in the engine process, so multiple CUDA processes share the same
+> GPU. Configure and start MPS before starting Aphrodite.
+
+You must also set a positive `--mm-ipc-gpu-memory-gb` value to reserve VRAM for
+video decoding. Aphrodite carves this budget out of the memory available to the
+KV cache and uses it to bound concurrent frontend decode allocations. If the
+budget is exhausted, decode work waits instead of consuming the engine's VRAM
+headroom and potentially causing an out-of-memory error while serving requests.
+
+Select the backend with an environment variable and specify a
+workload-appropriate VRAM budget. For example, to reserve 1 GiB:
+
+```bash
+export APHRODITE_VIDEO_LOADER_BACKEND=pynvvideocodec
+aphrodite serve Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --mm-ipc-gpu-memory-gb 1
+```
+
+Alternatively, select it with `--media-io-kwargs`:
+
+```bash
+aphrodite serve Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --media-io-kwargs '{"video": {"backend": "pynvvideocodec"}}' \
+  --mm-ipc-gpu-memory-gb 1
+```
+
+Choose a budget large enough for the largest sampled video that a single API
+server process must decode. When using multiple API server processes,
+Aphrodite divides the configured budget evenly among them.
+
+For streaming video sources, use the `deepstream` backend instead.
+
 ## Benchmark media
 
 Text-only tests do not measure encoder or download cost. Use
