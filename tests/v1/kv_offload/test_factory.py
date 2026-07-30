@@ -11,6 +11,9 @@ These tests verify:
 4. Error paths — unregistered specs, missing config, duplicate registration.
 """
 
+from typing import Any
+from unittest.mock import MagicMock
+
 import pytest
 import torch
 
@@ -26,6 +29,7 @@ from aphrodite.v1.kv_cache_interface import (
     MambaSpec,
 )
 from aphrodite.v1.kv_offload.base import OffloadingHistogramMetadata, OffloadingSpec
+from aphrodite.v1.kv_offload.cpu.shared_offload_region import SharedOffloadRegion
 from aphrodite.v1.kv_offload.cpu.spec import CPUOffloadingSpec
 from aphrodite.v1.kv_offload.factory import OffloadingSpecFactory
 from aphrodite.v1.kv_offload.tiering.spec import TieringOffloadingSpec
@@ -251,6 +255,108 @@ def test_create_cpu_offloading_spec_end_to_end():
     spec = OffloadingSpecFactory.create_spec(build_offloading_config(config, kv_cache_config))
     assert isinstance(spec, CPUOffloadingSpec)
     assert spec.num_blocks > 0
+
+
+def test_cpu_spec_sizes_use_shared_region_alignment():
+    alignment = SharedOffloadRegion.BLOCK_SIZE_ALIGNMENT
+    config = _make_aphrodite_config(cpu_bytes_to_use=alignment * 3)
+    spec = OffloadingSpecFactory.create_spec(build_offloading_config(config, _make_kv_cache_config()))
+
+    assert isinstance(spec, CPUOffloadingSpec)
+    assert spec.cpu_page_size_per_worker == 8
+    assert spec.kv_bytes_per_chunk == alignment
+    assert spec.num_blocks == 3
+
+
+def test_cpu_spec_create_worker_uses_mmap_on_cuda_alike(monkeypatch):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    alignment = SharedOffloadRegion.BLOCK_SIZE_ALIGNMENT
+    config = _make_aphrodite_config(cpu_bytes_to_use=alignment * 8)
+    config.parallel_config.tensor_parallel_size = 4
+    spec = OffloadingSpecFactory.create_spec(build_offloading_config(config, _make_kv_cache_config()))
+    assert isinstance(spec, CPUOffloadingSpec)
+
+    region = MagicMock()
+    region_calls: list[dict[str, Any]] = []
+    worker_calls: list[dict[str, Any]] = []
+
+    def fake_region_ctor(**kwargs):
+        region_calls.append(kwargs)
+        return region
+
+    def fake_worker_ctor(**kwargs):
+        worker_calls.append(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: True)
+    monkeypatch.setattr(cpu_spec_module, "SharedOffloadRegion", fake_region_ctor)
+    monkeypatch.setattr(cpu_spec_module, "CPUOffloadingWorker", fake_worker_ctor)
+    monkeypatch.setattr(cpu_spec_module.torch.accelerator, "current_device_index", lambda: 5)
+
+    kv_caches = MagicMock()
+    spec.create_worker(kv_caches)
+
+    assert region_calls[0]["rank"] == 1
+    assert region_calls[0]["engine_id"] == spec.config.engine_id
+    assert region_calls[0]["kv_bytes_per_block"] == spec.kv_bytes_per_chunk
+    assert worker_calls[0]["kv_caches"] is kv_caches
+    assert worker_calls[0]["mmap_region"] is region
+
+
+def test_cpu_spec_create_worker_uses_tensor_path_off_cuda_alike(monkeypatch):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    config = _make_aphrodite_config(cpu_bytes_to_use=65536)
+    spec = OffloadingSpecFactory.create_spec(build_offloading_config(config, _make_kv_cache_config()))
+    assert isinstance(spec, CPUOffloadingSpec)
+
+    region_calls: list[dict[str, Any]] = []
+    worker_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: False)
+    monkeypatch.setattr(
+        cpu_spec_module,
+        "SharedOffloadRegion",
+        lambda **kwargs: region_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        cpu_spec_module,
+        "CPUOffloadingWorker",
+        lambda **kwargs: worker_calls.append(kwargs),
+    )
+
+    spec.create_worker(MagicMock())
+
+    assert region_calls == []
+    assert worker_calls[0]["mmap_region"] is None
+
+
+def test_cpu_spec_create_worker_skips_mmap_for_empty_cache(monkeypatch):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    config = _make_aphrodite_config(cpu_bytes_to_use=65536)
+    spec = OffloadingSpecFactory.create_spec(build_offloading_config(config, _make_kv_cache_config()))
+    assert isinstance(spec, CPUOffloadingSpec)
+    spec.num_blocks = 0
+
+    region_calls: list[dict[str, Any]] = []
+    worker_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: True)
+    monkeypatch.setattr(
+        cpu_spec_module,
+        "SharedOffloadRegion",
+        lambda **kwargs: region_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        cpu_spec_module,
+        "CPUOffloadingWorker",
+        lambda **kwargs: worker_calls.append(kwargs),
+    )
+
+    spec.create_worker(MagicMock())
+
+    assert region_calls == []
+    assert worker_calls[0]["mmap_region"] is None
 
 
 # ---------------------------------------------------------------------------
