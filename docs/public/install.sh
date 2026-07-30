@@ -237,7 +237,7 @@ check_cuda() {
 '
     for capability in $compute_caps; do
         case "$capability" in
-            8.0 | 8.6 | 8.9 | 9.0 | 10.0 | 12.*) ;;
+            8.0 | 8.6 | 8.9 | 9.0 | 10.0 | 10.3 | 12.*) ;;
             *) unsupported_caps="${unsupported_caps}${unsupported_caps:+, }${capability}" ;;
         esac
     done
