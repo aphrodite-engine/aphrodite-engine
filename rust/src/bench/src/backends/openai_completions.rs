@@ -24,7 +24,7 @@ impl OpenAICompletionsBackend {
         let model = input.model_name.as_deref().unwrap_or(&input.model);
 
         // When prompt_token_ids are available, send them as the `prompt` value
-        // (JSON array of integers). vLLM's completions API accepts both string
+        // (JSON array of integers). Sonar's completions API accepts both string
         // and token ID array as `prompt`, skipping server-side tokenization.
         let prompt_value = if let Some(ref token_ids) = input.prompt_token_ids {
             serde_json::json!(token_ids.as_ref())

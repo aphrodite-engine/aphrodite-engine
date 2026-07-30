@@ -501,7 +501,7 @@ class InklingMoE(nn.Module):
             lambda: self.sink_experts(x, gammas),
             self._sink_events[0],
             self._sink_events[1],
-            self._sink_stream if num_tokens <= envs.VLLM_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD else None,
+            self._sink_stream if num_tokens <= envs.APHRODITE_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD else None,
         )
         self._routed_sel = None
 

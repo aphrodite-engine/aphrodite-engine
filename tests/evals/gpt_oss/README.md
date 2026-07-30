@@ -1,6 +1,6 @@
 # GPQA Evaluation using GPT-OSS
 
-This directory contains GPQA evaluation tests using the GPT-OSS evaluation package and vLLM server.
+This directory contains GPQA evaluation tests using the GPT-OSS evaluation package and Sonar server.
 
 ## Usage
 
@@ -41,7 +41,7 @@ The `env` field accepts a dictionary of environment variables to set for the ser
 
 ## Tiktoken Encoding Files
 
-The tiktoken encoding files required by the vLLM server are automatically downloaded from OpenAI's public blob storage on first run:
+The tiktoken encoding files required by the Sonar server are automatically downloaded from OpenAI's public blob storage on first run:
 
 - `cl100k_base.tiktoken`
 - `o200k_base.tiktoken`

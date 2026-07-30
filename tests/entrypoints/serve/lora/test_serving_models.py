@@ -20,7 +20,7 @@ from aphrodite.entrypoints.serve.lora.protocol import (
     LoadLoRAAdapterRequest,
     UnloadLoRAAdapterRequest,
 )
-from aphrodite.exceptions import VLLMNotFoundError
+from aphrodite.exceptions import AphroditeNotFoundError
 from aphrodite.lora.request import LoRARequest
 
 MODEL_NAME = "hmellor/tiny-random-LlamaForCausalLM"
@@ -174,8 +174,8 @@ def test_pooling_maybe_get_adapters_lora_name_sets_lora_request():
 
 
 def test_pooling_maybe_get_adapters_unknown_model_raises():
-    """An unrecognised model name must still raise VLLMNotFoundError."""
+    """An unrecognised model name must still raise AphroditeNotFoundError."""
     serving = _make_pooling_serving("some-lora")
 
-    with pytest.raises(VLLMNotFoundError):
+    with pytest.raises(AphroditeNotFoundError):
         _make_pooling_ctx("unknown-model", serving)

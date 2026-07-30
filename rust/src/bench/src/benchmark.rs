@@ -28,7 +28,7 @@ use crate::ready_checker::wait_for_endpoint;
 ///
 /// Skipped when: URL parse fails, host is already an IP, host is a loopback
 /// name (resolved from `/etc/hosts`, no DNS pressure and dual-stack ambiguity
-/// between `127.0.0.1` and `::1` breaks IPv4-only servers like vLLM), or
+/// between `127.0.0.1` and `::1` breaks IPv4-only servers like Sonar), or
 /// resolution fails.
 pub fn pre_resolve_dns(
     base_url: &str,
@@ -145,7 +145,7 @@ pub(crate) async fn fetch_spec_decode_metrics(
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if !line.starts_with("vllm:spec_decode") {
+        if !line.starts_with("aphrodite:spec_decode") {
             continue;
         }
         found_spec_decode = true;
@@ -1355,7 +1355,7 @@ pub(crate) async fn send_profile_request(
     Ok(resp.status().is_success())
 }
 
-/// Parse `vllm:num_requests_running` from the server's `/metrics` Prometheus endpoint.
+/// Parse `aphrodite:num_requests_running` from the server's `/metrics` endpoint.
 pub(crate) async fn fetch_num_requests_running(
     client: &reqwest::Client,
     base_url: &str,
@@ -1364,8 +1364,8 @@ pub(crate) async fn fetch_num_requests_running(
     let resp = client.get(&url).send().await.ok()?;
     let text = resp.text().await.ok()?;
     for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("vllm:num_requests_running") {
-            // Line format: `vllm:num_requests_running{model_name="..."} 42`
+        if let Some(rest) = line.strip_prefix("aphrodite:num_requests_running") {
+            // Line format: `aphrodite:num_requests_running{model_name="..."} 42`
             // The value is after the last space.
             if let Some(val_str) = rest.rsplit(' ').next()
                 && let Ok(v) = val_str.parse::<f64>()

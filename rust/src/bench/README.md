@@ -418,7 +418,7 @@ aphrodite-bench \
 | `openai-embeddings` | `/v1/embeddings` | Text embedding (accepts text or token IDs) |
 | `openai-embeddings-chat` | `/v1/embeddings` | Chat-format embedding (supports multimodal content) |
 | `aphrodite-pooling` | `/v1/pooling` | Aphrodite native pooling endpoint |
-| `aphrodite-rerank` | `/v1/rerank` | vLLM reranking (query from prompt, documents via `--extra-body`) |
+| `aphrodite-rerank` | `/v1/rerank` | Sonar reranking (query from prompt, documents via `--extra-body`) |
 
 Pooling backends are non-streaming and report E2EL (end-to-end latency) only. Use `--dataset-name sharegpt`, `sonnet`, or `hf` for text-based embedding/rerank benchmarks, or `random` for token-ID-based embedding benchmarks.
 
@@ -707,7 +707,7 @@ Tokenizers are loaded with a three-tier fallback chain:
 
 1. **Local HuggingFace** — `tokenizer.json` from a local path or the Hub (fastest)
 2. **Tiktoken** — `.tiktoken` / `.model` format for Kimi, Qwen, etc. (auto-extracts `pat_str` from Python source)
-3. **Server-side** — falls back to vLLM's `/tokenize` + `/detokenize` endpoints
+3. **Server-side** — falls back to Sonar's `/tokenize` + `/detokenize` endpoints
 
 For the `random` dataset, prompt token lengths are verified against the server on the first run and cached; subsequent runs with the same model+server skip verification. Verification is also skipped when `--prompt-token-ids` is set (token counts are exact by construction).
 

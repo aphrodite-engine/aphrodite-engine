@@ -200,7 +200,7 @@ def _validate_video_source(path: str, model_config) -> str:
     ``MultiModalDataParser`` and hands it to the trust-remote-code codec
     module, which opens it directly via ``cv2.VideoCapture`` / ffmpeg. That
     bypasses both ``MediaConnector``'s access controls and its redirect
-    handling (``VLLM_MEDIA_URL_ALLOW_REDIRECTS``), so we restrict the codec
+    handling (``APHRODITE_MEDIA_URL_ALLOW_REDIRECTS``), so we restrict the codec
     backend to **local files only**: remote ``http(s)`` / ``data`` URLs are
     rejected here and must instead go through the frame backend (a registered
     ``VIDEO_LOADER_REGISTRY`` loader), which rides Aphrodite's connector and its

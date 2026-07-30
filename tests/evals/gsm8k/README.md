@@ -1,6 +1,6 @@
 # GSM8K Accuracy Evaluation
 
-This directory contains a replacement for the lm-eval-harness GSM8K evaluation, using an isolated GSM8K script and vLLM server for better performance and control.
+This directory contains a replacement for the lm-eval-harness GSM8K evaluation, using an isolated GSM8K script and Sonar server for better performance and control.
 
 ## Usage
 
@@ -14,7 +14,7 @@ pytest -s -v tests/evals/gsm8k/test_gsm8k_correctness.py \
 ### Run standalone evaluation script
 
 ```bash
-# Start vLLM server first
+# Start the Sonar server first
 aphrodite serve Qwen/Qwen2.5-1.5B-Instruct --port 8000
 
 # Run evaluation

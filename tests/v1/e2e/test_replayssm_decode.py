@@ -73,7 +73,9 @@ PREFIX_CACHING_PROMPTS = [
 
 
 def _prefix_cache_hits(llm) -> int:
-    return sum(m.value for m in llm.llm.get_metrics() if isinstance(m, Counter) and m.name == "vllm:prefix_cache_hits")
+    return sum(
+        m.value for m in llm.llm.get_metrics() if isinstance(m, Counter) and m.name == "aphrodite:prefix_cache_hits"
+    )
 
 
 def _check_replayssm_prefix_caching_parity(aphrodite_runner, model_name, *, tensor_parallel_size=1):

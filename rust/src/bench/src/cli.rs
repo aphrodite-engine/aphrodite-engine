@@ -6,7 +6,7 @@ use std::fmt;
 /// Backend type for the benchmark endpoint.
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendKind {
-    #[value(name = "aphrodite", alias = "vllm")]
+    #[value(name = "aphrodite")]
     Aphrodite,
     #[value(name = "openai")]
     Openai,
@@ -16,9 +16,9 @@ pub enum BackendKind {
     OpenaiEmbeddings,
     #[value(name = "openai-embeddings-chat")]
     OpenaiEmbeddingsChat,
-    #[value(name = "aphrodite-pooling", alias = "vllm-pooling")]
+    #[value(name = "aphrodite-pooling")]
     AphroditePooling,
-    #[value(name = "aphrodite-rerank", alias = "vllm-rerank")]
+    #[value(name = "aphrodite-rerank")]
     AphroditeRerank,
 }
 
@@ -361,7 +361,7 @@ pub struct BenchServeArgs {
     #[arg(long, default_value_t = 0)]
     pub num_warmups: usize,
 
-    /// Use vLLM profiling. --profiler-config must be provided on the server.
+    /// Use Sonar profiling. --profiler-config must be provided on the server.
     #[arg(long, default_value_t = false)]
     pub profile: bool,
 

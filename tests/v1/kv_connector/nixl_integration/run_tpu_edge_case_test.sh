@@ -31,7 +31,7 @@ OUTPUT_FILE=${OUTPUT_FILE:-"${EXP_ROOT}/.tpu_accuracy_test_outputs.txt"}
 # Trap the SIGINT signal (triggered by Ctrl+C)
 trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
 
-# Waits for vLLM server to start.
+# Waits for the Sonar server to start.
 wait_for_server() {
   local host=$1
   local port=$2

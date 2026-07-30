@@ -1547,7 +1547,7 @@ def test_gemma4_dspark_correctness_and_acceptance_rate(
       acceptance_len:  min=5.044 max=5.167 mean=5.116
     Thresholds set conservatively to 10% to avoid flaking due to unlucky sampling
     """
-    monkeypatch.setenv("VLLM_USE_FLASHINFER_SAMPLER", "0")
+    monkeypatch.setenv("APHRODITE_USE_FLASHINFER_SAMPLER", "0")
 
     spec_llm = LLM(
         model="google/gemma-4-12B-it",

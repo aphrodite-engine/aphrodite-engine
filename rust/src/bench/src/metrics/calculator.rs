@@ -51,7 +51,7 @@ pub fn calculate_metrics(
             } else {
                 // Fallback: first token + ITL entries.
                 // Python re-encodes generated_text when tokenizer is available,
-                // but with vLLM's stream_options.include_usage=true,
+                // but with Sonar's stream_options.include_usage=true,
                 // output_tokens is always set so this path is rarely hit.
                 1 + output.itl.len()
             };

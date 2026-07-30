@@ -19,7 +19,7 @@ def _get_counter(metrics, name: str) -> float:
 @large_gpu_mark(min_gb=80)
 def test_laguna_dflash_hf_pair_smoke(monkeypatch):
     """Smoke-test the public Laguna XS-2.1 base/DFlash checkpoint pair."""
-    monkeypatch.setenv("VLLM_USE_FLASHINFER_SAMPLER", "0")
+    monkeypatch.setenv("APHRODITE_USE_FLASHINFER_SAMPLER", "0")
 
     llm = LLM(
         model="poolside/Laguna-XS-2.1",
@@ -48,8 +48,8 @@ def test_laguna_dflash_hf_pair_smoke(monkeypatch):
         assert all(output.outputs[0].text for output in outputs)
 
         metrics = llm.get_metrics()
-        num_drafts = _get_counter(metrics, "vllm:spec_decode_num_drafts")
-        num_accepted = _get_counter(metrics, "vllm:spec_decode_num_accepted_tokens")
+        num_drafts = _get_counter(metrics, "aphrodite:spec_decode_num_drafts")
+        num_accepted = _get_counter(metrics, "aphrodite:spec_decode_num_accepted_tokens")
 
         assert num_drafts > 0
         acceptance_len = 1 + (num_accepted / num_drafts)

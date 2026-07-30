@@ -4,7 +4,7 @@ This test verifies that EPD (Encoder-Prefill-Decode) disaggregation produces ide
 
 ## What It Tests
 
-- **Baseline**: Single vLLM instance serving a multimodal model
+- **Baseline**: Single Sonar instance serving a multimodal model
 - **EPD (1E+1PD)**: 1 Encoder + 1 Prefill-Decode instance
 - **Baseline (1P+1D)**: 1 Prefill + 1 Decode instance
 - **EPD (1E+1P+1D)**: 1 Encoder + 1 Prefill + 1 Decode instance
@@ -60,7 +60,7 @@ EC_SHARED_STORAGE_PATH="/tmp/my_ec_cache" bash ./tests/v1/ec_connector/integrati
 
 ### Step 1: Baseline
 
-1. Start single vLLM instance on GPU
+1. Start a single Sonar instance on the GPU.
 2. Run test prompts (multimodal or text-only)
 3. Save outputs to `.aphrodite_epd_baseline.txt`
 4. Shutdown instance
