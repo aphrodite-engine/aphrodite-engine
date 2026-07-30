@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           rm -f wheels/main/*.whl
-          docker buildx prune --force \
+          docker buildx prune --builder default --force \
             --filter type=regular \
             --max-used-space 25gb
 
@@ -319,7 +319,7 @@ jobs:
       - name: Limit ROCm build cache
         if: ${{ always() }}
         run: |
-          docker buildx prune --force \
+          docker buildx prune --builder sonar-rocm --force \
             --filter type=regular \
             --max-used-space 100gb
 

@@ -10,6 +10,8 @@ builder_name="${ROCM_BUILDER_NAME:-sonar-rocm}"
 container_name="${ROCM_BUILDKIT_CONTAINER:-sonar-rocm-buildkit}"
 cache_size="${ROCM_BUILDKIT_CACHE_SIZE:-300g}"
 builder_port="${ROCM_BUILDKIT_PORT:-12351}"
+# The rootless image does not use /var/lib/buildkit.
+builder_state_dir="/home/user/.local/share/buildkit"
 dind_address="$(
   docker --host "$host_control" inspect --format \
     '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
@@ -34,7 +36,7 @@ container_ports="$(
 if [[ -n "$container_args" ]] &&
   { [[ "$container_args" != *"tcp://0.0.0.0:1234"* ]] ||
     [[ "$container_args" != *"--oci-worker-gc=false"* ]] ||
-    [[ "$container_mounts" != *'"/var/lib/buildkit"'* ]] ||
+    [[ "$container_mounts" != *"\"${builder_state_dir}\""* ]] ||
     [[ "$container_ports" != *"${builder_port}"* ]]; }; then
   docker --host "$control_host" rm --force "$container_name" >/dev/null
   container_args=""
@@ -46,7 +48,7 @@ if [[ -z "$container_args" ]]; then
     --security-opt seccomp=unconfined \
     --security-opt apparmor=unconfined \
     --publish "${builder_port}:1234" \
-    --tmpfs "/var/lib/buildkit:rw,size=${cache_size},mode=1777" \
+    --tmpfs "${builder_state_dir}:rw,size=${cache_size},mode=1777" \
     moby/buildkit:rootless \
     --oci-worker-no-process-sandbox \
     --oci-worker-gc=false \

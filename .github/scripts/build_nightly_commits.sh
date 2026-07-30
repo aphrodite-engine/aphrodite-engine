@@ -176,7 +176,7 @@ for commit in "${commits[@]}"; do
 
     write_commit_index "$commit" "$wheel_name" "$digest"
     rm -f "$wheel"
-    docker buildx prune --force \
+    docker buildx prune --builder default --force \
       --filter type=regular \
       --max-used-space 25gb
   fi
