@@ -23,6 +23,8 @@ description: Select Sonar features for common inference workloads.
 ## Input types
 
 - [Multimodal inputs](/features/multimodal/) cover image, audio, and video models.
+- [FP8 vision attention](/features/fp8-vit-attention/) can accelerate Qwen3
+  vision encoders on supported NVIDIA and AMD GPUs.
 - Encoder-decoder models support sequence-to-sequence tasks.
 - Pooling runners provide embeddings, classifications, rewards, and scores.
 

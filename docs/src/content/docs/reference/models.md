@@ -7,7 +7,7 @@ description: Model architectures that the current Sonar source tree registers.
 
 Sonar reads the `architectures` field from a model's `config.json` file. The value must match an architecture in these tables. A compatible Transformers implementation can also use the Transformers backend.
 
-The current registry contains **369 architecture entries** in the user-facing categories below.
+The current registry contains **371 architecture entries** in the user-facing categories below.
 
 ## Text generation
 
@@ -126,6 +126,8 @@ The current registry contains **369 architecture entries** in the user-facing ca
 | `Qwen3ForCausalLM` | `qwen3:Qwen3ForCausalLM` |
 | `Qwen3MoeForCausalLM` | `qwen3_moe:Qwen3MoeForCausalLM` |
 | `Qwen3NextForCausalLM` | `qwen3_next:Qwen3NextForCausalLM` |
+| `Qwen3_5ForCausalLM` | `qwen3_5:Qwen3_5ForCausalLM` |
+| `Qwen3_5MoeForCausalLM` | `qwen3_5:Qwen3_5MoeForCausalLM` |
 | `RWForCausalLM` | `falcon:FalconForCausalLM` |
 | `Rnj1ForCausalLM` | `rnj1:Rnj1ForCausalLM` |
 | `SarvamMLAForCausalLM` | `sarvam:SarvamMLAForCausalLM` |
