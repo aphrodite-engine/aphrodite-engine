@@ -210,6 +210,12 @@ jobs:
       - name: Install rclone
         run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
 
+      - name: Pin Metal build driver
+        run: |
+          install -m 0755 \
+            .github/scripts/build_metal_wheel.sh \
+            "$RUNNER_TEMP/build_metal_wheel.sh"
+
       - name: Build and publish missing Metal wheels
         env:
           PUSH_BEFORE: ${{ github.event.before }}
@@ -217,7 +223,7 @@ jobs:
           PLATFORM_BACKEND: metal
           PLATFORM_ARCHITECTURE: aarch64
           PLATFORM_VERSION_LOCAL: metal
-          PLATFORM_BUILD_SCRIPT: .github/scripts/build_metal_wheel.sh
+          PLATFORM_BUILD_SCRIPT: ${{ runner.temp }}/build_metal_wheel.sh
           METAL_BUILD_PYTHON: ${{ github.workspace }}/.metal-build-venv/bin/python
         run: |
           .github/scripts/reconcile_platform_wheels.sh \
