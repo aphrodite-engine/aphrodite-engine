@@ -36,6 +36,56 @@ float8_info = torch.finfo(current_platform.fp8_dtype())
 #     key=["BLOCK_SIZE", "MAX_Q_LEN", "MAX_CTX_LEN"]
 # )
 @triton.jit
+def _paged_kv_cache_offsets(
+    B_Loc,
+    cur_batch,
+    token_indices,
+    token_valid,
+    offs_d,
+    cur_kv_head,
+    x,
+    stride_b_loc_b,
+    stride_b_loc_s,
+    stride_k_cache_bs,
+    stride_k_cache_h,
+    stride_k_cache_d,
+    stride_k_cache_bl,
+    stride_k_cache_x,
+    stride_v_cache_bs,
+    stride_v_cache_h,
+    stride_v_cache_d,
+    stride_v_cache_bl,
+    PHYSICAL_BLOCK_SIZE: tl.constexpr,
+    MASK_BLOCK_TABLE: tl.constexpr = False,
+):
+    """Compute paged K/V cache element offsets for token positions."""
+    bn_logical = token_indices // PHYSICAL_BLOCK_SIZE
+    if MASK_BLOCK_TABLE:
+        bn = tl.load(
+            B_Loc + cur_batch * stride_b_loc_b + bn_logical * stride_b_loc_s,
+            mask=token_valid,
+            other=0,
+        ).to(tl.int64)
+    else:
+        bn = tl.load(B_Loc + cur_batch * stride_b_loc_b + bn_logical * stride_b_loc_s).to(tl.int64)
+    internal = token_indices % PHYSICAL_BLOCK_SIZE
+    off_k = (
+        bn[None, :] * stride_k_cache_bs
+        + cur_kv_head * stride_k_cache_h
+        + (offs_d[:, None] // x) * stride_k_cache_d
+        + internal[None, :] * stride_k_cache_bl
+        + (offs_d[:, None] % x) * stride_k_cache_x
+    )
+    off_v = (
+        bn[:, None] * stride_v_cache_bs
+        + cur_kv_head * stride_v_cache_h
+        + offs_d[None, :] * stride_v_cache_d
+        + internal[:, None] * stride_v_cache_bl
+    )
+    return off_k, off_v
+
+
+@triton.jit
 def _fwd_kernel(
     Q,
     K,
@@ -94,6 +144,7 @@ def _fwd_kernel(
     MAX_CTX_LEN: tl.constexpr = 0,
     FP8_MIN: tl.constexpr = float8_info.min,
     FP8_MAX: tl.constexpr = float8_info.max,
+    KV_FROM_CACHE: tl.constexpr = False,
 ):
     cur_batch = tl.program_id(0)
     cur_head = tl.program_id(1)
@@ -159,30 +210,26 @@ def _fwd_kernel(
         # Calculate the logical block index of each of the 32 tokens
         # in the current Tile (handling cross-block cases).
         token_indices = start_n + offs_bs_n
-        bn_logical_indices = token_indices // PHYSICAL_BLOCK_SIZE
-
-        # 2. Vectorized loading of physical block IDs from B_Loc
-        bn = tl.load(B_Loc + cur_batch * stride_b_loc_b + bn_logical_indices * stride_b_loc_s).to(tl.int64)
-
-        # 3. Calculate the exact offset of
-        # each token within its physical block.
-        internal_offsets = token_indices % PHYSICAL_BLOCK_SIZE
-
-        # Addressing of K (5D)
-        off_k = (
-            bn[None, :] * stride_k_cache_bs
-            + cur_kv_head * stride_k_cache_h
-            + (offs_d[:, None] // x) * stride_k_cache_d
-            + internal_offsets[None, :] * stride_k_cache_bl
-            + (offs_d[:, None] % x) * stride_k_cache_x
-        )
-
-        # Addressing of V (4D)
-        off_v = (
-            bn[:, None] * stride_v_cache_bs
-            + cur_kv_head * stride_v_cache_h
-            + offs_d[None, :] * stride_v_cache_d
-            + internal_offsets[:, None] * stride_v_cache_bl
+        off_k, off_v = _paged_kv_cache_offsets(
+            B_Loc,
+            cur_batch,
+            token_indices,
+            offs_bs_n,
+            offs_d,
+            cur_kv_head,
+            x,
+            stride_b_loc_b,
+            stride_b_loc_s,
+            stride_k_cache_bs,
+            stride_k_cache_h,
+            stride_k_cache_d,
+            stride_k_cache_bl,
+            stride_k_cache_x,
+            stride_v_cache_bs,
+            stride_v_cache_h,
+            stride_v_cache_d,
+            stride_v_cache_bl,
+            PHYSICAL_BLOCK_SIZE,
         )
 
         if start_n + BLOCK_SIZE > cur_batch_ctx_len or BLOCK_DMODEL != BLOCK_DMODEL_PADDED:
@@ -275,11 +322,46 @@ def _fwd_kernel(
     ):
         start_n = tl.multiple_of(start_n, BLOCK_N)
         # -- compute qk ----
-        k = tl.load(
-            k_ptrs + (cur_batch_in_all_start_index + start_n) * stride_kbs,
-            mask=dim_mask[:, None] & ((start_n + offs_n[None, :]) < cur_batch_query_len),
-            other=0.0,
-        )
+        if KV_FROM_CACHE:
+            cache_token_idx = cur_batch_ctx_len + start_n + offs_n
+            cache_token_valid = (start_n + offs_n) < cur_batch_query_len
+            off_k_cur, off_v_cur = _paged_kv_cache_offsets(
+                B_Loc,
+                cur_batch,
+                cache_token_idx,
+                cache_token_valid,
+                offs_d,
+                cur_kv_head,
+                x,
+                stride_b_loc_b,
+                stride_b_loc_s,
+                stride_k_cache_bs,
+                stride_k_cache_h,
+                stride_k_cache_d,
+                stride_k_cache_bl,
+                stride_k_cache_x,
+                stride_v_cache_bs,
+                stride_v_cache_h,
+                stride_v_cache_d,
+                stride_v_cache_bl,
+                PHYSICAL_BLOCK_SIZE,
+                MASK_BLOCK_TABLE=True,
+            )
+            k_cur_load = tl.load(
+                K_cache + off_k_cur,
+                mask=dim_mask[:, None] & ((start_n + offs_n[None, :]) < cur_batch_query_len),
+                other=0.0,
+            )
+            if k_cur_load.dtype.is_fp8():
+                k = (k_cur_load.to(tl.float32) * tl.load(k_scale)).to(q.dtype)
+            else:
+                k = k_cur_load
+        else:
+            k = tl.load(
+                k_ptrs + (cur_batch_in_all_start_index + start_n) * stride_kbs,
+                mask=dim_mask[:, None] & ((start_n + offs_n[None, :]) < cur_batch_query_len),
+                other=0.0,
+            )
 
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
         qk = tl.dot(q, k, acc=qk, input_precision=IN_PRECISION)
@@ -305,11 +387,22 @@ def _fwd_kernel(
         acc = acc * alpha[:, None]
 
         # update acc
-        v = tl.load(
-            v_ptrs + (cur_batch_in_all_start_index + start_n) * stride_vbs,
-            mask=dim_mask[None, :] & ((start_n + offs_n[:, None]) < cur_batch_query_len),
-            other=0.0,
-        )
+        if KV_FROM_CACHE:
+            v_cur_load = tl.load(
+                V_cache + off_v_cur,
+                mask=dim_mask[None, :] & ((start_n + offs_n[:, None]) < cur_batch_query_len),
+                other=0.0,
+            )
+            if v_cur_load.dtype.is_fp8():
+                v = (v_cur_load.to(tl.float32) * tl.load(v_scale)).to(q.dtype)
+            else:
+                v = v_cur_load
+        else:
+            v = tl.load(
+                v_ptrs + (cur_batch_in_all_start_index + start_n) * stride_vbs,
+                mask=dim_mask[None, :] & ((start_n + offs_n[:, None]) < cur_batch_query_len),
+                other=0.0,
+            )
         p = p.to(v.dtype)
 
         acc = tl.dot(p, v, acc=acc, input_precision=IN_PRECISION)
@@ -646,8 +739,23 @@ def context_attention_fwd(
             FP8 KV Cache prefill kernel"
         )
 
+    assert (k is None) == (v is None), "k and v must both be None (cached-K/V path) or both be tensors"
+    kv_from_cache = k is None
+    if kv_from_cache:
+        if alibi_slopes is not None:
+            raise NotImplementedError(
+                "context_attention_fwd with cached K/V (key=None) is not supported together with ALiBi slopes."
+            )
+        num_kv_heads = k_cache.shape[1]
+        Lq = Lk = Lv = q.shape[-1]
+        # Never-dereferenced placeholders for the dense K/V pointer arguments.
+        k = q
+        v = q
+    else:
+        num_kv_heads = k.shape[1]
+        Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
+
     # shape constraints
-    Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
     assert Lq == Lk and Lk == Lv
     # round up Lk to a power of 2 - this is required for Triton block size
     Lk_padded = triton.next_power_of_2(Lk)
@@ -655,7 +763,7 @@ def context_attention_fwd(
     if sm_scale is None:
         sm_scale = 1.0 / (Lq**0.5)
     batch, head = b_seq_len.shape[0], q.shape[1]
-    num_queries_per_kv = q.shape[1] // k.shape[1]
+    num_queries_per_kv = q.shape[1] // num_kv_heads
 
     assert batch + 1 == len(b_start_loc)
 
@@ -814,6 +922,7 @@ def context_attention_fwd(
         num_stages=1,
         USE_SINKS=sinks is not None,
         CAUSAL=causal,
+        KV_FROM_CACHE=kv_from_cache,
         **extra_kargs,
     )
     return
