@@ -5,6 +5,7 @@ import pytest
 import torch
 from transformers import AutoModel
 
+from aphrodite import PoolingParams
 from aphrodite.config import PoolerConfig
 
 from ...utils import check_embeddings_close
@@ -124,10 +125,83 @@ def test_encoder_only_model_runner_v2_attention(
         gpu_memory_utilization=0.25,
         pooler_config=PoolerConfig(task="embed", seq_pooling_type="LAST", use_activation=True),
     ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
         aphrodite_outputs = aphrodite_model.embed(prompts)
 
     check_embeddings_close(
         embeddings_0_lst=hf_outputs,
+        embeddings_1_lst=aphrodite_outputs,
+        name_0="hf",
+        name_1="aphrodite",
+        tol=1e-2,
+    )
+
+
+@pytest.mark.core_model
+def test_encoder_model_runner_v2(hf_runner, aphrodite_runner, monkeypatch) -> None:
+    model = "sentence-transformers/all-MiniLM-L6-v2"
+    prompt_batches = [
+        ["short input"],
+        [
+            "short input",
+            "a longer input that exercises mixed sequence lengths",
+        ],
+    ]
+
+    with hf_runner(model, is_sentence_transformer=True) as hf_model:
+        hf_outputs = [hf_model.encode(prompts) for prompts in prompt_batches]
+
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
+    with aphrodite_runner(
+        model,
+        runner="pooling",
+        max_model_len=64,
+    ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
+        aphrodite_outputs = [aphrodite_model.embed(prompts) for prompts in prompt_batches]
+
+    for hf_batch, aphrodite_batch in zip(hf_outputs, aphrodite_outputs):
+        check_embeddings_close(
+            embeddings_0_lst=hf_batch,
+            embeddings_1_lst=aphrodite_batch,
+            name_0="hf",
+            name_1="aphrodite",
+            tol=1e-2,
+        )
+
+
+@pytest.mark.core_model
+def test_matryoshka_dimensions_model_runner_v2(hf_runner, aphrodite_runner, monkeypatch) -> None:
+    model = "Snowflake/snowflake-arctic-embed-m-v1.5"
+    prompts = ["short input", "a longer input for a different output width"]
+    dimensions = [None, 256]
+
+    with hf_runner(model, is_sentence_transformer=True) as hf_model:
+        hf_outputs = hf_model.encode(prompts)
+
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
+    with aphrodite_runner(
+        model,
+        runner="pooling",
+        max_model_len=64,
+        gpu_memory_utilization=0.25,
+    ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
+        aphrodite_outputs = aphrodite_model.embed(
+            prompts,
+            pooling_params=[PoolingParams(dimensions=d) for d in dimensions],
+        )
+
+    expected_outputs = []
+    for output, dimension in zip(hf_outputs, dimensions):
+        output = torch.as_tensor(output)
+        if dimension is not None:
+            output = torch.nn.functional.normalize(output[:dimension], dim=0)
+        expected_outputs.append(output.tolist())
+
+    assert [len(output) for output in aphrodite_outputs] == [768, 256]
+    check_embeddings_close(
+        embeddings_0_lst=expected_outputs,
         embeddings_1_lst=aphrodite_outputs,
         name_0="hf",
         name_1="aphrodite",

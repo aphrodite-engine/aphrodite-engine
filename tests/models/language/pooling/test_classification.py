@@ -47,3 +47,58 @@ def test_models(
             aphrodite_output,
             rtol=2e-3 if dtype == "float" else 1e-2,
         )
+
+
+@pytest.mark.core_model
+def test_bert_model_runner_v2(hf_runner, aphrodite_runner, monkeypatch) -> None:
+    model = "cross-encoder/ms-marco-TinyBERT-L-2-v2"
+    score_inputs = (
+        "What is the capital of France?",
+        [
+            "Paris.",
+            "Paris is the capital and largest city of France.",
+            "William Shakespeare wrote Hamlet in the early seventeenth century.",
+        ],
+    )
+    prompt_batches = [
+        ["short input"],
+        [
+            "short input",
+            "a longer input that exercises mixed sequence lengths",
+        ],
+    ]
+
+    with hf_runner(model, dtype="half", auto_cls=AutoModelForSequenceClassification) as hf_model:
+        # HfRunner uses problem_type to preserve the model's
+        # sbert_ce_default_activation_function=Identity raw logits.
+        hf_model.config.problem_type = "regression"
+        hf_outputs = [hf_model.classify(prompts) for prompts in prompt_batches]
+
+    text_1, text_2 = score_inputs
+    text_pairs = [[text_1, document] for document in text_2]
+    with hf_runner(model, dtype="half", is_cross_encoder=True) as hf_model:
+        hf_scores = hf_model.predict(text_pairs).tolist()
+
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
+    with aphrodite_runner(
+        model,
+        runner="pooling",
+        dtype="half",
+        max_model_len=64,
+    ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
+        aphrodite_outputs = [aphrodite_model.classify(prompts) for prompts in prompt_batches]
+        aphrodite_scores = aphrodite_model.score(*score_inputs)
+
+    for hf_batch, aphrodite_batch in zip(hf_outputs, aphrodite_outputs):
+        hf_tensor = torch.tensor(hf_batch)
+        aphrodite_tensor = torch.tensor(aphrodite_batch)
+        assert aphrodite_tensor.shape == hf_tensor.shape
+        assert torch.allclose(aphrodite_tensor, hf_tensor, rtol=1e-2, atol=1e-4)
+
+    assert torch.allclose(
+        torch.tensor(aphrodite_scores),
+        torch.tensor(hf_scores),
+        rtol=1e-2,
+        atol=1e-4,
+    )
