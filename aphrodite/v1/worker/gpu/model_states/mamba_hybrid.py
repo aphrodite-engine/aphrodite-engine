@@ -9,10 +9,6 @@ import torch.nn as nn
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.compilation import CUDAGraphMode
-from aphrodite.model_executor.layers.mamba.mamba_utils import (
-    get_conv_copy_spec,
-    is_conv_state_dim_first,
-)
 from aphrodite.triton_utils import tl, triton
 from aphrodite.v1.attention.backends.gdn_attn import GDNAttentionMetadataBuilder
 from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionMetadataBuilder
@@ -121,13 +117,9 @@ class MambaHybridModelState(DefaultModelState):
     ) -> MambaSpecDecodeGPUContext:
         if self._mamba_ctx is None:
             copy_funcs = self.model.get_mamba_state_copy_func()
-            # The fused copy kernels shift conv windows assuming the SD layout;
-            # the DS layout cannot express a >0 spec-decode shift as a single
-            # contiguous copy (mirrors get_conv_copy_spec's NotImplementedError).
-            if get_conv_copy_spec in copy_funcs and is_conv_state_dim_first():
-                assert self.aphrodite_config.speculative_config is None, (
-                    "DS conv state layout does not support mamba align state copies with speculative decoding"
-                )
+            # Both SD and DS conv layouts support a >0 spec-decode shift: the
+            # fused pre-copy kernel applies the accepted-token window shift per
+            # conv layout.
             self._mamba_ctx = MambaSpecDecodeGPUContext.create(
                 max_num_reqs=self.max_num_reqs,
                 kv_cache_config=kv_cache_config,
