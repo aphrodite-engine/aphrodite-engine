@@ -17,7 +17,9 @@ from aphrodite.entrypoints.openai.completion.protocol import (
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.entrypoints.scale_out.token_in_token_out.protocol import (
     DerenderChatRequest,
+    DerenderChatStreamRequest,
     DerenderCompletionRequest,
+    DerenderCompletionStreamRequest,
     GenerateRequest,
     GenerateResponse,
 )
@@ -50,11 +52,19 @@ class RendererChatRequest(RendererRequest, Protocol):
 
 
 CompletionLikeRequest: TypeAlias = (
-    CompletionRequest | TokenizeCompletionRequest | DetokenizeRequest | DerenderCompletionRequest
+    CompletionRequest
+    | TokenizeCompletionRequest
+    | DetokenizeRequest
+    | DerenderCompletionRequest
+    | DerenderCompletionStreamRequest
 )
 
 ChatLikeRequest: TypeAlias = (
-    ChatCompletionRequest | BatchChatCompletionRequest | TokenizeChatRequest | DerenderChatRequest
+    ChatCompletionRequest
+    | BatchChatCompletionRequest
+    | TokenizeChatRequest
+    | DerenderChatRequest
+    | DerenderChatStreamRequest
 )
 
 SpeechToTextRequest: TypeAlias = TranscriptionRequest | TranslationRequest
