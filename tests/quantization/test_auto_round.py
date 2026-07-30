@@ -8,6 +8,8 @@ Validating the configuration and printing results for manual checking.
 Run `pytest tests/quantization/test_auto_round.py`.
 """
 
+from typing import Any
+
 import pytest
 import torch
 
@@ -18,6 +20,7 @@ from aphrodite.model_executor.layers.quantization.inc import INCConfig
 from aphrodite.model_executor.layers.quantization.inc.config_parser import INCLayerConfig
 from aphrodite.model_executor.layers.quantization.inc.inc_linear import INCLinearMethod
 from aphrodite.model_executor.layers.quantization.inc.schemes import (
+    INCMxfp4Scheme,
     INCMxfp8Scheme,
     INCWna16Scheme,
     resolve_scheme,
@@ -69,9 +72,35 @@ MODELS = [
         ),
         id="auto_round:llm_compressor_mxfp8",
     ),
+    pytest.param(
+        "INCModel/Qwen3-1.7B-AutoRound-MXFP4-W4A4",
+        marks=pytest.mark.skipif(
+            not (current_platform.is_cuda() or current_platform.is_xpu()),
+            reason="Qwen3-1.7B MXFP4 AutoRound model requires CUDA/XPU.",
+        ),
+        id="auto_round:mxfp4:qwen3-1p7b",
+    ),
+    pytest.param(
+        "INCModel/Qwen3-30B-A3B-12L-W4A16-test",
+        marks=pytest.mark.skipif(
+            not (current_platform.is_cuda() or current_platform.is_xpu()),
+            reason="Qwen3-30B-A3B W4A16 AutoRound model requires CUDA/XPU.",
+        ),
+        id="auto_round:w4a16:qwen3-30b-a3b",
+    ),
+    pytest.param(
+        "INCModel/Qwen3-30B-A3B-12L-MXFP4-test",
+        marks=pytest.mark.skipif(
+            not (current_platform.is_cuda() or current_platform.is_xpu()),
+            reason="Qwen3-30B-A3B MXFP4 AutoRound model requires CUDA/XPU.",
+        ),
+        id="auto_round:mxfp4:qwen3-30b-a3b",
+    ),
 ]
 
-MODEL_RUNNER_KWARGS = {
+MODEL_RUNNER_KWARGS: dict[str, dict[str, Any]] = {
+    "INCModel/Qwen3-1.7B-AutoRound-MXFP4-W4A4": {"enforce_eager": True},
+    "INCModel/Qwen3-30B-A3B-12L-MXFP4-test": {"enforce_eager": True},
     "Intel/Qwen3-8B-w2g64-for-ut": {
         "block_size": 64,
         "gpu_memory_utilization": 0.8,
@@ -311,6 +340,24 @@ def test_inc_layer_config_mx_fp_helpers() -> None:
 
     assert layer_config.is_mxfp4 is True
     assert layer_config.is_mxfp8 is False
+
+
+def test_inc_config_accepts_mxfp_family_llm_compressor() -> None:
+    config = INCConfig.from_config(
+        {
+            "quant_method": "auto-round",
+            "bits": 4,
+            "group_size": 32,
+            "sym": True,
+            "packing_format": "auto_round:llm_compressor",
+            "data_type": "mx_fp4e2m1",
+        }
+    )
+    layer_config = config.config_parser.resolve(DummyLayer(), "model.layers.0.mlp.down_proj")
+
+    assert config.sym is True
+    assert layer_config.is_mxfp4 is True
+    assert isinstance(resolve_scheme(layer_config), INCMxfp4Scheme)
 
 
 def test_inc_mxfp8() -> None:

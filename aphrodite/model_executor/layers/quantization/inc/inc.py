@@ -68,7 +68,8 @@ class INCConfig(QuantizationConfig):
         super().__init__()
         if weight_bits not in self.SUPPORTED_BITS:
             raise ValueError(f"Unsupported weight_bits: {weight_bits}, currently only support {self.SUPPORTED_BITS}.")
-        if data_type not in self.SUPPORTED_DTYPES:
+        is_mxfp = "mx_fp" in data_type
+        if data_type not in self.SUPPORTED_DTYPES and not is_mxfp:
             raise ValueError(f"Unsupported data_type: {data_type}, currently only support  {self.SUPPORTED_DTYPES}.")
         if packing_format not in self.SUPPORTED_FORMATS:
             raise ValueError(
@@ -94,11 +95,16 @@ class INCConfig(QuantizationConfig):
     def __repr__(self) -> str:
         return f"INCConfig(weight_bits={self.weight_bits}, group_size={self.group_size}, sym={self.sym})"
 
+    @property
+    def is_mxfp(self) -> bool:
+        return "mx_fp" in self.data_type
+
+    @property
+    def is_mxfp8(self) -> bool:
+        return self.is_mxfp and self.weight_bits == self.MXFP8_BITS
+
     def _validate_supported_quantization(self) -> None:
-        if self.data_type == self.MXFP8_DATA_TYPE:
-            assert self.weight_bits == self.MXFP8_BITS, (
-                f"INC MXFP8 only supports bits=8, but found bits={self.weight_bits}."
-            )
+        if self.is_mxfp8:
             assert self.group_size == self.MXFP8_GROUP_SIZE, (
                 f"INC MXFP8 only supports group_size=32, but found group_size={self.group_size}."
             )
@@ -111,13 +117,13 @@ class INCConfig(QuantizationConfig):
             assert self.backend == "auto", (
                 f"INC MXFP8 only supports backend='auto', but found backend={self.backend!r}."
             )
-        elif self.packing_format == self.MXFP8_PACKING_FORMAT:
+        elif not self.is_mxfp and self.packing_format == self.MXFP8_PACKING_FORMAT:
             raise ValueError(
                 f"packing_format={self.MXFP8_PACKING_FORMAT!r} requires data_type={self.MXFP8_DATA_TYPE!r}."
             )
 
     def _validate_raw_config(self, config: dict[str, Any]) -> None:
-        if self.data_type != self.MXFP8_DATA_TYPE:
+        if not self.is_mxfp8:
             return
 
         expected_fields = {
