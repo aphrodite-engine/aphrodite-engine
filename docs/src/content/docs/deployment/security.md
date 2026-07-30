@@ -58,6 +58,53 @@ the process a writable cache directory and no access to unrelated host paths.
 The container still needs GPU device access and shared memory. These
 requirements do not require broad host filesystem access.
 
+## Secure Ray clusters
+
+Sonar treats an entire Ray cluster as one trust domain. A principal that can
+submit actors or tasks can execute arbitrary code on any cluster node and is
+therefore as trusted as the driver and API server. Environment variables do not
+form a security boundary inside the cluster. This matches
+[Ray's security model](https://docs.ray.io/en/latest/ray-core/security.html).
+
+`RayExecutorV2` copies the driver's environment to remote workers so they
+receive required Sonar settings, communication-library tuning, and credentials
+used to download gated models. `get_driver_env_vars()` in
+`aphrodite/v1/executor/ray_env_utils.py` uses a copy-all-except-denylist
+policy: it copies every variable except worker-specific variables and variables
+that the operator excludes. Workers apply copied values with `setdefault`, so
+an existing worker-side value is not overwritten.
+
+This behavior also copies credentials such as Hugging Face tokens, cloud
+storage keys, registry tokens, and internal service tokens when they are
+present in the driver's environment. A process running as the same OS user on
+a worker may be able to read them through `/proc/<pid>/environ`.
+
+To exclude variables, create
+`$APHRODITE_CONFIG_ROOT/ray_non_carry_over_env_vars.json` (by default,
+`~/.config/aphrodite/ray_non_carry_over_env_vars.json`) containing their names:
+
+```json
+[
+  "HF_TOKEN",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "AZURE_CLIENT_SECRET",
+  "REGISTRY_TOKEN",
+  "MY_INTERNAL_SERVICE_KEY"
+]
+```
+
+Also minimize the driver's environment by loading credentials from a secrets
+manager or mounted file when possible. If workers must have less trust than the
+driver, use separate OS users or containers with non-overlapping UIDs and
+isolate `/proc` between them. On Linux hosts, mounting `procfs` with `hidepid=2`
+can prevent same-UID processes from reading another process's environment.
+
+Restrict Ray cluster membership to trusted principals. Use Ray TLS
+authentication, isolate the cluster network, and do not expose the Ray client
+port or dashboard to untrusted networks.
+
 ## Log handling
 
 Prompts and generated text can contain secrets. Check log settings before
