@@ -1410,8 +1410,6 @@ class DeepseekV2Model(nn.Module):
                 combined_states = tensor_model_parallel_all_gather(combined_states, 0)
                 combined_states = combined_states[: positions.shape[0]]
                 hidden_states, residual = combined_states.split([self.hidden_size, self.hidden_size], dim=-1)
-                # fused_add_rms_norm requires a contiguous residual
-                residual = residual.contiguous()
             if idx in self.aux_hidden_state_layers:
                 aux_hidden_state = hidden_states + residual
                 if aux_hidden_state.shape[0] != positions.shape[0]:
@@ -1428,8 +1426,6 @@ class DeepseekV2Model(nn.Module):
             combined_states = tensor_model_parallel_all_gather(combined_states, 0)
             combined_states = combined_states[: positions.shape[0]]
             hidden_states, residual = combined_states.split([self.hidden_size, self.hidden_size], dim=-1)
-            # fused_add_rms_norm requires a contiguous residual
-            residual = residual.contiguous()
 
         if self.end_layer in self.aux_hidden_state_layers:
             aux_hidden_states.append(hidden_states + residual)
