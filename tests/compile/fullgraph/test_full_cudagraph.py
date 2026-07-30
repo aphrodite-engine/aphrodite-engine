@@ -7,7 +7,7 @@ import weakref
 import pytest
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.config import CompilationConfig
+from aphrodite.config import CompilationConfig, CUDAGraphMode
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
@@ -91,7 +91,7 @@ def llm_pair(request):
             trust_remote_code=True,
             max_model_len=1024,
             max_num_seqs=128,
-            compilation_config=CompilationConfig(cudagraph_mode="PIECEWISE"),
+            compilation_config=CompilationConfig(cudagraph_mode=CUDAGraphMode.PIECEWISE),
             generation_config="aphrodite",
             seed=42,
         )

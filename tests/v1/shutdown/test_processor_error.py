@@ -8,7 +8,7 @@ import pytest
 
 from aphrodite import SamplingParams
 from aphrodite.engine.arg_utils import AsyncEngineArgs
-from aphrodite.inputs import TokensPrompt
+from aphrodite.inputs import ExplicitEncoderDecoderPrompt
 from aphrodite.sampling_params import RequestOutputKind
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.exceptions import EngineGenerateError
@@ -29,8 +29,13 @@ async def test_async_llm_processor_error(model: str) -> None:
     async_llm = AsyncLLM.from_engine_args(engine_args)
 
     async def generate(request_id: str):
-        # [] is not allowed and will raise a ValueError in Processor.
-        generator = async_llm.generate(TokensPrompt([]), request_id=request_id, sampling_params=SamplingParams())
+        # An encoder/decoder prompt is rejected by the Processor for a
+        # decoder only model.
+        generator = async_llm.generate(
+            ExplicitEncoderDecoderPrompt(encoder_prompt="Hello my name is", decoder_prompt=None),
+            request_id=request_id,
+            sampling_params=SamplingParams(),
+        )
         try:
             async for _ in generator:
                 pass

@@ -21,10 +21,15 @@ The kernel must also no-op when ``src_col < 0`` (fresh request) or
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import torch
 
 from aphrodite.platforms import current_platform
 from aphrodite.v1.worker.mamba_utils import precopy_mamba_align_fused_kernel
+
+_parametrize: Callable[..., Callable[[Any], Any]]
 
 try:
     import pytest
@@ -35,16 +40,17 @@ try:
     )
     _parametrize = pytest.mark.parametrize
 except ModuleNotFoundError:  # allow running directly as ``python <thisfile>``
-    pytest = None
 
     def _cuda_required(fn):
         return fn
 
-    def _parametrize(_name, _values):
+    def _no_parametrize(_name, _values):
         def _deco(fn):
             return fn
 
         return _deco
+
+    _parametrize = _no_parametrize
 
 
 NUM_LAYERS = 3

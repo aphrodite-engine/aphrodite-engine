@@ -12,6 +12,7 @@ import aphrodite._custom_ops as ops
 from aphrodite.model_executor.layers.mamba.ops.cpu import gdn_attention
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import set_random_seed
+from aphrodite.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 
 if not current_platform.is_cpu():
     pytest.skip("skipping CPU-only tests", allow_module_level=True)
@@ -437,12 +438,17 @@ def test_spec_aware_mixed_routing_preserves_token_order(
 
     spec_indices = torch.tensor([0, 2])
     nonspec_indices = torch.tensor([1, 3])
-    metadata = types.SimpleNamespace(
+    metadata = GDNAttentionMetadata(
+        num_prefills=1,
+        num_prefill_tokens=0,
+        num_decodes=0,
+        num_decode_tokens=0,
+        num_spec_decodes=0,
+        num_spec_decode_tokens=0,
+        num_actual_tokens=0,
         spec_sequence_masks=torch.ones(1, dtype=torch.bool),
         spec_token_indx=spec_indices,
         non_spec_token_indx=nonspec_indices,
-        num_prefills=1,
-        num_decodes=0,
     )
     routed = []
 
@@ -484,13 +490,16 @@ def test_spec_aware_nonspec_materializes_state_indices(
     state_indices = block_table[:, 0]
     assert not state_indices.is_contiguous()
 
-    metadata = types.SimpleNamespace(
-        non_spec_state_indices_tensor=state_indices,
-        non_spec_query_start_loc=torch.tensor([0, 2, 4], dtype=torch.int32),
-        num_decodes=0,
-        num_decode_tokens=0,
+    metadata = GDNAttentionMetadata(
         num_prefills=2,
         num_prefill_tokens=4,
+        num_decodes=0,
+        num_decode_tokens=0,
+        num_spec_decodes=0,
+        num_spec_decode_tokens=0,
+        num_actual_tokens=4,
+        non_spec_state_indices_tensor=state_indices,
+        non_spec_query_start_loc=torch.tensor([0, 2, 4], dtype=torch.int32),
         has_initial_state=torch.tensor([False, False]),
     )
 
@@ -554,8 +563,14 @@ def test_spec_forward_prepares_native_conv_metadata(
     state_indices = block_table[:, 0]
     accepted_counts = torch.tensor([1, 4], dtype=torch.int32)
     assert not state_indices.is_contiguous()
-    metadata = types.SimpleNamespace(
+    metadata = GDNAttentionMetadata(
+        num_prefills=0,
+        num_prefill_tokens=0,
+        num_decodes=0,
+        num_decode_tokens=0,
         num_spec_decodes=2,
+        num_spec_decode_tokens=8,
+        num_actual_tokens=8,
         spec_state_indices_tensor=block_table,
         spec_query_start_loc=torch.tensor([0, 4, 8], dtype=torch.int32),
         num_accepted_tokens=accepted_counts,
