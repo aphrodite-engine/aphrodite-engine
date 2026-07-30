@@ -341,7 +341,14 @@ class Scheduler(SchedulerInterface):
         num_new_local_computed_tokens: int = 0,
         num_external_computed_tokens: int = 0,
     ) -> int:
-        """Clip a prefill chunk so it ends where Mamba state must be cached."""
+        """Clip a prefill chunk so it ends where Mamba state must be cached.
+
+        In "align" cache mode reusable SSM states are materialized at block
+        boundaries, plus mandatory early stops (the prompt's partial-tail hash
+        boundary, a detected shared-prefix junction). If a block is larger
+        than the configured prefill chunk limit, intermediate chunks keep
+        private running state until they reach the next cacheable position.
+        """
         start = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
         # Split only during prefill: `request.num_tokens - 1` extends this to
         # resumed requests replaying their output tokens.
@@ -354,8 +361,17 @@ class Scheduler(SchedulerInterface):
             last_cache_position = max(last_cache_position - block_size, 0)
 
         end = start + num_new_tokens
+        # Until `last_cache_position`, prefer chunks ending on block
+        # boundaries. When a block cannot fit in any configured prefill chunk,
+        # allow sub-block progress and re-align at the next reachable boundary.
         if end < last_cache_position:
-            end = end // block_size * block_size
+            max_prefill_tokens = self.max_num_scheduled_tokens
+            long_prefill_threshold = self.scheduler_config.long_prefill_token_threshold
+            if long_prefill_threshold > 0:
+                max_prefill_tokens = min(max_prefill_tokens, long_prefill_threshold)
+            aligned_end = end // block_size * block_size
+            if aligned_end > start or block_size <= max_prefill_tokens:
+                end = aligned_end
 
         next_block_boundary = (start // block_size + 1) * block_size
         tail_boundary = (

@@ -134,6 +134,7 @@ if TYPE_CHECKING:
     APHRODITE_ROCM_USE_AITER_LINEAR_HIPBMM: bool = False
     APHRODITE_ROCM_USE_AITER_MOE: bool = True
     APHRODITE_ROCM_AITER_MOE_DISPATCH_POLICY: int = 0
+    AITER_SITUV2_A8W4: bool = False
     APHRODITE_ROCM_USE_AITER_RMSNORM: bool = True
     APHRODITE_ROCM_USE_AITER_MLA: bool = True
     APHRODITE_ROCM_USE_AITER_MHA: bool = True
@@ -270,7 +271,6 @@ if TYPE_CHECKING:
     APHRODITE_NCCL_INCLUDE_PATH: str | None = None
     APHRODITE_GC_DEBUG: str = ""
     APHRODITE_DEBUG_WORKSPACE: bool = False
-    APHRODITE_ENABLE_K3_LATENT_MOE_TAIL_FUSION: bool = False
     APHRODITE_DISABLE_SHARED_EXPERTS_STREAM: bool = False
     APHRODITE_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD: int = 256
     APHRODITE_MULTI_STREAM_GEMM_TOKEN_THRESHOLD: int = 1024
@@ -928,7 +928,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Backend for Video IO — selects the frame-sampling algorithm.
     # - "opencv": uniform sampling.
     # - "opencv_dynamic": duration-aware dynamic sampling.
-    # - "identity": returns raw video bytes for model processor to handle.
     #
     # Custom backend implementations can be registered
     # via `@VIDEO_LOADER_REGISTRY.register("my_custom_video_loader")` and
@@ -1095,7 +1094,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Whether to use aiter moe ops.
     # By default is enabled.
-    "APHRODITE_ROCM_USE_AITER_MOE": lambda: os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in ("true", "1"),
+    "APHRODITE_ROCM_USE_AITER_MOE": lambda: (
+        os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in ("true", "1")
+    ),
+    # Route K3 SiTU MXFP4 MoE through the a8w4 (fp8 activation) gate/up-
+    # interleaved flydsl kernels instead of the default a16w4 separated path.
+    # Shared with the AITER runtime, which reads the same env var directly.
+    "AITER_SITUV2_A8W4": lambda: (os.getenv("AITER_SITUV2_A8W4", "0").lower() in ("true", "1")),
     # MoE sorting dispatch policy for AITER fused MoE kernels.
     #   0 = auto (default): single-pass for small batches, multi-pass
     #       for large batches
@@ -1666,11 +1671,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Debug workspace allocations.
     # logging of workspace resize operations.
     "APHRODITE_DEBUG_WORKSPACE": lambda: bool(int(os.getenv("APHRODITE_DEBUG_WORKSPACE", "0"))),
-    # Enable the experimental Kimi K3 latent-MoE tail fusion.
-    # Currently supported only on SM100 with TP=8/16 and BF16.
-    "APHRODITE_ENABLE_K3_LATENT_MOE_TAIL_FUSION": lambda: bool(
-        int(os.getenv("APHRODITE_ENABLE_K3_LATENT_MOE_TAIL_FUSION", "0"))
-    ),
     # Disables parallel execution of shared_experts via separate cuda stream
     "APHRODITE_DISABLE_SHARED_EXPERTS_STREAM": lambda: bool(
         int(os.getenv("APHRODITE_DISABLE_SHARED_EXPERTS_STREAM", "0"))

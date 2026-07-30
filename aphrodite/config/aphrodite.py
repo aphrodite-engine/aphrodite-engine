@@ -72,10 +72,30 @@ DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES = frozenset(
         "GraniteMoeForCausalLM",
         "InklingForCausalLM",
         "InklingForConditionalGeneration",
+        "KimiK3ForConditionalGeneration",
         "LongcatFlashNgramForCausalLM",
         "Qwen2MoeForCausalLM",
     }
 )
+
+# Architectures that default to V1 on ROCm: the V2 runner faults during the
+# profile run. APHRODITE_USE_V2_MODEL_RUNNER=1 still forces V2.
+# TODO: fix V2 enablement
+ROCM_EXCLUDED_V2_MODEL_RUNNER_ARCHITECTURES = frozenset(
+    {
+        "KimiK3ForConditionalGeneration",
+    }
+)
+
+
+@lru_cache
+def default_v2_model_runner_architectures() -> frozenset[str]:
+    """Architectures defaulting to the V2 model runner on this platform."""
+    from aphrodite.platforms import current_platform
+
+    if current_platform.is_rocm():
+        return DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES - ROCM_EXCLUDED_V2_MODEL_RUNNER_ARCHITECTURES
+    return DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES
 
 
 class OptimizationLevel(IntEnum):
@@ -592,14 +612,16 @@ class AphroditeConfig:
         if model_config.runner_type != "generate":
             return False
 
-        if getattr(model_config, "is_hybrid", False):
+        architectures = getattr(model_config, "architectures", [])
+        default_architectures = default_v2_model_runner_architectures()
+        is_default_v2_architecture = any(arch in default_architectures for arch in architectures)
+
+        if getattr(model_config, "is_hybrid", False) and (not is_default_v2_architecture):
             return False
 
         if getattr(model_config, "is_attention_free", False):
             return False
-
-        architectures = getattr(model_config, "architectures", [])
-        return any(arch in DEFAULT_V2_MODEL_RUNNER_ARCHITECTURES for arch in architectures) or not model_config.is_moe
+        return is_default_v2_architecture or not model_config.is_moe
 
     @property
     def needs_dp_coordinator(self) -> bool:
@@ -1115,6 +1137,9 @@ class AphroditeConfig:
                     "DeepSeekV4MTPModel",
                     "InklingForCausalLM",
                     "InklingForConditionalGeneration",
+                    "KimiK3ForConditionalGeneration",
+                    "KimiK3MTPModel",
+                    "KimiLinearForCausalLM",
                     "MiniMaxM3SparseForCausalLM",
                     "MiniMaxM3SparseForConditionalGeneration",
                 )
@@ -2078,14 +2103,6 @@ class AphroditeConfig:
 
         # Mamba cache align-mode constraints
         if self.cache_config.mamba_cache_mode == "align":
-            assert block_size <= self.scheduler_config.max_num_batched_tokens, (
-                "In Mamba cache align mode, block_size "
-                f"({block_size}) must be <= "
-                "max_num_batched_tokens "
-                f"({self.scheduler_config.max_num_batched_tokens})."
-            )
-            if self.scheduler_config.long_prefill_token_threshold > 0:
-                assert self.scheduler_config.long_prefill_token_threshold >= block_size
             assert not self.scheduler_config.disable_chunked_mm_input, (
                 "Chunked MM input is required because we need the flexibility "
                 "to schedule a multiple of block_size tokens even if they are "

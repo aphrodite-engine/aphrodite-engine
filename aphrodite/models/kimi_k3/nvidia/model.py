@@ -82,7 +82,7 @@ from aphrodite.model_executor.models.utils import (
     AutoWeightsLoader,
     PPMissingLayer,
     WeightsMapper,
-    init_vllm_registered_model,
+    init_aphrodite_registered_model,
     is_pp_missing_parameter,
     make_layers,
     maybe_prefix,
@@ -120,6 +120,13 @@ from ..common.mm_preprocess import (
 )
 
 logger = init_logger(__name__)
+
+# Token-count cutoff for overlapping the MoE router gate with the routed-expert
+# down projection on a separate CUDA stream (latent MoE). At or below this many
+# tokens the launch-bound decode path benefits from multi-stream overlap; above
+# it the GEMMs saturate the device and the cross-stream sync is pure overhead,
+# so it falls back to sequential.
+_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD = 256
 
 
 class KimiMLP(nn.Module):
@@ -496,7 +503,7 @@ class KimiMoE(nn.Module):
             )
             # Auxiliary CUDA stream to overlap the router gate with the routed
             # down projection on decode-sized batches (gated by
-            # APHRODITE_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD).
+            # _ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD).
             self._down_proj_stream: torch.cuda.Stream | None = aux_stream()
             self._down_proj_events = (torch.cuda.Event(), torch.cuda.Event())
         else:
@@ -526,7 +533,10 @@ class KimiMoE(nn.Module):
                 activation_linear_beta=activation_situ_linear_beta,
             )
         else:
-            enable_tail_fusion = envs.APHRODITE_ENABLE_K3_LATENT_MOE_TAIL_FUSION
+            # The tail-fusion kernels are tcgen05-based, so they require an
+            # SM100 NVIDIA device; the runner falls back to the default latent
+            # MoE path everywhere else.
+            enable_tail_fusion = current_platform.is_cuda() and current_platform.is_device_capability_family(100)
             self.experts = FusedMoE(
                 shared_experts=self.shared_experts,
                 num_experts=num_experts,
@@ -617,7 +627,7 @@ class KimiMoE(nn.Module):
             lambda: down_proj(hidden_states),
             self._down_proj_events[0],
             self._down_proj_events[1],
-            self._down_proj_stream if num_tokens <= envs.APHRODITE_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD else None,
+            self._down_proj_stream if num_tokens <= _ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD else None,
         )
         return routed_hidden_states, router_output, topk_ids
 
@@ -1439,7 +1449,7 @@ class KimiK3ForConditionalGeneration(
 
         self.quant_config = quant_config
         with self._mark_language_model(aphrodite_config):
-            self.language_model = init_vllm_registered_model(
+            self.language_model = init_aphrodite_registered_model(
                 aphrodite_config=aphrodite_config,
                 hf_config=config.text_config,
                 prefix=maybe_prefix(prefix, "language_model"),

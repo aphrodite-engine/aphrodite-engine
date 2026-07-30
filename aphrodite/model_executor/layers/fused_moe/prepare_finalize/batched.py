@@ -98,7 +98,7 @@ class BatchedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         if quant_config.is_quantized:
             scale_shape = quant_config.batched_scale_shape(num_local_experts, self.max_num_tokens, hidden_dim)
 
-            b_a1_scale = torch.empty(scale_shape, dtype=torch.float32, device=a1.device)
+            b_a1_scale = torch.zeros(scale_shape, dtype=torch.float32, device=a1.device)
         else:
             assert quant_config.a1_scale is None
             b_a1_scale = None
