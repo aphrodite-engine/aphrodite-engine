@@ -279,6 +279,110 @@ def test_contexted_kv_attention(
     torch.testing.assert_close(output, output_ref, atol=atol, rtol=0)
 
 
+@pytest.mark.parametrize("device", CUDA_DEVICES)
+@torch.inference_mode()
+def test_contexted_kv_attention_cached_kv(device: str) -> None:
+    """Exercise query-only prefix attention with all K/V in the paged cache."""
+    set_random_seed(0)
+    torch.set_default_device(device)
+    torch.accelerator.set_device_index(device)
+
+    dtype = torch.float16
+    num_heads = num_kv_heads = 4
+    head_size = 32
+    block_size = 32
+    num_blocks = 4
+    seq_len = num_blocks * block_size
+    query_len = 99
+
+    query = torch.empty(query_len, num_heads, head_size, dtype=dtype)
+    query.uniform_(-1e-3, 1e-3)
+    output = torch.empty_like(query)
+    key = torch.empty(seq_len, num_kv_heads, head_size, dtype=dtype)
+    value = torch.empty_like(key)
+    key.uniform_(-1e-3, 1e-3)
+    value.uniform_(-1e-3, 1e-3)
+
+    # Use an exact-sized table to cover padded lanes in the final kernel tile.
+    block_table = torch.arange(num_blocks, dtype=torch.int32).view(1, num_blocks)
+    k_cache = key.view(num_blocks, block_size, num_kv_heads, head_size)
+    k_cache = k_cache.view(num_blocks, block_size, num_kv_heads, head_size // 8, 8).permute(0, 2, 3, 1, 4).contiguous()
+    v_cache = value.view(num_blocks, block_size, num_kv_heads, head_size).permute(0, 2, 3, 1).contiguous()
+    b_seq_len = torch.tensor([seq_len], dtype=torch.int32)
+    b_start_loc = torch.tensor([0, query_len], dtype=torch.int32)
+    scale = torch.tensor(1.0, dtype=torch.float32, device=device)
+
+    context_attention_fwd(
+        query,
+        None,
+        None,
+        output,
+        "auto",
+        k_cache,
+        v_cache,
+        block_table,
+        b_start_loc,
+        b_seq_len,
+        seq_len,
+        query_len,
+        scale,
+        scale,
+        sliding_window=0,
+    )
+
+    query_ref = query.permute(1, 0, 2).unsqueeze(0)
+    key_ref = key.permute(1, 0, 2).unsqueeze(0)
+    value_ref = value.permute(1, 0, 2).unsqueeze(0)
+    attn_mask = create_causal_attention_mask_for_sdpa([query_len], [seq_len], device=device, dtype=dtype)
+    output_ref = F.scaled_dot_product_attention(
+        query_ref,
+        key_ref,
+        value_ref,
+        attn_mask=attn_mask,
+        dropout_p=0.0,
+        scale=head_size**-0.5,
+    )
+    output_ref = output_ref.squeeze(0).permute(1, 0, 2).contiguous()
+    torch.testing.assert_close(output, output_ref, atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("device", CUDA_DEVICES)
+@torch.inference_mode()
+def test_contexted_kv_attention_cached_kv_alibi_unsupported(device: str) -> None:
+    torch.set_default_device(device)
+    torch.accelerator.set_device_index(device)
+    num_heads = num_kv_heads = 4
+    head_size = block_size = 16
+    query_len = 8
+    query = torch.empty(query_len, num_heads, head_size, dtype=torch.float16)
+    output = torch.empty_like(query)
+    k_cache = torch.zeros(1, num_kv_heads, head_size // 8, block_size, 8, dtype=torch.float16)
+    v_cache = torch.zeros(1, num_kv_heads, head_size, block_size, dtype=torch.float16)
+    block_table = torch.zeros(1, 1, dtype=torch.int32)
+    b_seq_len = torch.tensor([query_len], dtype=torch.int32)
+    b_start_loc = torch.tensor([0, query_len], dtype=torch.int32)
+    scale = torch.tensor(1.0, dtype=torch.float32, device=device)
+
+    with pytest.raises(NotImplementedError):
+        context_attention_fwd(
+            query,
+            None,
+            None,
+            output,
+            "auto",
+            k_cache,
+            v_cache,
+            block_table,
+            b_start_loc,
+            b_seq_len,
+            query_len,
+            query_len,
+            scale,
+            scale,
+            alibi_slopes=torch.ones(num_heads, device=device),
+        )
+
+
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
 @pytest.mark.parametrize("num_queries_per_kv", NUM_QUERIES_PER_KV)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
