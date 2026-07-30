@@ -56,6 +56,7 @@ SEPARATE_GROUPS = [
     "tests",
     # v0 related
     "aphrodite/lora",
+    "aphrodite/models/deepseek_v32",
 ]
 
 # TODO(woosuk): Include the code from Megatron and HuggingFace.
