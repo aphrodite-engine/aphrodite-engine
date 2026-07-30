@@ -375,7 +375,7 @@ class MultiprocExecutor(Executor):
         def get_response():
             responses = []
             for mq in response_mqs:
-                dequeue_timeout = None if deadline is None else (deadline - time.monotonic())
+                dequeue_timeout = None if deadline is None else max(0.0, deadline - time.monotonic())
                 try:
                     status, result = mq.dequeue(timeout=dequeue_timeout)
                 except TimeoutError as e:
