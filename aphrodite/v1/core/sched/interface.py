@@ -9,6 +9,7 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
+    from aphrodite.config.kv_events import KVEventsConfig
     from aphrodite.distributed.ec_transfer.ec_connector.base import ECConnectorBase
     from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorBase_V1
     from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
@@ -251,4 +252,7 @@ class SchedulerInterface(ABC):
         return None
 
     def get_ec_connector(self) -> "ECConnectorBase | None":
+        return None
+
+    def get_kv_event_publisher_config(self) -> "KVEventsConfig | None":
         return None
