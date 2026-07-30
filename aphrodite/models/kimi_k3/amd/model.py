@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Kimi-K3 multimodal model implementation for vLLM."""
+"""Kimi-K3 multimodal model implementation for Sonar."""
 
 from collections.abc import Iterable
 from typing import cast
@@ -30,7 +30,7 @@ from aphrodite.model_executor.models.kimi_k25_vit import (
 from aphrodite.model_executor.models.utils import (
     AutoWeightsLoader,
     WeightsMapper,
-    init_vllm_registered_model,
+    init_aphrodite_registered_model,
     maybe_prefix,
 )
 from aphrodite.model_executor.models.vision import is_vit_use_data_parallel
@@ -66,7 +66,7 @@ class KimiK3ForConditionalGeneration(
 
     supports_encoder_tp_data = True
 
-    hf_to_vllm_mapper = WeightsMapper(
+    hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_prefix={
             "language_model.layers.": "language_model.model.layers.",
             "mm_projector.proj.0": "mm_projector.linear_1",
@@ -118,7 +118,7 @@ class KimiK3ForConditionalGeneration(
 
         self.quant_config = quant_config
         with self._mark_language_model(aphrodite_config):
-            self.language_model = init_vllm_registered_model(
+            self.language_model = init_aphrodite_registered_model(
                 aphrodite_config=aphrodite_config,
                 hf_config=config.text_config,
                 prefix=maybe_prefix(prefix, "language_model"),
@@ -206,14 +206,14 @@ class KimiK3ForConditionalGeneration(
     @classmethod
     def get_mamba_state_dtype_from_config(cls, aphrodite_config: AphroditeConfig):
         text_config = aphrodite_config.model_config.hf_config.text_config
-        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
-        return KimiLinearForCausalLM.get_mamba_state_dtype_from_config(temp_vllm_config)
+        temp_aphrodite_config = aphrodite_config.with_hf_config(text_config)
+        return KimiLinearForCausalLM.get_mamba_state_dtype_from_config(temp_aphrodite_config)
 
     @classmethod
     def get_mamba_state_shape_from_config(cls, aphrodite_config: AphroditeConfig):
         text_config = aphrodite_config.model_config.hf_config.text_config
-        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
-        return KimiLinearForCausalLM.get_mamba_state_shape_from_config(temp_vllm_config)
+        temp_aphrodite_config = aphrodite_config.with_hf_config(text_config)
+        return KimiLinearForCausalLM.get_mamba_state_shape_from_config(temp_aphrodite_config)
 
     @classmethod
     def get_mamba_state_copy_func(cls):
@@ -221,4 +221,4 @@ class KimiK3ForConditionalGeneration(
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+        return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)

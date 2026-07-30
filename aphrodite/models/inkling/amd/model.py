@@ -298,7 +298,7 @@ class InklingModel(nn.Module):
 class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
     """Shared text-backbone causal-LM scaffolding for both entry classes."""
 
-    hf_to_vllm_mapper = WeightsMapper(
+    hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_substr={
             ".w13_dn": ".gate_up_proj",
             ".w2_md": ".down_proj",
@@ -338,11 +338,11 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
 
     def _build(
         self,
-        vllm_config: AphroditeConfig,
+        aphrodite_config: AphroditeConfig,
         text_config: InklingModelConfig,
         prefix: str,
     ) -> None:
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
         self.config = text_config
         # ROCm checkpoints use Quark OCP MXFP4. The global Quark config is
         # passed into each routed MoE and its exclusion list keeps the rest of
@@ -400,9 +400,9 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
 class InklingForCausalLM(_TmlForCausalLMBase):
     """Text-only entry point (``inkling_model`` checkpoints)."""
 
-    def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        self._build(vllm_config, vllm_config.model_config.hf_config, prefix)
+        self._build(aphrodite_config, aphrodite_config.model_config.hf_config, prefix)
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -420,7 +420,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
     class only adds multimodal embedding + merge.
     """
 
-    hf_to_vllm_mapper = _TmlForCausalLMBase.hf_to_vllm_mapper | WeightsMapper(
+    hf_to_aphrodite_mapper = _TmlForCausalLMBase.hf_to_aphrodite_mapper | WeightsMapper(
         orig_to_new_prefix={
             "model.audio.": "audio.",
             "model.visual.": "visual.vision_encoder.",
@@ -435,9 +435,9 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
             return "<|content_audio_input|>"
         raise ValueError("Only image or audio modality is supported")
 
-    def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        config: InklingMMConfig = vllm_config.model_config.hf_config
+        config: InklingMMConfig = aphrodite_config.model_config.hf_config
 
         self.visual = (
             InklingVision(config.vision_config, prefix=maybe_prefix(prefix, "visual"))
@@ -450,7 +450,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
             else None
         )
 
-        self._build(vllm_config, config.text_config, prefix)
+        self._build(aphrodite_config, config.text_config, prefix)
 
     # -- multimodal embedding -------------------------------------------
 
@@ -572,7 +572,7 @@ def _load_inkling_weights(
     local_ids = set(config.local_layer_ids)
 
     def _iter_loadable_weights() -> Iterable[tuple[str, torch.Tensor]]:
-        for name, weight in module.hf_to_vllm_mapper.apply(weights):
+        for name, weight in module.hf_to_aphrodite_mapper.apply(weights):
             # LightSeek's MXFP4 conversion bundles a quantized copy of the
             # standalone PEFT adapter in the base safetensors index. These are
             # not base-model parameters; adapters remain opt-in at serving.

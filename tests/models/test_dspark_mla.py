@@ -47,7 +47,7 @@ def test_dspark_mla_uses_compile_free_model_entrypoint():
     ],
 )
 def test_dspark_mla_checkpoint_weight_mapping(checkpoint_name, runtime_name, shard_id):
-    assert K3DSparkForCausalLM.hf_to_vllm_mapper._map_name_with_shard(checkpoint_name) == (runtime_name, shard_id)
+    assert K3DSparkForCausalLM.hf_to_aphrodite_mapper._map_name_with_shard(checkpoint_name) == (runtime_name, shard_id)
 
 
 def test_dspark_mla_shares_frozen_target_weights_and_skips_training_head():

@@ -744,19 +744,19 @@ class CompilationConfig:
     # Attention ops; used for piecewise cudagraphs
     # Use PyTorch operator format: "namespace::name"
     _attention_ops: ClassVar[list[str]] = [
-        "vllm::unified_attention_with_output",
-        "vllm::unified_mla_attention_with_output",
-        "vllm::mamba_mixer2",
-        "vllm::mamba_mixer",
-        "vllm::short_conv",
-        "vllm::linear_attention",
-        "vllm::qwen_gdn_attention_core",
-        "vllm::gdn_attention_core_xpu",
-        "vllm::olmo_hybrid_gdn_full_forward",
-        "vllm::sparse_attn_indexer",
-        "vllm::rocm_aiter_sparse_attn_indexer",
-        "vllm::deepseek_v4_attention",
-        "vllm::hpc_rope_norm_forward",
+        "aphrodite::unified_attention_with_output",
+        "aphrodite::unified_mla_attention_with_output",
+        "aphrodite::mamba_mixer2",
+        "aphrodite::mamba_mixer",
+        "aphrodite::short_conv",
+        "aphrodite::linear_attention",
+        "aphrodite::qwen_gdn_attention_core",
+        "aphrodite::gdn_attention_core_xpu",
+        "aphrodite::olmo_hybrid_gdn_full_forward",
+        "aphrodite::sparse_attn_indexer",
+        "aphrodite::rocm_aiter_sparse_attn_indexer",
+        "aphrodite::deepseek_v4_attention",
+        "aphrodite::hpc_rope_norm_forward",
     ]
 
     def compute_hash(self) -> str:

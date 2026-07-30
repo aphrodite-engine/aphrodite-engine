@@ -55,7 +55,7 @@ OUTPUT_FILE=${OUTPUT_FILE:-"${EXP_ROOT}/.xpu_accuracy_test_outputs.txt"}
 trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
 
 cleanup() {
-  echo "Cleaning up any running vLLM instances..."
+  echo "Cleaning up any running Sonar instances..."
   pkill -f "aphrodite serve" || true
   sleep 2
 }

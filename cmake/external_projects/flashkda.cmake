@@ -54,7 +54,7 @@ if(FLASH_KDA_ARCHS)
 
   define_extension_target(
     _flashkda_C
-    DESTINATION vllm
+    DESTINATION aphrodite
     LANGUAGE ${APHRODITE_GPU_LANG}
     SOURCES ${FLASH_KDA_SOURCES}
     COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}

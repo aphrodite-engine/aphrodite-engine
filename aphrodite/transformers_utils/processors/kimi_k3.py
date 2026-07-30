@@ -9,7 +9,7 @@ from aphrodite.tokenizers.hf import HfTokenizer
 class KimiK3Processor(ProcessorMixin):
     """HF-style processor wrapper for the image-only Kimi-K3 model.
 
-    K3 exposes the standard ``image`` modality, so vLLM calls this processor
+    K3 exposes the standard ``image`` modality, so Sonar calls this processor
     with ``images=[PIL, ...]``. The underlying checkpoint image processor
     (``KimiK3VisionProcessor``) works on ``{"type": "image", "image": PIL}``
     media dicts, so this wrapper adapts bare PIL images into that shape before
@@ -17,7 +17,7 @@ class KimiK3Processor(ProcessorMixin):
 
     Text is only tokenized here; the single ``<|kimi_image_placeholder|>``
     token per image is expanded into the resolution-aware media block by the
-    model's ``_get_prompt_updates`` on the vLLM side.
+    model's ``_get_prompt_updates`` on the Sonar side.
     """
 
     attributes = ["image_processor", "tokenizer"]

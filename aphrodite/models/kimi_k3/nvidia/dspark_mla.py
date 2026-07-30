@@ -165,7 +165,7 @@ class K3DSparkModel(nn.Module):
             kv_c = attn.kv_a_layernorm(kv_c)
             k_pe = k_pe.unsqueeze(1)
             # DeepSeek YaRN's FlashInfer path requires paired Q/K tensors.
-            # The vLLM CUDA op supports rotating one tensor in place and
+            # The Sonar CUDA op supports rotating one tensor in place and
             # consumes the same (possibly scaled fp32) cos/sin cache.
             rotary_emb = attn.rotary_emb
             ops.rotary_embedding(
@@ -270,7 +270,7 @@ class K3DSparkModel(nn.Module):
         all_k_pe_flat = all_k_pe.view(num_layers * num_ctx, 1, self._context_rope_dim)
         repeated_positions = self._context_positions_repeated[: num_layers * num_ctx]
         repeated_positions.view(num_layers, num_ctx).copy_(context_positions)
-        # Keep the single-tensor context RoPE on vLLM's optimized CUDA op;
+        # Keep the single-tensor context RoPE on Sonar's optimized CUDA op;
         # DeepSeek YaRN's FlashInfer wrapper assumes a non-null key tensor.
         rotary_emb = self.layers[0].self_attn.rotary_emb
         assert rotary_emb is not None
@@ -394,7 +394,7 @@ class K3DSparkForCausalLM(nn.Module):
     draft_id_to_target_id = None
     checkpoint_skip_substrs = ("confidence_head", "embed_tokens", "lm_head")
 
-    hf_to_vllm_mapper = WeightsMapper(
+    hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_prefix={"": "model."},
         orig_to_new_stacked={
             ".gate_proj": (".gate_up_proj", 0),
@@ -470,6 +470,6 @@ class K3DSparkForCausalLM(nn.Module):
             self,
             skip_substrs=list(self.checkpoint_skip_substrs),
         )
-        loaded_weights = loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+        loaded_weights = loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
         self.model._build_fused_context_kv_buffers()
         return loaded_weights

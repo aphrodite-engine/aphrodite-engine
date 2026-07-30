@@ -51,7 +51,7 @@ wait_for_server() {
 
 # Function to clean up previous instances
 cleanup_instances() {
-  echo "Cleaning up any running vLLM instances..."
+  echo "Cleaning up any running Sonar instances..."
   pkill -f "aphrodite serve" || true
   sleep 2
 }

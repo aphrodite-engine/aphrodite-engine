@@ -17,7 +17,8 @@
   // riscv implementation
   #include "cpu_types_riscv.hpp"
 #else
-  #warning "unsupported vLLM cpu implementation, vLLM will compile with scalar"
+  #warning \
+      "unsupported Sonar CPU implementation; Sonar will compile with scalar"
   #include "cpu_types_scalar.hpp"
 #endif
 
@@ -35,7 +36,7 @@ inline int get_max_threads() {
   return omp_get_max_threads();
 #else
   TORCH_WARN_ONCE(
-      "vLLM CPU was built without OpenMP; running single-threaded.");
+      "Sonar CPU was built without OpenMP; running single-threaded.");
   return 1;
 #endif
 }

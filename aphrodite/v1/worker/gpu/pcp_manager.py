@@ -120,11 +120,11 @@ class PCPManager:
 
     @staticmethod
     def validate_config(
-        vllm_config: AphroditeConfig,
+        aphrodite_config: AphroditeConfig,
         supports_mm_inputs: bool,
     ) -> None:
-        parallel_config = vllm_config.parallel_config
-        model_config = vllm_config.model_config
+        parallel_config = aphrodite_config.parallel_config
+        model_config = aphrodite_config.model_config
         pcp_size = parallel_config.prefill_context_parallel_size
         if pcp_size <= 1:
             return
@@ -137,16 +137,16 @@ class PCPManager:
             raise NotImplementedError("MRV2 PCP does not support encoder-decoder models yet.")
         if supports_mm_inputs:
             raise NotImplementedError("MRV2 PCP does not support MM inputs yet.")
-        if vllm_config.lora_config is not None:
+        if aphrodite_config.lora_config is not None:
             raise NotImplementedError("MRV2 PCP does not support LoRA yet.")
-        if vllm_config.speculative_config is not None:
+        if aphrodite_config.speculative_config is not None:
             raise NotImplementedError("MRV2 PCP does not support speculative decoding yet.")
         is_sparse_mla = hasattr(model_config.hf_text_config, "index_topk")
-        if is_sparse_mla and vllm_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE:
+        if is_sparse_mla and aphrodite_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE:
             raise NotImplementedError(
                 "MRV2 sparse MLA PCP does not support CUDA graphs yet. Set -cc.cudagraph_mode=NONE."
             )
-        if vllm_config.compilation_config.cudagraph_mode.has_full_cudagraphs():
+        if aphrodite_config.compilation_config.cudagraph_mode.has_full_cudagraphs():
             raise NotImplementedError("MRV2 PCP supports PIECEWISE CUDA graphs only.")
 
     @staticmethod
@@ -591,18 +591,18 @@ def maybe_restore_pcp_for_sampling(
 
 
 def maybe_build_pcp_manager(
-    vllm_config: AphroditeConfig,
+    aphrodite_config: AphroditeConfig,
     device: torch.device,
     supports_mm_inputs: bool,
     req_states: RequestState,
     block_tables: BlockTables,
 ) -> PCPManager | None:
-    parallel_config = vllm_config.parallel_config
+    parallel_config = aphrodite_config.parallel_config
     pcp_size = parallel_config.prefill_context_parallel_size
     if pcp_size <= 1:
         return None
 
-    PCPManager.validate_config(vllm_config, supports_mm_inputs)
+    PCPManager.validate_config(aphrodite_config, supports_mm_inputs)
 
     pcp_rank = get_pcp_group().rank_in_group
     dcp_size = parallel_config.decode_context_parallel_size
@@ -613,8 +613,8 @@ def maybe_build_pcp_manager(
         pcp_rank=pcp_rank,
         device=device,
         req_states=req_states,
-        max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
-        max_num_tokens=vllm_config.scheduler_config.max_num_batched_tokens,
+        max_num_reqs=aphrodite_config.scheduler_config.max_num_seqs,
+        max_num_tokens=aphrodite_config.scheduler_config.max_num_batched_tokens,
         block_tables=block_tables,
         dcp_world_size=dcp_size,
         dcp_rank=dcp_rank,

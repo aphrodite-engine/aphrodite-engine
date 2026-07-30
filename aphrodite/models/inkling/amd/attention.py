@@ -145,17 +145,17 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         self.window_size: tuple[int, int] = (local_extent - 1, 0) if is_local else (-1, -1)
         # Static per-layer-type KV length bound for the split heuristic: local
         # layers never see more than the sliding window.
-        vllm_config = get_current_aphrodite_config()
-        self._max_kv_len = local_extent if is_local else vllm_config.model_config.max_model_len
+        aphrodite_config = get_current_aphrodite_config()
+        self._max_kv_len = local_extent if is_local else aphrodite_config.model_config.max_model_len
 
         # ---- KV-cache wiring (reuse FlashAttentionBackend for metadata) ----
-        cache_config = vllm_config.cache_config
+        cache_config = aphrodite_config.cache_config
         self.kv_cache_dtype = cache_config.cache_dtype if cache_config is not None else "auto"
-        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, vllm_config.model_config)
+        self.kv_cache_torch_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, aphrodite_config.model_config)
         self.register_buffer("k_scale", torch.ones((), dtype=torch.float32))
         self.register_buffer("v_scale", torch.ones((), dtype=torch.float32))
 
-        compilation_config = vllm_config.compilation_config
+        compilation_config = aphrodite_config.compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
@@ -170,19 +170,19 @@ class InklingAttention(nn.Module, AttentionLayerBase):
                 window_size=self.window_size,
                 is_local=self.is_local,
                 max_kv_len=self._max_kv_len,
-                dtype=vllm_config.model_config.dtype,
+                dtype=aphrodite_config.model_config.dtype,
                 kv_dtype=self.kv_cache_torch_dtype,
-                block_size=vllm_config.cache_config.block_size,
-                max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
-                max_num_batched_tokens=(vllm_config.scheduler_config.max_num_batched_tokens),
+                block_size=aphrodite_config.cache_config.block_size,
+                max_num_reqs=aphrodite_config.scheduler_config.max_num_seqs,
+                max_num_batched_tokens=(aphrodite_config.scheduler_config.max_num_batched_tokens),
             )
         )
 
     def get_attn_backend(self) -> type[AttentionBackend]:
         return FlashAttentionBackend
 
-    def get_kv_cache_spec(self, vllm_config: AphroditeConfig) -> KVCacheSpec:
-        block_size = vllm_config.cache_config.block_size
+    def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec:
+        block_size = aphrodite_config.cache_config.block_size
         if self.is_local:
             assert self.local_extent is not None
             return SlidingWindowSpec(

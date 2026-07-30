@@ -74,10 +74,10 @@ def generate_presets(output_path="CMakeUserPresets.json"):
     cmake_jobs = max(1, cpu_cores // nvcc_threads)
     print(f"Detected {cpu_cores} CPU cores. Setting NVCC_THREADS={nvcc_threads} and CMake jobs={cmake_jobs}.")
 
-    # Get vLLM project root
+    # Get the Sonar project root.
     # (assuming this script is in aphrodite-engine/tools/)
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    print(f"vLLM project root detected as: {project_root}")
+    print(f"Sonar project root detected as: {project_root}")
 
     # Ensure python_executable path is absolute or resolvable
     if not os.path.isabs(python_executable) and which(python_executable):

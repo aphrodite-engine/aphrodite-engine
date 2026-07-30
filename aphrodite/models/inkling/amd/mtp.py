@@ -38,7 +38,7 @@ from .model import InklingDecoderLayer, InklingReplicatedEmbedding
 from .ops.norm import embed_dual_rmsnorm_cat, embed_rmsnorm
 
 # Checkpoint attention projections (wq_du/wk_dv/wv_dv/wr_du) -> fused qkvr.
-# Mirrors the backbone's hf_to_vllm_mapper.orig_to_new_stacked; kept as a
+# Mirrors the backbone's hf_to_aphrodite_mapper.orig_to_new_stacked; kept as a
 # local (pname, wname, shard) list since the MTP loader remaps by hand.
 _ATTENTION_PARAMS_MAPPING = [
     ("qkvr", "wq_du", 0),
@@ -89,12 +89,12 @@ class InklingMTPDepthLayer(nn.Module):
 
 
 class InklingMultiTokenPredictor(nn.Module):
-    def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        assert vllm_config.speculative_config is not None
-        config: InklingModelConfig = vllm_config.speculative_config.draft_model_config.hf_config
+        assert aphrodite_config.speculative_config is not None
+        config: InklingModelConfig = aphrodite_config.speculative_config.draft_model_config.hf_config
         self.config = config
-        if vllm_config.speculative_config.num_speculative_tokens != 1:
+        if aphrodite_config.speculative_config.num_speculative_tokens != 1:
             raise ValueError("Inkling MTP currently supports exactly one speculative token")
         self.chain_hidden_post_norm = config.chain_hidden_post_norm
         local_ids = set(config.local_layer_ids)
@@ -196,12 +196,15 @@ class InklingMultiTokenPredictor(nn.Module):
 
 
 class InklingMTP(nn.Module):
-    def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        assert vllm_config.speculative_config is not None
-        config: InklingModelConfig = vllm_config.speculative_config.draft_model_config.hf_config
+        assert aphrodite_config.speculative_config is not None
+        config: InklingModelConfig = aphrodite_config.speculative_config.draft_model_config.hf_config
         self.config = config
-        self.model = InklingMultiTokenPredictor(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
+        self.model = InklingMultiTokenPredictor(
+            aphrodite_config=aphrodite_config,
+            prefix=maybe_prefix(prefix, "model"),
+        )
         # The target's (vocab-sharded) LM head, attached by load_eagle_model;
         # never materialized here (same reasoning as model.embed_tokens).
         self.lm_head: ParallelLMHead = None  # type: ignore[assignment]

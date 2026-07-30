@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Kimi-K3 multimodal model implementation for vLLM."""
+"""Kimi-K3 multimodal model implementation for Sonar."""
 
 import math
 from collections.abc import Iterable
@@ -1372,7 +1372,7 @@ class KimiK3ForConditionalGeneration(
 
     supports_encoder_tp_data = True
 
-    hf_to_vllm_mapper = WeightsMapper(
+    hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_prefix={
             "language_model.layers.": "language_model.model.layers.",
             "mm_projector.proj.0": "mm_projector.linear_1",
@@ -1714,14 +1714,14 @@ class KimiK3ForConditionalGeneration(
     @classmethod
     def get_mamba_state_dtype_from_config(cls, aphrodite_config: AphroditeConfig):
         text_config = aphrodite_config.model_config.hf_config.text_config
-        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
-        return KimiLinearForCausalLM.get_mamba_state_dtype_from_config(temp_vllm_config)
+        temp_aphrodite_config = aphrodite_config.with_hf_config(text_config)
+        return KimiLinearForCausalLM.get_mamba_state_dtype_from_config(temp_aphrodite_config)
 
     @classmethod
     def get_mamba_state_shape_from_config(cls, aphrodite_config: AphroditeConfig):
         text_config = aphrodite_config.model_config.hf_config.text_config
-        temp_vllm_config = aphrodite_config.with_hf_config(text_config)
-        return KimiLinearForCausalLM.get_mamba_state_shape_from_config(temp_vllm_config)
+        temp_aphrodite_config = aphrodite_config.with_hf_config(text_config)
+        return KimiLinearForCausalLM.get_mamba_state_shape_from_config(temp_aphrodite_config)
 
     @classmethod
     def get_mamba_state_copy_func(cls):
@@ -1729,4 +1729,4 @@ class KimiK3ForConditionalGeneration(
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+        return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)

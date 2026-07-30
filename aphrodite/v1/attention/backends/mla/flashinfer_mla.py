@@ -10,7 +10,7 @@ from flashinfer.utils import (
     get_trtllm_gen_multi_ctas_kv_counter_bytes,
 )
 
-from aphrodite.config import get_current_vllm_config
+from aphrodite.config import get_current_aphrodite_config
 from aphrodite.config.cache import CacheDType
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.attention.mla_attention import (
@@ -235,8 +235,8 @@ class FlashInferMLAImpl(MLACommonImpl[MLACommonMetadata]):
         # counter buffer (see _get_multi_ctas_kv_counter_buffer). Captured here
         # (config is in scope during construction) so the byte size can be
         # resolved once on the first decode and never grows after CUDA-graph
-        # capture. The impl has no _vllm_config, hence get_current_vllm_config().
-        _sched = get_current_vllm_config().scheduler_config
+        # capture. The impl has no config reference, so use the active config.
+        _sched = get_current_aphrodite_config().scheduler_config
         self._mla_counter_max_batch: int = _sched.max_num_batched_tokens or _sched.max_num_seqs
         self._mla_counter_bytes: int | None = None
 
