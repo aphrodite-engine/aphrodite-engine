@@ -77,6 +77,11 @@ class MultiModalHasher:
             if Image.ExifTags.Base.ImageID in exif and isinstance(exif[Image.ExifTags.Base.ImageID], uuid.UUID):
                 return (exif[Image.ExifTags.Base.ImageID].bytes,)
 
+            if obj.io_config:
+                return cls.iter_item_to_bytes(
+                    "image",
+                    {"io_config": obj.io_config, "data": obj.original_bytes},
+                )
             return cls.iter_item_to_bytes("image", obj.original_bytes)
 
         if isinstance(obj, MediaWithBytes) and isinstance(obj.media, np.ndarray):
