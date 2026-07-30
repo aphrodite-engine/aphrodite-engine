@@ -33,7 +33,7 @@ if [[ -n "$ATTENTION_BACKEND" ]]; then
   echo "Using attention backend: $ATTENTION_BACKEND"
 fi
 if [[ -n "$APHRODITE_SERVE_EXTRA_ARGS" ]]; then
-  echo "vLLM serve extra args: $APHRODITE_SERVE_EXTRA_ARGS"
+  echo "Sonar serve extra args: $APHRODITE_SERVE_EXTRA_ARGS"
 fi
 
 DECODER_KV_LAYOUT=${DECODER_KV_LAYOUT:-"HND"} # Default to HND, optional NHD
@@ -117,7 +117,7 @@ wait_for_gpu_memory_release() {
 }
 
 cleanup_instances() {
-  echo "Cleaning up any running vLLM instances..."
+  echo "Cleaning up any running Sonar instances..."
   pkill -f "toy_proxy_server.py" || true
   pkill -TERM -f "aphrodite serve" || true
   sleep 3

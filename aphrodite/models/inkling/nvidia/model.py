@@ -354,7 +354,6 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
             ".w2_weight.weight_scale": ".w2_weight_scale",
         },
     )
-    hf_to_vllm_mapper = hf_to_aphrodite_mapper
     packed_modules_mapping = {
         "qkvr": ["wq_du", "wk_dv", "wv_dv", "wr_du"],
         "w13": ["w1", "w3"],
@@ -365,11 +364,11 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
 
     def _build(
         self,
-        vllm_config: AphroditeConfig,
+        aphrodite_config: AphroditeConfig,
         text_config: InklingModelConfig,
         prefix: str,
     ) -> None:
-        quant_config = vllm_config.quant_config
+        quant_config = aphrodite_config.quant_config
         self.config = text_config
         # Read by the MRV2 runner to publish per-request short-conv metadata.
         # Short convolution is intrinsic to Inkling, so this is always set.
@@ -382,7 +381,7 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
         initialize_lamport_rs_conv(
             text_config.hidden_size,
             text_config.sconv_kernel_size,
-            vllm_config.scheduler_config.max_num_batched_tokens,
+            aphrodite_config.scheduler_config.max_num_batched_tokens,
         )
         self.lm_head = ParallelLMHead(
             text_config.padded_vocab_size,
@@ -429,9 +428,9 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
 class InklingForCausalLM(_TmlForCausalLMBase):
     """Text-only entry point (``inkling_model`` checkpoints)."""
 
-    def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        self._build(vllm_config, vllm_config.model_config.hf_config, prefix)
+        self._build(aphrodite_config, aphrodite_config.model_config.hf_config, prefix)
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -455,7 +454,6 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
             "model.visual.": "visual.vision_encoder.",
         },
     )
-    hf_to_vllm_mapper = hf_to_aphrodite_mapper
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
@@ -465,9 +463,9 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
             return "<|content_audio_input|>"
         raise ValueError("Only image or audio modality is supported")
 
-    def __init__(self, *, vllm_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
-        config: InklingMMConfig = vllm_config.model_config.hf_config
+        config: InklingMMConfig = aphrodite_config.model_config.hf_config
 
         self.visual = (
             InklingVision(config.vision_config, prefix=maybe_prefix(prefix, "visual"))
@@ -480,7 +478,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
             else None
         )
 
-        self._build(vllm_config, config.text_config, prefix)
+        self._build(aphrodite_config, config.text_config, prefix)
 
     # -- multimodal embedding -------------------------------------------
 

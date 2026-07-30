@@ -36,7 +36,7 @@ from aphrodite.model_executor.model_loader.weight_utils import (
     default_weight_loader,
     sharded_weight_loader,
 )
-from aphrodite.model_executor.parameter import BaseAphroditeParameter as BasevLLMParameter
+from aphrodite.model_executor.parameter import BaseAphroditeParameter
 from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.models.kimi_k3.nvidia.kda_metadata import (
     KimiK3KDAAttentionBackend,
@@ -114,7 +114,7 @@ class _KimiGDNMergedColumnParallelLinear(MergedColumnParallelLinear):
 
     def weight_loader_v2(
         self,
-        param: BasevLLMParameter,
+        param: BaseAphroditeParameter,
         loaded_weight: torch.Tensor,
         loaded_shard_id: tuple[int, ...] | int | None = None,
     ) -> None:

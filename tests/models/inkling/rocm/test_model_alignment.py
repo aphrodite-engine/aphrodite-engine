@@ -41,7 +41,7 @@ def test_rocm_model_exposes_the_upstream_lora_contract() -> None:
 
 
 def test_lightseek_bundled_adapter_weights_remain_opt_in() -> None:
-    mapper = amd_model._TmlForCausalLMBase.hf_to_vllm_mapper
+    mapper = amd_model._TmlForCausalLMBase.hf_to_aphrodite_mapper
     weight = torch.empty(1)
     name, mapped_weight = next(iter(mapper.apply([("language_model.layers.3.attn.wq_du.lora_A.weight", weight)])))
 

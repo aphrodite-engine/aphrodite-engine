@@ -144,7 +144,7 @@ wait_for_server() {
 }
 
 cleanup_instances() {
-  echo "Cleaning up any running vLLM / proxy instances..."
+  echo "Cleaning up any running Sonar / proxy instances..."
   pkill -f "aphrodite serve" || true
   pkill -f "p2p_connector_proxy.py" || true
   sleep 2

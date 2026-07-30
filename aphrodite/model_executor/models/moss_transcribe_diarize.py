@@ -252,7 +252,7 @@ def _add_aphrodite_audio_metadata(
 
 class MossTranscribeDiarizeWhisperEncoder(WhisperEncoder):
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
-    hf_to_vllm_mapper = WeightsMapper(
+    hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_substr={".fc1.": ".mlp.fc1.", ".fc2.": ".mlp.fc2."},
         orig_to_new_stacked={
             ".self_attn.q_proj": (".self_attn.qkv_proj", "q"),
@@ -277,7 +277,7 @@ class MossTranscribeDiarizeWhisperEncoder(WhisperEncoder):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         weights = _create_fake_bias_for_k_proj(weights, ".k_proj.weight")
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+        return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
     def forward(
         self,
@@ -545,7 +545,7 @@ class MossTranscribeDiarizeForConditionalGeneration(
     supports_segment_timestamp = False
     supports_diarized_transcription = True
     supported_languages = ISO639_1_SUPPORTED_LANGS
-    hf_to_vllm_mapper = WeightsMapper(
+    hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_prefix={
             "language_model.layers.": "language_model.model.layers.",
             "language_model.embed_tokens.": "language_model.model.embed_tokens.",
@@ -808,5 +808,5 @@ class MossTranscribeDiarizeForConditionalGeneration(
         loader = AutoWeightsLoader(self)
         return loader.load_weights(
             weights,
-            mapper=self.hf_to_vllm_mapper,
+            mapper=self.hf_to_aphrodite_mapper,
         )

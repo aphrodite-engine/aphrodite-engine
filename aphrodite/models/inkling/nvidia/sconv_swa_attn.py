@@ -55,13 +55,13 @@ class InklingSconvMetadataBuilder(AttentionMetadataBuilder[InklingSconvMetadata]
         self,
         kv_cache_spec: AttentionSpec,
         layer_names: list[str],
-        vllm_config: AphroditeConfig,
+        aphrodite_config: AphroditeConfig,
         device: torch.device,
     ) -> None:
-        super().__init__(kv_cache_spec, layer_names, vllm_config, device)
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
         assert isinstance(kv_cache_spec, SlidingWindowSpec)
         # Persistent per-token buffers for CUDA graph capture.
-        max_num_tokens = vllm_config.scheduler_config.max_num_batched_tokens
+        max_num_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens
         self.seq_idx_buffer = torch.empty(max_num_tokens, dtype=torch.int32, device=device)
         self.query_start_buffer = torch.empty(max_num_tokens, dtype=torch.int32, device=device)
 
@@ -184,12 +184,12 @@ class InklingConvState(nn.Module, AttentionLayerBase):
             (2 * head_dim, hidden_per_head),  # _ATTN
             (2 * head_dim + hidden_per_head, hidden_per_head),  # _MLP
         )
-        vllm_config = get_current_aphrodite_config()
-        self._dtype = vllm_config.model_config.dtype
+        aphrodite_config = get_current_aphrodite_config()
+        self._dtype = aphrodite_config.model_config.dtype
         assert self._dtype == torch.bfloat16, f"sconv SWA cache supports bfloat16 only, got {self._dtype}"
         # Register in the forward context so the runner enumerates this owner as
         # an attention-like layer (get_kv_cache_spec / get_attn_backend).
-        compilation_config = vllm_config.compilation_config
+        compilation_config = aphrodite_config.compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
@@ -199,7 +199,7 @@ class InklingConvState(nn.Module, AttentionLayerBase):
     def get_attn_backend(self) -> type[AttentionBackend]:
         return InklingSconvBackend
 
-    def get_kv_cache_spec(self, vllm_config: AphroditeConfig) -> KVCacheSpec:
+    def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec:
         return SlidingWindowSpec(
             block_size=self.block_size,
             num_kv_heads=self.num_kv_heads,

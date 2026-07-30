@@ -85,7 +85,7 @@ wait_for_server() {
 
 # Cleanup function
 cleanup_instances() {
-    echo "Cleaning up any running vLLM instances..."
+    echo "Cleaning up any running Sonar instances..."
     pkill -f "aphrodite serve" || true
     pkill -f "disagg_epd_proxy.py" || true
     sleep 2

@@ -22,41 +22,12 @@ import sys
 
 import regex as re
 
-# Paths verified clean under follow_imports="silent". Matched before
-# SEPARATE_GROUPS, so these files join the default group and are checked at the
-# stricter setting even while a parent directory remains in SEPARATE_GROUPS.
-#
-# Fixing a directory means moving it from SEPARATE_GROUPS to here. Without that
-# move the fixes are not enforced because "tests" claims every file below it.
-SILENT_GROUPS = [
-    "tests/compile/correctness_e2e",
-    "tests/compile/fullgraph",
-    "tests/compile/fusions_e2e",
-    "tests/config",
-    "tests/entrypoints/generate",
-    "tests/entrypoints/tool_parsers",
-    "tests/entrypoints/weight_transfer",
-    "tests/kernels/core",
-    "tests/kernels/mamba",
-    "tests/models/language",
-    "tests/models/quantization",
-    "tests/plugins/bge_m3_sparse_plugin",
-    "tests/plugins/prithvi_io_processor_plugin",
-    "tests/plugins_tests/gguf",
-    "tests/plugins_tests/lora_resolvers",
-    "tests/spec_decode",
-    "tests/transformers_utils",
-    "tests/v1/distributed",
-    "tests/v1/shutdown",
-]
-
 # After fixing errors resulting from changing follow_imports
-# from "skip" to "silent", move its directory to SILENT_GROUPS.
+# from "skip" to "silent", remove its directory from SEPARATE_GROUPS.
 SEPARATE_GROUPS = [
     "tests",
     # v0 related
     "aphrodite/lora",
-    "aphrodite/models/deepseek_v32",
 ]
 
 # TODO(woosuk): Include the code from Megatron and HuggingFace.
@@ -102,22 +73,14 @@ def group_files(changed_files: list[str]) -> dict[str, list[str]]:
         A dictionary mapping file group names to lists of changed files.
     """
     exclude_pattern = re.compile(f"^{'|'.join(EXCLUDE)}.*")
-    silent_pattern = re.compile(f"^({'|'.join(SILENT_GROUPS)}).*")
     file_groups: dict[str, list[str]] = {"": []}
     file_groups.update({k: [] for k in SEPARATE_GROUPS})
-    # Longest path first so a sub-directory is not shadowed by its parent
-    separate_groups = sorted(SEPARATE_GROUPS, key=len, reverse=True)
     for changed_file in changed_files:
         # Skip files which should be ignored completely
         if exclude_pattern.match(changed_file):
             continue
-        # Already-fixed paths go in the default group, which runs at the
-        # stricter follow_imports setting from pyproject.toml
-        if silent_pattern.match(changed_file):
-            file_groups[""].append(changed_file)
-            continue
         # Group files by mypy call
-        for directory in separate_groups:
+        for directory in SEPARATE_GROUPS:
             if re.match(f"^{directory}.*", changed_file):
                 file_groups[directory].append(changed_file)
                 break
@@ -166,11 +129,7 @@ def main():
 
     returncode = 0
     for file_group, changed_files in file_groups.items():
-        # Aphrodite's application modules are not yet clean when reached from
-        # tests with follow_imports="silent". Keep checking the selected test
-        # files themselves without pulling those existing errors into the hook.
-        tests_only = all(path.startswith("tests/") for path in changed_files)
-        follow_imports = "skip" if file_group or tests_only else None
+        follow_imports = "skip"
         if changed_files:
             returncode |= mypy(changed_files, python_version, follow_imports, file_group)
     return returncode

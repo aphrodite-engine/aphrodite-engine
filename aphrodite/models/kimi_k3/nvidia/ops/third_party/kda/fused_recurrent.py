@@ -444,7 +444,7 @@ def fused_recurrent_kda(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Run recurrent KDA from raw gate and beta inputs.
 
-    This vLLM wrapper applies the gate activation and beta sigmoid, selecting
+    This Sonar wrapper applies the gate activation and beta sigmoid, selecting
     whether to materialize them before launching the recurrent kernel.
     """
     if fuse_gate is None:

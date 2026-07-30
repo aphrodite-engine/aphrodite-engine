@@ -286,7 +286,7 @@ class KimiMoE(nn.Module):
 
 class KimiMLAAttention(nn.Module):
     """
-    Main reference: DeepseekV2 vllm Implementation
+    Main reference: Sonar's DeepseekV2 implementation.
     """
 
     def __init__(
