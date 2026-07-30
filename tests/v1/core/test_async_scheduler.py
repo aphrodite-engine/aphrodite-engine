@@ -319,7 +319,7 @@ def test_abort_request_when_structured_output_fsm_cannot_advance():
     assert not scheduler.running
 
 
-def test_no_placeholder_underflow_on_discarded_spec_frame():
+def test_no_placeholder_underflow_on_stale_spec_frame():
     num_spec = 5
     scheduler = create_scheduler(
         async_scheduling=True,
@@ -332,9 +332,10 @@ def test_no_placeholder_underflow_on_discarded_spec_frame():
     scheduler.running.append(req)
     req.status = RequestStatus.RUNNING
 
-    req.num_output_placeholders = 1
-    req.async_tokens_to_discard = num_spec
-    computed_before = req.num_computed_tokens
+    req.num_output_placeholders = num_spec + 1
+    req.num_in_flight_tokens = num_spec + 1
+    scheduler.running.remove(req)
+    scheduler._preempt_request(req, 0.0)
 
     scheduler_output = SchedulerOutput(
         scheduled_new_reqs=[],
@@ -358,7 +359,8 @@ def test_no_placeholder_underflow_on_discarded_spec_frame():
 
     scheduler.update_from_output(scheduler_output, model_runner_output)
 
-    assert req.num_output_placeholders == 1
-    assert req.num_computed_tokens == computed_before
-    assert req.async_tokens_to_discard == num_spec - 1
-    assert req.status == RequestStatus.RUNNING
+    assert req.num_output_placeholders == 0
+    assert req.num_computed_tokens == 0
+    assert req.num_stale_output_tokens == 0
+    assert req.output_token_ids == [999]
+    assert req.status == RequestStatus.PREEMPTED
