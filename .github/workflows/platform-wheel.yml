@@ -287,13 +287,23 @@ jobs:
       - name: Install rclone
         run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
 
+      - name: Pin ROCm build driver
+        run: |
+          install -m 0755 \
+            .github/scripts/build_rocm_wheel.sh \
+            "$RUNNER_TEMP/build_rocm_wheel.sh"
+          install -m 0644 \
+            docker/Dockerfile.rocm \
+            "$RUNNER_TEMP/Dockerfile.rocm"
+
       - name: Build and publish missing ROCm wheels
         env:
           PUSH_BEFORE: ${{ github.event.before }}
           PLATFORM_BACKEND: rocm
           PLATFORM_ARCHITECTURE: x86_64
           PLATFORM_VERSION_LOCAL: rocm723
-          PLATFORM_BUILD_SCRIPT: .github/scripts/build_rocm_wheel.sh
+          PLATFORM_BUILD_SCRIPT: ${{ runner.temp }}/build_rocm_wheel.sh
+          ROCM_BUILD_DOCKERFILE: ${{ runner.temp }}/Dockerfile.rocm
         run: |
           .github/scripts/reconcile_platform_wheels.sh \
             dist/rocm-x86_64 page-index
