@@ -36,7 +36,7 @@ container_ports="$(
 if [[ -n "$container_args" ]] &&
   { [[ "$container_args" != *"tcp://0.0.0.0:1234"* ]] ||
     [[ "$container_args" != *"--oci-worker-gc=false"* ]] ||
-    [[ "$container_mounts" != *"\"${builder_state_dir}\""* ]] ||
+    [[ "$container_mounts" != *"\"${builder_state_dir}\":\"rw,exec,"* ]] ||
     [[ "$container_ports" != *"${builder_port}"* ]]; }; then
   docker --host "$control_host" rm --force "$container_name" >/dev/null
   container_args=""
@@ -48,7 +48,7 @@ if [[ -z "$container_args" ]]; then
     --security-opt seccomp=unconfined \
     --security-opt apparmor=unconfined \
     --publish "${builder_port}:1234" \
-    --tmpfs "${builder_state_dir}:rw,size=${cache_size},mode=1777" \
+    --tmpfs "${builder_state_dir}:rw,exec,size=${cache_size},mode=1777" \
     moby/buildkit:rootless \
     --oci-worker-no-process-sandbox \
     --oci-worker-gc=false \
