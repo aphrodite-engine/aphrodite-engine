@@ -1,0 +1,189 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+import torch
+
+import aphrodite.model_executor.layers.fused_moe.modular_kernel as mk
+from aphrodite.logger import init_logger
+from aphrodite.model_executor.layers.fused_moe import (
+    FusedMoeWeightScaleSupported,
+    RoutedExperts,
+    SharedExperts,
+)
+from aphrodite.model_executor.layers.fused_moe.config import (
+    FusedMoEQuantConfig,
+    mxfp4_moe_quant_config,
+)
+from aphrodite.model_executor.layers.fused_moe.experts.cutlass_moe import (
+    CutlassExpertsMxfp4,
+)
+from aphrodite.model_executor.layers.fused_moe.experts.marlin_moe import (
+    MarlinExperts,
+)
+from aphrodite.model_executor.layers.fused_moe.fused_moe_method_base import (
+    FusedMoEMethodBase,
+)
+from aphrodite.model_executor.layers.fused_moe.oracle.mxfp4 import (
+    Mxfp4MoeBackend,
+    make_mxfp4_moe_kernel,
+    make_mxfp4_moe_quant_config,
+    select_mxfp4_moe_backend,
+)
+from aphrodite.model_executor.layers.quantization.utils.marlin_utils_fp4 import (
+    prepare_moe_fp4_layer_for_marlin,
+)
+from aphrodite.model_executor.utils import set_weight_attrs
+from aphrodite.platforms import current_platform
+
+logger = init_logger(__name__)
+
+
+class INCMxfp4MoEMethod(FusedMoEMethodBase):
+    def __init__(self, moe) -> None:
+        super().__init__(moe)
+        self.group_size = 32
+        self.use_cutlass_mxfp4 = CutlassExpertsMxfp4._supports_current_device()
+        self.mxfp4_backend = Mxfp4MoeBackend.MARLIN
+        self.experts_cls: type[mk.FusedMoEExperts] | None = None
+        if self.use_cutlass_mxfp4:
+            self.experts_cls = CutlassExpertsMxfp4
+            logger.info_once("Using CutlassExpertsMxfp4 for AutoRound MXFP4 MoE")
+        elif current_platform.is_xpu():
+            self.mxfp4_backend, self.experts_cls = select_mxfp4_moe_backend(moe)
+        else:
+            self.experts_cls = MarlinExperts
+            logger.info_once("Using MarlinExperts (weight-only FP4) for AutoRound MXFP4 MoE")
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts: int,
+        hidden_size: int,
+        intermediate_size_per_partition: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ) -> None:
+        layer.num_experts = num_experts
+        layer.params_dtype = params_dtype
+        w13_weight = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                2 * intermediate_size_per_partition,
+                hidden_size // 2,
+                dtype=torch.uint8,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight_packed", w13_weight)
+        set_weight_attrs(w13_weight, extra_weight_attrs)
+        w2_weight = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                hidden_size,
+                intermediate_size_per_partition // 2,
+                dtype=torch.uint8,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_weight_packed", w2_weight)
+        set_weight_attrs(w2_weight, extra_weight_attrs)
+        w13_weight_scale = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                2 * intermediate_size_per_partition,
+                hidden_size // self.group_size,
+                dtype=torch.uint8,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight_scale", w13_weight_scale)
+        extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.GROUP.value})
+        set_weight_attrs(w13_weight_scale, extra_weight_attrs)
+        w2_weight_scale = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                hidden_size,
+                intermediate_size_per_partition // self.group_size,
+                dtype=torch.uint8,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_weight_scale", w2_weight_scale)
+        set_weight_attrs(w2_weight_scale, extra_weight_attrs)
+
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
+        if self.use_cutlass_mxfp4:
+            return mxfp4_moe_quant_config(
+                w1_scale=layer.w13_weight_scale,
+                w2_scale=layer.w2_weight_scale,
+            )
+        return make_mxfp4_moe_quant_config(
+            mxfp4_backend=self.mxfp4_backend,
+            w1_scale=layer.w13_weight_scale,
+            w2_scale=layer.w2_weight_scale,
+        )
+
+    def process_weights_after_loading(self, layer: RoutedExperts) -> None:
+        layer.w13_weight = torch.nn.Parameter(layer.w13_weight_packed.data, requires_grad=False)
+        delattr(layer, "w13_weight_packed")
+        layer.w2_weight = torch.nn.Parameter(layer.w2_weight_packed.data, requires_grad=False)
+        delattr(layer, "w2_weight_packed")
+        if self.use_cutlass_mxfp4:
+            from aphrodite.model_executor.layers.fused_moe.experts.cutlass_moe import (
+                swizzle_mxfp4_scales,
+            )
+
+            num_experts = layer.w13_weight_scale.shape[0]
+            w13_n = layer.w13_weight_scale.shape[1]
+            w13_scale_k = layer.w13_weight_scale.shape[2]
+            w2_m = layer.w2_weight_scale.shape[1]
+            w2_scale_n = layer.w2_weight_scale.shape[2]
+            swizzled_w13 = []
+            swizzled_w2 = []
+            for expert_idx in range(num_experts):
+                scale13 = layer.w13_weight_scale[expert_idx]
+                swizzled13 = swizzle_mxfp4_scales(scale13, w13_n, w13_scale_k * 32)
+                swizzled_w13.append(swizzled13.reshape(w13_n, w13_scale_k))
+                scale2 = layer.w2_weight_scale[expert_idx]
+                swizzled2 = swizzle_mxfp4_scales(scale2, w2_m, w2_scale_n * 32)
+                swizzled_w2.append(swizzled2.reshape(w2_m, w2_scale_n))
+            layer.w13_weight_scale = torch.nn.Parameter(torch.stack(swizzled_w13), requires_grad=False)
+            layer.w2_weight_scale = torch.nn.Parameter(torch.stack(swizzled_w2), requires_grad=False)
+        elif not current_platform.is_xpu():
+            logger.warning_once("This device lacks native FP4 compute; using weight-only FP4 via the Marlin kernel.")
+            prepare_moe_fp4_layer_for_marlin(layer)
+
+        self.moe_quant_config = self.get_fused_moe_quant_config(layer)
+        if self.moe_quant_config is not None:
+            assert self.experts_cls is not None
+            self.moe_kernel = make_mxfp4_moe_kernel(
+                moe_quant_config=self.moe_quant_config,
+                moe_config=self.moe,
+                experts_cls=self.experts_cls,
+                mxfp4_backend=self.mxfp4_backend,
+                routing_tables=layer._expert_routing_tables(),
+            )
+
+    def apply(
+        self,
+        layer: RoutedExperts,
+        x: torch.Tensor,
+        topk_weights: torch.Tensor,
+        topk_ids: torch.Tensor,
+        shared_experts: SharedExperts | None,
+        shared_experts_input: torch.Tensor | None,
+    ) -> torch.Tensor:
+        assert self.moe_kernel is not None
+        return self.moe_kernel.apply(
+            x,
+            layer.w13_weight,
+            layer.w2_weight,
+            topk_weights,
+            topk_ids,
+            activation=layer.activation,
+            global_num_experts=layer.global_num_experts,
+            expert_map=layer.expert_map,
+            apply_router_weight_on_input=layer.apply_router_weight_on_input,
+            shared_experts=shared_experts,
+            shared_experts_input=shared_experts_input,
+        )
