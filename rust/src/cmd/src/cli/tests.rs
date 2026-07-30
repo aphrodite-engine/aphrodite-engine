@@ -1122,7 +1122,7 @@ fn frontend_args_json_rejects_malformed_json() {
 #[test]
 fn serve_args_reject_unsupported_modality_in_limit_mm_per_prompt() {
     let error = Cli::try_parse_from([
-        "vllm-rs",
+        "aphrodite-rs",
         "serve",
         "Qwen/Qwen3-0.6B",
         "--limit-mm-per-prompt",

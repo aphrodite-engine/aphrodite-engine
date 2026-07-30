@@ -50,16 +50,16 @@ def test_base_backend_never_supports_quant_output(quant_key):
     assert backend.supports_quant_output(quant_key) is False
 
 
-def _make_fa_backend(version: int | None, is_vllm_fa: bool):
+def _make_fa_backend(version: int | None, is_aphrodite_fa: bool):
     """Build a FlashAttnPrefillBackend without running its heavy __init__."""
     backend = object.__new__(FlashAttnPrefillBackend)
     backend.vllm_flash_attn_version = version
-    backend._is_vllm_fa = is_vllm_fa
+    backend._is_aphrodite_fa = is_aphrodite_fa
     return backend
 
 
 @pytest.mark.parametrize(
-    ("version", "is_vllm_fa", "dc_major", "quant_key", "expected"),
+    ("version", "is_aphrodite_fa", "dc_major", "quant_key", "expected"),
     [
         # FA4 + Aphrodite-FA + Blackwell SM100/SM110 + static FP8 -> fused.
         (4, True, 10, kFp8StaticTensorSym, True),
@@ -78,8 +78,8 @@ def _make_fa_backend(version: int | None, is_vllm_fa: bool):
         (4, True, 10, kNvfp4Dynamic, False),
     ],
 )
-def test_flash_attn_supports_quant_output(version, is_vllm_fa, dc_major, quant_key, expected):
-    backend = _make_fa_backend(version, is_vllm_fa)
+def test_flash_attn_supports_quant_output(version, is_aphrodite_fa, dc_major, quant_key, expected):
+    backend = _make_fa_backend(version, is_aphrodite_fa)
     with patch(f"{_FA_MODULE}.current_platform") as plat:
         plat.get_device_capability.return_value = DeviceCapability(major=dc_major, minor=0)
         assert backend.supports_quant_output(quant_key) is expected
@@ -87,7 +87,7 @@ def test_flash_attn_supports_quant_output(version, is_vllm_fa, dc_major, quant_k
 
 def test_flash_attn_supports_quant_output_unknown_device():
     """A None device capability (e.g. capability probe failed) is safe."""
-    backend = _make_fa_backend(version=4, is_vllm_fa=True)
+    backend = _make_fa_backend(version=4, is_aphrodite_fa=True)
     with patch(f"{_FA_MODULE}.current_platform") as plat:
         plat.get_device_capability.return_value = None
         assert backend.supports_quant_output(kFp8StaticTensorSym) is False

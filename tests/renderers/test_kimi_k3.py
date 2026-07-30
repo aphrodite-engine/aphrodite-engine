@@ -54,13 +54,13 @@ class MockParallelConfig:
 
 
 @dataclass
-class MockVllmConfig:
+class MockAphroditeConfig:
     model_config: MockModelConfig
     parallel_config: MockParallelConfig
 
 
 def _make_renderer(tokenizer: StubTokenizer) -> KimiK3Renderer:
-    config = MockVllmConfig(MockModelConfig(), MockParallelConfig())
+    config = MockAphroditeConfig(MockModelConfig(), MockParallelConfig())
     return KimiK3Renderer(config, tokenizer)
 
 

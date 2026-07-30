@@ -338,7 +338,7 @@ class WeightTransferEngine(ABC, Generic[TInitInfo, TUpdateInfo]):
 
 
 @runtime_checkable
-class VLLMWeightSyncClient(Protocol):
+class AphroditeWeightSyncClient(Protocol):
     """Trainer-side stub for the inference engine's weight-sync control plane.
 
     Mirrors the weight-sync methods that the inference engine exposes
@@ -395,7 +395,7 @@ class TrainerWeightTransferEngine(ABC, Generic[TConfig, TInitInfo]):
         self,
         config: TConfig,
         *,
-        client: VLLMWeightSyncClient,
+        client: AphroditeWeightSyncClient,
         source: WeightSource,
         is_sender: bool = True,
     ) -> None:
@@ -413,7 +413,7 @@ class TrainerWeightTransferEngine(ABC, Generic[TConfig, TInitInfo]):
         config: TConfig,
         init_info: TInitInfo,
         *,
-        client: VLLMWeightSyncClient,
+        client: AphroditeWeightSyncClient,
         source: WeightSource,
     ) -> Self:
         """Rendezvous with the inference side and return a ready instance.

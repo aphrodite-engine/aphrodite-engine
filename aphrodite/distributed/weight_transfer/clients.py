@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Built-in `VLLMWeightSyncClient` implementations.
+"""Built-in `AphroditeWeightSyncClient` implementations.
 
 These adapt the inference engine's weight-sync control plane to concrete
 transports. A `TrainerWeightTransferEngine` takes one of these (or any object
@@ -27,7 +27,8 @@ def _json_safe_update_info(update_info: dict[str, Any]) -> dict[str, Any]:
 
     CUDA IPC handles (`ipc_handles`) are tuples of non-JSON-native objects, so
     over HTTP they are pickled+base64-encoded into `ipc_handles_pickled` (which
-    the worker auto-deserializes when `VLLM_ALLOW_INSECURE_SERIALIZATION=1`).
+    the worker auto-deserializes when
+    `APHRODITE_ALLOW_INSECURE_SERIALIZATION=1`).
     Other backends (NCCL) carry only JSON-native metadata and pass through
     unchanged. Mirrors the old IPC `_do_send` HTTP branch.
     """
@@ -44,7 +45,7 @@ def _json_safe_update_info(update_info: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-class HTTPVLLMWeightSyncClient:
+class HTTPAphroditeWeightSyncClient:
     """Talks to an Aphrodite server over the RLHF HTTP routes.
 
     Mirrors `aphrodite/entrypoints/serve/dev/rlhf/api_router.py`:
@@ -76,7 +77,7 @@ class HTTPVLLMWeightSyncClient:
         self._post("finish_weight_update", json)
 
 
-class RayVLLMWeightSyncClient:
+class RayAphroditeWeightSyncClient:
     """Talks to one or more Aphrodite `AsyncLLM`/`LLM` Ray actors.
 
     Each call fans out to every handle and blocks on all of them, so a

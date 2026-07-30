@@ -40,7 +40,7 @@ GIT_ROOT="${GIT_ROOT:-$(cd -- "${SCRIPT_DIR}/../../../.." && pwd -P)}"
 # Trap the SIGINT signal (triggered by Ctrl+C)
 trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
 
-# Waits for vLLM to start.
+# Waits for Sonar to start.
 wait_for_server() {
   local port=$1
   timeout 1200 bash -c "

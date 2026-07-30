@@ -18,7 +18,7 @@ pub enum TokenizerKind {
     Server(ServerTokenizer),
 }
 
-/// Server-side tokenizer using vLLM's /tokenize and /detokenize endpoints.
+/// Server-side tokenizer using Sonar's /tokenize and /detokenize endpoints.
 pub struct ServerTokenizer {
     client: reqwest::Client,
     runtime: tokio::runtime::Handle,

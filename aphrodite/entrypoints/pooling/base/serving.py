@@ -203,7 +203,7 @@ class PoolingBaseServing(ABC, BaseServing):
         if request.model in self.models.lora_requests:
             return None
         if (
-            envs.VLLM_ALLOW_RUNTIME_LORA_UPDATING
+            envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING
             and request.model
             and (load_result := await self.models.resolve_lora(request.model))
         ):

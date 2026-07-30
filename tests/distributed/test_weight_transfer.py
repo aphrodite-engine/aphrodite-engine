@@ -18,11 +18,11 @@ from torch.multiprocessing.reductions import reduce_tensor
 from aphrodite.config.parallel import ParallelConfig
 from aphrodite.config.weight_transfer import WeightTransferConfig
 from aphrodite.distributed.weight_transfer import (
-    HTTPVLLMWeightSyncClient,
+    AphroditeWeightSyncClient,
+    HTTPAphroditeWeightSyncClient,
     ModuleSource,
-    RayVLLMWeightSyncClient,
+    RayAphroditeWeightSyncClient,
     TrainerWeightTransferEngine,
-    VLLMWeightSyncClient,
     WeightTransferEngineFactory,
     WeightTransferTrainerFactory,
 )
@@ -1200,7 +1200,7 @@ def test_ipc_receive_weights_missing_gpu_uuid_raises():
 
 
 class RecordingClient:
-    """A fake VLLMWeightSyncClient that records the order of calls."""
+    """A fake AphroditeWeightSyncClient that records the order of calls."""
 
     def __init__(self):
         self.order: list[str] = []
@@ -1245,13 +1245,19 @@ class TestTrainerClients:
     """Structural protocol conformance for the built-in clients."""
 
     def test_recording_client_is_protocol(self):
-        assert isinstance(RecordingClient(), VLLMWeightSyncClient)
+        assert isinstance(RecordingClient(), AphroditeWeightSyncClient)
 
     def test_http_client_is_protocol(self):
-        assert isinstance(HTTPVLLMWeightSyncClient("http://localhost:8000"), VLLMWeightSyncClient)
+        assert isinstance(
+            HTTPAphroditeWeightSyncClient("http://localhost:8000"),
+            AphroditeWeightSyncClient,
+        )
 
     def test_ray_client_is_protocol(self):
-        assert isinstance(RayVLLMWeightSyncClient(MagicMock()), VLLMWeightSyncClient)
+        assert isinstance(
+            RayAphroditeWeightSyncClient(MagicMock()),
+            AphroditeWeightSyncClient,
+        )
 
     def test_ray_client_sends_typed_requests(self, monkeypatch):
         """Ray client must hand the actor typed Request objects, not raw dicts."""
@@ -1259,7 +1265,7 @@ class TestTrainerClients:
 
         monkeypatch.setattr(ray, "get", lambda refs: None)
         handle = MagicMock()
-        client = RayVLLMWeightSyncClient(handle)
+        client = RayAphroditeWeightSyncClient(handle)
 
         client.init_weight_transfer_engine({"master_addr": "x"})
         (init_req,), _ = handle.init_weight_transfer_engine.remote.call_args
@@ -1283,8 +1289,8 @@ class TestTrainerClients:
             captured["path"] = path
             captured["json"] = json
 
-        monkeypatch.setattr(HTTPVLLMWeightSyncClient, "_post", fake_post)
-        client = HTTPVLLMWeightSyncClient("http://localhost:8000")
+        monkeypatch.setattr(HTTPAphroditeWeightSyncClient, "_post", fake_post)
+        client = HTTPAphroditeWeightSyncClient("http://localhost:8000")
         client.update_weights({"names": ["w"], "ipc_handles": [{"gpu": ("args",)}]})
         sent = captured["json"]["update_info"]
         assert "ipc_handles" not in sent
@@ -1298,8 +1304,8 @@ class TestTrainerClients:
         def fake_post(self, path, json=None):
             captured["json"] = json
 
-        monkeypatch.setattr(HTTPVLLMWeightSyncClient, "_post", fake_post)
-        client = HTTPVLLMWeightSyncClient("http://localhost:8000")
+        monkeypatch.setattr(HTTPAphroditeWeightSyncClient, "_post", fake_post)
+        client = HTTPAphroditeWeightSyncClient("http://localhost:8000")
         update_info = {"names": ["w"], "dtype_names": ["float32"], "shapes": [[4]]}
         client.update_weights(update_info)
         assert captured["json"]["update_info"] == update_info

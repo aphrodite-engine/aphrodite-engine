@@ -6,16 +6,16 @@ to inference workers.
 """
 
 from aphrodite.distributed.weight_transfer.base import (
+    AphroditeWeightSyncClient,
     ModuleSource,
     ParamMeta,
     TrainerWeightTransferEngine,
-    VLLMWeightSyncClient,
     WeightSource,
     WeightTransferEngine,
 )
 from aphrodite.distributed.weight_transfer.clients import (
-    HTTPVLLMWeightSyncClient,
-    RayVLLMWeightSyncClient,
+    HTTPAphroditeWeightSyncClient,
+    RayAphroditeWeightSyncClient,
 )
 from aphrodite.distributed.weight_transfer.factory import (
     WeightTransferEngineFactory,
@@ -27,9 +27,9 @@ __all__ = [
     "WeightTransferEngineFactory",
     "TrainerWeightTransferEngine",
     "WeightTransferTrainerFactory",
-    "VLLMWeightSyncClient",
-    "HTTPVLLMWeightSyncClient",
-    "RayVLLMWeightSyncClient",
+    "AphroditeWeightSyncClient",
+    "HTTPAphroditeWeightSyncClient",
+    "RayAphroditeWeightSyncClient",
     "ParamMeta",
     "WeightSource",
     "ModuleSource",

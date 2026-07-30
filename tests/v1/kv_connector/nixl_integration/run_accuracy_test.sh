@@ -100,7 +100,7 @@ SMI_BIN=$(which nvidia-smi || which rocm-smi || echo "")
 # Trap the SIGINT signal (triggered by Ctrl+C)
 trap 'kill $(jobs -pr) 2>/dev/null || true' SIGINT SIGTERM EXIT
 
-# Waits for vLLM to start.
+# Waits for Sonar to start.
 wait_for_server() {
   local port=$1
   timeout 1200 bash -c "

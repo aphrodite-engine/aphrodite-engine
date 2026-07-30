@@ -8,8 +8,8 @@
 //! - `openai-embeddings`: Standard OpenAI `/v1/embeddings` with text input
 //! - `openai-embeddings-chat`: OpenAI `/v1/embeddings` with chat message format (supports
 //!   multimodal)
-//! - `aphrodite-pooling`: vLLM `/v1/pooling` endpoint
-//! - `aphrodite-rerank`: vLLM `/v1/rerank` endpoint (query + documents)
+//! - `aphrodite-pooling`: Sonar `/v1/pooling` endpoint
+//! - `aphrodite-rerank`: Sonar `/v1/rerank` endpoint (query + documents)
 
 use std::time::Instant;
 
@@ -112,7 +112,7 @@ impl PoolingBackend {
             serde_json::json!(input.prompt.as_ref())
         };
 
-        let is_vllm_backend = matches!(
+        let is_aphrodite_backend = matches!(
             self.kind,
             BackendKind::AphroditePooling | BackendKind::AphroditeRerank
         );
@@ -125,7 +125,7 @@ impl PoolingBackend {
                 });
                 // truncate_prompt_tokens is Aphrodite-specific; only include for Aphrodite backends
                 // to avoid breaking standard OpenAI providers.
-                if is_vllm_backend {
+                if is_aphrodite_backend {
                     p["truncate_prompt_tokens"] = serde_json::json!(-1);
                 }
                 p
@@ -141,7 +141,7 @@ impl PoolingBackend {
                     "model": model,
                     "messages": [{"role": "user", "content": content_json}],
                 });
-                if is_vllm_backend {
+                if is_aphrodite_backend {
                     p["truncate_prompt_tokens"] = serde_json::json!(-1);
                 }
                 p

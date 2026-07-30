@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
     from aphrodite.config.weight_transfer import WeightTransferConfig
     from aphrodite.distributed.weight_transfer.base import (
-        VLLMWeightSyncClient,
+        AphroditeWeightSyncClient,
         WeightSource,
         WeightTransferInitInfo,
     )
@@ -161,7 +161,7 @@ class WeightTransferTrainerFactory:
         config: "WeightTransferConfig",
         init_info: "WeightTransferInitInfo",
         *,
-        client: "VLLMWeightSyncClient",
+        client: "AphroditeWeightSyncClient",
         source: "WeightSource",
     ) -> TrainerWeightTransferEngine:
         """Build and rendezvous a ready-to-send trainer engine.

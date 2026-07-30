@@ -189,7 +189,7 @@ def test_silu_and_mul_with_clamp(
 @pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16])
 @torch.inference_mode()
 def test_masked_situ_and_mul(
-    default_vllm_config,
+    default_aphrodite_config,
     linear_beta: float,
     dtype: torch.dtype,
 ) -> None:

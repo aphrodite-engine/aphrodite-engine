@@ -157,7 +157,7 @@ impl TiktokenTokenizer {
     pub fn get_allowed_tokens(&self) -> Vec<u32> {
         if self.is_builtin {
             // For built-in encodings, return full token range.
-            // Note: when used with random dataset, these IDs are sent to vLLM as-is;
+            // With a random dataset, these IDs are sent to Sonar as-is;
             // ensure the model's tokenizer is compatible (e.g. GPT-4o for o200k_base).
             return (0..self.vocab_size).collect();
         }

@@ -6,9 +6,9 @@
 # 
 # This script tests that EPD disaggregation produces the same outputs as baseline.
 # It runs:
-# 1. Baseline: Single vLLM instance
+# 1. Baseline: Single Sonar instance
 # 2. EPD: 1E + 1PD setup
-# 3. Baseline for (E + P + D): 1P + 1D vLLM instances disagg
+# 3. Baseline for (E + P + D): 1P + 1D Sonar instances disaggregated
 # 4. EPD: 1E + 1P + 1D setup
 
 # For GPU usage
