@@ -61,6 +61,12 @@
     "NVCC_THREADS": {
       "default": "8"
     },
+    "APHRODITE_MAX_SIZE_MB": {
+      "default": "500"
+    },
+    "RUN_WHEEL_CHECK": {
+      "default": "true"
+    },
     "FLASHINFER_VERSION": {
       "default": "0.6.15.post1"
     },
