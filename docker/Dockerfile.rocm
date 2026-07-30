@@ -50,6 +50,8 @@ ENV UV_INDEX_STRATEGY=unsafe-best-match
 ENV UV_LINK_MODE=copy
 ENV CCACHE_DIR=/root/.cache/ccache
 ENV CCACHE_COMPILERCHECK=content
+ENV CCACHE_MAXSIZE=80G
+ENV CCACHE_COMPRESS=true
 
 # Install sccache if USE_SCCACHE is enabled.
 ARG USE_SCCACHE
@@ -217,9 +219,14 @@ COPY --from=rust-build ${COMMON_WORKDIR}/aphrodite/aphrodite/_rust_*.so aphrodit
 # Build Aphrodite. setup.py auto-detects sccache in PATH.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,id=aphrodite-rocm-ccache,target=/root/.cache/ccache,sharing=locked \
+    --mount=type=cache,id=aphrodite-rocm-cmake-v1,target=${COMMON_WORKDIR}/aphrodite/build,sharing=locked \
     --mount=type=cache,id=aphrodite-rocm-deps,target=${COMMON_WORKDIR}/aphrodite/.deps,sharing=locked \
     --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
     cd aphrodite \
+    && mkdir -p build \
+    && find build -mindepth 1 -maxdepth 1 ! -name 'temp.*' -exec rm -rf {} + \
+    && ccache --set-config=max_size=${CCACHE_MAXSIZE} \
+    && ccache --show-stats \
     && if [ "$USE_SCCACHE" = "1" ]; then \
         if [ -n "${SCCACHE_ENDPOINT}" ]; then export SCCACHE_ENDPOINT="${SCCACHE_ENDPOINT}"; fi; \
         export RUSTC_WRAPPER=sccache; \
@@ -228,6 +235,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --system -r requirements/rocm.txt \
     && export APHRODITE_USE_PRECOMPILED_RUST=1 \
     && python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 \
+    && ccache --show-stats \
     && if [ "$USE_SCCACHE" = "1" ]; then \
         sccache --show-stats; \
     fi

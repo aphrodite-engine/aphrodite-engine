@@ -33,6 +33,7 @@ container_ports="$(
 )"
 if [[ -n "$container_args" ]] &&
   { [[ "$container_args" != *"tcp://0.0.0.0:1234"* ]] ||
+    [[ "$container_args" != *"--oci-worker-gc=false"* ]] ||
     [[ "$container_mounts" != *'"/var/lib/buildkit"'* ]] ||
     [[ "$container_ports" != *"${builder_port}"* ]]; }; then
   docker --host "$control_host" rm --force "$container_name" >/dev/null
@@ -48,6 +49,7 @@ if [[ -z "$container_args" ]]; then
     --tmpfs "/var/lib/buildkit:rw,size=${cache_size},mode=1777" \
     moby/buildkit:rootless \
     --oci-worker-no-process-sandbox \
+    --oci-worker-gc=false \
     --addr tcp://0.0.0.0:1234
 elif [ "$(docker --host "$control_host" inspect -f '{{.State.Running}}' "$container_name")" != "true" ]; then
   docker --host "$control_host" start "$container_name" >/dev/null

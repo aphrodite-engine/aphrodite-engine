@@ -308,7 +308,10 @@ jobs:
 
       - name: Limit ROCm build cache
         if: ${{ always() }}
-        run: docker buildx prune --force --max-used-space 300gb
+        run: |
+          docker buildx prune --force \
+            --filter type=regular \
+            --max-used-space 100gb
 
   build-pages:
     name: Build documentation with nightly indexes
