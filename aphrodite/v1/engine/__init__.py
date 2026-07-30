@@ -11,6 +11,7 @@ import msgspec
 import numpy as np
 import torch
 
+from aphrodite.config.kv_events import KVEventsConfig
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.inputs import MultiModalFeatureSpec
 from aphrodite.pooling_params import PoolingParams
@@ -90,6 +91,7 @@ class EngineCoreReadyResponse:
     # KV cache capacity (None for encoder-only/attention-free models).
     kv_cache_size_tokens: int | None = None
     kv_cache_max_concurrency: float | None = None
+    kv_events_config: KVEventsConfig | None = None
 
 
 class EngineCoreRequest(

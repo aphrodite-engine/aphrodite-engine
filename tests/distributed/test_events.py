@@ -268,7 +268,7 @@ def test_data_parallel_rank_tagging(publisher_config):
         sub_1.close()
 
 
-def test_event_publisher_factory():
+def test_event_publisher_factory(random_port):
     """Test event publisher factory creation behavior under different configurations"""
     from aphrodite.config.kv_events import KVEventsConfig
     from aphrodite.distributed.kv_events import ZmqEventPublisher
@@ -292,10 +292,15 @@ def test_event_publisher_factory():
     config = KVEventsConfig(
         enable_kv_cache_events=True,
         publisher="zmq",
-        endpoint="inproc://test-factory-true",
+        endpoint=f"tcp://*:{random_port}",
+        replay_endpoint=f"tcp://*:{random_port + 100}",
     )
-    publisher = EventPublisherFactory.create(config, DP_RANK)
+    publisher = EventPublisherFactory.create(config, DP_RANK + 1)
     assert isinstance(publisher, ZmqEventPublisher)
+    resolved_config = publisher.get_publisher_config()
+    assert resolved_config.endpoint == f"tcp://*:{random_port + 1}"
+    assert resolved_config.replay_endpoint == f"tcp://*:{random_port + 101}"
+    assert config.endpoint == f"tcp://*:{random_port}"
     publisher.shutdown()
 
     # test unknown publisher
