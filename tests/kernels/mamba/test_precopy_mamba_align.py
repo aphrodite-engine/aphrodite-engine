@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Equivalence test for ``precopy_mamba_align_fused_kernel``.
 
-The V2 "align" pre-copy must migrate mamba state across block boundaries with
-byte-identical semantics to the V1 copy specs (``get_conv_copy_spec`` /
-``get_temporal_copy_spec``):
+The fused "align" pre-copy must migrate mamba state across block boundaries
+with byte-identical semantics to the scalar V1 copy specs
+(``get_conv_copy_spec`` / ``get_temporal_copy_spec``):
 
 * conv state (SD layout, conv_width > 0): shift the sliding window by
   ``token_bias`` tokens -- ``state[bt[src_col], token_bias:]`` ->
@@ -14,7 +14,9 @@ byte-identical semantics to the V1 copy specs (``get_conv_copy_spec`` /
   ``state[bt[dst_col]]``.
 
 The kernel must also no-op when ``src_col < 0`` (fresh request) or
-``src_col == dst_col`` (no boundary crossed).
+``src_col == dst_col`` (no boundary crossed). V2 callers pass an explicit
+``idx_mapping``; V1 align preprocessing launches in batch order with
+``idx_mapping=None``.
 """
 
 from __future__ import annotations
@@ -27,13 +29,16 @@ from aphrodite.v1.worker.mamba_utils import precopy_mamba_align_fused_kernel
 try:
     import pytest
 
-    pytestmark = pytest.mark.skipif(
+    _cuda_required = pytest.mark.skipif(
         not current_platform.is_cuda(),
         reason="precopy_mamba_align_fused_kernel needs CUDA/Triton",
     )
     _parametrize = pytest.mark.parametrize
 except ModuleNotFoundError:  # allow running directly as ``python <thisfile>``
     pytest = None
+
+    def _cuda_required(fn):
+        return fn
 
     def _parametrize(_name, _values):
         def _deco(fn):
@@ -49,16 +54,17 @@ SSM_SHAPE = (4, 16, 16)
 MAX_COLS = 8
 
 
-def _build_state(num_blocks, device):
+def _build_state(num_blocks, device, conv_state_dim_first):
     """Per-layer (conv SD [nb, width, dim] bf16, ssm [nb, *shape] fp32) pools."""
     convs, ssms = [], []
     for _ in range(NUM_LAYERS):
-        convs.append(torch.randn(num_blocks, CONV_WIDTH, CONV_DIM, dtype=torch.bfloat16, device=device))
+        conv_shape = (num_blocks, CONV_DIM, CONV_WIDTH) if conv_state_dim_first else (num_blocks, CONV_WIDTH, CONV_DIM)
+        convs.append(torch.randn(*conv_shape, dtype=torch.bfloat16, device=device))
         ssms.append(torch.randn(num_blocks, *SSM_SHAPE, dtype=torch.float32, device=device))
     return convs, ssms
 
 
-def _build_meta(convs, ssms, device):
+def _build_meta(convs, ssms, device, conv_state_dim_first):
     """Flattened per-(layer, state-type) metadata, ordered conv, ssm per layer."""
     n = NUM_LAYERS * 2
     base = torch.zeros(n, dtype=torch.int64, device=device)
@@ -76,8 +82,14 @@ def _build_meta(convs, ssms, device):
         base[i] = conv.data_ptr()
         blk_stride[i] = conv.stride(0) * conv.element_size()
         elem[i] = conv.element_size()
-        width[i] = conv.size(1)
-        inner[i] = conv.stride(1)
+        if conv_state_dim_first:
+            width[i] = conv.size(2)
+            inner[i] = 1
+            drc[i] = conv.size(1)
+            drs[i] = conv.stride(1) * conv.element_size()
+        else:
+            width[i] = conv.size(1)
+            inner[i] = conv.stride(1)
         i += 1
         # ssm (temporal): width = 0, inner = elems per block
         base[i] = ssm.data_ptr()
@@ -89,7 +101,7 @@ def _build_meta(convs, ssms, device):
     return base, blk_stride, elem, inner, width, group, drc, drs
 
 
-def _reference(convs, ssms, bt, src_col, dst_col, bias, num_reqs):
+def _reference(convs, ssms, bt, src_col, dst_col, bias, num_reqs, conv_dim_first):
     """Apply the V1 copy semantics on clones, reading from the pre-copy state."""
     conv_pre = [c.clone() for c in convs]
     ssm_pre = [s.clone() for s in ssms]
@@ -102,14 +114,20 @@ def _reference(convs, ssms, bt, src_col, dst_col, bias, num_reqs):
         sblk, dblk = int(bt[r, sc]), int(bt[r, dc])
         tblk = int(bt[r, sc + tb])  # temporal src column shifted by bias
         for layer in range(NUM_LAYERS):
-            conv_ref[layer][dblk, : CONV_WIDTH - tb] = conv_pre[layer][sblk, tb:]
+            if conv_dim_first:
+                conv_ref[layer][dblk, :, : CONV_WIDTH - tb] = conv_pre[layer][sblk, :, tb:]
+            else:
+                conv_ref[layer][dblk, : CONV_WIDTH - tb] = conv_pre[layer][sblk, tb:]
             ssm_ref[layer][dblk] = ssm_pre[layer][tblk]
     return conv_ref, ssm_ref
 
 
+@_parametrize("conv_state_dim_first", [False, True])
 @_parametrize("num_reqs", [1, 4, 16])
 @_parametrize("token_bias", [0, 1, 2])
-def test_precopy_matches_v1_copy_specs(num_reqs, token_bias):
+@_parametrize("has_idx_mapping", [True, False])
+@_cuda_required
+def test_precopy_matches_v1_copy_specs(num_reqs, token_bias, has_idx_mapping, conv_state_dim_first):
     device = torch.device("cuda")
     torch.manual_seed(0)
     # Distinct physical block per (req, col) so copies never alias.
@@ -128,10 +146,19 @@ def test_precopy_matches_v1_copy_specs(num_reqs, token_bias):
     if num_reqs >= 2:
         dst_col[1] = 1  # src_col == dst_col -> no copy
 
-    convs, ssms = _build_state(num_blocks, device)
-    conv_ref, ssm_ref = _reference(convs, ssms, bt.cpu(), src_col.cpu(), dst_col.cpu(), bias.cpu(), num_reqs)
+    convs, ssms = _build_state(num_blocks, device, conv_state_dim_first)
+    conv_ref, ssm_ref = _reference(
+        convs,
+        ssms,
+        bt.cpu(),
+        src_col.cpu(),
+        dst_col.cpu(),
+        bias.cpu(),
+        num_reqs,
+        conv_state_dim_first,
+    )
 
-    base, blk_stride, elem, inner, width, group, drc, drs = _build_meta(convs, ssms, device)
+    base, blk_stride, elem, inner, width, group, drc, drs = _build_meta(convs, ssms, device, conv_state_dim_first)
     bt_ptrs = torch.tensor([bt.data_ptr()], dtype=torch.int64, device=device)
     idx_mapping = torch.arange(num_reqs, dtype=torch.int32, device=device)
     grid = (num_reqs, NUM_LAYERS * 2)
@@ -149,10 +176,11 @@ def test_precopy_matches_v1_copy_specs(num_reqs, token_bias):
         group,
         drc,
         drs,
-        idx_mapping,
+        idx_mapping if has_idx_mapping else None,
         num_reqs,
         COPY_BLOCK_SIZE=1024,
-        CONV_STATE_DIM_FIRST=False,
+        CONV_STATE_DIM_FIRST=conv_state_dim_first,
+        HAS_IDX_MAPPING=has_idx_mapping,
     )
     torch.accelerator.synchronize()
 
@@ -164,5 +192,7 @@ def test_precopy_matches_v1_copy_specs(num_reqs, token_bias):
 if __name__ == "__main__":
     for nr in (1, 4, 16):
         for tb in (0, 1, 2):
-            test_precopy_matches_v1_copy_specs(nr, tb)
-            print(f"OK num_reqs={nr} token_bias={tb}")
+            for mapping in (True, False):
+                for dim_first in (False, True):
+                    test_precopy_matches_v1_copy_specs(nr, tb, mapping, dim_first)
+                    print(f"OK num_reqs={nr} token_bias={tb} has_idx_mapping={mapping} conv_dim_first={dim_first}")
