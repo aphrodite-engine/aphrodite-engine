@@ -18,6 +18,7 @@ from ..base.serving import SpeechToTextBaseServing
 from .protocol import (
     TranscriptionRequest,
     TranscriptionResponse,
+    TranscriptionResponseDiarized,
     TranscriptionResponseStreamChoice,
     TranscriptionResponseVerbose,
     TranscriptionStreamResponse,
@@ -52,7 +53,13 @@ class OpenAIServingTranscription(SpeechToTextBaseServing):
         audio_data: bytes,
         request: TranscriptionRequest,
         raw_request: Request | None = None,
-    ) -> TranscriptionResponse | TranscriptionResponseVerbose | AsyncGenerator[str, None] | ErrorResponse:
+    ) -> (
+        TranscriptionResponse
+        | TranscriptionResponseVerbose
+        | TranscriptionResponseDiarized
+        | AsyncGenerator[str, None]
+        | ErrorResponse
+    ):
         """Transcription API similar to OpenAI's API.
 
         See https://platform.openai.com/docs/api-reference/audio/createTranscription
@@ -63,7 +70,11 @@ class OpenAIServingTranscription(SpeechToTextBaseServing):
             request=request,
             raw_request=raw_request,
             response_class=(
-                TranscriptionResponseVerbose if request.response_format == "verbose_json" else TranscriptionResponse
+                TranscriptionResponseVerbose
+                if request.response_format == "verbose_json"
+                else TranscriptionResponseDiarized
+                if request.response_format == "diarized_json"
+                else TranscriptionResponse
             ),
             stream_generator_method=self.transcription_stream_generator,
         )
