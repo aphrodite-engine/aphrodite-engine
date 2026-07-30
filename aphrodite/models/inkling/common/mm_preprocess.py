@@ -122,7 +122,7 @@ class InklingProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int] | None:
-        # Let vLLM profile dummy inputs to determine the max token counts; the
+        # Let Sonar profile dummy inputs to determine the maximum token counts. The
         # image patch count is data-dependent, and the dummy audio is sized to
         # MAX_AUDIO_TOKENS so audio is profiled/budgeted at its allowed maximum.
         return None

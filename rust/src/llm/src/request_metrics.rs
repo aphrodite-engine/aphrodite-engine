@@ -20,11 +20,10 @@ const PROMPT_TOKEN_SOURCE_LOCAL_COMPUTE: &str = "local_compute";
 const PROMPT_TOKEN_SOURCE_LOCAL_CACHE_HIT: &str = "local_cache_hit";
 const PROMPT_TOKEN_SOURCE_EXTERNAL_KV_TRANSFER: &str = "external_kv_transfer";
 
-/// Env var mirroring Python's `APHRODITE_REQUEST_LEVEL_METRICS` (an
-/// Aphrodite-specific addition on top of vLLM's aggregate prometheus metrics).
+/// Env var mirroring Python's `APHRODITE_REQUEST_LEVEL_METRICS`.
 /// When truthy (the default), the frontend logs one line per finished request
-/// and the periodic aggregated stats log is suppressed; when falsy, only the
-/// aggregated log is emitted.
+/// and suppresses the periodic aggregate log. When falsy, it emits only the
+/// aggregate log.
 const REQUEST_LEVEL_METRICS_ENV: &str = "APHRODITE_REQUEST_LEVEL_METRICS";
 
 /// Returns true when per-request metrics logging is enabled.

@@ -4,7 +4,7 @@
 
 The vision tower (``InklingVision`` / ``HMLPPatchEncoder``) emits one token per
 image patch; the audio tower (``InklingAudio``) emits one token per audio frame.
-Both use vLLM's standard ``RMSNorm`` (CPU-friendly, with a native fallback).
+Both use Sonar's standard ``RMSNorm`` with a CPU-friendly native fallback.
 """
 
 from __future__ import annotations

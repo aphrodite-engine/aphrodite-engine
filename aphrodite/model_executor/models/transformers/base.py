@@ -571,7 +571,7 @@ class Base(
                 # Already on device, nothing to do
                 if param.device != torch.device("meta"):
                     continue
-                # Already a vLLM parameter, nothing to do
+                # Already a Sonar parameter. No conversion is needed.
                 if hasattr(param, "weight_loader"):
                     continue
                 data = torch.empty_like(param.data, dtype=dtype, device=device)

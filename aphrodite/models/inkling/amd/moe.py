@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Inkling mixture-of-experts on vLLM's FusedMoE abstraction.
+"""Inkling mixture-of-experts on Sonar's FusedMoE abstraction.
 
 Overfit to the served checkpoint: sigmoid gate (+ selection bias) top-k over
 the routed experts, log-sigmoid renormalization over the k routed + S shared
 "sink" logits, scaled by route_scale * global_scale. The routed top-k goes
-through vLLM's FusedMoE (which handles TP/EP); the sink experts run in
-:class:`InklingSinkExperts` -- replicated across EP ranks (every token
+through Sonar's FusedMoE, which handles TP and EP. The sink experts run in
+:class:`InklingSinkExperts`. They are replicated across EP ranks (every token
 activates every sink) and always bf16 (the checkpoint excludes every
 ``shared_experts`` from quantization).
 
-MXFP4 routed experts reuse vLLM's Quark OCP MXFP4 fused-MoE method; excluded
+MXFP4 routed experts reuse Sonar's Quark OCP MXFP4 fused-MoE method. Excluded
 (bf16) layers fall back to the unquantized method. The checkpoint's fused
 stacked tensors (interleaved gate/up rows, ``.scale`` / ``.scale2`` /
 ``.input_amax`` aux tensors) are translated to the standard per-expert loads
@@ -549,7 +549,7 @@ class InklingMoE(nn.Module):
         experts: RoutedExperts = self.experts.routed_experts
         key = name.split(".", 1)[1]
 
-        # original_shape is unused by the vLLM serving layout.
+        # Sonar's serving layout does not use original_shape.
         if key.endswith(".original_shape"):
             return []
         if key.endswith(".input_amax"):

@@ -4,8 +4,8 @@
 //! Unified parser for the Kimi K3 (XTML) chat format.
 //!
 //! Original Python implementations:
-//! - `vllm/reasoning/kimi_k3_reasoning_parser.py`
-//! - `vllm/tool_parsers/kimi_k3_tool_parser.py`
+//! - `aphrodite/reasoning/kimi_k3_reasoning_parser.py`
+//! - `aphrodite/tool_parsers/kimi_k3_tool_parser.py`
 //!
 //! K3 wraps one assistant message into XTML channels built from the dedicated
 //! special tokens `<|open|>`, `<|close|>`, and `<|sep|>`:

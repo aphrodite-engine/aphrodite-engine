@@ -329,7 +329,7 @@ def test_gfx950_page128_packed_kv_views_match_reference(
     window_left: int | None,
     gluon_enabled: bool,
 ):
-    """Cover both Gluon and split-KV against vLLM's packed KV allocation."""
+    """Cover both Gluon and split-KV against Sonar's packed KV allocation."""
     monkeypatch.setenv(
         "INKLING_GFX950_GLUON",
         "1" if gluon_enabled else "0",

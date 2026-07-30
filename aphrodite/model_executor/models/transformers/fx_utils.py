@@ -104,7 +104,7 @@ class _AllLeafTracer(fx.Tracer):
     def _infer_meta(self, kind: str, target: object, args: tuple, kwargs: dict):
         """Execute the op on meta tensors; PyTorch infers the output value."""
         if kind == "placeholder":
-            # vLLM always feeds the model [1, seq_len, hidden_size] hidden states.
+            # Sonar always gives the model [1, seq_len, hidden_size] hidden states.
             weight = _reference_weight(self.root)
             if str(target) == "hidden_states" and weight is not None:
                 return torch.empty(1, 8, weight.shape[-1], dtype=weight.dtype, device="meta")
@@ -189,7 +189,7 @@ def _as_leaf_call(fn: Callable, length: int | None = None) -> Callable:
 def _leaf_attention_interfaces():
     """Patch `AttentionInterface.get_interface` so traced forwards see a leaf node.
 
-    `vllm_attention_function` needs runtime context so it is untraceable.
+    The selected attention function needs runtime context, so it is untraceable.
     Every interface returns `(attn_output, attn_weights)`."""
     from transformers.modeling_utils import AttentionInterface
 
@@ -204,7 +204,7 @@ def _leaf_attention_interfaces():
 def trace(module: nn.Module) -> fx.Graph | None:
     """Trace `module.forward`, returning the partial graph on failure."""
     parameters = forward_parameters(type(module))
-    # vLLM never passes `past_key_values` so it is always the default value of `None`.
+    # Sonar never passes `past_key_values`, so it keeps the default value `None`.
     # Make this concrete to simplify tracing.
     concrete_args = None
     if "past_key_values" in parameters:

@@ -131,7 +131,7 @@ class MetalWorker(WorkerBase):
 
         # Use MetalPlatform.get_torch_device() to properly support MPS when available.
         # This ensures consistency with the platform's device selection logic and
-        # allows using MPS for PyTorch operations (like vLLM's sampler) when supported,
+        # allows MPS for PyTorch operations such as Sonar's sampler when supported,
         # while falling back to CPU if MPS is not available.
         self.device = MetalPlatform.get_torch_device(0)
         logger.info("PyTorch device set to: %s", self.device)

@@ -683,7 +683,7 @@ at::Tensor causal_conv1d_fwd_cpu(
     }
   }
 
-// IMPORTANT: To make the kernel compatible with vLLM KV cache layout
+// Keep the kernel compatible with Sonar's KV cache layout.
   int64_t conv_state_slot_stride = conv_states->stride(0);
 
   // block size for sequence blocks, 32
@@ -860,7 +860,7 @@ at::Tensor causal_conv1d_update_cpu(
     conv_states.copy_(conv_states_copy);
   }
 
-  // IMPORTANT: To make the kernel compatible with vLLM KV cache layout
+  // Keep the kernel compatible with Sonar's KV cache layout.
   int64_t conv_state_slot_stride = conv_states.stride(0);
   at::Tensor out = at::empty_like(x);
   AT_DISPATCH_REDUCED_FLOATING_TYPES(scalar_type, "causal_conv1d_update_kernel_impl", [&] {

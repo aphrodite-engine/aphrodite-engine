@@ -237,7 +237,7 @@ class GPT2Model(nn.Module):
 
     def _transpose_conv1d(self, weights: Iterable[tuple[str, torch.Tensor]]) -> Iterable[tuple[str, torch.Tensor]]:
         # HF's GPT-2 uses Conv1D instead of Linear, so its 2D weights are
-        # stored transposed relative to what vLLM expects.
+        # stored transposed relative to what Sonar expects.
         # Note(zhuohan): the logic below might break quantized models.
         for name, loaded_weight in weights:
             if name.endswith(".weight") and any(proj in name for proj in ("c_attn", "c_proj", "c_fc")):

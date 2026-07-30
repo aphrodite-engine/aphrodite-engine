@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Compatibility shim for the ROCm relative-attention implementation.
 
-ROCm uses a Triton kernel which is compiled by vLLM's normal model warmup. The
+ROCm uses a Triton kernel which is compiled by Sonar's normal model warmup. The
 NVIDIA path registers ahead-of-time CuTeDSL units; importing that provider on
 ROCm would pull in CUDA-only tml-fa4 code.
 """
@@ -31,5 +31,5 @@ class InklingFA4WarmupConfig:
 
 
 def register_fa4_warmup(config: InklingFA4WarmupConfig) -> None:
-    """Triton compilation is triggered by the ordinary vLLM warmup forward."""
+    """The standard Sonar warmup forward triggers Triton compilation."""
     del config

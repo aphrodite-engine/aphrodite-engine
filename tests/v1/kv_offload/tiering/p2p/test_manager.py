@@ -1430,7 +1430,7 @@ class TestDrainJobs:
 
         monkeypatch.setattr(manager_module, "_DRAIN_SLEEP_S", 0.0)
 
-        # Spy on the warning logger directly — vllm's logger does not
+        # Spy on the warning logger directly because Sonar's logger does not
         # propagate to root, so caplog can't see it.
         warnings: list[str] = []
 

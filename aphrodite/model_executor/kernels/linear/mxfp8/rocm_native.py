@@ -143,7 +143,7 @@ def _select_cfg(M, N, K):
     # mid-M (65..256) on SMALL local-N: still occupancy-bound (a 64x64 tile makes too
     # few N-tiles), so the narrow-BLOCK_N decode-style tile fills the CUs better.
     # N<=1536 covers the real fused-qkv local N at TP=8: q heads shard but the GQA KV
-    # (4) + sparse-indexer (4) heads are < TP=8, so vLLM replicates them to 1/rank ->
+    # (4) + sparse-indexer (4) heads are < TP=8, so Sonar replicates them to 1/rank ->
     # N = 1024 + 4*128 = 1536 (not 2560/2=1280). For the wider 1280<N<=1536 band the
     # narrow tile only wins up to M=128 (at M=256 the 64x64 tile is better), so cap it
     # there; N<=1280 keeps the narrow tile through M=256. TP=4 qkv N=2560 is unchanged.

@@ -1,5 +1,5 @@
 /*
- * Stable ABI compatible dispatch utilities for vLLM.
+ * Stable ABI-compatible dispatch utilities for Sonar.
  * Adapted from dispatch_utils.h to use PyTorch's header-only (THO_*) macros
  * instead of the ATen (AT_*) macros.
  *

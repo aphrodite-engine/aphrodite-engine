@@ -804,11 +804,11 @@ void reshape_and_cache_flash(
     const std::string& kv_cache_dtype,
     torch::stable::Tensor& k_scale,    // [1] or [num_heads]
     torch::stable::Tensor& v_scale) {  // [1] or [num_heads]
-  // NOTE(woosuk): In vLLM V1, key.size(0) can be different from
+  // NOTE(woosuk): In Sonar V1, key.size(0) can be different from
   // slot_mapping.size(0) because of padding for CUDA graphs.
-  // In vLLM V0, key.size(0) is always equal to slot_mapping.size(0) because
+  // In Sonar V0, key.size(0) is always equal to slot_mapping.size(0) because
   // both include padding.
-  // In vLLM V1, however, key.size(0) can be larger than slot_mapping.size(0)
+  // In Sonar V1, however, key.size(0) can be larger than slot_mapping.size(0)
   // since key includes padding for CUDA graphs, while slot_mapping does not.
   // In this case, slot_mapping.size(0) represents the actual number of tokens
   // before padding.
@@ -896,11 +896,11 @@ void concat_and_cache_mla(
                                       // + pe_dim)]
     torch::stable::Tensor& slot_mapping,  // [num_tokens] or [num_actual_tokens]
     const std::string& kv_cache_dtype, torch::stable::Tensor& scale) {
-  // NOTE(woosuk): In vLLM V1, key.size(0) can be different from
+  // NOTE(woosuk): In Sonar V1, key.size(0) can be different from
   // slot_mapping.size(0) because of padding for CUDA graphs.
-  // In vLLM V0, key.size(0) is always equal to slot_mapping.size(0) because
+  // In Sonar V0, key.size(0) is always equal to slot_mapping.size(0) because
   // both include padding.
-  // In vLLM V1, however, key.size(0) can be larger than slot_mapping.size(0)
+  // In Sonar V1, however, key.size(0) can be larger than slot_mapping.size(0)
   // since key includes padding for CUDA graphs, while slot_mapping does not.
   // In this case, slot_mapping.size(0) represents the actual number of tokens
   // before padding.

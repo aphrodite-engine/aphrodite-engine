@@ -12,7 +12,7 @@
 // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md#annotations
 
 TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, rocm_ops) {
-  // vLLM custom ops for rocm
+  // Sonar custom ops for ROCm.
 
   // Custom gemm op for matrix-vector multiplication
   rocm_ops.def(
