@@ -185,6 +185,13 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Create stable Metal build environment
+        run: |
+          uv venv --python 3.13 .metal-build-venv
+          uv pip install \
+            --python .metal-build-venv/bin/python \
+            --requirements requirements/build/metal.txt
+
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
 
@@ -211,6 +218,7 @@ jobs:
           PLATFORM_ARCHITECTURE: aarch64
           PLATFORM_VERSION_LOCAL: metal
           PLATFORM_BUILD_SCRIPT: .github/scripts/build_metal_wheel.sh
+          METAL_BUILD_PYTHON: ${{ github.workspace }}/.metal-build-venv/bin/python
         run: |
           .github/scripts/reconcile_platform_wheels.sh \
             dist/metal-aarch64 page-index

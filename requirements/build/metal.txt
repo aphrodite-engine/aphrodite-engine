@@ -1,0 +1,12 @@
+# Should be mirrored in pyproject.toml
+cmake>=3.26.1
+ninja
+packaging>=24.2
+setuptools>=77.0.3,<81.0.0
+setuptools-scm>=8.0
+setuptools-rust>=1.9.0
+torch==2.13.0
+wheel
+jinja2
+mlx>=0.31.0,<0.32.0
+nanobind==2.10.2
