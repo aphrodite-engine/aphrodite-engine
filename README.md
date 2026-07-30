@@ -37,8 +37,7 @@ Run the automatic installer:
 curl -fsSL https://sonar.dphn.ai/install.sh | bash
 ```
 
-The installer detects the platform and accelerator. It can create a Python
-environment and install a release or nightly build.
+The installer supports Linux x86-64 (NVIDIA CUDA, AMD ROCm, Intel XPU, or CPU), Linux Arm64 (CPU), and Apple silicon macOS (Metal).
 
 Use the [complete installation guide](https://sonar.dphn.ai/getting-started/installation/)
 for AMD ROCm, Intel XPU, CPU, Apple silicon, Google TPU, Docker, WSL 2, source
