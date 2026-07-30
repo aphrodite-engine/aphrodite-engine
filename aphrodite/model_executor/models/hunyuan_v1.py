@@ -235,8 +235,12 @@ class HunYuanAttention(nn.Module):
         q, k = self.rotary_emb(positions, q, k)
         ori_k = k
         if self.use_qk_norm:
-            q = self.query_layernorm(q.view(-1, self.num_heads, self.head_dim).contiguous())
-            k = self.key_layernorm(k.view(-1, self.num_kv_heads, self.head_dim).contiguous())
+            q = self.query_layernorm(
+                q.view(-1, self.num_heads, self.head_dim),
+            )
+            k = self.key_layernorm(
+                k.view(-1, self.num_kv_heads, self.head_dim),
+            )
 
         attn_output = self.attn(q, k, v)
         # For o_proj
@@ -339,8 +343,12 @@ class HunYuanCrossAttention(nn.Module):
         k_tmp = torch.empty_like(k)  # Todo: reduant rotary embedding
         q, _ = self.rotary_emb(positions, q, k_tmp)
         if self.use_qk_norm:
-            q = self.query_layernorm(q.view(-1, self.num_heads, self.head_dim).contiguous())
-            k = self.key_layernorm(k.view(-1, self.num_kv_heads, self.head_dim).contiguous())
+            q = self.query_layernorm(
+                q.view(-1, self.num_heads, self.head_dim),
+            )
+            k = self.key_layernorm(
+                k.view(-1, self.num_kv_heads, self.head_dim),
+            )
 
         attn_output = self.attn(q, k, v)
         # For o_proj
