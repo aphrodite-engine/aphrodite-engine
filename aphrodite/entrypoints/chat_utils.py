@@ -887,15 +887,19 @@ class MultiModalContentParser(BaseMultiModalContentParser):
         super().__init__()
 
         self._tracker = tracker
-
-        self._connector: MediaConnector = MEDIA_CONNECTOR_REGISTRY.load(
-            envs.APHRODITE_MEDIA_CONNECTOR,
-            media_io_kwargs=tracker.media_io_kwargs,
-            allowed_local_media_path=tracker.allowed_local_media_path,
-            allowed_media_domains=tracker.allowed_media_domains,
-        )
-
         self._mm_processor_kwargs = mm_processor_kwargs
+
+    @cached_property
+    def _connector(self) -> MediaConnector:
+        # Connector setup may probe APHRODITE_MEDIA_CACHE. Defer it until a
+        # request actually contains media so text-only parsing never blocks
+        # on that I/O.
+        return MEDIA_CONNECTOR_REGISTRY.load(
+            envs.APHRODITE_MEDIA_CONNECTOR,
+            media_io_kwargs=self._tracker.media_io_kwargs,
+            allowed_local_media_path=self._tracker.allowed_local_media_path,
+            allowed_media_domains=self._tracker.allowed_media_domains,
+        )
 
     @property
     def model_config(self) -> ModelConfig:
@@ -1023,13 +1027,19 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         super().__init__()
 
         self._tracker = tracker
-        self._connector: MediaConnector = MEDIA_CONNECTOR_REGISTRY.load(
-            envs.APHRODITE_MEDIA_CONNECTOR,
-            media_io_kwargs=tracker.media_io_kwargs,
-            allowed_local_media_path=tracker.allowed_local_media_path,
-            allowed_media_domains=tracker.allowed_media_domains,
-        )
         self._mm_processor_kwargs: dict[str, Any] | None = mm_processor_kwargs
+
+    @cached_property
+    def _connector(self) -> MediaConnector:
+        # Connector setup may probe APHRODITE_MEDIA_CACHE. Defer it until a
+        # request actually contains media so text-only parsing never blocks
+        # on that I/O.
+        return MEDIA_CONNECTOR_REGISTRY.load(
+            envs.APHRODITE_MEDIA_CONNECTOR,
+            media_io_kwargs=self._tracker.media_io_kwargs,
+            allowed_local_media_path=self._tracker.allowed_local_media_path,
+            allowed_media_domains=self._tracker.allowed_media_domains,
+        )
 
     @property
     def model_config(self) -> ModelConfig:

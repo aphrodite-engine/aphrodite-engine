@@ -15,6 +15,7 @@ from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.config import ModelConfig
 from aphrodite.entrypoints.chat_utils import (
+    MEDIA_CONNECTOR_REGISTRY,
     AsyncMultiModalItemTracker,
     ConversationMessage,
     _postprocess_messages,
@@ -691,6 +692,29 @@ def test_parse_chat_messages_empty_system(
         {"role": "system", "content": [{"type": "text", "text": ""}]},
         {"role": "user", "content": [{"type": "text", "text": "Who are you?"}]},
     ]
+
+
+@pytest.mark.asyncio
+async def test_text_only_chat_does_not_initialize_media_connector(
+    mistral_model_config,
+    monkeypatch,
+):
+    load_connector = MagicMock()
+    monkeypatch.setattr(MEDIA_CONNECTOR_REGISTRY, "load", load_connector)
+    messages = [{"role": "user", "content": "Who are you?"}]
+
+    parse_chat_messages(
+        messages,
+        mistral_model_config,
+        content_format="string",
+    )
+    await parse_chat_messages_async(
+        messages,
+        mistral_model_config,
+        content_format="string",
+    )
+
+    load_connector.assert_not_called()
 
 
 @pytest.mark.asyncio
