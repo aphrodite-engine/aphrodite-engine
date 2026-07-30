@@ -276,7 +276,7 @@ class TestPromptBuilding:
         engine_inputs, _ = await serving._build_prompts(request, MagicMock(), max_model_len=4096)
 
         for i, exp in enumerate(expected):
-            assert engine_inputs[i]["prompt_token_ids"] == exp
+            assert engine_inputs[i]["prompt_token_ids"] == exp  # type: ignore[typeddict-item]
 
 
 class TestGeneration:

@@ -34,10 +34,13 @@ NUM_HEADS = [16]
 @pytest.fixture
 def _fp8_attention():
     """Create FP8-enabled MMEncoderAttention via config."""
-    from types import SimpleNamespace
-    from unittest.mock import patch
+    from unittest.mock import MagicMock, patch
 
-    from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
+    from aphrodite.config import (
+        AphroditeConfig,
+        ModelConfig,
+        set_current_aphrodite_config,
+    )
     from aphrodite.config.multimodal import MultiModalConfig
 
     if not is_flashinfer_cudnn_fp8_prefill_attn_supported():
@@ -45,7 +48,7 @@ def _fp8_attention():
 
     mm_config = MultiModalConfig(mm_encoder_attn_dtype="fp8")
     aphrodite_config = AphroditeConfig()
-    aphrodite_config.model_config = SimpleNamespace(multimodal_config=mm_config)
+    aphrodite_config.model_config = MagicMock(spec=ModelConfig, multimodal_config=mm_config)
 
     # MMEncoderAttention reads torch.get_default_dtype() during init
     # to determine the output dtype. In real model loading this is bf16.

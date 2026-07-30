@@ -30,6 +30,7 @@ class DummyDraftProposer:
         Args:
             aphrodite_config: Aphrodite configuration containing model and speculative settings.
         """
+        assert aphrodite_config.speculative_config is not None
         self.num_speculative_tokens = aphrodite_config.speculative_config.num_speculative_tokens
         self.max_model_len = aphrodite_config.model_config.max_model_len
         print(
