@@ -227,6 +227,72 @@ ARG torch_cuda_arch_list='7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0+PTX'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 #################### BUILD BASE IMAGE ####################
 
+#################### RUST BUILD IMAGE ####################
+# Build the Rust frontend separately so the CUDA wheel build does not need a
+# Rust toolchain and can reuse Cargo artifacts across wheel commits.
+FROM scratch AS rust-input
+COPY requirements/build/rust.txt /rust-input/aphrodite/requirements/build/rust.txt
+COPY rust/Cargo.lock rust/Cargo.toml /rust-input/aphrodite/rust/
+COPY rust/proto /rust-input/aphrodite/rust/proto
+COPY rust/src /rust-input/aphrodite/rust/src
+COPY tools/build_rust.py /rust-input/aphrodite/tools/build_rust.py
+
+FROM base AS rust-build
+ARG USE_SCCACHE
+ARG SCCACHE_ENDPOINT
+
+ENV CARGO_BUILD_JOBS=4
+ENV CARGO_NET_RETRY=10
+ENV RUSTUP_MAX_RETRIES=10
+ENV CARGO_HOME=/root/.cargo
+ENV RUSTUP_HOME=/root/.rustup
+ENV PATH=${CARGO_HOME}/bin:${PATH}
+ENV SCCACHE_SERVER_PORT=4227
+
+WORKDIR /workspace
+
+COPY --from=rust-input \
+    /rust-input/aphrodite/requirements/build/rust.txt \
+    requirements/build/rust.txt
+
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends \
+        make \
+        unzip \
+        protobuf-compiler \
+        libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain stable \
+    && rustc --version \
+    && cargo --version
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install \
+      --python /opt/venv/bin/python3 \
+      -r requirements/build/rust.txt
+
+COPY --from=rust-input /rust-input/aphrodite/rust rust
+COPY --from=rust-input \
+    /rust-input/aphrodite/tools/build_rust.py \
+    tools/build_rust.py
+
+RUN --mount=type=cache,id=aphrodite-cuda-cargo-registry,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,id=aphrodite-cuda-cargo-git,target=/root/.cargo/git,sharing=locked \
+    --mount=type=cache,id=aphrodite-cuda-cargo-target,target=/workspace/rust/target,sharing=locked \
+    --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
+    if [ "$USE_SCCACHE" = "1" ]; then \
+        if [ -n "${SCCACHE_ENDPOINT}" ]; then export SCCACHE_ENDPOINT="${SCCACHE_ENDPOINT}"; fi; \
+        export RUSTC_WRAPPER=sccache; \
+        sccache --show-stats; \
+    fi \
+    && python3 tools/build_rust.py --release \
+    && if [ "$USE_SCCACHE" = "1" ]; then \
+        sccache --show-stats; \
+    fi
+#################### RUST BUILD IMAGE ####################
+
 #################### EXTENSIONS BUILD IMAGE ####################
 # Build DeepEP wheels
 FROM base AS extensions-build
@@ -301,7 +367,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 WORKDIR /workspace
 
+COPY tools/setup_deepgemm_pythons.sh tools/build_deepgemm_C.py tools/
+ENV DEEPGEMM_VENV_PREFIX=/opt/dgenv
+RUN --mount=type=cache,target=/root/.cache/uv \
+    tools/setup_deepgemm_pythons.sh > /tmp/deepgemm-pythons.txt
+
 COPY . .
+
+# setup.py packages these separately built Rust artifacts as-is.
+RUN rm -f aphrodite/aphrodite-rs aphrodite/_rust_*.so
+COPY --from=rust-build /workspace/aphrodite/aphrodite-rs aphrodite/aphrodite-rs
+COPY --from=rust-build /workspace/aphrodite/_rust_*.so aphrodite/
 
 ARG GIT_REPO_CHECK=0
 RUN --mount=type=bind,source=.git,target=.git \
@@ -318,6 +394,7 @@ ENV APHRODITE_VERSION_OVERRIDE=${APHRODITE_VERSION_OVERRIDE}
 ENV MAX_JOBS=${max_jobs}
 ENV NVCC_THREADS=${nvcc_threads}
 ENV CMAKE_BUILD_TYPE=Release
+ENV APHRODITE_USE_PRECOMPILED_RUST=1
 
 # Use existing torch for nightly builds
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -336,10 +413,14 @@ RUN --mount=type=cache,id=aphrodite-wheel-uv,target=/root/.cache/uv \
         export RUSTC_WRAPPER=sccache; \
         sccache --show-stats; \
     fi \
+    && export DEEPGEMM_PYTHON_INTERPRETERS="$(cat /tmp/deepgemm-pythons.txt)" \
     && python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 \
     && if [ "$USE_SCCACHE" = "1" ]; then \
         sccache --show-stats; \
     fi
+
+RUN python3 .github/scripts/verify_cuda_wheel_artifacts.py \
+    "$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
 
 # Check the size of the CUDA 13 wheel uploaded to PyPI
 COPY .buildkite/check-wheel-size.py check-wheel-size.py
