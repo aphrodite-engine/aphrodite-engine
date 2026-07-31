@@ -7,6 +7,15 @@ on:
         description: Existing release tag to repair
         required: true
         type: string
+      target:
+        description: Platform wheels to rebuild
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - cpu
+          - metal
 
 permissions:
   contents: write
@@ -19,6 +28,7 @@ concurrency:
 
 jobs:
   cpu-wheel:
+    if: ${{ inputs.target != 'metal' }}
     name: CPU wheel (${{ matrix.architecture }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -88,6 +98,7 @@ jobs:
           if-no-files-found: error
 
   metal-wheel:
+    if: ${{ inputs.target != 'cpu' }}
     name: Metal wheel (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 180
@@ -158,6 +169,10 @@ jobs:
   publish:
     name: Publish repaired platform wheels
     needs: [cpu-wheel, metal-wheel]
+    if: >-
+      ${{ always() && !cancelled() &&
+          needs.cpu-wheel.result != 'failure' &&
+          needs.metal-wheel.result != 'failure' }}
     runs-on: ubuntu-24.04
     env:
       RCLONE_CONFIG_B2_TYPE: s3
@@ -174,12 +189,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download CPU wheels
+        if: ${{ inputs.target != 'metal' }}
         uses: actions/download-artifact@v4
         with:
           pattern: "cpu-*"
           path: platform-wheels
 
       - name: Download Metal wheel
+        if: ${{ inputs.target != 'cpu' }}
         uses: actions/download-artifact@v4
         with:
           pattern: "metal-*"
@@ -196,12 +213,16 @@ jobs:
           set -euo pipefail
           PRUNE_RELEASE_VERSION="${PRUNE_RELEASE_VERSION#v}"
           export PRUNE_RELEASE_VERSION
-          .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/cpu-x86_64 release cpu x86_64 page-index
-          .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/cpu-aarch64 release cpu aarch64 page-index
-          .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/metal-aarch64 release metal aarch64 page-index
+          if [[ "${{ inputs.target }}" != metal ]]; then
+            .github/scripts/publish_platform_wheels.sh \
+              platform-wheels/cpu-x86_64 release cpu x86_64 page-index
+            .github/scripts/publish_platform_wheels.sh \
+              platform-wheels/cpu-aarch64 release cpu aarch64 page-index
+          fi
+          if [[ "${{ inputs.target }}" != cpu ]]; then
+            .github/scripts/publish_platform_wheels.sh \
+              platform-wheels/metal-aarch64 release metal aarch64 page-index
+          fi
 
       - name: Attach repaired wheels to GitHub release
         env:
@@ -214,21 +235,27 @@ jobs:
           )
           while IFS= read -r asset; do
             case "$asset" in
-              "aphrodite_engine-${version}+cpu-"*.whl|\
+              "aphrodite_engine-${version}+cpu-"*.whl)
+                [[ "${{ inputs.target }}" != metal ]] || continue
+                ;;
               "aphrodite_engine-${version}+metal-"*.whl)
-                keep_asset=false
-                for replacement_asset in "${replacement_assets[@]}"; do
-                  if [[ "$asset" == "$replacement_asset" ]]; then
-                    keep_asset=true
-                    break
-                  fi
-                done
-                if [[ "$keep_asset" == false ]]; then
-                  gh release delete-asset "${{ inputs.release_tag }}" \
-                    "$asset" --yes
-                fi
+                [[ "${{ inputs.target }}" != cpu ]] || continue
+                ;;
+              *)
+                continue
                 ;;
             esac
+            keep_asset=false
+            for replacement_asset in "${replacement_assets[@]}"; do
+              if [[ "$asset" == "$replacement_asset" ]]; then
+                keep_asset=true
+                break
+              fi
+            done
+            if [[ "$keep_asset" == false ]]; then
+              gh release delete-asset "${{ inputs.release_tag }}" \
+                "$asset" --yes
+            fi
           done < <(
             gh release view "${{ inputs.release_tag }}" \
               --json assets --jq '.assets[].name'
