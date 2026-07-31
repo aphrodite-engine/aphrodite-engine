@@ -297,6 +297,7 @@ def test_sparse_attn_prefill_ragged_kernel() -> None:
     attn_sink = torch.tensor([-0.25, 0.0, 0.25], dtype=torch.float32, device=device)
     scale = HEAD_DIM**-0.5
 
+    out = torch.empty_like(q)
     actual = _rocm_sparse_attn_prefill_ragged_triton(
         q=q,
         kv=kv,
@@ -306,7 +307,9 @@ def test_sparse_attn_prefill_ragged_kernel() -> None:
         attn_sink=attn_sink,
         nope_head_dim=NOPE_HEAD_DIM,
         rope_head_dim=ROPE_HEAD_DIM,
+        out=out,
     )
+    assert actual.data_ptr() == out.data_ptr()
     expected = _ref_sparse_prefill_ragged(q, kv, [[0, 2], [1, 3, 4], []], scale, attn_sink)
 
     torch.testing.assert_close(actual, expected, atol=2e-2, rtol=2e-2)
