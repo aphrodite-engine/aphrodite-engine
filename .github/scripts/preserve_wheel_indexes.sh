@@ -5,15 +5,25 @@ set -euo pipefail
 
 public_dir="${1:?usage: preserve_wheel_indexes.sh DOCS_PUBLIC_DIR}"
 site="${SONAR_SITE_URL:-https://sonar.dphn.ai}"
+wheel_storage="${SONAR_WHEEL_STORAGE_URL:-https://sonar-nightly.dphn.ai/platform-wheels}"
 
 preserve() {
   local relative_path=$1
+  local fallback_url=${2:-}
   local output="${public_dir}/${relative_path}/index.html"
   mkdir -p "$(dirname "$output")"
-  curl --fail --location --silent --show-error \
+  if curl --fail --location --silent --show-error \
     "${site%/}/${relative_path}/" \
-    --output "$output" ||
-    rm -f "$output"
+    --output "$output"; then
+    return
+  fi
+  if [[ -n "$fallback_url" ]] && curl \
+    --fail --location --silent --show-error \
+    "$fallback_url" \
+    --output "$output"; then
+    return
+  fi
+  rm -f "$output"
 }
 
 preserve "nightly/aphrodite-engine"
@@ -28,8 +38,11 @@ for channel in release nightly; do
     rocm/x86_64 \
     xpu/x86_64 \
     metal/aarch64; do
-    preserve "whl/${channel}/${platform}"
-    preserve "whl/${channel}/${platform}/simple/aphrodite-engine"
+    fallback="${wheel_storage%/}/${channel}/${platform}/index.html"
+    preserve "whl/${channel}/${platform}" "$fallback"
+    preserve \
+      "whl/${channel}/${platform}/simple/aphrodite-engine" \
+      "$fallback"
     if [[ "$channel" == "nightly" ]]; then
       preserve "nightly/${platform}"
     fi
