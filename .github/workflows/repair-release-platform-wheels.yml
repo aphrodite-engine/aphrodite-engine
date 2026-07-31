@@ -191,8 +191,11 @@ jobs:
       - name: Upload wheels and generate indexes
         env:
           RCLONE_BIN: ${{ runner.temp }}/rclone-bin/rclone
+          PRUNE_RELEASE_VERSION: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          PRUNE_RELEASE_VERSION="${PRUNE_RELEASE_VERSION#v}"
+          export PRUNE_RELEASE_VERSION
           .github/scripts/publish_platform_wheels.sh \
             platform-wheels/cpu-x86_64 release cpu x86_64 page-index
           .github/scripts/publish_platform_wheels.sh \
@@ -204,6 +207,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version="${{ inputs.release_tag }}"
+          version="${version#v}"
+          mapfile -t replacement_assets < <(
+            find platform-wheels -type f -name '*.whl' -printf '%f\n'
+          )
+          while IFS= read -r asset; do
+            case "$asset" in
+              "aphrodite_engine-${version}+cpu-"*.whl|\
+              "aphrodite_engine-${version}+metal-"*.whl)
+                keep_asset=false
+                for replacement_asset in "${replacement_assets[@]}"; do
+                  if [[ "$asset" == "$replacement_asset" ]]; then
+                    keep_asset=true
+                    break
+                  fi
+                done
+                if [[ "$keep_asset" == false ]]; then
+                  gh release delete-asset "${{ inputs.release_tag }}" \
+                    "$asset" --yes
+                fi
+                ;;
+            esac
+          done < <(
+            gh release view "${{ inputs.release_tag }}" \
+              --json assets --jq '.assets[].name'
+          )
           gh release upload "${{ inputs.release_tag }}" \
             platform-wheels/*/*.whl --clobber
 

@@ -29,6 +29,20 @@ for wheel in "${wheels[@]}"; do
     --s3-chunk-size 64M
 done
 
+if [[ -n "${PRUNE_RELEASE_VERSION:-}" ]]; then
+  declare -A current_wheels=()
+  for wheel in "${wheels[@]}"; do
+    current_wheels["$(basename "$wheel")"]=1
+  done
+
+  wheel_prefix="aphrodite_engine-${PRUNE_RELEASE_VERSION}+${backend}-"
+  while IFS= read -r wheel_name; do
+    [[ "$wheel_name" == "${wheel_prefix}"*.whl ]] || continue
+    [[ -n "${current_wheels[$wheel_name]:-}" ]] && continue
+    "$rclone" deletefile "${remote_root}/wheels/${wheel_name}"
+  done < <("$rclone" lsf "${remote_root}/wheels" --files-only --include '*.whl')
+fi
+
 entries="${RUNNER_TEMP:-/tmp}/sonar-${channel}-${backend}-${architecture}.tsv"
 : >"$entries"
 while IFS= read -r wheel_name; do
