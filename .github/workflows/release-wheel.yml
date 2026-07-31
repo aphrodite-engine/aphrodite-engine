@@ -60,6 +60,13 @@ jobs:
             --check-url https://pypi.org/simple/aphrodite-engine/ \
             wheels/main/*.whl
 
+      - name: Upload CUDA wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-x86_64
+          path: wheels/main/*.whl
+          if-no-files-found: error
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -275,6 +282,12 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      - name: Download CUDA wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: cuda-x86_64
+          path: platform-wheels/cuda-x86_64
+
       - name: Download CPU wheels
         uses: actions/download-artifact@v4
         with:
@@ -310,7 +323,7 @@ jobs:
           .github/scripts/publish_platform_wheels.sh \
             platform-wheels/rocm-x86_64 release rocm x86_64 page-index
 
-      - name: Attach platform wheels to GitHub release
+      - name: Attach all wheels to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" platform-wheels/*/*.whl --clobber
