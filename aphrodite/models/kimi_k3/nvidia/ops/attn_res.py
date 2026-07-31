@@ -8,6 +8,8 @@
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 
 
+import time
+
 import torch
 
 from aphrodite import _custom_ops as ops
@@ -192,31 +194,40 @@ def attn_res(
         block_l, num_warps = 1, 4
     else:
         block_l, num_warps = 4, 8
-    _attn_res_kernel[(num_tokens,)](
-        prefix,
-        delta,
-        blocks,
-        norm_weight,
-        qk_weight,
-        output_norm_weight,
-        output,
-        prefix.stride(0),
-        0 if delta is None else delta.stride(0),
-        blocks.stride(0),
-        blocks.stride(1),
-        output.stride(0),
-        num_blocks,
-        hidden_size,
-        block_write_idx,
-        eps,
-        output_norm_eps,
-        HAS_DELTA=delta is not None,
-        WRITE_BLOCK=block_write_idx >= 0,
-        APPLY_OUTPUT_NORM=output_norm_weight is not None,
-        BLOCK_L=block_l,
-        BLOCK_D=triton.next_power_of_2(hidden_size),
-        num_warps=num_warps,
-        num_stages=2,
-        launch_pdl=current_platform.is_arch_support_pdl(),
-    )
+    for attempt in range(3):
+        try:
+            _attn_res_kernel[(num_tokens,)](
+                prefix,
+                delta,
+                blocks,
+                norm_weight,
+                qk_weight,
+                output_norm_weight,
+                output,
+                prefix.stride(0),
+                0 if delta is None else delta.stride(0),
+                blocks.stride(0),
+                blocks.stride(1),
+                output.stride(0),
+                num_blocks,
+                hidden_size,
+                block_write_idx,
+                eps,
+                output_norm_eps,
+                HAS_DELTA=delta is not None,
+                WRITE_BLOCK=block_write_idx >= 0,
+                APPLY_OUTPUT_NORM=output_norm_weight is not None,
+                BLOCK_L=block_l,
+                BLOCK_D=triton.next_power_of_2(hidden_size),
+                num_warps=num_warps,
+                num_stages=2,
+                launch_pdl=current_platform.is_arch_support_pdl(),
+            )
+            break
+        except FileNotFoundError:
+            if attempt == 2:
+                raise
+            # Concurrent Triton compilation can briefly expose an incomplete
+            # cache entry on filesystems without fully atomic replacement.
+            time.sleep(0.1 * (attempt + 1))
     return output
