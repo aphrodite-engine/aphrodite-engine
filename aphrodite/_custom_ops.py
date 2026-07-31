@@ -3589,8 +3589,9 @@ def sm89_sparse_mla_fwd(
 ) -> None:
     """Sparse MLA forward on sm89, gathering directly from an fp8_ds_mla pool by slot.
 
-    q is [T, h, 576] bf16; kv_cache_pool [S, 656] uint8 (fp8_ds_mla rows); indices
-    [T, topk] int32 physical slots, -1 padded; out [T, h, 512] bf16; lse [T, h] fp32.
+    q is [T, h, 576] bf16 with a [S, 656] uint8 V3.2 pool, or [T, h, 512]
+    bf16 with a [B, block_size, 584] uint8 V4 pool. Indices are [T, topk]
+    int32 physical slots, -1 padded; out is [T, h, 512] bf16 and lse is [T, h] fp32.
     Rows whose indices are all -1 produce zero output and -inf LSE.
 
     topk_lens is an optional [T] int32 of per-token valid counts. It requires index
