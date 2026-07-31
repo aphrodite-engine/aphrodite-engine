@@ -72,7 +72,8 @@ paged_mqa_logits_kernel(const uint8_t* __restrict__ q,           // [B, NEXT_N, 
                         const int32_t* __restrict__ block_table, // [B, max_pages]
                         const int32_t* __restrict__ sched,       // [(P+1), 2]
                         float* __restrict__ logits,              // [B*NEXT_N, max_model_len]
-                        int max_pages, int64_t max_model_len, int clean_logits) {
+                        int max_pages, int64_t max_model_len, int64_t pool_page_stride,
+                        int clean_logits) {
   static_assert(NUM_HEADS == 32 || NUM_HEADS == 64, "unsupported indexer head count");
   constexpr int HGROUPS = NUM_HEADS / 16;  // head groups of 16 (one m16 mma tile each)
   constexpr int NT = 8 * HGROUPS / 4;      // 8-key n-tiles per warp
@@ -131,7 +132,7 @@ paged_mqa_logits_kernel(const uint8_t* __restrict__ q,           // [B, NEXT_N, 
 
     const int32_t* bt = block_table + (int64_t)req * max_pages;
     auto issue_page = [&](int p, int stage) {
-      const uint8_t* src = pool + (int64_t)bt[p] * PAGE_BYTES;
+      const uint8_t* src = pool + (int64_t)bt[p] * pool_page_stride;
       uint8_t* dst = smem + stage * PAGE_BYTES;
       for (int c = tid; c < PAGE_BYTES / 16; c += NEXT_N * 128) {
         int off = (c < PAGE_KEY_BYTES / 16) ? swizzle_chunk(c >> 3, c & 7)
@@ -294,8 +295,11 @@ void sm89_fp8_paged_mqa_logits(const torch::stable::Tensor& q,
                   "q must be [B, next_n, {32|64}, 128]");
   STD_TORCH_CHECK(weights.dim() == 2 && weights.size(1) == q.size(2),
                   "weights must be [B*next_n, num_heads]");
-  STD_TORCH_CHECK(q.is_contiguous() && pool.is_contiguous() && logits.is_contiguous(),
-                  "q, pool, and logits must be contiguous");
+  STD_TORCH_CHECK(q.is_contiguous() && logits.is_contiguous(),
+                  "q and logits must be contiguous");
+  STD_TORCH_CHECK(pool.dim() == 2 && pool.size(1) == sm89_dsa::PAGE_BYTES &&
+                      pool.stride(1) == 1,
+                  "pool must have dense 8448-byte pages");
   STD_TORCH_CHECK(weights.is_contiguous() && seq_lens.is_contiguous() &&
                       block_table.is_contiguous() && sched.is_contiguous(),
                   "weights, seq_lens, block_table, and sched must be contiguous");
@@ -316,7 +320,8 @@ void sm89_fp8_paged_mqa_logits(const torch::stable::Tensor& q,
         q.const_data_ptr<uint8_t>(), pool.const_data_ptr<uint8_t>(),
         weights.const_data_ptr<float>(), seq_lens.const_data_ptr<int32_t>(),
         block_table.const_data_ptr<int32_t>(), sched.const_data_ptr<int32_t>(),
-        logits.mutable_data_ptr<float>(), max_pages, max_model_len, (int)clean_logits);
+        logits.mutable_data_ptr<float>(), max_pages, max_model_len, pool.stride(0),
+        (int)clean_logits);
   };
   STD_TORCH_CHECK(next_n == 1 || next_n == 2, "next_n must be 1 or 2");
   if (next_n == 1) {
