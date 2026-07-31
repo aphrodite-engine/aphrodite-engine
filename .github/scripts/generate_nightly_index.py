@@ -4,6 +4,12 @@
 import argparse
 import html
 from pathlib import Path
+from urllib.parse import quote
+
+
+def canonicalize_url(url: str) -> str:
+    """Encode path characters that object-storage rewrites may reinterpret."""
+    return quote(url, safe=":/%?&=#")
 
 
 def main() -> None:
@@ -39,6 +45,7 @@ def main() -> None:
         digest = fields[2] if len(fields) == 3 else ""
         if not name.endswith(".whl") or Path(name).name != name:
             raise ValueError(f"Invalid wheel name: {name!r}")
+        url = canonicalize_url(url)
         if digest:
             url = f"{url}#sha256={digest}"
         try:
