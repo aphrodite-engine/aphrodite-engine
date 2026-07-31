@@ -38,7 +38,7 @@ foreach(path IN ITEMS
   endif()
 endforeach()
 
-Python_add_library(_paged_ops MODULE WITH_SOABI
+Python_add_library(_paged_ops MODULE USE_SABI 3.12 WITH_SOABI
   "${NANOBIND_SRC}"
   "${CMAKE_CURRENT_SOURCE_DIR}/csrc/metal/paged_ops.cpp")
 

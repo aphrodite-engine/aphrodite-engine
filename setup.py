@@ -684,7 +684,7 @@ if _is_cpu():
 if _build_custom_ops():
     if _is_metal():
         # MLX/nanobind paged-attention Metal kernel (aphrodite/metal/metal/_paged_ops).
-        ext_modules.append(CMakeExtension(name="aphrodite.metal.metal._paged_ops", py_limited_api=False))
+        ext_modules.append(CMakeExtension(name="aphrodite.metal.metal._paged_ops"))
     if _is_hip():
         ext_modules.append(CMakeExtension(name="aphrodite._C"))
     if _is_cuda() or _is_hip():

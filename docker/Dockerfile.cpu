@@ -116,7 +116,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/workspace/aphrodite/rust/target,sharing=locked \
     --mount=type=bind,source=.git,target=.git \
     APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE}" \
-    APHRODITE_TARGET_DEVICE=cpu python3 setup.py bdist_wheel
+    APHRODITE_TARGET_DEVICE=cpu python3 setup.py bdist_wheel \
+      --py-limited-api=cp311
 
 RUN wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)" \
     && test -n "$wheel" \

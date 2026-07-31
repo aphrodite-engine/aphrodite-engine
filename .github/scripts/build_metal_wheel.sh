@@ -17,11 +17,9 @@ fi
 APHRODITE_TARGET_DEVICE=metal \
 APHRODITE_REQUIRE_RUST_FRONTEND=1 \
 MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-  uv build \
-    --python "$METAL_BUILD_PYTHON" \
-    --no-build-isolation \
-    --wheel \
-    --out-dir "$output_dir"
+  "$METAL_BUILD_PYTHON" setup.py bdist_wheel \
+    --dist-dir "$output_dir" \
+    --py-limited-api=cp312
 
 wheel="$(find "$output_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)"
 test -n "$wheel"
