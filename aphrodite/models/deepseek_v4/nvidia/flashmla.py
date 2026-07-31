@@ -169,6 +169,22 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
         swa_indices = swa_metadata.decode_swa_indices
         swa_lens = swa_metadata.decode_swa_lens
 
+        from aphrodite.v1.attention.backends.mla.sm89_mla_sparse import (
+            use_sm89_dsa,
+        )
+
+        if use_sm89_dsa():
+            self._forward_decode_sm89(
+                q,
+                kv_cache,
+                swa_indices,
+                swa_lens,
+                topk_indices,
+                topk_lens,
+                output,
+            )
+            return
+
         # We treat queries in the same seq as different queries
         # and later we only attend by generated indices.
         # q arrives pre-padded to self.padded_heads by the outer wrapper.
@@ -218,6 +234,75 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
             extra_indices_in_kvcache=topk_indices,
             extra_topk_length=topk_lens,
             out=output.unsqueeze(1),
+        )
+
+    def _forward_decode_sm89(
+        self,
+        q: torch.Tensor,
+        compressed_cache: torch.Tensor | None,
+        swa_indices: torch.Tensor,
+        swa_lens: torch.Tensor,
+        compressed_indices: torch.Tensor | None,
+        compressed_lens: torch.Tensor | None,
+        output: torch.Tensor,
+    ) -> None:
+        """Run V4 sparse decode through the native Ada kernel."""
+        from aphrodite import _custom_ops as ops
+
+        # Decode receives token slices of the runner's padded buffers.  The
+        # native kernel requires dense storage, so materialize only this small
+        # query view.  Do not materialize the KV caches here.
+        q = q.contiguous()
+
+        def run_cache(
+            cache: torch.Tensor,
+            indices: torch.Tensor,
+            lens: torch.Tensor | None,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            indices = indices.view(q.shape[0], -1).to(torch.int32).contiguous()
+            if lens is not None:
+                lens = lens.view(-1).to(torch.int32).contiguous()
+            partial = torch.empty(
+                output.shape,
+                dtype=output.dtype,
+                device=output.device,
+            )
+            lse = torch.empty(
+                (q.shape[0], q.shape[1]),
+                dtype=torch.float32,
+                device=q.device,
+            )
+            ops.sm89_sparse_mla_fwd(
+                q,
+                cache,
+                indices,
+                partial,
+                lse,
+                self.scale,
+                lens,
+            )
+            return partial, lse
+
+        swa_output, swa_lse = run_cache(
+            self.swa_cache_layer.kv_cache,
+            swa_indices,
+            swa_lens,
+        )
+        if compressed_cache is None or compressed_indices is None:
+            output.copy_(swa_output)
+            return
+
+        compressed_output, compressed_lse = run_cache(
+            compressed_cache,
+            compressed_indices,
+            compressed_lens,
+        )
+        ops.merge_attn_states(
+            output,
+            swa_output,
+            swa_lse.transpose(0, 1).contiguous(),
+            compressed_output,
+            compressed_lse.transpose(0, 1).contiguous(),
         )
 
     def _forward_prefill(
@@ -316,12 +401,36 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
                 chunk_M,
                 chunk_N,
             )
-            flash_mla_sparse_fwd(
-                q=q[query_start:query_end],
-                kv=kv.view(-1, 1, q.shape[-1]),
-                indices=combined_indices.unsqueeze(1),
-                sm_scale=self.scale,
-                attn_sink=self.attn_sink,
-                topk_length=combined_lens,
-                out=output[query_start:query_end],
+            from aphrodite.v1.attention.backends.mla.sm89_mla_sparse import (
+                use_sm89_dsa,
             )
+
+            if use_sm89_dsa():
+                # FlashMLA sparse prefill requires SM90a+.  Its Triton
+                # counterpart is device-neutral and supports the same V4
+                # query/KV layout on Ada.
+                from aphrodite.v1.attention.ops.rocm_aiter_mla_sparse import (
+                    _rocm_sparse_attn_prefill_triton,
+                )
+
+                prefill_out = _rocm_sparse_attn_prefill_triton(
+                    q=q[query_start:query_end],
+                    kv=kv.view(-1, q.shape[-1]),
+                    indices=combined_indices,
+                    scale=self.scale,
+                    attn_sink=self.attn_sink,
+                    nope_head_dim=448,
+                    rope_head_dim=64,
+                    topk_length=combined_lens,
+                )
+                output[query_start:query_end].copy_(prefill_out)
+            else:
+                flash_mla_sparse_fwd(
+                    q=q[query_start:query_end],
+                    kv=kv.view(-1, 1, q.shape[-1]),
+                    indices=combined_indices.unsqueeze(1),
+                    sm_scale=self.scale,
+                    attn_sink=self.attn_sink,
+                    topk_length=combined_lens,
+                    out=output[query_start:query_end],
+                )

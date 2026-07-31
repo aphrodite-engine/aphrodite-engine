@@ -54,22 +54,27 @@
 
 namespace sm89_dsa {
 
-constexpr int D = 576;   // 512 nope + 64 rope
-constexpr int DN = 512;  // value dims (MLA absorb, V == K nope)
-constexpr int ROW_BYTES = 656;
-constexpr int ROW_CHUNKS = ROW_BYTES / 16;  // 41
 constexpr int BI = 32;                      // keys per pipeline iteration
 constexpr int STAGES = 2;
 constexpr int HT = 16;                    // head tile (one m16 mma tile)
-constexpr int SKV_STRIDE = D + 8;         // in halves; 1168B rows stay 16B-aligned, 4-word bank skew
-constexpr int SQ_STRIDE = D + 8;
 constexpr int SS_STRIDE = BI + 1;         // fp32; +1 pad -> per-row bank skew
 
-constexpr int SMEM_STAGING = STAGES * BI * ROW_BYTES;  // 41984
-constexpr int SMEM_SKV = BI * SKV_STRIDE * 2;          // 37376
-constexpr int SMEM_SQ = HT * SQ_STRIDE * 2;            // 18688
-constexpr int SMEM_SS = HT * SS_STRIDE * 4;            // 2112
-constexpr int SMEM_TOTAL = SMEM_STAGING + SMEM_SKV + SMEM_SQ + SMEM_SS;  // 100160 <= 99KB opt-in
+template <bool DSV4>
+struct Layout {
+  static constexpr int D = DSV4 ? 512 : 576;
+  static constexpr int NOPE = DSV4 ? 448 : 512;
+  static constexpr int VALUE = 512;
+  // V4 stages its 576-byte data row followed by a padded 16-byte scale row.
+  static constexpr int ROW_BYTES = DSV4 ? 592 : 656;
+  static constexpr int ROW_CHUNKS = ROW_BYTES / 16;
+  static constexpr int SKV_STRIDE = D + 8;
+  static constexpr int SQ_STRIDE = D + 8;
+  static constexpr int SMEM_STAGING = STAGES * BI * ROW_BYTES;
+  static constexpr int SMEM_SKV = BI * SKV_STRIDE * 2;
+  static constexpr int SMEM_SQ = HT * SQ_STRIDE * 2;
+  static constexpr int SMEM_SS = HT * SS_STRIDE * 4;
+  static constexpr int SMEM_TOTAL = SMEM_STAGING + SMEM_SKV + SMEM_SQ + SMEM_SS;
+};
 
 DEVINL void cp_async_16(void* smem_dst, const void* gmem_src) {
   uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(smem_dst));
@@ -106,7 +111,7 @@ DEVINL float2 fp8x2_to_float2(uint16_t v) {
 
 // HAS_LENS == false compiles the len clamp away, leaving the full-topk loop
 // untouched (the extra kernel param is never read).
-template <bool HAS_LENS>
+template <bool HAS_LENS, bool DSV4>
 __global__ void __launch_bounds__(128, 1)
 sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
                       const uint8_t* __restrict__ pool,      // [S, 656]
@@ -114,12 +119,14 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
                       __nv_bfloat16* __restrict__ out,       // [T, h, 512]
                       float* __restrict__ lse,                // [T, h]
                       const int32_t* __restrict__ topk_lens,  // [T]; read iff HAS_LENS
-                      int h, int topk, float sm_scale) {
+                      int h, int topk, float sm_scale, int cache_block_size,
+                      int64_t cache_block_stride) {
+  using L = Layout<DSV4>;
   extern __shared__ uint8_t smem[];
   uint8_t* staging = smem;
-  __nv_bfloat16* sKV = reinterpret_cast<__nv_bfloat16*>(smem + SMEM_STAGING);
-  __nv_bfloat16* sQ = reinterpret_cast<__nv_bfloat16*>(smem + SMEM_STAGING + SMEM_SKV);
-  float* sS = reinterpret_cast<float*>(smem + SMEM_STAGING + SMEM_SKV + SMEM_SQ);
+  __nv_bfloat16* sKV = reinterpret_cast<__nv_bfloat16*>(smem + L::SMEM_STAGING);
+  __nv_bfloat16* sQ = reinterpret_cast<__nv_bfloat16*>(smem + L::SMEM_STAGING + L::SMEM_SKV);
+  float* sS = reinterpret_cast<float*>(smem + L::SMEM_STAGING + L::SMEM_SKV + L::SMEM_SQ);
 
   const int t = blockIdx.x;
   const int h_base = blockIdx.y * HT;
@@ -135,22 +142,38 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
   auto key_valid = [&](int k) { return k < topk && idx_row[k] >= 0; };
 
   // ---- q tile -> sQ (rows past h zeroed; pad cols never read)
-  for (int c = tid; c < HT * (D / 8); c += 128) {
-    const int r = c / (D / 8), cc = c % (D / 8);
+  for (int c = tid; c < HT * (L::D / 8); c += 128) {
+    const int r = c / (L::D / 8), cc = c % (L::D / 8);
     uint4 v = make_uint4(0u, 0u, 0u, 0u);
     if (h_base + r < h)
-      v = *reinterpret_cast<const uint4*>(q + ((int64_t)t * h + h_base + r) * D + cc * 8);
-    *reinterpret_cast<uint4*>(sQ + r * SQ_STRIDE + cc * 8) = v;
+      v = *reinterpret_cast<const uint4*>(q + ((int64_t)t * h + h_base + r) * L::D + cc * 8);
+    *reinterpret_cast<uint4*>(sQ + r * L::SQ_STRIDE + cc * 8) = v;
   }
 
   auto issue_iter = [&](int it, int stage) {
-    uint8_t* dst = staging + stage * (BI * ROW_BYTES);
+    uint8_t* dst = staging + stage * (BI * L::ROW_BYTES);
     const int kbase = it * BI;
-    for (int c = tid; c < BI * ROW_CHUNKS; c += 128) {
-      const int j = c / ROW_CHUNKS, cc = c % ROW_CHUNKS;
+    for (int c = tid; c < BI * L::ROW_CHUNKS; c += 128) {
+      const int j = c / L::ROW_CHUNKS, cc = c % L::ROW_CHUNKS;
       const int k = kbase + j;
       const int32_t slot = (k < topk) ? max(idx_row[k], 0) : 0;  // -1/tail -> slot 0 (masked)
-      cp_async_16(dst + j * ROW_BYTES + cc * 16, pool + (int64_t)slot * ROW_BYTES + cc * 16);
+      if constexpr (DSV4) {
+        const int block = slot / cache_block_size;
+        const int pos = slot % cache_block_size;
+        const uint8_t* block_base = pool + block * cache_block_stride;
+        if (cc < 36) {
+          cp_async_16(dst + j * L::ROW_BYTES + cc * 16,
+                      block_base + (int64_t)pos * 576 + cc * 16);
+        } else {
+          const uint8_t* scale_src =
+              block_base + (int64_t)cache_block_size * 576 + (int64_t)pos * 8;
+          *reinterpret_cast<uint64_t*>(dst + j * L::ROW_BYTES + 576) =
+              *reinterpret_cast<const uint64_t*>(scale_src);
+        }
+      } else {
+        cp_async_16(dst + j * L::ROW_BYTES + cc * 16,
+                    pool + (int64_t)slot * L::ROW_BYTES + cc * 16);
+      }
     }
     cp_async_commit();
   };
@@ -185,10 +208,35 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
 
     // ---- dequant staging[stage] -> sKV bf16 [32][584]; thread (row j=tid/4, tile p=tid%4)
     {
-      const uint8_t* srow = staging + stage * (BI * ROW_BYTES) + (tid >> 2) * ROW_BYTES;
+      const uint8_t* srow = staging + stage * (BI * L::ROW_BYTES) + (tid >> 2) * L::ROW_BYTES;
       const int p = tid & 3;
-      const float scale = reinterpret_cast<const float*>(srow + DN)[p];
-      __nv_bfloat16* drow = sKV + (tid >> 2) * SKV_STRIDE;
+      __nv_bfloat16* drow = sKV + (tid >> 2) * L::SKV_STRIDE;
+      if constexpr (DSV4) {
+#pragma unroll
+        for (int block = p; block < 7; block += 4) {
+          const int exponent = static_cast<int>(srow[576 + block]) - 127;
+          const float scale = ldexpf(1.0f, exponent);
+#pragma unroll
+          for (int d = 0; d < 64; d += 8) {
+            const uint2 raw = *reinterpret_cast<const uint2*>(srow + block * 64 + d);
+            const uint16_t* b2 = reinterpret_cast<const uint16_t*>(&raw);
+            uint32_t packed[4];
+#pragma unroll
+            for (int i = 0; i < 4; ++i) {
+              const float2 f = fp8x2_to_float2(b2[i]);
+              packed[i] = bf16x2(f.x * scale, f.y * scale);
+            }
+            *reinterpret_cast<uint4*>(drow + block * 64 + d) =
+                make_uint4(packed[0], packed[1], packed[2], packed[3]);
+          }
+        }
+        // The 64 rope bf16 values are part of the 576-byte data row.
+        const uint4* rs = reinterpret_cast<const uint4*>(srow + L::NOPE);
+        uint4* rd = reinterpret_cast<uint4*>(drow + L::NOPE);
+        rd[2 * p] = rs[2 * p];
+        rd[2 * p + 1] = rs[2 * p + 1];
+      } else {
+      const float scale = reinterpret_cast<const float*>(srow + L::NOPE)[p];
 #pragma unroll
       for (int d = 0; d < 128; d += 8) {
         const uint2 raw = *reinterpret_cast<const uint2*>(srow + p * 128 + d);
@@ -202,10 +250,11 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
         *reinterpret_cast<uint4*>(drow + p * 128 + d) = make_uint4(o[0], o[1], o[2], o[3]);
       }
       // rope passthrough (64 bf16 = 8 uint4); thread p copies 2
-      const uint4* rs = reinterpret_cast<const uint4*>(srow + DN + 16);
-      uint4* rd = reinterpret_cast<uint4*>(drow + DN);
+      const uint4* rs = reinterpret_cast<const uint4*>(srow + L::NOPE + 16);
+      uint4* rd = reinterpret_cast<uint4*>(drow + L::NOPE);
       rd[2 * p] = rs[2 * p];
       rd[2 * p + 1] = rs[2 * p + 1];
+      }
     }
     __syncthreads();  // sKV ready; staging[stage] consumed -> safe to refill
 
@@ -215,11 +264,11 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
     // ---- QK mma; warp owns keys [8*warp, 8*warp+8), 36 k-steps over 576 dims
     float c[4] = {0.f, 0.f, 0.f, 0.f};
     {
-      const __nv_bfloat16* bk = sKV + (8 * warp + group) * SKV_STRIDE + 2 * quad;
-      const __nv_bfloat16* qa0 = sQ + r0 * SQ_STRIDE + 2 * quad;
-      const __nv_bfloat16* qa1 = sQ + r1 * SQ_STRIDE + 2 * quad;
+      const __nv_bfloat16* bk = sKV + (8 * warp + group) * L::SKV_STRIDE + 2 * quad;
+      const __nv_bfloat16* qa0 = sQ + r0 * L::SQ_STRIDE + 2 * quad;
+      const __nv_bfloat16* qa1 = sQ + r1 * L::SQ_STRIDE + 2 * quad;
 #pragma unroll
-      for (int ks = 0; ks < D / 16; ++ks) {
+      for (int ks = 0; ks < L::D / 16; ++ks) {
         uint32_t a[4], b[2];
         a[0] = *reinterpret_cast<const uint32_t*>(qa0 + ks * 16);
         a[1] = *reinterpret_cast<const uint32_t*>(qa1 + ks * 16);
@@ -286,7 +335,7 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
 #pragma unroll
       for (int j = 0; j < 8; ++j) {  // 16-col chunks
         uint32_t r[4];
-        const __nv_bfloat16* src = sKV + (16 * s + mr) * SKV_STRIDE + 128 * warp + 16 * j + mc;
+        const __nv_bfloat16* src = sKV + (16 * s + mr) * L::SKV_STRIDE + 128 * warp + 16 * j + mc;
         ldmatrix_x4_trans(r, src);
         mma_bf16(pf[s], r, acc[2 * j]);          // cols [.. +0, +8)
         mma_bf16(pf[s], r + 2, acc[2 * j + 1]);  // cols [.. +8, +16)
@@ -302,7 +351,7 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
     if (hh >= h) continue;
     const float l = l_st[rr];
     const float inv = (l > 0.f) ? 1.f / l : 0.f;
-    __nv_bfloat16* orow = out + ((int64_t)t * h + hh) * DN;
+    __nv_bfloat16* orow = out + ((int64_t)t * h + hh) * L::VALUE;
 #pragma unroll
     for (int nt = 0; nt < 16; ++nt) {
       const int col = 128 * warp + 8 * nt + 2 * quad;
@@ -328,12 +377,16 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
   STD_TORCH_CHECK(q.is_cuda() && pool.is_cuda() && indices.is_cuda() &&
                       out.is_cuda() && lse.is_cuda(),
                   "all tensors must be CUDA");
-  STD_TORCH_CHECK(q.dim() == 3 && q.size(2) == 576, "q must be [T, h, 576]");
+  STD_TORCH_CHECK(q.dim() == 3 && (q.size(2) == 576 || q.size(2) == 512),
+                  "q must be [T, h, 576] or DeepSeek-V4 [T, h, 512]");
+  const bool dsv4 = q.size(2) == 512;
   STD_TORCH_CHECK(q.scalar_type() == torch::headeronly::ScalarType::BFloat16,
                   "q must be bf16");
-  STD_TORCH_CHECK(pool.dim() == 2 && pool.size(1) == 656 &&
-                      pool.scalar_type() == torch::headeronly::ScalarType::Byte,
-                  "pool must be [S, 656] u8");
+  const bool valid_pool = dsv4
+      ? pool.dim() == 3 && pool.size(2) == 584
+      : pool.dim() == 2 && pool.size(1) == 656;
+  STD_TORCH_CHECK(valid_pool && pool.scalar_type() == torch::headeronly::ScalarType::Byte,
+                  "pool must be [S, 656] u8 or DeepSeek-V4 [B, block_size, 584] u8");
   STD_TORCH_CHECK(indices.dim() == 2 &&
                       indices.scalar_type() == torch::headeronly::ScalarType::Int,
                   "indices must be [T, topk] i32");
@@ -346,9 +399,11 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
   STD_TORCH_CHECK(lse.dim() == 2 && lse.size(0) == T && lse.size(1) == h &&
                       lse.scalar_type() == torch::headeronly::ScalarType::Float,
                   "lse must be [T, h] f32");
-  STD_TORCH_CHECK(q.is_contiguous() && pool.is_contiguous() && indices.is_contiguous() &&
-                      out.is_contiguous() && lse.is_contiguous(),
-                  "all tensors must be contiguous");
+  STD_TORCH_CHECK(q.is_contiguous() && indices.is_contiguous() && out.is_contiguous() &&
+                      lse.is_contiguous(),
+                  "q, indices, out, and lse must be contiguous");
+  STD_TORCH_CHECK(!dsv4 || (pool.stride(1) == 584 && pool.stride(2) == 1),
+                  "DeepSeek-V4 pool rows must have dense 584-byte storage");
   const int32_t* lens_ptr = nullptr;
   if (topk_lens.has_value()) {
     const torch::stable::Tensor& lens = topk_lens.value();
@@ -361,20 +416,42 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
 
   const cudaStream_t stream = get_current_cuda_stream();
   dim3 grid(T, (h + sm89_dsa::HT - 1) / sm89_dsa::HT);
-  if (lens_ptr != nullptr) {
-    cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<true>,
-                         cudaFuncAttributeMaxDynamicSharedMemorySize, sm89_dsa::SMEM_TOTAL);
-    sm89_dsa::sparse_mla_fwd_kernel<true><<<grid, 128, sm89_dsa::SMEM_TOTAL, stream>>>(
+  const int cache_block_size = dsv4 ? pool.size(1) : 0;
+  const int64_t cache_block_stride = dsv4 ? pool.stride(0) : 0;
+  if (dsv4 && lens_ptr != nullptr) {
+    constexpr int smem = sm89_dsa::Layout<true>::SMEM_TOTAL;
+    cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<true, true>,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    sm89_dsa::sparse_mla_fwd_kernel<true, true><<<grid, 128, smem, stream>>>(
         static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
         indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
-        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale);
+        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale, cache_block_size,
+        cache_block_stride);
+  } else if (dsv4) {
+    constexpr int smem = sm89_dsa::Layout<true>::SMEM_TOTAL;
+    cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<false, true>,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    sm89_dsa::sparse_mla_fwd_kernel<false, true><<<grid, 128, smem, stream>>>(
+        static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
+        indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
+        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale, cache_block_size,
+        cache_block_stride);
+  } else if (lens_ptr != nullptr) {
+    constexpr int smem = sm89_dsa::Layout<false>::SMEM_TOTAL;
+    cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<true, false>,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    sm89_dsa::sparse_mla_fwd_kernel<true, false><<<grid, 128, smem, stream>>>(
+        static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
+        indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
+        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale, 0, 0);
   } else {
-    cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<false>,
-                         cudaFuncAttributeMaxDynamicSharedMemorySize, sm89_dsa::SMEM_TOTAL);
-    sm89_dsa::sparse_mla_fwd_kernel<false><<<grid, 128, sm89_dsa::SMEM_TOTAL, stream>>>(
+    constexpr int smem = sm89_dsa::Layout<false>::SMEM_TOTAL;
+    cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<false, false>,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    sm89_dsa::sparse_mla_fwd_kernel<false, false><<<grid, 128, smem, stream>>>(
         static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
         indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
-        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale);
+        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale, 0, 0);
   }
   STD_CUDA_KERNEL_LAUNCH_CHECK();
 #else

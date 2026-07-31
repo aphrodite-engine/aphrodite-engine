@@ -5,20 +5,149 @@ on:
     branches: [main]
   schedule:
     - cron: "30 3 * * *"
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [closed]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Open PR number to build temporary wheels for; leave empty for the normal nightly reconciliation"
+        required: false
+        type: string
+      platform:
+        description: "Platform to build (manual dispatch only)"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - cuda
+          - rocm
+          - cpu
+          - metal
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
   pages: write
   id-token: write
 
 concurrency:
-  group: platform-wheels-${{ github.ref }}
+  group: platform-wheels-${{ github.event.issue.number || inputs.pr_number || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  authorize:
+    name: Authorize wheel build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      build: ${{ steps.authorize.outputs.build }}
+      pr_number: ${{ steps.authorize.outputs.pr_number }}
+      target_sha: ${{ steps.authorize.outputs.target_sha }}
+      temporary: ${{ steps.authorize.outputs.temporary }}
+    steps:
+      - name: Validate trigger and resolve revision
+        id: authorize
+        uses: actions/github-script@v7
+        env:
+          DISPATCH_PR: ${{ inputs.pr_number || '' }}
+        with:
+          script: |
+            const event = context.eventName;
+            core.setOutput("build", "false");
+            core.setOutput("temporary", "false");
+            core.setOutput("pr_number", "");
+            core.setOutput("target_sha", context.sha);
+
+            if (event === "pull_request_target") {
+              return;
+            }
+
+            let prNumber = "";
+            if (event === "issue_comment") {
+              if (!context.payload.issue?.pull_request ||
+                  context.payload.comment?.body?.trim() !== "/build-wheels") {
+                return;
+              }
+              prNumber = String(context.issue.number);
+            } else if (event === "workflow_dispatch") {
+              prNumber = process.env.DISPATCH_PR.trim();
+            }
+
+            if (!prNumber) {
+              core.setOutput("build", "true");
+              return;
+            }
+            if (!/^\d+$/.test(prNumber)) {
+              core.setFailed(`Invalid PR number: ${prNumber}`);
+              return;
+            }
+
+            const actor = context.actor;
+            const {data: permission} = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor,
+            });
+            if (!["admin", "maintain", "write"].includes(permission.permission)) {
+              core.setFailed(`${actor} does not have maintainer write access`);
+              return;
+            }
+
+            const {data: pr} = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(prNumber),
+            });
+            if (pr.state !== "open") {
+              core.setFailed(`PR #${prNumber} is not open`);
+              return;
+            }
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed(
+                "PR wheel builds require a branch in this repository; fork code is not executed on self-hosted runners"
+              );
+              return;
+            }
+
+            core.setOutput("build", "true");
+            core.setOutput("temporary", "true");
+            core.setOutput("pr_number", prNumber);
+            core.setOutput("target_sha", pr.head.sha);
+
+  cleanup-pr-wheels:
+    name: Remove closed PR wheels
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    env:
+      RCLONE_CONFIG_B2_TYPE: s3
+      RCLONE_CONFIG_B2_PROVIDER: Other
+      RCLONE_CONFIG_B2_ACCESS_KEY_ID: ${{ secrets.B2_S3_KEY_ID }}
+      RCLONE_CONFIG_B2_SECRET_ACCESS_KEY: ${{ secrets.B2_S3_APPLICATION_KEY }}
+      RCLONE_CONFIG_B2_REGION: ${{ vars.B2_S3_REGION }}
+      RCLONE_CONFIG_B2_ENDPOINT: ${{ vars.B2_S3_ENDPOINT }}
+      RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
+      B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
+    steps:
+      - name: Check out trusted cleanup script
+        uses: actions/checkout@v4
+      - name: Install rclone
+        run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
+      - name: Remove temporary wheel prefix
+        run: |
+          "$RUNNER_TEMP/rclone-bin/rclone" purge \
+            "b2:${B2_S3_BUCKET}/pull-requests/${{ github.event.pull_request.number }}"
+
   cuda-wheel:
     name: CUDA nightly (x86_64)
+    needs: authorize
+    if: ${{ needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'cuda') }}
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
@@ -32,11 +161,13 @@ jobs:
       RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+      PR_WHEEL_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+      TARGET_COMMIT: ${{ needs.authorize.outputs.target_sha }}
     steps:
       - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.authorize.outputs.target_sha }}
           fetch-depth: 0
 
       - name: Install rclone
@@ -68,6 +199,7 @@ jobs:
             "$public_test_url")" = "nightly storage preflight"
 
       - name: Build and publish missing CUDA wheels
+        if: ${{ needs.authorize.outputs.temporary != 'true' }}
         env:
           PUSH_BEFORE: ${{ github.event.before }}
           MAX_JOBS: "64"
@@ -75,6 +207,18 @@ jobs:
           CUDA_VERSION: "13.0.2"
           TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
         run: ./.github/scripts/build_nightly_commits.sh page-index
+
+      - name: Build and publish PR CUDA wheel
+        if: ${{ needs.authorize.outputs.temporary == 'true' }}
+        env:
+          MAX_JOBS: "64"
+          NVCC_THREADS: "4"
+          CUDA_VERSION: "13.0.2"
+          TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
+          PLATFORM_BACKEND: cuda
+          PLATFORM_ARCHITECTURE: x86_64
+          PLATFORM_VERSION_LOCAL: cu130
+        run: ./.github/scripts/build_pr_wheel.sh wheels/main page-index
 
       - name: Upload CUDA index
         uses: actions/upload-artifact@v4
@@ -95,6 +239,8 @@ jobs:
 
   cpu-wheel:
     name: CPU nightly (${{ matrix.architecture }})
+    needs: authorize
+    if: ${{ needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'cpu') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 720
     env:
@@ -107,6 +253,8 @@ jobs:
       RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+      PR_WHEEL_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+      TARGET_COMMIT: ${{ needs.authorize.outputs.target_sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -121,7 +269,7 @@ jobs:
       - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.authorize.outputs.target_sha }}
           fetch-depth: 0
 
       - name: Configure Docker Buildx
@@ -149,6 +297,7 @@ jobs:
         run: ./.github/scripts/install-rclone.sh "$RUNNER_TEMP/rclone-bin"
 
       - name: Build and publish missing CPU wheels
+        if: ${{ needs.authorize.outputs.temporary != 'true' }}
         env:
           PUSH_BEFORE: ${{ github.event.before }}
           TARGET_PLATFORM: ${{ matrix.platform }}
@@ -162,6 +311,20 @@ jobs:
           .github/scripts/reconcile_platform_wheels.sh \
             "dist/cpu-${{ matrix.architecture }}" page-index
 
+      - name: Build and publish PR CPU wheel
+        if: ${{ needs.authorize.outputs.temporary == 'true' }}
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          PYTHON_VERSION: "3.13"
+          CACHE_SCOPE: cpu-${{ matrix.architecture }}
+          PLATFORM_BACKEND: cpu
+          PLATFORM_ARCHITECTURE: ${{ matrix.architecture }}
+          PLATFORM_VERSION_LOCAL: cpu
+          PLATFORM_BUILD_SCRIPT: .github/scripts/build_cpu_wheel.sh
+        run: |
+          .github/scripts/build_pr_wheel.sh \
+            "dist/cpu-${{ matrix.architecture }}" page-index
+
       - name: Upload CPU index
         uses: actions/upload-artifact@v4
         with:
@@ -172,6 +335,8 @@ jobs:
 
   metal-wheel:
     name: Metal nightly (Apple Silicon)
+    needs: authorize
+    if: ${{ needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'metal') }}
     runs-on: macos-15
     timeout-minutes: 720
     env:
@@ -185,11 +350,13 @@ jobs:
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
       UV_CACHE_DIR: ${{ github.workspace }}/.cache/uv
+      PR_WHEEL_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+      TARGET_COMMIT: ${{ needs.authorize.outputs.target_sha }}
     steps:
       - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.authorize.outputs.target_sha }}
           fetch-depth: 0
 
       - name: Install build tools
@@ -235,6 +402,7 @@ jobs:
             "$RUNNER_TEMP/build_metal_wheel.sh"
 
       - name: Build and publish missing Metal wheels
+        if: ${{ needs.authorize.outputs.temporary != 'true' }}
         env:
           PUSH_BEFORE: ${{ github.event.before }}
           MACOSX_DEPLOYMENT_TARGET: "14.0"
@@ -247,6 +415,17 @@ jobs:
           .github/scripts/reconcile_platform_wheels.sh \
             dist/metal-aarch64 page-index
 
+      - name: Build and publish PR Metal wheel
+        if: ${{ needs.authorize.outputs.temporary == 'true' }}
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+          PLATFORM_BACKEND: metal
+          PLATFORM_ARCHITECTURE: aarch64
+          PLATFORM_VERSION_LOCAL: metal
+          PLATFORM_BUILD_SCRIPT: ${{ runner.temp }}/build_metal_wheel.sh
+          METAL_BUILD_PYTHON: ${{ github.workspace }}/.metal-build-venv/bin/python
+        run: .github/scripts/build_pr_wheel.sh dist/metal-aarch64 page-index
+
       - name: Upload Metal index
         uses: actions/upload-artifact@v4
         with:
@@ -257,8 +436,8 @@ jobs:
 
   rocm-wheel:
     name: ROCm nightly (x86_64)
-    needs: cuda-wheel
-    if: ${{ always() }}
+    needs: [authorize, cuda-wheel]
+    if: ${{ always() && needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'rocm') && (needs.cuda-wheel.result == 'success' || needs.cuda-wheel.result == 'skipped') }}
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
@@ -274,11 +453,13 @@ jobs:
       RCLONE_CONFIG_B2_NO_CHECK_BUCKET: "true"
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
+      PR_WHEEL_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+      TARGET_COMMIT: ${{ needs.authorize.outputs.target_sha }}
     steps:
       - name: Check out target revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.authorize.outputs.target_sha }}
           fetch-depth: 0
 
       - name: Start RAM-backed ROCm builder
@@ -297,6 +478,7 @@ jobs:
             "$RUNNER_TEMP/Dockerfile.rocm"
 
       - name: Build and publish missing ROCm wheels
+        if: ${{ needs.authorize.outputs.temporary != 'true' }}
         env:
           PUSH_BEFORE: ${{ github.event.before }}
           PLATFORM_BACKEND: rocm
@@ -307,6 +489,16 @@ jobs:
         run: |
           .github/scripts/reconcile_platform_wheels.sh \
             dist/rocm-x86_64 page-index
+
+      - name: Build and publish PR ROCm wheel
+        if: ${{ needs.authorize.outputs.temporary == 'true' }}
+        env:
+          PLATFORM_BACKEND: rocm
+          PLATFORM_ARCHITECTURE: x86_64
+          PLATFORM_VERSION_LOCAL: rocm723
+          PLATFORM_BUILD_SCRIPT: ${{ runner.temp }}/build_rocm_wheel.sh
+          ROCM_BUILD_DOCKERFILE: ${{ runner.temp }}/Dockerfile.rocm
+        run: .github/scripts/build_pr_wheel.sh dist/rocm-x86_64 page-index
 
       - name: Upload ROCm index
         uses: actions/upload-artifact@v4
@@ -325,8 +517,8 @@ jobs:
 
   build-pages:
     name: Build documentation with nightly indexes
-    needs: [cuda-wheel, cpu-wheel, metal-wheel, rocm-wheel]
-    if: ${{ always() && !cancelled() }}
+    needs: [authorize, cuda-wheel, cpu-wheel, metal-wheel, rocm-wheel]
+    if: ${{ always() && !cancelled() && needs.authorize.outputs.temporary != 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out target revision
