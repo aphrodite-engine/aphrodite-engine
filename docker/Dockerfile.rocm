@@ -193,7 +193,7 @@ RUN --mount=type=cache,id=aphrodite-rocm-cargo-registry,target=/root/.cargo/regi
         export RUSTC_WRAPPER=sccache; \
         sccache --show-stats; \
     fi \
-    && python3 tools/build_rust.py \
+    && python3 tools/build_rust.py --release \
     && if [ "$USE_SCCACHE" = "1" ]; then \
         sccache --show-stats; \
     fi
