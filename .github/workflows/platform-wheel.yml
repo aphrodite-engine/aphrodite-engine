@@ -15,6 +15,17 @@ on:
         description: "Open PR number to build temporary wheels for; leave empty for the normal nightly reconciliation"
         required: false
         type: string
+      platform:
+        description: "Platform to build (manual dispatch only)"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - cuda
+          - rocm
+          - cpu
+          - metal
 
 permissions:
   contents: read
@@ -136,7 +147,7 @@ jobs:
   cuda-wheel:
     name: CUDA nightly (x86_64)
     needs: authorize
-    if: ${{ needs.authorize.outputs.build == 'true' }}
+    if: ${{ needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'cuda') }}
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
@@ -229,7 +240,7 @@ jobs:
   cpu-wheel:
     name: CPU nightly (${{ matrix.architecture }})
     needs: authorize
-    if: ${{ needs.authorize.outputs.build == 'true' }}
+    if: ${{ needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'cpu') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 720
     env:
@@ -325,7 +336,7 @@ jobs:
   metal-wheel:
     name: Metal nightly (Apple Silicon)
     needs: authorize
-    if: ${{ needs.authorize.outputs.build == 'true' }}
+    if: ${{ needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'metal') }}
     runs-on: macos-15
     timeout-minutes: 720
     env:
@@ -426,7 +437,7 @@ jobs:
   rocm-wheel:
     name: ROCm nightly (x86_64)
     needs: [authorize, cuda-wheel]
-    if: ${{ always() && needs.authorize.outputs.build == 'true' && needs.cuda-wheel.result == 'success' }}
+    if: ${{ always() && needs.authorize.outputs.build == 'true' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'rocm') && (needs.cuda-wheel.result == 'success' || needs.cuda-wheel.result == 'skipped') }}
     runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
     timeout-minutes: 720
     env:
