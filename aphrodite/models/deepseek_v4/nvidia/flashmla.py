@@ -249,6 +249,11 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
         """Run V4 sparse decode through the native Ada kernel."""
         from aphrodite import _custom_ops as ops
 
+        # Decode receives token slices of the runner's padded buffers.  The
+        # native kernel requires dense storage, so materialize only this small
+        # query view.  Do not materialize the KV caches here.
+        q = q.contiguous()
+
         def run_cache(
             cache: torch.Tensor,
             indices: torch.Tensor,
@@ -257,7 +262,11 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
             indices = indices.view(q.shape[0], -1).to(torch.int32).contiguous()
             if lens is not None:
                 lens = lens.view(-1).to(torch.int32).contiguous()
-            partial = torch.empty_like(output)
+            partial = torch.empty(
+                output.shape,
+                dtype=output.dtype,
+                device=output.device,
+            )
             lse = torch.empty(
                 (q.shape[0], q.shape[1]),
                 dtype=torch.float32,
