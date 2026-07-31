@@ -10,7 +10,7 @@ def test_generate_nightly_index_lists_all_wheels(tmp_path: Path) -> None:
     script = Path(__file__).parents[2] / ".github" / "scripts" / "generate_nightly_index.py"
     current = "aphrodite_engine-0.2.dev2+cu130-cp38-abi3-linux_x86_64.whl"
     previous = "aphrodite_engine-0.2.dev1+cu130-cp38-abi3-linux_x86_64.whl"
-    current_url = current.replace("+", "%2B")
+    current_url = current
     previous_url = previous.replace("+", "%2B")
     entries = tmp_path / "entries.tsv"
     entries.write_text(
@@ -34,7 +34,8 @@ def test_generate_nightly_index_lists_all_wheels(tmp_path: Path) -> None:
     )
 
     document = output.read_text()
-    assert f"https://sonar-nightly.dphn.ai/wheels/{current_url}#sha256=abc123" in document
+    canonical_current_url = current_url.replace("+", "%2B")
+    assert f"https://sonar-nightly.dphn.ai/wheels/{canonical_current_url}#sha256=abc123" in document
     assert f"https://sonar-nightly.dphn.ai/wheels/{previous_url}" in document
     assert document.count(current) == 1
     assert document.count(previous) == 1
