@@ -333,7 +333,13 @@ def mhc_pre_broadcast_tilelang(
     residual_flat = residual
     num_tokens = residual.shape[0]
 
-    n_splits = compute_num_split(64, hidden_size, cdiv(num_tokens, 64))
+    from aphrodite.utils.deep_gemm import is_deep_gemm_supported
+
+    use_deep_gemm = is_deep_gemm_supported()
+    if use_deep_gemm:
+        n_splits = compute_num_split(64, hidden_size, cdiv(num_tokens, 64))
+    else:
+        n_splits = 1
 
     residual_out = torch.empty(
         num_tokens,
@@ -359,15 +365,25 @@ def mhc_pre_broadcast_tilelang(
         device=residual.device,
     )
 
-    from aphrodite.utils.deep_gemm import tf32_hc_prenorm_gemm
+    if use_deep_gemm:
+        from aphrodite.utils.deep_gemm import tf32_hc_prenorm_gemm
 
-    tf32_hc_prenorm_gemm(
-        residual_flat,
-        fn_broadcast,
-        gemm_out_mul,
-        gemm_out_sqrsum,
-        n_splits,
-    )
+        tf32_hc_prenorm_gemm(
+            residual_flat,
+            fn_broadcast,
+            gemm_out_mul,
+            gemm_out_sqrsum,
+            n_splits,
+        )
+    else:
+        _tilelang_hc_prenorm_gemm(
+            residual_flat,
+            fn_broadcast,
+            gemm_out_mul,
+            gemm_out_sqrsum,
+            hidden_size,
+            1,
+        )
     mhc_pre_big_fuse_broadcast_with_norm_tilelang(
         gemm_out_mul,
         gemm_out_sqrsum,
