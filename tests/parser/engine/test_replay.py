@@ -20,9 +20,11 @@ import pytest
 from aphrodite.parser.engine import registered_adapters as _adapters_mod
 from aphrodite.parser.engine.parser_engine import ParserEngine
 from aphrodite.parser.engine.parser_engine_config import ParserState
+from aphrodite.parser.mistral import MistralParser
 from tests.parser.engine.replay_harness import (
     DUMMY_TOOLS,
     MockTokenizer,
+    Sample,
     _test_request,
     assert_no_terminal_leakage,
     assert_parse_output,
@@ -58,6 +60,11 @@ def _discover_parsers() -> list[_ParserInfo]:
     missing_builders: list[str] = []
     for obj in vars(_adapters_mod).values():
         if not (isinstance(obj, type) and issubclass(obj, ParserEngine) and obj is not ParserEngine):
+            continue
+        if obj is MistralParser:
+            # Mistral uses brace-balanced JSON tool args with no TOOL_END
+            # token, so it does not fit this TOOL_END-based replay harness.
+            # It is covered by tests/parser/mistral/ instead.
             continue
         cfg = obj(bare_tok, None).parser_engine_config
         if cfg.name not in _BUILDERS:
@@ -98,6 +105,14 @@ def _discover_parsers() -> list[_ParserInfo]:
 
 _PARSERS = _discover_parsers()
 
+
+def _make_parser(parser_cls: type[ParserEngine], tokenizer, sample: Sample, **extra):
+    kwargs = dict(extra)
+    if sample.chat_template_kwargs:
+        kwargs["chat_template_kwargs"] = sample.chat_template_kwargs
+    return parser_cls(tokenizer, sample.tools, **kwargs)
+
+
 _ENGINE_PARSERS: dict[str, type[ParserEngine]] = {f"{p.name}_engine": p.parser_cls for p in _PARSERS}
 
 # ── Parametrize sample lists ─────────────────────────────────────────
@@ -119,7 +134,7 @@ class TestReplayWithHoldback:
 
     def test_replay(self, parser_cls, sample, terminals, chunk_size, holdback):
         tokenizer = make_mock_tokenizer(sample)
-        parser = parser_cls(tokenizer, sample.tools)
+        parser = _make_parser(parser_cls, tokenizer, sample)
         deltas = replay_streaming(
             parser,
             sample.tokens,
@@ -156,7 +171,7 @@ class TestTextHoldback:
 
     def test_replay(self, parser_cls, sample, terminals, delay):
         tokenizer = make_mock_tokenizer(sample)
-        parser = parser_cls(tokenizer, sample.tools)
+        parser = _make_parser(parser_cls, tokenizer, sample)
         deltas = replay_with_text_holdback(
             parser,
             sample.tokens,
@@ -184,7 +199,7 @@ class TestReplay:
 
     def test_replay(self, parser_cls, sample, terminals, chunk_size):
         tokenizer = make_mock_tokenizer(sample)
-        parser = parser_cls(tokenizer, sample.tools)
+        parser = _make_parser(parser_cls, tokenizer, sample)
         deltas = replay_streaming(
             parser,
             sample.tokens,
@@ -216,7 +231,7 @@ class TestDeferralFinish:
 
     def test_misaligned_last_delta_with_finish(self, parser_cls, sample, tool_end_text):
         tokenizer = make_mock_tokenizer(sample)
-        parser = parser_cls(tokenizer, sample.tools)
+        parser = _make_parser(parser_cls, tokenizer, sample)
 
         request = _test_request()
 
@@ -502,10 +517,7 @@ class TestDropTokenReplay:
         for sample in parser_info.samples:
             injected = _inject_drop_tokens(sample)
             tokenizer = make_mock_tokenizer(injected)
-            parser = parser_info.parser_cls(
-                tokenizer,
-                tools=sample.tools,
-            )
+            parser = _make_parser(parser_info.parser_cls, tokenizer, sample)
 
             results = replay_streaming(
                 parser,
@@ -536,10 +548,7 @@ class TestDropTokenNonStreaming:
         for sample in parser_info.samples:
             injected = _inject_drop_tokens(sample)
             tokenizer = make_mock_tokenizer(injected)
-            parser = parser_info.parser_cls(
-                tokenizer,
-                tools=sample.tools,
-            )
+            parser = _make_parser(parser_info.parser_cls, tokenizer, sample)
 
             request = _test_request(tools=sample.tools)
             output = parse_non_streaming(parser, injected, request)

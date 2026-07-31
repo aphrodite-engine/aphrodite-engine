@@ -138,7 +138,7 @@ class GenerateRequest(BaseModel):
     )
     ec_transfer_params: dict[str, Any] | None = Field(
         default=None,
-        description="ECTransfer parameters used for encoder-cache disaggregated serving.",
+        description=("ECTransfer parameters used for encoder-cache disaggregated serving."),
     )
 
     # Tracks which keys the caller explicitly set inside ``sampling_params``
@@ -248,7 +248,7 @@ class GenerateResponse(BaseModel):
     )
     ec_transfer_params: dict[str, Any] | None = Field(
         default=None,
-        description="ECTransfer parameters used for encoder-cache disaggregated serving.",
+        description=("ECTransfer parameters used for encoder-cache disaggregated serving."),
     )
 
 
@@ -280,7 +280,7 @@ class DerenderChatRequest(BaseModel):
 
     Required by the parsing so that tool/reasoning parsers can receive the full
     request context they expect (request.tools, request.tool_choice,
-    request._grammar_from_tool_parser, etc.).
+    request._grammar_from_parser, etc.).
     """
     # --8<-- [end:derender-chat-request]
 

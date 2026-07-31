@@ -3,7 +3,6 @@
 
 # Adapted from
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
-import json
 import time
 from typing import Annotated, Any, ClassVar, Literal
 
@@ -11,13 +10,7 @@ from openai.types.chat.chat_completion_audio import (
     ChatCompletionAudio as OpenAIChatCompletionAudio,
 )
 from openai.types.chat.chat_completion_message import Annotation as OpenAIAnnotation
-from pydantic import (
-    AliasChoices,
-    Field,
-    PrivateAttr,
-    model_serializer,
-    model_validator,
-)
+from pydantic import Field, PrivateAttr, model_serializer, model_validator
 
 from aphrodite.config import ModelConfig
 from aphrodite.entrypoints.chat_utils import (
@@ -38,7 +31,7 @@ from aphrodite.entrypoints.openai.engine.protocol import (
     validate_structural_tag_response_format,
     validate_structured_outputs_structural_tag,
 )
-from aphrodite.exceptions import APHRODITEValidationError
+from aphrodite.exceptions import VLLMValidationError
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import Logprob
 from aphrodite.renderers import ChatParams, TokenizeParams, merge_kwargs
@@ -59,28 +52,6 @@ _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 
 
-def _coerce_stringified_str_list(
-    data: Any,
-    field_name: str,
-) -> Any:
-    if not isinstance(data, dict):
-        return data
-
-    value = data.get(field_name)
-    if not isinstance(value, str):
-        return data
-
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return data
-
-    if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
-        data[field_name] = parsed
-
-    return data
-
-
 class ChatMessage(OpenAIBaseModel):
     role: str
     content: str | None = None
@@ -90,7 +61,7 @@ class ChatMessage(OpenAIBaseModel):
     function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
 
-    # Aphrodite-specific fields that are not in OpenAI spec
+    # vLLM-specific fields that are not in OpenAI spec
     reasoning: str | None = None
 
     @model_serializer(mode="wrap")
@@ -124,7 +95,7 @@ class ChatCompletionResponseChoice(OpenAIBaseModel):
     logprobs: ChatCompletionLogProbs | None = None
     # per OpenAI spec this is the default
     finish_reason: str | None = "stop"
-    # not part of the OpenAI spec but included in Aphrodite for legacy reasons
+    # not part of the OpenAI spec but included in vLLM for legacy reasons
     stop_reason: int | str | None = None
     # not part of the OpenAI spec but is useful for tracing the tokens
     # in agent scenarios
@@ -151,7 +122,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
     system_fingerprint: str | None = None
     usage: UsageInfo
 
-    # Aphrodite-specific fields that are not in OpenAI spec
+    # vLLM-specific fields that are not in OpenAI spec
     prompt_logprobs: list[dict[int, Logprob] | None] | None = None
     prompt_token_ids: list[int] | None = None
     # Rendered prompt text from chat templating (only set when
@@ -260,7 +231,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     include_reasoning: bool = True
     parallel_tool_calls: bool | None = True
 
-    # NOTE this will be ignored by Aphrodite
+    # NOTE this will be ignored by vLLM
     user: str | None = None
 
     # --8<-- [start:chat-completion-sampling-params]
@@ -291,42 +262,14 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "Specific vocab token IDs to return logprobs for at each generated "
             "position, in addition to the sampled token. More efficient than "
             "`top_logprobs=-1` when only a small fixed label set is needed "
-            "(e.g. multilabel scoring where each label corresponds to a known "
-            "vocab id). When set, this explicit token selection takes "
-            "precedence over the natural top-k selected by `top_logprobs`. "
-            "Requires `logprobs=True`."
+            "(e.g. multilabel scoring "
+            "where each label corresponds to a known vocab id). When set, "
+            "this explicit token selection takes precedence over the natural "
+            "top-k selected by `top_logprobs`. Requires `logprobs=True`."
         ),
     )
     allowed_token_ids: list[int] | None = None
     bad_words: list[str] = Field(default_factory=list)
-    # Aphrodite extra sampler params
-    top_a: float | None = 0.0
-    tfs: float | None = 1.0
-    eta_cutoff: float | None = 0.0
-    epsilon_cutoff: float | None = 0.0
-    typical_p: float | None = 1.0
-    smoothing_factor: float | None = 0.0
-    smoothing_curve: float | None = 1.0
-    no_repeat_ngram_size: int | None = 0
-    temperature_last: bool | None = False
-    xtc_threshold: float | None = 0.1
-    xtc_probability: float | None = 0.0
-    dry_multiplier: float | None = 0.0
-    dry_base: float | None = 1.75
-    dry_allowed_length: int | None = 2
-    dry_sequence_breakers: list[str] | None = Field(default=None)
-    dry_range: int | None = 0
-    dry_max_ngram: int | None = 12
-    dry_max_occurrences: int | None = 8
-    dry_early_exit_match_len: int | None = 8
-    dynatemp_min: float | None = 0.0
-    dynatemp_max: float | None = 0.0
-    dynatemp_exponent: float | None = 1.0
-    nsigma: float | None = 0.0
-    skew: float | None = 0.0
-    mirostat_mode: int | None = 0
-    mirostat_tau: float | None = 0.0
-    mirostat_eta: float | None = 0.0
     # --8<-- [end:chat-completion-sampling-params]
 
     # --8<-- [start:chat-completion-extra-params]
@@ -497,12 +440,11 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
     ec_transfer_params: dict[str, Any] | None = Field(
         default=None,
-        description="ECTransfer parameters used for encoder-cache disaggregated serving.",
+        description=("ECTransfer parameters used for encoder-cache disaggregated serving."),
     )
 
-    aphrodite_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
+    vllm_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
         default=None,
-        validation_alias=AliasChoices("aphrodite_xargs", "aphrodite_xargs"),
         description=(
             "Additional request parameters with (list of) string or numeric values, used by custom extensions."
         ),
@@ -529,11 +471,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
     )
 
     # --8<-- [end:chat-completion-extra-params]
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_stringified_dry_sequence_breakers(cls, data: Any) -> Any:
-        return _coerce_stringified_str_list(data, "dry_sequence_breakers")
 
     @model_validator(mode="before")
     @classmethod
@@ -580,8 +517,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 msg["tool_calls"] = list(tool_calls)
         return self
 
-    _grammar_from_tool_parser: bool = PrivateAttr(default=False)
-    """CAUTION: Should only be set by ``ToolParser.adjust_request``."""
+    _grammar_from_parser: bool = PrivateAttr(default=False)
+    """CAUTION: Should only be set by the parser-engine adapter's adjust_request."""
 
     def build_chat_params(
         self,
@@ -704,7 +641,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if prompt_logprobs is None and self.echo:
             prompt_logprobs = self.top_logprobs
 
-        extra_args: dict[str, Any] = self.aphrodite_xargs if self.aphrodite_xargs else {}
+        extra_args: dict[str, Any] = self.vllm_xargs if self.vllm_xargs else {}
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
@@ -732,41 +669,13 @@ class ChatCompletionRequest(OpenAIBaseModel):
             skip_special_tokens=self.skip_special_tokens,
             spaces_between_special_tokens=self.spaces_between_special_tokens,
             include_stop_str_in_output=self.include_stop_str_in_output,
-            output_kind=RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY,
+            output_kind=(RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY),
             stream_interval=self.stream_interval,
             structured_outputs=self.extract_structured_outputs(),
             logit_bias=self.logit_bias,
             bad_words=self.bad_words,
             thinking_token_budget=self.thinking_token_budget,
             allowed_token_ids=self.allowed_token_ids,
-            # Aphrodite extra sampler params
-            no_repeat_ngram_size=self.no_repeat_ngram_size,
-            dynatemp_min=self.dynatemp_min,
-            dynatemp_max=self.dynatemp_max,
-            dynatemp_exponent=self.dynatemp_exponent,
-            temperature_last=self.temperature_last,
-            top_a=self.top_a,
-            tfs=self.tfs,
-            eta_cutoff=self.eta_cutoff,
-            epsilon_cutoff=self.epsilon_cutoff,
-            typical_p=self.typical_p,
-            smoothing_factor=self.smoothing_factor,
-            smoothing_curve=self.smoothing_curve,
-            xtc_threshold=self.xtc_threshold,
-            xtc_probability=self.xtc_probability,
-            dry_multiplier=self.dry_multiplier,
-            dry_base=self.dry_base,
-            dry_allowed_length=self.dry_allowed_length,
-            dry_sequence_breakers=self.dry_sequence_breakers,
-            dry_range=self.dry_range,
-            dry_max_ngram=self.dry_max_ngram,
-            dry_max_occurrences=self.dry_max_occurrences,
-            dry_early_exit_match_len=self.dry_early_exit_match_len,
-            nsigma=self.nsigma,
-            skew=self.skew,
-            mirostat_mode=self.mirostat_mode,
-            mirostat_tau=self.mirostat_tau,
-            mirostat_eta=self.mirostat_eta,
             extra_args=extra_args or None,
             skip_clone=True,  # Created fresh per request, safe to skip clone
             repetition_detection=self.repetition_detection,
@@ -790,7 +699,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 else getattr(response_format, "json_schema", None)
             )
             if json_schema is None:
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     "When response_format type is 'json_schema', the 'json_schema' field must be provided.",
                     parameter="response_format",
                 )
@@ -804,7 +713,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def validate_stream_options(cls, data):
         if data.get("stream_options") and not data.get("stream"):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "Stream options can only be defined when `stream=True`.",
                 parameter="stream_options",
             )
@@ -815,13 +724,13 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def check_logprobs(cls, data):
         if data.get("logprob_token_ids") and data.get("use_beam_search"):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "`logprob_token_ids` is not supported with beam search.",
                 parameter="logprob_token_ids",
             )
 
         if data.get("logprob_token_ids") and not data.get("logprobs"):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "when using `logprob_token_ids`, `logprobs` must be set to true.",
                 parameter="logprob_token_ids",
             )
@@ -833,35 +742,34 @@ class ChatCompletionRequest(OpenAIBaseModel):
         for field_name in ("prompt_logprobs", "top_logprobs"):
             field_value = data.get(field_name)
             if field_value is not None and not isinstance(field_value, (int, float)):
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     f"`{field_name}` must be an integer.",
                     parameter=field_name,
                     value=field_value,
                 )
-
         if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
             if data.get("stream") and (prompt_logprobs > 0 or prompt_logprobs == -1):
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     "`prompt_logprobs` are not available when `stream=True`.",
                     parameter="prompt_logprobs",
                 )
 
             if prompt_logprobs < 0 and prompt_logprobs != -1:
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     "`prompt_logprobs` must be a positive value or -1.",
                     parameter="prompt_logprobs",
                     value=prompt_logprobs,
                 )
         if (top_logprobs := data.get("top_logprobs")) is not None:
             if top_logprobs < 0 and top_logprobs != -1:
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     "`top_logprobs` must be a positive value or -1.",
                     parameter="top_logprobs",
                     value=top_logprobs,
                 )
 
             if (top_logprobs == -1 or top_logprobs > 0) and not data.get("logprobs"):
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     "when using `top_logprobs`, `logprobs` must be set to true.",
                     parameter="top_logprobs",
                 )
@@ -888,7 +796,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         )
         # you can only use one kind of constraints for structured outputs
         if count > 1:
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "You can only use one kind of constraints for structured outputs ('json', 'regex' or 'choice').",
             )
         # you can only either use structured outputs or tools, not both
@@ -897,7 +805,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "auto",
             "required",
         ):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "You can only either use constraints for structured outputs or tools, not both.",
             )
         validate_structured_outputs_structural_tag(structured_outputs_kwargs)
@@ -913,7 +821,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
         # Reject empty tools array, matching OpenAI API behavior
         if data.get("tools") == []:
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "`tools` must not be an empty array. Either provide at least one tool or omit the field entirely.",
                 parameter="tools",
             )
@@ -931,7 +839,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if "tool_choice" in data and data["tool_choice"] is not None:
             # ensure that if "tool choice" is specified, tools are present
             if "tools" not in data or data["tools"] is None:
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     "When using `tool_choice`, `tools` must be set.",
                     parameter="tool_choice",
                 )
@@ -939,7 +847,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             # make sure that tool choice is either a named tool
             # OR that it's set to "auto" or "required"
             if data["tool_choice"] not in ["auto", "required"] and not isinstance(data["tool_choice"], dict):
-                raise APHRODITEValidationError(
+                raise VLLMValidationError(
                     f"Invalid value for `tool_choice`: {data['tool_choice']}! "
                     'Only named tools, "none", "auto" or "required" '
                     "are supported.",
@@ -953,18 +861,18 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 valid_tool = False
                 function = data["tool_choice"].get("function")
                 if not isinstance(function, dict):
-                    raise APHRODITEValidationError(
+                    raise VLLMValidationError(
                         f"Invalid value for `function`: `{function}` in `tool_choice`! {correct_usage_message}",
                         parameter="tool_choice.function",
                     )
                 if "name" not in function:
-                    raise APHRODITEValidationError(
+                    raise VLLMValidationError(
                         f"Expected field `name` in `function` in `tool_choice`! {correct_usage_message}",
                         parameter="tool_choice.function.name",
                     )
                 function_name = function["name"]
                 if not isinstance(function_name, str) or len(function_name) == 0:
-                    raise APHRODITEValidationError(
+                    raise VLLMValidationError(
                         f"Invalid `name` in `function`: `{function_name}` in `tool_choice`! {correct_usage_message}",
                         parameter="tool_choice.function.name",
                     )
@@ -973,7 +881,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
                         valid_tool = True
                         break
                 if not valid_tool:
-                    raise APHRODITEValidationError(
+                    raise VLLMValidationError(
                         "The tool specified in `tool_choice` does not match any of the specified `tools`",
                         parameter="tool_choice",
                     )
@@ -983,7 +891,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def check_generation_prompt(cls, data):
         if data.get("continue_final_message") and data.get("add_generation_prompt"):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "Cannot set both `continue_final_message` and `add_generation_prompt` to True.",
             )
         return data
@@ -992,7 +900,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def check_cache_salt_support(cls, data):
         if data.get("cache_salt") is not None and (not isinstance(data["cache_salt"], str) or not data["cache_salt"]):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "Parameter 'cache_salt' must be a non-empty string if provided.",
                 parameter="cache_salt",
             )
@@ -1087,18 +995,18 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
     response_format: Any | None = None
     seed: int | None = Field(None, ge=_INT64_MIN, le=_INT64_MAX)
     stop: str | list[str] | None = Field(default_factory=list)
-    temperature: float | None = 0.7
-    top_p: float | None = 1.0
+    temperature: float | None = None
+    top_p: float | None = None
     user: str | None = None
     tool_choice: Literal["none"] | None = "none"
     include_reasoning: bool = True
 
-    # Aphrodite extensions
+    # vLLM extensions
     best_of: int | None = None
     use_beam_search: bool = False
     top_k: int | None = None
-    min_p: float | None = 0.0
-    repetition_penalty: float | None = 1.0
+    min_p: float | None = None
+    repetition_penalty: float | None = None
     length_penalty: float | None = 1.0
     early_stopping: bool = False
     structured_outputs: StructuredOutputsParams | None = None
@@ -1125,12 +1033,12 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
         if isinstance(data, BatchChatCompletionRequest):
             data = data.model_dump(exclude_unset=True)
         if data.get("use_beam_search"):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "Batch chat completions do not support beam search. Please set `use_beam_search` to False.",
                 parameter="use_beam_search",
             )
         if data.get("logprob_token_ids") and not data.get("logprobs"):
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "when using `logprob_token_ids`, `logprobs` must be set to true.",
                 parameter="logprob_token_ids",
             )
@@ -1144,7 +1052,7 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
             validate_structured_outputs_structural_tag(structured_outputs)
         n = data.get("n", 1)
         if n is not None and n != 1:
-            raise APHRODITEValidationError(
+            raise VLLMValidationError(
                 "Batch chat completions do not support `n > 1`. Please set `n` to 1.",
                 parameter="n",
                 value=n,

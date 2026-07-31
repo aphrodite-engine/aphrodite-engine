@@ -15,6 +15,7 @@ from aphrodite.parser.glm47_moe import Glm47MoeParser
 from aphrodite.parser.inkling import InklingParser
 from aphrodite.parser.kimi_k2 import KimiK2Parser
 from aphrodite.parser.minimax_m2 import MinimaxM2Parser
+from aphrodite.parser.mistral import MistralParser
 from aphrodite.parser.nemotron_v3 import NemotronV3Parser
 from aphrodite.parser.qwen3 import Qwen3Parser
 from aphrodite.parser.seed_oss import SeedOssParser
@@ -68,3 +69,8 @@ from aphrodite.parser.seed_oss import SeedOssParser
     InklingParserReasoningAdapter,
     InklingParserToolAdapter,
 ) = make_adapters(InklingParser)
+
+(
+    MistralParserReasoningAdapter,
+    MistralParserToolAdapter,
+) = make_adapters(MistralParser)

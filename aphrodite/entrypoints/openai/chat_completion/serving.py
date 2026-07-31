@@ -65,7 +65,6 @@ from aphrodite.renderers.online_renderer import OnlineRenderer
 from aphrodite.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.tokenizers import TokenizerLike
 from aphrodite.utils.collection_utils import as_list
-from aphrodite.utils.mistral import is_mistral_tool_parser
 
 logger = init_logger(__name__)
 
@@ -147,15 +146,6 @@ class OpenAIServingChat(GenerateBaseServing):
             model_name=self.model_config.model,
             is_harmony=self.model_config.hf_config.model_type == "gpt_oss",
         )
-        if (
-            self.parser_cls is not None
-            and is_mistral_tool_parser(self.parser_cls.tool_parser_cls)
-            and self.parser_cls.reasoning_parser_cls is not None
-        ):
-            from aphrodite.tool_parsers.mistral_tool_parser import MistralToolParser
-
-            MistralToolParser.model_can_reason = True
-
         self.exclude_tools_when_tool_choice_none = exclude_tools_when_tool_choice_none
 
         self.enable_prompt_tokens_details = enable_prompt_tokens_details
@@ -165,11 +155,11 @@ class OpenAIServingChat(GenerateBaseServing):
         mc = self.model_config
         self.override_max_tokens = (
             self.default_sampling_params.get("max_tokens")
-            if mc.generation_config not in ("auto", "aphrodite")
+            if mc.generation_config not in ("auto", "vllm")
             else getattr(mc, "override_generation_config", {}).get("max_new_tokens")
         )
         # NOTE(woosuk): While OpenAI's chat completion API supports browsing
-        # for some models, currently Aphrodite doesn't support it. Please use the
+        # for some models, currently vLLM doesn't support it. Please use the
         # Responses API instead.
         self.supports_browsing = False
         self.browser_tool = None
@@ -326,7 +316,7 @@ class OpenAIServingChat(GenerateBaseServing):
             else:
                 if not request.include_reasoning:
                     reasoning_ended = True
-                elif request._grammar_from_tool_parser:
+                elif request._grammar_from_parser:
                     # The Mistral grammar already includes an optional
                     # `think?` rule that handles both reasoning and
                     # non-reasoning outputs.
@@ -715,9 +705,15 @@ class OpenAIServingChat(GenerateBaseServing):
                 )
 
                 # In streaming, metrics ride on this final usage chunk, which is
-                # only emitted when usage reporting is enabled.
+                # only emitted when usage reporting is enabled (i.e.
+                # ``stream_options.include_usage=true`` or
+                # ``--enable-force-include-usage``).
                 stream_per_request_metrics: PerRequestTimingMetrics | None = None
-                if self.enable_per_request_metrics and (request.n or 1) == 1:
+                if (
+                    self.enable_per_request_metrics
+                    # See note in chat_completion_full_generator: suppress for n>1.
+                    and (request.n or 1) == 1
+                ):
                     last_metrics = last_res.metrics if last_res is not None else None
                     stream_per_request_metrics = build_per_request_timing_metrics(last_metrics, completion_tokens)
 
@@ -828,9 +824,10 @@ class OpenAIServingChat(GenerateBaseServing):
                     enable_auto_tools=self.enable_auto_tools,
                     model_output_token_ids=token_ids,
                 )
-                suppress_metadata = not request.include_reasoning
+                suppress_metadata = not request.include_reasoning and parser is not None
                 if not request.include_reasoning:
                     reasoning = None
+                if suppress_metadata:
                     logprobs = None
             else:
                 reasoning = None
