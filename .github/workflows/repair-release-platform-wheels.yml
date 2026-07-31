@@ -1,98 +1,23 @@
-name: Build release wheel
+name: Repair release platform wheels
 
 on:
-  push:
-    tags:
-      - "v[0-9]*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to repair
+        required: true
+        type: string
 
 permissions:
   contents: write
-  id-token: write
   pages: write
+  id-token: write
 
 concurrency:
-  group: wheel-main
+  group: repair-release-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
-  cuda-wheel:
-    name: CUDA wheel (x86_64)
-    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
-    timeout-minutes: 720
-    env:
-      DOCKER_HOST: tcp://127.0.0.1:23750
-      MAX_JOBS: "64"
-      NVCC_THREADS: "4"
-      CUDA_VERSION: "13.0.2"
-      TORCH_CUDA_ARCH_LIST: "8.0 8.6 8.9 9.0 10.0 12.0+PTX"
-    steps:
-      - name: Check out release tag
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 0
-
-      - name: Build release wheel
-        run: ./docker/export_wheels.sh
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Apply manylinux platform tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
-          test -n "$wheel"
-          uv run --isolated --no-project \
-            --with auditwheel==6.6.0 \
-            python .github/scripts/detect_manylinux_tag.py "$wheel"
-
-      - name: Verify release version
-        shell: bash
-        run: |
-          set -euo pipefail
-          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
-          test -n "$wheel"
-          python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}"
-
-      - name: Generate release notes
-        run: |
-          python3 .github/scripts/generate_release_notes.py \
-            --tag "$GITHUB_REF_NAME" \
-            --output release-notes.md
-
-      - name: Publish wheel to PyPI
-        run: |
-          uv publish \
-            --trusted-publishing always \
-            --check-url https://pypi.org/simple/aphrodite-engine/ \
-            wheels/main/*.whl
-
-      - name: Upload CUDA wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: cuda-x86_64
-          path: wheels/main/*.whl
-          if-no-files-found: error
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release-notes.md
-          generate_release_notes: false
-          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
-
-      - name: Reclaim wheel build storage
-        if: ${{ always() }}
-        shell: bash
-        run: |
-          rm -f wheels/main/*.whl
-          docker buildx prune --builder default --force \
-            --filter type=regular \
-            --max-used-space 25gb
-
   cpu-wheel:
     name: CPU wheel (${{ matrix.architecture }})
     runs-on: ${{ matrix.runner }}
@@ -108,10 +33,9 @@ jobs:
             runner: ubuntu-24.04-arm
             platform: linux/arm64
     steps:
-      - name: Check out release tag
+      - name: Check out repair source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Configure Docker Buildx
@@ -137,7 +61,7 @@ jobs:
 
       - name: Build CPU wheel
         env:
-          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}+cpu
+          APHRODITE_VERSION_OVERRIDE: ${{ inputs.release_tag }}+cpu
           TARGET_PLATFORM: ${{ matrix.platform }}
           PYTHON_VERSION: "3.13"
           CACHE_SCOPE: cpu-${{ matrix.architecture }}
@@ -148,10 +72,13 @@ jobs:
 
       - name: Verify CPU wheel
         run: |
+          expected="${{ inputs.release_tag }}"
+          expected="${expected#v}+cpu"
           wheel="$(find "dist/cpu-${{ matrix.architecture }}" \
             -maxdepth 1 -type f -name '*.whl' -print -quit)"
           python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}+cpu"
+            "$wheel" "$expected"
+          [[ "$(basename "$wheel")" == *-cp311-abi3-* ]]
 
       - name: Upload CPU wheel
         uses: actions/upload-artifact@v4
@@ -165,10 +92,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 180
     steps:
-      - name: Check out release tag
+      - name: Check out repair source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Install build tools
@@ -182,19 +108,6 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install Rust
-        run: rustup toolchain install stable --profile minimal
-
-      - name: Restore Cargo build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            rust/target
-          key: metal-cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
-          restore-keys: metal-cargo-${{ runner.os }}-
-
       - name: Create stable Metal build environment
         run: |
           uv venv --python 3.13 .metal-build-venv
@@ -202,21 +115,38 @@ jobs:
             --python .metal-build-venv/bin/python \
             --requirements requirements/build/metal.txt
 
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Restore Metal build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .deps
+            ~/.cargo/git
+            ~/.cargo/registry
+            rust/target
+          key: metal-build-v2-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: metal-build-v2-${{ runner.os }}-
+
       - name: Build Metal wheel
         env:
-          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}+metal
+          APHRODITE_VERSION_OVERRIDE: ${{ inputs.release_tag }}+metal
           MACOSX_DEPLOYMENT_TARGET: "14.0"
           METAL_BUILD_PYTHON: ${{ github.workspace }}/.metal-build-venv/bin/python
         run: |
           APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
             .github/scripts/build_metal_wheel.sh dist/metal-aarch64
 
-      - name: Verify and install Metal wheel
+      - name: Verify Metal wheel
         run: |
+          expected="${{ inputs.release_tag }}"
+          expected="${expected#v}+metal"
           wheel="$(find dist/metal-aarch64 -maxdepth 1 \
             -type f -name '*.whl' -print -quit)"
           python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}+metal"
+            "$wheel" "$expected"
+          [[ "$(basename "$wheel")" == *-cp312-abi3-* ]]
 
       - name: Upload Metal wheel
         uses: actions/upload-artifact@v4
@@ -225,57 +155,9 @@ jobs:
           path: dist/metal-aarch64/*.whl
           if-no-files-found: error
 
-  rocm-wheel:
-    name: ROCm wheel (x86_64)
-    needs: cuda-wheel
-    if: ${{ always() }}
-    runs-on: [self-hosted, linux, x64, aphrodite-wheel-builder]
-    timeout-minutes: 720
-    env:
-      DOCKER_HOST: tcp://127.0.0.1:23750
-      MAX_JOBS: "64"
-      PYTORCH_ROCM_ARCH: "gfx90a;gfx942;gfx950"
-    steps:
-      - name: Check out release tag
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 0
-
-      - name: Start RAM-backed ROCm builder
-        run: .github/scripts/ensure_rocm_builder.sh
-
-      - name: Build ROCm wheel
-        env:
-          APHRODITE_VERSION_OVERRIDE: ${{ github.ref_name }}+rocm723
-        run: |
-          APHRODITE_VERSION_OVERRIDE="${APHRODITE_VERSION_OVERRIDE#v}" \
-            .github/scripts/build_rocm_wheel.sh dist/rocm-x86_64
-
-      - name: Verify ROCm wheel
-        run: |
-          wheel="$(find dist/rocm-x86_64 -maxdepth 1 \
-            -type f -name '*.whl' -print -quit)"
-          python3 .github/scripts/verify_wheel_version.py \
-            "$wheel" "${GITHUB_REF_NAME#v}+rocm723"
-
-      - name: Upload ROCm wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: rocm-x86_64
-          path: dist/rocm-x86_64/*.whl
-          if-no-files-found: error
-
-      - name: Limit ROCm build cache
-        if: ${{ always() }}
-        run: |
-          docker buildx prune --builder sonar-rocm --force \
-            --filter type=regular \
-            --max-used-space 100gb
-
-  publish-platform-wheels:
-    name: Publish platform wheels
-    needs: [cuda-wheel, cpu-wheel, metal-wheel, rocm-wheel]
+  publish:
+    name: Publish repaired platform wheels
+    needs: [cpu-wheel, metal-wheel]
     runs-on: ubuntu-24.04
     env:
       RCLONE_CONFIG_B2_TYPE: s3
@@ -288,16 +170,8 @@ jobs:
       B2_S3_BUCKET: ${{ vars.B2_S3_BUCKET }}
       B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
     steps:
-      - name: Check out release tag
+      - name: Check out main
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Download CUDA wheel
-        uses: actions/download-artifact@v4
-        with:
-          name: cuda-x86_64
-          path: platform-wheels/cuda-x86_64
 
       - name: Download CPU wheels
         uses: actions/download-artifact@v4
@@ -309,12 +183,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: "metal-*"
-          path: platform-wheels
-
-      - name: Download ROCm wheel
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "rocm-*"
           path: platform-wheels
 
       - name: Install rclone
@@ -331,39 +199,37 @@ jobs:
             platform-wheels/cpu-aarch64 release cpu aarch64 page-index
           .github/scripts/publish_platform_wheels.sh \
             platform-wheels/metal-aarch64 release metal aarch64 page-index
-          .github/scripts/publish_platform_wheels.sh \
-            platform-wheels/rocm-x86_64 release rocm x86_64 page-index
 
-      - name: Attach all wheels to GitHub release
+      - name: Attach repaired wheels to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" platform-wheels/*/*.whl --clobber
+        run: |
+          gh release upload "${{ inputs.release_tag }}" \
+            platform-wheels/*/*.whl --clobber
 
       - name: Upload platform indexes
         uses: actions/upload-artifact@v4
         with:
-          name: platform-wheel-indexes
+          name: repaired-platform-wheel-indexes
           path: page-index
           if-no-files-found: error
           retention-days: 1
 
   build-pages:
-    name: Build documentation with release indexes
-    needs: publish-platform-wheels
+    name: Build documentation with repaired indexes
+    needs: publish
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out release tag
+      - name: Check out main
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
 
       - name: Preserve existing wheel indexes
         run: ./.github/scripts/preserve_wheel_indexes.sh docs/public
 
-      - name: Download new platform indexes
+      - name: Download repaired indexes
         uses: actions/download-artifact@v4
         with:
-          name: platform-wheel-indexes
+          name: repaired-platform-wheel-indexes
           path: docs/public
 
       - name: Build and upload site
@@ -374,7 +240,7 @@ jobs:
           package-manager: pnpm@9.15.8
 
   deploy-pages:
-    name: Deploy documentation with release indexes
+    name: Deploy documentation with repaired indexes
     needs: build-pages
     runs-on: ubuntu-24.04
     concurrency:
