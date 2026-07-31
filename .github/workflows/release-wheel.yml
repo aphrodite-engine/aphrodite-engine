@@ -35,6 +35,19 @@ jobs:
       - name: Build release wheel
         run: ./docker/export_wheels.sh
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Apply manylinux platform tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          uv run --isolated --no-project \
+            --with auditwheel==6.6.0 \
+            python .github/scripts/detect_manylinux_tag.py "$wheel"
+
       - name: Verify release version
         shell: bash
         run: |
@@ -49,9 +62,6 @@ jobs:
           python3 .github/scripts/generate_release_notes.py \
             --tag "$GITHUB_REF_NAME" \
             --output release-notes.md
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
 
       - name: Publish wheel to PyPI
         run: |
