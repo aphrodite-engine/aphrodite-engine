@@ -119,7 +119,8 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
                       __nv_bfloat16* __restrict__ out,       // [T, h, 512]
                       float* __restrict__ lse,                // [T, h]
                       const int32_t* __restrict__ topk_lens,  // [T]; read iff HAS_LENS
-                      int h, int topk, float sm_scale, int cache_block_size) {
+                      int h, int topk, float sm_scale, int cache_block_size,
+                      int64_t cache_block_stride) {
   using L = Layout<DSV4>;
   extern __shared__ uint8_t smem[];
   uint8_t* staging = smem;
@@ -159,8 +160,7 @@ sparse_mla_fwd_kernel(const __nv_bfloat16* __restrict__ q,   // [T, h, 576]
       if constexpr (DSV4) {
         const int block = slot / cache_block_size;
         const int pos = slot % cache_block_size;
-        const int64_t block_stride = (int64_t)cache_block_size * 584;
-        const uint8_t* block_base = pool + block * block_stride;
+        const uint8_t* block_base = pool + block * cache_block_stride;
         if (cc < 36) {
           cp_async_16(dst + j * L::ROW_BYTES + cc * 16,
                       block_base + (int64_t)pos * 576 + cc * 16);
@@ -399,9 +399,11 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
   STD_TORCH_CHECK(lse.dim() == 2 && lse.size(0) == T && lse.size(1) == h &&
                       lse.scalar_type() == torch::headeronly::ScalarType::Float,
                   "lse must be [T, h] f32");
-  STD_TORCH_CHECK(q.is_contiguous() && pool.is_contiguous() && indices.is_contiguous() &&
-                      out.is_contiguous() && lse.is_contiguous(),
-                  "all tensors must be contiguous");
+  STD_TORCH_CHECK(q.is_contiguous() && indices.is_contiguous() && out.is_contiguous() &&
+                      lse.is_contiguous(),
+                  "q, indices, out, and lse must be contiguous");
+  STD_TORCH_CHECK(!dsv4 || (pool.stride(1) == 584 && pool.stride(2) == 1),
+                  "DeepSeek-V4 pool rows must have dense 584-byte storage");
   const int32_t* lens_ptr = nullptr;
   if (topk_lens.has_value()) {
     const torch::stable::Tensor& lens = topk_lens.value();
@@ -415,6 +417,7 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
   const cudaStream_t stream = get_current_cuda_stream();
   dim3 grid(T, (h + sm89_dsa::HT - 1) / sm89_dsa::HT);
   const int cache_block_size = dsv4 ? pool.size(1) : 0;
+  const int64_t cache_block_stride = dsv4 ? pool.stride(0) : 0;
   if (dsv4 && lens_ptr != nullptr) {
     constexpr int smem = sm89_dsa::Layout<true>::SMEM_TOTAL;
     cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<true, true>,
@@ -422,7 +425,8 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
     sm89_dsa::sparse_mla_fwd_kernel<true, true><<<grid, 128, smem, stream>>>(
         static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
         indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
-        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale, cache_block_size);
+        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale, cache_block_size,
+        cache_block_stride);
   } else if (dsv4) {
     constexpr int smem = sm89_dsa::Layout<true>::SMEM_TOTAL;
     cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<false, true>,
@@ -430,7 +434,8 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
     sm89_dsa::sparse_mla_fwd_kernel<false, true><<<grid, 128, smem, stream>>>(
         static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
         indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
-        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale, cache_block_size);
+        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale, cache_block_size,
+        cache_block_stride);
   } else if (lens_ptr != nullptr) {
     constexpr int smem = sm89_dsa::Layout<false>::SMEM_TOTAL;
     cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<true, false>,
@@ -438,7 +443,7 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
     sm89_dsa::sparse_mla_fwd_kernel<true, false><<<grid, 128, smem, stream>>>(
         static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
         indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
-        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale, 0);
+        lse.mutable_data_ptr<float>(), lens_ptr, h, topk, (float)sm_scale, 0, 0);
   } else {
     constexpr int smem = sm89_dsa::Layout<false>::SMEM_TOTAL;
     cudaFuncSetAttribute(sm89_dsa::sparse_mla_fwd_kernel<false, false>,
@@ -446,7 +451,7 @@ void sm89_sparse_mla_fwd(const torch::stable::Tensor& q,
     sm89_dsa::sparse_mla_fwd_kernel<false, false><<<grid, 128, smem, stream>>>(
         static_cast<const __nv_bfloat16*>(q.const_data_ptr()), pool.const_data_ptr<uint8_t>(),
         indices.const_data_ptr<int32_t>(), static_cast<__nv_bfloat16*>(out.mutable_data_ptr()),
-        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale, 0);
+        lse.mutable_data_ptr<float>(), nullptr, h, topk, (float)sm_scale, 0, 0);
   }
   STD_CUDA_KERNEL_LAUNCH_CHECK();
 #else
