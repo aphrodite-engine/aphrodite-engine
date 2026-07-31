@@ -401,12 +401,36 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
                 chunk_M,
                 chunk_N,
             )
-            flash_mla_sparse_fwd(
-                q=q[query_start:query_end],
-                kv=kv.view(-1, 1, q.shape[-1]),
-                indices=combined_indices.unsqueeze(1),
-                sm_scale=self.scale,
-                attn_sink=self.attn_sink,
-                topk_length=combined_lens,
-                out=output[query_start:query_end],
+            from aphrodite.v1.attention.backends.mla.sm89_mla_sparse import (
+                use_sm89_dsa,
             )
+
+            if use_sm89_dsa():
+                # FlashMLA sparse prefill requires SM90a+.  Its Triton
+                # counterpart is device-neutral and supports the same V4
+                # query/KV layout on Ada.
+                from aphrodite.v1.attention.ops.rocm_aiter_mla_sparse import (
+                    _rocm_sparse_attn_prefill_triton,
+                )
+
+                prefill_out = _rocm_sparse_attn_prefill_triton(
+                    q=q[query_start:query_end],
+                    kv=kv.view(-1, q.shape[-1]),
+                    indices=combined_indices,
+                    scale=self.scale,
+                    attn_sink=self.attn_sink,
+                    nope_head_dim=448,
+                    rope_head_dim=64,
+                    topk_length=combined_lens,
+                )
+                output[query_start:query_end].copy_(prefill_out)
+            else:
+                flash_mla_sparse_fwd(
+                    q=q[query_start:query_end],
+                    kv=kv.view(-1, 1, q.shape[-1]),
+                    indices=combined_indices.unsqueeze(1),
+                    sm_scale=self.scale,
+                    attn_sink=self.attn_sink,
+                    topk_length=combined_lens,
+                    out=output[query_start:query_end],
+                )
