@@ -225,6 +225,11 @@ def _insert_context_kv(
         swa_2d = swa_cache.view(swa_cache.shape[0], -1)
         torch.ops._C.fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
             dummy_q,
+            torch.empty(
+                (n_ctx, attn.padded_heads, attn.head_dim),
+                dtype=kv.dtype,
+                device=kv.device,
+            ),
             kv,
             swa_2d,
             slot_mapping,

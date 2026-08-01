@@ -137,8 +137,14 @@ pytestmark = pytest.mark.skipif(
 
 
 def _call_fused(q_in, q_head_padded, kv, k_cache, slot_mapping, positions, cos_sin_cache, eps, bs):
+    q_out = torch.empty(
+        (q_in.shape[0], q_head_padded, q_in.shape[2]),
+        dtype=q_in.dtype,
+        device=q_in.device,
+    )
     return torch.ops._C.fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
         q_in,
+        q_out,
         kv,
         k_cache,
         slot_mapping,

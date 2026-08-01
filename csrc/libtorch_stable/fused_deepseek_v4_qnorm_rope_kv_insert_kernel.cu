@@ -944,6 +944,7 @@ static void launchFullCacheKernel(
 // ────────────────────────────────────────────────────────────────────────────
 torch::stable::Tensor fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
     torch::stable::Tensor const& q_in,           // [N, num_heads_q, 512] bf16
+    torch::stable::Tensor& q_out,                // [N, q_head_padded, 512] bf16
     torch::stable::Tensor const& kv,             // [N, 512] bf16 (read-only)
     torch::stable::Tensor& k_cache,              // [num_blocks, block_bytes] uint8
     torch::stable::Tensor const& slot_mapping,   // [N] int64
@@ -970,6 +971,14 @@ torch::stable::Tensor fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
   STD_TORCH_CHECK(kv.dim() == 2 && kv.size(1) == 512, "kv shape [N, 512]");
   STD_TORCH_CHECK(q_in.scalar_type() == kv.scalar_type(),
                   "q_in and kv dtype must match");
+  STD_TORCH_CHECK(q_out.device() == q_in.device() && q_out.is_contiguous(),
+                  "q_out must be contiguous and on the same device as q_in");
+  STD_TORCH_CHECK(q_out.scalar_type() == q_in.scalar_type(),
+                  "q_out dtype must match q_in");
+  STD_TORCH_CHECK(q_out.dim() == 3 && q_out.size(0) == q_in.size(0) &&
+                      q_out.size(1) == q_head_padded &&
+                      q_out.size(2) == q_in.size(2),
+                  "q_out shape must be [N, q_head_padded, 512]");
   STD_TORCH_CHECK(q_head_padded >= q_in.size(1),
                   "q_head_padded must be >= q_in.size(1) (num_heads_q)");
   STD_TORCH_CHECK(k_cache.scalar_type() == torch::headeronly::ScalarType::Byte,
@@ -998,11 +1007,6 @@ torch::stable::Tensor fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
   const torch::stable::accelerator::DeviceGuard device_guard(
       q_in.get_device_index());
   const cudaStream_t stream = get_current_cuda_stream(q_in.get_device_index());
-
-  // Allocate the padded q output.  The kernel writes every element (live
-  // region gets RMSNorm+RoPE; pad region gets zeros), so `empty` is safe.
-  auto q_out = torch::stable::new_empty(
-      q_in, {q_in.size(0), q_head_padded, q_in.size(2)}, q_in.scalar_type());
 
   APHRODITE_STABLE_DISPATCH_HALF_TYPES(
       q_in.scalar_type(), "fused_deepseek_v4_qnorm_rope_kv_insert", [&] {

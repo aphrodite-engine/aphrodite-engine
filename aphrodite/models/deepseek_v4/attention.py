@@ -179,6 +179,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         aphrodite_config: AphroditeConfig,
         prefix: str,
         topk_indices_buffer: torch.Tensor | None = None,
+        q_workspace: torch.Tensor | None = None,
         aux_stream_list: list[torch.cuda.Stream] | None = None,
     ) -> None:
         super().__init__()
@@ -268,6 +269,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         )
         self.indexer_rotary_emb = self.rotary_emb
         self.topk_indices_buffer = topk_indices_buffer
+        self.q_workspace = q_workspace
 
         self.indexer = None
         if self.compress_ratio == 4:
@@ -560,8 +562,17 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             #            the padded q tensor.
             #   KV side: GPT-J RoPE + UE8M0 FP8 quant + paged cache insert.
             swa_kv_cache_2d = swa_kv_cache.view(swa_kv_cache.shape[0], -1)
+            if self.q_workspace is None:
+                q_out = torch.empty(
+                    (q.shape[0], self.padded_heads, self.head_dim),
+                    dtype=q.dtype,
+                    device=q.device,
+                )
+            else:
+                q_out = self.q_workspace[: q.shape[0]]
             return torch.ops._C.fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
                 q,
+                q_out,
                 kv,
                 swa_kv_cache_2d,
                 swa_metadata.slot_mapping,

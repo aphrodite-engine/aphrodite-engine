@@ -53,6 +53,7 @@ from aphrodite.sequence import IntermediateTensors
 from .model import (
     DeepseekV4DecoderLayer,
     DeepseekV4Model,
+    _select_dsv4_attn_cls,
     make_deepseek_v4_expert_params_mapping,
 )
 
@@ -74,6 +75,7 @@ class DeepSeekV4MultiTokenPredictorLayer(nn.Module):
         self,
         aphrodite_config: AphroditeConfig,
         topk_indices_buffer: torch.Tensor,
+        q_workspace: torch.Tensor,
         prefix: str,
         aux_stream_list: list[torch.cuda.Stream] | None = None,
     ) -> None:
@@ -128,6 +130,7 @@ class DeepSeekV4MultiTokenPredictorLayer(nn.Module):
             aphrodite_config,
             prefix,
             topk_indices_buffer=topk_indices_buffer,
+            q_workspace=q_workspace,
             aux_stream_list=aux_stream_list,
         )
 
@@ -178,6 +181,14 @@ class DeepSeekV4MultiTokenPredictor(nn.Module):
             topk_tokens,
             dtype=torch.int32,
         )
+        attn_cls = _select_dsv4_attn_cls(aphrodite_config)
+        local_heads = config.num_attention_heads // get_tensor_model_parallel_world_size()
+        self.q_workspace = torch.empty(
+            aphrodite_config.scheduler_config.max_num_batched_tokens,
+            attn_cls.get_padded_num_q_heads(local_heads),
+            config.head_dim,
+            dtype=aphrodite_config.model_config.dtype,
+        )
 
         # Three aux streams shared across all MTP layers, mirroring DeepseekV4Model.
         aux_stream_list = [torch.cuda.Stream() for _ in range(3)]
@@ -188,6 +199,7 @@ class DeepSeekV4MultiTokenPredictor(nn.Module):
                 str(idx): DeepSeekV4MultiTokenPredictorLayer(
                     aphrodite_config,
                     self.topk_indices_buffer,
+                    self.q_workspace,
                     f"{prefix}.layers.{idx}",
                     aux_stream_list=aux_stream_list,
                 )
