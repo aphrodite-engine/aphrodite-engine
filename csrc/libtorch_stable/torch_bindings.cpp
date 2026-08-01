@@ -483,7 +483,7 @@ STABLE_TORCH_LIBRARY_FRAGMENT(_C, ops) {
 
   ops.def(
       "fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert("
-      "Tensor q_in, Tensor kv, Tensor! k_cache, "
+      "Tensor q_in, Tensor! q_out, Tensor kv, Tensor! k_cache, "
       "Tensor slot_mapping, Tensor position_ids, Tensor cos_sin_cache, "
       "int q_head_padded, float eps, int cache_block_size) -> Tensor");
 

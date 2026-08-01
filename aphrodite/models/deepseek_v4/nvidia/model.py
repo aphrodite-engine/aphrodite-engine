@@ -772,6 +772,7 @@ class DeepseekV4DecoderLayer(nn.Module):
         aphrodite_config,
         prefix,
         topk_indices_buffer: torch.Tensor | None = None,
+        q_workspace: torch.Tensor | None = None,
         aux_stream_list: list[torch.cuda.Stream] | None = None,
     ):
         super().__init__()
@@ -784,6 +785,7 @@ class DeepseekV4DecoderLayer(nn.Module):
             aphrodite_config,
             prefix=f"{prefix}.attn",
             topk_indices_buffer=topk_indices_buffer,
+            q_workspace=q_workspace,
             aux_stream_list=aux_stream_list,
         )
         self.ffn = DeepseekV4MoE(aphrodite_config, prefix=f"{prefix}.ffn")
@@ -966,6 +968,14 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             config.index_topk,
             dtype=torch.int32,
         )
+        attn_cls = _select_dsv4_attn_cls(aphrodite_config)
+        local_heads = config.num_attention_heads // get_tensor_model_parallel_world_size()
+        self.q_workspace = torch.empty(
+            aphrodite_config.scheduler_config.max_num_batched_tokens,
+            attn_cls.get_padded_num_q_heads(local_heads),
+            config.head_dim,
+            dtype=aphrodite_config.model_config.dtype,
+        )
 
         if get_pp_group().is_first_rank:
             self.embed_tokens = VocabParallelEmbedding(
@@ -983,6 +993,7 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
                 aphrodite_config,
                 prefix=prefix,
                 topk_indices_buffer=self.topk_indices_buffer,
+                q_workspace=self.q_workspace,
                 aux_stream_list=aux_stream_list,
             ),
             prefix=f"{prefix}.layers",
