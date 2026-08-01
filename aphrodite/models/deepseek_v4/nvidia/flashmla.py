@@ -413,7 +413,7 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
                     _rocm_sparse_attn_prefill_triton,
                 )
 
-                prefill_out = _rocm_sparse_attn_prefill_triton(
+                _rocm_sparse_attn_prefill_triton(
                     q=q[query_start:query_end],
                     kv=kv.view(-1, q.shape[-1]),
                     indices=combined_indices,
@@ -422,8 +422,8 @@ class DeepseekV4FlashMLAAttention(DeepseekV4Attention):
                     nope_head_dim=448,
                     rope_head_dim=64,
                     topk_length=combined_lens,
+                    out=output[query_start:query_end],
                 )
-                output[query_start:query_end].copy_(prefill_out)
             else:
                 flash_mla_sparse_fwd(
                     q=q[query_start:query_end],
