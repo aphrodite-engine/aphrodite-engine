@@ -208,6 +208,30 @@ def exl3_had_r_128(
     torch.ops._C.exl3_had_r_128(input, output, pre_scale, post_scale, scale)
 
 
+def exl3_had_r_128_dual(
+    input1: torch.Tensor,
+    output1: torch.Tensor,
+    pre_scale1: torch.Tensor | None,
+    post_scale1: torch.Tensor | None,
+    input2: torch.Tensor,
+    output2: torch.Tensor,
+    pre_scale2: torch.Tensor | None,
+    post_scale2: torch.Tensor | None,
+    scale: float = 1.0,
+) -> None:
+    torch.ops._C.exl3_had_r_128_dual(
+        input1,
+        output1,
+        pre_scale1,
+        post_scale1,
+        input2,
+        output2,
+        pre_scale2,
+        post_scale2,
+        scale,
+    )
+
+
 def exl3_hgemm(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor) -> None:
     torch.ops._C.exl3_hgemm(a, b, c)
 
@@ -242,8 +266,10 @@ def exl3_moe(
     down_mcg: bool,
     down_mul1: bool,
     act_limit: float = 0.0,
+    num_active: int = -1,
 ) -> None:
-    torch.ops._C.exl3_moe(
+    op = torch.ops._C.exl3_moe if num_active < 0 else torch.ops._C.exl3_moe_active
+    args = (
         hidden_state,
         output_state,
         expert_count,
@@ -274,6 +300,10 @@ def exl3_moe(
         down_mul1,
         act_limit,
     )
+    if num_active < 0:
+        op(*args)
+    else:
+        op(*args, num_active)
 
 
 if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
