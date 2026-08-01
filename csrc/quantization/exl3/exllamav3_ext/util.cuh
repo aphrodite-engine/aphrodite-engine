@@ -1,5 +1,10 @@
 #pragma once
 
+#include <cstdio>
+#include <cuda_fp16.h>
+#include <cuda_bf16.h>
+#include <cublas_v2.h>
+
 typedef struct __align__(8) half4 {
   half2 x;
   half2 y;

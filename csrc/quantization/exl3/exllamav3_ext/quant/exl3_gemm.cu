@@ -9,13 +9,14 @@ namespace cg = cooperative_groups;
 #include "exl3_kernel_map.cuh"
 #include "exl3_devctx.cuh"
 #include "exl3_gemv.cuh"
+#include "exl3_gemv_int8.cuh"
+#include "coop_autotune.cuh"
 #include <set>
-
-#define NEW_TUNE_GEMM
-#define NEW_TUNE_MGEMM
+#include <vector>
 
 int exl3_gemm_tilesize_k_g[] = {EXL3_GEMM_TILESIZE_K};
 int exl3_gemm_tilesize_n_g[] = {EXL3_GEMM_TILESIZE_N};
+int exl3_gemm_blockdim_g[] = {EXL3_GEMM_BLOCKDIM};
 
 /*
 EXL3 matmul, A @ B -> C
@@ -35,6 +36,52 @@ limitations:
 */
 
 std::set<void*> kernel_attr_set[MAX_DEVICES] = {};
+
+uint64_t roundup_pow2(uint64_t x) {
+  if (x == 0) return 1;
+  x--;
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+  x |= x >> 32;
+  return x + 1;
+}
+
+uint64_t gemm_autotune_hash(int size_m, int size_k, int size_n, int K,
+                            bool c_fp32, int device, int cc, int max_num_sms,
+                            int cb) {
+  uint64_t h = 1469598103934665603ull;
+  auto mix = [&](uint64_t v) {
+    h ^= v;
+    h *= 1099511628211ull;
+  };
+  mix((uint64_t)MIN(roundup_pow2(size_m), 16));
+  mix((uint64_t)size_k);
+  mix((uint64_t)size_n);
+  mix((uint64_t)K);
+  mix(c_fp32 ? 1ull : 0ull);
+  mix((uint64_t)device);
+  mix((uint64_t)cc);
+  mix((uint64_t)max_num_sms);
+  mix((uint64_t)cb);
+  return h;
+}
+
+uint64_t mgemm_autotune_hash(int size_m, int size_k, int size_n, int K,
+                             bool c_fp32, int device, int cc, int max_num_sms,
+                             int cb, int bszm_in, int bszm_out) {
+  uint64_t h = gemm_autotune_hash(size_m, size_k, size_n, K, c_fp32, device, cc,
+                                  max_num_sms, cb);
+  auto mix = [&](uint64_t v) {
+    h ^= v;
+    h *= 1099511628211ull;
+  };
+  mix((uint64_t)bszm_in);
+  mix((uint64_t)bszm_out);
+  return h;
+}
 
 int exl3_gemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                  const c10::optional<at::Tensor>& suh,
@@ -96,25 +143,96 @@ int exl3_gemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
   if (mcg) cb = 1;
   if (mul1) cb = 2;
 
+  // Experimental fused int8-activation GEMV path (EXL3_INT8_GEMV=1) for mul1
+  // tensors. Rows are processed as successive GEMV launches, so this is only
+  // sensible for small m (the reconstruct threshold keeps m <= 144 in
+  // practice). Not graph-capturable yet; graphed callers fall through to the
+  // regular kernel.
+  if (mul1 && exl3_gemv_int8_enabled()) {
+    if (exl3_gemv_int8(A, B, C, suh, A_had, svh, stream, graph)) return 0;
+  }
+
   int block_dim;
   int shape_idx;
   fp_exl3_gemm_kernel kernel;
 
-#ifndef NEW_TUNE_GEMM
+  void* kernelArgs[] = {(void*)&A_ptr,  (void*)&B_ptr,   (void*)&C_ptr,
+                        (void*)&size_m, (void*)&size_k,  (void*)&size_n,
+                        (void*)&locks,  (void*)&suh_ptr, (void*)&A_had_ptr,
+                        (void*)&svh_ptr};
+
+  auto add_graph_args = [&](void* kernel_ptr) {
+    if (graph) {
+      graph->record_param(kernel_ptr, GP_gemm_A, 0);
+      graph->record_param(kernel_ptr, GP_gemm_B_trellis, 1);
+      graph->record_param(kernel_ptr, GP_gemm_C, 2);
+      graph->record_param(kernel_ptr, GP_gemm_B_suh, 7);
+      graph->record_param(kernel_ptr, GP_gemm_A_had, 8);
+      graph->record_param(kernel_ptr, GP_gemm_B_svh, 9);
+      graph->record_param(kernel_ptr, GP_end, 0);
+    }
+  };
+
+  // QTIP-style GEMV path for small m (exl3_gemv_kernel.cuh). Same kernel
+  // arguments, so graph recording is identical; falls through to the regular
+  // kernel when the heuristic declines
+  if (force_shape_idx <= 0 && force_num_sms <= 0) {
+    void* gemv_kernel = nullptr;
+    if (exl3_gemv_try_launch(kernelArgs, size_m, size_k, size_n, K, cb, c_fp32,
+                             suh_ptr && A_had_ptr && svh_ptr, device, stream,
+                             &gemv_kernel, false)) {
+      add_graph_args(gemv_kernel);
+      cuda_check(cudaPeekAtLastError());
+      return 90;
+    }
+  }
+
+  bool autotune = force_shape_idx <= 0 && force_num_sms <= 0;
+  if (autotune) {
+    uint64_t autotune_key = gemm_autotune_hash(
+        MAX(size_m, 2), size_k, size_n, K, c_fp32, device, cc, num_sms, cb);
+    CoopAutotuneLaunch tuned;
+    if (CoopKernelAutotuner::launch_locked(autotune_key, kernelArgs, SMEM_MAX,
+                                           stream, &tuned)) {
+      add_graph_args((void*)tuned.kernel);
+      cuda_check(cudaPeekAtLastError());
+      return tuned.tag;
+    }
+    std::vector<CoopAutotuneCandidate> candidates;
+    for (int candidate_shape_idx = 1;
+         candidate_shape_idx <= EXL3_GEMM_NUM_SHAPES; ++candidate_shape_idx) {
+      if (!exl3_gemm_shape_compat(candidate_shape_idx, size_m, size_k, size_n,
+                                  K))
+        continue;
+
+      fp_exl3_gemm_kernel candidate_kernel =
+          get_gemm_kernel_ptr(K, candidate_shape_idx, c_fp32, cb);
+      if (!candidate_kernel) continue;
+
+      int tilesize_k = exl3_gemm_tilesize_k_g[candidate_shape_idx];
+      int tilesize_n = exl3_gemm_tilesize_n_g[candidate_shape_idx];
+      int max_slices = MAX(size_k / tilesize_k * size_n / tilesize_n, 1);
+      int max_candidate_sms = MAX(MIN(max_slices, num_sms), 1);
+
+      candidates.push_back(
+          {(void*)candidate_kernel, exl3_gemm_blockdim_g[candidate_shape_idx],
+           max_candidate_sms, 1, max_candidate_sms, candidate_shape_idx});
+    }
+    TORCH_CHECK(!candidates.empty(),
+                "exl3_gemm autotune: no compatible kernel shapes");
+
+    tuned =
+        CoopKernelAutotuner::launch(autotune_key, candidates, kernelArgs,
+                                    SMEM_MAX, stream, (size_t)size_k * size_n);
+    if (graph) add_graph_args((void*)tuned.kernel);
+    cuda_check(cudaPeekAtLastError());
+    return tuned.tag;
+  }
+
   kernel = select_exl3_gemm_kernel(cc, size_m, size_k, size_n, K, c_fp32,
                                    force_shape_idx, &block_dim, &shape_idx,
                                    &num_sms, cb);
   if (!kernel) return 0;
-#else
-  TResult* tr =
-      select_exl3_gemm_mgemm_kernel_new(cc, size_m, size_k, size_n, K, c_fp32,
-                                        force_shape_idx, force_num_sms, cb);
-  if (!tr) return 0;
-  num_sms = MIN(num_sms, tr->num_sms);
-  kernel = tr->kernel;
-  block_dim = tr->block_dim;
-  shape_idx = tr->shape_idx;
-#endif
 
   // Launch
   if (kernel_attr_set[device].find((void*)kernel) ==
@@ -124,20 +242,9 @@ int exl3_gemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
     kernel_attr_set[device].insert((void*)kernel);
     cuda_check(cudaPeekAtLastError());
   }
-  void* kernelArgs[] = {(void*)&A_ptr,  (void*)&B_ptr,   (void*)&C_ptr,
-                        (void*)&size_m, (void*)&size_k,  (void*)&size_n,
-                        (void*)&locks,  (void*)&suh_ptr, (void*)&A_had_ptr,
-                        (void*)&svh_ptr};
   cudaLaunchCooperativeKernel((void*)kernel, num_sms, block_dim, kernelArgs,
                               SMEM_MAX, stream);
-
-  if (graph) graph->record_param((void*)kernel, GP_gemm_A, 0);
-  if (graph) graph->record_param((void*)kernel, GP_gemm_B_trellis, 1);
-  if (graph) graph->record_param((void*)kernel, GP_gemm_C, 2);
-  if (graph) graph->record_param((void*)kernel, GP_gemm_B_suh, 7);
-  if (graph) graph->record_param((void*)kernel, GP_gemm_A_had, 8);
-  if (graph) graph->record_param((void*)kernel, GP_gemm_B_svh, 9);
-  if (graph) graph->record_param((void*)kernel, GP_end, 0);
+  add_graph_args((void*)kernel);
 
   cuda_check(cudaPeekAtLastError());
   return shape_idx;
@@ -153,20 +260,45 @@ int exl3_gemm(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
 }
 
 /*
-EXL3 multi matmul, A @ B -> C
+EXL3 batched/multi-matrix matmul.
 
-- A: row-major A tensor, shape (m, k), dtype float16, contiguous
-- B: EXL3-quantized B tensor, shape (k//16, n//16, 16*K), dtype uint16
-- C: empty row-major C tensor, shape (m, n), dtype float16 or float23,
-contiguous. Does not need to be zero-initialized
-- suh: optional, packed input scales/flips, shape (k//16), dtype float16
-- A_had: required if suh given, may be reference to A, temporary storage for
-input transform, size and dtype as A
-- svh: optional, packed output scales/flips, shape (n//16), dtype float16
+This is not a conventional batched A @ B. B, suh and svh are CUDA int64
+tensors containing device addresses (one address per quantized matrix), rather
+than the matrix data themselves. Entry q of each table describes one linear:
 
-limitations:
-- k % 16 == 0
-- n % 128 == 0
+    B[q]   -> EXL3 trellis, logically (k / 16, n / 16, 16 * K) uint16
+    suh[q] -> packed input scales/flips, logically (k / 16) float16
+    svh[q] -> packed output scales/flips, logically (n / 16) float16
+
+A is contiguous float16 [a_batches, m, k], C is contiguous float16 or
+float32 [c_batches, m, n], and A_had is float16 scratch with room for every
+active matrix. The kernel applies the input Hadamard transform into A_had,
+performs the selected EXL3 matmul, then applies the output transform.
+
+The active matrix/output slot j selects q = indices[j] when indices is given,
+or q = j otherwise. This supports the following modes:
+
+- Multiple inputs and outputs: A[j] @ B[q] -> C[j].
+- One input, multiple outputs: when a_batches == 1, A[0] is broadcast and
+  transformed separately for each selected B[q], producing C[j]. This is used
+  for e.g. fused gate/up projections and MoE expert fan-out.
+- Indexed matrices: indices is a contiguous int64 [*, num_indices] tensor;
+  the kernel reads its first num_indices entries as q values. Negative indices
+  skip that slot.
+- Weighted MoE reduction: weights is a float16 tensor parallel to indices.
+  Each transformed result is multiplied by weights[j], then all active C[j]
+  are summed into C[0]. C therefore also serves as per-expert scratch; only
+  C[0] is the reduced result.
+- Expert-range filtering: with min_index >= 0, selections outside
+  [min_index, max_index) are removed and retained indices are rebased by
+  min_index. This allows B/suh/svh to be local pointer tables for an expert
+  shard. Weights are compacted in the same order.
+
+Without weights, every active C[j] is a separate output. The active slot count
+is max(a_batches, c_batches), capped to num_indices when indices is present.
+
+Limitations: k must be divisible by 16 and n by 128. Range filtering supports
+at most 128 slots (the kernel's index-compaction capacity).
 */
 
 int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
@@ -175,11 +307,18 @@ int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                   const c10::optional<at::Tensor>& indices,
                   const c10::optional<at::Tensor>& weights, int K,
                   int force_shape_idx, bool mcg, bool mul1, int min_index,
-                  int max_index, int force_num_sms, Graph* graph) {
+                  int max_index, int force_num_sms, Graph* graph,
+                  int num_tokens) {
   const torch::stable::accelerator::DeviceGuard device_guard(
       A.get_device_index());
   cudaStream_t stream = graph ? graph->capture_stream
                               : get_current_cuda_stream(A.get_device_index());
+
+  TORCH_CHECK(num_tokens == 1 || min_index < 0,
+              "exl3_mgemm: multi-token reduction (num_tokens > 1) is not "
+              "compatible with expert-range "
+              "filtering (min_index >= 0); TP-sharded experts must use "
+              "num_tokens == 1");
 
   TORCH_CHECK_DTYPE(A, kHalf);
   TORCH_CHECK_DTYPE(B, kLong);
@@ -202,7 +341,7 @@ int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
   int bszm_out = C.size(0);
   int bszm = MAX(bszm_in, bszm_out);
 
-  const long* indices_ptr = (const long*)OPTPTR(indices);
+  const int64_t* indices_ptr = (const int64_t*)OPTPTR(indices);
   const half* weights_ptr = (const half*)OPTPTR(weights);
 
   if (indices) {
@@ -249,13 +388,74 @@ int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
   fp_exl3_mgemm_kernel kernel;
   int concurrency;
 
-#ifndef NEW_TUNE_MGEMM
-  kernel = select_exl3_mgemm_kernel(cc, size_m, size_k, size_n, K, c_fp32,
-                                    force_shape_idx, &block_dim, &shape_idx,
-                                    &num_sms, cb, bszm_in, bszm_out);
-  if (!kernel) return 0;
-  concurrency = MIN(total_sms / num_sms, bszm_out);
-#else
+  void* kernelArgs[] = {
+      (void*)&A_ptr,       (void*)&B_ptr_ptr,   (void*)&C_ptr,
+      (void*)&size_m,      (void*)&size_k,      (void*)&size_n,
+      (void*)&locks,       (void*)&suh_ptr_ptr, (void*)&A_had_ptr,
+      (void*)&svh_ptr_ptr, (void*)&indices_ptr, (void*)&weights_ptr,
+      (void*)&bszm_in,     (void*)&bszm_out,    (void*)&min_index,
+      (void*)&max_index,   (void*)&num_tokens};
+
+  auto add_graph_args = [&](void* kernel_ptr) {
+    if (graph) {
+      graph->record_param(kernel_ptr, GP_mgemm_A, 0);
+      graph->record_param(kernel_ptr, GP_mgemm_C, 2);
+      graph->record_param(kernel_ptr, GP_mgemm_indices, 10);
+      graph->record_param(kernel_ptr, GP_mgemm_weights, 11);
+      graph->record_param(kernel_ptr, GP_end, 0);
+    }
+  };
+
+  bool autotune = force_shape_idx <= 0 && force_num_sms <= 0;
+  if (autotune) {
+    uint64_t autotune_key =
+        mgemm_autotune_hash(size_m, size_k, size_n, K, c_fp32, device, cc,
+                            total_sms, cb, bszm_in, bszm_out);
+
+    CoopAutotuneLaunch tuned;
+    if (CoopKernelAutotuner::launch_locked(autotune_key, kernelArgs, SMEM_MAX,
+                                           stream, &tuned)) {
+      add_graph_args((void*)tuned.kernel);
+      cuda_check(cudaPeekAtLastError());
+      return tuned.tag;
+    }
+    if (!graph) {
+      std::vector<CoopAutotuneCandidate> candidates;
+      for (int candidate_shape_idx = 1;
+           candidate_shape_idx <= EXL3_GEMM_NUM_SHAPES; ++candidate_shape_idx) {
+        if (!exl3_gemm_shape_compat(candidate_shape_idx, size_m, size_k, size_n,
+                                    K))
+          continue;
+
+        fp_exl3_mgemm_kernel candidate_kernel =
+            get_mgemm_kernel_ptr(K, candidate_shape_idx, c_fp32, cb);
+        if (!candidate_kernel) continue;
+
+        int tilesize_k = exl3_gemm_tilesize_k_g[candidate_shape_idx];
+        int tilesize_n = exl3_gemm_tilesize_n_g[candidate_shape_idx];
+        int max_slices = MAX(size_k / tilesize_k * size_n / tilesize_n, 1);
+        int max_candidate_sms = MAX(MIN(max_slices, total_sms), 1);
+
+        candidates.push_back(
+            {(void*)candidate_kernel, exl3_gemm_blockdim_g[candidate_shape_idx],
+             max_candidate_sms, bszm, total_sms, candidate_shape_idx});
+      }
+      TORCH_CHECK(!candidates.empty(),
+                  "exl3_mgemm autotune: no compatible kernel shapes");
+
+      tuned = CoopKernelAutotuner::launch(autotune_key, candidates, kernelArgs,
+                                          SMEM_MAX, stream,
+                                          (size_t)size_k * size_n * bszm);
+      add_graph_args((void*)tuned.kernel);
+
+      // DBGI10(size_m, size_k, size_n, K, bszm_in, bszm_out, tuned.tag,
+      // tuned.block_dim, tuned.num_sms, tuned.concurrency);
+
+      cuda_check(cudaPeekAtLastError());
+      return tuned.tag;
+    }
+  }
+
   kernel = select_exl3_mgemm_kernel(cc, size_m, size_k, size_n, K, c_fp32,
                                     force_shape_idx, &block_dim, &shape_idx,
                                     &num_sms, cb, bszm_in, bszm_out);
@@ -267,7 +467,9 @@ int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
   if (num_sms <= total_sms && tiles / num_sms > 48)
     num_sms = MIN(total_sms, num_sms * 2);
   concurrency = MIN(total_sms / num_sms, bszm);
-#endif
+
+  // DBGI10(size_m, size_k, size_n, K, bszm_in, bszm_out, shape_idx, block_dim,
+  // num_sms, concurrency);
 
   // Launch bigger grid if possible
   dim3 block_grid(num_sms, 1, concurrency);
@@ -279,22 +481,10 @@ int exl3_mgemm_gr(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                          SMEM_MAX);
     kernel_attr_set[device].insert((void*)kernel);
   }
-  void* kernelArgs[] = {
-      (void*)&A_ptr,       (void*)&B_ptr_ptr,   (void*)&C_ptr,
-      (void*)&size_m,      (void*)&size_k,      (void*)&size_n,
-      (void*)&locks,       (void*)&suh_ptr_ptr, (void*)&A_had_ptr,
-      (void*)&svh_ptr_ptr, (void*)&indices_ptr, (void*)&weights_ptr,
-      (void*)&bszm_in,     (void*)&bszm_out,    (void*)&min_index,
-      (void*)&max_index};
 
   cudaLaunchCooperativeKernel((void*)kernel, block_grid, block_dim, kernelArgs,
                               SMEM_MAX, stream);
-
-  if (graph) graph->record_param((void*)kernel, GP_mgemm_A, 0);
-  if (graph) graph->record_param((void*)kernel, GP_mgemm_C, 2);
-  if (graph) graph->record_param((void*)kernel, GP_mgemm_indices, 10);
-  if (graph) graph->record_param((void*)kernel, GP_mgemm_weights, 11);
-  if (graph) graph->record_param((void*)kernel, GP_end, 0);
+  add_graph_args((void*)kernel);
 
   cuda_check(cudaPeekAtLastError());
   return shape_idx;
@@ -305,8 +495,9 @@ int exl3_mgemm(const at::Tensor& A, const at::Tensor& B, at::Tensor& C,
                const at::Tensor& svh, const c10::optional<at::Tensor>& indices,
                const c10::optional<at::Tensor>& weights, int K,
                int force_shape_idx, uint32_t mcg_mult, uint32_t mul1_mult,
-               int min_index, int max_index, int force_num_sms) {
+               int min_index, int max_index, int force_num_sms,
+               int num_tokens) {
   return exl3_mgemm_gr(A, B, C, suh, A_had, svh, indices, weights, K,
                        force_shape_idx, mcg_mult, mul1_mult, min_index,
-                       max_index, force_num_sms, nullptr);
+                       max_index, force_num_sms, nullptr, num_tokens);
 }

@@ -1,51 +1,29 @@
 #pragma once
 
+#include <cuda_bf16.h>
+#include <cublas_v2.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "exl3_moe_common.cuh"
+#include "../util.h"
+#include "../util.cuh"
 #include "exl3_kernel_map.cuh"
 #include "hadamard_inner.cuh"
 #include "exl3_gemm_inner.cuh"
 #include "exl3_devctx.cuh"
 #include "../ptx.cuh"
 
-#define MOE_ACT_SILU 0
-#define MOE_ACT_GELU 1
-
-#define MOE_SMS_PER_EXPERT 12
-#define MOE_TILESIZE_K 32
-#define MOE_TILESIZE_M 16
-#define MOE_SH_STAGES 4
-#define MOE_FRAG_STAGES 3
-
-#define EXL3_MOE_KERNEL_ARGS                                                   \
-  const half *__restrict__ hidden_state, half *__restrict__ temp_state_g,      \
-      half *__restrict__ temp_state_u, half *__restrict__ temp_intermediate_g, \
-      half *__restrict__ temp_intermediate_u,                                  \
-      float *__restrict__ output_state,                                        \
-                                                                               \
-      const uint16_t **__restrict__ gate_trellis,                              \
-      const half **__restrict__ gate_suh, const half **__restrict__ gate_svh,  \
-      const uint16_t **__restrict__ up_trellis,                                \
-      const half **__restrict__ up_suh, const half **__restrict__ up_svh,      \
-      const uint16_t **__restrict__ down_trellis,                              \
-      const half **__restrict__ down_suh, const half **__restrict__ down_svh,  \
-                                                                               \
-      const int64_t *__restrict__ expert_count,                                \
-      const int64_t *__restrict__ token_sorted,                                \
-      const half *__restrict__ weight_sorted,                                  \
-                                                                               \
-      const int hidden_dim, const int intermediate_dim, const int num_experts, \
-      const int num_experts_per_tok, const int max_tokens_per_expert,          \
-      const int concurrency, const float act_limit, const int act_function,    \
-      const int K_gate, const int K_up, const int K_down,                      \
-                                                                               \
-      int *__restrict__ locks
-
-template <int t_bits, int MOE_TILESIZE_N>
+template <int t_bits, int MOE_TILESIZE_N, int cb>
 __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
                              16) void exl3_moe_kernel(EXL3_MOE_KERNEL_ARGS) {
   const int group_idx = blockIdx.z;
   const int block_idx = blockIdx.x;
-  const int block_threads = blockDim.x;
-  const int group_threads = MOE_SMS_PER_EXPERT * block_threads;
+  const int group_size = gridDim.x;  // SMs per expert, set at launch
+  const int num_groups = gridDim.z;
+  const int block_threads =
+      EXL3_GEMM_BASE_THREADS * MOE_TILESIZE_K / 16;  // blockDim.x
+  const int group_threads = group_size * block_threads;
   const int warp_id = threadIdx.x / 32;
   const int warps_per_group = group_threads / 32;
   const int warps_per_block = block_threads / 32;
@@ -60,8 +38,19 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
   // Barriers for group sync
   int* barrier_counters_sense = locks + BARRIER_LOCKS_OFFSET;
 
+  // Expert scheduler state, self-resetting: [0] next ticket, [1] retired
+  // groups, [2 + g] ticket for group g
+  int* sched = locks + MOE_SCHED_OFFSET;
+
   // Individual GEMM barriers per group
   locks += group_idx * MAX(hidden_dim, intermediate_dim) / 128;
+
+  // Dynamic expert assignment: active experts are numbered in scan order, and
+  // each group processes the active expert matching its current ticket. Initial
+  // tickets are the group indices; after finishing an expert, a group draws the
+  // next unclaimed ticket, so load balances greedily without assuming uniform
+  // cost per expert
+  int ticket = group_idx;
 
   // Loop over experts
   int start = 0;
@@ -79,8 +68,8 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
     if (token_count == 0) continue;
     if (token_count > max_tokens_per_expert) continue;
 
-    // Skip if expert is assigned to different group
-    if (expert_idx_assign++ % concurrency != group_idx) continue;
+    // Skip if expert is claimed by a different group
+    if (expert_idx_assign++ != ticket) continue;
 
     // EXL3 weights for g, u, d
     const uint16_t* exp_gate_trellis = gate_trellis[expert_idx];
@@ -93,7 +82,9 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
     const half* exp_down_suh = down_suh[expert_idx];
     const half* exp_down_svh = down_svh[expert_idx];
 
-    // Gather + input hadamard for g, u
+    // Gather + input hadamard for g, u. Non-gated mode skips the g staging (and
+    // the g GEMM below); the activation synthesizes the gate lane from u
+    const bool gated = act_function != MOE_ACT_RELU2_NOGATE;
     auto had_gather_gu_in = [&]() {
       const int warps_per_token = hidden_dim / 128;
       const int total_warps = token_count * warps_per_token;
@@ -104,14 +95,15 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
         int token_off = warp_idx % warps_per_token;
         const half* in_ptr =
             hidden_state + token_idx * hidden_dim + token_off * 128;
-        had_hf_r_128_inner(in_ptr, temp_state_g + 128 * warp_idx,
-                           exp_gate_suh + 128 * token_off, nullptr,
-                           0.088388347648f);
-        had_hf_r_128_inner(in_ptr, temp_state_u + 128 * warp_idx,
-                           exp_up_suh + 128 * token_off, nullptr,
-                           0.088388347648f);
+        if (gated)
+          had_hf_r_128_inner<true, false>(in_ptr, temp_state_g + 128 * warp_idx,
+                                          exp_gate_suh + 128 * token_off,
+                                          0.088388347648f);
+        had_hf_r_128_inner<true, false>(in_ptr, temp_state_u + 128 * warp_idx,
+                                        exp_up_suh + 128 * token_off,
+                                        0.088388347648f);
       }
-      group_barrier(group_idx, MOE_SMS_PER_EXPERT, barrier_counters_sense);
+      group_barrier(group_idx, group_size, barrier_counters_sense);
     };
 
     had_gather_gu_in();
@@ -121,37 +113,38 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
                        const uint16_t* trellis, const int K) {
       int size_m = token_count;
       while (size_m > 0) {
-#define ARGS \
-  in_addr, trellis, out_addr, size_m, hidden_dim, intermediate_dim, locks
+#define ARGS                                                                 \
+  in_addr, trellis, out_addr, MIN(size_m, 16), hidden_dim, intermediate_dim, \
+      locks, nullptr
 #define SHAPE_ARGS \
   MOE_TILESIZE_M, MOE_TILESIZE_K, MOE_TILESIZE_N, MOE_SH_STAGES, MOE_FRAG_STAGES
         if constexpr (t_bits)
-          exl3_gemm_kernel_inner<t_bits, false, 1, SHAPE_ARGS>(ARGS);
+          exl3_gemm_kernel_inner<t_bits, false, cb, SHAPE_ARGS, false>(ARGS);
         else
           switch (K) {
             case 1:
-              exl3_gemm_kernel_inner<1, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<1, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 2:
-              exl3_gemm_kernel_inner<2, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<2, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 3:
-              exl3_gemm_kernel_inner<3, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<3, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 4:
-              exl3_gemm_kernel_inner<4, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<4, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 5:
-              exl3_gemm_kernel_inner<5, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<5, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 6:
-              exl3_gemm_kernel_inner<6, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<6, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 7:
-              exl3_gemm_kernel_inner<7, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<7, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 8:
-              exl3_gemm_kernel_inner<8, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<8, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
           };
 #undef ARGS
@@ -160,12 +153,13 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
         in_addr += 16 * hidden_dim;
         out_addr += 16 * intermediate_dim;
         size_m -= 16;
-        group_barrier(group_idx, MOE_SMS_PER_EXPERT, barrier_counters_sense);
       }
     };
 
-    gemm_up(temp_state_g, temp_intermediate_g, exp_gate_trellis, K_gate);
+    if (gated)
+      gemm_up(temp_state_g, temp_intermediate_g, exp_gate_trellis, K_gate);
     gemm_up(temp_state_u, temp_intermediate_u, exp_up_trellis, K_up);
+    group_barrier(group_idx, group_size, barrier_counters_sense);
 
     // Output hadamard for g, u + activation+gate + input hadamard for d
     auto had_guad = [&]() {
@@ -182,7 +176,7 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
                                 exp_down_suh + 128 * token_off, 0.088388347648f,
                                 act_limit, act_function);
       }
-      group_barrier(group_idx, MOE_SMS_PER_EXPERT, barrier_counters_sense);
+      group_barrier(group_idx, group_size, barrier_counters_sense);
     };
 
     had_guad();
@@ -192,37 +186,38 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
                          const uint16_t* trellis, const int K) {
       int size_m = token_count;
       while (size_m > 0) {
-#define ARGS \
-  in_addr, trellis, out_addr, size_m, intermediate_dim, hidden_dim, locks
+#define ARGS                                                                 \
+  in_addr, trellis, out_addr, MIN(size_m, 16), intermediate_dim, hidden_dim, \
+      locks, nullptr
 #define SHAPE_ARGS \
   MOE_TILESIZE_M, MOE_TILESIZE_K, MOE_TILESIZE_N, MOE_SH_STAGES, MOE_FRAG_STAGES
         if constexpr (t_bits)
-          exl3_gemm_kernel_inner<t_bits, false, 1, SHAPE_ARGS>(ARGS);
+          exl3_gemm_kernel_inner<t_bits, false, cb, SHAPE_ARGS, false>(ARGS);
         else
           switch (K) {
             case 1:
-              exl3_gemm_kernel_inner<1, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<1, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 2:
-              exl3_gemm_kernel_inner<2, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<2, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 3:
-              exl3_gemm_kernel_inner<3, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<3, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 4:
-              exl3_gemm_kernel_inner<4, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<4, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 5:
-              exl3_gemm_kernel_inner<5, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<5, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 6:
-              exl3_gemm_kernel_inner<6, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<6, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 7:
-              exl3_gemm_kernel_inner<7, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<7, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
             case 8:
-              exl3_gemm_kernel_inner<8, false, 1, SHAPE_ARGS>(ARGS);
+              exl3_gemm_kernel_inner<8, false, cb, SHAPE_ARGS, false>(ARGS);
               break;
           };
 #undef ARGS
@@ -231,11 +226,11 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
         in_addr += 16 * intermediate_dim;
         out_addr += 16 * hidden_dim;
         size_m -= 16;
-        group_barrier(group_idx, MOE_SMS_PER_EXPERT, barrier_counters_sense);
       }
     };
 
     gemm_down(temp_intermediate_g, temp_state_g, exp_down_trellis, K_down);
+    group_barrier(group_idx, group_size, barrier_counters_sense);
 
     // Output hadamard for d + scatter add
     auto had_d_out = [&]() {
@@ -254,9 +249,31 @@ __global__ __launch_bounds__(EXL3_GEMM_BASE_THREADS* MOE_TILESIZE_K /
                              exp_down_svh + 128 * token_off,
                              0.088388347648f * __half2float(weight));
       }
-      group_barrier(group_idx, MOE_SMS_PER_EXPERT, barrier_counters_sense);
     };
 
     had_d_out();
+
+    // Draw the next ticket and publish it to the group through the
+    // end-of-expert barrier, which also protects the temp buffers for reuse.
+    // Grabbed tickets continue from num_groups since 0..num_groups-1 are
+    // implicit
+    if (block_idx == 0 && threadIdx.x == 0)
+      sched[2 + group_idx] = num_groups + atomicAdd(&sched[0], 1);
+    group_barrier(group_idx, group_size, barrier_counters_sense);
+    ticket = sched[2 + group_idx];
+  }
+
+  // Retire group; last group out resets the scheduler for the next launch. The
+  // acq_rel increment orders each group's earlier ticket grabs before the last
+  // group's reset (plain atomics are relaxed, so without this a straggler's
+  // in-flight grab could land after the reset and leak into the next launch)
+  if (block_idx == 0 && threadIdx.x == 0) {
+    cuda::atomic_ref<int, cuda::thread_scope_device> next_ticket(sched[0]);
+    cuda::atomic_ref<int, cuda::thread_scope_device> retired_groups(sched[1]);
+    int retired = retired_groups.fetch_add(1, cuda::memory_order_acq_rel);
+    if (retired == num_groups - 1) {
+      next_ticket.store(0, cuda::memory_order_relaxed);
+      retired_groups.store(0, cuda::memory_order_relaxed);
+    }
   }
 }

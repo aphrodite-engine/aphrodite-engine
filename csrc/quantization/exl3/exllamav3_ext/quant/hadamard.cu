@@ -4,52 +4,58 @@
 #include "../util.cuh"
 #include "hadamard_inner.cuh"
 
+template <bool pre_scale, bool post_scale>
 __global__ __launch_bounds__(32) void had_hf_r_128_kernel(
     const half* __restrict__ input_ptr, half* __restrict__ output_ptr,
-    const half* __restrict__ pre_scale, const half* __restrict__ post_scale,
-    const float r_scale) {
-  input_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  output_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  had_hf_r_128_inner(input_ptr, output_ptr, pre_scale, post_scale, r_scale);
+    const half* __restrict__ scale, const float r_scale) {
+  input_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  output_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  had_hf_r_128_inner<pre_scale, post_scale>(input_ptr, output_ptr, scale,
+                                            r_scale);
 }
 
+template <bool pre_scale, bool post_scale>
 __global__ __launch_bounds__(32) void had_ff_r_128_kernel(
     const float* __restrict__ input_ptr, float* __restrict__ output_ptr,
-    const half* __restrict__ pre_scale, const half* __restrict__ post_scale,
-    const float r_scale) {
-  input_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  output_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  had_ff_r_128_inner(input_ptr, output_ptr, pre_scale, post_scale, r_scale);
+    const half* __restrict__ scale, const float r_scale) {
+  input_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  output_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  had_ff_r_128_inner<pre_scale, post_scale>(input_ptr, output_ptr, scale,
+                                            r_scale);
 }
 
+template <bool pre_scale, bool post_scale>
 __global__ __launch_bounds__(32) void had_hf_r_128_dual_kernel(
     const half* __restrict__ input1_ptr, half* __restrict__ output1_ptr,
-    const half* __restrict__ pre1_scale, const half* __restrict__ post1_scale,
-    const half* __restrict__ input2_ptr, half* __restrict__ output2_ptr,
-    const half* __restrict__ pre2_scale, const half* __restrict__ post2_scale,
+    const half* __restrict__ scale_1, const half* __restrict__ input2_ptr,
+    half* __restrict__ output2_ptr, const half* __restrict__ scale_2,
     const float r_scale) {
-  input1_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  output1_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  had_hf_r_128_inner(input1_ptr, output1_ptr, pre1_scale, post1_scale, r_scale);
+  input1_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  output1_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  had_hf_r_128_inner<pre_scale, post_scale>(input1_ptr, output1_ptr, scale_1,
+                                            r_scale);
 
-  input2_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  output2_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  had_hf_r_128_inner(input2_ptr, output2_ptr, pre2_scale, post2_scale, r_scale);
+  input2_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  output2_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  had_hf_r_128_inner<pre_scale, post_scale>(input2_ptr, output2_ptr, scale_2,
+                                            r_scale);
 }
 
+template <bool pre_scale, bool post_scale>
 __global__ __launch_bounds__(32) void had_ff_r_128_dual_kernel(
     const float* __restrict__ input1_ptr, float* __restrict__ output1_ptr,
-    const half* __restrict__ pre1_scale, const half* __restrict__ post1_scale,
-    const float* __restrict__ input2_ptr, float* __restrict__ output2_ptr,
-    const half* __restrict__ pre2_scale, const half* __restrict__ post2_scale,
+    const half* __restrict__ scale_1, const float* __restrict__ input2_ptr,
+    float* __restrict__ output2_ptr, const half* __restrict__ scale_2,
     const float r_scale) {
-  input1_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  output1_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  had_ff_r_128_inner(input1_ptr, output1_ptr, pre1_scale, post1_scale, r_scale);
+  input1_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  output1_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  had_ff_r_128_inner<pre_scale, post_scale>(input1_ptr, output1_ptr, scale_1,
+                                            r_scale);
 
-  input2_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  output2_ptr += gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
-  had_ff_r_128_inner(input2_ptr, output2_ptr, pre2_scale, post2_scale, r_scale);
+  input2_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  output2_ptr += (size_t)gridDim.y * 128 * blockIdx.x + blockIdx.y * 128;
+  had_ff_r_128_inner<pre_scale, post_scale>(input2_ptr, output2_ptr, scale_2,
+                                            r_scale);
 }
 
 /*
@@ -78,19 +84,35 @@ void had_r_128(const at::Tensor& input, const at::Tensor& output,
 
   if (input.scalar_type() == at::kHalf) {
     TORCH_CHECK_DTYPE(output, kHalf);
-    had_hf_r_128_kernel<<<gridDim, blockDim, 0, stream>>>(
-        (const half*)input.data_ptr(), (half*)output.data_ptr(),
-        (const half*)OPTPTR(pre_scale), (const half*)OPTPTR(post_scale),
-        r_scale);
+    if (pre_scale.has_value())
+      had_hf_r_128_kernel<true, false><<<gridDim, blockDim, 0, stream>>>(
+          (const half*)input.data_ptr(), (half*)output.data_ptr(),
+          (const half*)OPTPTR(pre_scale), r_scale);
+    else if (post_scale.has_value())
+      had_hf_r_128_kernel<false, true><<<gridDim, blockDim, 0, stream>>>(
+          (const half*)input.data_ptr(), (half*)output.data_ptr(),
+          (const half*)OPTPTR(post_scale), r_scale);
+    else
+      had_hf_r_128_kernel<false, false><<<gridDim, blockDim, 0, stream>>>(
+          (const half*)input.data_ptr(), (half*)output.data_ptr(),
+          (const half*)nullptr, r_scale);
     cuda_check(cudaPeekAtLastError());
   }
 
   else if (input.scalar_type() == at::kFloat) {
     TORCH_CHECK_DTYPE(output, kFloat);
-    had_ff_r_128_kernel<<<gridDim, blockDim, 0, stream>>>(
-        (const float*)input.data_ptr(), (float*)output.data_ptr(),
-        (const half*)OPTPTR(pre_scale), (const half*)OPTPTR(post_scale),
-        r_scale);
+    if (pre_scale.has_value())
+      had_ff_r_128_kernel<true, false><<<gridDim, blockDim, 0, stream>>>(
+          (const float*)input.data_ptr(), (float*)output.data_ptr(),
+          (const half*)OPTPTR(pre_scale), r_scale);
+    else if (post_scale.has_value())
+      had_ff_r_128_kernel<false, true><<<gridDim, blockDim, 0, stream>>>(
+          (const float*)input.data_ptr(), (float*)output.data_ptr(),
+          (const half*)OPTPTR(post_scale), r_scale);
+    else
+      had_ff_r_128_kernel<false, false><<<gridDim, blockDim, 0, stream>>>(
+          (const float*)input.data_ptr(), (float*)output.data_ptr(),
+          (const half*)nullptr, r_scale);
     cuda_check(cudaPeekAtLastError());
   }
 
@@ -117,6 +139,10 @@ void had_r_128_dual(const at::Tensor& input1, const at::Tensor& output1,
   int rows = input1.size(0);
   int cols = input1.size(1);
 
+  TORCH_CHECK(pre_scale1.has_value() == pre_scale2.has_value() &&
+                  post_scale1.has_value() == post_scale2.has_value(),
+              "Cannot mix scaling modes in dual had")
+
   int blocks = cols / 128;
   float r_scale = scale * 0.088388347648f;  // scale / sqrt(128)
 
@@ -125,23 +151,42 @@ void had_r_128_dual(const at::Tensor& input1, const at::Tensor& output1,
 
   if (input1.scalar_type() == at::kHalf) {
     TORCH_CHECK_DTYPE(output1, kHalf);
-    had_hf_r_128_dual_kernel<<<gridDim, blockDim, 0, stream>>>(
-        (const half*)input1.data_ptr(), (half*)output1.data_ptr(),
-        (const half*)OPTPTR(pre_scale1), (const half*)OPTPTR(post_scale1),
-        (const half*)input2.data_ptr(), (half*)output2.data_ptr(),
-        (const half*)OPTPTR(pre_scale2), (const half*)OPTPTR(post_scale2),
-        r_scale);
+    if (pre_scale1.has_value())
+      had_hf_r_128_dual_kernel<true, false><<<gridDim, blockDim, 0, stream>>>(
+          (const half*)input1.data_ptr(), (half*)output1.data_ptr(),
+          (const half*)OPTPTR(pre_scale1), (const half*)input2.data_ptr(),
+          (half*)output2.data_ptr(), (const half*)OPTPTR(pre_scale2), r_scale);
+    else if (post_scale1.has_value())
+      had_hf_r_128_dual_kernel<false, true><<<gridDim, blockDim, 0, stream>>>(
+          (const half*)input1.data_ptr(), (half*)output1.data_ptr(),
+          (const half*)OPTPTR(post_scale1), (const half*)input2.data_ptr(),
+          (half*)output2.data_ptr(), (const half*)OPTPTR(post_scale2), r_scale);
+    else
+      had_hf_r_128_dual_kernel<false, false><<<gridDim, blockDim, 0, stream>>>(
+          (const half*)input1.data_ptr(), (half*)output1.data_ptr(),
+          (const half*)nullptr, (const half*)input2.data_ptr(),
+          (half*)output2.data_ptr(), (const half*)nullptr, r_scale);
     cuda_check(cudaPeekAtLastError());
   }
 
   else if (input1.scalar_type() == at::kFloat) {
     TORCH_CHECK_DTYPE(output1, kFloat);
-    had_ff_r_128_dual_kernel<<<gridDim, blockDim, 0, stream>>>(
-        (const float*)input1.data_ptr(), (float*)output1.data_ptr(),
-        (const half*)OPTPTR(pre_scale1), (const half*)OPTPTR(post_scale1),
-        (const float*)input2.data_ptr(), (float*)output2.data_ptr(),
-        (const half*)OPTPTR(pre_scale2), (const half*)OPTPTR(post_scale2),
-        r_scale);
+    if (pre_scale1.has_value())
+      had_ff_r_128_dual_kernel<true, false><<<gridDim, blockDim, 0, stream>>>(
+          (const float*)input1.data_ptr(), (float*)output1.data_ptr(),
+          (const half*)OPTPTR(pre_scale1), (const float*)input2.data_ptr(),
+          (float*)output2.data_ptr(), (const half*)OPTPTR(pre_scale2), r_scale);
+    else if (post_scale1.has_value())
+      had_ff_r_128_dual_kernel<false, true><<<gridDim, blockDim, 0, stream>>>(
+          (const float*)input1.data_ptr(), (float*)output1.data_ptr(),
+          (const half*)OPTPTR(post_scale1), (const float*)input2.data_ptr(),
+          (float*)output2.data_ptr(), (const half*)OPTPTR(post_scale2),
+          r_scale);
+    else
+      had_ff_r_128_dual_kernel<false, false><<<gridDim, blockDim, 0, stream>>>(
+          (const float*)input1.data_ptr(), (float*)output1.data_ptr(),
+          (const half*)nullptr, (const float*)input2.data_ptr(),
+          (float*)output2.data_ptr(), (const half*)nullptr, r_scale);
     cuda_check(cudaPeekAtLastError());
   }
 

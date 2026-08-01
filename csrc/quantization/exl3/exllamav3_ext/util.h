@@ -8,9 +8,8 @@
 #include <chrono>
 #include <optional>
 
-// Keep the imported exllamav3 kernel sources close to upstream while binding
-// their tensor-facing surface to PyTorch's stable ABI. These are source-level
-// aliases only; no ATen or c10 symbols are linked into the extension.
+// Bind the vendored tensor-facing API to PyTorch's stable ABI. These aliases
+// are source-level compatibility only; the extension does not link ATen/c10.
 namespace at {
 using Tensor = torch::stable::Tensor;
 inline constexpr auto kFloat = torch::headeronly::ScalarType::Float;

@@ -17,6 +17,7 @@
 #include "quantization/exl3/exllamav3_ext/quant/exl3_moe.cuh"
 #include "quantization/exl3/exllamav3_ext/quant/hadamard.cuh"
 #include "quantization/exl3/exllamav3_ext/quant/reconstruct.cuh"
+#include "quantization/exl3/exllamav3_ext/quant/util.cuh"
 
 // Thin adapters between the torch schema (int64/double/bool) and the native
 // kernel entry points (int/float). Defined here rather than in a shared header
@@ -49,6 +50,13 @@ static void aphrodite_exl3_reconstruct(torch::stable::Tensor unpacked,
                                        torch::stable::Tensor packed, int64_t k,
                                        bool mcg, bool mul1) {
   reconstruct(unpacked, packed, static_cast<int>(k), mcg, mul1);
+}
+
+static void aphrodite_exl3_reconstruct_slice(torch::stable::Tensor unpacked,
+                                             torch::stable::Tensor packed,
+                                             int64_t k, bool mcg, bool mul1,
+                                             int64_t n_offset) {
+  reconstruct_slice(unpacked, packed, static_cast<int>(k), mcg, mul1, n_offset);
 }
 
 static void aphrodite_exl3_had_r_128(
@@ -87,14 +95,14 @@ static void aphrodite_exl3_moe(const torch::stable::Tensor& hidden_state,
                                bool gate_mcg, bool gate_mul1, bool up_mcg,
                                bool up_mul1, bool down_mcg, bool down_mul1,
                                double act_limit) {
-  exl3_moe(hidden_state, output_state, expert_count, token_sorted,
-           weight_sorted, temp_state_g, temp_state_u, temp_intermediate_g,
-           temp_intermediate_u, static_cast<int>(act_function),
-           static_cast<int>(K_gate), static_cast<int>(K_up),
-           static_cast<int>(K_down), gate_ptrs_trellis, gate_ptrs_suh,
-           gate_ptrs_svh, up_ptrs_trellis, up_ptrs_suh, up_ptrs_svh,
-           down_ptrs_trellis, down_ptrs_suh, down_ptrs_svh, gate_mcg, gate_mul1,
-           up_mcg, up_mul1, down_mcg, down_mul1, static_cast<float>(act_limit));
+  exl3_moe(
+      hidden_state, output_state, expert_count, token_sorted, weight_sorted,
+      temp_state_g, temp_state_u, temp_intermediate_g, temp_intermediate_u,
+      static_cast<int>(act_function), static_cast<int>(K_gate),
+      static_cast<int>(K_up), static_cast<int>(K_down), gate_ptrs_trellis,
+      gate_ptrs_suh, gate_ptrs_svh, up_ptrs_trellis, up_ptrs_suh, up_ptrs_svh,
+      down_ptrs_trellis, down_ptrs_suh, down_ptrs_svh, gate_mcg, gate_mul1,
+      up_mcg, up_mul1, down_mcg, down_mul1, static_cast<float>(act_limit), -1);
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +122,9 @@ STABLE_TORCH_LIBRARY_FRAGMENT(_C, ops) {
       "exl3_reconstruct(Tensor! unpacked, Tensor packed, int k, bool mcg, "
       "bool mul1) -> ()");
   ops.def(
+      "exl3_reconstruct_slice(Tensor! unpacked, Tensor packed, int k, bool "
+      "mcg, bool mul1, int n_offset) -> ()");
+  ops.def(
       "exl3_had_r_128(Tensor input, Tensor! output, Tensor? pre_scale, "
       "Tensor? post_scale, float scale) -> ()");
   ops.def("exl3_hgemm(Tensor a, Tensor b, Tensor! c) -> ()");
@@ -127,13 +138,20 @@ STABLE_TORCH_LIBRARY_FRAGMENT(_C, ops) {
       "up_ptrs_svh, Tensor down_ptrs_trellis, Tensor down_ptrs_suh, Tensor "
       "down_ptrs_svh, bool gate_mcg, bool gate_mul1, bool up_mcg, bool "
       "up_mul1, bool down_mcg, bool down_mul1, float act_limit) -> ()");
+  ops.def(
+      "make_gate_up_indices(Tensor! out, Tensor indices, int offset) -> ()");
+  ops.def("silu_mul(Tensor! out, Tensor gate, Tensor up) -> ()");
 }
 
 STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, ops) {
   ops.impl("exl3_gemm", TORCH_BOX(&aphrodite_exl3_gemm));
   ops.impl("exl3_mgemm", TORCH_BOX(&aphrodite_exl3_mgemm));
   ops.impl("exl3_reconstruct", TORCH_BOX(&aphrodite_exl3_reconstruct));
+  ops.impl("exl3_reconstruct_slice",
+           TORCH_BOX(&aphrodite_exl3_reconstruct_slice));
   ops.impl("exl3_had_r_128", TORCH_BOX(&aphrodite_exl3_had_r_128));
   ops.impl("exl3_hgemm", TORCH_BOX(&aphrodite_exl3_hgemm));
   ops.impl("exl3_moe", TORCH_BOX(&aphrodite_exl3_moe));
+  ops.impl("make_gate_up_indices", TORCH_BOX(&exl3_make_gate_up_indices));
+  ops.impl("silu_mul", TORCH_BOX(&exl3_silu_mul));
 }

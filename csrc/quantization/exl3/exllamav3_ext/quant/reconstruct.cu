@@ -5,11 +5,10 @@
 #include "../ptx.cuh"
 #include "exl3_dq.cuh"
 
-// TODO: Benchmark, profile, unit test
-
 template <int K, int cb>
 __global__ __launch_bounds__(256) void reconstruct_kernel(
-    half* __restrict__ g_unpacked, const uint16_t* __restrict__ g_packed) {
+    half* __restrict__ g_unpacked, const uint16_t* __restrict__ g_packed,
+    int packed_blocks_n, int packed_n_offset) {
   constexpr int packed_size = 256 * K / 16;  // in uint16s
 
   int t = threadIdx.x;
@@ -18,13 +17,12 @@ __global__ __launch_bounds__(256) void reconstruct_kernel(
   int k = blockIdx.y;
   int n = blockIdx.x * 8;
   int tiles_n = gridDim.x;
-  int blocks_n = tiles_n * 8;
+  int out_blocks_n = tiles_n * 8;
 
   // Load packed 16*128 tile
   __shared__ uint32_t s_packed[8][packed_size / 2];
-  g_packed += (k * blocks_n + n) * packed_size;
-  for (int s = t; s < packed_size * 8 / 8; s += 256)
-    ((int4*)s_packed)[t] = ((int4*)g_packed)[t];
+  g_packed += (k * packed_blocks_n + packed_n_offset + n) * packed_size;
+  if (t < packed_size) ((int4*)s_packed)[t] = ((int4*)g_packed)[t];
   __syncthreads();
 
   // Dequant
@@ -39,7 +37,6 @@ __global__ __launch_bounds__(256) void reconstruct_kernel(
   half2 n1 = __shfl_down_sync(0xFFFFFFFF, frag[0][1], 4, 32);
   half2 n2 = __shfl_down_sync(0xFFFFFFFF, frag[1][0], 4, 32);
   half2 n3 = __shfl_down_sync(0xFFFFFFFF, frag[1][1], 4, 32);
-  __syncwarp();
 
   if (!(lane_id & 4)) {
     half2 m0 = __halves2half2(__low2half(frag[0][0]), __low2half(n0));
@@ -72,7 +69,7 @@ __global__ __launch_bounds__(256) void reconstruct_kernel(
   int c = t % 16;
   int4* tile_int4 = (reinterpret_cast<int4*>(tile));
   int4* out_int4 =
-      ((int4*)g_unpacked) + (k * 16 + r) * 2 * blocks_n + n * 2 + c;
+      ((int4*)g_unpacked) + (k * 16 + r) * 2 * out_blocks_n + n * 2 + c;
   *out_int4 = tile_int4[t];
 }
 
@@ -87,19 +84,30 @@ constexpr auto reconstruct_kernel_instances =
 /*
 Reconstruct encoded+packed tensor
 */
-void reconstruct(at::Tensor unpacked, at::Tensor packed, int K, bool mcg,
-                 bool mul1) {
+void reconstruct_slice(at::Tensor unpacked, at::Tensor packed, int K, bool mcg,
+                       bool mul1, int64_t n_offset) {
   const torch::stable::accelerator::DeviceGuard device_guard(
       unpacked.get_device_index());
   cudaStream_t stream = get_current_cuda_stream(unpacked.get_device_index());
 
   TORCH_CHECK_SHAPES(unpacked, 0, packed, 0, 16);
-  TORCH_CHECK_SHAPES(unpacked, 1, packed, 1, 16);
   TORCH_CHECK_SIZE(packed, 2, 256 * K / 16);
   TORCH_CHECK_DTYPE(unpacked, kHalf);
 
   int rows = packed.size(0);
-  int cols = packed.size(1);
+  int packed_cols = packed.size(1);
+
+  if (unpacked.numel() == 0) return;
+
+  TORCH_CHECK(unpacked.size(1) % 128 == 0,
+              "unpacked N dimension must be divisible by 128");
+  TORCH_CHECK(n_offset % 128 == 0, "n_offset must be divisible by 128");
+  TORCH_CHECK(n_offset >= 0, "n_offset must be non-negative");
+  TORCH_CHECK(n_offset + unpacked.size(1) <= packed.size(1) * 16,
+              "reconstruct slice exceeds packed tensor bounds");
+
+  int cols = unpacked.size(1) / 16;
+  int packed_n_offset = n_offset / 16;
 
   dim3 blockDim(256);
   dim3 gridDim(cols / 8, rows);
@@ -111,6 +119,13 @@ void reconstruct(at::Tensor unpacked, at::Tensor packed, int K, bool mcg,
     cbi += 16;
 
   reconstruct_kernel_instances[cbi]<<<gridDim, blockDim, 0, stream>>>(
-      (half*)unpacked.data_ptr(), (const uint16_t*)packed.data_ptr());
+      (half*)unpacked.data_ptr(), (const uint16_t*)packed.data_ptr(),
+      packed_cols, packed_n_offset);
   cuda_check(cudaPeekAtLastError());
+}
+
+void reconstruct(at::Tensor unpacked, at::Tensor packed, int K, bool mcg,
+                 bool mul1) {
+  TORCH_CHECK_SHAPES(unpacked, 1, packed, 1, 16);
+  reconstruct_slice(unpacked, packed, K, mcg, mul1, 0);
 }

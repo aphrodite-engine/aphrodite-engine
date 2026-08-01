@@ -187,6 +187,17 @@ def exl3_reconstruct(
     torch.ops._C.exl3_reconstruct(unpacked, packed, k, mcg, mul1)
 
 
+def exl3_reconstruct_slice(
+    unpacked: torch.Tensor,
+    packed: torch.Tensor,
+    k: int,
+    mcg: bool,
+    mul1: bool,
+    n_offset: int,
+) -> None:
+    torch.ops._C.exl3_reconstruct_slice(unpacked, packed, k, mcg, mul1, n_offset)
+
+
 def exl3_had_r_128(
     input: torch.Tensor,
     output: torch.Tensor,
@@ -309,6 +320,17 @@ if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
         k: int,
         mcg: bool,
         mul1: bool,
+    ) -> None:
+        return None
+
+    @register_fake("_C::exl3_reconstruct_slice")
+    def _exl3_reconstruct_slice_fake(
+        unpacked: torch.Tensor,
+        packed: torch.Tensor,
+        k: int,
+        mcg: bool,
+        mul1: bool,
+        n_offset: int,
     ) -> None:
         return None
 

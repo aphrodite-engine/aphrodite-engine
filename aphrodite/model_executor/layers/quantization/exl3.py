@@ -42,6 +42,8 @@ logger = init_logger(__name__)
 _EXL3_MOE_MAX_TOKENS_PER_EXPERT = 128
 _EXL3_MOE_MAX_EXPERTS_PER_TOKEN = 32
 _EXL3_MOE_ACT_SILU = 0
+_EXL3_AUTO_RECONSTRUCT_THRESHOLD = 144
+_EXL3_MAX_RECONSTRUCT_SLICE_N = 32768
 
 
 def _get_exl3_moe_down_tuning(
@@ -86,7 +88,7 @@ def _exl3_linear_one(
     )
     x_had = torch.empty_like(x)
 
-    if x.shape[0] <= 32:
+    if x.shape[0] <= _EXL3_AUTO_RECONSTRUCT_THRESHOLD:
         ops.exl3_gemm(
             x,
             trellis,
@@ -101,19 +103,6 @@ def _exl3_linear_one(
         )
         return output
 
-    weight = torch.empty(
-        (trellis.shape[0] * 16, out_features),
-        device=trellis.device,
-        dtype=torch.float16,
-    )
-    ops.exl3_reconstruct(
-        weight,
-        trellis,
-        # EXL3 reconstruct expects K where packed.shape[2] == 16 * K.
-        trellis.shape[2] // 16,
-        mcg,
-        mul1,
-    )
     ops.exl3_had_r_128(
         x,
         x_had,
@@ -121,11 +110,27 @@ def _exl3_linear_one(
         None,
         1.0,
     )
-    ops.exl3_hgemm(
-        x_had,
-        weight,
-        output,
-    )
+    in_features = trellis.shape[0] * 16
+    k = trellis.shape[2] // 16
+    if out_features <= _EXL3_MAX_RECONSTRUCT_SLICE_N:
+        weight = torch.empty(
+            (in_features, out_features),
+            device=trellis.device,
+            dtype=torch.float16,
+        )
+        ops.exl3_reconstruct(weight, trellis, k, mcg, mul1)
+        ops.exl3_hgemm(x_had, weight, output)
+    else:
+        weight_buffer = torch.empty(
+            (in_features * _EXL3_MAX_RECONSTRUCT_SLICE_N,),
+            device=trellis.device,
+            dtype=torch.float16,
+        )
+        for n_start in range(0, out_features, _EXL3_MAX_RECONSTRUCT_SLICE_N):
+            n_end = min(n_start + _EXL3_MAX_RECONSTRUCT_SLICE_N, out_features)
+            weight = weight_buffer[: in_features * (n_end - n_start)].view(in_features, n_end - n_start)
+            ops.exl3_reconstruct_slice(weight, trellis, k, mcg, mul1, n_start)
+            ops.exl3_hgemm(x_had, weight, output[:, n_start:n_end])
     ops.exl3_had_r_128(
         output,
         output,
@@ -173,7 +178,7 @@ def _exl3_gate_up(
     mcg: bool,
     mul1: bool,
 ) -> torch.Tensor:
-    if x.shape[0] > 32:
+    if x.shape[0] > _EXL3_AUTO_RECONSTRUCT_THRESHOLD:
         return torch.cat(
             [
                 _exl3_linear_one(x, gate_trellis, gate_suh, gate_svh, mcg, mul1),
@@ -267,7 +272,7 @@ def _exl3_qkv(
     kv_mul1: bool,
 ) -> torch.Tensor:
     q = _exl3_linear_one(x, q_trellis, q_suh, q_svh, q_mcg, q_mul1)
-    if x.shape[0] > 32:
+    if x.shape[0] > _EXL3_AUTO_RECONSTRUCT_THRESHOLD:
         return torch.cat(
             [
                 q,

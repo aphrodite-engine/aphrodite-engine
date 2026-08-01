@@ -87,3 +87,52 @@ void count_inf_nan(at::Tensor x, at::Tensor y) {
   else
     TORCH_CHECK(false, "Unsupported dtype");
 }
+
+__global__ void make_gate_up_indices_kernel(int64_t* out,
+                                            const int64_t* indices,
+                                            int64_t count, int64_t offset) {
+  const int64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  out[index] = indices[index];
+  out[index + count] = indices[index] + offset;
+}
+
+void exl3_make_gate_up_indices(at::Tensor out, at::Tensor indices,
+                               int64_t offset) {
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      indices.get_device_index());
+  cudaStream_t stream = get_current_cuda_stream(indices.get_device_index());
+  TORCH_CHECK_DTYPE(out, kLong);
+  TORCH_CHECK_DTYPE(indices, kLong);
+  TORCH_CHECK(out.numel() == indices.numel() * 2,
+              "out must have twice as many elements as indices");
+  const int64_t count = indices.numel();
+  make_gate_up_indices_kernel<<<CEIL_DIVIDE(count, 256), 256, 0, stream>>>(
+      static_cast<int64_t*>(out.data_ptr()),
+      static_cast<const int64_t*>(indices.data_ptr()), count, offset);
+}
+
+__global__ void silu_mul_kernel(half* out, const half* gate, const half* up,
+                                int64_t count) {
+  const int64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index >= count) return;
+  const float gate_f = __half2float(gate[index]);
+  out[index] = __float2half_rn((gate_f / (1.0f + __expf(-gate_f))) *
+                               __half2float(up[index]));
+}
+
+void exl3_silu_mul(at::Tensor out, at::Tensor gate, at::Tensor up) {
+  const torch::stable::accelerator::DeviceGuard device_guard(
+      gate.get_device_index());
+  cudaStream_t stream = get_current_cuda_stream(gate.get_device_index());
+  TORCH_CHECK_DTYPE(out, kHalf);
+  TORCH_CHECK_DTYPE(gate, kHalf);
+  TORCH_CHECK_DTYPE(up, kHalf);
+  TORCH_CHECK_NUMEL(out, gate);
+  TORCH_CHECK_NUMEL(out, up);
+  const int64_t count = out.numel();
+  silu_mul_kernel<<<CEIL_DIVIDE(count, 256), 256, 0, stream>>>(
+      static_cast<half*>(out.data_ptr()),
+      static_cast<const half*>(gate.data_ptr()),
+      static_cast<const half*>(up.data_ptr()), count);
+}

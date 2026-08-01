@@ -3,6 +3,10 @@
 
 #define ACT_SILU 0
 #define ACT_GELU 1
+// Non-gated relu2 (NemotronH): the g input is unused (its GEMM is skipped by
+// the caller); the gate lane is set to relu(u) so the gate multiply below
+// yields relu(u) * u = relu^2(u) exactly
+#define ACT_RELU2_NOGATE 2
 
 // Hadamard transform 128-element vector across one warp, with optional pre and
 // post scales
@@ -82,10 +86,10 @@ __device__ inline half2 shuffle_had_h2x32(half2 v, int lane_id) {
 
 // Half vector, half scales
 
+template <bool pre_scale, bool post_scale>
 inline __device__ void had_hf_r_128_inner(const half* __restrict__ input_ptr,
                                           half* __restrict__ output_ptr,
-                                          const half* __restrict__ pre_scale,
-                                          const half* __restrict__ post_scale,
+                                          const half* __restrict__ scale,
                                           const float r_scale) {
   int t = threadIdx.x & 31;
 
@@ -93,9 +97,9 @@ inline __device__ void had_hf_r_128_inner(const half* __restrict__ input_ptr,
   half4 v = ((half4*)input_ptr)[t];
 
   // Pre scale
-  if (pre_scale) {
+  if constexpr (pre_scale) {
     int i = blockIdx.y * 32 + t;
-    half4 scales = ((half4*)pre_scale)[i];
+    half4 scales = ((half4*)scale)[i];
     v.x = __hmul2(v.x, scales.x);
     v.y = __hmul2(v.y, scales.y);
   }
@@ -120,9 +124,9 @@ inline __device__ void had_hf_r_128_inner(const half* __restrict__ input_ptr,
   v.y = __floats2half2_rn(h2 * r_scale, h3 * r_scale);
 
   // Post scale
-  if (post_scale) {
+  if constexpr (post_scale) {
     int i = blockIdx.y * 32 + t;
-    half4 scales = ((half4*)post_scale)[i];
+    half4 scales = ((half4*)scale)[i];
     v.x = __hmul2(v.x, scales.x);
     v.y = __hmul2(v.y, scales.y);
   }
@@ -133,10 +137,10 @@ inline __device__ void had_hf_r_128_inner(const half* __restrict__ input_ptr,
 
 // Float vector, half scales
 
+template <bool pre_scale, bool post_scale>
 inline __device__ void had_ff_r_128_inner(const float* __restrict__ input_ptr,
                                           float* __restrict__ output_ptr,
-                                          const half* __restrict__ pre_scale,
-                                          const half* __restrict__ post_scale,
+                                          const half* __restrict__ scale,
                                           const float r_scale) {
   int t = threadIdx.x & 31;
 
@@ -144,9 +148,9 @@ inline __device__ void had_ff_r_128_inner(const float* __restrict__ input_ptr,
   float4 v = ((float4*)input_ptr)[t];
 
   // Pre scale
-  if (pre_scale) {
+  if constexpr (pre_scale) {
     int i = blockIdx.y * 32 + t;
-    half4 scales = ((half4*)pre_scale)[i];
+    half4 scales = ((half4*)scale)[i];
     v.x *= __low2float(scales.x);
     v.y *= __high2float(scales.x);
     v.z *= __low2float(scales.y);
@@ -176,9 +180,9 @@ inline __device__ void had_ff_r_128_inner(const float* __restrict__ input_ptr,
   v.w *= r_scale;
 
   // Post scale
-  if (post_scale) {
+  if constexpr (post_scale) {
     int i = blockIdx.y * 32 + t;
-    half4 scales = ((half4*)post_scale)[i];
+    half4 scales = ((half4*)scale)[i];
     v.x *= __low2float(scales.x);
     v.y *= __high2float(scales.x);
     v.z *= __low2float(scales.y);
@@ -187,6 +191,66 @@ inline __device__ void had_ff_r_128_inner(const float* __restrict__ input_ptr,
 
   // Store
   ((float4*)output_ptr)[t] = v;
+}
+
+// Float vector, half scales, half output
+
+template <bool pre_scale, bool post_scale>
+inline __device__ void had_fh_r_128_inner(const float* __restrict__ input_ptr,
+                                          half* __restrict__ output_ptr,
+                                          const half* __restrict__ scale,
+                                          const float r_scale) {
+  int t = threadIdx.x & 31;
+
+  // Load
+  float4 v = ((float4*)input_ptr)[t];
+
+  // Pre scale
+  if constexpr (pre_scale) {
+    int i = blockIdx.y * 32 + t;
+    half4 scales = ((half4*)scale)[i];
+    v.x *= __low2float(scales.x);
+    v.y *= __high2float(scales.x);
+    v.z *= __low2float(scales.y);
+    v.w *= __high2float(scales.y);
+  }
+
+  // 4 element had
+  float v0 = v.x;
+  float v1 = v.y;
+  float v2 = v.z;
+  float v3 = v.w;
+  float s0 = v0 + v1;
+  float d0 = v0 - v1;
+  float s1 = v2 + v3;
+  float d1 = v2 - v3;
+  v.x = s0 + s1;
+  v.y = d0 + d1;
+  v.z = s0 - s1;
+  v.w = d0 - d1;
+
+  // 32 element had, warp shuffle
+  shuffle_had_f2x32(v.x, v.y, t);
+  shuffle_had_f2x32(v.z, v.w, t);
+  v.x *= r_scale;
+  v.y *= r_scale;
+  v.z *= r_scale;
+  v.w *= r_scale;
+
+  half4 o;
+  o.x = __floats2half2_rn(v.x, v.y);
+  o.y = __floats2half2_rn(v.z, v.w);
+
+  // Post scale
+  if constexpr (post_scale) {
+    int i = blockIdx.y * 32 + t;
+    half4 scales = ((half4*)scale)[i];
+    o.x = __hmul2(o.x, scales.x);
+    o.y = __hmul2(o.y, scales.y);
+  }
+
+  // Store
+  ((half4*)output_ptr)[t] = o;
 }
 
 // Fused op: o <- in_had(silu(out_had(g)) * out_had(u))
@@ -241,22 +305,27 @@ inline __device__ void had_hf_r_128_guad_inner(
     return __float22half2_rn(xf);
   };
 
-  // Load
-  half4 vg = ((half4*)input_ptr_g)[t];
+  // Load. In non-gated mode the g buffer holds no data (its GEMM is skipped);
+  // the gate lane is synthesized from u in the activation switch below
+  half4 vg = {};
   half4 vu = ((half4*)input_ptr_u)[t];
 
   // Hadamard
-  vg = had(vg);
   vu = had(vu);
 
   // Post scale  TODO: should maybe do this in float32
   int i = blockIdx.y * 32 + t;
-  half4 scales_g = ((half4*)post_scale_g)[i];
   half4 scales_u = ((half4*)post_scale_u)[i];
-  vg.x = __hmul2(vg.x, scales_g.x);
-  vg.y = __hmul2(vg.y, scales_g.y);
   vu.x = __hmul2(vu.x, scales_u.x);
   vu.y = __hmul2(vu.y, scales_u.y);
+
+  if (act_function != ACT_RELU2_NOGATE) {
+    vg = ((half4*)input_ptr_g)[t];
+    vg = had(vg);
+    half4 scales_g = ((half4*)post_scale_g)[i];
+    vg.x = __hmul2(vg.x, scales_g.x);
+    vg.y = __hmul2(vg.y, scales_g.y);
+  }
 
   // Activation
   switch (act_function) {
@@ -268,6 +337,11 @@ inline __device__ void had_hf_r_128_guad_inner(
     case ACT_GELU:
       vg.x = _gelu(vg.x);
       vg.y = _gelu(vg.y);
+      break;
+
+    case ACT_RELU2_NOGATE:
+      vg.x = __hmax2(vu.x, __float2half2_rn(0.0f));
+      vg.y = __hmax2(vu.y, __float2half2_rn(0.0f));
       break;
 
     default:
