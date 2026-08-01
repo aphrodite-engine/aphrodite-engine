@@ -8,21 +8,36 @@
 
 #include "exl3_dq.cuh"
 
-template <EXL3_GEMM_T_ARGS>
+// On GA10x, HMMA with fp32 accumulation runs at half rate and dominates the m=1
+// (decode-bound) case. Accumulate MMA results in fp16 instead and fold into the
+// fp32 accumulators once per k-slice: ~14% faster at bsz 1 on RTX 3090 together
+// with the codebook.cuh IMUL change (see benchmarks/exl3_m1_bench). Max
+// observed error vs fp32 accumulation is ~1% of output RMS at k=4096, well
+// below quantization noise. Only enabled for sm_86 for now; unvalidated on
+// other archs where fp32-acc HMMA is also half rate.
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 860)
+  #define EXL3_GEMM_H_ACC 1
+#else
+  #define EXL3_GEMM_H_ACC 0
+#endif
+
+template <EXL3_GEMM_T_ARGS, bool shmem_out_had>
 inline __device__ void exl3_gemm_kernel_inner(
     const half* __restrict__ A, const uint16_t* __restrict__ B,
     void* __restrict__ C, const int size_m, const int size_k, const int size_n,
-    int* __restrict__ locks) {
+    int* __restrict__ locks, const half* post_scale) {
   const int TILEBLOCKS_M = TILESIZE_M / 16;
   const int TILEBLOCKS_K = TILESIZE_K / 16;
   const int TILEBLOCKS_N = TILESIZE_N / 16;
-  const int FRAGS_M = TILEBLOCKS_M;
+  // const int FRAGS_M = TILEBLOCKS_M;
   const int FRAGS_N_PER_WARP = 2 * TILEBLOCKS_N / (EXL3_GEMM_BASE_THREADS / 32);
 
   const int sh_a_stage_size = TILESIZE_M * TILESIZE_K;  // in halfs
   const int sh_b_stage_size =
       TILEBLOCKS_K * TILEBLOCKS_N * 256 / 16 * bits;  // in uint16s
-  const int sh_c_size = 4 * EXL3_GEMM_BASE_THREADS;   // in floats
+  const int sh_c_size = MAX                           // in floats
+      (4 * EXL3_GEMM_BASE_THREADS * FRAGS_N_PER_WARP,
+       shmem_out_had ? TILESIZE_N * TILESIZE_M : 0);
 
   // XOR-swizzle constants for bank-conflict-free A fragment loads
   // col_swizzled = col ^ ((row >> SHIFT) & MASK)
@@ -32,7 +47,8 @@ inline __device__ void exl3_gemm_kernel_inner(
 
   // Sanity checks
   static_assert(EXL3_GEMM_BASE_THREADS == 256);
-  static_assert(TILESIZE_M % 16 == 0, "Invalid kernel params");
+  static_assert(TILESIZE_M == 16,
+                "Invalid kernel params");  // strictly assume size_m <= 16
   static_assert(TILESIZE_K % 16 == 0, "Invalid kernel params");
   static_assert(TILESIZE_N % 128 == 0, "Invalid kernel params");
   static_assert(
@@ -72,8 +88,9 @@ inline __device__ void exl3_gemm_kernel_inner(
   auto index_n = [&](int slice_i) { return (slice_i / tiles_k); };
 
   // Batch dimension
-  int slice_m = index_m(slice_beg);
-  int max_m = MIN(size_m - slice_m * TILESIZE_M, TILESIZE_M);
+  // int slice_m = index_m(slice_beg);
+  // int max_m = MIN(size_m - slice_m * TILESIZE_M, TILESIZE_M);
+  const int slice_m = 0;
 
   // Pipe 0, global A, B tile and shared A, B tile
   int slice0_k = index_k(slice_beg);
@@ -96,7 +113,7 @@ inline __device__ void exl3_gemm_kernel_inner(
     int m = (i * EXL3_GEMM_BASE_THREADS + t) / (gl_a_stride_k / 8);
     load_a_gl[i] = m * size_k / 8 + k;
     load_a_sh[i] = m * A_COLS + (k ^ ((m >> A_SWIZZLE_SHIFT) & A_SWIZZLE_MASK));
-    pred_a_gl[i] = m < max_m;
+    pred_a_gl[i] = m < size_m;
   }
 
   int gl_b_stride_k = blocks_n * TILEBLOCKS_K * 256 / 16 * bits;
@@ -172,9 +189,12 @@ inline __device__ void exl3_gemm_kernel_inner(
   float* gl_c_ptr_32 =
       ((float*)C) + slice_m * gl_c_stride_m + slice2_n * gl_c_stride_n;
 
-  register FragA frag_a[FRAG_STAGES][FRAGS_M];
+  register FragA frag_a[FRAG_STAGES];
   register FragB frag_b[FRAG_STAGES][FRAGS_N_PER_WARP];
-  register FragC frag_c[FRAGS_M][FRAGS_N_PER_WARP];
+  register FragC frag_c[FRAGS_N_PER_WARP];
+#if EXL3_GEMM_H_ACC
+  register FragC_h frag_c_h[FRAGS_N_PER_WARP];
+#endif
 
   auto advance2 = [&]() {
     slice2_k++;
@@ -244,7 +264,7 @@ inline __device__ void exl3_gemm_kernel_inner(
       for (int m = 0; m < TILEBLOCKS_M; ++m) {
         int R = r + m * 16;
         int c_swizzled = base_c ^ ((R >> A_SWIZZLE_SHIFT) & A_SWIZZLE_MASK);
-        ldsm4(frag_a[buf][m], (int4*)sh1_a_ptr + R * A_COLS + c_swizzled);
+        ldsm4(frag_a[buf], (int4*)sh1_a_ptr + R * A_COLS + c_swizzled);
       }
     }
 
@@ -267,64 +287,213 @@ inline __device__ void exl3_gemm_kernel_inner(
   // Clear C fragments
   auto clear_frag_c = [&]() {
 #pragma unroll
-    for (int m = 0; m < FRAGS_M; ++m)
-#pragma unroll
-      for (int n = 0; n < FRAGS_N_PER_WARP; ++n) frag_c[m][n] = {};
+    for (int n = 0; n < FRAGS_N_PER_WARP; ++n) frag_c[n] = {};
+#if EXL3_GEMM_H_ACC
+  #pragma unroll
+    for (int n = 0; n < FRAGS_N_PER_WARP; ++n) frag_c_h[n] = {};
+#endif
   };
 
   // Threadblock reduction
   auto threadblock_reduce = [&]() {
-    auto store = [&](int i, int m, int n) {
-      // TODO: Shuffle to avoid bank conflicts here? Doesn't seem to be a
-      // bottleneck
+    auto store = [&](int i) {
       if (sub_k == i) {
         float* sh_red = sh_c + (FRAGS_N_PER_WARP * 4) * t;
-        if (size_m <= 8) {
 #pragma unroll
-          for (int i = 0; i < 2; ++i) *sh_red++ = frag_c[m][n][i];
-        } else {
+        for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
 #pragma unroll
-          for (int i = 0; i < 4; ++i) *sh_red++ = frag_c[m][n][i];
+          for (int j = 0; j < 4; ++j) *sh_red++ = frag_c[n][j];
         }
       }
       __syncthreads();
     };
 
-    auto add = [&](int i, int m, int n) {
+    auto add = [&](int i) {
       if (sub_k == i) {
         float* sh_red = sh_c + (FRAGS_N_PER_WARP * 4) * t;
-        if (size_m <= 8) {
 #pragma unroll
-          for (int i = 0; i < 2; ++i) frag_c[m][n][i] += *sh_red++;
-        } else {
+        for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
 #pragma unroll
-          for (int i = 0; i < 4; ++i) frag_c[m][n][i] += *sh_red++;
+          for (int j = 0; j < 4; ++j) frag_c[n][j] += *sh_red++;
+        }
+      }
+    };
+
+    auto store_small = [&](int i) {
+      if (sub_k == i && lane_id / 4 < size_m) {
+        float* sh_red = sh_c + (FRAGS_N_PER_WARP * 4) * t;
+#pragma unroll
+        for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+          *sh_red++ = frag_c[n][0];
+          *sh_red++ = frag_c[n][1];
         }
       }
       __syncthreads();
     };
 
+    auto add_small = [&](int i) {
+      if (sub_k == i && lane_id / 4 < size_m) {
+        float* sh_red = sh_c + (FRAGS_N_PER_WARP * 4) * t;
 #pragma unroll
-    for (int m = 0; m < FRAGS_M; ++m) {
+        for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+          frag_c[n][0] += *sh_red++;
+          frag_c[n][1] += *sh_red++;
+        }
+      }
+    };
+
+    if (size_m <= 8) {
+      if constexpr (TILEBLOCKS_K == 2) {
+        store_small(1);
+        add_small(0);
+      }
+      if constexpr (TILEBLOCKS_K == 3) {
+        store_small(1);
+        add_small(0);
+        store_small(2);
+        add_small(0);
+      }
+      if constexpr (TILEBLOCKS_K == 4) {
+        store_small(3);
+        add_small(2);
+        store_small(1);
+        add_small(0);
+        store_small(2);
+        add_small(0);
+      }
+    } else {
+      if constexpr (TILEBLOCKS_K == 2) {
+        store(1);
+        add(0);
+      }
+      if constexpr (TILEBLOCKS_K == 3) {
+        store(1);
+        add(0);
+        store(2);
+        add(0);
+      }
+      if constexpr (TILEBLOCKS_K == 4) {
+        store(3);
+        add(2);
+        store(1);
+        add(0);
+        store(2);
+        add(0);
+      }
+    }
+  };
+
+  // Pre-hadamard: Write final output tile to shmem
+  auto write_sum_tile_sh = [&]() {
+    const int n0 = warp_id * FRAGS_N_PER_WARP;
+    const int r0 = lane_id / 4;
+    const int r1 = r0 + 8;
+    if (r0 < size_m) {
+      const int c = (lane_id % 4) * 2;
 #pragma unroll
       for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
-        if constexpr (TILEBLOCKS_K == 2) {
-          store(1, m, n);
-          add(0, m, n);
+        float* c_ptr = ((float*)sh_c) + r0 * TILESIZE_N + (n0 + n) * 8 + c;
+        *c_ptr++ = frag_c[n][0];
+        *c_ptr++ = frag_c[n][1];
+      }
+    }
+    if (r1 < size_m) {
+      const int c = (lane_id % 4) * 2;
+#pragma unroll
+      for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+        float* c_ptr = ((float*)sh_c) + r1 * TILESIZE_N + (n0 + n) * 8 + c;
+        *c_ptr++ = frag_c[n][2];
+        *c_ptr++ = frag_c[n][3];
+      }
+    }
+  };
+
+  // Copy output tile to global with hadamard transform and out scale
+  auto output_had_sh_gl = [&]() {
+    int sh_warp = warp_id;
+    constexpr int active_warps = EXL3_GEMM_BASE_THREADS / 32;
+    for (;; sh_warp += active_warps) {
+      int col = sh_warp % (TILESIZE_N / 128);
+      int row = sh_warp / (TILESIZE_N / 128);
+      if (row >= size_m) break;
+
+      const float* had_in = sh_c + row * TILESIZE_N + col * 128;
+      const half* post_scale_c =
+          post_scale + slice2_n * gl_c_stride_n + col * 128;
+
+      if constexpr (c_fp32) {
+        float* had_out = gl_c_ptr_32 + row * size_n + col * 128;
+        had_ff_r_128_inner<false, true>(had_in, had_out, post_scale_c,
+                                        0.088388347648f);
+      } else {
+        half* had_out = gl_c_ptr_16 + row * size_n + col * 128;
+        had_fh_r_128_inner<false, true>(had_in, had_out, post_scale_c,
+                                        0.088388347648f);
+      }
+    }
+  };
+
+  auto read_sum_gl = [&]() {
+    int n0 = warp_id * FRAGS_N_PER_WARP;
+#pragma unroll
+    for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+      int r0 = lane_id / 4;
+      int r1 = r0 + 8;
+      int c = (lane_id % 4) * 2;
+      if (r0 < size_m) {
+        if constexpr (c_fp32) {
+          float* c_ptr = gl_c_ptr_32 + r0 * size_n + (n0 + n) * 8 + c;
+          frag_c[n][0] += *c_ptr++;
+          frag_c[n][1] += *c_ptr++;
+        } else {
+          half2* c_ptr = (half2*)(gl_c_ptr_16 + r0 * size_n + (n0 + n) * 8 + c);
+          float2 interm = __half22float2(*c_ptr);
+          frag_c[n][0] += interm.x;
+          frag_c[n][1] += interm.y;
         }
-        if constexpr (TILEBLOCKS_K == 3) {
-          store(1, m, n);
-          add(0, m, n);
-          store(2, m, n);
-          add(0, m, n);
+      }
+      if (r1 < size_m) {
+        if constexpr (c_fp32) {
+          float* c_ptr = gl_c_ptr_32 + r1 * size_n + (n0 + n) * 8 + c;
+          frag_c[n][2] += *c_ptr++;
+          frag_c[n][3] += *c_ptr++;
+        } else {
+          half2* c_ptr = (half2*)(gl_c_ptr_16 + r1 * size_n + (n0 + n) * 8 + c);
+          float2 interm = __half22float2(*c_ptr);
+          frag_c[n][2] += interm.x;
+          frag_c[n][3] += interm.y;
         }
-        if constexpr (TILEBLOCKS_K == 4) {
-          store(3, m, n);
-          add(2, m, n);
-          store(1, m, n);
-          add(0, m, n);
-          store(2, m, n);
-          add(0, m, n);
+      }
+    }
+  };
+
+  auto write_sum_gl = [&]() {
+    int n0 = warp_id * FRAGS_N_PER_WARP;
+#pragma unroll
+    for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+      int r0 = lane_id / 4;
+      int r1 = r0 + 8;
+      int c = (lane_id % 4) * 2;
+      if (r0 < size_m) {
+        if constexpr (c_fp32) {
+          float* c_ptr = gl_c_ptr_32 + r0 * size_n + (n0 + n) * 8 + c;
+          *c_ptr++ = frag_c[n][0];
+          *c_ptr++ = frag_c[n][1];
+        } else {
+          half2* c_ptr = (half2*)(gl_c_ptr_16 + r0 * size_n + (n0 + n) * 8 + c);
+          half2 sum = __floats2half2_rn(frag_c[n][0], frag_c[n][1]);
+          *c_ptr = sum;
+        }
+      }
+      if (r1 < size_m) {
+        if constexpr (c_fp32) {
+          float* c_ptr = gl_c_ptr_32 + r1 * size_n + (n0 + n) * 8 + c;
+          *c_ptr++ = frag_c[n][2];
+          *c_ptr++ = frag_c[n][3];
+        } else {
+          half2* c_ptr = (half2*)(gl_c_ptr_16 + r1 * size_n + (n0 + n) * 8 + c);
+          half2 sum = __floats2half2_rn(frag_c[n][2], frag_c[n][3]);
+          *c_ptr = sum;
         }
       }
     }
@@ -332,6 +501,19 @@ inline __device__ void exl3_gemm_kernel_inner(
 
   // Output reduction
   auto reduce = [&]() {
+#if EXL3_GEMM_H_ACC
+  // Fold the fp16 MMA accumulators into the fp32 accumulators once per k-slice
+  #pragma unroll
+    for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+      float2 f0 = __half22float2(frag_c_h[n][0]);
+      float2 f1 = __half22float2(frag_c_h[n][1]);
+      frag_c[n][0] += f0.x;
+      frag_c[n][1] += f0.y;
+      frag_c[n][2] += f1.x;
+      frag_c[n][3] += f1.y;
+    }
+#endif
+
     // First reduce all partial sums along k for the current slice
     threadblock_reduce();
 
@@ -347,121 +529,29 @@ inline __device__ void exl3_gemm_kernel_inner(
     bool first = lock_i == 0;
     bool last = lock_i + lock_d == tiles_k;
 
-    int n0 = warp_id * FRAGS_N_PER_WARP;
-
     // Second and subsequent threadblocks in column read back the intermediate
     // sum from global memory
     if (!sub_k && !first) {
-#pragma unroll
-      for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
-#pragma unroll
-        for (int m = 0; m < FRAGS_M; ++m) {
-          int r0 = lane_id / 4 + 16 * m;
-          int r1 = r0 + 8;
-          int c = (lane_id % 4) * 2;
-          if (r0 < max_m) {
-            if constexpr (c_fp32) {
-              float* c_ptr = gl_c_ptr_32 + r0 * size_n + (n0 + n) * 8 + c;
-              frag_c[m][n][0] += *c_ptr++;
-              frag_c[m][n][1] += *c_ptr++;
-            } else {
-              half2* c_ptr =
-                  (half2*)(gl_c_ptr_16 + r0 * size_n + (n0 + n) * 8 + c);
-              float2 interm = __half22float2(*c_ptr);
-              frag_c[m][n][0] += interm.x;
-              frag_c[m][n][1] += interm.y;
-            }
-          }
-          if (r1 < max_m) {
-            if constexpr (c_fp32) {
-              float* c_ptr = gl_c_ptr_32 + r1 * size_n + (n0 + n) * 8 + c;
-              frag_c[m][n][2] += *c_ptr++;
-              frag_c[m][n][3] += *c_ptr++;
-            } else {
-              half2* c_ptr =
-                  (half2*)(gl_c_ptr_16 + r1 * size_n + (n0 + n) * 8 + c);
-              float2 interm = __half22float2(*c_ptr);
-              frag_c[m][n][2] += interm.x;
-              frag_c[m][n][3] += interm.y;
-            }
-          }
-        }
-      }
+      read_sum_gl();
     }
 
     // All but last threadblock in column write the intermediate result to
     // global memory
     if (!sub_k && !last) {
-#pragma unroll
-      for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
-#pragma unroll
-        for (int m = 0; m < FRAGS_M; ++m) {
-          int r0 = lane_id / 4 + 16 * m;
-          int r1 = r0 + 8;
-          int c = (lane_id % 4) * 2;
-          if (r0 < max_m) {
-            if constexpr (c_fp32) {
-              float* c_ptr = gl_c_ptr_32 + r0 * size_n + (n0 + n) * 8 + c;
-              *c_ptr++ = frag_c[m][n][0];
-              *c_ptr++ = frag_c[m][n][1];
-            } else {
-              half2* c_ptr =
-                  (half2*)(gl_c_ptr_16 + r0 * size_n + (n0 + n) * 8 + c);
-              half2 sum = __floats2half2_rn(frag_c[m][n][0], frag_c[m][n][1]);
-              *c_ptr = sum;
-            }
-          }
-          if (r1 < max_m) {
-            if constexpr (c_fp32) {
-              float* c_ptr = gl_c_ptr_32 + r1 * size_n + (n0 + n) * 8 + c;
-              *c_ptr++ = frag_c[m][n][2];
-              *c_ptr++ = frag_c[m][n][3];
-            } else {
-              half2* c_ptr =
-                  (half2*)(gl_c_ptr_16 + r1 * size_n + (n0 + n) * 8 + c);
-              half2 sum = __floats2half2_rn(frag_c[m][n][2], frag_c[m][n][3]);
-              *c_ptr = sum;
-            }
-          }
-        }
-      }
+      write_sum_gl();
     }
 
     // Last block writes in row-major format
     if (!sub_k && last) {
-#pragma unroll
-      for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
-#pragma unroll
-        for (int m = 0; m < FRAGS_M; ++m) {
-          int r0 = lane_id / 4 + 16 * m;
-          int r1 = r0 + 8;
-          int c = (lane_id % 4) * 2;
-          if (r0 < max_m) {
-            if constexpr (c_fp32) {
-              float* c_ptr = gl_c_ptr_32 + r0 * size_n + (n0 + n) * 8 + c;
-              *c_ptr++ = frag_c[m][n][0];
-              *c_ptr++ = frag_c[m][n][1];
-            } else {
-              half2* c_ptr =
-                  (half2*)(gl_c_ptr_16 + r0 * size_n + (n0 + n) * 8 + c);
-              half2 sum = __floats2half2_rn(frag_c[m][n][0], frag_c[m][n][1]);
-              *c_ptr = sum;
-            }
-          }
-          if (r1 < max_m) {
-            if constexpr (c_fp32) {
-              float* c_ptr = gl_c_ptr_32 + r1 * size_n + (n0 + n) * 8 + c;
-              *c_ptr++ = frag_c[m][n][2];
-              *c_ptr++ = frag_c[m][n][3];
-            } else {
-              half2* c_ptr =
-                  (half2*)(gl_c_ptr_16 + r1 * size_n + (n0 + n) * 8 + c);
-              half2 sum = __floats2half2_rn(frag_c[m][n][2], frag_c[m][n][3]);
-              *c_ptr = sum;
-            }
-          }
-        }
-      }
+      if constexpr (shmem_out_had)
+        write_sum_tile_sh();
+      else
+        write_sum_gl();
+    }
+
+    if constexpr (shmem_out_had) {
+      if (last) __syncthreads();
+      if (!sub_k && last) output_had_sh_gl();
     }
 
     barrier_release(lock, lock_d, last);
@@ -479,10 +569,13 @@ inline __device__ void exl3_gemm_kernel_inner(
   // Perform tensor core matmul on current tile
   auto matmul = [&](int buf) {
 #pragma unroll
-    for (int m = 0; m < FRAGS_M; ++m)
-#pragma unroll
-      for (int n = 0; n < FRAGS_N_PER_WARP; ++n)
-        ptx_mma_m16n8k16(frag_a[buf][m], frag_b[buf][n], frag_c[m][n]);
+    for (int n = 0; n < FRAGS_N_PER_WARP; ++n) {
+#if EXL3_GEMM_H_ACC
+      ptx_mma_m16n8k16(frag_a[buf], frag_b[buf][n], frag_c_h[n]);
+#else
+      ptx_mma_m16n8k16(frag_a[buf], frag_b[buf][n], frag_c[n]);
+#endif
+    }
   };
 
 // Start global to shared pipeline
@@ -499,7 +592,7 @@ inline __device__ void exl3_gemm_kernel_inner(
   // two different iterations of the main loop to avoid confusing the compiler
   // and making it (sometimes) place the fragment arrays in local memory
 
-#define FSTAGE(_load, _mul)                           \
+#define FSTAGE_OLD(_load, _mul)                       \
   async_load_gl();                                    \
   wait_stage();                                       \
   load_frags(_load);                                  \
@@ -511,9 +604,21 @@ inline __device__ void exl3_gemm_kernel_inner(
   advance2();                                         \
   if (!slice2_iters) break;
 
+#define FSTAGE(_load, _mul)                           \
+  async_load_gl();                                    \
+  wait_stage();                                       \
+  matmul(_mul);                                       \
+  if (slice2_k == tiles_k - 1 || slice2_iters == 1) { \
+    reduce();                                         \
+    slice2_k0 = slice2_k + 1;                         \
+  }                                                   \
+  advance2();                                         \
+  if (!slice2_iters) break;                           \
+  load_frags(_load);
+
   if constexpr (FRAG_STAGES == 1) {
     while (true) {
-      FSTAGE(0, 0);
+      FSTAGE_OLD(0, 0);
     }
   }
 

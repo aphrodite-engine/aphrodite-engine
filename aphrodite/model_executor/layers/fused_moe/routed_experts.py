@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
+import regex as re
 import torch
 
 from aphrodite.distributed.eplb.eplb_state import EplbState
@@ -853,8 +854,12 @@ class RoutedExperts(PluggableLayer):
         unpadded_hidden = self.moe_config.hidden_dim_unpadded
         for expert_name, loaded_weight in weights:
             qual_name = f"{self.layer_name}.{expert_name}"
-            # Fused expert weights can be identified by their 3D tensors
-            is_fused = loaded_weight.dim() == 3
+            # Most fused expert weights are 3D, but some quantization formats
+            # use 3D tensors for a single expert (for example EXL3 trellises).
+            # An explicit expert index in the checkpoint name takes priority
+            # over the tensor rank.
+            is_per_expert = re.search(r"(?:^|\.)experts\.\d+\.", qual_name) is not None
+            is_fused = loaded_weight.dim() == 3 and not is_per_expert
             matched = False
             for param_name, weight_name, expert_id, shard_id in expert_mapping:
                 if weight_name not in qual_name:

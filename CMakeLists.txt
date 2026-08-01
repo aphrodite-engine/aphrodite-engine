@@ -1192,26 +1192,29 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   endif()
 
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")
+    file(GLOB APHRODITE_EXL3_GEMM_UNITS CONFIGURE_DEPENDS
+      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_*_cb*.cu")
+    file(GLOB APHRODITE_EXL3_GEMV_INT8_UNITS CONFIGURE_DEPENDS
+      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_gemv_int8_inst_*.cu")
+    file(GLOB APHRODITE_EXL3_MOE_UNITS CONFIGURE_DEPENDS
+      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_moe_inst_*.cu")
     set(APHRODITE_EXL3_SRC
       "csrc/libtorch_stable/exl3_torch_bindings.cpp"
       "csrc/quantization/exl3/exllamav3_ext/graph.cu"
       "csrc/quantization/exl3/exllamav3_ext/hgemm.cu"
+      "csrc/quantization/exl3/exllamav3_ext/quant/coop_autotune.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/exl3_devctx.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/exl3_gemm.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/exl3_gemv.cu"
+      "csrc/quantization/exl3/exllamav3_ext/quant/exl3_gemv_int8.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/exl3_kernel_map.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/exl3_moe.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/hadamard.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/reconstruct.cu"
       "csrc/quantization/exl3/exllamav3_ext/quant/util.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_1.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_2.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_3.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_4.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_5.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_6.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_7.cu"
-      "csrc/quantization/exl3/exllamav3_ext/quant/comp_units/exl3_comp_unit_8.cu")
+      ${APHRODITE_EXL3_GEMM_UNITS}
+      ${APHRODITE_EXL3_GEMV_INT8_UNITS}
+      ${APHRODITE_EXL3_MOE_UNITS})
 
     # EXL3 requires Ampere+ instructions. Preserve all configured SM80+
     # architectures, including native Thor SM110 cubins.

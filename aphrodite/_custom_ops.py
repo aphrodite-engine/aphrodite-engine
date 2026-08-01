@@ -187,6 +187,17 @@ def exl3_reconstruct(
     torch.ops._C.exl3_reconstruct(unpacked, packed, k, mcg, mul1)
 
 
+def exl3_reconstruct_slice(
+    unpacked: torch.Tensor,
+    packed: torch.Tensor,
+    k: int,
+    mcg: bool,
+    mul1: bool,
+    n_offset: int,
+) -> None:
+    torch.ops._C.exl3_reconstruct_slice(unpacked, packed, k, mcg, mul1, n_offset)
+
+
 def exl3_had_r_128(
     input: torch.Tensor,
     output: torch.Tensor,
@@ -195,6 +206,30 @@ def exl3_had_r_128(
     scale: float = 1.0,
 ) -> None:
     torch.ops._C.exl3_had_r_128(input, output, pre_scale, post_scale, scale)
+
+
+def exl3_had_r_128_dual(
+    input1: torch.Tensor,
+    output1: torch.Tensor,
+    pre_scale1: torch.Tensor | None,
+    post_scale1: torch.Tensor | None,
+    input2: torch.Tensor,
+    output2: torch.Tensor,
+    pre_scale2: torch.Tensor | None,
+    post_scale2: torch.Tensor | None,
+    scale: float = 1.0,
+) -> None:
+    torch.ops._C.exl3_had_r_128_dual(
+        input1,
+        output1,
+        pre_scale1,
+        post_scale1,
+        input2,
+        output2,
+        pre_scale2,
+        post_scale2,
+        scale,
+    )
 
 
 def exl3_hgemm(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor) -> None:
@@ -231,8 +266,10 @@ def exl3_moe(
     down_mcg: bool,
     down_mul1: bool,
     act_limit: float = 0.0,
+    num_active: int = -1,
 ) -> None:
-    torch.ops._C.exl3_moe(
+    op = torch.ops._C.exl3_moe if num_active < 0 else torch.ops._C.exl3_moe_active
+    args = (
         hidden_state,
         output_state,
         expert_count,
@@ -263,6 +300,10 @@ def exl3_moe(
         down_mul1,
         act_limit,
     )
+    if num_active < 0:
+        op(*args)
+    else:
+        op(*args, num_active)
 
 
 if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
@@ -309,6 +350,17 @@ if hasattr(torch.ops, "_C") and hasattr(torch.ops._C, "exl3_gemm"):
         k: int,
         mcg: bool,
         mul1: bool,
+    ) -> None:
+        return None
+
+    @register_fake("_C::exl3_reconstruct_slice")
+    def _exl3_reconstruct_slice_fake(
+        unpacked: torch.Tensor,
+        packed: torch.Tensor,
+        k: int,
+        mcg: bool,
+        mul1: bool,
+        n_offset: int,
     ) -> None:
         return None
 

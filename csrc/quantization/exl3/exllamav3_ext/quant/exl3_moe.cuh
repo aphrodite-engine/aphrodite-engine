@@ -27,4 +27,4 @@ void exl3_moe(const at::Tensor& hidden_state, const at::Tensor& output_state,
               const bool gate_mcg, const bool gate_mul1, const bool up_mcg,
               const bool up_mul1, const bool down_mcg, const bool down_mul1,
 
-              const float act_limit);
+              const float act_limit, const int num_active);

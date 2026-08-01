@@ -56,6 +56,7 @@ from .utils import (
     make_empty_intermediate_tensors_factory,
     make_layers,
     maybe_prefix,
+    model_should_use_tied_lm_head,
 )
 
 
@@ -573,6 +574,7 @@ class Lfm2MoeForCausalLM(
 
         super().__init__()
         self.config = config
+        self.use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
         self.model = Lfm2MoeModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
@@ -582,7 +584,8 @@ class Lfm2MoeForCausalLM(
                 quant_config=quant_config,
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
-            self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
+            if self.use_tied_lm_head:
+                self.lm_head.weight = self.model.embed_tokens.weight
         else:
             self.lm_head = PPMissingLayer()
 
@@ -653,6 +656,6 @@ class Lfm2MoeForCausalLM(
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
+            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
         )
         return loader.load_weights(weights)

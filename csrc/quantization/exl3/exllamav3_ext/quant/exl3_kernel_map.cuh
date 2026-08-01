@@ -24,7 +24,7 @@ bool exl3_gemm_shape_compat(int shape_idx, int size_m, int size_k, int size_n,
       const half **__restrict__ suh_list, half *__restrict__ A_had,            \
       const half **__restrict__ svh_list, int64_t *B_indices, half *B_weights, \
       const int bszm_in, const int bszm_out, const int min_index,              \
-      const int max_index
+      const int max_index, const int num_tokens
 
 typedef void (*fp_exl3_gemm_kernel)(EXL3_GEMM_ARGS);
 typedef void (*fp_exl3_mgemm_kernel)(EXL3_MGEMM_ARGS);
@@ -55,32 +55,33 @@ typedef void (*fp_exl3_mgemm_kernel)(EXL3_MGEMM_ARGS);
 
 #define EXL3_GEMM_BASE_THREADS 256
 
-#define ALL_EXL3_KERNEL_EXTERNS(K)                               \
-  extern fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp32_b##K[];   \
-  extern fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp16_b##K[];   \
-  extern fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp32_b##K[]; \
-  extern fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp16_b##K[];
+// Instance arrays are indexed by shape and defined per (K, cb) so each codebook
+// compiles as a separate translation unit (see
+// comp_units/exl3_comp_unit_K_cbX.cu)
 
-#define ALL_EXL3_KERNEL_INSTANCES(K)                         \
-  fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp32_b##K[] = {   \
-      EXL3_GEMM_KERNEL_INSTANCES(K, true, 0),                \
-      EXL3_GEMM_KERNEL_INSTANCES(K, true, 1),                \
-      EXL3_GEMM_KERNEL_INSTANCES(K, true, 2)};               \
-                                                             \
-  fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp16_b##K[] = {   \
-      EXL3_GEMM_KERNEL_INSTANCES(K, false, 0),               \
-      EXL3_GEMM_KERNEL_INSTANCES(K, false, 1),               \
-      EXL3_GEMM_KERNEL_INSTANCES(K, false, 2)};              \
-                                                             \
-  fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp32_b##K[] = { \
-      EXL3_MGEMM_KERNEL_INSTANCES(K, true, 0),               \
-      EXL3_MGEMM_KERNEL_INSTANCES(K, true, 1),               \
-      EXL3_MGEMM_KERNEL_INSTANCES(K, true, 2)};              \
-                                                             \
-  fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp16_b##K[] = { \
-      EXL3_MGEMM_KERNEL_INSTANCES(K, false, 0),              \
-      EXL3_MGEMM_KERNEL_INSTANCES(K, false, 1),              \
-      EXL3_MGEMM_KERNEL_INSTANCES(K, false, 2)};
+#define EXL3_KERNEL_EXTERNS_CB(K, cb)                                     \
+  extern fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp32_b##K##_cb##cb[];   \
+  extern fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp16_b##K##_cb##cb[];   \
+  extern fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp32_b##K##_cb##cb[]; \
+  extern fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp16_b##K##_cb##cb[];
+
+#define ALL_EXL3_KERNEL_EXTERNS(K) \
+  EXL3_KERNEL_EXTERNS_CB(K, 0)     \
+  EXL3_KERNEL_EXTERNS_CB(K, 1)     \
+  EXL3_KERNEL_EXTERNS_CB(K, 2)
+
+#define EXL3_KERNEL_INSTANCES_CB(K, cb)                               \
+  fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp32_b##K##_cb##cb[] = {   \
+      EXL3_GEMM_KERNEL_INSTANCES(K, true, cb)};                       \
+                                                                      \
+  fp_exl3_gemm_kernel tfp_exl3_gemm_kernel_fp16_b##K##_cb##cb[] = {   \
+      EXL3_GEMM_KERNEL_INSTANCES(K, false, cb)};                      \
+                                                                      \
+  fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp32_b##K##_cb##cb[] = { \
+      EXL3_MGEMM_KERNEL_INSTANCES(K, true, cb)};                      \
+                                                                      \
+  fp_exl3_mgemm_kernel tfp_exl3_mgemm_kernel_fp16_b##K##_cb##cb[] = { \
+      EXL3_MGEMM_KERNEL_INSTANCES(K, false, cb)};
 
 fp_exl3_gemm_kernel select_exl3_gemm_kernel(
     const int cc, const int size_m, const int size_k, const int size_n,
@@ -93,39 +94,7 @@ fp_exl3_mgemm_kernel select_exl3_mgemm_kernel(
     int* out_block_dim, int* out_shape_idx, int* out_num_sms, const int cb,
     const int bszm_in, const int bszm_out);
 
-struct TSample {
-  int cc;
-  int K;
-  int m;
-  int k;
-  int n;
-  int shape_idx;
-  int num_sms;
-};
-
-struct TMSample {
-  int cc;
-  int K;
-  int m;
-  int k;
-  int n;
-  int shape_idx;
-  int num_sms;
-  int bszm_in;
-  int bszm_out;
-};
-
-struct TResult {
-  fp_exl3_gemm_kernel kernel;
-  fp_exl3_mgemm_kernel mkernel;
-  int shape_idx;
-  int num_sms;
-  int block_dim;
-};
-
-TResult* select_exl3_gemm_mgemm_kernel_new(const int cc, const int size_m,
-                                           const int size_k, const int size_n,
-                                           const int K, const bool c_fp32,
-                                           const int force_shape_idx,
-                                           const int force_num_sms,
-                                           const int cb);
+fp_exl3_gemm_kernel get_gemm_kernel_ptr(int K, int shape_idx, bool c_fp32,
+                                        int cb);
+fp_exl3_mgemm_kernel get_mgemm_kernel_ptr(int K, int shape_idx, bool c_fp32,
+                                          int cb);

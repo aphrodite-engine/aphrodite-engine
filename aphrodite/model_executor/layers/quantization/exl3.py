@@ -39,9 +39,14 @@ from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 
 logger = init_logger(__name__)
-_EXL3_MOE_MAX_TOKENS_PER_EXPERT = 128
+_EXL3_MOE_DEFAULT_MAX_TOKENS_PER_EXPERT = 128
+_EXL3_MOE_SM110_MAX_TOKENS_PER_EXPERT = 32
+_EXL3_MOE_SM110_SHORT_MAX_TOKENS_PER_EXPERT = 1
+_EXL3_MOE_SM110_SHORT_TOKEN_THRESHOLD = 512
 _EXL3_MOE_MAX_EXPERTS_PER_TOKEN = 32
 _EXL3_MOE_ACT_SILU = 0
+_EXL3_AUTO_RECONSTRUCT_THRESHOLD = 144
+_EXL3_MAX_RECONSTRUCT_SLICE_N = 32768
 
 
 def _get_exl3_moe_down_tuning(
@@ -86,7 +91,7 @@ def _exl3_linear_one(
     )
     x_had = torch.empty_like(x)
 
-    if x.shape[0] <= 32:
+    if x.shape[0] <= _EXL3_AUTO_RECONSTRUCT_THRESHOLD:
         ops.exl3_gemm(
             x,
             trellis,
@@ -101,19 +106,6 @@ def _exl3_linear_one(
         )
         return output
 
-    weight = torch.empty(
-        (trellis.shape[0] * 16, out_features),
-        device=trellis.device,
-        dtype=torch.float16,
-    )
-    ops.exl3_reconstruct(
-        weight,
-        trellis,
-        # EXL3 reconstruct expects K where packed.shape[2] == 16 * K.
-        trellis.shape[2] // 16,
-        mcg,
-        mul1,
-    )
     ops.exl3_had_r_128(
         x,
         x_had,
@@ -121,11 +113,27 @@ def _exl3_linear_one(
         None,
         1.0,
     )
-    ops.exl3_hgemm(
-        x_had,
-        weight,
-        output,
-    )
+    in_features = trellis.shape[0] * 16
+    k = trellis.shape[2] // 16
+    if out_features <= _EXL3_MAX_RECONSTRUCT_SLICE_N:
+        weight = torch.empty(
+            (in_features, out_features),
+            device=trellis.device,
+            dtype=torch.float16,
+        )
+        ops.exl3_reconstruct(weight, trellis, k, mcg, mul1)
+        ops.exl3_hgemm(x_had, weight, output)
+    else:
+        weight_buffer = torch.empty(
+            (in_features * _EXL3_MAX_RECONSTRUCT_SLICE_N,),
+            device=trellis.device,
+            dtype=torch.float16,
+        )
+        for n_start in range(0, out_features, _EXL3_MAX_RECONSTRUCT_SLICE_N):
+            n_end = min(n_start + _EXL3_MAX_RECONSTRUCT_SLICE_N, out_features)
+            weight = weight_buffer[: in_features * (n_end - n_start)].view(in_features, n_end - n_start)
+            ops.exl3_reconstruct_slice(weight, trellis, k, mcg, mul1, n_start)
+            ops.exl3_hgemm(x_had, weight, output[:, n_start:n_end])
     ops.exl3_had_r_128(
         output,
         output,
@@ -173,7 +181,7 @@ def _exl3_gate_up(
     mcg: bool,
     mul1: bool,
 ) -> torch.Tensor:
-    if x.shape[0] > 32:
+    if x.shape[0] > _EXL3_AUTO_RECONSTRUCT_THRESHOLD:
         return torch.cat(
             [
                 _exl3_linear_one(x, gate_trellis, gate_suh, gate_svh, mcg, mul1),
@@ -267,7 +275,7 @@ def _exl3_qkv(
     kv_mul1: bool,
 ) -> torch.Tensor:
     q = _exl3_linear_one(x, q_trellis, q_suh, q_svh, q_mcg, q_mul1)
-    if x.shape[0] > 32:
+    if x.shape[0] > _EXL3_AUTO_RECONSTRUCT_THRESHOLD:
         return torch.cat(
             [
                 q,
@@ -479,6 +487,10 @@ class Exl3Config(QuantizationConfig):
             base = prefix.removesuffix(".gate_up_proj")
             return all(self._is_exl3_prefix(f"{base}.{proj}") for proj in ("gate_proj", "up_proj"))
 
+        if prefix.endswith(".w13"):
+            base = prefix.removesuffix(".w13")
+            return all(self._is_exl3_prefix(f"{base}.{proj}") for proj in ("w1", "w3"))
+
         if prefix.endswith(".in_proj_qkvz"):
             base = prefix.removesuffix(".in_proj_qkvz")
             return all(self._is_exl3_prefix(f"{base}.{proj}") for proj in ("in_proj_qkv", "in_proj_z"))
@@ -488,8 +500,9 @@ class Exl3Config(QuantizationConfig):
     def _moe_prefix_is_exl3(self, prefix: str) -> bool:
         expert_prefixes = (f"{prefix}.0", f"{prefix}.experts.0")
         return any(
-            all(self._is_exl3_prefix(f"{expert_prefix}.{proj}") for proj in ("gate_proj", "up_proj", "down_proj"))
+            all(self._is_exl3_prefix(f"{expert_prefix}.{proj}") for proj in projections)
             for expert_prefix in expert_prefixes
+            for projections in (("gate_proj", "up_proj", "down_proj"), ("w1", "w3", "w2"))
         )
 
     def has_moe_tensors(self) -> bool:
@@ -888,7 +901,7 @@ class Exl3LinearMethod(LinearMethodBase):
         layer.exl3_can_mgemm = False
 
         prefix = getattr(layer, "prefix", "")
-        if prefix.endswith("gate_up_proj") and len(layer.exl3_shard_ids) == 2:
+        if prefix.endswith(("gate_up_proj", "w13")) and len(layer.exl3_shard_ids) == 2:
             mgemm_shard_ids = layer.exl3_shard_ids
             layer.exl3_mgemm_mode = "gate_up"
         elif prefix.endswith("qkv_proj") and layer.exl3_shard_ids == ["q", "k", "v"]:
@@ -940,8 +953,8 @@ class Exl3LinearMethod(LinearMethodBase):
         layer.exl3_mgemm_mul1 = mul1
         layer.exl3_can_mgemm = True
 
-    @staticmethod
     def _shard_ids_for_layer(
+        self,
         layer: torch.nn.Module,
         output_partition_sizes: list[int],
     ) -> list[str | int | tuple[int, ...] | None]:
@@ -949,6 +962,10 @@ class Exl3LinearMethod(LinearMethodBase):
             return [None]
 
         prefix = getattr(layer, "prefix", "")
+        # Some checkpoints store a merged projection as one EXL3 tensor even
+        # when the runtime layer exposes several logical output partitions.
+        if self.quant_config._is_exl3_prefix(prefix):
+            return [None]
         if prefix.endswith("qkv_proj"):
             return ["q", "k", "v"]
         if prefix.endswith("gate_up_proj"):
@@ -1142,6 +1159,16 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             expert_sorted,
             torch.ones_like(expert_sorted, dtype=torch.long),
         )
+        capturing = torch.cuda.is_current_stream_capturing()
+        fused_max_tokens = layer.exl3_moe_max_tokens_per_expert
+        if x_2d.shape[0] <= layer.exl3_moe_short_token_threshold:
+            fused_max_tokens = layer.exl3_moe_short_max_tokens_per_expert
+        if capturing:
+            expert_count_list = None
+            num_active = -1
+        else:
+            expert_count_list = expert_count.tolist()
+            num_active = sum(0 < count <= fused_max_tokens for count in expert_count_list[: layer.local_num_experts])
 
         if not hasattr(torch.ops._C, "exl3_moe"):
             raise RuntimeError("EXL3 MoE kernel is not available. Rebuild Aphrodite.")
@@ -1152,10 +1179,10 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             expert_count,
             token_sorted,
             weight_sorted,
-            layer.exl3_temp_state_g,
-            layer.exl3_temp_state_u,
-            layer.exl3_temp_intermediate_g,
-            layer.exl3_temp_intermediate_u,
+            layer.exl3_temp_state_g[:, :fused_max_tokens],
+            layer.exl3_temp_state_u[:, :fused_max_tokens],
+            layer.exl3_temp_intermediate_g[:, :fused_max_tokens],
+            layer.exl3_temp_intermediate_u[:, :fused_max_tokens],
             _EXL3_MOE_ACT_SILU,
             layer.exl3_moe_k_gate,
             layer.exl3_moe_k_up,
@@ -1176,50 +1203,144 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             layer.exl3_down_mcg,
             layer.exl3_down_mul1,
             0.0,
+            num_active,
         )
 
-        if torch.cuda.is_current_stream_capturing():
+        if capturing:
             if output.dtype != original_dtype:
                 output = output.to(original_dtype)
             return output.reshape(*x.shape[:-1], output.shape[-1])
 
-        if total_assignments <= _EXL3_MOE_MAX_TOKENS_PER_EXPERT:
+        if total_assignments <= fused_max_tokens:
             if output.dtype != original_dtype:
                 output = output.to(original_dtype)
             return output.reshape(*x.shape[:-1], output.shape[-1])
 
-        needs_fallback = bool((expert_count[:-1] > _EXL3_MOE_MAX_TOKENS_PER_EXPERT).any().item())
-        if not needs_fallback:
+        assert expert_count_list is not None
+        max_fallback_count = max(expert_count_list[: layer.local_num_experts])
+        if max_fallback_count <= fused_max_tokens:
             if output.dtype != original_dtype:
                 output = output.to(original_dtype)
             return output.reshape(*x.shape[:-1], output.shape[-1])
 
-        expert_offsets = torch.empty(
-            layer.local_num_experts + 2,
+        expert_offsets_list = [0]
+        for count in expert_count_list:
+            expert_offsets_list.append(expert_offsets_list[-1] + count)
+
+        hidden_size = layer.hidden_size
+        intermediate_size = layer.exl3_intermediate_size_per_partition
+        input_had = torch.empty(
+            (2, max_fallback_count, hidden_size),
+            dtype=torch.float16,
             device=x_2d.device,
-            dtype=torch.long,
         )
-        expert_offsets[0] = 0
-        expert_offsets[1:] = expert_count.cumsum(0)
-        expert_offsets_list = expert_offsets.cpu().tolist()
+        gate_up = torch.empty(
+            (2, max_fallback_count, intermediate_size),
+            dtype=torch.float16,
+            device=x_2d.device,
+        )
+        intermediate = torch.empty(
+            (max_fallback_count, intermediate_size),
+            dtype=torch.float16,
+            device=x_2d.device,
+        )
+        expert_output = torch.empty(
+            (max_fallback_count, hidden_size),
+            dtype=torch.float32,
+            device=x_2d.device,
+        )
+        weight = torch.empty(
+            (hidden_size, intermediate_size),
+            dtype=torch.float16,
+            device=x_2d.device,
+        )
 
         for expert_id in range(layer.local_num_experts):
             start = expert_offsets_list[expert_id]
             end = expert_offsets_list[expert_id + 1]
             count = end - start
-            if count <= _EXL3_MOE_MAX_TOKENS_PER_EXPERT:
+            if count <= fused_max_tokens:
                 continue
 
             token_pos = token_sorted[start:end]
             route_weight = weight_sorted[start:end].unsqueeze(-1)
             expert_input = x_2d.index_select(0, token_pos)
 
-            gate = self._apply_exl3(layer, "w13", expert_input, expert_id, "w1")
-            up = self._apply_exl3(layer, "w13", expert_input, expert_id, "w3")
-            intermediate = torch.nn.functional.silu(gate) * up
-            expert_output = self._apply_exl3(layer, "w2", intermediate, expert_id, "w2")
-            expert_output = expert_output * route_weight
-            output.index_add_(0, token_pos, expert_output.to(torch.float32))
+            gate_key = (expert_id, "w1")
+            up_key = (expert_id, "w3")
+            down_key = (expert_id, "w2")
+            gate = gate_up[0, :count]
+            up = gate_up[1, :count]
+            gate_had = input_had[0, :count]
+            up_had = input_had[1, :count]
+            ops.exl3_had_r_128_dual(
+                expert_input,
+                gate_had,
+                layer.w13_suh.exl3_tensors[gate_key],
+                None,
+                expert_input,
+                up_had,
+                layer.w13_suh.exl3_tensors[up_key],
+                None,
+                1.0,
+            )
+            ops.exl3_reconstruct(
+                weight,
+                layer.w13_trellis.exl3_tensors[gate_key],
+                layer.exl3_moe_k_gate,
+                layer.exl3_gate_mcg,
+                layer.exl3_gate_mul1,
+            )
+            ops.exl3_hgemm(gate_had, weight, gate)
+            ops.exl3_reconstruct(
+                weight,
+                layer.w13_trellis.exl3_tensors[up_key],
+                layer.exl3_moe_k_up,
+                layer.exl3_up_mcg,
+                layer.exl3_up_mul1,
+            )
+            ops.exl3_hgemm(up_had, weight, up)
+            ops.exl3_had_r_128_dual(
+                gate,
+                gate,
+                None,
+                layer.w13_svh.exl3_tensors[gate_key],
+                up,
+                up,
+                None,
+                layer.w13_svh.exl3_tensors[up_key],
+                1.0,
+            )
+            activated = intermediate[:count]
+            ops.silu_mul(activated, gate, up)
+
+            down_had = gate_up[0, :count]
+            ops.exl3_had_r_128(
+                activated,
+                down_had,
+                layer.w2_suh.exl3_tensors[down_key],
+                None,
+                1.0,
+            )
+            down_weight = weight.view(intermediate_size, hidden_size)
+            ops.exl3_reconstruct(
+                down_weight,
+                layer.w2_trellis.exl3_tensors[down_key],
+                layer.exl3_moe_k_down,
+                layer.exl3_down_mcg,
+                layer.exl3_down_mul1,
+            )
+            current_output = expert_output[:count]
+            ops.exl3_hgemm(down_had, down_weight, current_output)
+            ops.exl3_had_r_128(
+                current_output,
+                current_output,
+                None,
+                layer.w2_svh.exl3_tensors[down_key],
+                1.0,
+            )
+            current_output.mul_(route_weight)
+            output.index_add_(0, token_pos, current_output)
 
         if output.dtype != original_dtype:
             output = output.to(original_dtype)
@@ -1509,14 +1630,23 @@ class Exl3MoEMethod(FusedMoEMethodBase):
             1,
             torch.cuda.get_device_properties(device).multi_processor_count // 12,
         )
+        capability = current_platform.get_device_capability(device.index)
+        is_sm110 = capability is not None and capability.major == 11
+        layer.exl3_moe_max_tokens_per_expert = (
+            _EXL3_MOE_SM110_MAX_TOKENS_PER_EXPERT if is_sm110 else _EXL3_MOE_DEFAULT_MAX_TOKENS_PER_EXPERT
+        )
+        layer.exl3_moe_short_max_tokens_per_expert = (
+            _EXL3_MOE_SM110_SHORT_MAX_TOKENS_PER_EXPERT if is_sm110 else layer.exl3_moe_max_tokens_per_expert
+        )
+        layer.exl3_moe_short_token_threshold = _EXL3_MOE_SM110_SHORT_TOKEN_THRESHOLD if is_sm110 else 0
         temp_shape_hidden = (
             concurrency,
-            _EXL3_MOE_MAX_TOKENS_PER_EXPERT,
+            layer.exl3_moe_max_tokens_per_expert,
             layer.hidden_size,
         )
         temp_shape_intermediate = (
             concurrency,
-            _EXL3_MOE_MAX_TOKENS_PER_EXPERT,
+            layer.exl3_moe_max_tokens_per_expert,
             intermediate_size,
         )
         layer.exl3_temp_state_g = torch.empty(temp_shape_hidden, dtype=torch.float16, device=device)
@@ -1531,6 +1661,7 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         x: torch.Tensor,
         expert_id: int,
         shard_id: str,
+        output_dtype: torch.dtype = torch.float16,
     ) -> torch.Tensor:
         key = (expert_id, shard_id)
         suh = getattr(layer, f"{prefix}_suh").exl3_tensors[key]
@@ -1542,11 +1673,13 @@ class Exl3MoEMethod(FusedMoEMethodBase):
         output = torch.empty(
             (x.shape[0], trellis.shape[1] * 16),
             device=x.device,
-            dtype=torch.float16,
+            dtype=output_dtype,
         )
         x_had = torch.empty_like(x)
 
         if x.shape[0] <= 32:
+            if output_dtype != torch.float16:
+                raise ValueError("The EXL3 GEMM path only supports float16 output")
             ops.exl3_gemm(
                 x,
                 trellis,
