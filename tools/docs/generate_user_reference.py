@@ -213,6 +213,7 @@ def quantization_reference() -> str:
     declared = {
         platform: set(literal_assignment(path, "supported_quantization")) for platform, path in PLATFORMS.items()
     }
+    method_capability_overrides = {"mxfp6": 110}
     lines = [
         frontmatter(
             "Quantization support",
@@ -229,6 +230,7 @@ def quantization_reference() -> str:
     for method in methods:
         config_class = config_classes.get(method, "OnlineQuantizationConfig")
         _, minimum = capabilities.get(config_class, (None, None))
+        minimum = method_capability_overrides.get(method, minimum)
         cuda = f"SM {minimum // 10}.{minimum % 10}" if minimum else "Any supported CUDA GPU"
         rocm = "✓" if method in declared["AMD ROCm"] else "—"
         xpu = "✓" if method in declared["Intel XPU"] else "—"

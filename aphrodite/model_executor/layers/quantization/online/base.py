@@ -36,6 +36,10 @@ from aphrodite.model_executor.layers.quantization.online.fp8 import (
 from aphrodite.model_executor.layers.quantization.online.int8 import (
     Int8OnlineMoEMethod,
 )
+from aphrodite.model_executor.layers.quantization.online.mxfp6 import (
+    Mxfp6OnlineLinearMethod,
+    Mxfp6OnlineMoEMethod,
+)
 from aphrodite.model_executor.layers.quantization.online.mxfp8 import (
     Mxfp8OnlineLinearMethod,
     Mxfp8OnlineMoEMethod,
@@ -49,6 +53,8 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8StaticChannelSym,
     kFp8StaticTensorSym,
     kInt8StaticChannelSym,
+    kMxfp6E2m3Static,
+    kMxfp6E3m2Static,
     kMxfp8Dynamic,
     kNvfp4Static,
 )
@@ -64,6 +70,8 @@ _ONLINE_LINEAR_METHODS: dict[QuantKey, type] = {
     kFp8Static128BlockSym: Fp8PerBlockOnlineLinearMethod,
     kFp8StaticChannelSym: Fp8PtpcOnlineLinearMethod,
     kMxfp8Dynamic: Mxfp8OnlineLinearMethod,
+    kMxfp6E2m3Static: Mxfp6OnlineLinearMethod,
+    kMxfp6E3m2Static: Mxfp6OnlineLinearMethod,
 }
 
 _ONLINE_MOE_METHODS: dict[QuantKey, type] = {
@@ -73,6 +81,8 @@ _ONLINE_MOE_METHODS: dict[QuantKey, type] = {
     kMxfp8Dynamic: Mxfp8OnlineMoEMethod,
     kInt8StaticChannelSym: Int8OnlineMoEMethod,
     kNvfp4Static: Nvfp4OnlineMoEMethod,
+    kMxfp6E2m3Static: Mxfp6OnlineMoEMethod,
+    kMxfp6E3m2Static: Mxfp6OnlineMoEMethod,
 }
 
 
@@ -93,6 +103,40 @@ class OnlineQuantizationConfig(QuantizationConfig):
             )
         self.args = args
         self.ignored_layers: list[str] = args.ignore
+
+    def _resolve_spec(self, prefix: str, base: QuantSpec | None) -> QuantSpec | None:
+        """Resolve ordered precision rules for a module.
+
+        ``ignore`` remains an unconditional compatibility escape hatch. The
+        newer overrides are evaluated in declaration order, so a later rule
+        can refine (or undo) an earlier broad rule.
+        """
+        if should_ignore_layer(
+            prefix,
+            ignore=self.ignored_layers,
+            fused_mapping=self.packed_modules_mapping,
+        ):
+            return None
+
+        spec = base
+        for override in self.args.overrides:
+            if not should_ignore_layer(
+                prefix,
+                ignore=[override.pattern],
+                fused_mapping=self.packed_modules_mapping,
+            ):
+                continue
+            if override.weight == "bf16":
+                spec = None
+                continue
+
+            inherited_weight = spec.weight if spec is not None else None
+            inherited_activation = spec.activation if spec is not None else None
+            spec = QuantSpec(
+                weight=override.weight or inherited_weight,
+                activation=override.activation or inherited_activation,
+            )  # type: ignore[call-arg]
+        return spec
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -135,6 +179,38 @@ class OnlineQuantizationConfig(QuantizationConfig):
                 f"weight={spec.weight} is not supported; supported weight "
                 f"keys: {sorted(str(k) for k in table)}"
             )
+        if cls is Mxfp6OnlineLinearMethod:
+            return cls(spec)
+        if cls is Mxfp6OnlineMoEMethod:
+            from aphrodite.model_executor.kernels.linear.mxfp6 import CutedslMxfp6LinearKernel
+            from aphrodite.model_executor.layers.fused_moe.activation import MoEActivation
+
+            supported, reason = CutedslMxfp6LinearKernel.is_supported()
+            moe = layer.moe_config
+            if supported and moe.activation != MoEActivation.SILU:
+                supported = False
+                reason = f"activation {moe.activation} is not supported"
+            elif supported and moe.moe_parallel_config.ep_size != 1:
+                supported = False
+                reason = "expert parallel execution is not supported yet"
+            elif supported and moe.has_bias:
+                supported = False
+                reason = "biased experts are not supported yet"
+            elif supported and moe.swiglu_limit is not None:
+                supported = False
+                reason = "SwiGLU clamping is not supported yet"
+            elif supported and (
+                moe.hidden_dim < 128
+                or moe.hidden_dim % 128
+                or moe.intermediate_size_per_partition < 128
+                or moe.intermediate_size_per_partition % 128
+            ):
+                supported = False
+                reason = "hidden and intermediate dimensions must be multiples of 128"
+            if not supported:
+                logger.warning_once("Keeping MXFP6-targeted MoE layers in BF16 because %s", reason)
+                return None
+            return cls(layer=layer, spec=spec)
         # Online method classes pick their own activation format internally.
         # Per-class activation overrides are not yet wired through; reject
         # explicit overrides until the relevant method class opts in.
@@ -148,21 +224,17 @@ class OnlineQuantizationConfig(QuantizationConfig):
 
     def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> "QuantizeMethodBase | None":
         if isinstance(layer, LinearBase):
-            if should_ignore_layer(
-                prefix,
-                ignore=self.ignored_layers,
-                fused_mapping=self.packed_modules_mapping,
-            ):
-                return UnquantizedLinearMethod()
-            method = self._dispatch(self.args.linear, _ONLINE_LINEAR_METHODS, layer)
+            method = self._dispatch(
+                self._resolve_spec(prefix, self.args.linear),
+                _ONLINE_LINEAR_METHODS,
+                layer,
+            )
             return method if method is not None else UnquantizedLinearMethod()
         elif isinstance(layer, RoutedExperts):
-            if should_ignore_layer(
-                prefix,
-                ignore=self.ignored_layers,
-                fused_mapping=self.packed_modules_mapping,
-            ):
-                return UnquantizedFusedMoEMethod(layer.moe_config)
-            method = self._dispatch(self.args.moe, _ONLINE_MOE_METHODS, layer)
+            method = self._dispatch(
+                self._resolve_spec(prefix, self.args.moe),
+                _ONLINE_MOE_METHODS,
+                layer,
+            )
             return method if method is not None else UnquantizedFusedMoEMethod(layer.moe_config)
         return None

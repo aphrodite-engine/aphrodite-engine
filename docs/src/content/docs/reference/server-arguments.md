@@ -83,6 +83,14 @@ Select GDN prefill backend.
 
 Choices: `flashinfer`, `triton`, `cutedsl`.
 
+### `--kda-prefill-backend`
+
+`--kda-prefill-backend KDA_PREFILL_BACKEND`
+
+Select KDA prefill backend.
+
+Choices: `auto`, `triton`, `flashkda`.
+
 ### `--enable-log-requests`
 
 `--enable-log-requests, --no-enable-log-requests`
@@ -779,7 +787,8 @@ determine the data type of the weights.
 `--quantization-config QUANTIZATION_CONFIG`
 
 User-facing quantization configuration. Carries per-layer-kind specs
-(linear, moe) and ignore patterns; see :class:`QuantizationConfigArgs`.
+(linear, moe), ignore patterns, and ordered precision overrides; see
+:class:`QuantizationConfigArgs`.
 Auto-populated from the matching online shorthand when `quantization` is
 one of the values in `ONLINE_QUANT_SHORTHAND_NAMES`.
 Should either be a valid JSON string or JSON keys passed individually.
@@ -2998,7 +3007,7 @@ provided.
 If using `ngram` method, the related configuration `prompt_lookup_max` and
 `prompt_lookup_min` should be considered.
 
-Choices: `bailing_hybrid_mtp`, `custom_class`, `deepseek_mtp`, `dflash`, `draft_model`, `dspark`, `eagle`, `eagle3`, `ernie_mtp`, `exaone4_5_mtp`, `exaone_moe_mtp`, `extract_hidden_states`, `gemma4_mtp`, `glm4_moe_lite_mtp`, `glm4_moe_mtp`, `glm_ocr_mtp`, `hy_v3_mtp`, `inkling_mtp`, `longcat_flash_mtp`, `medusa`, `mimo_mtp`, `mimo_v2_mtp`, `minimax_m3_mtp`, `mlp_speculator`, `mtp`, `nemotron_h_mtp`, `ngram`, `ngram_gpu`, `pangu_ultra_moe_mtp`, `qwen3_5_mtp`, `qwen3_next_mtp`, `step3p5_mtp`, `suffix`, `None`.
+Choices: `bailing_hybrid_mtp`, `custom_class`, `deepseek_mtp`, `dflash`, `draft_model`, `dspark`, `eagle`, `eagle3`, `ernie_mtp`, `exaone4_5_mtp`, `exaone_moe_mtp`, `extract_hidden_states`, `gemma4_mtp`, `glm4_moe_lite_mtp`, `glm4_moe_mtp`, `glm_ocr_mtp`, `hy_v3_mtp`, `inkling_mtp`, `kimi_k3_mtp`, `longcat_flash_mtp`, `medusa`, `mimo_mtp`, `mimo_v2_mtp`, `minimax_m3_mtp`, `mlp_speculator`, `mtp`, `nemotron_h_mtp`, `ngram`, `ngram_gpu`, `pangu_ultra_moe_mtp`, `qwen3_5_mtp`, `qwen3_next_mtp`, `step3p5_mtp`, `suffix`, `None`.
 
 ### `--spec-model`
 

@@ -7,6 +7,7 @@ import pytest
 from aphrodite.config.quantization import (
     QUANT_KEY_NAMES,
     QuantizationConfigArgs,
+    QuantOverride,
     QuantSpec,
     resolve_quantization_config,
 )
@@ -16,6 +17,8 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8Static128BlockSym,
     kFp8StaticTensorSym,
     kInt8StaticChannelSym,
+    kMxfp6E2m3Dynamic,
+    kMxfp6E2m3Static,
     kMxfp8Dynamic,
 )
 
@@ -104,6 +107,44 @@ def test_resolve_merges_explicit_over_shorthand():
     )
     assert args.linear == QuantSpec(weight=kFp8Static128BlockSym)
     assert args.moe == QuantSpec(weight=kFp8StaticTensorSym)
+
+
+def test_mxfp6_shorthand_uses_w6a8_and_preserves_routers():
+    args = resolve_quantization_config("mxfp6", None)
+    expected = QuantSpec(weight=kMxfp6E2m3Static, activation=kMxfp8Dynamic)
+    assert args.linear == expected
+    assert args.moe == expected
+    assert args.overrides == [
+        QuantOverride(
+            pattern=r"re:(^|.*\.)(gate|router|shared_expert_gate|lm_head)$",
+            weight="bf16",
+        )
+    ]
+
+
+def test_mxfp6_w6a6_and_ordered_overrides():
+    args = resolve_quantization_config(
+        "mxfp6",
+        {
+            "linear": {
+                "weight": "mxfp6_e2m3",
+                "activation": "mxfp6_e2m3_dynamic",
+            },
+            "overrides": [
+                {"pattern": "re:.*\\.gate$", "weight": "mxfp6_e2m3"},
+                {"pattern": "model.layers.0.mlp.gate", "weight": "bf16"},
+            ],
+        },
+    )
+    assert args.linear == QuantSpec(
+        weight=kMxfp6E2m3Static,
+        activation=kMxfp6E2m3Dynamic,
+    )
+    assert [rule.weight for rule in args.overrides] == [
+        "bf16",
+        kMxfp6E2m3Static,
+        "bf16",
+    ]
 
 
 def test_resolve_rejects_quantization_config_with_non_shorthand_quant():

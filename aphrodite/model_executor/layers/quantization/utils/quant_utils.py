@@ -165,6 +165,29 @@ kMxfp8Dynamic = QuantKey(FP8_DTYPE, scale=kMxfp8DynamicGroupScale, symmetric=Tru
 kMxfp4StaticGroupScale = ScaleDesc(MXFP_SCALE_DTYPE, True, GroupShape(1, 32))
 kMxfp4Static = QuantKey(FP4_DTYPE, scale=kMxfp4StaticGroupScale, symmetric=True)
 
+kMxfp6StaticGroupScale = ScaleDesc(MXFP_SCALE_DTYPE, True, GroupShape(1, 32))
+kMxfp6DynamicGroupScale = ScaleDesc(MXFP_SCALE_DTYPE, False, GroupShape(1, 32))
+kMxfp6E2m3Static = QuantKey(
+    scalar_types.float6_e2m3f,
+    scale=kMxfp6StaticGroupScale,
+    symmetric=True,
+)
+kMxfp6E2m3Dynamic = QuantKey(
+    scalar_types.float6_e2m3f,
+    scale=kMxfp6DynamicGroupScale,
+    symmetric=True,
+)
+kMxfp6E3m2Static = QuantKey(
+    scalar_types.float6_e3m2f,
+    scale=kMxfp6StaticGroupScale,
+    symmetric=True,
+)
+kMxfp6E3m2Dynamic = QuantKey(
+    scalar_types.float6_e3m2f,
+    scale=kMxfp6DynamicGroupScale,
+    symmetric=True,
+)
+
 # TODO: convert this to use SCALAR_TYPE. This is not right.
 kInt4StaticGroupScale = ScaleDesc(torch.float16, True, GroupShape(1, -1))
 kInt4Static = QuantKey(INT4_DTYPE, scale=kInt4StaticGroupScale, symmetric=True)

@@ -41,6 +41,7 @@ A check mark means that the platform class declares the method. NVIDIA CUDA acce
 | `int8_per_channel_weight_only` | SM 7.5 | — | — |
 | `nvfp4_per_token` | SM 7.5 | — | — |
 | `mxfp8` | SM 8.0 | ✓ | ✓ |
+| `mxfp6` | SM 11.0 | — | — |
 
 ## Read the table
 

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# mypy: disable-error-code=call-arg
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, GetPydanticSchema, ValidationInfo, field_validator
 from pydantic_core import core_schema
@@ -17,6 +18,10 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8StaticTensorSym,
     kInt8StaticChannelSym,
     kMxfp4Dynamic,
+    kMxfp6E2m3Dynamic,
+    kMxfp6E2m3Static,
+    kMxfp6E3m2Dynamic,
+    kMxfp6E3m2Static,
     kMxfp8Dynamic,
     kNvfp4Static,
 )
@@ -31,6 +36,10 @@ QUANT_KEY_NAMES: dict[str, QuantKey] = {
     "fp8_per_block_dynamic": kFp8Dynamic128Sym,
     "mxfp8": kMxfp8Dynamic,
     "mxfp4": kMxfp4Dynamic,
+    "mxfp6_e2m3": kMxfp6E2m3Static,
+    "mxfp6_e2m3_dynamic": kMxfp6E2m3Dynamic,
+    "mxfp6_e3m2": kMxfp6E3m2Static,
+    "mxfp6_e3m2_dynamic": kMxfp6E3m2Dynamic,
     "int8_per_channel_static": kInt8StaticChannelSym,
 }
 
@@ -69,6 +78,32 @@ class QuantSpec:
     """Activation quantization key, or a name from QUANT_KEY_NAMES."""
 
 
+def _coerce_override_weight(v: Any) -> Any:
+    if v in (None, "bf16"):
+        return v
+    return _coerce_quant_key(v)
+
+
+OverrideWeightField = Annotated[
+    QuantKey | Literal["bf16"] | None,
+    GetPydanticSchema(lambda _src, _handler: core_schema.no_info_plain_validator_function(_coerce_override_weight)),
+]
+
+
+@config
+class QuantOverride:
+    """Ordered module-level override for online quantization."""
+
+    pattern: str = ""
+    """Exact module prefix or ``re:`` regular expression."""
+
+    weight: OverrideWeightField = None
+    """Replacement weight format; ``bf16`` leaves the module unquantized."""
+
+    activation: QuantKeyField = None
+    """Replacement activation format; omitted fields inherit the base spec."""
+
+
 @config
 class QuantizationConfigArgs:
     """User-facing quantization configuration.
@@ -85,6 +120,9 @@ class QuantizationConfigArgs:
 
     ignore: list[str] = Field(default_factory=list)
     """Layers to skip quantization for."""
+
+    overrides: list[QuantOverride] = Field(default_factory=list)
+    """Ordered module precision overrides. Later matching rules win."""
 
     @field_validator("linear", "moe", mode="before")
     @classmethod
@@ -121,6 +159,16 @@ _ONLINE_SHORTHANDS: dict[str, QuantizationConfigArgs] = {
     "mxfp8": QuantizationConfigArgs(
         linear=QuantSpec(weight=kMxfp8Dynamic),
         moe=QuantSpec(weight=kMxfp8Dynamic),
+    ),
+    "mxfp6": QuantizationConfigArgs(
+        linear=QuantSpec(weight=kMxfp6E2m3Static, activation=kMxfp8Dynamic),
+        moe=QuantSpec(weight=kMxfp6E2m3Static, activation=kMxfp8Dynamic),
+        overrides=[
+            QuantOverride(
+                pattern=r"re:(^|.*\.)(gate|router|shared_expert_gate|lm_head)$",
+                weight="bf16",
+            )
+        ],
     ),
     # INT8 weight-only on MoE; linear stays unquantized (no `linear` field).
     "int8_per_channel_weight_only": QuantizationConfigArgs(
@@ -177,4 +225,5 @@ def resolve_quantization_config(
         linear=quantization_config.linear or base.linear,
         moe=quantization_config.moe or base.moe,
         ignore=quantization_config.ignore or base.ignore,
+        overrides=[*base.overrides, *quantization_config.overrides],
     )
