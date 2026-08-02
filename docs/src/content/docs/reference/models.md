@@ -7,7 +7,7 @@ description: Model architectures that the current Sonar source tree registers.
 
 Sonar reads the `architectures` field from a model's `config.json` file. The value must match an architecture in these tables. A compatible Transformers implementation can also use the Transformers backend.
 
-The current registry contains **371 architecture entries** in the user-facing categories below.
+The current registry contains **374 architecture entries** in the user-facing categories below.
 
 ## Text generation
 
@@ -80,7 +80,7 @@ The current registry contains **371 architecture entries** in the user-facing ca
 | `InternLM3ForCausalLM` | `llama:LlamaForCausalLM` |
 | `Jais2ForCausalLM` | `jais2:Jais2ForCausalLM` |
 | `JambaForCausalLM` | `jamba:JambaForCausalLM` |
-| `KimiLinearForCausalLM` | `kimi_linear:KimiLinearForCausalLM` |
+| `KimiLinearForCausalLM` | `aphrodite.models.kimi_k3:KimiLinearForCausalLM` |
 | `LLaMAForCausalLM` | `llama:LlamaForCausalLM` |
 | `LagunaForCausalLM` | `laguna:LagunaForCausalLM` |
 | `Lfm2ForCausalLM` | `lfm2:Lfm2ForCausalLM` |
@@ -293,6 +293,7 @@ The current registry contains **371 architecture entries** in the user-facing ca
 | `KeyeForConditionalGeneration` | `keye:KeyeForConditionalGeneration` |
 | `KeyeVL1_5ForConditionalGeneration` | `keye_vl1_5:KeyeVL1_5ForConditionalGeneration` |
 | `KimiK25ForConditionalGeneration` | `kimi_k25:KimiK25ForConditionalGeneration` |
+| `KimiK3ForConditionalGeneration` | `aphrodite.models.kimi_k3:KimiK3ForConditionalGeneration` |
 | `KimiVLForConditionalGeneration` | `kimi_vl:KimiVLForConditionalGeneration` |
 | `Lfm2VlForConditionalGeneration` | `lfm2_vl:Lfm2VLForConditionalGeneration` |
 | `LightOnOCRForConditionalGeneration` | `lightonocr:LightOnOCRForConditionalGeneration` |
@@ -394,6 +395,8 @@ The current registry contains **371 architecture entries** in the user-facing ca
 | `GlmOcrMTPModel` | `glm_ocr_mtp:GlmOcrMTP` |
 | `HYV3MTPModel` | `hy_v3_mtp:HYV3MTP` |
 | `InklingMTPModel` | `aphrodite.models.inkling:InklingMTP` |
+| `K3DSparkModel` | `aphrodite.models.kimi_k3.nvidia.dspark_mla:K3DSparkForCausalLM` |
+| `KimiK3MTPModel` | `aphrodite.models.kimi_k3:KimiK3MTP` |
 | `LlamaForCausalLMEagle3` | `llama_eagle3:Eagle3LlamaForCausalLM` |
 | `LongCatFlashMTPModel` | `longcat_flash_mtp:LongCatFlashMTP` |
 | `MedusaModel` | `medusa:Medusa` |

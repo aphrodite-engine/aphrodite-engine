@@ -513,7 +513,7 @@ class EngineArgs:
     quantization: QuantizationMethods | str | None = ModelConfig.quantization
     quantization_config: "dict[str, Any] | QuantizationConfigArgs | None" = None
     """User-facing quantization configuration. Carries per-layer-kind
-    QuantSpecs (linear, moe) and ignore patterns; see
+    QuantSpecs (linear, moe), ignore patterns, and ordered precision overrides; see
     :class:`QuantizationConfigArgs`. Auto-populated from the matching online
     shorthand when `quantization` is one of the values in
     `ONLINE_QUANT_SHORTHAND_NAMES`."""

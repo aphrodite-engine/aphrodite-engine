@@ -141,7 +141,10 @@ extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*", "tests/tokenizer
     "docs/governance/process.md", "docs/assets/contributing/aphrodite_bench_serve_timeline.html",
     "tests/v1/engine/test_fast_incdec_prefix_err.py", ".git/*",
     "rust/src/text/src/output/decoded.rs",
-    "rust/src/tokenizer/src/incremental.rs"]
+    "rust/src/tokenizer/src/incremental.rs",
+    # Vendored NVIDIA CUTLASS reference kernel. Keep identifiers aligned with upstream.
+    "aphrodite/model_executor/kernels/linear/mxfp6/cutedsl_kernel.py",
+    "aphrodite/model_executor/kernels/linear/mxfp6/cutedsl_grouped_kernel.py"]
 ignore-hidden = false
 
 [tool.typos.default]
