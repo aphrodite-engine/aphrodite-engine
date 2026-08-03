@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from aphrodite.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.model_executor.models import AphroditeModelForPooling, is_pooling_model
 from aphrodite.pooling_params import PoolingParams
 from aphrodite.tasks import PoolingTask
@@ -16,7 +16,7 @@ from aphrodite.v1.pool.metadata import PoolingMetadata, PoolingStates
 from aphrodite.v1.worker.gpu.input_batch import InputBatch
 from aphrodite.v1.worker.gpu.states import RequestState
 
-_SUPPORTED_TASKS: frozenset[PoolingTask] = frozenset({"embed", "classify"})
+_SUPPORTED_TASKS: frozenset[PoolingTask] = frozenset({"embed", "classify", "token_classify"})
 
 
 class PoolingRunner:
@@ -25,19 +25,24 @@ class PoolingRunner:
         self.model_config = aphrodite_config.model_config
         self.max_num_reqs = aphrodite_config.scheduler_config.max_num_seqs
         model_tasks = tuple(sorted(self.model.pooler.get_supported_tasks()))
+        enabled_tasks = self._get_enabled_tasks(self.model_config)
         selected_task = self.model_config.get_pooling_task(model_tasks)
-        if selected_task not in _SUPPORTED_TASKS:
-            raise ValueError(
-                "Model Runner V2 supports only sequence-level pooling tasks "
-                f"{sorted(_SUPPORTED_TASKS)}, but this model selects "
-                f"{selected_task!r} from {list(model_tasks)}. Set an explicitly "
-                "supported task or APHRODITE_USE_V2_MODEL_RUNNER=0."
+        if selected_task not in enabled_tasks:
+            hint = (
+                "Set an explicitly supported task or APHRODITE_USE_V2_MODEL_RUNNER=0."
+                if enabled_tasks.intersection(model_tasks)
+                else "Set APHRODITE_USE_V2_MODEL_RUNNER=0 to use this model."
             )
-        self.supported_tasks = frozenset(self.get_supported_tasks(model))
+            raise ValueError(
+                "Model Runner V2 supports pooling tasks "
+                f"{sorted(enabled_tasks)}, but this model selects "
+                f"{selected_task!r} from {list(model_tasks)}. {hint}"
+            )
+        self.supported_tasks = frozenset(self.get_supported_tasks(model, self.model_config))
         if not self.supported_tasks:
             raise ValueError(
-                "Model Runner V2 supports only sequence-level pooling tasks "
-                f"{sorted(_SUPPORTED_TASKS)}, but this model supports "
+                "Model Runner V2 supports pooling tasks "
+                f"{sorted(enabled_tasks)}, but this model supports "
                 f"{list(model_tasks)}. "
                 "Set APHRODITE_USE_V2_MODEL_RUNNER=0 to use this model."
             )
@@ -46,10 +51,18 @@ class PoolingRunner:
         self.prompt_token_ids: dict[int, torch.Tensor] = {}
 
     @staticmethod
-    def get_supported_tasks(model: nn.Module) -> list[PoolingTask]:
+    def _get_enabled_tasks(model_config: ModelConfig) -> frozenset[PoolingTask]:
+        # Token classification is validated only for unchunked encoder-only prefill.
+        if model_config.attn_type == "encoder_only":
+            return _SUPPORTED_TASKS
+        return _SUPPORTED_TASKS - {"token_classify"}
+
+    @staticmethod
+    def get_supported_tasks(model: nn.Module, model_config: ModelConfig) -> list[PoolingTask]:
         if not is_pooling_model(model):
             return []
-        return sorted(model.pooler.get_supported_tasks() & _SUPPORTED_TASKS)
+        enabled_tasks = PoolingRunner._get_enabled_tasks(model_config)
+        return sorted(model.pooler.get_supported_tasks() & enabled_tasks)
 
     def add_request(
         self,

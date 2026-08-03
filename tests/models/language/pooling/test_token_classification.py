@@ -29,16 +29,22 @@ def seed_everything():
 )
 # The float32 is required for this tiny model to pass the test.
 @pytest.mark.parametrize("dtype", ["float"])
+@pytest.mark.core_model
 @torch.inference_mode
-def test_bert_models(
+def test_bert_model_runner_v2(
     hf_runner,
     aphrodite_runner,
     example_prompts,
+    monkeypatch,
     model: str,
     dtype: str,
 ) -> None:
+    prompt_batches = [[example_prompts[0]], example_prompts]
+
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.token_classify(example_prompts)
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
+        aphrodite_output_batches = [aphrodite_model.token_classify(prompts) for prompts in prompt_batches]
 
     # Use eager attention on ROCm to avoid HF Transformers flash attention
     # accuracy issues: https://github.com/vllm-project/vllm/issues/30167
@@ -59,12 +65,14 @@ def test_bert_models(
             inputs = hf_model.wrap_device(inputs)
             output = hf_model.model(**inputs)
             hf_outputs.append(softmax(output.logits[0]))
+        hf_output_batches = [[hf_outputs[0]], hf_outputs]
 
     # check logits difference
-    for hf_output, aphrodite_output in zip(hf_outputs, aphrodite_outputs):
-        hf_output = hf_output.detach().clone().cpu().float()
-        aphrodite_output = aphrodite_output.detach().clone().cpu().float()
-        torch.testing.assert_close(hf_output, aphrodite_output, atol=3.2e-2, rtol=1e-3)
+    for hf_outputs, aphrodite_outputs in zip(hf_output_batches, aphrodite_output_batches):
+        for hf_output, aphrodite_output in zip(hf_outputs, aphrodite_outputs):
+            hf_output = hf_output.detach().clone().cpu().float()
+            aphrodite_output = aphrodite_output.detach().clone().cpu().float()
+            torch.testing.assert_close(hf_output, aphrodite_output, atol=3.2e-2, rtol=1e-3)
 
 
 @pytest.mark.parametrize("model", ["disham993/electrical-ner-ModernBERT-base"])
