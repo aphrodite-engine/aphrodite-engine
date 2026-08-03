@@ -112,10 +112,10 @@ class MarlinLinearKernel(MPLinearKernel):
 
         # Default names since marlin requires empty parameters for these,
         # TODO: remove this requirement from marlin (allow optional tensors)
-        if getattr(self, "w_gidx_name", None) is None:
-            self.w_gidx_name = "g_idx"
-        if getattr(self, "w_zp_name", None) is None:
-            self.w_zp_name = "w_zp"
+        w_gidx_name: str = getattr(self, "w_gidx_name", None) or "g_idx"
+        w_zp_name: str = getattr(self, "w_zp_name", None) or "w_zp"
+        self.w_gidx_name = w_gidx_name
+        self.w_zp_name = w_zp_name
 
         def transform_w_q(x):
             assert isinstance(x, BaseAphroditeParameter)
@@ -164,11 +164,11 @@ class MarlinLinearKernel(MPLinearKernel):
             return x
 
         if c.has_g_idx:
-            g_idx, g_idx_sort_indices = marlin_sort_g_idx(getattr(layer, self.w_gidx_name))
-            self._transform_param(layer, self.w_gidx_name, lambda _: g_idx)
+            g_idx, g_idx_sort_indices = marlin_sort_g_idx(getattr(layer, w_gidx_name))
+            self._transform_param(layer, w_gidx_name, lambda _: g_idx)
             replace_parameter(layer, "g_idx_sort_indices", g_idx_sort_indices, prefer_copy=True)
         else:
-            setattr(layer, self.w_gidx_name, marlin_make_empty_g_idx(device))
+            setattr(layer, w_gidx_name, marlin_make_empty_g_idx(device))
             layer.g_idx_sort_indices = marlin_make_empty_g_idx(device)
 
         if c.zero_points:
@@ -176,7 +176,7 @@ class MarlinLinearKernel(MPLinearKernel):
             padded_grouped_k = padded_k // c.group_size if c.group_size != -1 else 1
             self._transform_param(
                 layer,
-                self.w_zp_name,
+                w_zp_name,
                 lambda x: marlin_zero_points(
                     marlin_pad_scales(
                         unpack_cols(
@@ -198,7 +198,7 @@ class MarlinLinearKernel(MPLinearKernel):
                 ),
             )
         else:
-            setattr(layer, self.w_zp_name, marlin_make_empty_g_idx(device))
+            setattr(layer, w_zp_name, marlin_make_empty_g_idx(device))
         self._transform_param(layer, self.w_q_name, transform_w_q)
         self._transform_param(layer, self.w_s_name, transform_w_s)
 
