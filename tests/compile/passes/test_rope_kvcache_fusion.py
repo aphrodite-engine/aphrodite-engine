@@ -27,6 +27,7 @@ from aphrodite.config import (
 from aphrodite.config.utils import Range
 from aphrodite.forward_context import get_forward_context, set_forward_context
 from aphrodite.model_executor.layers.attention import Attention
+from aphrodite.model_executor.layers.attention import attention as attention_module
 from aphrodite.model_executor.layers.rotary_embedding import RotaryEmbedding
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import _encode_layer_name
@@ -41,6 +42,35 @@ from tests.v1.attention.utils import BatchSpec, create_common_attn_metadata
 INDEX_SELECT_OP = torch.ops.aten.index.Tensor
 APHRODITE_UNIFIED_KV_CACHE_UPDATE_OP = torch.ops.aphrodite.unified_kv_cache_update
 FP8_DTYPE = current_platform.fp8_dtype()
+
+
+def test_kv_cache_update_ops_fake_tensor_metadata(monkeypatch: pytest.MonkeyPatch):
+    query = torch.empty(1, dtype=torch.bfloat16)
+    kv_cache = torch.empty(1, dtype=torch.uint8)
+    context = (None, None, kv_cache, None)
+    monkeypatch.setattr(attention_module, "get_attention_context", lambda _: context)
+    monkeypatch.setattr(rope_kvcache_fusion, "get_attention_context", lambda _: context)
+
+    runtime_output = attention_module.unified_kv_cache_update(query, query, "layer")
+    fake_output = attention_module.unified_kv_cache_update_fake(query, query, "layer")
+    assert runtime_output.shape == fake_output.shape
+    assert runtime_output.dtype == fake_output.dtype
+    assert runtime_output.device == fake_output.device
+
+    args = (
+        query,
+        query,
+        query,
+        torch.empty(1, dtype=torch.int64),
+        torch.empty(1),
+        True,
+        "layer",
+    )
+    runtime_output = rope_kvcache_fusion.fused_rope_and_unified_kv_cache_update_impl(*args)
+    fake_output = rope_kvcache_fusion.fused_rope_and_unified_kv_cache_update_fake(*args)
+    assert runtime_output.shape == fake_output.shape
+    assert runtime_output.dtype == fake_output.dtype
+    assert runtime_output.device == fake_output.device
 
 
 def test_rope_kvcache_fusion_default_keeps_large_ranges_unfused():
