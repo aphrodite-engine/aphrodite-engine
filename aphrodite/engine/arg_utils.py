@@ -87,7 +87,7 @@ from aphrodite.config.model import (
     RunnerOption,
     TokenizerMode,
 )
-from aphrodite.config.multimodal import MMCacheType, MMEncoderTPMode, MMTensorIPC
+from aphrodite.config.multimodal import MMCacheType, MMEncoderTPMode, MMHasherAlgorithm, MMTensorIPC
 from aphrodite.config.observability import DetailedTraceModules
 from aphrodite.config.parallel import (
     All2AllBackend,
@@ -528,6 +528,7 @@ class EngineArgs:
     mm_processor_kwargs: dict[str, Any] | None = MultiModalConfig.mm_processor_kwargs
     mm_processor_cache_gb: float = MultiModalConfig.mm_processor_cache_gb
     mm_processor_cache_type: MMCacheType | None = MultiModalConfig.mm_processor_cache_type
+    mm_hasher_algorithm: MMHasherAlgorithm = get_field(MultiModalConfig, "mm_hasher_algorithm")
     mm_shm_cache_max_object_size_mb: int = MultiModalConfig.mm_shm_cache_max_object_size_mb
     mm_encoder_only: bool = MultiModalConfig.mm_encoder_only
     mm_encoder_tp_mode: MMEncoderTPMode = MultiModalConfig.mm_encoder_tp_mode
@@ -1102,6 +1103,7 @@ class EngineArgs:
         multimodal_group.add_argument("--mm-processor-kwargs", **multimodal_kwargs["mm_processor_kwargs"])
         multimodal_group.add_argument("--mm-processor-cache-gb", **multimodal_kwargs["mm_processor_cache_gb"])
         multimodal_group.add_argument("--mm-processor-cache-type", **multimodal_kwargs["mm_processor_cache_type"])
+        multimodal_group.add_argument("--mm-hasher-algorithm", **multimodal_kwargs["mm_hasher_algorithm"])
         multimodal_group.add_argument(
             "--mm-shm-cache-max-object-size-mb",
             **multimodal_kwargs["mm_shm_cache_max_object_size_mb"],
@@ -1454,6 +1456,7 @@ class EngineArgs:
             mm_processor_kwargs=self.mm_processor_kwargs,
             mm_processor_cache_gb=self.mm_processor_cache_gb,
             mm_processor_cache_type=self.mm_processor_cache_type,
+            mm_hasher_algorithm=self.mm_hasher_algorithm,
             mm_shm_cache_max_object_size_mb=self.mm_shm_cache_max_object_size_mb,
             mm_encoder_only=self.mm_encoder_only,
             mm_encoder_tp_mode=self.mm_encoder_tp_mode,

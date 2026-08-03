@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import hashlib
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 import torch
 from PIL import Image, ImageDraw
 
+from aphrodite.config.multimodal import MMHasherAlgorithm
 from aphrodite.multimodal.hasher import MultiModalHasher
 from aphrodite.multimodal.media.base import MediaWithBytes
 from aphrodite.multimodal.media.image import ImageMediaIO
@@ -18,6 +20,15 @@ pytestmark = pytest.mark.cpu_test
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 assert ASSETS_DIR.exists()
+
+
+@pytest.mark.parametrize("algorithm", ["sha256", "sha512"])
+def test_hash_algorithm(algorithm: MMHasherAlgorithm):
+    hasher = getattr(hashlib, algorithm)()
+    for bytes_ in MultiModalHasher.iter_item_to_bytes("value", "test"):
+        hasher.update(bytes_)
+
+    assert MultiModalHasher.hash_kwargs(algorithm, value="test") == hasher.hexdigest()
 
 
 def test_hash_single_item_different_shape():

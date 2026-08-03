@@ -17,6 +17,7 @@ from aphrodite.config.model_arch import (
 from aphrodite.config.multimodal import (
     MMCacheType,
     MMEncoderTPMode,
+    MMHasherAlgorithm,
     MMTensorIPC,
     MultiModalConfig,
 )
@@ -374,6 +375,7 @@ class ModelConfig:
     mm_processor_kwargs: InitVar[dict[str, Any] | None] = cast(InitVar[dict[str, Any] | None], None)
     mm_processor_cache_gb: InitVar[float | None] = cast(InitVar[float | None], None)
     mm_processor_cache_type: InitVar[MMCacheType | None] = cast(InitVar[MMCacheType | None], None)
+    mm_hasher_algorithm: InitVar[MMHasherAlgorithm | None] = cast(InitVar[MMHasherAlgorithm | None], None)
     mm_shm_cache_max_object_size_mb: InitVar[int | None] = cast(InitVar[int | None], None)
     mm_encoder_only: InitVar[bool | None] = cast(InitVar[bool | None], None)
     mm_encoder_tp_mode: InitVar[MMEncoderTPMode | None] = cast(InitVar[MMEncoderTPMode | None], None)
@@ -504,6 +506,7 @@ class ModelConfig:
         mm_processor_kwargs: dict[str, Any] | None,
         mm_processor_cache_gb: float | None,
         mm_processor_cache_type: MMCacheType | None,
+        mm_hasher_algorithm: MMHasherAlgorithm | None,
         mm_shm_cache_max_object_size_mb: int | None,
         mm_encoder_only: bool | None,
         mm_encoder_tp_mode: MMEncoderTPMode | None,
@@ -716,6 +719,7 @@ class ModelConfig:
                 mm_processor_kwargs=mm_processor_kwargs,
                 mm_processor_cache_gb=mm_processor_cache_gb,
                 mm_processor_cache_type=mm_processor_cache_type,
+                mm_hasher_algorithm=mm_hasher_algorithm,
                 mm_shm_cache_max_object_size_mb=mm_shm_cache_max_object_size_mb,
                 mm_encoder_only=mm_encoder_only,
                 mm_encoder_tp_mode=mm_encoder_tp_mode,
