@@ -31,7 +31,7 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from aphrodite.transformers_utils.repo_utils import hf_api
+from aphrodite.transformers_utils.repo_utils import hf_api, with_retry
 from PIL import Image
 from transformers import (
     AutoConfig,
@@ -537,9 +537,15 @@ class HfRunner:
             # it will call torch.accelerator.device_count()
             from transformers import AutoProcessor
 
-            self.processor = AutoProcessor.from_pretrained(
-                model_name,
-                trust_remote_code=trust_remote_code,
+            # A concurrent refresh of the shared HF cache can briefly hide
+            # processor configuration files. Retry just as model config loading
+            # does in aphrodite.transformers_utils.config.
+            self.processor = with_retry(
+                lambda: AutoProcessor.from_pretrained(
+                    model_name,
+                    trust_remote_code=trust_remote_code,
+                ),
+                f"Error loading processor for {model_name}",
             )
         if skip_tokenizer_init:
             if self.processor is None:
