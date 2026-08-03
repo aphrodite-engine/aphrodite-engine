@@ -31,7 +31,7 @@ from aphrodite.entrypoints.openai.engine.protocol import (
     validate_structural_tag_response_format,
     validate_structured_outputs_structural_tag,
 )
-from aphrodite.exceptions import VLLMValidationError
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import Logprob
 from aphrodite.renderers import ChatParams, TokenizeParams, merge_kwargs
@@ -61,7 +61,7 @@ class ChatMessage(OpenAIBaseModel):
     function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
 
-    # vLLM-specific fields that are not in OpenAI spec
+    # Aphrodite-specific fields that are not in OpenAI spec
     reasoning: str | None = None
 
     @model_serializer(mode="wrap")
@@ -95,7 +95,7 @@ class ChatCompletionResponseChoice(OpenAIBaseModel):
     logprobs: ChatCompletionLogProbs | None = None
     # per OpenAI spec this is the default
     finish_reason: str | None = "stop"
-    # not part of the OpenAI spec but included in vLLM for legacy reasons
+    # not part of the OpenAI spec but included in Aphrodite for legacy reasons
     stop_reason: int | str | None = None
     # not part of the OpenAI spec but is useful for tracing the tokens
     # in agent scenarios
@@ -122,7 +122,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
     system_fingerprint: str | None = None
     usage: UsageInfo
 
-    # vLLM-specific fields that are not in OpenAI spec
+    # Aphrodite-specific fields that are not in OpenAI spec
     prompt_logprobs: list[dict[int, Logprob] | None] | None = None
     prompt_token_ids: list[int] | None = None
     # Rendered prompt text from chat templating (only set when
@@ -231,7 +231,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     include_reasoning: bool = True
     parallel_tool_calls: bool | None = True
 
-    # NOTE this will be ignored by vLLM
+    # NOTE this will be ignored by Aphrodite
     user: str | None = None
 
     # --8<-- [start:chat-completion-sampling-params]
@@ -443,7 +443,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         description=("ECTransfer parameters used for encoder-cache disaggregated serving."),
     )
 
-    vllm_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
+    aphrodite_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
         default=None,
         description=(
             "Additional request parameters with (list of) string or numeric values, used by custom extensions."
@@ -641,7 +641,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if prompt_logprobs is None and self.echo:
             prompt_logprobs = self.top_logprobs
 
-        extra_args: dict[str, Any] = self.vllm_xargs if self.vllm_xargs else {}
+        extra_args: dict[str, Any] = self.aphrodite_xargs if self.aphrodite_xargs else {}
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
@@ -699,7 +699,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 else getattr(response_format, "json_schema", None)
             )
             if json_schema is None:
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     "When response_format type is 'json_schema', the 'json_schema' field must be provided.",
                     parameter="response_format",
                 )
@@ -713,7 +713,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def validate_stream_options(cls, data):
         if data.get("stream_options") and not data.get("stream"):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "Stream options can only be defined when `stream=True`.",
                 parameter="stream_options",
             )
@@ -724,13 +724,13 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def check_logprobs(cls, data):
         if data.get("logprob_token_ids") and data.get("use_beam_search"):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "`logprob_token_ids` is not supported with beam search.",
                 parameter="logprob_token_ids",
             )
 
         if data.get("logprob_token_ids") and not data.get("logprobs"):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "when using `logprob_token_ids`, `logprobs` must be set to true.",
                 parameter="logprob_token_ids",
             )
@@ -742,34 +742,34 @@ class ChatCompletionRequest(OpenAIBaseModel):
         for field_name in ("prompt_logprobs", "top_logprobs"):
             field_value = data.get(field_name)
             if field_value is not None and not isinstance(field_value, (int, float)):
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     f"`{field_name}` must be an integer.",
                     parameter=field_name,
                     value=field_value,
                 )
         if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
             if data.get("stream") and (prompt_logprobs > 0 or prompt_logprobs == -1):
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     "`prompt_logprobs` are not available when `stream=True`.",
                     parameter="prompt_logprobs",
                 )
 
             if prompt_logprobs < 0 and prompt_logprobs != -1:
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     "`prompt_logprobs` must be a positive value or -1.",
                     parameter="prompt_logprobs",
                     value=prompt_logprobs,
                 )
         if (top_logprobs := data.get("top_logprobs")) is not None:
             if top_logprobs < 0 and top_logprobs != -1:
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     "`top_logprobs` must be a positive value or -1.",
                     parameter="top_logprobs",
                     value=top_logprobs,
                 )
 
             if (top_logprobs == -1 or top_logprobs > 0) and not data.get("logprobs"):
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     "when using `top_logprobs`, `logprobs` must be set to true.",
                     parameter="top_logprobs",
                 )
@@ -796,7 +796,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         )
         # you can only use one kind of constraints for structured outputs
         if count > 1:
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "You can only use one kind of constraints for structured outputs ('json', 'regex' or 'choice').",
             )
         # you can only either use structured outputs or tools, not both
@@ -805,7 +805,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "auto",
             "required",
         ):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "You can only either use constraints for structured outputs or tools, not both.",
             )
         validate_structured_outputs_structural_tag(structured_outputs_kwargs)
@@ -821,7 +821,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
         # Reject empty tools array, matching OpenAI API behavior
         if data.get("tools") == []:
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "`tools` must not be an empty array. Either provide at least one tool or omit the field entirely.",
                 parameter="tools",
             )
@@ -839,7 +839,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if "tool_choice" in data and data["tool_choice"] is not None:
             # ensure that if "tool choice" is specified, tools are present
             if "tools" not in data or data["tools"] is None:
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     "When using `tool_choice`, `tools` must be set.",
                     parameter="tool_choice",
                 )
@@ -847,7 +847,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             # make sure that tool choice is either a named tool
             # OR that it's set to "auto" or "required"
             if data["tool_choice"] not in ["auto", "required"] and not isinstance(data["tool_choice"], dict):
-                raise VLLMValidationError(
+                raise AphroditeValidationError(
                     f"Invalid value for `tool_choice`: {data['tool_choice']}! "
                     'Only named tools, "none", "auto" or "required" '
                     "are supported.",
@@ -861,18 +861,18 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 valid_tool = False
                 function = data["tool_choice"].get("function")
                 if not isinstance(function, dict):
-                    raise VLLMValidationError(
+                    raise AphroditeValidationError(
                         f"Invalid value for `function`: `{function}` in `tool_choice`! {correct_usage_message}",
                         parameter="tool_choice.function",
                     )
                 if "name" not in function:
-                    raise VLLMValidationError(
+                    raise AphroditeValidationError(
                         f"Expected field `name` in `function` in `tool_choice`! {correct_usage_message}",
                         parameter="tool_choice.function.name",
                     )
                 function_name = function["name"]
                 if not isinstance(function_name, str) or len(function_name) == 0:
-                    raise VLLMValidationError(
+                    raise AphroditeValidationError(
                         f"Invalid `name` in `function`: `{function_name}` in `tool_choice`! {correct_usage_message}",
                         parameter="tool_choice.function.name",
                     )
@@ -881,7 +881,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
                         valid_tool = True
                         break
                 if not valid_tool:
-                    raise VLLMValidationError(
+                    raise AphroditeValidationError(
                         "The tool specified in `tool_choice` does not match any of the specified `tools`",
                         parameter="tool_choice",
                     )
@@ -891,7 +891,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def check_generation_prompt(cls, data):
         if data.get("continue_final_message") and data.get("add_generation_prompt"):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "Cannot set both `continue_final_message` and `add_generation_prompt` to True.",
             )
         return data
@@ -900,7 +900,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @classmethod
     def check_cache_salt_support(cls, data):
         if data.get("cache_salt") is not None and (not isinstance(data["cache_salt"], str) or not data["cache_salt"]):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "Parameter 'cache_salt' must be a non-empty string if provided.",
                 parameter="cache_salt",
             )
@@ -1001,7 +1001,7 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
     tool_choice: Literal["none"] | None = "none"
     include_reasoning: bool = True
 
-    # vLLM extensions
+    # Aphrodite extensions
     best_of: int | None = None
     use_beam_search: bool = False
     top_k: int | None = None
@@ -1033,12 +1033,12 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
         if isinstance(data, BatchChatCompletionRequest):
             data = data.model_dump(exclude_unset=True)
         if data.get("use_beam_search"):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "Batch chat completions do not support beam search. Please set `use_beam_search` to False.",
                 parameter="use_beam_search",
             )
         if data.get("logprob_token_ids") and not data.get("logprobs"):
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "when using `logprob_token_ids`, `logprobs` must be set to true.",
                 parameter="logprob_token_ids",
             )
@@ -1052,7 +1052,7 @@ class BatchChatCompletionRequest(OpenAIBaseModel):
             validate_structured_outputs_structural_tag(structured_outputs)
         n = data.get("n", 1)
         if n is not None and n != 1:
-            raise VLLMValidationError(
+            raise AphroditeValidationError(
                 "Batch chat completions do not support `n > 1`. Please set `n` to 1.",
                 parameter="n",
                 value=n,

@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
 
 from aphrodite.config.multimodal import MultiModalConfig
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
@@ -18,6 +17,7 @@ from aphrodite.entrypoints.openai.engine.protocol import GenerationError
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.scale_out.render.serving import ServingRender
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.renderers.hf import HfRenderer
 from aphrodite.renderers.online_renderer import OnlineRenderer
@@ -461,7 +461,7 @@ def test_json_schema_response_format_missing_schema():
 def test_structural_tag_response_format_invalid(format_value):
     """Malformed structural tags should be rejected during request validation."""
     with pytest.raises(
-        ValidationError,
+        AphroditeValidationError,
         match="Invalid response_format structural_tag",
     ):
         ChatCompletionRequest(
@@ -475,7 +475,7 @@ def test_structural_tag_response_format_invalid(format_value):
 def test_batch_structural_tag_response_format_invalid(format_value):
     """Batch chat should reject malformed structural tags at request parsing."""
     with pytest.raises(
-        ValidationError,
+        AphroditeValidationError,
         match="Invalid response_format structural_tag",
     ):
         BatchChatCompletionRequest(
@@ -489,7 +489,7 @@ def test_batch_structural_tag_response_format_invalid(format_value):
 def test_structured_outputs_structural_tag_invalid(structural_tag):
     """Malformed direct structured_outputs structural tags should be rejected."""
     with pytest.raises(
-        ValidationError,
+        AphroditeValidationError,
         match="Invalid structured_outputs structural_tag",
     ):
         ChatCompletionRequest(
@@ -503,7 +503,7 @@ def test_structured_outputs_structural_tag_invalid(structural_tag):
 def test_non_numeric_logprobs_rejected(field_name):
     """A non-numeric logprobs value must be a clean 400 validation error, not a
     TypeError from the mode='before' comparison (which surfaces as HTTP 500)."""
-    with pytest.raises(ValidationError, match=f"`{field_name}` must be an integer"):
+    with pytest.raises(AphroditeValidationError, match=f"`{field_name}` must be an integer"):
         ChatCompletionRequest(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": "hello"}],

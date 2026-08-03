@@ -155,11 +155,11 @@ class OpenAIServingChat(GenerateBaseServing):
         mc = self.model_config
         self.override_max_tokens = (
             self.default_sampling_params.get("max_tokens")
-            if mc.generation_config not in ("auto", "vllm")
+            if mc.generation_config not in ("auto", "aphrodite")
             else getattr(mc, "override_generation_config", {}).get("max_new_tokens")
         )
         # NOTE(woosuk): While OpenAI's chat completion API supports browsing
-        # for some models, currently vLLM doesn't support it. Please use the
+        # for some models, currently Aphrodite doesn't support it. Please use the
         # Responses API instead.
         self.supports_browsing = False
         self.browser_tool = None

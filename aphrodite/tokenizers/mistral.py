@@ -267,7 +267,7 @@ class MistralTokenizer(TokenizerLike):
     def num_special_tokens_to_add(self) -> int:
         return len(self.encode(""))
 
-    # the following attributes are set to fit vLLM's design and are used
+    # the following attributes are set to fit Aphrodite's design and are used
     # by the structured output backends.
     @property
     def all_special_tokens(self) -> list[str]:
