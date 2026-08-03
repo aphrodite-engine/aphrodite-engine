@@ -12,6 +12,7 @@ CUDA_ALIKE = current_platform.is_cuda_alike()
 """Most kernels in this file are supported on all CUDA-alike platforms."""
 IS_ROCM = current_platform.is_rocm()
 """ROCm needs shape normalization before calling some Aphrodite C kernels."""
+GPGPU_DEVICE = CUDA_ALIKE or current_platform.is_xpu()
 
 rms_no_var_size = lambda x, weight, epsilon, variance_size=None: (
     variance_size is None and (weight is None or weight.dtype == x.dtype)
@@ -19,7 +20,7 @@ rms_no_var_size = lambda x, weight, epsilon, variance_size=None: (
 """Aphrodite kernel requires no variance_size override and matching input/weight dtype."""
 
 
-@ir.ops.rms_norm.register_impl("aphrodite_c", supports_args=rms_no_var_size, supported=CUDA_ALIKE)
+@ir.ops.rms_norm.register_impl("aphrodite_c", supports_args=rms_no_var_size, supported=GPGPU_DEVICE)
 def rms_norm(x: Tensor, weight: Tensor | None, epsilon: float, variance_size: int | None = None) -> Tensor:
     assert variance_size is None
     # ROCm's Aphrodite C RMSNorm kernel operates on contiguous 2D tensors.
@@ -49,7 +50,7 @@ matching input/weight dtype."""
 @ir.ops.fused_add_rms_norm.register_impl(
     "aphrodite_c",
     supports_args=rms_add_no_var_size,
-    supported=CUDA_ALIKE,
+    supported=GPGPU_DEVICE,
     inplace=True,
 )
 def fused_add_rms_norm(
