@@ -25,6 +25,7 @@ from aphrodite.model_executor.layers.quantization.utils.marlin_utils import (
     unpack_cols,
 )
 from aphrodite.model_executor.parameter import BaseAphroditeParameter, permute_param_layout_
+from aphrodite.model_executor.utils import replace_parameter
 from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import scalar_types
 
@@ -106,14 +107,14 @@ class MarlinLinearKernel(MPLinearKernel):
         else:
             padded_n, padded_k = marlin_padded_nk(size_n, size_k, c.group_size)
 
-        # Allocate marlin workspace.
-        self.workspace = marlin_make_workspace_new(device)
+        # Allocate marlin workspace, reusing existing storage on reload.
+        self.workspace = marlin_make_workspace_new(device, existing=getattr(self, "workspace", None))
 
         # Default names since marlin requires empty parameters for these,
         # TODO: remove this requirement from marlin (allow optional tensors)
-        if self.w_gidx_name is None:
+        if getattr(self, "w_gidx_name", None) is None:
             self.w_gidx_name = "g_idx"
-        if self.w_zp_name is None:
+        if getattr(self, "w_zp_name", None) is None:
             self.w_zp_name = "w_zp"
 
         def transform_w_q(x):
@@ -165,7 +166,7 @@ class MarlinLinearKernel(MPLinearKernel):
         if c.has_g_idx:
             g_idx, g_idx_sort_indices = marlin_sort_g_idx(getattr(layer, self.w_gidx_name))
             self._transform_param(layer, self.w_gidx_name, lambda _: g_idx)
-            layer.g_idx_sort_indices = g_idx_sort_indices
+            replace_parameter(layer, "g_idx_sort_indices", g_idx_sort_indices, prefer_copy=True)
         else:
             setattr(layer, self.w_gidx_name, marlin_make_empty_g_idx(device))
             layer.g_idx_sort_indices = marlin_make_empty_g_idx(device)
