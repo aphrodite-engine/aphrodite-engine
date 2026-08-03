@@ -11,6 +11,7 @@ These tests verify:
 4. Error paths — unregistered specs, missing config, duplicate registration.
 """
 
+from dataclasses import replace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -268,6 +269,79 @@ def test_cpu_spec_sizes_use_shared_region_alignment():
     assert spec.num_blocks == 3
 
 
+def _create_cpu_spec(
+    *,
+    cpu_bytes_to_use: int,
+    worker_kv_bytes_per_block: int,
+    world_size: int,
+    replicated_layout: bool,
+) -> CPUOffloadingSpec:
+    config = _make_aphrodite_config(cpu_bytes_to_use=cpu_bytes_to_use)
+    offloading_config = build_offloading_config(config, _make_kv_cache_config())
+    offloading_config = replace(
+        offloading_config,
+        worker_kv_bytes_per_block=worker_kv_bytes_per_block,
+        parallel=replace(offloading_config.parallel, world_size=world_size),
+        replicated_layout=replicated_layout,
+    )
+    return CPUOffloadingSpec(offloading_config)
+
+
+@pytest.mark.parametrize("world_size", [2, 4, 8])
+def test_cpu_spec_replicated_sizing_on_shared_region(monkeypatch, world_size: int):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: True)
+    worker_bytes = SharedOffloadRegion.BLOCK_SIZE_ALIGNMENT
+    spec = _create_cpu_spec(
+        cpu_bytes_to_use=worker_bytes * 8,
+        worker_kv_bytes_per_block=worker_bytes,
+        world_size=world_size,
+        replicated_layout=True,
+    )
+
+    assert spec.replicated_layout is True
+    assert spec.cpu_page_size_per_worker == worker_bytes
+    assert spec.kv_bytes_per_chunk == worker_bytes
+    assert spec.num_blocks == 8
+
+
+@pytest.mark.parametrize("world_size", [2, 4, 8])
+def test_cpu_spec_replicated_disabled_without_shared_region(monkeypatch, world_size: int):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: False)
+    worker_bytes = SharedOffloadRegion.BLOCK_SIZE_ALIGNMENT
+    spec = _create_cpu_spec(
+        cpu_bytes_to_use=worker_bytes * world_size * 2,
+        worker_kv_bytes_per_block=worker_bytes,
+        world_size=world_size,
+        replicated_layout=True,
+    )
+
+    assert spec.replicated_layout is False
+    assert spec.cpu_page_size_per_worker == worker_bytes
+    assert spec.kv_bytes_per_chunk == worker_bytes * world_size
+    assert spec.num_blocks == 2
+
+
+@pytest.mark.parametrize("config_replicated", [True, False])
+@pytest.mark.parametrize("cuda_alike", [True, False])
+def test_cpu_spec_replicated_layout_truth_matrix(monkeypatch, cuda_alike: bool, config_replicated: bool):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: cuda_alike)
+    worker_bytes = SharedOffloadRegion.BLOCK_SIZE_ALIGNMENT
+    spec = _create_cpu_spec(
+        cpu_bytes_to_use=worker_bytes * 8,
+        worker_kv_bytes_per_block=worker_bytes,
+        world_size=4,
+        replicated_layout=config_replicated,
+    )
+
+    assert spec.replicated_layout is (cuda_alike and config_replicated)
+
+
 def test_cpu_spec_create_worker_uses_mmap_on_cuda_alike(monkeypatch):
     import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
 
@@ -357,6 +431,47 @@ def test_cpu_spec_create_worker_skips_mmap_for_empty_cache(monkeypatch):
 
     assert region_calls == []
     assert worker_calls[0]["mmap_region"] is None
+
+
+@pytest.mark.parametrize(
+    ("replicated_layout", "device_index", "world_size", "expected_rank"),
+    [
+        (True, 5, 4, 0),
+        (True, 0, 4, 0),
+        (False, 5, 4, 1),
+        (False, 7, 4, 3),
+    ],
+)
+def test_cpu_spec_create_worker_rank_assignment(
+    monkeypatch, replicated_layout, device_index, world_size, expected_rank
+):
+    import aphrodite.v1.kv_offload.cpu.spec as cpu_spec_module
+
+    monkeypatch.setattr(cpu_spec_module.current_platform, "is_cuda_alike", lambda: True)
+    worker_bytes = SharedOffloadRegion.BLOCK_SIZE_ALIGNMENT
+    spec = _create_cpu_spec(
+        cpu_bytes_to_use=worker_bytes * 8,
+        worker_kv_bytes_per_block=worker_bytes,
+        world_size=world_size,
+        replicated_layout=replicated_layout,
+    )
+    region_calls: list[dict[str, Any]] = []
+
+    def fake_region_ctor(**kwargs):
+        region_calls.append(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(cpu_spec_module, "SharedOffloadRegion", fake_region_ctor)
+    monkeypatch.setattr(cpu_spec_module, "CPUOffloadingWorker", MagicMock())
+    monkeypatch.setattr(
+        cpu_spec_module.torch.accelerator,
+        "current_device_index",
+        lambda: device_index,
+    )
+
+    spec.create_worker(MagicMock())
+
+    assert region_calls[0]["rank"] == expected_rank
 
 
 # ---------------------------------------------------------------------------
