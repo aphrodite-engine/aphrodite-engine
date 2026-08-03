@@ -30,7 +30,7 @@ from aphrodite.platforms import current_platform
 from aphrodite.utils.import_utils import has_deep_ep
 from aphrodite.utils.torch_utils import set_random_seed
 from aphrodite.v1.worker.workspace import init_workspace_manager
-from tests.kernels.moe.utils import check_accuracy, make_dummy_moe_config
+from tests.kernels.moe.utils import make_dummy_moe_config
 
 from ...utils import multi_gpu_test
 from .parallel_utils import ProcessGroupInfo, parallel_launch
@@ -339,14 +339,6 @@ def assert_deepep_close(
     k: int,
     use_fp8_dispatch: bool,
 ) -> None:
-    if use_fp8_dispatch and current_platform.is_fp8_fnuz():
-        # ROCm e4m3fnuz rounds differently than the reference quant,
-        # so DeepEP's fp8 dispatch can yield a few outliers even with
-        # a correct kernel; allow a small fraction of mismatches here.
-        atol = rtol = 1.5e-1
-        check_accuracy(expected, actual, atol=atol, rtol=rtol, percent=0.95)
-        return
-
     torch.testing.assert_close(
         expected,
         actual,
