@@ -362,7 +362,9 @@ class MistralParser(ParserEngine):
             ):
                 schema = self._build_guided_schema_pre_v11(request)
                 if schema is not None:
-                    request.structured_outputs = StructuredOutputsParams(json=schema)
+                    request.structured_outputs = StructuredOutputsParams(  # type: ignore[call-arg]
+                        json=schema
+                    )
                     request.response_format = None
             return request
 
@@ -433,7 +435,9 @@ class MistralParser(ParserEngine):
                     json_only=False,
                 )
 
-        request.structured_outputs = StructuredOutputsParams(grammar=lark_grammar)
+        request.structured_outputs = StructuredOutputsParams(  # type: ignore[call-arg]
+            grammar=lark_grammar
+        )
         request._grammar_from_parser = True
         return request
 
