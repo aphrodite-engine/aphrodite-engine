@@ -19,8 +19,8 @@ if TYPE_CHECKING:
     from aphrodite.config.weight_transfer import WeightTransferConfig
     from aphrodite.distributed.weight_transfer.base import (
         AphroditeWeightSyncClient,
+        TrainerInitInfo,
         WeightSource,
-        WeightTransferInitInfo,
     )
 
 logger = init_logger(__name__)
@@ -130,13 +130,11 @@ class WeightTransferTrainerFactory:
     def register_engine(
         cls,
         name: str,
-        module_path_or_cls: str | type[TrainerWeightTransferEngine],
+        module_path_or_cls: "str | type[TrainerWeightTransferEngine]",
         class_name: str | None = None,
     ) -> None:
-        """Register a trainer engine.
-
-        Same conventions as `WeightTransferEngineFactory.register_engine`.
-        """
+        """Register a trainer engine. Same conventions as
+        `WeightTransferEngineFactory.register_engine`."""
         if name in cls._registry:
             raise ValueError(f"Weight transfer trainer engine '{name}' is already registered.")
 
@@ -157,9 +155,7 @@ class WeightTransferTrainerFactory:
     @classmethod
     def trainer_init(
         cls,
-        backend: str,
-        config: "WeightTransferConfig",
-        init_info: "WeightTransferInitInfo",
+        init_info: "TrainerInitInfo",
         *,
         client: "AphroditeWeightSyncClient",
         source: "WeightSource",
@@ -169,16 +165,22 @@ class WeightTransferTrainerFactory:
         Called on every trainer rank (multi-rank trainers construct on all
         ranks; the sender is resolved inside the engine's ``trainer_init``).
 
+        The trainer side takes no `WeightTransferConfig` and no separate
+        `backend` argument: the backend is read from ``init_info.backend`` (a
+        `ClassVar` on each `TrainerInitInfo` subclass), and the static wire
+        params ride `init_info`.
+
         Args:
-            backend: Backend name (must be registered).
-            config: Backend-specific weight transfer config.
-            init_info: Backend-specific trainer init info.
+            init_info: Backend-specific trainer init info. Its `backend`
+                selects the engine; it also carries the wire params (e.g.
+                `packed`).
             client: Inference-side control-plane client.
             source: `WeightSource` of `(name, tensor)` pairs to send each round.
 
         Raises:
-            ValueError: If the backend is not registered.
+            ValueError: If `init_info.backend` is not registered.
         """
+        backend = init_info.backend
         if backend not in cls._registry:
             available = list(cls._registry.keys())
             raise ValueError(f"Invalid weight transfer backend: {backend}. Available trainer engines: {available}")
@@ -190,7 +192,6 @@ class WeightTransferTrainerFactory:
         )
 
         return engine_cls.trainer_init(
-            config=config,
             init_info=init_info,
             client=client,
             source=source,
@@ -217,4 +218,13 @@ WeightTransferEngineFactory.register_engine(
     "sparse_nccl",
     "aphrodite.distributed.weight_transfer.sparse_nccl_engine",
     "SparseNCCLWeightTransferEngine",
+)
+
+
+# Trainer-side engines. Backends register here as they migrate to the stateful
+# trainer engine; NCCL / sparse NCCL keep their static trainer path until then.
+WeightTransferTrainerFactory.register_engine(
+    "ipc",
+    "aphrodite.distributed.weight_transfer.ipc_engine",
+    "IPCTrainerWeightTransferEngine",
 )
