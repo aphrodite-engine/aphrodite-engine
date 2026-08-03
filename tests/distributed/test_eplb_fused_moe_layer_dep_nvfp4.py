@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-# Test that the interaction between EPLB and FusedMoE Layer is okay for DP w/ NVFP4
+# Test that the interaction between EPLB and FusedMoEFactory Layer is okay for DP w/ NVFP4
 
 from dataclasses import dataclass
 
@@ -18,7 +18,7 @@ from aphrodite.distributed.parallel_state import (
     get_eplb_group,
 )
 from aphrodite.forward_context import set_forward_context
-from aphrodite.model_executor.layers.fused_moe.layer import FusedMoE
+from aphrodite.model_executor.layers.fused_moe.layer import FusedMoEFactory, MoERunner
 from aphrodite.model_executor.layers.quantization.modelopt import (
     ModelOptNvFp4Config,
     ModelOptNvFp4FusedMoE,
@@ -44,7 +44,7 @@ def make_fused_moe_layer(
     rank: int,
     layer_idx: int,
     test_config: TestConfig,
-) -> FusedMoE:
+) -> MoERunner:
     quant_config = None
 
     device = torch.device(f"cuda:{rank}")
@@ -55,7 +55,7 @@ def make_fused_moe_layer(
         exclude_modules=[],
     )
 
-    fml = FusedMoE(
+    fml = FusedMoEFactory(
         num_experts=test_config.num_experts,
         top_k=test_config.num_topk,
         hidden_size=test_config.hidden_size,

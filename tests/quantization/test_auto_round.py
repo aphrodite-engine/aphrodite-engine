@@ -805,7 +805,7 @@ def test_inc_get_quant_method_unquantized_linear_returns_unquantized() -> None:
 def test_inc_get_quant_method_unquantized_moe_returns_unquantized(
     monkeypatch,
 ) -> None:
-    """Early-exit returns UnquantizedFusedMoEMethod for FusedMoE layers
+    """Early-exit returns UnquantizedFusedMoEMethod for FusedMoEFactory layers
     when extra_config has bits >= 16."""
     config = make_config(extra_config={"layer": {"bits": 16}})
     layer = object.__new__(RoutedExperts)

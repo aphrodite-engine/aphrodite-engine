@@ -40,7 +40,7 @@ from aphrodite.distributed import (
 )
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
 )
 from aphrodite.model_executor.layers.fused_moe.router.gate_linear import GateLinear
 from aphrodite.model_executor.layers.layernorm import RMSNorm
@@ -90,7 +90,7 @@ class MiniMaxM2MoE(nn.Module):
         else:
             self.e_score_correction_bias = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=config.num_local_experts,
             top_k=config.num_experts_per_tok,
             scoring_func=config.scoring_func,

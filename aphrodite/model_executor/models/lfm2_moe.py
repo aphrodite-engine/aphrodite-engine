@@ -15,7 +15,7 @@ from aphrodite.distributed import (
 )
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
@@ -139,7 +139,7 @@ class Lfm2MoeSparseMoeBlock(nn.Module):
         else:
             self.gate.e_score_correction_bias = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=self.n_routed_experts,
             top_k=config.num_experts_per_tok,
             hidden_size=config.hidden_size,
@@ -400,7 +400,7 @@ class Lfm2MoeModel(nn.Module):
             ".k_proj": (".qkv_proj", "k"),
             ".v_proj": (".qkv_proj", "v"),
             # Scoped (with trailing dots) to the dense MLP so routed experts.*.w1/w3
-            # (loaded by FusedMoE) are left untouched and .w1 does not match inside .w13
+            # (loaded by FusedMoEFactory) are left untouched and .w1 does not match inside .w13
             ".feed_forward.w1.": (".feed_forward.w13.", 0),
             ".feed_forward.w3.": (".feed_forward.w13.", 1),
         },

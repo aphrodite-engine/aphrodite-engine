@@ -285,7 +285,7 @@ def test_moe_fuser_matches_grouped_router():
 
 def test_moe_fuser_matches_correction_router():
     """A score-correction bias buffer (DeepSeek-V3 noaux) is allowed; the
-    rebuilt gate carries it in fp32 for FusedMoE's biased routers."""
+    rebuilt gate carries it in fp32 for FusedMoEFactory's biased routers."""
     with torch.device("meta"):
         block = MoEBlock(CorrectionRouter)
     fuser = MoEBlockFuser.match(block, "experts")

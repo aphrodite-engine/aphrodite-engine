@@ -42,7 +42,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
         routed_experts.lora_base_layer_prefix = "base_layer."
         assert not routed_experts.quant_method.is_monolithic, "Monolithic kernels are not supported for Fused MoE LoRA."
 
-        # Use the MoE-aware TP rank/size: when EP is active, FusedMoE collapses
+        # Use the MoE-aware TP rank/size: when EP is active, FusedMoEFactory collapses
         # moe_parallel_config.tp_size to 1 (experts are sharded across the
         # TP group instead).
         moe_parallel_config = self.moe_config.moe_parallel_config

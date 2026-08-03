@@ -42,7 +42,7 @@ from aphrodite.distributed import (
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
@@ -155,7 +155,7 @@ class Glm4MoE(nn.Module):
         self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
 
         # AITER fused shared-expert (FSE) gate; mirrors the deepseek_v2.py
-        # pattern (see Glm4MoE / FusedMoE wiring there).
+        # pattern (see Glm4MoE / FusedMoEFactory wiring there).
         self.is_rocm_aiter_moe_enabled = rocm_aiter_ops.is_fused_moe_enabled()
         self.is_fusion_moe_shared_experts_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
 
@@ -172,7 +172,7 @@ class Glm4MoE(nn.Module):
                 prefix=f"{prefix}.shared_experts",
             )
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=config.n_routed_experts,
             top_k=config.num_experts_per_tok,

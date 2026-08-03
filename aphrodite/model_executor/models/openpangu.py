@@ -43,7 +43,7 @@ from aphrodite.model_executor.layers.attention import (
     Attention,
     StaticSinkAttention,
 )
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -186,7 +186,7 @@ class OpenPanguMoE(nn.Module):
         else:
             self.shared_experts = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=config.n_routed_experts,
             top_k=config.num_experts_per_tok,

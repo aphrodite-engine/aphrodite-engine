@@ -13,7 +13,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.model_executor.layers.activation import get_act_fn
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
@@ -211,7 +211,7 @@ class AriaTextMoELayer(nn.Module):
             bias=config.mlp_bias,
         )
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=config.moe_num_experts,
             top_k=config.moe_topk,
@@ -266,7 +266,7 @@ class AriaTextModel(LlamaModel, SupportsQuant):
     }
 
     # Aria packs all experts into single (transposed) fc1/fc2 tensors, which is
-    # exactly the pre-fused checkpoint layout FusedMoE self-loads once fc1/fc2
+    # exactly the pre-fused checkpoint layout FusedMoEFactory self-loads once fc1/fc2
     # are renamed to the fused gate_up_proj/down_proj names.
     hf_to_aphrodite_mapper = LlamaModel.hf_to_aphrodite_mapper | WeightsMapper(
         orig_to_new_substr={

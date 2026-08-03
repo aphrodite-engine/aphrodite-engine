@@ -33,7 +33,7 @@ from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.model_executor.layers.activation import ReLUSquaredActivation
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
     GateLinear,
     activation_without_mul,
     fused_moe_make_expert_params_mapping,
@@ -201,7 +201,7 @@ class NemotronHMoE(nn.Module):
             self.fc1_latent_proj = None
             self.fc2_latent_proj = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=config.n_routed_experts,
             top_k=config.num_experts_per_tok,

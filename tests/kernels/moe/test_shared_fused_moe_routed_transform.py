@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
-Tests for FusedMoE with routed_input_transform.
+Tests for FusedMoEFactory with routed_input_transform.
 
-Verifies that applying routed_input_transform inside FusedMoE
+Verifies that applying routed_input_transform inside FusedMoEFactory
 produces the same results as applying the transform manually outside.
 """
 
@@ -13,7 +13,7 @@ import torch.nn as nn
 
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.forward_context import set_forward_context
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer, set_random_seed
 
@@ -125,9 +125,9 @@ def test_routed_input_transform_inside_vs_outside(
     workspace_init,
     monkeypatch,
 ):
-    """Compare FusedMoE with transform inside vs manually applying outside.
-    Method A (inside): FusedMoE with routed_input_transform
-    Method B (outside): Manually transform, then FusedMoE without transform
+    """Compare FusedMoEFactory with transform inside vs manually applying outside.
+    Method A (inside): FusedMoEFactory with routed_input_transform
+    Method B (outside): Manually transform, then FusedMoEFactory without transform
     """
     if current_platform.is_rocm():
         monkeypatch.setenv("APHRODITE_ROCM_USE_AITER", "1" if use_rocm_aiter else "0")
@@ -149,8 +149,8 @@ def test_routed_input_transform_inside_vs_outside(
     routed_transform = SimpleLinear(hidden_size, latent_size, dtype)
 
     with set_current_aphrodite_config(aphrodite_config):
-        # Method A: FusedMoE WITH routed_input_transform
-        moe_with_transform = FusedMoE(
+        # Method A: FusedMoEFactory WITH routed_input_transform
+        moe_with_transform = FusedMoEFactory(
             shared_experts=shared_experts,
             routed_input_transform=routed_transform,
             num_experts=num_experts,
@@ -165,9 +165,9 @@ def test_routed_input_transform_inside_vs_outside(
             prefix="moe_with_transform",
         )
 
-        # Method B: FusedMoE WITHOUT routed_input_transform
+        # Method B: FusedMoEFactory WITHOUT routed_input_transform
         # Note: shared_experts=None because when transform is done outside,
-        moe_without_transform = FusedMoE(
+        moe_without_transform = FusedMoEFactory(
             shared_experts=None,
             routed_input_transform=None,
             num_experts=num_experts,

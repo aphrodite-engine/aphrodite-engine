@@ -40,7 +40,7 @@ from aphrodite.distributed import (
 )
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
 )
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -122,7 +122,7 @@ class MixtralMoE(nn.Module):
             prefix=f"{prefix}.gate",
         )
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=num_experts,
             top_k=top_k,
             hidden_size=hidden_size,

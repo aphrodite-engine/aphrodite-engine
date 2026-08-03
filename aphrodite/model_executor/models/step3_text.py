@@ -19,7 +19,7 @@ from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
 )
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -67,7 +67,7 @@ class FusedMoEBlock(nn.Module):
                 f"Tensor parallel size {self.tp_size} is greater than the number of experts {config.moe_num_experts}."
             )
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=config.moe_num_experts,
             top_k=config.moe_top_k,
             hidden_size=config.hidden_size,

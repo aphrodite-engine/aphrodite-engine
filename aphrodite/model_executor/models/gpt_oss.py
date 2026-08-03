@@ -21,7 +21,7 @@ from aphrodite.distributed import (
 )
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
     fused_moe_make_expert_params_mapping,
 )
 from aphrodite.model_executor.layers.fused_moe.config import FusedMoEParallelConfig
@@ -202,7 +202,7 @@ class MLPBlock(torch.nn.Module):
             return_bias=False,
         )
         assert config.intermediate_size % self.world_size == 0
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=config.num_local_experts,
             top_k=config.num_experts_per_tok,
             hidden_size=config.hidden_size,
@@ -944,7 +944,7 @@ class GptOssModel(nn.Module, EagleModelMixin):
         tp_rank_end = min((tp_rank + 1) * per_rank_intermediate_size, intermediate_size)
 
         # Use centralized weight remapping for MoE expert parameters.
-        # The FusedMoE refactor moved expert params under
+        # The FusedMoEFactory refactor moved expert params under
         # `mlp.experts.routed_experts.*`; this remaps checkpoint names so
         # MoE weight/bias keys resolve against params_dict.
         for name, weight in remap_moe_expert_weights(weights, params_dict):

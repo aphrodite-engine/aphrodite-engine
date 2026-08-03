@@ -14,7 +14,7 @@ from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     QKVParallelLinear,
@@ -81,7 +81,7 @@ class JambaMoE(nn.Module):
                 prefix=f"{prefix}.router",
             )
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             self.num_total_experts,
             self.top_k,
             self.hidden_size,

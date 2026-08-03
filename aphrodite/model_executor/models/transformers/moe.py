@@ -29,7 +29,7 @@ from aphrodite.distributed import get_dp_group, get_ep_group
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.custom_op import PluggableLayer
-from aphrodite.model_executor.layers.fused_moe import FusedMoE, MoERunner, RoutedExperts
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory, MoERunner, RoutedExperts
 from aphrodite.model_executor.models.interfaces import MixtureOfExperts
 from aphrodite.model_executor.models.transformers.fuser import get_fuser
 from aphrodite.model_executor.models.transformers.fusers.moe import MoEBlockFuser
@@ -53,7 +53,7 @@ class TransformersMoEState:
 # --8<-- [start:transformers_fused_moe]
 @PluggableLayer.register("transformers_fused_moe")
 class TransformersMoERunner(MoERunner):
-    """Custom FusedMoE for the Transformers modeling backend."""
+    """Custom FusedMoEFactory for the Transformers modeling backend."""
 
     # --8<-- [end:transformers_fused_moe]
     def __init__(self, *args, moe_state: TransformersMoEState, **kwargs):
@@ -223,7 +223,7 @@ class MoEMixin(MixtureOfExperts):
         self.num_shared_experts = num_shared_experts
         self.num_redundant_experts = num_redundant_experts
 
-        # Down projections of shared experts consumed by FusedMoE
+        # Down projections of shared experts consumed by FusedMoEFactory
         shared_down_projs: list[tuple[nn.Module, str]] = []
 
         # Recursively fuse MoE layers
@@ -293,7 +293,7 @@ class MoEMixin(MixtureOfExperts):
                         )
                     if fuser is not None and not reaches_fp16_trick:
                         # MoE block forward is fully replaced.
-                        # gate/router and shared expert (if any) runs in FusedMoE.
+                        # gate/router and shared expert (if any) runs in FusedMoEFactory.
                         shared_experts = fuser.shared_experts(moe_block, prefix)
                         # Store shared experts for later down projection adjustment
                         if shared_experts is not None:
@@ -325,7 +325,7 @@ class MoEMixin(MixtureOfExperts):
                         if fuser.shared_name:
                             routed += " + shared experts"
                         logger.info_once(
-                            "Fused: %s (%s) -> FusedMoE (internal routing)",
+                            "Fused: %s (%s) -> FusedMoEFactory (internal routing)",
                             routed,
                             moe_block_cls,
                         )
@@ -368,10 +368,10 @@ class MoEMixin(MixtureOfExperts):
                             runner_args={"moe_state": moe_state},
                         )
                         logger.info_once(
-                            "Fused: experts (%s) -> FusedMoE (external routing)",
+                            "Fused: experts (%s) -> FusedMoEFactory (external routing)",
                             experts_cls,
                         )
-                    fused_experts = FusedMoE(**kwargs)
+                    fused_experts = FusedMoEFactory(**kwargs)
                     moe_block.experts = fused_experts
                     log_replacement(qual_name, experts, fused_experts)
                     # Update MixtureOfExperts mixin state
@@ -385,6 +385,6 @@ class MoEMixin(MixtureOfExperts):
         # Continue with the replacement of layers in Base
         super().recursive_replace()
         # GLUFuser likely fused shared_experts. The down projection after the GLU
-        # normally immediately reduces but we want FusedMoE to handle the reduction.
+        # normally immediately reduces but we want FusedMoEFactory to handle the reduction.
         for hf_shared, down_name in shared_down_projs:
             hf_shared.get_submodule(down_name).reduce_results = False

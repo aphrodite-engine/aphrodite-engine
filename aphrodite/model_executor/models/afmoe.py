@@ -18,7 +18,7 @@ from aphrodite.distributed import (
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
     MoERunner,
 )
 from aphrodite.model_executor.layers.layernorm import RMSNorm
@@ -115,8 +115,8 @@ class AfmoeMoE(nn.Module):
                 prefix=f"{prefix}.shared_experts",
             )
 
-        # Routed experts using FusedMoE
-        self.experts = FusedMoE(
+        # Routed experts using FusedMoEFactory
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=config.num_experts,
             top_k=config.num_experts_per_tok,

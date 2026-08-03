@@ -419,7 +419,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 if module.disable_tp:
                     self.tp_disabled_modules.append(name)
             elif isinstance(module, RoutedExperts) and hasattr(module.quant_method, "quant_config"):
-                # TODO: support FusedMoE with prequant and 8bit.
+                # TODO: support FusedMoEFactory with prequant and 8bit.
                 if self.pre_quant and self.load_8bit:
                     raise ValueError("Prequant BitsAndBytes 8bit models with RoutedExperts is not supported yet.")
                 # Get the corresponding weight name using module name and

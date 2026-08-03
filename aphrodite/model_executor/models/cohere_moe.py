@@ -16,7 +16,7 @@ from aphrodite.distributed import (
 )
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
     QKVParallelLinear,
@@ -234,7 +234,7 @@ class CohereMoe(nn.Module):
             self.shared_experts = None
             self.shared_expert_combination_strategy = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=config.num_experts,
             top_k=config.num_experts_per_tok,
             hidden_size=config.hidden_size,
@@ -252,7 +252,7 @@ class CohereMoe(nn.Module):
         orig_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, self.hidden_size)
         router_logits, _ = self.gate(hidden_states)
-        # FusedMoE handles shared expert overlap internally and returns
+        # FusedMoEFactory handles shared expert overlap internally and returns
         # shared_output + routed_output when shared_experts is set.
         final_hidden_states = self.experts(hidden_states, router_logits)
         if self.shared_expert_combination_strategy == "average":
@@ -411,7 +411,7 @@ class CohereMoeForCausalLM(nn.Module, SupportsPP, SupportsQuant):
             ("gate_up_proj", "up_proj", 1),
         ]
 
-        expert_params_mapping = FusedMoE.make_expert_params_mapping(
+        expert_params_mapping = FusedMoEFactory.make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
             ckpt_down_proj_name="down_proj",

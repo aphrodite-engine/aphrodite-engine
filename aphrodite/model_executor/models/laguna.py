@@ -19,7 +19,7 @@ from aphrodite.distributed import (
 )
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -165,7 +165,7 @@ class LagunaMoE(nn.Module):
             prefix=f"{prefix}.gate",
         )
 
-        # Shared expert (optional) - passed to FusedMoE for overlap optimization
+        # Shared expert (optional) - passed to FusedMoEFactory for overlap optimization
         self.shared_expert: LagunaMLP | None
         if config.shared_expert_intermediate_size > 0:
             self.shared_expert = LagunaMLP(
@@ -182,7 +182,7 @@ class LagunaMoE(nn.Module):
         # Auxiliary-loss-free load-balancing bias (arXiv:2408.15664). The
         # checkpoint stores one [num_experts] tensor per MoE layer at
         # `mlp.experts.e_score_correction_bias`; registering it as a Parameter
-        # on the FusedMoE lets the weight loader pick it up and the router
+        # on the FusedMoEFactory lets the weight loader pick it up and the router
         # add it during top-k selection. The fused top-k bias router requires
         # float32 regardless of model dtype.
         e_score_correction_bias = torch.nn.Parameter(
@@ -190,12 +190,12 @@ class LagunaMoE(nn.Module):
             requires_grad=False,
         )
 
-        # FusedMoE with SIGMOID routing. Passing `shared_experts=` lets the
+        # FusedMoEFactory with SIGMOID routing. Passing `shared_experts=` lets the
         # layer overlap the shared-expert compute with the all2all dispatch.
-        # `apply_routed_scale_to_output=True` makes FusedMoE handle the
+        # `apply_routed_scale_to_output=True` makes FusedMoEFactory handle the
         # routed_scaling_factor, shared+routed combine, and TP all-reduce
         # internally, so forward() just returns the final hidden states.
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_expert,
             num_experts=config.num_experts,
             top_k=config.num_experts_per_tok,

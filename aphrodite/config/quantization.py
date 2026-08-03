@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # mypy: disable-error-code=call-arg
 
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import Field, GetPydanticSchema, ValidationInfo, field_validator
 from pydantic_core import core_schema
@@ -77,6 +77,14 @@ class QuantSpec:
     activation: QuantKeyField = None
     """Activation quantization key, or a name from QUANT_KEY_NAMES."""
 
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            weight: QuantKeyField = None,
+            activation: QuantKeyField = None,
+        ) -> None: ...
+
 
 def _coerce_override_weight(v: Any) -> Any:
     if v in (None, "bf16"):
@@ -116,13 +124,23 @@ class QuantizationConfigArgs:
     """Spec applied to ``LinearBase`` layers."""
 
     moe: QuantSpec | None = None
-    """Spec applied to ``FusedMoE`` layers."""
+    """Spec applied to ``FusedMoEFactory`` layers."""
 
     ignore: list[str] = Field(default_factory=list)
     """Layers to skip quantization for."""
 
     overrides: list[QuantOverride] = Field(default_factory=list)
     """Ordered module precision overrides. Later matching rules win."""
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            linear: QuantSpec | None = None,
+            moe: QuantSpec | None = None,
+            ignore: list[str] = ...,
+            overrides: list[QuantOverride] = ...,
+        ) -> None: ...
 
     @field_validator("linear", "moe", mode="before")
     @classmethod

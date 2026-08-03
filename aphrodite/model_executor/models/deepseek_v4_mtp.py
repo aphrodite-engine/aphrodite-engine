@@ -25,7 +25,7 @@ from aphrodite.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import ReplicatedLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
@@ -51,7 +51,7 @@ from .utils import maybe_prefix
 logger = init_logger(__name__)
 
 # MoE expert scales are fused into per-layer w13/w2 tensors. The exact
-# parameter suffix depends on which FusedMoE method handles the experts:
+# parameter suffix depends on which FusedMoEFactory method handles the experts:
 # - fp4 experts (Mxfp4MoEMethod) register ``w{1,2,3}_weight_scale``;
 # - fp8 experts (Fp8MoEMethod with block_quant=True) register
 #   ``w{1,2,3}_weight_scale_inv``.
@@ -312,7 +312,7 @@ class DeepSeekV4MTP(nn.Module):
         if first_layer.mtp_block.ffn.use_mega_moe:
             expert_mapping = make_deepseek_v4_expert_params_mapping(self.config.n_routed_experts)
         else:
-            expert_mapping = FusedMoE.make_expert_params_mapping(
+            expert_mapping = FusedMoEFactory.make_expert_params_mapping(
                 self,
                 ckpt_gate_proj_name="w1",
                 ckpt_down_proj_name="w2",

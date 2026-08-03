@@ -35,7 +35,7 @@ from aphrodite.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from aphrodite.model_executor.layers.activation import SiluAndMul
-from aphrodite.model_executor.layers.fused_moe import FusedMoE, MoERunner
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory, MoERunner
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -332,7 +332,7 @@ class SarvamMLAMoE(nn.Module):
         else:
             self.shared_experts = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             num_experts=self.num_experts,
             top_k=self.top_k,

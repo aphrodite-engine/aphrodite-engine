@@ -41,7 +41,7 @@ from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
 )
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -163,7 +163,7 @@ class Qwen2MoeSparseMoeBlock(nn.Module):
         else:
             self.shared_expert = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_expert,
             num_experts=config.num_experts,
             top_k=config.num_experts_per_tok,

@@ -27,7 +27,7 @@ from aphrodite.model_executor.kernels.mhc.tilelang import (
 )
 from aphrodite.model_executor.layers.activation import SiluAndMul, SiluAndMulWithClamp
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
     fused_moe_make_expert_params_mapping,
 )
 from aphrodite.model_executor.layers.fused_moe.router.base_router import (
@@ -651,7 +651,7 @@ class DeepseekV4MoE(nn.Module):
         self.physical_expert_start = self.experts_start_idx
         self.physical_expert_end = self.experts_end_idx
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             gate=self.gate,
             num_experts=config.n_routed_experts,
@@ -711,7 +711,7 @@ class DeepseekV4MoE(nn.Module):
     def _forward_fused_moe(self, hidden_states: torch.Tensor, input_ids: torch.Tensor | None = None) -> torch.Tensor:
         org_shape = hidden_states.shape
         if self.experts.is_internal_router:
-            # In this case, the gate/router runs inside the FusedMoE class
+            # In this case, the gate/router runs inside the FusedMoEFactory class
             final_hidden_states = self.experts(
                 hidden_states=hidden_states,
                 router_logits=hidden_states,

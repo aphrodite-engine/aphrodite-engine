@@ -368,7 +368,7 @@ def _deep_ep_v2_moe_cudagraph(
     aphrodite_cfg.kernel_config = KernelConfig(moe_backend="flashinfer_trtllm")
 
     with set_current_aphrodite_config(aphrodite_cfg):
-        # Initialize Aphrodite parallel state (needed by FusedMoE layer)
+        # Initialize Aphrodite parallel state (needed by FusedMoEFactory layer)
         temp_file = tempfile.mktemp()
         init_distributed_environment(
             world_size=pgi.world_size,
@@ -388,7 +388,7 @@ def _deep_ep_v2_moe_cudagraph(
         )
 
         # Use the production pipeline: make_fused_moe_layer creates
-        # a FusedMoE layer, quantizes weights, runs
+        # a FusedMoEFactory layer, quantizes weights, runs
         # process_weights_after_loading (TrtLLM W31 swap + BlockMajorK
         # shuffle), and selects the kernel.
         # Quantize weights using production helper, EP-slice, then

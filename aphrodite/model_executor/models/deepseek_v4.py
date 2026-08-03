@@ -22,7 +22,7 @@ from aphrodite.model_executor.layers.deepseek_v4_attention import (
     DeepseekV4MLAModules,
     DeepseekV4MultiHeadLatentAttentionWrapper,
 )
-from aphrodite.model_executor.layers.fused_moe import FusedMoE, GateLinear
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory, GateLinear
 from aphrodite.model_executor.layers.fused_moe.layer import UnquantizedFusedMoEMethod
 from aphrodite.model_executor.layers.fused_moe.router.fused_topk_bias_router import (
     fused_topk_bias,
@@ -182,7 +182,7 @@ class DeepseekV4FP8Config(Fp8Config):
         return None
 
     def get_quant_method(self, layer, prefix):
-        if isinstance(layer, FusedMoE):
+        if isinstance(layer, FusedMoEFactory):
             if is_layer_skipped(
                 prefix=prefix,
                 ignored_layers=self.ignored_layers,
@@ -196,7 +196,7 @@ class DeepseekV4FP8Config(Fp8Config):
         return super().get_quant_method(layer, prefix)
 
     def is_mxfp4_quant(self, prefix, layer):
-        return isinstance(layer, FusedMoE) and self.expert_dtype == "fp4"
+        return isinstance(layer, FusedMoEFactory) and self.expert_dtype == "fp4"
 
 
 @triton.jit
@@ -798,7 +798,7 @@ class DeepseekV4MoE(nn.Module):
         self.experts_start_idx = self.tp_rank * self.n_local_experts
         self.experts_end_idx = self.experts_start_idx + self.n_local_experts
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_experts,
             gate=self.gate,
             num_experts=config.n_routed_experts,
@@ -856,7 +856,7 @@ class DeepseekV4MoE(nn.Module):
     def _forward_fused_moe(self, hidden_states: torch.Tensor, input_ids: torch.Tensor | None = None) -> torch.Tensor:
         org_shape = hidden_states.shape
         if self.experts.is_internal_router:
-            # In this case, the gate/router runs inside the FusedMoE class
+            # In this case, the gate/router runs inside the FusedMoEFactory class
             final_hidden_states = self.experts(
                 hidden_states=hidden_states,
                 router_logits=hidden_states,
@@ -1376,7 +1376,7 @@ class DeepseekV4Model(nn.Module):
             return make_deepseek_v4_expert_params_mapping(self.config.n_routed_experts)
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
-        return FusedMoE.make_expert_params_mapping(
+        return FusedMoEFactory.make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="w1",
             ckpt_down_proj_name="w2",

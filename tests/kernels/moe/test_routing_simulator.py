@@ -6,7 +6,7 @@ Test script for the token-to-expert routing simulator.
 
 This script demonstrates how to use the routing simulator to test
 different routing strategies and analyze their performance, including
-integration tests with FusedMoE layer.
+integration tests with FusedMoEFactory layer.
 """
 
 import tempfile
@@ -75,11 +75,11 @@ def test_basic_functionality(
 
 def test_routing_strategy_integration(monkeypatch, device):
     """Test that the routing strategy environment variable works with
-    FusedMoE."""
+    FusedMoEFactory."""
     pytest.importorskip("aphrodite.model_executor.layers.fused_moe.layer")
 
     import aphrodite.envs as envs
-    from aphrodite.model_executor.layers.fused_moe.layer import FusedMoE
+    from aphrodite.model_executor.layers.fused_moe.layer import FusedMoEFactory
 
     # Test parameters
     num_tokens = 32
@@ -109,7 +109,7 @@ def test_routing_strategy_integration(monkeypatch, device):
         )
 
         for strategy in strategies:
-            fused_moe = FusedMoE(
+            fused_moe = FusedMoEFactory(
                 num_experts=num_experts,
                 top_k=top_k,
                 hidden_size=hidden_size,

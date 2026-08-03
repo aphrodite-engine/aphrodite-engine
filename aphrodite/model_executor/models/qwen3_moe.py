@@ -42,7 +42,7 @@ from aphrodite.distributed import (
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import SiluAndMul
 from aphrodite.model_executor.layers.attention import Attention
-from aphrodite.model_executor.layers.fused_moe import FusedMoE
+from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
@@ -195,7 +195,7 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
             self.shared_expert_gate = None
             self.shared_expert = None
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             shared_experts=self.shared_expert,
             gate=self.gate,
             num_experts=self.n_routed_experts,
@@ -220,11 +220,11 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
             hidden_states = sequence_parallel_chunk(hidden_states)
 
         if self.experts.is_internal_router:
-            # In this case, the gate/router runs inside the FusedMoE class
+            # In this case, the gate/router runs inside the FusedMoEFactory class
             final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=hidden_states)
         else:
             # Actually this will be dead code, since we always pass gate into
-            # FusedMoE in the current implementation. But we keep this code
+            # FusedMoEFactory in the current implementation. But we keep this code
             # here for clarity and future flexibility.
             router_logits, _ = self.gate(hidden_states)
             final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)

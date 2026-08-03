@@ -36,7 +36,7 @@ from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.fused_moe import (
-    FusedMoE,
+    FusedMoEFactory,
 )
 from aphrodite.model_executor.layers.linear import (
     QKVParallelLinear,
@@ -269,7 +269,7 @@ class PhiMoE(nn.Module):
             prefix=f"{prefix}.gate",
         )
 
-        self.experts = FusedMoE(
+        self.experts = FusedMoEFactory(
             num_experts=num_experts,
             top_k=top_k,
             hidden_size=hidden_size,

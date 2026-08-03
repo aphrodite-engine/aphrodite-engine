@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the Aphrodite project
-"""MoE fuser: route an HF MoE block through `FusedMoE` with Aphrodite's own routing."""
+"""MoE fuser: route an HF MoE block through `FusedMoEFactory` with Aphrodite's own routing."""
 
 import ast
 import inspect
