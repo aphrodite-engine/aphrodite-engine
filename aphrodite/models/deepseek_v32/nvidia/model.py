@@ -38,8 +38,10 @@ from aphrodite.model_executor.models.utils import (
     make_layers,
     sequence_parallel_chunk,
 )
+from aphrodite.models.common.ops.fused_allreduce_rms_norm import (
+    fused_allreduce_rms_norm,
+)
 from aphrodite.models.deepseek_v32.attention import DeepseekV32Attention
-from aphrodite.models.deepseek_v32.common.fused_ops import fused_allreduce_rms_norm
 from aphrodite.sequence import IntermediateTensors
 
 
