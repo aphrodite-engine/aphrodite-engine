@@ -73,7 +73,7 @@ class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
         if role == KVConnectorRole.SCHEDULER:
             self.connector_scheduler = OffloadingConnectorScheduler(spec, aphrodite_config, kv_cache_config)
         elif role == KVConnectorRole.WORKER:
-            self.connector_worker = OffloadingConnectorWorker(spec, kv_cache_config)
+            self.connector_worker = OffloadingConnectorWorker(spec, aphrodite_config, kv_cache_config)
 
     def shutdown(self) -> None:
         if self.connector_worker is not None:

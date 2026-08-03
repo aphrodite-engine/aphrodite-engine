@@ -5,6 +5,10 @@ from dataclasses import replace
 
 import torch
 
+from aphrodite.config import AphroditeConfig
+from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.canonical_mapping import (
+    derive_canonical_mappings,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.common import (
     OffloadingConnectorMetadata,
     OffloadingWorkerMetadata,
@@ -40,9 +44,11 @@ class OffloadingConnectorWorker:
     def __init__(
         self,
         spec: OffloadingSpec,
+        aphrodite_config: "AphroditeConfig",
         kv_cache_config: KVCacheConfig,
     ):
         self.spec = spec
+        self.aphrodite_config = aphrodite_config
         self.kv_cache_config = kv_cache_config
         self.worker: OffloadingWorker | None = None
         # Non-writers still ack: pending_count waits for world_size per job.
@@ -59,6 +65,7 @@ class OffloadingConnectorWorker:
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
         kv_cache_config = self.kv_cache_config
         num_blocks = kv_cache_config.num_blocks
+        mappings = derive_canonical_mappings(self.aphrodite_config, kv_cache_config, kv_caches)
 
         # Packed layouts (e.g. DSv4) set block_stride > 0; their tensors use
         # stride(0) as the manager-block stride (equals total_num_bytes_per_block).
@@ -173,10 +180,13 @@ class OffloadingConnectorWorker:
 
                 curr_tensor_idx = len(block_tensors) - 1
                 for layer_name in tensor_layer_names:
+                    mapping = mappings.get(layer_name) if len(tensors_per_block[first_layer_name]) == 1 else None
+                    assert mapping is None or mapping.local_page_size_bytes == unpadded_page_size_bytes[layer_name]
                     block_data_refs[layer_name].append(
                         CanonicalKVCacheRef(
                             tensor_idx=curr_tensor_idx,
                             page_size_bytes=(unpadded_page_size_bytes[layer_name]),
+                            mapping=mapping,
                         )
                     )
 

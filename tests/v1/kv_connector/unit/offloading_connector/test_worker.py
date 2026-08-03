@@ -96,7 +96,21 @@ def _make_worker(kv_cache_config: KVCacheConfig):
     spec = MagicMock(spec=OffloadingSpec)
     spec.get_worker.return_value = MagicMock()
 
-    worker = OffloadingConnectorWorker(spec=spec, kv_cache_config=kv_cache_config)
+    aphrodite_config = MagicMock()
+    parallel_config = aphrodite_config.parallel_config
+    parallel_config.tensor_parallel_size = 1
+    parallel_config.decode_context_parallel_size = 1
+    parallel_config.prefill_context_parallel_size = 1
+    parallel_config.cp_kv_cache_interleave_size = 1
+    parallel_config.world_size = 1
+    parallel_config.rank = 0
+    aphrodite_config.model_config.get_total_num_kv_heads.return_value = NUM_KV_HEADS
+
+    worker = OffloadingConnectorWorker(
+        spec=spec,
+        aphrodite_config=aphrodite_config,
+        kv_cache_config=kv_cache_config,
+    )
     worker.worker = MagicMock()
 
     return worker, spec
@@ -328,6 +342,7 @@ def test_register_kv_caches(backend):
         for actual, expected in zip(actual_refs, exp_refs):
             assert actual.tensor_idx == expected.tensor_idx
             assert actual.page_size_bytes == expected.page_size_bytes
+            assert actual.mapping is not None
 
 
 @pytest.mark.parametrize("backend", ATTN_BACKENDS)
@@ -428,5 +443,13 @@ def test_register_kv_caches_uniform_type(backend):
     assert canonical.tensors[0].tensor.shape == (NUM_BLOCKS, spec_a.page_size_bytes)
     assert canonical.tensors[1].tensor.shape == (NUM_BLOCKS, spec_b.page_size_bytes)
 
-    assert group_refs[0] == CanonicalKVCacheRef(tensor_idx=0, page_size_bytes=spec_a.page_size_bytes)
-    assert group_refs[1] == CanonicalKVCacheRef(tensor_idx=1, page_size_bytes=spec_b.page_size_bytes)
+    for ref, expected_tensor_idx, expected_spec in (
+        (group_refs[0], 0, spec_a),
+        (group_refs[1], 1, spec_b),
+    ):
+        assert ref.tensor_idx == expected_tensor_idx
+        assert ref.page_size_bytes == expected_spec.page_size_bytes
+        assert ref.mapping is not None
+
+    assert group_refs[0].mapping.parallelism_agnostic
+    assert not group_refs[1].mapping.parallelism_agnostic
