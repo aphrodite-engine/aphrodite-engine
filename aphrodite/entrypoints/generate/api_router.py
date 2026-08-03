@@ -140,8 +140,6 @@ async def init_generate_state(
     )
     state.openai_serving_chat = OpenAIServingChat(**_chat_kwargs) if "generate" in supported_tasks else None
     state.openai_serving_chat_batch = OpenAIServingChatBatch(**_chat_kwargs) if "generate" in supported_tasks else None
-    if state.openai_serving_chat is not None:
-        state.openai_serving_chat.warmup()
     state.openai_serving_completion = (
         OpenAIServingCompletion(
             engine_client,

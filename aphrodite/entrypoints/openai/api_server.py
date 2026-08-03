@@ -395,6 +395,7 @@ async def init_app_state(
         default_chat_template_kwargs=args.default_chat_template_kwargs,
         log_error_stack=args.log_error_stack,
     )
+    state.online_renderer.warmup()
 
     state.online_derenderer = OnlineDerenderer(
         model_config=engine_client.model_config,
@@ -491,6 +492,7 @@ async def init_render_app_state(
         default_chat_template_kwargs=args.default_chat_template_kwargs,
         log_error_stack=args.log_error_stack,
     )
+    state.online_renderer.warmup()
 
     state.online_derenderer = OnlineDerenderer(
         model_config=aphrodite_config.model_config,

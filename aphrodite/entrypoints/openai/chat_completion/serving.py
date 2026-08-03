@@ -60,7 +60,6 @@ from aphrodite.logprobs import Logprob
 from aphrodite.outputs import RequestOutput
 from aphrodite.parser import ParserManager
 from aphrodite.parser.abstract_parser import Parser
-from aphrodite.renderers import ChatParams
 from aphrodite.renderers.online_renderer import OnlineRenderer
 from aphrodite.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.tokenizers import TokenizerLike
@@ -167,15 +166,6 @@ class OpenAIServingChat(GenerateBaseServing):
         # Please use the Responses API instead.
         self.supports_code_interpreter = False
         self.python_tool = None
-
-    def warmup(self) -> None:
-        self.renderer.warmup(
-            ChatParams(
-                chat_template=self.chat_template,
-                chat_template_content_format=self.chat_template_content_format,
-                chat_template_kwargs=self.default_chat_template_kwargs,
-            )
-        )
 
     def _effective_chat_template_kwargs(self, request: ChatCompletionRequest) -> dict[str, Any]:
         return (
