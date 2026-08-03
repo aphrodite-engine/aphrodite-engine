@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from aphrodite.model_executor.layers.quantization.utils.quant_utils import QuantKey
     from aphrodite.platforms.interface import DeviceCapability
     from aphrodite.v1.attention.backends.utils import KVCacheLayoutType
-    from aphrodite.v1.kv_cache_interface import AttentionSpec, KVQuantMode
+    from aphrodite.v1.kv_cache_interface import KVCacheSpec, KVQuantMode
 
 from aphrodite.v1.kv_cache_interface import get_kv_quant_mode
 
@@ -615,7 +615,7 @@ class AttentionMetadataBuilder(ABC, Generic[M]):
     @abstractmethod
     def __init__(
         self,
-        kv_cache_spec: "AttentionSpec",
+        kv_cache_spec: "KVCacheSpec",
         layer_names: list[str],
         aphrodite_config: "AphroditeConfig",
         device: torch.device,
@@ -629,7 +629,7 @@ class AttentionMetadataBuilder(ABC, Generic[M]):
     def get_cudagraph_support(
         cls: type["AttentionMetadataBuilder"],
         aphrodite_config: "AphroditeConfig",
-        kv_cache_spec: "AttentionSpec",
+        kv_cache_spec: "KVCacheSpec",
     ) -> AttentionCGSupport:
         """Get the cudagraph support level of this builder class."""
         return cls._cudagraph_support

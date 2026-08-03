@@ -60,7 +60,7 @@ from aphrodite.v1.attention.backend import (
 from aphrodite.v1.attention.backends.utils import (
     get_kv_cache_layout,
 )
-from aphrodite.v1.kv_cache_interface import AttentionSpec
+from aphrodite.v1.kv_cache_interface import AttentionSpec, KVCacheSpec
 
 logger = init_logger(__name__)
 
@@ -327,7 +327,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
     def get_cudagraph_support(
         cls,
         aphrodite_config: "AphroditeConfig",
-        kv_cache_spec: "AttentionSpec",
+        kv_cache_spec: "KVCacheSpec",
     ) -> AttentionCGSupport:
         return cls._cudagraph_support
 

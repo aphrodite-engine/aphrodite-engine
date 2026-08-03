@@ -21,7 +21,7 @@ from aphrodite.v1.attention.backends.utils import (
     mamba_get_block_table_tensor,
     split_decodes_and_prefills,
 )
-from aphrodite.v1.kv_cache_interface import AttentionSpec, MambaSpec
+from aphrodite.v1.kv_cache_interface import MambaSpec
 
 
 class GDNAttentionBackend(AttentionBackend):
@@ -76,18 +76,18 @@ class GDNAttentionMetadata:
 
 
 class GDNAttentionMetadataBuilder(AttentionMetadataBuilder[GDNAttentionMetadata]):
+    kv_cache_spec: MambaSpec
     _cudagraph_support = AttentionCGSupport.UNIFORM_BATCH
 
     reorder_batch_threshold: int = 1
 
     def __init__(
         self,
-        kv_cache_spec: AttentionSpec,
+        kv_cache_spec: MambaSpec,
         layer_names: list[str],
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        assert isinstance(kv_cache_spec, MambaSpec)
         self.aphrodite_config = aphrodite_config
         self.compilation_config = aphrodite_config.compilation_config
         self.speculative_config = aphrodite_config.speculative_config

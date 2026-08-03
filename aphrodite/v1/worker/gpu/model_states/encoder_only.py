@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-from typing import Any, cast
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -15,11 +15,7 @@ from aphrodite.v1.attention.backend import (
     CommonAttentionMetadata,
 )
 from aphrodite.v1.core.sched.output import NewRequestData
-from aphrodite.v1.kv_cache_interface import (
-    AttentionSpec,
-    EncoderOnlyAttentionSpec,
-    KVCacheConfig,
-)
+from aphrodite.v1.kv_cache_interface import EncoderOnlyAttentionSpec, KVCacheConfig
 from aphrodite.v1.worker.gpu.input_batch import InputBatch
 from aphrodite.v1.worker.gpu.mm.encoder_cache import EncoderCache
 from aphrodite.v1.worker.gpu.model_states.default import DefaultModelState
@@ -142,7 +138,7 @@ class EncoderOnlyModelState(DefaultModelState):
         backend: str | None = None
         for group in self.encoder_attn_groups:
             builder = group.get_metadata_builder(0)
-            cg_support = builder.get_cudagraph_support(self.aphrodite_config, cast(AttentionSpec, group.kv_cache_spec))
+            cg_support = builder.get_cudagraph_support(self.aphrodite_config, group.kv_cache_spec)
             if cg_support.value < support.value:
                 support = cg_support
                 backend = group.backend.__name__

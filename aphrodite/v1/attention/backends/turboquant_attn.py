@@ -53,6 +53,7 @@ from aphrodite.v1.attention.ops.triton_turboquant_decode import (
     triton_turboquant_decode_attention,
 )
 from aphrodite.v1.attention.ops.triton_turboquant_store import triton_turboquant_store
+from aphrodite.v1.kv_cache_interface import AttentionSpec
 from aphrodite.v1.worker.workspace import (
     current_workspace_manager,
     is_workspace_manager_initialized,
@@ -198,6 +199,7 @@ class TurboQuantMetadata(AttentionMetadata):
 class TurboQuantMetadataBuilder(AttentionMetadataBuilder[TurboQuantMetadata]):
     """Builds TurboQuantMetadata from scheduler output."""
 
+    kv_cache_spec: AttentionSpec
     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
 
     def __init__(self, kv_cache_spec, layer_names, aphrodite_config, device):

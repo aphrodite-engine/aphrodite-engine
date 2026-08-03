@@ -16,7 +16,7 @@ from aphrodite.v1.attention.backends.mamba_attn import (
     BaseMambaAttentionMetadata,
     BaseMambaAttentionMetadataBuilder,
 )
-from aphrodite.v1.kv_cache_interface import AttentionSpec
+from aphrodite.v1.kv_cache_interface import MambaSpec
 
 
 def compute_varlen_chunk_metadata(
@@ -110,7 +110,7 @@ class Mamba2AttentionMetadataBuilder(BaseMambaAttentionMetadataBuilder[Mamba2Att
 
     def __init__(
         self,
-        kv_cache_spec: AttentionSpec,
+        kv_cache_spec: MambaSpec,
         layer_names: list[str],
         aphrodite_config: AphroditeConfig,
         device: torch.device,
