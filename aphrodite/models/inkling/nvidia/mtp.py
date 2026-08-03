@@ -1,6 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Inkling MTP (Multi-Token Prediction) draft model (NVIDIA)."""
+"""Inkling MTP (Multi-Token Prediction) draft model (NVIDIA).
+
+Mirrors the reference ``mtp_model.py`` shipped with the checkpoint: each MTP
+depth ``i`` owns ``hidden_norm`` / ``embed_norm`` RMSNorms, an ``input_proj``
+(``2H -> H``) and a full Inkling transformer block (dense bf16 MLP, with the
+same short convolutions as the backbone; its attention is full or sliding-window
+per depth, selected by ``mtp_config.local_layer_ids``). When enabled, a shared
+``chain_norm`` is applied after every depth; its output is both the logits input
+and the previous hidden state fed to the next depth.
+
+The draft shares the target's token embedding table and LM head
+(``load_eagle_model`` wires those references) and applies the backbone
+``embed_norm`` before each depth's own ``embed_norm``.
+"""
 
 from __future__ import annotations
 
@@ -41,6 +54,16 @@ _ATTENTION_PARAMS_MAPPING = [
 def _mtp_depth_from_name(name: str) -> int | None:
     m = re.search(r"\.mtp\.layers\.(\d+)\.", name)
     return int(m.group(1)) if m else None
+
+
+def _select_mtp_depth_count(n_predict: int, num_spec: int | None) -> int:
+    num_layers = min(n_predict, num_spec) if num_spec else n_predict
+    if num_layers <= 0:
+        raise ValueError(
+            "Inkling MTP requires num_nextn_predict_layers and "
+            "num_speculative_tokens to select at least one depth layer."
+        )
+    return num_layers
 
 
 class InklingMTPDepthLayer(nn.Module):
@@ -85,11 +108,18 @@ class InklingMultiTokenPredictor(nn.Module):
         assert aphrodite_config.speculative_config is not None
         config: InklingModelConfig = aphrodite_config.speculative_config.draft_model_config.hf_config
         self.config = config
-        if aphrodite_config.speculative_config.num_speculative_tokens != 1:
-            raise ValueError("Inkling MTP currently supports exactly one speculative token")
+        # Build only the depth blocks exercised by speculative decoding.
+        n_predict = config.num_nextn_predict_layers
+        num_spec = aphrodite_config.speculative_config.num_speculative_tokens
+        self.num_mtp_layers = _select_mtp_depth_count(n_predict, num_spec)
         self.chain_hidden_post_norm = config.chain_hidden_post_norm
         local_ids = set(config.local_layer_ids)
-        self.layers = nn.ModuleDict({"0": InklingMTPDepthLayer(config, f"{prefix}.layers.0", 0 in local_ids)})
+        self.layers = nn.ModuleDict(
+            {
+                str(idx): InklingMTPDepthLayer(config, f"{prefix}.layers.{idx}", idx in local_ids)
+                for idx in range(self.num_mtp_layers)
+            }
+        )
         self.chain_norm = (
             InklingRMSNorm(config.hidden_size, eps=config.rms_norm_eps) if self.chain_hidden_post_norm else None
         )
@@ -162,9 +192,8 @@ class InklingMultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
-        if spec_step_idx != 0:
-            raise ValueError("Inkling MTP only supports spec_step_idx=0")
-        layer = self.layers["0"]
+        depth = spec_step_idx % self.num_mtp_layers
+        layer = self.layers[str(depth)]
         combined = self.fused_input_cat(layer, previous_hidden_states, input_ids, inputs_embeds)
         hidden = layer(combined, positions)
         if self.chain_norm is not None:
@@ -266,8 +295,8 @@ def _load_inkling_mtp_weights(
         # Only consume the MTP weights; everything else belongs to the target.
         if ".mtp." not in name:
             continue
-        # Only the first checkpoint depth is used for MTP=1.
-        if depth is not None and depth != 0:
+        # Skip depth blocks beyond the ones built for speculative decoding.
+        if depth is not None and depth >= module.model.num_mtp_layers:
             continue
         original_name = name
         name = name.replace(".mtp.layers.", ".layers.").replace(".mtp.chain_norm.", ".chain_norm.")

@@ -26,6 +26,12 @@ def init_speculator(aphrodite_config: AphroditeConfig, device: torch.device):
         )
 
         return Gemma4Speculator(aphrodite_config, device)
+    elif speculative_config.use_multi_module_mtp():
+        from aphrodite.v1.worker.gpu.spec_decode.multi_module_mtp.speculator import (
+            MultiModuleMTPSpeculator,
+        )
+
+        return MultiModuleMTPSpeculator(aphrodite_config, device)
     elif speculative_config.method == "mtp":
         from aphrodite.v1.worker.gpu.spec_decode.mtp.speculator import MTPSpeculator
 
