@@ -22,6 +22,7 @@ from aphrodite.entrypoints.chat_utils import (
     parse_chat_messages,
     parse_chat_messages_async,
 )
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.inputs import MultiModalDataDict, MultiModalUUIDDict
 from aphrodite.multimodal.utils import (
     encode_audio_url,
@@ -2066,7 +2067,7 @@ def test_parse_chat_messages_multiple_images_interleave_with_placeholders(
     image_url,
 ):
     with pytest.raises(
-        ValueError,
+        APHRODITEValidationError,
         match=r"Found more '<|image_1|>' placeholders in input prompt "
         "than actual multimodal data items.",
     ):

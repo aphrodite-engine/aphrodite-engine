@@ -26,6 +26,7 @@ from aphrodite.entrypoints.chat_utils import (
     parse_chat_messages,
     parse_chat_messages_async,
 )
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.renderers.hf import (
     _PROMPT_EMBEDS_PLACEHOLDER_SPAN_MISMATCH_ERROR,
     _build_mixed_prompt_embeds,
@@ -309,7 +310,7 @@ _PLACEHOLDER_ERROR_PATTERN: Final[str] = re.sub(r"\\{[^}]*\\}", ".*", re.escape(
 def test_parse_chat_messages_rejects_placeholder_in_user_text(content):
     mc = _make_mock_model_config()  # enable_prompt_embeds=True by default
     messages = [{"role": "user", "content": content}]
-    with pytest.raises(ValueError, match=_PLACEHOLDER_ERROR_PATTERN):
+    with pytest.raises(APHRODITEValidationError, match=_PLACEHOLDER_ERROR_PATTERN):
         parse_chat_messages(messages, mc, content_format="openai")
 
 

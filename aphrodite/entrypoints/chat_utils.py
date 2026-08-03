@@ -454,7 +454,7 @@ def _merge_embeds(
 
     first_keys = set(data_items[0].keys())
     if any(set(item.keys()) != first_keys for item in data_items[1:]):
-        raise ValueError("All dictionaries in the list of embeddings must have the same keys.")
+        raise APHRODITEValidationError("All dictionaries in the list of embeddings must have the same keys.")
 
     fields = {key: _detect_field([item[key] for item in data_items], mm_processor) for key in first_keys}
     data_merged = {
@@ -708,9 +708,15 @@ def _resolve_items(
         modality requires a processor, enforced by the guard below.
     """
     if "image" in items_by_modality and "image_embeds" in items_by_modality:
-        raise ValueError("Mixing raw image and embedding inputs is not allowed")
+        raise APHRODITEValidationError(
+            "Mixing raw image and embedding inputs is not allowed",
+            parameter="image_embeds",
+        )
     if "audio" in items_by_modality and "audio_embeds" in items_by_modality:
-        raise ValueError("Mixing raw audio and embedding inputs is not allowed")
+        raise APHRODITEValidationError(
+            "Mixing raw audio and embedding inputs is not allowed",
+            parameter="audio_embeds",
+        )
     # `prompt_embeds` bypasses HF MM processors. Every other modality requires one.
     processor_modalities = items_by_modality.keys() - {"prompt_embeds"}
     if processor_modalities and mm_processor is None:
@@ -1335,7 +1341,7 @@ def _get_full_multimodal_text_prompt(
                 interleave_strings,
             )
             logger.debug("Input prompt: %s", text_prompt)
-            raise ValueError(
+            raise APHRODITEValidationError(
                 f"Found more '{placeholder}' placeholders in input prompt than actual multimodal data items."
             )
 
@@ -1568,7 +1574,9 @@ def _reject_reserved_placeholder_in_text(text: str, model_config: ModelConfig) -
     caller move or inject splice positions via plain text content.
     """
     if model_config.enable_prompt_embeds and PROMPT_EMBEDS_PLACEHOLDER_TOKEN in text:
-        raise ValueError(_RESERVED_PLACEHOLDER_IN_TEXT_ERROR.format(token=PROMPT_EMBEDS_PLACEHOLDER_TOKEN))
+        raise APHRODITEValidationError(
+            _RESERVED_PLACEHOLDER_IN_TEXT_ERROR.format(token=PROMPT_EMBEDS_PLACEHOLDER_TOKEN)
+        )
 
 
 def _parse_chat_message_content_part(
