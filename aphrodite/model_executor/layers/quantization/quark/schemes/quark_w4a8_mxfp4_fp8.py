@@ -64,9 +64,7 @@ class QuarkW4A8_MXFP4_FP8(QuarkScheme):
 
         kernel_supported_gpu = False
         if current_platform.is_rocm():
-            from aphrodite.platforms.rocm import on_gfx950
-
-            kernel_supported_gpu = on_gfx950()
+            kernel_supported_gpu = current_platform.supports_mx()
 
         self.use_aiter_kernel = is_aiter_found_and_supported() and self.is_static_input_scheme and kernel_supported_gpu
 

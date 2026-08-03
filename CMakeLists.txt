@@ -49,7 +49,7 @@ install(CODE "set(CMAKE_INSTALL_LOCAL_ONLY TRUE)" ALL_COMPONENTS)
 set(PYTHON_SUPPORTED_VERSIONS "3.10" "3.11" "3.12" "3.13" "3.14")
 
 # Supported AMD GPU architectures.
-set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx942;gfx950;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201")
+set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx942;gfx950;gfx1250;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201")
 
 # ROCm installation prefix. Default to /opt/rocm but allow override via
 # -DROCM_PATH=/your/rocm/path when invoking cmake.
@@ -1529,6 +1529,38 @@ if(APHRODITE_GPU_LANG STREQUAL "HIP")
     "csrc/rocm/skinny_gemms.cu"
     "csrc/rocm/skinny_gemms_int4.cu"
     "csrc/rocm/attention.cu")
+  set(APHRODITE_ROCM_EXT_FLAGS ${APHRODITE_GPU_FLAGS})
+
+  # skinny_gemms*.cu are built on gfx9/gfx11 ISA (MFMA, dot2/dot4, legacy
+  # s_waitcnt asm) that gfx1250 (gfx12) does not provide. Exclude them from the
+  # gfx1250 build and disable their op registrations (APHRODITE_SKIP_SKINNY_GEMMS);
+  # vLLM falls back to default/Triton GEMM for those ops on gfx1250.
+  list(REMOVE_ITEM APHRODITE_ROCM_EXT_SRC "csrc/rocm/skinny_gemms.cu")
+  list(REMOVE_ITEM APHRODITE_ROCM_EXT_SRC "csrc/rocm/skinny_gemms_int4.cu")
+  set(APHRODITE_SKINNY_ARCHES ${APHRODITE_GPU_ARCHES})
+  list(FILTER APHRODITE_SKINNY_ARCHES EXCLUDE REGEX "gfx1250")
+  if(APHRODITE_SKINNY_ARCHES)
+    message(STATUS "Building skinny_gemms for archs: ${APHRODITE_SKINNY_ARCHES}")
+    set(APHRODITE_SKINNY_SRC
+      "csrc/rocm/skinny_gemms.cu"
+      "csrc/rocm/skinny_gemms_int4.cu")
+    hipify_sources_target(APHRODITE_SKINNY_HIP_SRCS _rocm_C_skinny "${APHRODITE_SKINNY_SRC}")
+    unset(_APHRODITE_LAST_HIPIFY_TARGET)
+    add_library(_rocm_C_skinny OBJECT ${APHRODITE_SKINNY_HIP_SRCS})
+    add_dependencies(_rocm_C_skinny hipify_all)
+    set_source_files_properties(${APHRODITE_SKINNY_HIP_SRCS} PROPERTIES LANGUAGE ${APHRODITE_GPU_LANG})
+    set_target_properties(_rocm_C_skinny PROPERTIES
+      ${APHRODITE_GPU_LANG}_ARCHITECTURES "${APHRODITE_SKINNY_ARCHES}"
+      POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(_rocm_C_skinny PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/csrc)
+    target_compile_options(_rocm_C_skinny PRIVATE
+      $<$<COMPILE_LANGUAGE:${APHRODITE_GPU_LANG}>:${APHRODITE_ROCM_EXT_FLAGS}>)
+    target_compile_definitions(_rocm_C_skinny PRIVATE "-DTORCH_EXTENSION_NAME=_rocm_C")
+    target_link_libraries(_rocm_C_skinny PRIVATE torch)
+  else()
+    message(STATUS "Only gfx1250, skipping skinny_gemms")
+    list(APPEND APHRODITE_ROCM_EXT_FLAGS "-DAPHRODITE_SKIP_SKINNY_GEMMS")
+  endif()
 
   set(APHRODITE_ROCM_HAS_GFX1100 OFF)
   if(APHRODITE_GPU_ARCHES MATCHES "gfx1100")
@@ -1544,10 +1576,16 @@ if(APHRODITE_GPU_LANG STREQUAL "HIP")
     DESTINATION aphrodite
     LANGUAGE ${APHRODITE_GPU_LANG}
     SOURCES ${APHRODITE_ROCM_EXT_SRC}
-    COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
+    COMPILE_FLAGS ${APHRODITE_ROCM_EXT_FLAGS}
     ARCHITECTURES ${APHRODITE_GPU_ARCHES}
     USE_SABI 3
     WITH_SOABI)
+  
+  if(TARGET _rocm_C_skinny)
+    target_link_libraries(_rocm_C PRIVATE _rocm_C_skinny)
+  else()
+    target_compile_definitions(_rocm_C PRIVATE APHRODITE_SKIP_SKINNY_GEMMS)
+  endif()
 
   if(APHRODITE_ROCM_HAS_GFX1100)
     target_compile_definitions(_rocm_C PRIVATE APHRODITE_ROCM_GFX1100)

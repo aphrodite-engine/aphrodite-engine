@@ -37,12 +37,12 @@ def _get_rocm_attention_config(model_name):
 
     if "whisper" in model_name.lower():
         try:
-            from aphrodite.platforms.rocm import _ON_MI3XX
+            from aphrodite.platforms.rocm import get_cdna_version
 
-            if _ON_MI3XX:
+            if get_cdna_version() > 2:
                 return {"backend": "ROCM_AITER_UNIFIED_ATTN"}
         except ImportError:
-            logger.warning("Could not import _ON_MI3XX from rocm platform, falling back to TRITON_ATTN for Whisper.")
+            logger.warning("Could not check cdna version from rocm platform, falling back to TRITON_ATTN for Whisper.")
         return {"backend": "TRITON_ATTN"}
 
     return {"backend": "ROCM_AITER_FA"}

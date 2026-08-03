@@ -15,15 +15,15 @@ from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import set_random_seed
 from tests.kernels.attention.test_triton_unified_attention import ref_paged_attn
 
-_SKIP_NON_MI3XX = True
+_SKIP_NON_CDNA_2_PLUS = True
 if current_platform.is_rocm():
-    from aphrodite.platforms.rocm import on_mi3xx
+    from aphrodite.platforms.rocm import get_cdna_version
 
-    _SKIP_NON_MI3XX = not on_mi3xx()
+    _SKIP_NON_CDNA_2_PLUS = get_cdna_version() < 2
 
 pytestmark = [
     pytest.mark.skipif(not current_platform.is_rocm(), reason="ROCm-specific tests"),
-    pytest.mark.skipif(_SKIP_NON_MI3XX, reason="MI300/MI350 ROCm only"),
+    pytest.mark.skipif(_SKIP_NON_CDNA_2_PLUS, reason="CDNA 2+ ROCm only"),
 ]
 
 NUM_Q_HEADS = 8

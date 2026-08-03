@@ -35,21 +35,23 @@ elif current_platform.is_xpu():
     compile_flash_attn_varlen_func_from_specs = None  # type: ignore[assignment]
     get_scheduler_metadata = xpu_ops.get_scheduler_metadata  # type: ignore[assignment]
 elif current_platform.is_rocm():
+    from aphrodite.platforms.rocm import on_gfx1250
+
+    compile_flash_attn_varlen_func_from_specs = None  # type: ignore[assignment]
     try:
-        from flash_attn import flash_attn_varlen_func  # type: ignore[no-redef]
+        if on_gfx1250():
+            from aiter.ops.triton.mha import flash_attn_varlen_func  # type: ignore[no-redef]
+        else:
+            from flash_attn import flash_attn_varlen_func  # type: ignore[no-redef]
 
-        compile_flash_attn_varlen_func_from_specs = None  # type: ignore[assignment]
-
-        # Mark that upstream flash-attn is available on ROCm
         _ROCM_FLASH_ATTN_AVAILABLE = True
     except ImportError:
 
         def flash_attn_varlen_func(*args: Any, **kwargs: Any) -> Any:  # type: ignore[no-redef,misc]
+            package = "aiter" if on_gfx1250() else "flash-attn"
             raise ImportError(
-                "ROCm platform requires upstream flash-attn to be installed. Please install flash-attn first."
+                f"ROCm platform requires upstream {package} to be installed. Please install {package} first."
             )
-
-        compile_flash_attn_varlen_func_from_specs = None  # type: ignore[assignment]
 
     # ROCm doesn't use scheduler metadata (FA3 feature), provide stub
     def get_scheduler_metadata(*args: Any, **kwargs: Any) -> None:  # type: ignore[misc]

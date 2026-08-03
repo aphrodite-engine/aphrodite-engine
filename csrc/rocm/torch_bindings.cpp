@@ -14,6 +14,11 @@
 TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, rocm_ops) {
   // Sonar custom ops for ROCm.
 
+// skinny_gemms.cu (LLMM1/wvSplitK/wvSplitKrc/wvSplitKQ) is excluded on gfx1250
+// (gfx9/gfx11 ISA, unsupported there); skip these registrations to avoid
+// undefined symbols. Aphrodite uses default/Triton GEMM for these ops on
+// gfx1250.
+#ifndef APHRODITE_SKIP_SKINNY_GEMMS
   // Custom gemm op for matrix-vector multiplication
   rocm_ops.def(
       "LLMM1(Tensor in_a, Tensor in_b, int rows_per_block) -> "
@@ -46,6 +51,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, rocm_ops) {
       "Tensor scale_a, "
       "          Tensor scale_b, int CuCount) -> ()");
   rocm_ops.impl("wvSplitKQ", torch::kCUDA, &wvSplitKQ);
+#endif  // APHRODITE_SKIP_SKINNY_GEMMS
 
 #ifdef APHRODITE_ROCM_GFX1100
   // W4A16 GPTQ kernels for AMD RDNA3 (gfx1100).

@@ -219,11 +219,14 @@ def backend_to_kernel_cls(
         return [BatchedMarlinExperts]
 
     elif backend == Mxfp4MoeBackend.AITER_MXFP4_BF16:
+        from aphrodite.model_executor.layers.fused_moe.experts.aiter_mxfp4_w4a8_moe import (
+            AiterW4A16ExpertsMonolithic,
+        )
         from aphrodite.model_executor.layers.fused_moe.experts.rocm_aiter_moe import (
             AiterExperts,
         )
 
-        return [AiterExperts]
+        return [AiterExperts, AiterW4A16ExpertsMonolithic]
 
     elif backend == Mxfp4MoeBackend.AITER_MXFP4_FP8:
         from aphrodite.model_executor.layers.fused_moe.experts.aiter_mxfp4_w4a8_moe import (
@@ -1171,6 +1174,7 @@ def convert_weight_to_mxfp4_moe_kernel_format(
 
     Supports DeepGEMM, TRTLLM MXFP8, Triton and Marlin backends.
     """
+    from aphrodite.platforms.rocm import on_gfx1250
 
     if mxfp4_backend == Mxfp4MoeBackend.DEEPGEMM_MXFP4:
         w13_weight_scale, w2_weight_scale = _pack_deepgemm_mxfp4_scales(
@@ -1333,7 +1337,7 @@ def convert_weight_to_mxfp4_moe_kernel_format(
             w2_bias,
         )
 
-    elif mxfp4_backend == Mxfp4MoeBackend.AITER_MXFP4_BF16:
+    elif mxfp4_backend == Mxfp4MoeBackend.AITER_MXFP4_BF16 and not on_gfx1250():
         # Initially introduced for DeepSeekV4
 
         if w13_bias is not None:
@@ -1390,7 +1394,7 @@ def convert_weight_to_mxfp4_moe_kernel_format(
             w2_bias,
         )
 
-    elif mxfp4_backend in TRITON_BACKENDS:
+    elif mxfp4_backend in TRITON_BACKENDS or (mxfp4_backend == Mxfp4MoeBackend.AITER_MXFP4_BF16 and on_gfx1250()):
         from triton_kernels.matmul_ogs import FlexCtx, PrecisionConfig
 
         if mxfp4_backend == Mxfp4MoeBackend.TRITON:
