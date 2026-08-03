@@ -12,8 +12,6 @@ import aphrodite.model_executor.layers.fused_moe.modular_kernel as mk
 from aphrodite.config import get_current_aphrodite_config
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.kernels.linear import (
-    MarlinNvFp4LinearKernel,
-    NvFp4LinearLayerConfig,
     init_fp8_linear_kernel,
     init_mxfp8_linear_kernel,
     init_nvfp4_linear_kernel,
@@ -1168,16 +1166,16 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
     """Linear method for ModelOpt NVFP4 W4A16.
 
     4-bit NVFP4 weights, fp16/bf16 activations. Loads ModelOpt-style names
-    directly (no on-disk conversion) and dispatches to the FP4 Marlin GEMM:
+    directly (no on-disk conversion) and dispatches to a W4A16 GEMM:
 
         weight          uint8     packed NVFP4 (2 nibbles/byte along input dim)
         weight_scale    fp8-e4m3  per 16-elem group along input dim
         weight_scale_2  fp32      per-tensor global scale = amax / (6.0 * 448.0)
 
-    No activation quantization. Marlin expects the global scale in the same
-    form ModelOpt stores (amax/2688), so we rename weight_scale_2 ->
-    weight_global_scale **without reciprocation** -- the CT W4A16 path
-    reciprocates only because CT stores the inverse on disk.
+    No activation quantization. ModelOpt stores the global scale as
+    amax/2688, so we rename weight_scale_2 -> weight_global_scale without
+    reciprocation. The selected kernel converts it to its runtime format.
+    The CT W4A16 path reciprocates because CT stores the inverse on disk.
 
     We also register a placeholder input_scale parameter so that W4A4-shaped
     checkpoints (which contain *_proj.input_scale tensors) can be loaded
@@ -1188,17 +1186,10 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
 
     def __init__(self, quant_config: ModelOptNvFp4Config) -> None:
         self.quant_config = quant_config
-        # Vestigial slot mirrored from ModelOptNvFp4LinearMethod: the parent
-        # config's get_quant_method only fills marlin_input_dtype when
-        # backend == "marlin"; we don't set that since we pin the kernel
-        # below, but we keep the attribute for shape parity.
         self.marlin_input_dtype = None
-        # Direct-instantiate the Marlin NVFP4 adapter rather than going through
-        # init_nvfp4_linear_kernel(): the latter's priority list returns a
-        # cutlass W4A4 kernel as first-pick on this hardware, which would
-        # silently try to quantize activations (we have no input_scale). For
-        # W4A16 there is exactly one valid kernel, so we pin it.
-        self.kernel = MarlinNvFp4LinearKernel(NvFp4LinearLayerConfig())
+        # Auto-selection picks Marlin for W4A16, while an explicit compatible
+        # --linear-backend (for example, humming) overrides that default.
+        self.kernel = init_nvfp4_linear_kernel(use_a16=True)
 
     def create_weights(
         self,
@@ -1218,6 +1209,7 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
         layer.logical_widths = output_partition_sizes
         layer.input_size_per_partition = input_size_per_partition
         layer.output_size_per_partition = output_size_per_partition
+        layer.output_partition_sizes = output_partition_sizes
 
         if input_size_per_partition % 16 != 0:
             raise ValueError("Unsupported model: input feature size is not a multiple of 16.")
@@ -1271,6 +1263,9 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
         layer.register_parameter("input_scale", input_scale)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if not hasattr(layer, "has_bias"):
+            layer.has_bias = getattr(layer, "bias", None) is not None
+
         # Discard the input_scale placeholder. Whether it carries values
         # (W4A4 ckpt loaded as W4A16) or is uninitialized (native W4A16
         # ckpt), W4A16 mode does not quantize activations, so this is unused.
