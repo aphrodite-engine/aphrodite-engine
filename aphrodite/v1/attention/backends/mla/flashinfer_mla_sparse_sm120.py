@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """SM120 implementation variant for ``FLASHINFER_MLA_SPARSE_SM120``."""
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -34,6 +34,10 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
     """SM120 FlashInfer sparse-MLA implementation."""
 
     is_sparse = True
+    # This backend only implements sparse MQA. Advertising dense prefill makes
+    # the indexer skip top-k generation even though forward() later falls back
+    # to MQA, leaving prefill attention with stale indices.
+    supports_dense_mha_prefill = False
     can_return_lse_for_decode = True
     lse_base_on_e = False
 
@@ -123,17 +127,14 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
                 return_valid_counts=True,
             )
         else:
-            topk_indices_physical = cast(
-                torch.Tensor,
-                triton_convert_req_index_to_global_index(
-                    attn_metadata.req_id_per_token[:num_actual_toks],
-                    attn_metadata.block_table,
-                    topk_indices,
-                    BLOCK_SIZE=attn_metadata.block_size,
-                    NUM_TOPK_TOKENS=topk_indices.shape[1],
-                ),
+            topk_indices_physical, seq_lens = triton_convert_req_index_to_global_index(
+                attn_metadata.req_id_per_token[:num_actual_toks],
+                attn_metadata.block_table,
+                topk_indices,
+                BLOCK_SIZE=attn_metadata.block_size,
+                NUM_TOPK_TOKENS=topk_indices.shape[1],
+                return_valid_counts=True,
             )
-            seq_lens = None
 
         output = q.new_empty(
             (num_actual_toks, q.shape[-2], self.kv_lora_rank),
