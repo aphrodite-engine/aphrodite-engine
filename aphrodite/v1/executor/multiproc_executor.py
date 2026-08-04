@@ -773,6 +773,14 @@ class WorkerProc:
         """Worker initialization and execution loops.
         This runs a background process"""
 
+        # Triton's cache writes are not atomic across processes. Give each
+        # local worker a stable subdirectory so simultaneous first-use JITs do
+        # not observe another worker's partially written metadata. Keeping the
+        # rank in the path preserves reuse across server restarts.
+        rank = kwargs.get("rank", 0)
+        triton_cache_root = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
+        os.environ["TRITON_CACHE_DIR"] = os.path.join(triton_cache_root, f"worker-{rank}")
+
         # Signal handler used for graceful termination.
         # SystemExit exception is only raised once to allow this and worker
         # processes to terminate without error
@@ -816,7 +824,6 @@ class WorkerProc:
 
         try:
             # Initialize tracer
-            rank = kwargs.get("rank", 0)
             maybe_init_worker_tracer(
                 instrumenting_module_name="aphrodite.worker",
                 process_kind="worker",
