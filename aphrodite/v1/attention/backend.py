@@ -972,6 +972,10 @@ class MLAAttentionImpl(AttentionImplBase[T], Generic[T]):
     """MLA attention implementation with forward_mqa and forward_mha methods."""
 
     supports_pcp: bool = True
+    # Masked sparse-MHA prefill is an optional capability implemented by
+    # SparseMLACommonImpl. Platform-specific sparse MLA backends inherit the
+    # safe default and continue to route prefills through MQA.
+    masked_mha_available: bool = False
 
     @abstractmethod
     def __init__(

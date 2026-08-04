@@ -98,6 +98,10 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
         # the topk_tokens buffer written by a previous layer in the same pass.
         # Refer: https://arxiv.org/abs/2603.12201 for more details.
         self.skip_topk = skip_topk
+        # qrep is active when the query projection is a DCP-group-sharded layer
+        # that materializes the full group head set locally.
+        q_proj_layer = self.q_b_proj if self.q_lora_rank is not None else self.q_proj
+        self.dcp_q_replicate = getattr(q_proj_layer, "qrep_active", False)
         if self.indexer is not None:
             assert hasattr(self.indexer, "topk_tokens")
             self.topk_tokens = self.indexer.topk_tokens
@@ -115,6 +119,7 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
             quant_config=quant_config,
             prefix=f"{prefix}.attn",
             kv_b_proj=self.kv_b_proj,
+            dcp_q_replicate=self.dcp_q_replicate,
             use_sparse=self.is_sparse,
             indexer=self.indexer,
             topk_indices_buffer=mla_modules.topk_indices_buffer,
