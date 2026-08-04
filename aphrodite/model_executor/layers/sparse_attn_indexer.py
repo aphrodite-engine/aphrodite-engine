@@ -13,6 +13,11 @@ from aphrodite.distributed import get_dcp_group, get_pcp_group
 from aphrodite.forward_context import get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.custom_op import CustomOp
+from aphrodite.model_executor.kernels.attention.dsa.sm120_indexer import (
+    sm120_fp8_mqa_logits,
+    sm120_fp8_paged_mqa_logits,
+    use_sm120_dsa_indexer,
+)
 from aphrodite.model_executor.layers.attention.pcp import maybe_gather_indexer_k
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     get_fp8_min_max,
@@ -44,6 +49,7 @@ from aphrodite.v1.worker.workspace import current_workspace_manager
 logger = init_logger(__name__)
 
 RADIX_TOPK_WORKSPACE_SIZE = 1024 * 1024
+DCP_TOPK_GATHER_MAX_BYTES = 256 * 1024 * 1024
 
 # MXFP4 layout: 2 values packed per byte, ue8m0 (1-byte) scale per block of 32.
 MXFP4_BLOCK_SIZE = 32
@@ -101,22 +107,29 @@ def _merge_dcp_topk_global(
         stable_topk_from_gathered_candidates_cutedsl,
     )
 
-    packed = torch.empty(
-        (*topk_indices.shape, 2),
-        dtype=torch.float32,
-        device=topk_indices.device,
-    )
-    pack_dcp_topk_candidates_cutedsl(
-        logits,
-        topk_indices,
-        packed,
-        dcp_rank,
-        dcp_world_size,
-        cp_interleave,
-        row_starts,
-    )
-    gathered = get_dcp_group().all_gather(packed, dim=1)
-    stable_topk_from_gathered_candidates_cutedsl(gathered, topk_tokens, out=topk_indices)
+    gathered_bytes_per_row = dcp_world_size * topk_tokens * 2 * torch.float32.itemsize
+    rows_per_collective = max(1, DCP_TOPK_GATHER_MAX_BYTES // gathered_bytes_per_row)
+    for row_start in range(0, topk_indices.shape[0], rows_per_collective):
+        row_end = min(row_start + rows_per_collective, topk_indices.shape[0])
+        logits_chunk = logits[row_start:row_end]
+        indices_chunk = topk_indices[row_start:row_end]
+        starts_chunk = row_starts[row_start:row_end] if row_starts is not None else None
+        packed = torch.empty(
+            (*indices_chunk.shape, 2),
+            dtype=torch.float32,
+            device=indices_chunk.device,
+        )
+        pack_dcp_topk_candidates_cutedsl(
+            logits_chunk,
+            indices_chunk,
+            packed,
+            dcp_rank,
+            dcp_world_size,
+            cp_interleave,
+            starts_chunk,
+        )
+        gathered = get_dcp_group().all_gather(packed, dim=1)
+        stable_topk_from_gathered_candidates_cutedsl(gathered, topk_tokens, out=indices_chunk)
 
 
 @triton.jit
@@ -549,6 +562,16 @@ def sparse_attn_indexer(
                         cu_seqlen_ke,
                         logits,
                     )
+                elif use_sm120_dsa_indexer():
+                    assert q_scale_slice is None
+                    logits = sm120_fp8_mqa_logits(
+                        q_slice_cast,
+                        k_quant_cast,
+                        k_scale_cast,
+                        weights[chunk.token_start : chunk.token_end],
+                        cu_seqlen_ks,
+                        cu_seqlen_ke,
+                    )
                 else:
                     logits = fp8_fp4_mqa_logits(
                         (q_slice_cast, q_scale_slice),
@@ -592,7 +615,7 @@ def sparse_attn_indexer(
             # each page holds block_size fp8 key rows then block_size fp32
             # scales) rather than the per-token quant view deep_gemm uses.
             kv_cache = kv_cache.view(torch.uint8).view(kv_cache.shape[0], -1)
-        else:
+        elif not use_sm120_dsa_indexer():
             kv_cache = kv_cache_as_quant_view(kv_cache, head_dim, use_fp4_cache)
         decode_lens = decode_metadata.decode_lens
         if num_decode_tokens == 0:
@@ -669,6 +692,16 @@ def sparse_attn_indexer(
                 decode_metadata.schedule_metadata,
                 logits,
                 False,
+            )
+        elif use_sm120_dsa_indexer():
+            assert padded_q_scale is None
+            logits = sm120_fp8_paged_mqa_logits(
+                padded_q_quant_cast,
+                kv_cache,
+                weights[:num_padded_tokens],
+                seq_lens,
+                decode_metadata.block_table,
+                max_model_len,
             )
         else:
             logits = fp8_fp4_paged_mqa_logits(
@@ -845,12 +878,12 @@ class SparseAttnIndexer(CustomOp):
         # 64-token page of alignment padding per request. Used only to
         # reserve workspace during the profiling run; 0 disables it.
         self.dcp_local_prefill_shadow_rows = 0
-        if self.dcp_world_size > 1 and _use_sm89_dsa():
+        if self.dcp_world_size > 1 and (_use_sm89_dsa() or use_sm120_dsa_indexer()):
             scheduler_config = get_current_aphrodite_config().scheduler_config
             self.dcp_local_prefill_shadow_rows = (
                 round_up(scheduler_config.max_num_batched_tokens, 64) + 64 * scheduler_config.max_num_seqs
             )
-        if current_platform.is_cuda() and not has_deep_gemm() and not _use_sm89_dsa():
+        if current_platform.is_cuda() and not has_deep_gemm() and not _use_sm89_dsa() and not use_sm120_dsa_indexer():
             raise RuntimeError(
                 "Sparse Attention Indexer CUDA op requires DeepGEMM support in the current Aphrodite environment."
             )

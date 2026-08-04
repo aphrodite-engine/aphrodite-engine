@@ -109,8 +109,8 @@ def init_attn_backend(
         layer_type = cast(type[Any], AttentionLayerBase)
         attn_layers = get_layers_from_aphrodite_config(aphrodite_config, layer_type, layer_names)
 
-        group_map: dict[tuple[tuple[str, str], KVCacheSpec, int], AttentionGroup] = {}
-        group_order: list[tuple[tuple[str, str], KVCacheSpec, int]] = []
+        group_map: dict[tuple[tuple[str, str], KVCacheSpec, int, str | None], AttentionGroup] = {}
+        group_order: list[tuple[tuple[str, str], KVCacheSpec, int, str | None]] = []
 
         for layer_name in layer_names:
             attn_backend = attn_layers[layer_name].get_attn_backend()
@@ -123,9 +123,16 @@ def init_attn_backend(
             # counts (e.g. a spec-decode draft head and its target) get separate
             # metadata builders.
             num_heads_q = getattr(attn_layers[layer_name], "num_heads", 0)
-            key = (attn_backend.full_cls_name(), layer_kv_cache_spec, num_heads_q)
+            layer_cache_dtype = getattr(attn_layers[layer_name], "kv_cache_dtype", None)
+            key = (attn_backend.full_cls_name(), layer_kv_cache_spec, num_heads_q, layer_cache_dtype)
             if key not in group_map:
-                group_map[key] = AttentionGroup(attn_backend, [layer_name], layer_kv_cache_spec, kv_cache_group_id)
+                group_map[key] = AttentionGroup(
+                    attn_backend,
+                    [layer_name],
+                    layer_kv_cache_spec,
+                    kv_cache_group_id,
+                    cache_dtype=layer_cache_dtype,
+                )
                 group_order.append(key)
             else:
                 group_map[key].layer_names.append(layer_name)
