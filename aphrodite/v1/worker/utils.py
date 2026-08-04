@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import copy
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
@@ -210,6 +211,9 @@ class AttentionGroup:
     layer_names: list[str]
     kv_cache_spec: KVCacheSpec
     kv_cache_group_id: int
+    # A speculative draft can override a target-only cache layout while both
+    # models share the top-level AphroditeConfig.
+    cache_dtype: str | None = None
     # When ubatching is enabled we will have a metadata builder for each ubatch
     # so that if they use internal persistent buffers for cudagraphs, and they
     # won't have to worry about conflicting with the other ubatches.
@@ -222,6 +226,11 @@ class AttentionGroup:
         kernel_block_size: int | None = None,
         num_metadata_builders: int = 1,
     ):
+        builder_config = aphrodite_config
+        if self.cache_dtype is not None and self.cache_dtype != aphrodite_config.cache_config.cache_dtype:
+            builder_config = copy.copy(aphrodite_config)
+            builder_config.cache_config = copy.copy(aphrodite_config.cache_config)
+            builder_config.cache_config.cache_dtype = self.cache_dtype
         kv_cache_spec_builder = (
             self.kv_cache_spec.copy_with_new_block_size(kernel_block_size)
             if kernel_block_size is not None
@@ -231,7 +240,7 @@ class AttentionGroup:
             self.backend.get_builder_cls()(
                 kv_cache_spec_builder,
                 self.layer_names,
-                aphrodite_config,
+                builder_config,
                 device,
             )
             for _ in range(num_metadata_builders)
