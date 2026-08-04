@@ -1209,14 +1209,18 @@ class SpecDecodeBaseProposer:
             ),
         )
 
-        if spec_cfg.kv_cache_dtype is not None:
-            base = replace(
-                base,
-                cache_config=replace(
-                    base.cache_config,
-                    cache_dtype=spec_cfg.kv_cache_dtype,
+        from aphrodite.config.speculative import resolve_draft_kv_cache_dtype
+
+        base = replace(
+            base,
+            cache_config=replace(
+                base.cache_config,
+                cache_dtype=resolve_draft_kv_cache_dtype(
+                    spec_cfg,
+                    base.cache_config.cache_dtype,
                 ),
-            )
+            ),
+        )
 
         return base
 
