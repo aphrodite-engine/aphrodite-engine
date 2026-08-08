@@ -144,6 +144,21 @@ def test_fused_indexer_q_rope_quant_matches_unfused(num_tokens, cache_dtype, use
     head_scale = N_HEAD**-0.5
 
     q_quant_ref, weights_ref = _reference(positions, q, cos_sin_cache, weights, softmax_scale, head_scale, use_fp4)
+    output_buffers: tuple[torch.Tensor, ...] | None = None
+    output_buffer_test_num_tokens = 7
+    if num_tokens == output_buffer_test_num_tokens and cache_dtype == torch.float32:
+        if use_fp4:
+            q_ref, q_scale_ref = q_quant_ref
+            output_buffers = (
+                torch.empty_like(q_ref),
+                torch.empty_like(q_scale_ref).view(torch.uint8).reshape(num_tokens, N_HEAD, -1),
+                torch.empty_like(weights_ref),
+            )
+        else:
+            output_buffers = (
+                torch.empty_like(q_quant_ref),
+                torch.empty_like(weights_ref),
+            )
     # use_cutedsl=False: force the triton path even when cutedsl is installed
     # by patching the dispatcher's has_cutedsl() binding to return False.
     cutedsl_patch = (
@@ -163,7 +178,16 @@ def test_fused_indexer_q_rope_quant_matches_unfused(num_tokens, cache_dtype, use
             softmax_scale,
             head_scale,
             use_fp4,
+            output_buffers=output_buffers,
         )
+
+    if output_buffers is not None:
+        if use_fp4:
+            assert q_quant_fused[0].data_ptr() == output_buffers[0].data_ptr()
+            assert q_quant_fused[1].data_ptr() == output_buffers[1].data_ptr()
+        else:
+            assert q_quant_fused.data_ptr() == output_buffers[0].data_ptr()
+        assert weights_fused.data_ptr() == output_buffers[-1].data_ptr()
 
     if use_fp4:
         q_quant_ref, q_scale_ref = q_quant_ref
