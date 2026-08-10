@@ -86,12 +86,19 @@ class DSparkDeepseekV4Model(nn.Module):
         )
         self.main_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
+        self.topk_indices_buffer = torch.empty(
+            aphrodite_config.scheduler_config.max_num_batched_tokens,
+            config.index_topk,
+            dtype=torch.int32,
+        )
+
         current_aphrodite_config = get_current_aphrodite_config()
         self.layers = nn.ModuleList(
             [
                 DeepseekV4DecoderLayer(
                     current_aphrodite_config,
                     prefix=maybe_prefix(prefix, f"layers.{self.num_hidden_layers + i}"),
+                    topk_indices_buffer=self.topk_indices_buffer,
                 )
                 for i in range(self.num_dspark_layers)
             ]

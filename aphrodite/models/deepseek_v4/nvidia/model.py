@@ -66,6 +66,7 @@ from aphrodite.model_executor.models.utils import (
 )
 from aphrodite.model_executor.utils import set_weight_attrs
 from aphrodite.models.deepseek_v4.attention import DeepseekV4Attention
+from aphrodite.models.deepseek_v4.eager_scratch import DeepseekV4EagerScratchPool
 from aphrodite.models.deepseek_v4.nvidia.flashinfer_sparse import (
     DeepseekV4FlashInferMLAAttention,
     DeepseekV4FlashInferSM120Attention,
@@ -774,6 +775,7 @@ class DeepseekV4DecoderLayer(nn.Module):
         topk_indices_buffer: torch.Tensor | None = None,
         q_workspace: torch.Tensor | None = None,
         aux_stream_list: list[torch.cuda.Stream] | None = None,
+        eager_scratch_pool: DeepseekV4EagerScratchPool | None = None,
     ):
         super().__init__()
 
@@ -787,6 +789,7 @@ class DeepseekV4DecoderLayer(nn.Module):
             topk_indices_buffer=topk_indices_buffer,
             q_workspace=q_workspace,
             aux_stream_list=aux_stream_list,
+            eager_scratch_pool=eager_scratch_pool,
         )
         self.ffn = DeepseekV4MoE(aphrodite_config, prefix=f"{prefix}.ffn")
 
@@ -976,6 +979,18 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             config.head_dim,
             dtype=aphrodite_config.model_config.dtype,
         )
+        self.eager_scratch_pool: DeepseekV4EagerScratchPool | None = None
+        if not aphrodite_config.parallel_config.use_ubatching:
+            # TODO: support DBO if needed; this requires a microbatch dimension.
+            self.eager_scratch_pool = DeepseekV4EagerScratchPool(
+                aphrodite_config.scheduler_config.max_num_batched_tokens,
+                self.q_workspace,
+                config.head_dim,
+                config.index_n_heads,
+                config.index_head_dim,
+                config.index_topk,
+                current_platform.device_type,
+            )
 
         if get_pp_group().is_first_rank:
             self.embed_tokens = VocabParallelEmbedding(
@@ -995,6 +1010,7 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
                 topk_indices_buffer=self.topk_indices_buffer,
                 q_workspace=self.q_workspace,
                 aux_stream_list=aux_stream_list,
+                eager_scratch_pool=self.eager_scratch_pool,
             ),
             prefix=f"{prefix}.layers",
         )
