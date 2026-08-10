@@ -1752,6 +1752,20 @@ def get_kv_cache_capacity(aphrodite_config: AphroditeConfig, kv_cache_config: KV
     return int(max_concurrency * max_model_len), max_concurrency
 
 
+def update_kv_cache_capacity(aphrodite_config: AphroditeConfig, kv_cache_config: KVCacheConfig) -> None:
+    """Store and log the resolved KV cache capacity."""
+    num_tokens, max_concurrency = get_kv_cache_capacity(aphrodite_config, kv_cache_config)
+    aphrodite_config.cache_config.kv_cache_size_tokens = num_tokens
+    aphrodite_config.cache_config.kv_cache_max_concurrency = max_concurrency
+    max_model_len = aphrodite_config.model_config.max_model_len
+    logger.info_once(
+        "GPU KV cache size: %s tokens, Maximum concurrency for %s tokens per request: %.2fx",
+        f"{num_tokens:,}",
+        f"{max_model_len:,}",
+        max_concurrency,
+    )
+
+
 def _max_memory_usage_bytes_from_groups(
     aphrodite_config: AphroditeConfig,
     kv_cache_groups: list[KVCacheGroupSpec],
@@ -2054,21 +2068,6 @@ def get_kv_cache_configs(
         for tensor in kv_cache_config.kv_cache_tensors:
             assert tensor.size % num_blocks_old == 0
             tensor.size = tensor.size // num_blocks_old * min_num_blocks
-
-        if len(kv_cache_config.kv_cache_groups) > 0:
-            max_model_len = aphrodite_config.model_config.max_model_len
-            # GPU KV cache size in tokens = max_concurrency * max_model_len:
-            # the total tokens of context the pool can hold at peak
-            # utilization. Sourcing this from the concurrency calculation
-            # handles hybrid layouts correctly.
-            num_tokens, max_concurrency = get_kv_cache_capacity(aphrodite_config, kv_cache_config)
-
-            logger.info_once("GPU KV cache size: %s tokens", f"{num_tokens:,}")
-            logger.info_once(
-                "Maximum concurrency for %s tokens per request: %.2fx",
-                f"{max_model_len:,}",
-                max_concurrency,
-            )
 
     return kv_cache_configs
 

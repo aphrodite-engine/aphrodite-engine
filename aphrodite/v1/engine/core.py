@@ -46,11 +46,11 @@ from aphrodite.utils.system_utils import decorate_logs, set_process_title
 from aphrodite.v1.core.kv_cache_utils import (
     BlockHash,
     generate_scheduler_kv_cache_config,
-    get_kv_cache_capacity,
     get_kv_cache_configs,
     get_request_block_hasher,
     init_none_hash,
     resolve_kv_cache_block_sizes,
+    update_kv_cache_capacity,
 )
 from aphrodite.v1.core.sched.interface import PauseState, SchedulerInterface
 from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -287,9 +287,7 @@ class EngineCore:
         kv_cache_groups = scheduler_kv_cache_config.kv_cache_groups
         if kv_cache_groups:
             aphrodite_config.cache_config.block_size = min(g.kv_cache_spec.block_size for g in kv_cache_groups)
-            num_tokens, max_concurrency = get_kv_cache_capacity(aphrodite_config, scheduler_kv_cache_config)
-            aphrodite_config.cache_config.kv_cache_size_tokens = num_tokens
-            aphrodite_config.cache_config.kv_cache_max_concurrency = max_concurrency
+            update_kv_cache_capacity(aphrodite_config, scheduler_kv_cache_config)
 
         aphrodite_config.validate_block_size()
 
