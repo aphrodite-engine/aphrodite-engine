@@ -273,18 +273,85 @@ class FlashInferMLASparseMetadataBuilder(SparseMLACommonMetadataBuilder[FlashInf
             supports_dcp_with_varlen=True,
         )
 
+        dcp_world_size = aphrodite_config.parallel_config.decode_context_parallel_size
+        if dcp_world_size > 1:
+            _get_workspace_buffer(
+                device,
+                _required_workspace_bytes(
+                    dcp_world_size,
+                    num_q_heads,
+                    aphrodite_config.scheduler_config.max_num_batched_tokens,
+                ),
+            )
+
 
 # Global workspace buffer (lazily initialized)
 _fi_sparse_workspace: torch.Tensor | None = None
 
+_TRTLLM_GEN_SOFTMAX_STAT_BYTES = 8
+_TRTLLM_GEN_SOFTMAX_SLOTS_PER_TOKEN = 256
+_TRTLLM_GEN_SOFTMAX_GUARD_BYTES = 1024 * 1024
+_DEFAULT_WORKSPACE_BUFFER_SIZE = 394 * 1024 * 1024
 
-def _get_workspace_buffer(device: torch.device) -> torch.Tensor:
+
+def compute_trtllm_sparse_mla_workspace_bytes(
+    base_workspace_bytes: int,
+    dcp_world_size: int,
+    num_heads_per_rank: int,
+    max_num_batched_tokens: int,
+) -> int:
+    """Return workspace bytes required by sparse MLA decode under DCP."""
+    if dcp_world_size <= 1:
+        return base_workspace_bytes
+    softmax_bytes = (
+        _TRTLLM_GEN_SOFTMAX_STAT_BYTES
+        * (num_heads_per_rank * dcp_world_size)
+        * max_num_batched_tokens
+        * _TRTLLM_GEN_SOFTMAX_SLOTS_PER_TOKEN
+        + _TRTLLM_GEN_SOFTMAX_GUARD_BYTES
+    )
+    return base_workspace_bytes + softmax_bytes
+
+
+def _required_workspace_bytes(
+    dcp_world_size: int,
+    num_heads_per_rank: int,
+    max_num_batched_tokens: int,
+) -> int:
+    computed = compute_trtllm_sparse_mla_workspace_bytes(
+        _DEFAULT_WORKSPACE_BUFFER_SIZE,
+        dcp_world_size,
+        num_heads_per_rank,
+        max_num_batched_tokens,
+    )
+    if not envs.is_set("APHRODITE_FLASHINFER_WORKSPACE_BUFFER_SIZE"):
+        return computed
+
+    env_bytes = envs.APHRODITE_FLASHINFER_WORKSPACE_BUFFER_SIZE
+    if env_bytes < computed:
+        logger.warning_once(
+            "APHRODITE_FLASHINFER_WORKSPACE_BUFFER_SIZE=%d is below the "
+            "%d bytes required for sparse MLA with DCP=%d, %d heads per "
+            "rank, and max_num_batched_tokens=%d. The kernel may overflow "
+            "its workspace; set the value to at least %d or unset it.",
+            env_bytes,
+            computed,
+            dcp_world_size,
+            num_heads_per_rank,
+            max_num_batched_tokens,
+            computed,
+        )
+    return env_bytes
+
+
+def _get_workspace_buffer(device: torch.device, min_bytes: int | None = None) -> torch.Tensor:
     global _fi_sparse_workspace
-    if _fi_sparse_workspace is None:
+    required = min_bytes if min_bytes is not None else envs.APHRODITE_FLASHINFER_WORKSPACE_BUFFER_SIZE
+    if _fi_sparse_workspace is None or _fi_sparse_workspace.numel() < required:
         # FlashInfer's CuteDSL MLA-decode tactic requires an int8 workspace;
         # the trtllm-gen path views it as uint8, so int8 is safe for all backends.
         _fi_sparse_workspace = torch.zeros(
-            envs.APHRODITE_FLASHINFER_WORKSPACE_BUFFER_SIZE,
+            required,
             dtype=torch.int8,
             device=device,
         )
