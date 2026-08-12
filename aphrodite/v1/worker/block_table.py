@@ -15,6 +15,31 @@ from aphrodite.v1.worker.cp_utils import get_total_cp_world_size
 logger = init_logger(__name__)
 
 
+def get_block_table_width(
+    max_num_blocks: int,
+    block_size: int,
+    kernel_block_size: int | None = None,
+    *,
+    token_alignment: int | None = 128,
+) -> int:
+    """Return the kernel-visible block-table width.
+
+    The allocation block count is aligned before allocation blocks are split
+    into smaller kernel blocks. Metadata scratch buffers must use the same
+    width or speculative decode can read beyond their final row.
+    """
+    if kernel_block_size is None:
+        kernel_block_size = block_size
+    if block_size % kernel_block_size != 0:
+        raise ValueError(f"kernel_block_size {kernel_block_size} must divide block_size {block_size}")
+    if token_alignment is not None:
+        if token_alignment <= 0:
+            raise ValueError("token_alignment must be positive")
+        block_alignment = token_alignment // np.gcd(token_alignment, block_size)
+        max_num_blocks = cdiv(max_num_blocks, block_alignment) * block_alignment
+    return max_num_blocks * block_size // kernel_block_size
+
+
 class BlockTable:
     def __init__(
         self,
@@ -242,11 +267,7 @@ class MultiGroupBlockTable:
                 f"max_num_blocks length ({len(max_num_blocks)}) must match block_sizes length ({len(block_sizes)})"
             )
 
-        # Align to a multiple of (128 / block_size) as required
-        # by some attention backends such as TRTLLM (#39324)
-        max_num_blocks = [
-            cdiv(n, 128 // bs) * (128 // bs) if bs <= 128 else n for n, bs in zip(max_num_blocks, block_sizes)
-        ]
+        max_num_blocks = [get_block_table_width(n, bs, bs) for n, bs in zip(max_num_blocks, block_sizes)]
 
         self.block_tables = [
             BlockTable(

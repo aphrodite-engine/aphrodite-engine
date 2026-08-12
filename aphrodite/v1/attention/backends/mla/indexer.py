@@ -44,6 +44,7 @@ from aphrodite.v1.attention.backends.utils import (
     split_decodes_and_prefills,
 )
 from aphrodite.v1.kv_cache_interface import KVCacheSpec, MLAAttentionSpec
+from aphrodite.v1.worker.block_table import get_block_table_width
 from aphrodite.v1.worker.cp_utils import get_kv_cache_shard_count
 
 logger = init_logger(__name__)
@@ -494,9 +495,12 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             dtype=torch.int32,
             device=self.device,
         )
-        max_num_blocks_per_req = cdiv(
-            self.aphrodite_config.model_config.max_model_len,
-            self.kv_cache_spec.block_size * get_kv_cache_shard_count(),
+        max_num_blocks_per_req = get_block_table_width(
+            cdiv(
+                self.aphrodite_config.model_config.max_model_len,
+                self.kv_cache_spec.block_size * get_kv_cache_shard_count(),
+            ),
+            self.kv_cache_spec.block_size,
         )
         self.expanded_block_table_buffer = torch.zeros(
             (
