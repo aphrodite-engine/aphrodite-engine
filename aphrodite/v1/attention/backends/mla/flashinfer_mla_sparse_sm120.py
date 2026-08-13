@@ -34,9 +34,8 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
     """SM120 FlashInfer sparse-MLA implementation."""
 
     is_sparse = True
-    # This backend only implements sparse MQA. Advertising dense prefill makes
-    # the indexer skip top-k generation even though forward() later falls back
-    # to MQA, leaving prefill attention with stale indices.
+    # The SM120 launcher provides only sparse MQA. Dense/masked prefill is not
+    # implemented for GLM's head geometry and packed FP8 cache.
     supports_dense_mha_prefill = False
     can_return_lse_for_decode = True
     lse_base_on_e = False
@@ -77,6 +76,10 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
         self.kv_lora_rank: int = mla_args["kv_lora_rank"]
         self.qk_nope_head_dim: int = mla_args["qk_nope_head_dim"]
         self.qk_rope_head_dim: int = mla_args["qk_rope_head_dim"]
+        self.topk_indices_buffer: torch.Tensor | None = (
+            indexer.topk_indices_buffer if indexer is not None else mla_args.get("topk_indices_buffer")
+        )
+
         from aphrodite.config import get_current_aphrodite_config
 
         aphrodite_config = get_current_aphrodite_config()
@@ -85,11 +88,6 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
             model_type = getattr(aphrodite_config.model_config.hf_text_config, "model_type", None)
         self.kv_scale_format = _kv_scale_format_for_model(model_type)
 
-        # Skip-topk layers are built with indexer=None and get the shared
-        # buffer via mla_args instead (cf. FLASHMLA_SPARSE).
-        self.topk_indices_buffer: torch.Tensor | None = (
-            indexer.topk_indices_buffer if indexer is not None else mla_args.get("topk_indices_buffer")
-        )
         from aphrodite.utils.flashinfer import has_flashinfer_sparse_mla_sm120
 
         if not has_flashinfer_sparse_mla_sm120():
@@ -156,7 +154,10 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
             kv_lora_rank=self.kv_lora_rank,
             qk_rope_head_dim=self.qk_rope_head_dim,
             block_tables=topk_indices_physical.unsqueeze(1),
-            seq_lens=seq_lens,
+            # Preserve FlashInfer's original SM120 contract outside DCP. The
+            # explicit valid-count vector is required only after DCP filters
+            # the global top-k down to the current rank's compact local set.
+            seq_lens=seq_lens if self.dcp_world_size > 1 else None,
             max_seq_len=attn_metadata.topk_tokens,
             out=output.unsqueeze(1),
             bmm1_scale=self.scale,

@@ -638,6 +638,12 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             not (self.use_sm89_dsa or self.use_sm120_dsa)
             or self.dcp_world_size <= 1
             or parallel_config.prefill_context_parallel_size > 1
+            # Speculative decoding can turn the first scheduler step into a
+            # mixed prefill/decode sequence before the next metadata build.
+            # Keep it on the regular DCP gather-and-merge path; the ephemeral
+            # full-prompt shadow cache is only safe for non-speculative
+            # prefills.
+            or self.num_speculative_tokens > 0
             or num_prefills == 0
         ):
             return False
