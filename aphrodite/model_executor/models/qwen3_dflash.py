@@ -13,6 +13,7 @@ from aphrodite import _custom_ops as ops
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, get_current_aphrodite_config
 from aphrodite.distributed import (
+    get_dcp_group,
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
@@ -135,6 +136,16 @@ def _resolve_layer_attention(config: Qwen3Config, layer_idx: int) -> tuple[int |
     return sliding_window, _dflash_layer_causal(config, layer_idx)
 
 
+def dcp_kv_head_replicas(total_num_kv_heads: int) -> int:
+    """Return the draft-cache KV-head replication factor required by DCP."""
+    parallel_config = get_current_aphrodite_config().parallel_config
+    dcp_size = parallel_config.decode_context_parallel_size
+    tp_size = parallel_config.tensor_parallel_size
+    if dcp_size > 1 and total_num_kv_heads >= tp_size:
+        return dcp_size
+    return 1
+
+
 class DFlashQwen3Attention(nn.Module):
     """Attention for DFlash speculative decoding.
 
@@ -208,6 +219,7 @@ class DFlashQwen3Attention(nn.Module):
         )
 
         self.sliding_window = sliding_window
+        self.dcp_kv_replicas = dcp_kv_head_replicas(self.total_num_kv_heads)
         self.attn = Attention(
             self.num_heads,
             self.head_dim,
@@ -219,6 +231,7 @@ class DFlashQwen3Attention(nn.Module):
             prefix=f"{prefix}.attn",
             attn_type=attn_type,
             sinks=self.attention_sink_bias,
+            cache_num_kv_heads=self.num_kv_heads * self.dcp_kv_replicas,
         )
         self.causal = causal
         self.q_norm = RMSNorm(self.head_dim, eps=rms_norm_eps)
@@ -451,6 +464,7 @@ class DFlashQwen3Model(nn.Module):
         self._head_dim = attn0.head_dim
         self._num_kv_heads = attn0.num_kv_heads
         self._rms_norm_eps = attn0.q_norm.variance_epsilon
+        self._dcp_kv_replicas = getattr(attn0, "dcp_kv_replicas", 1)
         # Validation that all layers have the same attention config
         for attn in layers_attn[1:]:
             assert (
@@ -574,8 +588,13 @@ class DFlashQwen3Model(nn.Module):
         if context_slot_mapping is None:
             return
 
-        # --- Per-layer cache insert ---
         all_k_final = all_k_flat.view(L, num_ctx, nkv, hd)
+        if self._dcp_kv_replicas > 1:
+            dcp_group = get_dcp_group()
+            all_k_final = dcp_group.all_gather(all_k_final.contiguous(), dim=2)
+            all_v = dcp_group.all_gather(all_v.contiguous(), dim=2)
+
+        # --- Per-layer cache insert ---
         per_layer = isinstance(context_slot_mapping, (list, tuple))
         for i in range(L):
             slot_mapping = context_slot_mapping[i] if per_layer else context_slot_mapping
