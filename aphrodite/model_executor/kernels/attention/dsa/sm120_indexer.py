@@ -187,9 +187,28 @@ def sm120_fp8_paged_mqa_logits(
     """Compute paged FP8 indexer logits on SM120."""
     batch_size, next_n, num_heads, head_dim = q.shape
     page_size = kv_cache.shape[1]
-    kv_bytes = kv_cache.reshape(kv_cache.shape[0], page_size, -1)
-    k = kv_bytes[..., :head_dim].view(torch.float8_e4m3fn)
-    k_scales = kv_bytes[..., head_dim : head_dim + 4].view(torch.float32).squeeze(-1)
+    num_pages = kv_cache.shape[0]
+    page_stride = kv_cache.stride(0)
+    cache_bytes = kv_cache.view(torch.uint8)
+
+    # indexer_k_quant_and_cache stores a page in planar form: all
+    # ``page_size * head_dim`` FP8 key bytes first, followed by one FP32 scale
+    # per token. The logical cache tensor has a per-token trailing width, but
+    # slicing that dimension would incorrectly interpret the scale bytes as
+    # interleaved with each key row.
+    k_bytes = torch.as_strided(
+        cache_bytes,
+        size=(num_pages, page_size, head_dim),
+        stride=(page_stride, head_dim, 1),
+    )
+    scale_bytes = torch.as_strided(
+        cache_bytes,
+        size=(num_pages, page_size, 4),
+        stride=(page_stride, 4, 1),
+        storage_offset=page_size * head_dim,
+    )
+    k = k_bytes.view(torch.float8_e4m3fn)
+    k_scales = scale_bytes.view(torch.float32).squeeze(-1)
     if context_lens.ndim == 1:
         context_lens = context_lens[:, None].expand(-1, next_n)
 

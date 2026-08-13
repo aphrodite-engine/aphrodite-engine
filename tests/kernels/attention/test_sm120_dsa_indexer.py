@@ -75,9 +75,11 @@ def test_sm120_fp8_paged_mqa_logits(next_n: int) -> None:
         dtype=torch.uint8,
         device="cuda",
     )
-    cache_bytes = cache.reshape(num_pages, PAGE_SIZE, -1)
-    cache_bytes[..., :HEAD_DIM].copy_(keys.view(torch.uint8))
-    cache_bytes[..., HEAD_DIM:].copy_(scales.unsqueeze(-1).view(torch.uint8))
+    # Match indexer_k_quant_and_cache's planar page layout: all key rows,
+    # followed by all per-token scales.
+    page_bytes = cache.view(num_pages, -1)
+    page_bytes[:, : PAGE_SIZE * HEAD_DIM].copy_(keys.view(torch.uint8).reshape(num_pages, -1))
+    page_bytes[:, PAGE_SIZE * HEAD_DIM :].copy_(scales.view(torch.uint8).reshape(num_pages, -1))
     weights = torch.randn((batch_size * next_n, NUM_HEADS), device="cuda")
     context_lens = torch.tensor(
         [[129 + token for token in range(next_n)], [70 + token for token in range(next_n)]],
