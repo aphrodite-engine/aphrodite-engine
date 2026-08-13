@@ -6,7 +6,7 @@ from transformers import DeepseekV2Config, DeepseekV3Config
 
 from aphrodite.compilation.breakable_cudagraph import eager_break_during_capture
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed import get_dcp_group, get_tensor_model_parallel_world_size
 from aphrodite.forward_context import get_forward_context
 from aphrodite.model_executor.layers.attention import MLAAttention
 from aphrodite.model_executor.layers.layernorm import LayerNorm, RMSNorm
@@ -33,6 +33,8 @@ from aphrodite.model_executor.models.deepseek_v2 import (
 from aphrodite.model_executor.models.utils import extract_layer_index
 from aphrodite.models.deepseek_v32.common.kernels import fused_norm_rope, fused_q
 from aphrodite.utils.torch_utils import is_quantized_kv_cache
+from aphrodite.v1.attention.ops.common import cp_lse_ag_out_rs
+from aphrodite.v1.attention.ops.dcp_alltoall import dcp_a2a_lse_reduce
 
 
 class DeepseekV32Indexer(nn.Module):
@@ -459,6 +461,11 @@ class DeepseekV32Attention(MLAAttention):
                 use_fp4_cache=False,
                 # fused_norm_rope already cleared the topk buffer this forward.
                 skip_topk_buffer_clear=True,
+                # This fused path bypasses SparseAttnIndexer.forward_cuda, so
+                # forward its run-constant DCP geometry explicitly.
+                dcp_rank=self.indexer.indexer_op.dcp_rank,
+                dcp_world_size=self.indexer.indexer_op.dcp_world_size,
+                cp_kv_cache_interleave_size=(self.indexer.indexer_op.cp_kv_cache_interleave_size),
             )
 
         if attn_metadata is None:
@@ -474,9 +481,39 @@ class DeepseekV32Attention(MLAAttention):
             mqa_q_arg: torch.Tensor | tuple[torch.Tensor, torch.Tensor] = mqa_q[:num_actual]
         else:
             mqa_q_arg = (ql_nope[:num_actual], mqa_q[:num_actual])
-        attn_out, _ = self.impl.forward_mqa(  # type: ignore[attr-defined]
+
+        if self.impl.dcp_world_size > 1:
+            if self.use_pcp:
+                raise NotImplementedError(
+                    "The NVIDIA DeepSeek-v3.2/GLM-5.2 override does not yet support combined PCP and DCP attention."
+                )
+            if isinstance(mqa_q_arg, tuple):
+                mqa_q_arg = torch.cat(mqa_q_arg, dim=-1)
+            # Every DCP rank evaluates all query heads against its local KV
+            # shard. The per-rank outputs are LSE-combined below.
+            mqa_q_arg = get_dcp_group().all_gather(mqa_q_arg, dim=1)
+
+        attn_out, lse = self.impl.forward_mqa(  # type: ignore[attr-defined]
             mqa_q_arg, kv_cache, attn_metadata, self
         )
+        if self.impl.dcp_world_size > 1:
+            if lse is None:
+                raise RuntimeError("The NVIDIA DCP attention path requires per-head LSE from the sparse MLA backend.")
+            dcp_group = get_dcp_group()
+            if self.dcp_a2a:
+                attn_out = dcp_a2a_lse_reduce(
+                    attn_out,
+                    lse,
+                    dcp_group,
+                    is_lse_base_on_e=self.impl.lse_base_on_e,
+                )
+            else:
+                attn_out = cp_lse_ag_out_rs(
+                    attn_out,
+                    lse,
+                    dcp_group,
+                    is_lse_base_on_e=self.impl.lse_base_on_e,
+                )
         x = attn_out.view(num_actual, self.num_local_heads, self.kv_lora_rank).transpose(0, 1)
         out = output[:num_actual].view(num_actual, self.num_local_heads, self.v_head_dim).transpose(0, 1)
         torch.bmm(x, self.W_UV, out=out)

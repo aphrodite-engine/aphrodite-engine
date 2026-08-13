@@ -6,6 +6,10 @@ import torch.nn as nn
 from aphrodite.config import AphroditeConfig, replace
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.model_executor.model_loader import get_model
+from aphrodite.v1.worker.gpu.spec_decode.dflash.utils import (
+    resolve_dflash_attention_backend,
+    resolve_dflash_cache_dtype,
+)
 from aphrodite.v1.worker.gpu.spec_decode.eagle.utils import (
     _should_share,
     get_target_lm_head,
@@ -25,15 +29,11 @@ def load_dspark_model(target_model: nn.Module, aphrodite_config: AphroditeConfig
         attention_config=replace(
             aphrodite_config.attention_config,
             use_non_causal=dflash_has_any_non_causal(draft_model_config.hf_config),
-            backend=speculative_config.attention_backend,
+            backend=resolve_dflash_attention_backend(aphrodite_config),
         ),
-        cache_config=(
-            replace(
-                aphrodite_config.cache_config,
-                cache_dtype=speculative_config.kv_cache_dtype,
-            )
-            if speculative_config.kv_cache_dtype is not None
-            else aphrodite_config.cache_config
+        cache_config=replace(
+            aphrodite_config.cache_config,
+            cache_dtype=resolve_dflash_cache_dtype(aphrodite_config),
         ),
     )
 

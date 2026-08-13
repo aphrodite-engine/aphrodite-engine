@@ -32,6 +32,22 @@ else:
 
 logger = init_logger(__name__)
 
+
+def resolve_draft_kv_cache_dtype(
+    speculative_config: "SpeculativeConfig",
+    target_cache_dtype: CacheDType,
+) -> CacheDType:
+    """Resolve the draft cache dtype without leaking target-only layouts."""
+    if speculative_config.kv_cache_dtype is not None:
+        return speculative_config.kv_cache_dtype
+
+    draft_model_config = speculative_config.draft_model_config
+    if target_cache_dtype == "fp8_ds_mla" and not draft_model_config.use_mla:
+        return "fp8_e4m3"
+
+    return target_cache_dtype
+
+
 MTPModelTypes = Literal[
     "deepseek_mtp",
     "mimo_mtp",

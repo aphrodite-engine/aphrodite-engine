@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """SM120 implementation variant for ``FLASHINFER_MLA_SPARSE_SM120``."""
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -17,6 +17,7 @@ from aphrodite.v1.attention.backends.mla.flashinfer_mla_sparse import (
 )
 from aphrodite.v1.attention.backends.mla.sparse_utils import (
     triton_convert_req_index_to_global_index,
+    triton_filter_and_convert_dcp_index,
 )
 
 if TYPE_CHECKING:
@@ -33,6 +34,11 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
     """SM120 FlashInfer sparse-MLA implementation."""
 
     is_sparse = True
+    # The SM120 launcher provides only sparse MQA. Dense/masked prefill is not
+    # implemented for GLM's head geometry and packed FP8 cache.
+    supports_dense_mha_prefill = False
+    can_return_lse_for_decode = True
+    lse_base_on_e = False
 
     def __init__(
         self,
@@ -70,6 +76,10 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
         self.kv_lora_rank: int = mla_args["kv_lora_rank"]
         self.qk_nope_head_dim: int = mla_args["qk_nope_head_dim"]
         self.qk_rope_head_dim: int = mla_args["qk_rope_head_dim"]
+        self.topk_indices_buffer: torch.Tensor | None = (
+            indexer.topk_indices_buffer if indexer is not None else mla_args.get("topk_indices_buffer")
+        )
+
         from aphrodite.config import get_current_aphrodite_config
 
         aphrodite_config = get_current_aphrodite_config()
@@ -78,11 +88,6 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
             model_type = getattr(aphrodite_config.model_config.hf_text_config, "model_type", None)
         self.kv_scale_format = _kv_scale_format_for_model(model_type)
 
-        # Skip-topk layers are built with indexer=None and get the shared
-        # buffer via mla_args instead (cf. FLASHMLA_SPARSE).
-        self.topk_indices_buffer: torch.Tensor | None = (
-            indexer.topk_indices_buffer if indexer is not None else mla_args.get("topk_indices_buffer")
-        )
         from aphrodite.utils.flashinfer import has_flashinfer_sparse_mla_sm120
 
         if not has_flashinfer_sparse_mla_sm120():
@@ -107,19 +112,30 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
         assert self.topk_indices_buffer is not None
         topk_indices = self.topk_indices_buffer[:num_actual_toks]
 
-        topk_indices_physical = cast(
-            torch.Tensor,
-            triton_convert_req_index_to_global_index(
+        if self.dcp_world_size > 1:
+            topk_indices_physical, seq_lens = triton_filter_and_convert_dcp_index(
+                attn_metadata.req_id_per_token[:num_actual_toks],
+                attn_metadata.block_table,
+                topk_indices,
+                dcp_size=self.dcp_world_size,
+                dcp_rank=self.dcp_rank,
+                cp_kv_cache_interleave_size=attn_metadata.cp_kv_cache_interleave_size,
+                BLOCK_SIZE=attn_metadata.block_size,
+                NUM_TOPK_TOKENS=topk_indices.shape[1],
+                return_valid_counts=True,
+            )
+        else:
+            topk_indices_physical, seq_lens = triton_convert_req_index_to_global_index(
                 attn_metadata.req_id_per_token[:num_actual_toks],
                 attn_metadata.block_table,
                 topk_indices,
                 BLOCK_SIZE=attn_metadata.block_size,
                 NUM_TOPK_TOKENS=topk_indices.shape[1],
-            ),
-        )
+                return_valid_counts=True,
+            )
 
         output = q.new_empty(
-            (num_actual_toks, self.num_heads, self.kv_lora_rank),
+            (num_actual_toks, q.shape[-2], self.kv_lora_rank),
             dtype=q.dtype,
         )
 
@@ -138,12 +154,44 @@ class FlashInferMLASparseSM120Impl(MLAAttentionImpl[FlashInferMLASparseMetadata]
             kv_lora_rank=self.kv_lora_rank,
             qk_rope_head_dim=self.qk_rope_head_dim,
             block_tables=topk_indices_physical.unsqueeze(1),
-            seq_lens=None,
+            # Preserve FlashInfer's original SM120 contract outside DCP. The
+            # explicit valid-count vector is required only after DCP filters
+            # the global top-k down to the current rank's compact local set.
+            seq_lens=seq_lens if self.dcp_world_size > 1 else None,
             max_seq_len=attn_metadata.topk_tokens,
             out=output.unsqueeze(1),
             bmm1_scale=self.scale,
             bmm2_scale=1.0,
             sparse_mla_top_k=attn_metadata.topk_tokens,
             kv_scale_format=self.kv_scale_format,
+            return_lse=self.need_to_return_lse_for_decode,
         )
-        return out.squeeze(1), None
+        if self.need_to_return_lse_for_decode:
+            assert isinstance(out, tuple)
+            output, lse = out
+        else:
+            assert isinstance(out, torch.Tensor)
+            output, lse = out, None
+
+        output = output.squeeze(1)
+        if lse is not None:
+            lse = self._normalize_lse(lse, output.shape[0], output.shape[1])
+            empty_rows = (topk_indices_physical == -1).all(dim=-1)
+            output.masked_fill_(empty_rows.view(-1, 1, 1), 0.0)
+            lse.masked_fill_(empty_rows.view(-1, 1), float("-inf"))
+        return output, lse
+
+    @staticmethod
+    def _normalize_lse(lse: torch.Tensor, num_tokens: int, num_heads: int) -> torch.Tensor:
+        if lse.dim() == 3:
+            if lse.shape[-1] == 1:
+                lse = lse.squeeze(-1)
+            elif lse.shape[1] == 1:
+                lse = lse.squeeze(1)
+            elif lse.shape[0] * lse.shape[1] == num_tokens:
+                lse = lse.reshape(num_tokens, lse.shape[-1])
+        if lse.shape != (num_tokens, num_heads):
+            raise RuntimeError(
+                f"Unexpected FlashInfer sparse MLA LSE shape: {tuple(lse.shape)}, expected ({num_tokens}, {num_heads})."
+            )
+        return lse

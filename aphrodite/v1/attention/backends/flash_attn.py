@@ -1008,7 +1008,41 @@ class FlashAttentionImpl(AttentionImpl):
         max_seqlen_q = attn_metadata.max_query_len
         block_table = attn_metadata.block_table
 
+        # A non-quantized DCP draft cache can store more KV heads than the
+        # implementation projects. Its descales are no-op scalars, and leaving
+        # them populated makes FlashAttention validate them against the larger
+        # replicated cache-head dimension.
+        context_q_descale = q_descale
+        context_k_descale = k_descale
+        context_v_descale = v_descale
+        if not is_quantized_kv_cache(self.kv_cache_dtype):
+            context_q_descale = context_k_descale = context_v_descale = None
+            q_descale = k_descale = v_descale = None
         query = query.contiguous()
+        if attn_metadata.max_dcp_context_kv_len == 0:
+            flash_attn_varlen_func(
+                q=query,
+                k=key,
+                v=value,
+                out=output,
+                cu_seqlens_q=cu_seqlens_q,
+                max_seqlen_q=max_seqlen_q,
+                cu_seqlens_k=cu_seqlens_q,
+                max_seqlen_k=max_seqlen_q,
+                softmax_scale=self.scale,
+                causal=attn_metadata.causal,
+                alibi_slopes=self.alibi_slopes,
+                window_size=list(self.sliding_window) if self.sliding_window is not None else None,
+                softcap=self.logits_soft_cap,
+                return_softmax_lse=True,
+                fa_version=self.vllm_flash_attn_version,
+                q_descale=q_descale,
+                k_descale=k_descale,
+                v_descale=v_descale,
+                num_splits=attn_metadata.max_num_splits,
+            )
+            return output
+
         query_across_dcp = get_dcp_group().all_gather(query, dim=1)
         sliding_window_size = list(self.sliding_window) if self.sliding_window is not None else None
         n = query_across_dcp.shape[0]
@@ -1036,9 +1070,9 @@ class FlashAttentionImpl(AttentionImpl):
             return_softmax_lse=True,
             scheduler_metadata=attn_metadata.scheduler_metadata,
             fa_version=self.vllm_flash_attn_version,
-            q_descale=q_descale,
-            k_descale=k_descale,
-            v_descale=v_descale,
+            q_descale=context_q_descale,
+            k_descale=context_k_descale,
+            v_descale=context_v_descale,
             num_splits=attn_metadata.max_num_splits,
         )
         # FA returns LSE in shape [ H, B ] but DCP combine wants [ B, H ]

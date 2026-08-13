@@ -10,6 +10,9 @@ from aphrodite import _custom_ops as ops
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_dcp_group, get_pcp_group
 from aphrodite.logger import init_logger
+from aphrodite.model_executor.kernels.attention.dsa.sm120_indexer import (
+    use_sm120_dsa_indexer,
+)
 from aphrodite.model_executor.warmup.jit_warmup import (
     AphroditeJitKernel,
     WarmupIntRange,
@@ -41,6 +44,7 @@ from aphrodite.v1.attention.backends.utils import (
     split_decodes_and_prefills,
 )
 from aphrodite.v1.kv_cache_interface import KVCacheSpec, MLAAttentionSpec
+from aphrodite.v1.worker.block_table import get_block_table_width
 from aphrodite.v1.worker.cp_utils import get_kv_cache_shard_count
 
 logger = init_logger(__name__)
@@ -443,7 +447,10 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         # caches). Outside the SM100 family the FP8
         # paged MQA logits kernel only supports next_n in (1, 2)
         # (deepgemm smxx_fp8_fp4_paged_mqa_logits.hpp:233), so flatten there.
-        self.use_flattening = not current_platform.is_device_capability_family(100) and next_n not in (1, 2)
+        self.use_sm120_dsa = use_sm120_dsa_indexer()
+        self.use_flattening = (
+            not current_platform.is_device_capability_family(100) and not self.use_sm120_dsa and next_n not in (1, 2)
+        )
         logger.info_once(
             "DSA indexer decode path: use_flattening=%s (next_n=%d, use_fp4_indexer_cache=%s)",
             self.use_flattening,
@@ -488,9 +495,12 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             dtype=torch.int32,
             device=self.device,
         )
-        max_num_blocks_per_req = cdiv(
-            self.aphrodite_config.model_config.max_model_len,
-            self.kv_cache_spec.block_size * get_kv_cache_shard_count(),
+        max_num_blocks_per_req = get_block_table_width(
+            cdiv(
+                self.aphrodite_config.model_config.max_model_len,
+                self.kv_cache_spec.block_size * get_kv_cache_shard_count(),
+            ),
+            self.kv_cache_spec.block_size,
         )
         self.expanded_block_table_buffer = torch.zeros(
             (
@@ -514,7 +524,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                 f"DCP is not supported with sparse indexer KV compression (compress_ratio={self.compress_ratio})."
             )
 
-        if self.dcp_world_size > 1 and self.use_sm89_dsa:
+        if self.dcp_world_size > 1 and (self.use_sm89_dsa or self.use_sm120_dsa):
             self._warmup_dcp_kernels()
 
         # Pre-allocate buffers for CUDA graph compatibility when
@@ -612,7 +622,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         seq_lens_cpu: torch.Tensor,
         prefill_query_lens_cpu: torch.Tensor,
     ) -> bool:
-        """Whether this batch qualifies for the sm89 DCP local-prefill path.
+        """Whether this batch qualifies for the native DCP local-prefill path.
 
         Fresh prompts only (context length 0 for every prefill request). The
         full prompt K is then computable on-rank from the replicated
@@ -625,9 +635,14 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         """
         parallel_config = self.aphrodite_config.parallel_config
         if (
-            not self.use_sm89_dsa
+            not (self.use_sm89_dsa or self.use_sm120_dsa)
             or self.dcp_world_size <= 1
             or parallel_config.prefill_context_parallel_size > 1
+            # Speculative decoding can turn the first scheduler step into a
+            # mixed prefill/decode sequence before the next metadata build.
+            # Keep it on the regular DCP gather-and-merge path; the ephemeral
+            # full-prompt shadow cache is only safe for non-speculative
+            # prefills.
             or self.num_speculative_tokens > 0
             or num_prefills == 0
         ):
@@ -1030,7 +1045,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                     seq_lens.shape[1],
                 )
             # DeepGEMM is required for the paged MQA logits on CUDA devices
-            elif current_platform.is_cuda() and has_deep_gemm():
+            elif current_platform.is_cuda() and has_deep_gemm() and not self.use_sm120_dsa:
                 self.scheduler_metadata_buffer[:] = get_paged_mqa_logits_metadata(
                     seq_lens,
                     self.kv_cache_spec.storage_block_size,

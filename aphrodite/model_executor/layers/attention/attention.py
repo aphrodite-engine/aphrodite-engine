@@ -231,11 +231,17 @@ class Attention(nn.Module, AttentionLayerBase):
         mm_prefix_clamp_sliding_window: bool = False,
         attn_backend: type[AttentionBackend] | None = None,
         head_size_v: int | None = None,
+        cache_num_kv_heads: int | None = None,
         **extra_impl_args,
     ) -> None:
         """
         The KV cache is stored inside this class and is accessed via
         `self.kv_cache`.
+
+        ``cache_num_kv_heads`` can increase the number of KV heads stored in
+        each cache block without changing the number projected by the
+        attention implementation. DFlash and DSpark use this under DCP to
+        replicate the draft KV heads needed by gathered query heads.
         """
         super().__init__()
         sliding_window: int | None
@@ -310,6 +316,10 @@ class Attention(nn.Module, AttentionLayerBase):
         self.head_size = head_size
         self.head_size_v = self.head_size if head_size_v is None else head_size_v
         self.num_kv_heads = num_kv_heads
+        self.cache_num_kv_heads = num_kv_heads if cache_num_kv_heads is None else cache_num_kv_heads
+        assert self.cache_num_kv_heads % num_kv_heads == 0, (
+            f"cache_num_kv_heads ({self.cache_num_kv_heads}) must be a multiple of num_kv_heads ({num_kv_heads})"
+        )
         self.sliding_window = sliding_window
         self.has_sink = extra_impl_args.get("sinks") is not None
 
@@ -585,7 +595,7 @@ class Attention(nn.Module, AttentionLayerBase):
             shared_page = aphrodite_config.cache_config.skip_page_size_padded
             sw_per_token = SlidingWindowSpec(
                 block_size=1,
-                num_kv_heads=self.num_kv_heads,
+                num_kv_heads=self.cache_num_kv_heads,
                 head_size=self.head_size,
                 head_size_v=self.head_size_v,
                 dtype=self.kv_cache_torch_dtype,
@@ -595,7 +605,7 @@ class Attention(nn.Module, AttentionLayerBase):
             sw_block_size = _largest_kernel_block_within(self.attn_backend, sw_per_token, shared_page, block_size)
             return SlidingWindowSpec(
                 block_size=sw_block_size,
-                num_kv_heads=self.num_kv_heads,
+                num_kv_heads=self.cache_num_kv_heads,
                 head_size=self.head_size,
                 head_size_v=self.head_size_v,
                 dtype=self.kv_cache_torch_dtype,
@@ -612,7 +622,7 @@ class Attention(nn.Module, AttentionLayerBase):
             tq_config = TurboQuantConfig.from_cache_dtype(self.kv_cache_dtype, self.head_size)
             return TQFullAttentionSpec(
                 block_size=block_size,
-                num_kv_heads=self.num_kv_heads,
+                num_kv_heads=self.cache_num_kv_heads,
                 head_size=self.head_size,
                 head_size_v=self.head_size,
                 dtype=self.kv_cache_torch_dtype,
@@ -621,7 +631,7 @@ class Attention(nn.Module, AttentionLayerBase):
         else:
             return FullAttentionSpec(
                 block_size=block_size,
-                num_kv_heads=self.num_kv_heads,
+                num_kv_heads=self.cache_num_kv_heads,
                 head_size=self.head_size,
                 head_size_v=self.head_size_v,
                 dtype=self.kv_cache_torch_dtype,
