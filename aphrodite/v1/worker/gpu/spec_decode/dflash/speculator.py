@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import copy
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -189,9 +189,10 @@ class DFlashSpeculator(DraftModelSpeculator):
             for group in groups:
                 builder = group.get_metadata_builder(0)
                 if hasattr(builder, "num_heads_q"):
-                    builder.num_heads_q = draft_heads_q
-                    builder.num_heads_kv = draft_heads_kv
-                    builder.headdim = draft_head_dim
+                    draft_builder = cast(Any, builder)
+                    draft_builder.num_heads_q = draft_heads_q
+                    draft_builder.num_heads_kv = draft_heads_kv
+                    draft_builder.headdim = draft_head_dim
 
         self.draft_kv_cache_group_ids = [gid for gid, g in enumerate(self.attn_groups) if g]
         assert self.draft_kv_cache_group_ids, "No draft attention groups found."
