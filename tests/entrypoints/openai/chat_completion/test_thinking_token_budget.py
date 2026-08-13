@@ -204,9 +204,7 @@ async def test_thinking_token_budget_mixed_requests(client: openai.AsyncOpenAI):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "client", ["default", "auto_config", "async_scheduling"], indirect=True
-)
+@pytest.mark.parametrize("client", ["default", "auto_config", "async_scheduling"], indirect=True)
 async def test_thinking_token_budget_limits_reasoning(client: openai.AsyncOpenAI):
     """Test that thinking_token_budget limits the number of reasoning tokens.
 

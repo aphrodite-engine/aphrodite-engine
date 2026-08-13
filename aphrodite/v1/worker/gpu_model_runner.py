@@ -3357,10 +3357,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         # way. Call it here every step, before sampling, using this step's
         # freshly-updated token lists.
         thinking_budget_state_holder = sampling_metadata.thinking_budget_state_holder
-        if (
-            thinking_budget_state_holder is not None
-            and thinking_budget_state_holder.has_tracked_requests()
-        ):
+        if thinking_budget_state_holder is not None and thinking_budget_state_holder.has_tracked_requests():
             thinking_budget_state_holder.update_state(
                 sampling_metadata.output_token_ids,
                 sampling_metadata.spec_token_ids,

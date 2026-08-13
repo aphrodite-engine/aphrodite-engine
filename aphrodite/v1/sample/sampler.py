@@ -131,10 +131,7 @@ class Sampler(nn.Module):
         # logits here and generation ran past the budget every time. Mirror
         # the same call for the normal (non-spec-decode) path.
         thinking_budget_state_holder = sampling_metadata.thinking_budget_state_holder
-        if (
-            thinking_budget_state_holder is not None
-            and thinking_budget_state_holder.has_tracked_requests()
-        ):
+        if thinking_budget_state_holder is not None and thinking_budget_state_holder.has_tracked_requests():
             logits = thinking_budget_state_holder.apply_to_logits(
                 logits,
                 predict_bonus_token=predict_bonus_token,
