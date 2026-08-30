@@ -47,6 +47,7 @@ from aphrodite.transformers_utils.model_arch_config_convertor import (
     MODEL_ARCH_CONFIG_CONVERTORS,
     ModelArchConfigConvertorBase,
 )
+from aphrodite.transformers_utils.oci_utils import is_oci_uri, resolve_oci_model
 from aphrodite.transformers_utils.runai_utils import ObjectStorageModel, is_runai_obj_uri
 from aphrodite.transformers_utils.utils import maybe_model_redirect
 from aphrodite.utils.import_utils import LazyLoader
@@ -942,6 +943,14 @@ class ModelConfig:
         if self.model_weights:
             return
 
+        # A CNCF ModelPack artifact is pulled from a container registry and
+        # extracted to a local directory, which the default HuggingFace-format
+        # loading then sees. Handled before the object-storage path since the
+        # two schemes are disjoint.
+        if is_oci_uri(model) or is_oci_uri(tokenizer):
+            self.maybe_pull_model_tokenizer_for_oci(model, tokenizer)
+            return
+
         if not (is_runai_obj_uri(model) or is_runai_obj_uri(tokenizer)):
             return
 
@@ -974,6 +983,28 @@ class ModelConfig:
                 ignore_pattern=["*.pt", "*.safetensors", "*.bin", "*.tensors", "*.pth"],
             )
             self.tokenizer = object_storage_tokenizer.dir
+
+    def maybe_pull_model_tokenizer_for_oci(self, model: str, tokenizer: str) -> None:
+        """Pull a CNCF ModelPack artifact from an OCI registry.
+
+        The whole image is extracted to one directory, so a tokenizer naming
+        the same reference reuses it rather than pulling twice.
+
+        Args:
+            model: Model name or path
+            tokenizer: Tokenizer name or path
+        """
+        resolved: dict[str, str] = {}
+
+        if is_oci_uri(model):
+            resolved[model] = resolve_oci_model(model)
+            self.model_weights = model
+            self.model = resolved[model]
+
+        if is_oci_uri(tokenizer):
+            if tokenizer not in resolved:
+                resolved[tokenizer] = resolve_oci_model(tokenizer)
+            self.tokenizer = resolved[tokenizer]
 
     def _get_encoder_config(self) -> dict[str, Any] | None:
         return get_sentence_transformer_tokenizer_config(self.model, self.revision)
