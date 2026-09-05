@@ -63,6 +63,10 @@ def get_precompiled_rust_extension_paths() -> list[Path]:
     return sorted((ROOT_DIR / "aphrodite").glob("_rust_*.so"))
 
 
+def is_metadata_only_build() -> bool:
+    return bool({"egg_info", "dist_info"}.intersection(sys.argv[1:]))
+
+
 if sys.platform.startswith("darwin") and APHRODITE_TARGET_DEVICE not in ("cpu", "metal"):
     logger.warning("APHRODITE_TARGET_DEVICE automatically set to `metal` due to macOS")
     APHRODITE_TARGET_DEVICE = "metal"
@@ -110,7 +114,7 @@ def should_bundle_tcmalloc() -> bool:
     return (
         APHRODITE_TARGET_DEVICE == "cpu"
         and sys.platform.startswith("linux")
-        and platform.machine() in ("aarch64", "x86_64")
+        and platform.machine() in ("aarch64", "x86_64", "s390x")
     )
 
 
@@ -701,6 +705,8 @@ package_data = {
         "entrypoints/serve/instrumentator/static/*.js",
         "entrypoints/serve/instrumentator/static/*.css",
         "distributed/kv_transfer/kv_connector/v1/hf3fs/utils/*.cpp",
+        # Built-in multimodal chat template fallbacks (registry.py)
+        "transformers_utils/chat_templates/*.jinja",
         "third_party/flash_linear_attention/LICENSE",
         # DeepGEMM JIT include headers (vendored via cmake)
         "third_party/deep_gemm/include/**/*.cuh",
@@ -738,7 +744,7 @@ for rust_extension_path in get_precompiled_rust_extension_paths():
 if _no_device():
     ext_modules = []
 
-if APHRODITE_USE_PRECOMPILED:
+if APHRODITE_USE_PRECOMPILED and not is_metadata_only_build():
     wheel = precompiled_wheel.determine_wheel(
         ROOT_DIR,
         location=envs.APHRODITE_PRECOMPILED_WHEEL_LOCATION,
@@ -758,6 +764,10 @@ cmdclass = {"build_py": aphrodite_build_py}
 if ext_modules:
     cmdclass["build_ext"] = cmake_build_ext
 
+# Resolve the Python version first because get_aphrodite_version() may set
+# SETUPTOOLS_SCM_PRETEND_VERSION, which the Rust version should inherit.
+aphrodite_version = get_aphrodite_version()
+
 # Rust artifacts, built via setuptools-rust and installed into the package
 # directory alongside the Python modules. Imported lazily: setuptools-rust does
 # not need to be installed when nothing is being built.
@@ -765,20 +775,21 @@ if APHRODITE_USE_PRECOMPILED or should_use_precompiled_rust():
     rust_extensions = []
 else:
     rust_build = load_module_from_path("rust_build", os.path.join(ROOT_DIR, "tools", "build_rust.py"))
+    rust_build.prepare_build_environment()
     rust_extensions = rust_build.rust_extensions(optional=not should_require_rust_frontend())
 
 setup(
     # static metadata should rather go in pyproject.toml
-    version=get_aphrodite_version(),
+    version=aphrodite_version,
     ext_modules=ext_modules,
     rust_extensions=rust_extensions,
     install_requires=get_requirements(),
     extras_require={
         # AMD Zen CPU optimizations via zentorch
-        "zen": ["zentorch==2.11.0.0"],
+        "zen": ["zentorch==2.13.0.0"],
         "bench": ["pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly"],
         "tensorizer": ["tensorizer==2.10.1"],
-        "fastsafetensors": ["fastsafetensors >= 0.3.2"],
+        "fastsafetensors": ["fastsafetensors >= 0.3.3"],
         "instanttensor": ["instanttensor >= 0.1.9"],
         "runai": ["runai-model-streamer[s3,gcs,azure] >= 0.15.7"],
         "audio": [
@@ -793,11 +804,12 @@ setup(
         # only; also needs system GStreamer + libv4l (see docs).
         "deepstream": ["nvidia-deepstream-videodecode-cu13>=9.0.2"],
         "flashinfer": [],  # Kept for backwards compatibility
+        "b12x": ["b12x==1.3.0"],
         # Optional deps for Helion kernel development
         # NOTE: When updating helion version, also update CI files:
         #   - .buildkite/test_areas/kernels.yaml
         #   - .buildkite/test-amd.yaml
-        "helion": ["helion==1.1.0"],
+        "helion": ["helion==1.4.0"],
         # Optional deps for gRPC server (aphrodite serve --grpc)
         "grpc": ["smg-grpc-servicer[aphrodite] >= 0.5.2"],
         # Optional deps for OpenTelemetry tracing

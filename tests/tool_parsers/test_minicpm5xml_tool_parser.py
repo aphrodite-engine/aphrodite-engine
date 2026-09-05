@@ -8,11 +8,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aphrodite.entrypoints.generate.base.protocol import FunctionCall, ToolCall
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
     ChatCompletionToolsParam,
 )
-from aphrodite.entrypoints.openai.engine.protocol import FunctionCall, ToolCall
 from aphrodite.tool_parsers import ToolParser, ToolParserManager
 from aphrodite.tool_parsers.minicpm5xml_tool_parser import MiniCPM5XMLToolParser
 from tests.tool_parsers.utils import run_tool_extraction_streaming

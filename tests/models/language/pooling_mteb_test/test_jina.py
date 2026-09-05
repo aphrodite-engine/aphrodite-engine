@@ -5,6 +5,7 @@ from functools import partial
 import pytest
 
 from aphrodite import PoolingParams
+from aphrodite.platforms import current_platform
 from tests.models.language.pooling.embed_utils import (
     check_embeddings_close,
     correctness_test_embed_models,
@@ -37,6 +38,15 @@ EMBEDDING_MODELS = [
         attn_type="decoder",
         is_prefix_caching_supported=True,
         is_chunked_prefill_supported=True,
+    ),
+    EmbedModelInfo(
+        "jinaai/jina-embeddings-v5-text-nano",
+        architecture="JinaEmbeddingsV5Model",
+        dtype="bfloat16" if current_platform.is_rocm() else "auto",
+        seq_pooling_type="LAST",
+        attn_type="encoder_only",
+        is_prefix_caching_supported=False,
+        is_chunked_prefill_supported=False,
     ),
 ]
 

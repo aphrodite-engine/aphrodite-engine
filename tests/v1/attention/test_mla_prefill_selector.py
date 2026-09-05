@@ -58,11 +58,33 @@ def _make_aphrodite_config(
 class TestGetMLAPrefillBackend:
     """Tests for get_mla_prefill_backend (public API)."""
 
-    def test_no_device_capability_returns_flash_attn(self):
+    def test_cpu_uses_sdpa_prefill(self):
         aphrodite_config = _make_aphrodite_config()
 
         with patch("aphrodite.platforms.current_platform") as mock_platform:
+            mock_platform.is_cpu.return_value = True
+
+            backend = get_mla_prefill_backend(aphrodite_config)
+            assert backend is MLAPrefillBackendEnum.CPU.get_class()
+
+    def test_no_device_capability_returns_flash_attn(self):
+        aphrodite_config = _make_aphrodite_config()
+
+        class FlashAttnBackend:
+            @staticmethod
+            def get_name():
+                return "FLASH_ATTN"
+
+        with (
+            patch("aphrodite.platforms.current_platform") as mock_platform,
+            patch.object(
+                MLAPrefillBackendEnum.FLASH_ATTN,
+                "get_class",
+                return_value=FlashAttnBackend,
+            ),
+        ):
             mock_platform.get_device_capability.return_value = None
+            mock_platform.is_cpu.return_value = False
 
             backend = get_mla_prefill_backend(aphrodite_config)
             assert backend.get_name() == "FLASH_ATTN"
@@ -79,6 +101,7 @@ class TestGetMLAPrefillBackend:
         )
 
         with patch("aphrodite.platforms.current_platform") as mock_platform:
+            mock_platform.is_cpu.return_value = False
             mock_platform.get_device_capability.return_value = DeviceCapability(major=9, minor=0)
 
             with patch.object(
@@ -95,6 +118,7 @@ class TestGetMLAPrefillBackend:
         )
 
         with patch("aphrodite.platforms.current_platform") as mock_platform:
+            mock_platform.is_cpu.return_value = False
             mock_platform.get_device_capability.return_value = DeviceCapability(major=9, minor=0)
 
             with pytest.raises(ValueError, match="is not valid"):
@@ -106,6 +130,7 @@ class TestGetMLAPrefillBackend:
         )
 
         with patch("aphrodite.platforms.current_platform") as mock_platform:
+            mock_platform.is_cpu.return_value = False
             mock_platform.get_device_capability.return_value = DeviceCapability(major=10, minor=0)
 
             with (
@@ -145,6 +170,7 @@ class TestGetMLAPrefillBackend:
                 return_value=3,
             ),
         ):
+            mock_platform.is_cpu.return_value = False
             mock_platform.get_device_capability.return_value = DeviceCapability(major=9, minor=0)
             mock_platform.is_rocm.return_value = False
 

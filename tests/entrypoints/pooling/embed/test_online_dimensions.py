@@ -8,7 +8,6 @@ import openai
 import pytest
 
 from aphrodite.entrypoints.pooling.embed.protocol import EmbeddingResponse
-from aphrodite.platforms import current_platform
 from tests.conftest import HfRunner
 from tests.models.language.pooling.embed_utils import run_embedding_correctness_test
 from tests.models.utils import EmbedModelInfo
@@ -54,10 +53,6 @@ def server(model_info, dtype: str):
     if model_info.name == "Snowflake/snowflake-arctic-embed-m-v1.5":
         # Manually enable Matryoshka Embeddings
         args.extend(["--trust_remote_code", "--hf_overrides", '{"matryoshka_dimensions":[256]}'])
-
-    # ROCm: Use Flex Attention to support encoder-only self-attention.
-    if current_platform.is_rocm():
-        args.extend(["--attention-backend", "FLEX_ATTENTION"])
 
     with RemoteOpenAIServer(model_info.name, args) as remote_server:
         yield remote_server

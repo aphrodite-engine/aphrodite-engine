@@ -30,7 +30,6 @@ SEPARATE_GROUPS = [
     "aphrodite/lora",
 ]
 
-# TODO(woosuk): Include the code from Megatron and HuggingFace.
 EXCLUDE = [
     "aphrodite/third_party",
     "aphrodite/vllm_flash_attn",
@@ -46,15 +45,12 @@ EXCLUDE = [
     r"aphrodite/model_executor/models/[iI]",
     r"aphrodite/model_executor/models/[jJ]",
     r"aphrodite/model_executor/models/[kK]",
-    r"aphrodite/model_executor/models/[lL]",
-    r"aphrodite/model_executor/models/[mM]",
     r"aphrodite/model_executor/models/[nN]",
     r"aphrodite/model_executor/models/[oO]",
-    r"aphrodite/model_executor/models/[pP]",
     r"aphrodite/model_executor/models/[qQ]",
     r"aphrodite/model_executor/models/[rR]",
     r"aphrodite/model_executor/models/[sS]",
-    r"aphrodite/model_executor/models/[tT]",
+    r"aphrodite/model_executor/models/transformers",
     r"aphrodite/model_executor/models/[uU]",
     r"aphrodite/model_executor/models/[vV]",
     r"aphrodite/model_executor/models/[wW]",

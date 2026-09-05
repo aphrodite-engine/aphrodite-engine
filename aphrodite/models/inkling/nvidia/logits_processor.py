@@ -47,23 +47,26 @@ class InklingLogitsProcessor(LogitsProcessor):
         lm_head: VocabParallelEmbedding,
         hidden_states: torch.Tensor,
         embedding_bias: torch.Tensor | None = None,
+        skip_gather: bool = False,
     ) -> torch.Tensor | None:
         if hasattr(self, "base_layer"):
-            return type(self.base_layer)._lora_forward(self, lm_head, hidden_states, embedding_bias)
-        return self._base_forward(lm_head, hidden_states, embedding_bias)
+            return type(self.base_layer)._lora_forward(self, lm_head, hidden_states, embedding_bias, skip_gather)
+        return self._base_forward(lm_head, hidden_states, embedding_bias, skip_gather)
 
     def _lora_forward(
         self,
         lm_head: VocabParallelEmbedding,
         hidden_states: torch.Tensor,
         embedding_bias: torch.Tensor | None = None,
+        skip_gather: bool = False,
     ) -> torch.Tensor | None:
         mup_multiplier = self.base_layer.logits_mup_width_multiplier
         mup = 1.0 / mup_multiplier if mup_multiplier else None
         if self.logits_as_input:
             logits = hidden_states
         else:
-            logits = self._get_logits(hidden_states, lm_head, embedding_bias)
+            logits = self._get_logits(hidden_states, lm_head, embedding_bias, skip_gather)
+        # TODO: fuse this multiplication
         if logits is not None and mup:
             assert self.base_layer.soft_cap is None
             assert self.base_layer.scale == 1.0
@@ -75,10 +78,11 @@ class InklingLogitsProcessor(LogitsProcessor):
         lm_head: VocabParallelEmbedding,
         hidden_states: torch.Tensor,
         embedding_bias: torch.Tensor | None = None,
+        skip_gather: bool = False,
     ) -> torch.Tensor | None:
         mup = self.logits_mup_width_multiplier
         if not mup:
-            return super().forward(lm_head, hidden_states, embedding_bias)
+            return super().forward(lm_head, hidden_states, embedding_bias, skip_gather)
         # Fold the muP width divisor into the lm_head GEMM alpha (fp32 epilogue):
         # no separate elementwise kernel, no bf16 rounding of scaled logits, and
         # no weight mutation. Overfit to the served checkpoint: bf16 lm_head, no
@@ -95,6 +99,8 @@ class InklingLogitsProcessor(LogitsProcessor):
             beta=0.0,
             alpha=1.0 / mup,
         )
+        if skip_gather:
+            return logits
         logits = self._gather_logits(logits)
         if logits is not None:
             logits = logits[..., : self.org_vocab_size]

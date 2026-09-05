@@ -9,17 +9,17 @@ import pytest
 from openai.types.responses.function_tool import FunctionTool
 from xgrammar import StructuralTag
 
+from aphrodite.entrypoints.generate.base.protocol import (
+    DeltaMessage,
+    FunctionCall,
+    ToolCall,
+)
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionNamedFunction,
     ChatCompletionNamedToolChoiceParam,
     ChatCompletionRequest,
     ChatCompletionToolsParam,
     FunctionDefinition,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
-    DeltaMessage,
-    FunctionCall,
-    ToolCall,
 )
 from aphrodite.parser.abstract_parser import DelegatingParser
 from aphrodite.tokenizers import TokenizerLike, get_tokenizer

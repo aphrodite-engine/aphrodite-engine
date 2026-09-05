@@ -7,7 +7,7 @@ Script to test add_lora, remove_lora, pin_lora, list_loras functions.
 import pytest
 
 from aphrodite.engine.arg_utils import AsyncEngineArgs, EngineArgs
-from aphrodite.entrypoints.openai.api_server import (
+from aphrodite.entrypoints.launchers.api_server.entry import (
     build_async_engine_client_from_engine_args,
 )
 from aphrodite.lora.request import LoRARequest

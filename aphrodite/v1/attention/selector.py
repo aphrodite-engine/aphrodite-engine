@@ -8,7 +8,6 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.config.cache import CacheDType
-from aphrodite.logger import init_logger
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.v1.attention.backend import AttentionBackend, AttentionType
 from aphrodite.v1.attention.backends.registry import (
@@ -17,8 +16,6 @@ from aphrodite.v1.attention.backends.registry import (
 
 if TYPE_CHECKING:
     from aphrodite.v1.kv_cache_interface import KVCacheSpecKind
-
-logger = init_logger(__name__)
 
 
 class AttentionSelectorConfig(NamedTuple):
@@ -37,6 +34,8 @@ class AttentionSelectorConfig(NamedTuple):
     use_batch_invariant: bool = False
     use_kv_connector: bool = False
     use_pcp: bool = False
+    use_adaptive_verification: bool = False
+    use_dcp: bool = False
 
     def __repr__(self):
         return (
@@ -54,7 +53,9 @@ class AttentionSelectorConfig(NamedTuple):
             f"use_non_causal={self.use_non_causal}, "
             f"use_batch_invariant={self.use_batch_invariant}, "
             f"use_kv_connector={self.use_kv_connector}, "
-            f"use_pcp={self.use_pcp})"
+            f"use_adaptive_verification={self.use_adaptive_verification}, "
+            f"use_pcp={self.use_pcp}, "
+            f"use_dcp={self.use_dcp})"
         )
 
 
@@ -133,6 +134,15 @@ def get_attn_backend(
     kv_transfer_config = aphrodite_config.kv_transfer_config
     use_kv_connector = kv_transfer_config is not None and kv_transfer_config.is_kv_transfer_instance
 
+    speculative_config = aphrodite_config.speculative_config
+    use_adaptive_verification = speculative_config is not None and speculative_config.enable_adaptive_verification
+    if use_adaptive_verification:
+        from aphrodite.compilation.backends import model_tag
+
+        # The drafter always runs full-length blocks; only the verifier sees
+        # the trimmed, device-decided query lengths.
+        use_adaptive_verification = model_tag != "dspark_head"
+
     attn_type = attn_type or AttentionType.DECODER
     attn_selector_config = AttentionSelectorConfig(
         head_size=head_size,
@@ -150,6 +160,8 @@ def get_attn_backend(
         use_batch_invariant=envs.APHRODITE_BATCH_INVARIANT,
         use_kv_connector=use_kv_connector,
         use_pcp=aphrodite_config.parallel_config.prefill_context_parallel_size > 1,
+        use_adaptive_verification=use_adaptive_verification,
+        use_dcp=aphrodite_config.parallel_config.decode_context_parallel_size > 1,
     )
 
     attention_config = aphrodite_config.attention_config
@@ -162,6 +174,8 @@ def get_attn_backend(
         )
         backend = attention_config.backend_per_kind.get(kind.value, backend)
 
+    # The KV cache layout is resolved across all of the model's backends at once
+    # in get_kv_cache_spec(); a single selection cannot see its peers.
     return _cached_get_attn_backend(
         backend=backend,
         attn_selector_config=attn_selector_config,
@@ -185,19 +199,6 @@ def _cached_get_attn_backend(
     if not attention_cls:
         raise ValueError(f"Invalid attention backend for {current_platform.device_name}")
     backend = resolve_obj_by_qualname(attention_cls)
-
-    # Adjust kv cache layout if the selected backend requires a specific one
-    required_layout = backend.get_required_kv_cache_layout()
-    if required_layout is not None:
-        from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
-
-        set_kv_cache_layout(required_layout)
-        logger.info(
-            "Using %s KV cache layout for %s backend.",
-            required_layout,
-            backend.get_name(),
-        )
-
     return backend
 
 

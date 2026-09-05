@@ -39,10 +39,11 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import _I, BaseMultiModalProcessorCache
 from aphrodite.multimodal.inputs import MultiModalKwargsOptionalItems
 from aphrodite.multimodal.parse import MultiModalDataItems
-from aphrodite.multimodal.processing import BaseDummyInputsBuilder
 from aphrodite.multimodal.processing.processor import (
+    BaseDummyInputsBuilder,
     MultiModalPromptUpdates,
     PlaceholderFeaturesInfo,
+    cached_encode,
 )
 from aphrodite.tokenizers import cached_tokenizer_from_config
 from aphrodite.transformers_utils.processor import cached_processor_from_config
@@ -114,7 +115,6 @@ class Qwen3ASRRealtimeMultiModalProcessor(Qwen3ASRMultiModalProcessor):
         prompt_ids: list[int],
         mm_kwargs: MultiModalKwargsOptionalItems,
         mm_prompt_updates: MultiModalPromptUpdates,
-        is_update_applied: bool,
     ) -> tuple[list[int], Mapping[str, list[PlaceholderFeaturesInfo]]]:
         audios = mm_kwargs.get("audio", [])
         assert len(audios) == 1, f"Expected only one audio input for realtime, got {len(audios)}"
@@ -194,7 +194,7 @@ class Qwen3ASRRealtimeGeneration(Qwen3ASRForConditionalGeneration, SupportsRealt
         audio_placeholder = cls.get_placeholder_str("audio", 0)
         prompt_template = f"<|im_start|>user\n{audio_placeholder}<|im_end|>\n<|im_start|>assistant\n"
 
-        prompt_token_ids = tokenizer.encode(prompt_template)
+        prompt_token_ids = cached_encode(tokenizer, prompt_template)
 
         async for audio_chunk in audio_stream:
             buffer.write_audio(audio_chunk)

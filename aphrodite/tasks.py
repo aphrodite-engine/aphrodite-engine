@@ -39,3 +39,4 @@ FrontendTask = Literal["render"]
 FRONTEND_TASKS: tuple[FrontendTask, ...] = get_args(FrontendTask)
 
 SupportedTask = Literal[GenerationTask, PoolingTask, FrontendTask]
+FALLBACK_SUPPORTED_TASKS: tuple[SupportedTask, ...] = ("generate",)

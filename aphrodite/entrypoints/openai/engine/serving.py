@@ -7,7 +7,7 @@ from aphrodite.entrypoints.generate.base.serving import (
     format_token_id_placeholder,
     resolve_token_id_placeholder,
 )
-from aphrodite.entrypoints.openai.engine.protocol import GenerationError
+from aphrodite.exceptions import GenerationError
 
 __all__ = [
     "GenerateBaseServing",

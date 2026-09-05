@@ -48,13 +48,9 @@ def modelscope_list_repo_files(
 
     api = HubApi()
     api.login(token)
+
     # same as huggingface_hub.list_repo_files
-    files = [
-        file["Path"]
-        for file in api.get_model_files(model_id=repo_id, revision=revision, recursive=True)
-        if file["Type"] == "blob"
-    ]
-    return files
+    return [file["Path"] for file in api.get_model_files(model_id=repo_id, revision=revision, recursive=True)]
 
 
 def _maybe_json_dict(path: str | PathLike) -> dict[str, str]:

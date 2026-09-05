@@ -41,7 +41,7 @@ from aphrodite.v1.attention.backends.mla.sparse_utils import (
     triton_filter_and_convert_dcp_index,
 )
 from aphrodite.v1.attention.backends.utils import split_decodes_and_prefills
-from aphrodite.v1.kv_cache_interface import AttentionSpec
+from aphrodite.v1.kv_cache_interface import AttentionSpec, KVCacheLayout
 from aphrodite.v1.worker.workspace import current_workspace_manager
 
 if TYPE_CHECKING:
@@ -66,6 +66,11 @@ def use_sm89_dsa() -> bool:
 
 
 class Sm89MLASparseBackend(AttentionBackend):
+    @classmethod
+    def supported_kv_cache_layouts(cls) -> tuple[KVCacheLayout, ...]:
+        # Native SM89 kernels flatten the packed token pool across blocks.
+        return (KVCacheLayout.LBHNC,)
+
     supported_dtypes: ClassVar[list[torch.dtype]] = [torch.bfloat16]
     # No bf16 cache path; the forward kernel reads the fp8_ds_mla pool
     # directly, so `--kv-cache-dtype fp8_ds_mla` (or `fp8`) is required.

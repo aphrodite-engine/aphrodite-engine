@@ -582,7 +582,7 @@ def mhc_fused_post_pre_tilelang(
             hidden_size,
             hc_mult3,
             tile_n=tile_n,
-            n_splits=n_splits,
+            split_k=n_splits,
         )
     else:
         mhc_post_tilelang(

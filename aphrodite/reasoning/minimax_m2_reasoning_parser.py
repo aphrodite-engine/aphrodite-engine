@@ -4,9 +4,7 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from aphrodite.entrypoints.openai.engine.protocol import (
-    DeltaMessage,
-)
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.parser.engine.registered_adapters import MinimaxM2ParserReasoningAdapter
 from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParser
 from aphrodite.tokenizers import TokenizerLike

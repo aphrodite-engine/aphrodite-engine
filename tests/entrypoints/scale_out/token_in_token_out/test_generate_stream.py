@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from aphrodite.config.multimodal import MultiModalConfig
-from aphrodite.entrypoints.openai.engine.protocol import StreamOptions
+from aphrodite.entrypoints.generate.base.protocol import StreamOptions
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.scale_out.token_in_token_out.protocol import (
@@ -17,6 +17,7 @@ from aphrodite.entrypoints.scale_out.token_in_token_out.protocol import (
     GenerateResponse,
 )
 from aphrodite.entrypoints.scale_out.token_in_token_out.serving import ServingTokens
+from aphrodite.exceptions import GenerationError
 from aphrodite.logprobs import Logprob
 from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.renderers import renderer_from_config
@@ -192,6 +193,52 @@ async def test_serve_tokens_skips_mm_cache_for_remote_engine_execution():
 
     assert isinstance(response, GenerateResponse)
     assert serving.online_renderer.preprocess_completion.call_args.kwargs["skip_mm_cache"] is True
+
+
+@pytest.mark.asyncio
+async def test_serve_tokens_threads_session_id_header_to_engine():
+    engine = _mock_engine()
+
+    async def mock_generate(*args, **kwargs):
+        yield _make_request_output("req-1", token_ids=[10], finish_reason="stop", finished=True)
+
+    engine.generate = MagicMock(side_effect=mock_generate)
+    serving = _build_serving_tokens(engine)
+
+    request = GenerateRequest(
+        token_ids=[1, 2, 3],
+        sampling_params=SamplingParams(max_tokens=1),
+        model=MODEL_NAME,
+        stream=False,
+    )
+    raw_request = MagicMock()
+    raw_request.headers = {"X-Session-ID": "header-session"}
+
+    await serving.serve_tokens(request, raw_request)
+
+    assert engine.generate.call_args.kwargs["session_id"] == "header-session"
+
+
+@pytest.mark.asyncio
+async def test_non_stream_error():
+    """finish_reason='error' raises for the HTTP exception handler."""
+    engine = _mock_engine()
+
+    async def mock_generate(*args, **kwargs):
+        yield _make_request_output("req-1", token_ids=[], finish_reason="error", finished=True)
+
+    engine.generate = MagicMock(side_effect=mock_generate)
+    serving = _build_serving_tokens(engine)
+
+    request = GenerateRequest(
+        token_ids=[1, 2, 3],
+        sampling_params=SamplingParams(max_tokens=10),
+        model=MODEL_NAME,
+        stream=False,
+    )
+
+    with pytest.raises(GenerationError):
+        await serving.serve_tokens(request)
 
 
 @pytest.mark.asyncio

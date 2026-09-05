@@ -18,7 +18,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from tests.quantization.utils import is_quant_method_supported
+from aphrodite.config import set_current_aphrodite_config
+from aphrodite.forward_context import set_forward_context
+from aphrodite.model_executor.layers.attention import Attention
+from aphrodite.platforms import current_platform
+from tests.quantization.utils import (
+    is_quant_method_supported,
+    load_model_without_aphrodite_runner,
+)
 
 
 def _get_auto_awq_config_source() -> str:
@@ -182,42 +189,38 @@ AWQ_MODELS = [
     reason="auto_awq is not supported on this GPU type.",
 )
 @pytest.mark.parametrize("model_id", AWQ_MODELS)
-def test_auto_awq_quantization_method(aphrodite_runner, model_id: str, monkeypatch):
+def test_auto_awq_quantization_method(model_id: str, monkeypatch, dist_init, workspace_init):
     """Test that quantization='auto_awq' loads and runs correctly."""
     monkeypatch.setenv("APHRODITE_ALLOW_INSECURE_SERIALIZATION", "1")
-
-    with aphrodite_runner(
+    model, aphrodite_config = load_model_without_aphrodite_runner(
         model_id,
         dtype=torch.float16,
         quantization="auto_awq",
-        max_model_len=2048,
-        enforce_eager=True,
-    ) as llm:
+        model_config_kwargs={"max_model_len": 2048},
+    )
+    target_device = torch.device(current_platform.device_type)
 
-        def check_model(model):
-            from aphrodite.model_executor.layers.quantization.auto_awq import (
-                AutoAWQLinearMethod,
-                AutoAWQMarlinLinearMethod,
-            )
+    from aphrodite.model_executor.layers.quantization.auto_awq import (
+        AutoAWQLinearMethod,
+        AutoAWQMarlinLinearMethod,
+    )
 
-            for name, submodule in model.named_modules():
-                if name == "model.layers.0.self_attn.qkv_proj":
-                    # Should use either AutoAWQLinearMethod (Triton) or
-                    # AutoAWQMarlinLinearMethod (Marlin) depending on hardware
-                    assert isinstance(
-                        submodule.quant_method,
-                        (AutoAWQLinearMethod, AutoAWQMarlinLinearMethod),
-                    ), (
-                        f"Expected AutoAWQLinearMethod or AutoAWQMarlinLinearMethod "
-                        f"for {name}, got {type(submodule.quant_method)}"
-                    )
-                    break
+    qkv_proj = model.model.layers[0].self_attn.qkv_proj
+    assert isinstance(
+        qkv_proj.quant_method,
+        (AutoAWQLinearMethod, AutoAWQMarlinLinearMethod),
+    ), f"Expected AutoAWQLinearMethod or AutoAWQMarlinLinearMethod, got {type(qkv_proj.quant_method)}"
 
-        llm.apply_model(check_model)
-
-        outputs = llm.generate_greedy([PROMPT], max_tokens=8)
-        assert outputs
-        assert len(outputs[0][1]) > 0
+    monkeypatch.setattr(Attention, "forward", lambda _, q, k, v: q.contiguous())
+    input_ids = torch.tensor([1, 2, 3, 4], device=target_device)
+    positions = torch.arange(input_ids.numel(), device=target_device)
+    with (
+        set_current_aphrodite_config(aphrodite_config),
+        set_forward_context(None, aphrodite_config, num_tokens=input_ids.numel()),
+    ):
+        hidden_states = model(input_ids, positions, None)
+        logits = model.compute_logits(hidden_states)
+    assert torch.isfinite(logits).all()
 
 
 def test_auto_awq_config_get_name():

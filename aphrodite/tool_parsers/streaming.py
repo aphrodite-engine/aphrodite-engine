@@ -9,7 +9,7 @@ import regex as re
 from partial_json_parser.core.options import Allow
 
 from aphrodite.entrypoints.chat_utils import make_tool_call_id
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,

@@ -4,8 +4,8 @@
 import pytest
 from transformers import AutoTokenizer
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
 from aphrodite.reasoning.deepseek_v3_reasoning_parser import DeepSeekV3ReasoningParser

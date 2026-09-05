@@ -8,6 +8,7 @@ from aphrodite.config.speculative import resolve_draft_kv_cache_dtype
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.lora.layers.base import BaseLayerWithLoRA
 from aphrodite.model_executor.model_loader import get_model
+from aphrodite.model_executor.models.utils import PPMissingLayer
 
 
 def _should_share(eagle: nn.Module, flag: str, draft, target) -> bool:
@@ -32,6 +33,32 @@ def get_target_lm_head(target_model: nn.Module, target_language_model: nn.Module
     return getattr(target_language_model, "lm_head", None) or getattr(target_model, "lm_head", None)
 
 
+def maybe_share_target_embed(draft_model: nn.Module, draft_inner: nn.Module, target_inner: nn.Module) -> None:
+    """Share the target input embedding with the drafter when needed."""
+    target_embed = getattr(target_inner, "embed_tokens", None) or getattr(target_inner, "embedding", None)
+    if isinstance(target_embed, PPMissingLayer):
+        target_embed = None
+    # The drafter does not use the target's LoRA adapter.
+    if isinstance(target_embed, BaseLayerWithLoRA):
+        target_embed = target_embed.base_layer
+    draft_embed = getattr(draft_inner, "embed_tokens", None)
+
+    if get_pp_group().world_size > 1 and not hasattr(draft_model, "has_own_embed_tokens"):
+        return
+
+    if target_embed is None:
+        if hasattr(draft_inner, "embed_tokens") and not getattr(draft_model, "has_own_embed_tokens", False):
+            raise RuntimeError(
+                f"{type(draft_model).__name__} needs the target input embedding, but it is unavailable on this PP stage"
+            )
+        return
+
+    if _should_share(draft_model, "has_own_embed_tokens", draft_embed, target_embed):
+        if draft_embed is not None:
+            del draft_inner.embed_tokens
+        draft_inner.embed_tokens = target_embed
+
+
 def load_eagle_model(target_model: nn.Module, aphrodite_config: AphroditeConfig) -> nn.Module:
     from aphrodite.compilation.backends import set_model_tag
 
@@ -48,6 +75,16 @@ def load_eagle_model(target_model: nn.Module, aphrodite_config: AphroditeConfig)
             ),
         ),
     )
+    if speculative_config.attention_backend is not None:
+        # Before get_model(): the backend is read off the constructed layers.
+        # Only when set, so the draft keeps a KV cache layout the target shares.
+        aphrodite_config = replace(
+            aphrodite_config,
+            attention_config=replace(
+                aphrodite_config.attention_config,
+                backend=speculative_config.attention_backend,
+            ),
+        )
     with set_model_tag("eagle_head"):
         eagle_model = get_model(aphrodite_config=aphrodite_config, model_config=draft_model_config)
 
@@ -57,21 +94,7 @@ def load_eagle_model(target_model: nn.Module, aphrodite_config: AphroditeConfig)
     target_inner = target_language_model.model
     draft_inner = eagle_model.model
 
-    # Skip embedding sharing under PP — each rank owns its own embedding.
-    if get_pp_group().world_size == 1:
-        target_embed = getattr(target_inner, "embed_tokens", None) or getattr(target_inner, "embedding", None)
-        # If the target's embedding is LoRA-wrapped, share the underlying base
-        # layer. The draft is not part of the LoRA adapter; sharing the wrapper
-        # would make the draft run the LoRA embedding kernel with the target's
-        # punica metadata (sized for the target's token count), causing an
-        # out-of-bounds GPU access during multi-step draft decode.
-        if isinstance(target_embed, BaseLayerWithLoRA):
-            target_embed = target_embed.base_layer
-        draft_embed = getattr(draft_inner, "embed_tokens", None)
-        if target_embed is not None and _should_share(eagle_model, "has_own_embed_tokens", draft_embed, target_embed):
-            if draft_embed is not None:
-                del draft_inner.embed_tokens
-            draft_inner.embed_tokens = target_embed
+    maybe_share_target_embed(eagle_model, draft_inner, target_inner)
 
     target_lm_head = get_target_lm_head(target_model, target_language_model)
     draft_lm_head = getattr(eagle_model, "lm_head", None)

@@ -12,7 +12,13 @@ import torch.distributed as dist
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.utils.network_utils import get_distributed_init_method, get_ip, get_open_port
+from aphrodite.utils.network_utils import (
+    aiter_requires_tcp_store,
+    get_distributed_init_method,
+    get_file_store_init_method,
+    get_ip,
+    get_open_port,
+)
 from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
 from aphrodite.v1.executor.abstract import Executor
 from aphrodite.v1.executor.aphrodite_net_devices import set_worker_net_device
@@ -70,7 +76,10 @@ class UniProcExecutor(Executor):
 
     def _distributed_args(self) -> tuple[str, int, int]:
         """Return (distributed_init_method, rank, local_rank)."""
-        distributed_init_method = get_distributed_init_method(get_ip(), get_open_port())
+        if aiter_requires_tcp_store():
+            distributed_init_method = get_distributed_init_method(get_ip(), get_open_port())
+        else:
+            distributed_init_method = get_file_store_init_method()
         # set local rank as the device index if specified
         device_info = self.aphrodite_config.device_config.device.__str__().split(":")
         local_rank = int(device_info[1]) if len(device_info) > 1 else 0

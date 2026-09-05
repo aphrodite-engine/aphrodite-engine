@@ -5,15 +5,13 @@ from collections.abc import AsyncGenerator
 from fastapi import Request
 
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorResponse,
-    RequestResponseMetadata,
-)
+from aphrodite.entrypoints.generate.base.protocol import RequestResponseMetadata
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.logger import init_logger
 from aphrodite.outputs import RequestOutput
 
+from ...serve.engine.protocol import ErrorResponse
 from ..base.serving import SpeechToTextBaseServing
 from .protocol import (
     TranscriptionRequest,

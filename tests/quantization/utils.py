@@ -2,11 +2,77 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import logging
+from typing import Any
 
 import regex as re
+import torch
 
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationConfig,
+    ModelConfig,
+    set_current_aphrodite_config,
+)
 from aphrodite.model_executor.layers.quantization import get_quantization_config
+from aphrodite.model_executor.model_loader.default_loader import DefaultModelLoader
 from aphrodite.platforms import current_platform
+
+
+def _limit_num_hidden_layers(model: torch.nn.Module, num_hidden_layers: int | None) -> None:
+    if num_hidden_layers is None:
+        return
+
+    original_load_weights = model.load_weights
+
+    def should_load_weight(name: str) -> bool:
+        for prefix in ("model.layers.", "layers."):
+            if name.startswith(prefix):
+                layer_idx = int(name.removeprefix(prefix).split(".", 1)[0])
+                return layer_idx < num_hidden_layers
+        return True
+
+    def load_weights(weights):
+        weights = ((name, weight) for name, weight in weights if should_load_weight(name))
+        return original_load_weights(weights)
+
+    model.load_weights = load_weights
+
+
+def load_model_without_aphrodite_runner(
+    model_path: str,
+    *,
+    dtype: str | torch.dtype = "bfloat16",
+    quantization: str | None = None,
+    model_config_kwargs: dict[str, Any] | None = None,
+    aphrodite_config_kwargs: dict[str, Any] | None = None,
+    model_loader_cls: type = DefaultModelLoader,
+) -> tuple[torch.nn.Module, AphroditeConfig]:
+    """Instantiate a model, load weights, and process them for inference."""
+    model_config = ModelConfig(
+        model=model_path,
+        dtype=dtype,
+        quantization=quantization,
+        **(model_config_kwargs or {}),
+    )
+    aphrodite_config_args = dict(aphrodite_config_kwargs or {})
+    aphrodite_config_args.setdefault("compilation_config", CompilationConfig(mode=0))
+    aphrodite_config = AphroditeConfig(model_config=model_config, **aphrodite_config_args)
+    hf_overrides = (model_config_kwargs or {}).get("hf_overrides") or {}
+    num_hidden_layers = hf_overrides.get("num_hidden_layers")
+
+    with set_current_aphrodite_config(aphrodite_config):
+        model_loader = model_loader_cls(aphrodite_config.load_config)
+        if num_hidden_layers is not None:
+            original_load_weights = model_loader.load_weights
+
+            def load_weights(model, model_config):
+                _limit_num_hidden_layers(model, num_hidden_layers)
+                original_load_weights(model, model_config)
+
+            model_loader.load_weights = load_weights
+        model = model_loader.load_model(aphrodite_config, model_config)
+
+    return model, aphrodite_config
 
 
 def is_quant_method_supported(quant_method: str) -> bool:

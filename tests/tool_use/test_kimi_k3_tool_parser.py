@@ -5,10 +5,10 @@ import json
 
 import pytest
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.entrypoints.openai.responses.utils import build_response_output_items
 from aphrodite.exceptions import AphroditeValidationError

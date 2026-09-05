@@ -6,7 +6,6 @@ import openai
 import pytest
 import pytest_asyncio
 
-from aphrodite.platforms import current_platform
 from tests.utils import RemoteOpenAIServer
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L12-v2"
@@ -38,10 +37,6 @@ def server():
         "--max-model-len",
         str(max_model_len),
     ]
-
-    # ROCm: Use Flex Attention to support encoder-only self-attention.
-    if current_platform.is_rocm():
-        args.extend(["--attention-backend", "FLEX_ATTENTION"])
 
     with RemoteOpenAIServer(MODEL_NAME, args) as remote_server:
         yield remote_server

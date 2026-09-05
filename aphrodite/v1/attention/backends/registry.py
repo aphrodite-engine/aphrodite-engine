@@ -56,6 +56,9 @@ class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
     FLASHINFER_MLA_SPARSE_SM120 = (
         "aphrodite.v1.attention.backends.mla.flashinfer_mla_sparse.FlashInferMLASparseSM120Backend"
     )
+    FLASHINFER_MLA_SPARSE_SM90 = (
+        "aphrodite.v1.attention.backends.mla.flashinfer_mla_sparse_sm90.FlashInferMLASparseSM90Backend"
+    )
     TRITON_MLA = "aphrodite.v1.attention.backends.mla.triton_mla.TritonMLABackend"
     CUTLASS_MLA = "aphrodite.v1.attention.backends.mla.cutlass_mla.CutlassMLABackend"
     FLASHMLA = "aphrodite.v1.attention.backends.mla.flashmla.FlashMLABackend"
@@ -66,10 +69,13 @@ class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
         "aphrodite.models.deepseek_v4.nvidia.flashinfer_sparse.DeepseekV4FlashInferMLASparseBackend"
     )
     ROCM_FLASHMLA_SPARSE_DSV4 = "aphrodite.models.deepseek_v4.amd.rocm.DeepseekV4ROCMAiterMLASparseBackend"
+    B12X = "aphrodite.v1.attention.backends.b12x.B12xPagedAttentionBackend"
     FLASH_ATTN_MLA = "aphrodite.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend"
     FLASH_ATTN_MLA_SPARSE = "aphrodite.v1.attention.backends.mla.flashattn_mla_sparse.FlashAttnMLASparseBackend"
     SM89_MLA_SPARSE = "aphrodite.v1.attention.backends.mla.sm89_mla_sparse.Sm89MLASparseBackend"
     MINIMAX_M3_SPARSE = "aphrodite.models.minimax_m3.common.sparse_attention.MiniMaxM3SparseBackend"
+    CUTLASS_MSA = "aphrodite.models.minimax_m3.nvidia.sparse_attention_msa.MiniMaxM3SparseCutlassBackend"
+    TRITON_MSA = "aphrodite.models.minimax_m3.nvidia.sparse_attention_msa.MiniMaxM3SparseTritonBackend"
     NO_ATTENTION = "aphrodite.v1.attention.backends.no_attention.NoAttentionBackend"
     FLEX_ATTENTION = "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"
     # HPC Attention Backend:
@@ -80,6 +86,8 @@ class AttentionBackendEnum(Enum, metaclass=_AttentionBackendEnumMeta):
     HPC_ATTN = "aphrodite.v1.attention.backends.hpc_attn.HpcAttentionBackend"
     ROCM_AITER_UNIFIED_ATTN = "aphrodite.v1.attention.backends.rocm_aiter_unified_attn.RocmAiterUnifiedAttentionBackend"
     CPU_ATTN = "aphrodite.v1.attention.backends.cpu_attn.CPUAttentionBackend"
+    CPU_MLA = "aphrodite.v1.attention.backends.mla.cpu_mla.CPUMLABackend"
+    AMX_MLA = "aphrodite.v1.attention.backends.mla.amx_mla.AMXMLABackend"
     TURBOQUANT = "aphrodite.v1.attention.backends.turboquant_attn.TurboQuantAttentionBackend"
     # Placeholder for third-party/custom backends - must be registered before use
     # set to None to avoid alias with other backend, whose value is an empty string

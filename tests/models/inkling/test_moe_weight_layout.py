@@ -99,7 +99,7 @@ def test_inkling_mapper_maps_modelopt_exclusions() -> None:
         }
     )
 
-    quant_config.apply_aphrodite_mapper(_TmlForCausalLMBase.hf_to_aphrodite_mapper.get_unstacked_mapper())
+    quant_config.apply_aphrodite_mapper(_TmlForCausalLMBase.hf_to_aphrodite_mapper.get_rename_mapper())
 
     assert quant_config.is_layer_excluded("model.layers.2.mlp.experts")
     assert quant_config.is_layer_excluded("model.layers.2.mlp.shared_experts")

@@ -6,14 +6,14 @@ from fastapi import Request
 
 from aphrodite import PromptType, SamplingParams, envs
 from aphrodite.config import ModelConfig
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.models.serving import (
     OpenAIModelRegistry,
     OpenAIServingModels,
 )
 from aphrodite.entrypoints.pooling.typing import AnyPoolingRequest
+from aphrodite.entrypoints.serve import create_error_response
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.engine.typing import AnyRequest
-from aphrodite.entrypoints.serve.utils.error_response import create_error_response
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.exceptions import APHRODITENotFoundError
 from aphrodite.inputs import EngineInput

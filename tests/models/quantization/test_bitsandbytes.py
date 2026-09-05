@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Tests whether bitsandbytes computation is enabled correctly.
 
-Run `pytest tests/quantization/test_bitsandbytes.py`.
+Run `pytest tests/models/quantization/test_bitsandbytes.py`.
 """
 
 import types

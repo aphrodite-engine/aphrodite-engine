@@ -546,6 +546,8 @@ def main(args: argparse.Namespace):
         "DeepseekV2ForCausalLM",
         "DeepseekV3ForCausalLM",
         "DeepseekV32ForCausalLM",
+        "DeepseekV4ForCausalLM",
+        "GlmMoeDsaForCausalLM",
         "Glm4MoeForCausalLM",
         "GlmMoeDsaForCausalLM",
     ):
@@ -553,7 +555,8 @@ def main(args: argparse.Namespace):
         topk = config.num_experts_per_tok
         intermediate_size = config.moe_intermediate_size
         hidden_size = config.hidden_size
-    elif config.architectures[0] in (
+    elif architecture in (
+        "BailingMoeV3ForCausalLM",
         "Qwen2MoeForCausalLM",
         "Qwen3MoeForCausalLM",
         "Qwen3NextForCausalLM",
@@ -573,6 +576,28 @@ def main(args: argparse.Namespace):
         topk = config.moe_topk[0]
         intermediate_size = config.moe_intermediate_size[0]
         hidden_size = config.hidden_size
+    elif architecture == "Qwen3OmniMoeForConditionalGeneration":
+        E = config.thinker_config.text_config.num_experts
+        topk = config.thinker_config.text_config.num_experts_per_tok
+        intermediate_size = config.thinker_config.text_config.moe_intermediate_size
+        hidden_size = config.thinker_config.text_config.hidden_size
+    elif architecture in (
+        "KimiK3ForConditionalGeneration",
+        "KimiLinearForCausalLM",
+    ):
+        # Kimi K3 (multimodal) nests its MoE params in a KimiLinearConfig
+        # text_config and uses ``num_experts_per_token`` rather than the more
+        # common ``num_experts_per_tok``. get_text_config() returns the config
+        # itself for the text-only KimiLinearForCausalLM.
+        text_config = config.get_text_config()
+        E = text_config.num_experts
+        topk = text_config.num_experts_per_token
+        intermediate_size = text_config.moe_intermediate_size
+        hidden_size = text_config.hidden_size
+    elif architecture == "PixtralForConditionalGeneration":
+        # Pixtral can contain different LLM architectures,
+        # recurse to get their parameters
+        return get_model_params(config.get_text_config())
     else:
         # Support for llama4
         config = config.get_text_config()

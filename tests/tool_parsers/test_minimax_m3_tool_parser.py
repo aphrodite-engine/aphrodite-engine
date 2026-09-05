@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionToolsParam,
     FunctionDefinition,
 )
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.tool_parsers import ToolParserManager
 from aphrodite.tool_parsers.minimax_m3_tool_parser import MinimaxM3ToolParser
 

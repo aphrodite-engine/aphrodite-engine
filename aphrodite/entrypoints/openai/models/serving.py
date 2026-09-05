@@ -7,18 +7,18 @@ from http import HTTPStatus
 
 from aphrodite.config import ModelConfig
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.openai.models.protocol import BaseModelPath, LoRAModulePath
+from aphrodite.entrypoints.serve import create_error_response
+from aphrodite.entrypoints.serve.engine.protocol import (
     ErrorResponse,
     ModelCard,
     ModelList,
     ModelPermission,
 )
-from aphrodite.entrypoints.openai.models.protocol import BaseModelPath, LoRAModulePath
 from aphrodite.entrypoints.serve.lora.protocol import (
     LoadLoRAAdapterRequest,
     UnloadLoRAAdapterRequest,
 )
-from aphrodite.entrypoints.serve.utils.error_response import create_error_response
 from aphrodite.exceptions import LoRAAdapterNotFoundError
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest

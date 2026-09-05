@@ -53,7 +53,7 @@ def test_base_backend_never_supports_quant_output(quant_key):
 def _make_fa_backend(version: int | None, is_aphrodite_fa: bool):
     """Build a FlashAttnPrefillBackend without running its heavy __init__."""
     backend = object.__new__(FlashAttnPrefillBackend)
-    backend.vllm_flash_attn_version = version
+    backend.flash_attn_version = version
     backend._is_aphrodite_fa = is_aphrodite_fa
     return backend
 

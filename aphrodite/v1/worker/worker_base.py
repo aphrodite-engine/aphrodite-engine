@@ -9,12 +9,17 @@ import torch.nn as nn
 
 import aphrodite.ir
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
+from aphrodite.distributed.kv_transfer.kv_connector.utils import get_current_attn_backends
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.tracing import instrument
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.utils.system_utils import update_environment_variables
+from aphrodite.v1.attention.backends.utils import (
+    get_supported_kv_cache_layouts,
+    record_kv_cache_layout,
+)
 from aphrodite.v1.kv_cache_interface import KVCacheSpec
 
 if TYPE_CHECKING:
@@ -97,6 +102,15 @@ class WorkerBase:
         """Get specifications for KV cache implementation."""
         raise NotImplementedError
 
+    def get_supported_kv_cache_layouts(self) -> list[str]:
+        """Layout names every attention backend supports, most preferred first."""
+        backends = get_current_attn_backends(self.aphrodite_config)
+        return [layout.name for layout in get_supported_kv_cache_layouts(backends)]
+
+    def set_kv_cache_layout(self, kv_cache_layout: str) -> None:
+        """Adopt the KV cache layout resolved by the engine core."""
+        record_kv_cache_layout(self.aphrodite_config.cache_config, kv_cache_layout)
+
     def compile_or_warm_up_model(self) -> CompilationTimes:
         """Prepare model for execution through compilation/warmup.
 
@@ -108,6 +122,12 @@ class WorkerBase:
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
         return
+
+    def synchronize_device(self) -> None:
+        """Block until in-flight device work completes; backends outside
+        ``torch.accelerator`` must override with their own wait."""
+        if torch.accelerator.is_available():
+            torch.accelerator.synchronize()
 
     def init_device(self) -> None:
         """Initialize device state, such as loading the model or other on-device
@@ -122,6 +142,10 @@ class WorkerBase:
 
     def get_model(self) -> nn.Module:
         raise NotImplementedError
+
+    def supports_draft_weight_updates(self) -> bool:
+        """Whether this worker can update its configured speculative model."""
+        return False
 
     def apply_model(self, fn: Callable[[nn.Module], _R]) -> _R:
         """Apply a function on the model inside this worker."""

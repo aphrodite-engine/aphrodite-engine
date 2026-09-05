@@ -6,6 +6,7 @@ import itertools
 import math
 import os
 from collections.abc import Callable, Generator
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -21,7 +22,6 @@ from aphrodite.distributed import (
     get_tensor_model_parallel_world_size,
 )
 from aphrodite.logger import init_logger
-from aphrodite.lora.utils import is_moe_model
 from aphrodite.model_executor.layers.fused_moe import RoutedExperts
 from aphrodite.model_executor.layers.linear import (
     LinearBase,
@@ -31,7 +31,6 @@ from aphrodite.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from aphrodite.model_executor.model_loader.base_loader import BaseModelLoader
-from aphrodite.model_executor.model_loader.utils import ParamMapping
 from aphrodite.model_executor.model_loader.weight_utils import (
     download_safetensors_index_file_from_hf,
     download_weights_from_hf,
@@ -499,6 +498,8 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         self.is_pool_model = is_pooling_model(model)
         self.modules_mapping = ParamMapping(get_packed_modules_mapping(model))
 
+        from aphrodite.lora.utils import is_moe_model
+
         if is_moe_model(model):
             self.expert_params_mapping = get_moe_expert_mapping(model)
         # For some models like Molmo, we need to use hf_to_aphrodite_mapper
@@ -739,3 +740,32 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(model_config.model, model_config.revision)
+
+
+@dataclass
+class ParamMapping:
+    """
+    A class to handle parameter mapping for model weight loading.
+    It creates a bidirectional mapping between packed parameters and their
+    constituent parts.
+    """
+
+    packed_mapping: dict[str, list[str]]
+    inverse_packed_mapping: dict[str, tuple[str, int]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        for packed_name, sub_params in self.packed_mapping.items():
+            # Skip self-contained cases (e.g., {"W_pack": ["W_pack"]})
+            if len(sub_params) == 1 and sub_params[0] == packed_name:
+                continue
+            for index, param_name in enumerate(sub_params):
+                self.inverse_packed_mapping[param_name] = (
+                    packed_name,
+                    index,
+                )
+
+    def get_sub_modules(self, module_name: str) -> tuple[str, list[str]] | None:
+        for key, value in self.packed_mapping.items():
+            if module_name.endswith(key):
+                return key, value
+        return None

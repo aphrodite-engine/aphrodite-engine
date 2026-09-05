@@ -37,8 +37,8 @@ _GPU_SKIP = _gpu_skip_reason()
 
 pytestmark = [
     pytest.mark.skipif(
-        os.environ.get("APHRODITE_USE_V2_MODEL_RUNNER", "0") != "1",
-        reason="APHRODITE_USE_V2_MODEL_RUNNER=1 required",
+        os.environ.get("APHRODITE_USE_V2_MODEL_RUNNER", "1") == "0",
+        reason="V2 model runner disabled via APHRODITE_USE_V2_MODEL_RUNNER=0",
     ),
     pytest.mark.skipif(_GPU_SKIP is not None, reason=_GPU_SKIP or ""),
 ]

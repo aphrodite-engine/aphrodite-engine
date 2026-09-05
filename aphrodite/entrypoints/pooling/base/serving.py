@@ -16,7 +16,6 @@ from aphrodite import PoolingRequestOutput, envs
 from aphrodite.config import AphroditeConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.chat_utils import ChatTemplateConfig
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.serve.engine.serving import BaseServing
 from aphrodite.entrypoints.serve.engine.typing import AnyRequest
@@ -30,6 +29,7 @@ from aphrodite.tracing import (
 )
 from aphrodite.utils.async_utils import make_async, merge_async_iterators
 
+from ...serve.engine.protocol import ErrorResponse
 from ..typing import AnyPoolingRequest, PoolingServeContext
 from .io_processor import PoolingIOProcessor
 

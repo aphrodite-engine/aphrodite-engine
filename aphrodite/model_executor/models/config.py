@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
     from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
+    from aphrodite.config.cache import MambaDType
 
 
 logger = init_logger(__name__)
@@ -37,6 +38,14 @@ class DeepseekV32ForCausalLM(VerifyAndUpdateConfig):
         if cache_config.cache_dtype == "bfloat16":
             cache_config.cache_dtype = "auto"
             logger.info("Using bfloat16 kv-cache for DeepSeekV3.2")
+
+
+class GlmMoeDsaForCausalLM(VerifyAndUpdateConfig):
+    @staticmethod
+    def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
+        # For Glm-Moe-DSA, qrep + a2a is better than the default all-gather + ag-rs
+        # in most cases.
+        aphrodite_config.parallel_config.set_dcp_defaults(comm_backend="a2a", q_replicate=True)
 
 
 class Ernie4_5_VLMoeForConditionalGenerationConfig(VerifyAndUpdateConfig):
@@ -189,26 +198,29 @@ class Gemma4Config(VerifyAndUpdateConfig):
     def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
         """Configure attention for heterogeneous head dimensions.
 
-        Gemma4 uses different head dimensions for sliding window
-        (head_dim) vs full attention (global_head_dim) layers. The
-        default FA3 on Hopper cannot handle head_dim > 256, which
-        causes mixed backend selection and numerical divergence.
+        Gemma4 uses different head dimensions for sliding window vs full attention
+        layers. The default FA3 on Hopper cannot handle head_dim > 256, which causes
+        mixed backend selection and numerical divergence.
 
-        When FA4 is available we force it for ALL layers, giving a
-        uniform kernel path and avoiding the mixed FA3+FA4 penalty.
-        When FA4 is not available we fall back to Triton.
+        When FA4 is available we force it for ALL layers, giving a uniform kernel path
+        and avoiding the mixed FA3+FA4 penalty. When FA4 is not available we fall back
+        to Triton.
         """
-        hf_text_config = aphrodite_config.model_config.hf_text_config
-        head_dim = getattr(hf_text_config, "head_dim", None)
-        global_head_dim = getattr(hf_text_config, "global_head_dim", None)
+        model_config = aphrodite_config.model_config
+        arch_config = model_config.model_arch_config
+        layer_types = getattr(model_config.hf_text_config, "layer_types", None) or []
+        head_dims = {
+            layer_types[i]: arch_config[i].head_size
+            for i in range(min(arch_config.total_num_hidden_layers, len(layer_types)))
+        }
 
-        if head_dim is None or global_head_dim is None or head_dim == global_head_dim:
+        if len(set(head_dims.values())) <= 1:
             return
 
         from aphrodite.v1.attention.backends.fa_utils import is_fa_version_supported
         from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
 
-        max_head_dim = max(head_dim, global_head_dim)
+        max_head_dim = max(head_dims.values())
 
         if is_fa_version_supported(4) and max_head_dim <= 512:
             if (
@@ -217,20 +229,15 @@ class Gemma4Config(VerifyAndUpdateConfig):
             ):
                 aphrodite_config.attention_config.flash_attn_version = 4
                 logger.info(
-                    "Gemma4 model has heterogeneous head dimensions "
-                    "(head_dim=%d, global_head_dim=%d). Using FA4 for "
+                    "Gemma4 model has heterogeneous head dimensions %s. Using FA4 for "
                     "all layers to avoid mixed FA3/FA4 penalty.",
-                    head_dim,
-                    global_head_dim,
+                    head_dims,
                 )
         elif aphrodite_config.attention_config.backend is None:
             aphrodite_config.attention_config.backend = AttentionBackendEnum.TRITON_ATTN
             logger.info(
-                "Gemma4 model has heterogeneous head dimensions "
-                "(head_dim=%d, global_head_dim=%d). FA4 not available, "
-                "forcing TRITON_ATTN backend.",
-                head_dim,
-                global_head_dim,
+                "Gemma4 model has heterogeneous head dimensions %s. FA4 not available, forcing TRITON_ATTN backend.",
+                head_dims,
             )
 
 
@@ -412,23 +419,6 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
         Args:
             aphrodite_config: Aphrodite Config
         """
-        cache_config = aphrodite_config.cache_config
-
-        # Disable calculate_kv_scales for hybrid models: uninitialized
-        # recurrent state corrupts scales during the calibration pass.
-        # See issue: https://github.com/vllm-project/vllm/issues/37554
-
-        if cache_config.calculate_kv_scales:
-            logger.warning(
-                "Disabling calculate_kv_scales for hybrid model '%s'. "
-                "Hybrid models with recurrent layers (GDN, Mamba, SSM) "
-                "produce unreliable KV cache scales during the "
-                "calibration pass because recurrent state is "
-                "uninitialized. Using default scale of 1.0 instead.",
-                aphrodite_config.model_config.model,
-            )
-            cache_config.calculate_kv_scales = False
-
         # Enable FULL_AND_PIECEWISE by default
         MambaModelConfig.verify_and_update_config(aphrodite_config)
 
@@ -437,6 +427,7 @@ class JambaForSequenceClassificationConfig(VerifyAndUpdateConfig):
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         pooler_config = model_config.pooler_config
+        assert pooler_config is not None
         if pooler_config.use_activation is None:
             pooler_config.use_activation = False
 
@@ -446,25 +437,21 @@ class JinaEmbeddingsV5ModelConfig(VerifyAndUpdateConfig):
 
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
-        """Reject checkpoints whose backbone is not the Qwen3 decoder.
+        """Enable the bidirectional encoder backbone for -nano checkpoints.
 
         The V5 family ships more than one backbone under a single
-        ``architectures`` entry: the ``-small`` variants are Qwen3 decoders,
-        while ``-nano`` is a bidirectional EuroBERT encoder. The encoder
-        variants are identifiable by ``is_decoder=False``.
-
-        Raises:
-            NotImplementedError: If the checkpoint uses an encoder backbone.
+        `architectures` entry: the `-small` variants are Qwen3 decoders, while
+        `-nano` is a bidirectional EuroBERT encoder. Upstream ships a separate
+        `configuration_*.py` per repository, so the config carries no backbone
+        field and the encoder variants are only identifiable by
+        `is_decoder=False`. For encoder checkpoints, set `is_causal=False` so the
+        Llama backbone uses EncoderOnlyAttention; `JinaEmbeddingsV5Model` then
+        dispatches to its encoder implementation.
         """
         if getattr(model_config.hf_config, "is_decoder", True):
             return
 
-        raise NotImplementedError(
-            "This jina-embeddings-v5 checkpoint uses a bidirectional encoder "
-            "backbone (is_decoder=False). JinaEmbeddingsV5Model is built on "
-            "Qwen3 and cannot serve it, so only the Qwen3-based decoder "
-            "variants are supported, such as jina-embeddings-v5-text-small."
-        )
+        model_config.hf_config.is_causal = False
 
 
 class JinaForRankingConfig(VerifyAndUpdateConfig):
@@ -507,6 +494,7 @@ class JinaVLForSequenceClassificationConfig(VerifyAndUpdateConfig):
         config = model_config.hf_config
         config.num_labels = 1
         pooler_config = model_config.pooler_config
+        assert pooler_config is not None
         if pooler_config.logit_mean is None:
             pooler_config.logit_mean = 2.65
 
@@ -525,10 +513,21 @@ class LlamaBidirectionalConfig(VerifyAndUpdateConfig):
             "last": "LAST",
         }
 
-        pooling_type = pooling_type_map.get(hf_config.pooling)
-        if pooling_type is None:
-            raise ValueError(f"pool_type {hf_config.pooling!r} not supported")
+        pooling = getattr(hf_config, "pooling", None)
+        if pooling is None:
+            raise ValueError(
+                "This bidirectional model requires a 'pooling' field in its HF "
+                "config (one of 'avg', 'cls', 'last'), but none was found. "
+                "Unlike the VL variants, no default is assumed here because "
+                "silently picking a pooling for an embedding model can produce "
+                "wrong embeddings."
+            )
 
+        pooling_type = pooling_type_map.get(pooling)
+        if pooling_type is None:
+            raise ValueError(f"pool_type {pooling!r} not supported")
+
+        assert model_config.pooler_config is not None
         model_config.pooler_config.seq_pooling_type = pooling_type
 
 
@@ -561,10 +560,13 @@ class LlamaNemotronVLConfig(VerifyAndUpdateConfig):
         if pooling is None and hasattr(hf_config, "llm_config"):
             pooling = getattr(hf_config.llm_config, "pooling", "avg")
 
+        assert isinstance(pooling, str)
+
         pooling_type = pooling_type_map.get(pooling)
         if pooling_type is None:
             raise ValueError(f"pool_type {pooling!r} not supported")
 
+        assert model_config.pooler_config is not None
         model_config.pooler_config.seq_pooling_type = pooling_type
 
 
@@ -583,8 +585,8 @@ class MambaModelConfig(VerifyAndUpdateConfig):
 
         if cache_config.enable_prefix_caching:
             if cache_config.mamba_cache_mode == "none":
-                cache_config.mamba_cache_mode = "all" if model_config.supports_mamba_prefix_caching else "align"
-                logger.warning(
+                cache_config.mamba_cache_mode = "align"
+                logger.info(
                     "Mamba cache mode is set to '%s' for %s by default when prefix caching is enabled",
                     cache_config.mamba_cache_mode,
                     model_config.architecture,
@@ -600,13 +602,6 @@ class MambaModelConfig(VerifyAndUpdateConfig):
                 assert aphrodite_config.scheduler_config.enable_chunked_prefill, (
                     "Chunked prefill is required for mamba cache mode 'align'."
                 )
-            logger.info(
-                "Warning: Prefix caching in Mamba cache '%s' "
-                "mode is currently enabled. "
-                "Its support for Mamba layers is experimental. "
-                "Please report any issues you may observe.",
-                cache_config.mamba_cache_mode,
-            )
             # By default, mamba block size will be set to max_model_len (see
             # below). When enabling prefix caching, we align mamba block size
             # to the block size as the basic granularity for prefix caching.
@@ -621,7 +616,7 @@ class MambaModelConfig(VerifyAndUpdateConfig):
 
 
 class NemotronHForCausalLMConfig(VerifyAndUpdateConfig):
-    DEFAULT_MAMBA_SSM_CACHE_DTYPE = "float32"
+    DEFAULT_MAMBA_SSM_CACHE_DTYPE: "MambaDType" = "float32"
     """Only `float32` is known to have no accuracy issues by default."""
 
     @classmethod
@@ -631,7 +626,9 @@ class NemotronHForCausalLMConfig(VerifyAndUpdateConfig):
         `float32` if not specified.
         """
         if cache_config.mamba_ssm_cache_dtype == "auto":
-            mamba_ssm_cache_dtype = getattr(hf_config, "mamba_ssm_cache_dtype", cls.DEFAULT_MAMBA_SSM_CACHE_DTYPE)
+            mamba_ssm_cache_dtype: MambaDType = getattr(
+                hf_config, "mamba_ssm_cache_dtype", cls.DEFAULT_MAMBA_SSM_CACHE_DTYPE
+            )
             logger.info(
                 "Updating mamba_ssm_cache_dtype to '%s' for NemotronH model",
                 mamba_ssm_cache_dtype,
@@ -709,6 +706,7 @@ class Qwen2ForProcessRewardModelConfig(VerifyAndUpdateConfig):
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         pooler_config = model_config.pooler_config
+        assert pooler_config is not None
 
         if pooler_config.step_tag_id is None:
             pooler_config.step_tag_id = 151651
@@ -718,6 +716,7 @@ class Qwen2ForRewardModelConfig(VerifyAndUpdateConfig):
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         pooler_config = model_config.pooler_config
+        assert pooler_config is not None
 
         if pooler_config.use_activation is None:
             pooler_config.use_activation = False
@@ -783,6 +782,76 @@ class Qwen3_5ForCausalLMConfig(Qwen3_5ForConditionalGenerationConfig):
         if rope_parameters is not None:
             rope_parameters.pop("mrope_section", None)
             rope_parameters.pop("mrope_interleaved", None)
+
+
+def _strip_qwen4_exp_mrope(model_config: "ModelConfig") -> None:
+    configs = {
+        id(config): config
+        for config in (
+            getattr(model_config, "hf_config", None),
+            model_config.hf_text_config,
+        )
+        if config is not None
+    }
+    for config in configs.values():
+        rope_parameters = getattr(config, "rope_parameters", None)
+        if rope_parameters is not None:
+            rope_parameters.pop("mrope_section", None)
+            rope_parameters.pop("mrope_interleaved", None)
+
+
+class Qwen4ExpForConditionalGenerationConfig(Qwen3_5ForConditionalGenerationConfig):
+    """Apply the Qwen3.5 hybrid-cache contract to Qwen4Exp."""
+
+    @staticmethod
+    def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
+        Qwen3_5ForConditionalGenerationConfig.verify_and_update_config(aphrodite_config)
+        text_config = aphrodite_config.model_config.hf_text_config
+        if text_config.hc_count <= 1:
+            raise ValueError("Qwen4Exp requires hc_count > 1")
+        parallel_config = aphrodite_config.parallel_config
+        uses_ple_or_qsa = bool(text_config.ple_layer_ids) or (getattr(text_config, "indexer_n_heads", None) is not None)
+        if uses_ple_or_qsa and (parallel_config.enable_dbo or parallel_config.ubatch_size > 1):
+            raise NotImplementedError("Qwen4Exp PLE/QSA does not support dual-batch overlap or microbatching")
+        # Checked again in Qwen4ExpModelState; rejecting it here keeps the
+        # engine from loading weights first.
+        if text_config.ple_layer_ids and parallel_config.pipeline_parallel_size > 1:
+            raise NotImplementedError(
+                "Qwen4Exp N-gram PLE embedding requires pipeline_parallel_size=1 "
+                "because non-first pipeline ranks do not receive the raw input_ids "
+                "it needs. Please run with PP=1."
+            )
+        multimodal_config = aphrodite_config.model_config.multimodal_config
+        if multimodal_config is not None and multimodal_config.language_model_only:
+            _strip_qwen4_exp_mrope(aphrodite_config.model_config)
+        spec_config = aphrodite_config.speculative_config
+        if spec_config is not None and spec_config.method not in {
+            "mtp",
+            "ngram",
+            "ngram_gpu",
+        }:
+            raise NotImplementedError(
+                "Qwen4Exp speculative decoding supports only its native MTP checkpoint and linear n-gram proposers"
+            )
+
+
+class Qwen4ExpForCausalLMConfig(Qwen4ExpForConditionalGenerationConfig):
+    @staticmethod
+    def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
+        Qwen4ExpForConditionalGenerationConfig.verify_and_update_config(aphrodite_config)
+
+        _strip_qwen4_exp_mrope(aphrodite_config.model_config)
+
+
+class Qwen4ExpMTPConfig(Qwen4ExpForConditionalGenerationConfig):
+    """Preserve MRoPE for a VL target and use 1D RoPE for a text target."""
+
+    @staticmethod
+    def verify_and_update_config(aphrodite_config: "AphroditeConfig") -> None:
+        Qwen4ExpForConditionalGenerationConfig.verify_and_update_config(aphrodite_config)
+        if hasattr(aphrodite_config.model_config.hf_config, "vision_config"):
+            return
+        _strip_qwen4_exp_mrope(aphrodite_config.model_config)
 
 
 class ColQwen3_5Config(Qwen3_5ForConditionalGenerationConfig):
@@ -868,6 +937,7 @@ MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "ColBERTJinaRobertaModel": JinaRobertaModelConfig,
     "ColQwen3_5": ColQwen3_5Config,
     "DeepseekV4ForCausalLM": DeepseekV4ForCausalLMConfig,
+    "DeepseekV4ForConditionalGeneration": DeepseekV4ForCausalLMConfig,
     "DeepseekV32ForCausalLM": DeepseekV32ForCausalLM,
     "DiffusionGemmaForBlockDiffusion": DiffusionGemmaModelForBlockDiffusionConfig,  # noqa: E501
     "Ernie4_5_VLMoeForConditionalGeneration": Ernie4_5_VLMoeForConditionalGenerationConfig,  # noqa: E501
@@ -876,6 +946,7 @@ MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "Gemma4ForCausalLM": Gemma4Config,
     "Gemma4ForConditionalGeneration": Gemma4Config,
     "Gemma4UnifiedForConditionalGeneration": Gemma4Config,
+    "GlmMoeDsaForCausalLM": GlmMoeDsaForCausalLM,
     "GptOssForCausalLM": GptOssForCausalLMConfig,
     "LongcatFlashNgramForCausalLM": LongcatFlashNgramForCausalLMConfig,
     "GteModel": SnowflakeGteNewModelConfig,
@@ -905,6 +976,9 @@ MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "Qwen3_5ForConditionalGeneration": Qwen3_5ForConditionalGenerationConfig,
     "Qwen3_5MoeForCausalLM": Qwen3_5ForCausalLMConfig,
     "Qwen3_5MoeForConditionalGeneration": Qwen3_5ForConditionalGenerationConfig,
+    "Qwen4ExpForCausalLM": Qwen4ExpForCausalLMConfig,
+    "Qwen4ExpForConditionalGeneration": (Qwen4ExpForConditionalGenerationConfig),
+    "Qwen4ExpMTP": Qwen4ExpMTPConfig,
     "UnlimitedOCRForCausalLM": UnlimitedOCRForCausalLMConfig,
     "VoyageQwen3BidirectionalEmbedModel": VoyageQwen3BidirectionalEmbedModelConfig,
     "XLMRobertaModel": JinaRobertaModelConfig,

@@ -4,7 +4,14 @@
 
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import Field, GetPydanticSchema, ValidationInfo, field_validator
+import regex as re
+from pydantic import (
+    Field,
+    GetPydanticSchema,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import core_schema
 
 from aphrodite.config.utils import config
@@ -18,6 +25,7 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8StaticTensorSym,
     kInt8StaticChannelSym,
     kMxfp4Dynamic,
+    kMxfp4Static,
     kMxfp6E2m3Dynamic,
     kMxfp6E2m3Static,
     kMxfp6E3m2Dynamic,
@@ -77,6 +85,11 @@ class QuantSpec:
     activation: QuantKeyField = None
     """Activation quantization key, or a name from QUANT_KEY_NAMES."""
 
+    def __str__(self) -> str:
+        if self.weight is None:
+            return "None"
+        return next((name for name, key in QUANT_KEY_NAMES.items() if key == self.weight), str(self.weight))
+
     if TYPE_CHECKING:
 
         def __init__(
@@ -127,7 +140,16 @@ class QuantizationConfigArgs:
     """Spec applied to ``FusedMoEFactory`` layers."""
 
     ignore: list[str] = Field(default_factory=list)
-    """Layers to skip quantization for."""
+    """Layers to skip quantization for. Online quantization also supports
+    fnmatch-style patterns."""
+
+    targets: dict[str, str] | None = None
+    """Per-layer online quantization overrides, keyed by exact layer name or
+    regex patterns with a `re:`, or fnmatch-style patterns for online
+    quantization, mapping to an online shorthand name (see
+    `_ONLINE_SHORTHANDS`). A layer that matches no pattern is left unquantized.
+    Mutually exclusive with `linear` and `moe`.
+    """
 
     overrides: list[QuantOverride] = Field(default_factory=list)
     """Ordered module precision overrides. Later matching rules win."""
@@ -139,6 +161,7 @@ class QuantizationConfigArgs:
             linear: QuantSpec | None = None,
             moe: QuantSpec | None = None,
             ignore: list[str] = ...,
+            targets: dict[str, str] | None = None,
             overrides: list[QuantOverride] = ...,
         ) -> None: ...
 
@@ -155,6 +178,42 @@ class QuantizationConfigArgs:
                 raise ValueError(f"online shorthand {v!r} does not define a {field_name} spec")
             return spec
         return QuantSpec(weight=_coerce_quant_key(v))
+
+    @field_validator("targets", mode="before")
+    @classmethod
+    def _validate_targets(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise TypeError(f"targets must be a dict, got {type(v).__name__}")
+        for pattern, shorthand in v.items():
+            if not isinstance(pattern, str):
+                raise ValueError(f"targets keys must be strings, got {type(pattern).__name__}")
+            if not isinstance(shorthand, str) or shorthand not in _ONLINE_SHORTHANDS:
+                raise ValueError(
+                    f"targets[{pattern}] = {shorthand} is not a valid "
+                    f"online shorthand name; expected one of "
+                    f"{sorted(_ONLINE_SHORTHANDS)}"
+                )
+            if pattern.startswith("re:"):
+                try:
+                    re.compile(pattern[3:])
+                except re.error as e:
+                    raise ValueError(f"targets key {pattern} is not a valid regex: {e}") from e
+        return v
+
+    @model_validator(mode="after")
+    def _validate_targets_exclusivity(self) -> "QuantizationConfigArgs":
+        if self.targets is None:
+            return self
+        if self.linear is not None or self.moe is not None:
+            raise ValueError(
+                "quantization_config.targets is mutually exclusive with "
+                f"quantization_config.linear/moe, got "
+                f"targets={self.targets}, linear={self.linear}, "
+                f"moe={self.moe}."
+            )
+        return self
 
 
 # CLI shorthands accepted by `--quantization`. Each desugars to a full
@@ -188,6 +247,10 @@ _ONLINE_SHORTHANDS: dict[str, QuantizationConfigArgs] = {
             )
         ],
     ),
+    "mxfp4": QuantizationConfigArgs(
+        linear=QuantSpec(weight=kMxfp4Static),
+        moe=QuantSpec(weight=kMxfp4Static),
+    ),
     # INT8 weight-only on MoE; linear stays unquantized (no `linear` field).
     "int8_per_channel_weight_only": QuantizationConfigArgs(
         moe=QuantSpec(weight=kInt8StaticChannelSym),
@@ -206,6 +269,10 @@ ONLINE_QUANT_SHORTHAND_NAMES: tuple[str, ...] = (
     "online",
 )
 
+# These names are also checkpoint quantization methods. Their online configs
+# are resolved only when checkpoint quantization metadata is absent.
+_DEFERRED_ONLINE_SHORTHANDS = frozenset(("mxfp4", "mxfp8"))
+
 
 def resolve_quantization_config(
     quantization: str | None,
@@ -220,17 +287,25 @@ def resolve_quantization_config(
     take precedence over the shorthand.
     """
     if quantization is not None and quantization not in ONLINE_QUANT_SHORTHAND_NAMES:
-        if quantization_config is not None:
-            raise ValueError(
-                f"quantization_config is only supported when quantization is "
-                f"one of {sorted(ONLINE_QUANT_SHORTHAND_NAMES)}, "
-                f"got quantization={quantization!r}"
-            )
-        return None
+        # Pre-quantized checkpoints can be composed with online quantization
+        # for layers that the base quant_method leaves unquantized. The
+        # checkpoint quant_method remains the primary quantization method; composition
+        # is performed after its config has been loaded.
+        if quantization_config is None:
+            return None
+
+        # `quantization_config` may hold both:
+        # 1. Base quantization method activation key override,
+        # 2. online quantization config to apply on top of the base quant_method.
+        if isinstance(quantization_config, dict):
+            return QuantizationConfigArgs(**quantization_config)
+        return quantization_config
 
     base = _ONLINE_SHORTHANDS.get(quantization) if quantization else None
 
     if quantization_config is None:
+        if quantization in _DEFERRED_ONLINE_SHORTHANDS:
+            return None
         return base
 
     if isinstance(quantization_config, dict):
@@ -244,4 +319,5 @@ def resolve_quantization_config(
         moe=quantization_config.moe or base.moe,
         ignore=quantization_config.ignore or base.ignore,
         overrides=[*base.overrides, *quantization_config.overrides],
+        targets=quantization_config.targets or base.targets,
     )

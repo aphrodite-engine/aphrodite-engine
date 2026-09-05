@@ -345,6 +345,8 @@ def test_fusion_rmsnorm_quant(
             use_aiter_fusion=False,
             use_aiter_quant=False,
         )
+        if any(type(layer.kernel) is not force_kernel for layer in model.fp8_linear_layers):
+            pytest.skip(f"{force_kernel.__name__} is not supported on this platform")
 
         backend, _ = _run_fusion_test(model, fusion_pass, aphrodite_config, dtype, hidden_size, num_tokens)
         backend.check_before_ops(model.ops_in_model_before_partial(), fully_replaced=False)

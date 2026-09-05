@@ -21,5 +21,8 @@ def test_ppl(hf_runner, aphrodite_runner, model_info: GenerateModelInfo):
     aphrodite_extra_kwargs = {}
     if model_info.name == "Qwen/Qwen3.5-0.8B":
         aphrodite_extra_kwargs["language_model_only"] = True
+        # Qwen3.5 is a hybrid model; its default mamba cache mode ('align')
+        # for prefix caching requires chunked prefill.
+        aphrodite_extra_kwargs["enable_chunked_prefill"] = True
 
     wikitext_ppl_test(hf_runner, aphrodite_runner, model_info, aphrodite_extra_kwargs=aphrodite_extra_kwargs)

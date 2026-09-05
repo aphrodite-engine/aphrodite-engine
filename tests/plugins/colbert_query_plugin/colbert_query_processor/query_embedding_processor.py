@@ -4,7 +4,7 @@ from collections.abc import Iterator, Sequence
 from typing import cast
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.entrypoints.openai.engine.protocol import UsageInfo
+from aphrodite.entrypoints.serve.engine.protocol import UsageInfo
 from aphrodite.inputs import PromptType, TokensPrompt
 from aphrodite.outputs import PoolingRequestOutput
 from aphrodite.plugins.io_processors.interface import IOProcessor

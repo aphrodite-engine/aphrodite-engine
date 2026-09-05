@@ -4,6 +4,9 @@
 import hashlib
 import json
 
+from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.canonical_mapping import (
+    canonical_format_id,
+)
 from aphrodite.v1.kv_offload.base import (
     OffloadingSpec,
     OffloadKey,
@@ -36,6 +39,7 @@ class FileMapper:
         inference_engine: str = "aphrodite",
         parallel_agnostic: bool = False,
         replicated_layout: bool = False,
+        canonical_format: str | None = None,
     ):
         """
         Initialize the file mapper. Each worker constructs its own, but
@@ -65,6 +69,11 @@ class FileMapper:
         # unchanged (False is the historical default and must not appear).
         if replicated_layout:
             self.fields["replicated_layout"] = True
+        # The canonical byte format is not interchangeable with the direct
+        # layout (or with other canonical format versions/families), so its
+        # identity participates in the storage namespace.
+        if canonical_format is not None:
+            self.fields["canonical_format"] = canonical_format
         self.base_path: str = self._compute_base_path(root_dir, self.fields)
 
     @classmethod
@@ -85,7 +94,10 @@ class FileMapper:
             for group in config.groups
         ]
         parallel = config.parallel
-        replicated_layout = bool(getattr(config, "replicated_layout", False))
+        canonical_format = None
+        if config.canonical_layout:
+            assert config.kv_cache_layout is not None
+            canonical_format = canonical_format_id(config.kv_cache_layout)
         return cls(
             root_dir=root_dir,
             model_name=config.model.name,
@@ -98,8 +110,9 @@ class FileMapper:
             rank=parallel.rank,
             dtype=config.model.dtype,
             kv_cache_groups=kv_cache_groups,
-            parallel_agnostic=(parallel_agnostic and (parallel.is_parallelism_agnostic or replicated_layout)),
-            replicated_layout=(parallel_agnostic and replicated_layout),
+            parallel_agnostic=(parallel_agnostic and (parallel.is_parallelism_agnostic or config.replicated_layout)),
+            replicated_layout=(parallel_agnostic and config.replicated_layout),
+            canonical_format=canonical_format,
         )
 
     def get_file_name(self, key: OffloadKey) -> str:

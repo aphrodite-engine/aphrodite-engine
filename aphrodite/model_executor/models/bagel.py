@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.multimodal import BaseDummyOptions, ImageDummyOptions
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import get_act_fn
@@ -252,6 +252,7 @@ class BagelDummyInputsBuilder(BaseDummyInputsBuilder[BagelProcessingInfo]):
         # Use the configured image size
         image_size = vit_config.image_size
         image_overrides = mm_options.get("image")
+        assert image_overrides is None or isinstance(image_overrides, ImageDummyOptions)
 
         return {
             "image": self._get_dummy_images(
@@ -265,15 +266,6 @@ class BagelDummyInputsBuilder(BaseDummyInputsBuilder[BagelProcessingInfo]):
 
 class BagelMultiModalProcessor(BaseMultiModalProcessor[BagelProcessingInfo]):
     """Multimodal processor for BAGEL model."""
-
-    def _hf_processor_applies_updates(
-        self,
-        prompt_text: str,
-        mm_items: MultiModalDataItems,
-        hf_processor_mm_kwargs: Mapping[str, object],
-        tokenization_kwargs: Mapping[str, object],
-    ) -> bool:
-        return False
 
     def _get_prompt_updates(
         self,
@@ -327,15 +319,8 @@ class BagelForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLoRA,
     The image generation part is not supported in Aphrodite.
     """
 
-    # Weight mapping from HF to Aphrodite
-    hf_to_aphrodite_mapper = WeightsMapper(
-        orig_to_new_prefix={
-            "language_model.": "language_model.",
-            "vit_model.": "vit_model.",
-            "connector.": "connector.",
-            "vit_pos_embed.": "vit_pos_embed.",
-        }
-    )
+    # pos_embed is handled by the PositionEmbedding module
+    hf_to_aphrodite_mapper = WeightsMapper(orig_to_new_prefix={"vit_pos_embed.pos_embed": None})
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
@@ -554,6 +539,5 @@ class BagelForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLoRA,
 
             filtered_weights.append((name, tensor))
 
-        # Skip vit_pos_embed.pos_embed as it's handled by PositionEmbedding module
-        loader = AutoWeightsLoader(self, skip_prefixes=["vit_pos_embed.pos_embed"])
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(filtered_weights, mapper=self.hf_to_aphrodite_mapper)

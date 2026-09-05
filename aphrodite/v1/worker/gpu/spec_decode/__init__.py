@@ -8,7 +8,19 @@ from aphrodite.config import AphroditeConfig
 def init_speculator(aphrodite_config: AphroditeConfig, device: torch.device):
     speculative_config = aphrodite_config.speculative_config
     assert speculative_config is not None
-    if speculative_config.method == "dflash":
+    if speculative_config.method == "extract_hidden_states":
+        from aphrodite.v1.worker.gpu.spec_decode.extract_hidden_states import (
+            ExtractHiddenStatesSpeculator,
+        )
+
+        return ExtractHiddenStatesSpeculator(aphrodite_config, device)
+    elif speculative_config.method == "dflash":
+        if "DFlash2DraftModel" in speculative_config.draft_model_config.architectures:
+            from aphrodite.v1.worker.gpu.spec_decode.dflash2.speculator import (
+                DFlash2Speculator,
+            )
+
+            return DFlash2Speculator(aphrodite_config, device)
         from aphrodite.v1.worker.gpu.spec_decode.dflash.speculator import (
             DFlashSpeculator,
         )

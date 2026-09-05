@@ -10,6 +10,8 @@ from aphrodite import LLM, SamplingParams
 from aphrodite.platforms import current_platform
 from tests.models.utils import check_logprobs_close
 
+pytestmark = pytest.mark.cpu_model
+
 if not current_platform.is_cpu():
     pytest.skip("skipping CPU-only tests", allow_module_level=True)
 

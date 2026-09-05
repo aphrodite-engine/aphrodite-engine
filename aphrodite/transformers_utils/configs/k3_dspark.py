@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the Sonar project
 
-from transformers import DeepseekV2Config
+from transformers import DeepseekV3Config
 
 
-class K3DSparkConfig(DeepseekV2Config):
+class K3DSparkConfig(DeepseekV3Config):
     """Configuration for a dense MLA DSpark draft model."""
 
     model_type = "k3_dspark"
@@ -19,8 +19,8 @@ class K3DSparkConfig(DeepseekV2Config):
         rope_theta: float = 50000.0,
         **kwargs,
     ) -> None:
-        # DeepseekV2Config defaults to a MoE topology. Zero these fields so
-        # generic Sonar config logic also recognizes this draft as dense.
+        # DeepseekV3Config defaults to a MoE topology. Zero these fields so
+        # generic Aphrodite config logic also recognizes this draft as dense.
         kwargs.setdefault("n_routed_experts", 0)
         kwargs.setdefault("n_shared_experts", 0)
         kwargs.setdefault("num_experts_per_tok", 0)

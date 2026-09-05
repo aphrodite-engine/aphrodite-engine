@@ -30,7 +30,10 @@ from aphrodite.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
 )
-from aphrodite.model_executor.model_loader.weight_utils import default_weight_loader
+from aphrodite.model_executor.model_loader.weight_utils import (
+    default_weight_loader,
+    maybe_remap_moe_expert_param_name,
+)
 from aphrodite.sequence import IntermediateTensors
 
 from .granitemoe import GraniteMoeMoE
@@ -262,6 +265,7 @@ class GraniteMoeHybridAttention(nn.Module):
             prefix=f"{prefix}.o_proj",
         )
 
+        self.rotary_emb: nn.Module | None
         if config.position_embedding_type == "rope":
             self.rotary_emb = get_rope(
                 self.head_dim,
@@ -442,7 +446,9 @@ class GraniteMoeHybridModel(nn.Module):
             # Skip layers on other devices.
             if not is_pp_missing_parameter(n, self):
                 param = params_dict[n]
-                weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                weight_loader = getattr(param, "weight_loader", None)
+                if not callable(weight_loader):
+                    raise TypeError(f"{n} requires a shard-aware weight loader")
                 weight_loader(param, p, shard_id)
                 loaded_params.add(n)
 
@@ -450,7 +456,9 @@ class GraniteMoeHybridModel(nn.Module):
             if n not in params_dict:
                 return
             param = params_dict[n]
-            weight_loader = getattr(param, "weight_loader", default_weight_loader)
+            weight_loader = getattr(param, "weight_loader", None)
+            if not callable(weight_loader):
+                raise TypeError(f"{n} requires an expert-aware weight loader")
             weight_loader(param, p, name, shard_id=shard_id, expert_id=expert_id)
             loaded_params.add(n)
 
@@ -462,6 +470,7 @@ class GraniteMoeHybridModel(nn.Module):
                     continue
 
                 name_mapped = name.replace(weight_name, param_name)
+                name_mapped = maybe_remap_moe_expert_param_name(name_mapped, params_dict)
 
                 # Skip layers on other devices.
                 if is_pp_missing_parameter(name_mapped, self):
@@ -492,7 +501,7 @@ class GraniteMoeHybridModel(nn.Module):
             if _load_quant_expert(n, p):
                 continue
 
-            # Logic analogous to: https://github.com/vllm-project/vllm/blob/f49e5aff11c986ed4d45202b1716c5d74786efa9/aphrodite/model_executor/models/granitemoeshared.py#L215
+            # Logic analogous to: https://github.com/vllm-project/vllm/blob/f49e5aff11c986ed4d45202b1716c5d74786efa9/vllm/model_executor/models/granitemoeshared.py#L215
             # Mapping different experts' layout:
             #  from HF (input_linear, output_linear, router)
             #  to Aphrodite (experts_w13({e}.w1, {e}.w2), experts_w3({e}.w3), gate)
@@ -568,7 +577,7 @@ class GraniteMoeHybridForCausalLM(
     SupportsQuant,
     SupportsMambaPrefixCaching,
 ):
-    packed_modules_mapping = {
+    packed_modules_mapping: dict[str, list[str]] = {
         "qkv_proj": [
             "q_proj",
             "k_proj",
@@ -647,7 +656,7 @@ class GraniteMoeHybridForCausalLM(
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         if config.tie_word_embeddings:
-            self.lm_head.weight = self.model.embed_tokens.weight
+            self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
         self.logits_processor = LogitsProcessor(
             config.vocab_size,
             config.vocab_size,

@@ -4,6 +4,7 @@
 import copy
 from collections.abc import Iterable
 from functools import partial
+from typing import TYPE_CHECKING
 
 import regex
 import torch
@@ -22,10 +23,19 @@ from aphrodite.model_executor.models.deepseek_v2 import (
 )
 from aphrodite.model_executor.models.mistral_large_3 import MistralLarge3ForCausalLM
 
-from .interfaces import SupportsMultiModal
+from .interfaces import SupportsMultiModal, SupportsMultiModalEmbeddings
 from .utils import WeightsMapper, make_empty_intermediate_tensors_factory, maybe_prefix
 
 logger = init_logger(__name__)
+
+
+if TYPE_CHECKING:
+
+    class _EagleMistralLarge3ForCausalLMBase(nn.Module):
+        pass
+
+else:
+    _EagleMistralLarge3ForCausalLMBase = MistralLarge3ForCausalLM
 
 
 @support_torch_compile
@@ -99,7 +109,7 @@ class EagleMistralLarge3Model(DeepseekV2Model):
         return output
 
 
-class EagleMistralLarge3ForCausalLM(MistralLarge3ForCausalLM):
+class EagleMistralLarge3ForCausalLM(_EagleMistralLarge3ForCausalLMBase, SupportsMultiModalEmbeddings):
     hf_to_aphrodite_mapper = MistralLarge3ForCausalLM.hf_to_aphrodite_mapper | WeightsMapper(
         orig_to_new_regex={
             regex.compile(r"\Aeagle_linear\.weight\Z"): r"model.fc.weight",
@@ -109,11 +119,13 @@ class EagleMistralLarge3ForCausalLM(MistralLarge3ForCausalLM):
     )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
         target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
-        aphrodite_config.model_config = aphrodite_config.speculative_config.draft_model_config
+        aphrodite_config.model_config = speculative_config.draft_model_config
         # draft model quantization config may differ from target model
         self.quant_config = AphroditeConfig.get_quantization_config(
-            aphrodite_config.speculative_config.draft_model_config, aphrodite_config.load_config
+            speculative_config.draft_model_config, aphrodite_config.load_config
         )
         aphrodite_config.quant_config = self.quant_config
         self.model_cls = partial(EagleMistralLarge3Model, start_layer_id=target_layer_num)

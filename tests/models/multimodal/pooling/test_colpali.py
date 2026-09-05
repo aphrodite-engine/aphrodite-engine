@@ -19,6 +19,7 @@ from aphrodite.entrypoints.chat_utils import (
     ChatCompletionContentPartTextParam,
 )
 from aphrodite.entrypoints.pooling.scoring.typing import ScoreMultiModalParam
+from aphrodite.platforms import current_platform
 
 from ....conftest import AphroditeRunner
 
@@ -72,75 +73,51 @@ def _make_image_mm_param(
 
 
 def _run_token_embed_test(
-    aphrodite_runner: type[AphroditeRunner],
+    aphrodite_model: AphroditeRunner,
     model: str,
-    *,
-    dtype: str,
 ) -> None:
     """Verify per-token embedding shape and L2 normalization."""
-    with aphrodite_runner(
-        model,
-        runner="pooling",
-        dtype=dtype,
-        max_model_len=4096,
-        enforce_eager=True,
-        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
-    ) as aphrodite_model:
-        outputs = aphrodite_model.token_embed([TEXT_QUERIES[0]])
+    outputs = aphrodite_model.token_embed([TEXT_QUERIES[0]])
 
-        assert len(outputs) == 1
-        emb = torch.tensor(outputs[0])
-        # Token embeddings should be 2D: [num_tokens, embed_dim]
-        assert emb.dim() == 2
-        assert emb.shape[1] == EMBED_DIMS[model]
-        assert emb.shape[0] > 1
+    assert len(outputs) == 1
+    emb = torch.tensor(outputs[0])
+    # Token embeddings should be 2D: [num_tokens, embed_dim]
+    assert emb.dim() == 2
+    assert emb.shape[1] == EMBED_DIMS[model]
+    assert emb.shape[0] > 1
 
-        # Verify L2 normalization
-        norms = torch.norm(emb, p=2, dim=-1)
-        torch.testing.assert_close(
-            norms,
-            torch.ones_like(norms),
-            rtol=1e-2,
-            atol=1e-2,
-        )
+    # Verify L2 normalization
+    norms = torch.norm(emb, p=2, dim=-1)
+    torch.testing.assert_close(
+        norms,
+        torch.ones_like(norms),
+        rtol=1e-2,
+        atol=1e-2,
+    )
 
 
 def _run_late_interaction_test(
-    aphrodite_runner: type[AphroditeRunner],
-    model: str,
-    *,
-    dtype: str,
+    aphrodite_model: AphroditeRunner,
 ) -> None:
     """Verify MaxSim scoring matches manual computation."""
     from aphrodite.entrypoints.pooling.scoring.utils import compute_maxsim_score
 
-    with aphrodite_runner(
-        model,
-        runner="pooling",
-        dtype=dtype,
-        max_model_len=4096,
-        enforce_eager=True,
-        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
-    ) as aphrodite_model:
-        q_outputs = aphrodite_model.token_embed([TEXT_QUERIES[0]])
-        d_outputs = aphrodite_model.token_embed([TEXT_DOCUMENTS[0]])
+    q_outputs = aphrodite_model.token_embed([TEXT_QUERIES[0]])
+    d_outputs = aphrodite_model.token_embed([TEXT_DOCUMENTS[0]])
 
-        q_emb = torch.tensor(q_outputs[0])
-        d_emb = torch.tensor(d_outputs[0])
+    q_emb = torch.tensor(q_outputs[0])
+    d_emb = torch.tensor(d_outputs[0])
 
-        manual_score = compute_maxsim_score(q_emb, d_emb).item()
+    manual_score = compute_maxsim_score(q_emb, d_emb).item()
 
-        aphrodite_scores = aphrodite_model.score(TEXT_QUERIES[0], TEXT_DOCUMENTS[0])
+    aphrodite_scores = aphrodite_model.score(TEXT_QUERIES[0], TEXT_DOCUMENTS[0])
 
-        assert len(aphrodite_scores) == 1
-        assert aphrodite_scores[0] == pytest.approx(manual_score, rel=0.01)
+    assert len(aphrodite_scores) == 1
+    assert aphrodite_scores[0] == pytest.approx(manual_score, rel=0.01)
 
 
 def _run_relevance_test(
-    aphrodite_runner: type[AphroditeRunner],
-    model: str,
-    *,
-    dtype: str,
+    aphrodite_model: AphroditeRunner,
 ) -> None:
     """Verify that relevant documents score higher than irrelevant ones."""
     query = "What is machine learning?"
@@ -150,59 +127,18 @@ def _run_relevance_test(
         "Deep learning uses neural networks for complex tasks.",
     ]
 
-    with aphrodite_runner(
-        model,
-        runner="pooling",
-        dtype=dtype,
-        max_model_len=4096,
-        enforce_eager=True,
-        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
-    ) as aphrodite_model:
-        scores = aphrodite_model.score(query, documents)
+    scores = aphrodite_model.score(query, documents)
 
-        assert len(scores) == 3
-        assert scores[0] > scores[1], "ML doc should score higher than weather doc"
-        assert scores[2] > scores[1], "DL doc should score higher than weather doc"
-
-
-@pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("dtype", [DTYPE])
-def test_colpali_token_embed(
-    aphrodite_runner,
-    model: str,
-    dtype: str,
-) -> None:
-    _run_token_embed_test(aphrodite_runner, model, dtype=dtype)
-
-
-@pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("dtype", [DTYPE])
-def test_colpali_late_interaction_scoring(
-    aphrodite_runner,
-    model: str,
-    dtype: str,
-) -> None:
-    _run_late_interaction_test(aphrodite_runner, model, dtype=dtype)
-
-
-@pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("dtype", [DTYPE])
-def test_colpali_relevance_ordering(
-    aphrodite_runner,
-    model: str,
-    dtype: str,
-) -> None:
-    _run_relevance_test(aphrodite_runner, model, dtype=dtype)
+    assert len(scores) == 3
+    assert scores[0] > scores[1], "ML doc should score higher than weather doc"
+    assert scores[2] > scores[1], "DL doc should score higher than weather doc"
 
 
 # ── Multimodal scoring tests ────────────────────────────────
 
 
 def _run_multimodal_text_query_image_docs_test(
-    aphrodite_runner: type[AphroditeRunner],
-    model: str,
-    *,
-    dtype: str,
+    aphrodite_model: AphroditeRunner,
 ) -> None:
     """Score a text query against image documents via the multimodal path."""
     red_image = _make_base64_image(64, 64, color=(255, 0, 0))
@@ -213,27 +149,15 @@ def _run_multimodal_text_query_image_docs_test(
         _make_image_mm_param(red_image),
         _make_image_mm_param(blue_image),
     ]
+    scores = aphrodite_model.llm.score(query, image_docs)
 
-    with aphrodite_runner(
-        model,
-        runner="pooling",
-        dtype=dtype,
-        max_model_len=4096,
-        enforce_eager=True,
-        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
-    ) as aphrodite_model:
-        scores = aphrodite_model.llm.score(query, image_docs)
-
-        assert len(scores) == 2
-        for s in scores:
-            assert isinstance(s.outputs.score, float)
+    assert len(scores) == 2
+    for s in scores:
+        assert isinstance(s.outputs.score, float)
 
 
 def _run_multimodal_mixed_docs_test(
-    aphrodite_runner: type[AphroditeRunner],
-    model: str,
-    *,
-    dtype: str,
+    aphrodite_model: AphroditeRunner,
 ) -> None:
     """Score a text query against a mix of text and image documents."""
     red_image = _make_base64_image(64, 64, color=(255, 0, 0))
@@ -244,28 +168,17 @@ def _run_multimodal_mixed_docs_test(
         _make_image_mm_param(red_image),
     ]
 
-    with aphrodite_runner(
-        model,
-        runner="pooling",
-        dtype=dtype,
-        max_model_len=4096,
-        enforce_eager=True,
-        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
-    ) as aphrodite_model:
-        scores = aphrodite_model.llm.score(query, documents)
+    scores = aphrodite_model.llm.score(query, documents)
 
-        assert len(scores) == 2
-        for s in scores:
-            assert isinstance(s.outputs.score, float)
-        # Text document about France should score higher than a random image
-        assert scores[0].outputs.score > scores[1].outputs.score
+    assert len(scores) == 2
+    for s in scores:
+        assert isinstance(s.outputs.score, float)
+    # Text document about France should score higher than a random image
+    assert scores[0].outputs.score > scores[1].outputs.score
 
 
 def _run_multimodal_image_query_text_docs_test(
-    aphrodite_runner: type[AphroditeRunner],
-    model: str,
-    *,
-    dtype: str,
+    aphrodite_model: AphroditeRunner,
 ) -> None:
     """Score an image query against text documents."""
     red_image = _make_base64_image(64, 64, color=(255, 0, 0))
@@ -276,6 +189,20 @@ def _run_multimodal_image_query_text_docs_test(
         "The weather forecast shows rain tomorrow.",
     ]
 
+    scores = aphrodite_model.llm.score(image_query, documents)
+
+    assert len(scores) == 2
+    for s in scores:
+        assert isinstance(s.outputs.score, float)
+
+
+@pytest.mark.parametrize("model", MODELS)
+@pytest.mark.parametrize("dtype", [DTYPE])
+def test_colpali_default_runner(
+    aphrodite_runner,
+    model: str,
+    dtype: str,
+) -> None:
     with aphrodite_runner(
         model,
         runner="pooling",
@@ -284,38 +211,32 @@ def _run_multimodal_image_query_text_docs_test(
         enforce_eager=True,
         gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
     ) as aphrodite_model:
-        scores = aphrodite_model.llm.score(image_query, documents)
-
-        assert len(scores) == 2
-        for s in scores:
-            assert isinstance(s.outputs.score, float)
-
-
-@pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("dtype", [DTYPE])
-def test_colpali_multimodal_text_query_image_docs(
-    aphrodite_runner,
-    model: str,
-    dtype: str,
-) -> None:
-    _run_multimodal_text_query_image_docs_test(aphrodite_runner, model, dtype=dtype)
+        _run_token_embed_test(aphrodite_model, model)
+        _run_late_interaction_test(aphrodite_model)
+        _run_relevance_test(aphrodite_model)
+        _run_multimodal_mixed_docs_test(aphrodite_model)
+        _run_multimodal_image_query_text_docs_test(aphrodite_model)
 
 
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("dtype", [DTYPE])
-def test_colpali_multimodal_mixed_docs(
+def test_colpali_v2_multimodal_text_query_image_docs(
     aphrodite_runner,
+    monkeypatch: pytest.MonkeyPatch,
     model: str,
     dtype: str,
 ) -> None:
-    _run_multimodal_mixed_docs_test(aphrodite_runner, model, dtype=dtype)
-
-
-@pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("dtype", [DTYPE])
-def test_colpali_multimodal_image_query_text_docs(
-    aphrodite_runner,
-    model: str,
-    dtype: str,
-) -> None:
-    _run_multimodal_image_query_text_docs_test(aphrodite_runner, model, dtype=dtype)
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
+    attention_backend = "FLASH_ATTN" if current_platform.is_cuda() else None
+    with aphrodite_runner(
+        model,
+        runner="pooling",
+        dtype=dtype,
+        max_model_len=4096,
+        enforce_eager=True,
+        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
+        attention_backend=attention_backend,
+        kernel_config={"enable_flashinfer_autotune": False},
+    ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
+        _run_multimodal_text_query_image_docs_test(aphrodite_model)

@@ -13,6 +13,7 @@ from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.linear import QKVParallelLinear
 from aphrodite.model_executor.models.transformers.fusers.base import (
     StackedFuser,
+    fused_head_size,
     local_output_sizes,
 )
 from aphrodite.model_executor.models.transformers.fx_utils import (
@@ -147,7 +148,7 @@ class QKVFuser(StackedFuser):
         q = module.get_submodule(self.q_name)
         k = module.get_submodule(self.k_name)
         v = module.get_submodule(self.v_name)
-        head_size = aphrodite_config.model_config.get_head_size()
+        head_size = fused_head_size(module, aphrodite_config)
         compatible = (
             q.in_features == k.in_features == v.in_features
             and len({proj.bias is None for proj in (q, k, v)}) == 1
@@ -161,7 +162,7 @@ class QKVFuser(StackedFuser):
 
     def update_attrs(self, module: nn.Module, prefix: str, aphrodite_config: "AphroditeConfig") -> None:
         quant_config = aphrodite_config.quant_config
-        head_size = aphrodite_config.model_config.get_head_size()
+        head_size = fused_head_size(module, aphrodite_config)
         q = module.get_submodule(self.q_name)
         k = module.get_submodule(self.k_name)
         merged = QKVParallelLinear(

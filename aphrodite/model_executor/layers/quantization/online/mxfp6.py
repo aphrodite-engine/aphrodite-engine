@@ -15,7 +15,7 @@ from aphrodite.model_executor.kernels.linear.mxfp6 import (
 )
 from aphrodite.model_executor.layers.linear import UnquantizedLinearMethod
 from aphrodite.model_executor.layers.quantization.online.fp8 import (
-    _Fp8OnlineLinearBase,
+    OnlineLinearBase,
 )
 from aphrodite.model_executor.layers.quantization.online.moe_base import (
     OnlineMoEMethodBase,
@@ -49,7 +49,7 @@ def _swizzle_mxfp6_expert_scales(scales: torch.Tensor, m: int, k: int) -> torch.
     return padded.view(experts, num_m_tiles, 4, 32, num_k_tiles, 4).transpose(2, 4).contiguous().view(experts, -1)
 
 
-class Mxfp6OnlineLinearMethod(_Fp8OnlineLinearBase):
+class Mxfp6OnlineLinearMethod(OnlineLinearBase):
     def __init__(self, spec: QuantSpec):
         super().__init__()
         if spec.weight in (kMxfp6E2m3Static, kMxfp6E2m3Dynamic):

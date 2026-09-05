@@ -288,15 +288,14 @@ class Qwen3ForCausalLM(LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, Su
 
         use_tied_lm_head = model_should_use_tied_lm_head(config, quant_config)
         if get_pp_group().is_last_rank:
+            self.lm_head = ParallelLMHead(
+                config.vocab_size,
+                config.hidden_size,
+                quant_config=quant_config,
+                prefix=maybe_prefix(prefix, "lm_head"),
+            )
             if use_tied_lm_head:
-                self.lm_head = self.model.embed_tokens
-            else:
-                self.lm_head = ParallelLMHead(
-                    config.vocab_size,
-                    config.hidden_size,
-                    quant_config=quant_config,
-                    prefix=maybe_prefix(prefix, "lm_head"),
-                )
+                self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
         else:
             self.lm_head = PPMissingLayer()
 
@@ -325,8 +324,5 @@ class Qwen3ForCausalLM(LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, Su
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=(["lm_head."] if self.lm_head is self.model.embed_tokens else None),
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

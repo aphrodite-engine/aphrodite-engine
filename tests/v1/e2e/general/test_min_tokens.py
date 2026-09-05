@@ -13,10 +13,13 @@ Covers:
 5) Multiple stop conditions
 """
 
+import json
+
 import pytest
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.outputs import RequestOutput
+from aphrodite.sampling_params import StructuredOutputsParams
 
 # Test configuration
 TEST_MODEL = "facebook/opt-125m"  # Small model for fast CI execution
@@ -158,6 +161,25 @@ def llm_v1():
         enforce_eager=True,  # Avoid graph compilation overhead
     )
     return llm
+
+
+def test_min_tokens_with_terminal_structured_output(llm_v1: LLM):
+    """A grammar whose only legal continuation is EOS must stop under
+    min_tokens instead of sampling outside the grammar."""
+    params = SamplingParams(
+        temperature=GREEDY,
+        min_tokens=20,
+        max_tokens=40,
+        structured_outputs=StructuredOutputsParams(json=json.dumps({"type": "boolean"})),
+    )
+
+    output = llm_v1.generate("Answer:", params)[0].outputs[0]
+    eos_token_id = llm_v1.get_tokenizer().eos_token_id
+
+    assert output.finish_reason == "stop"
+    assert isinstance(json.loads(output.text), bool)
+    assert output.token_ids[-1] == eos_token_id
+    assert len(output.token_ids) < params.min_tokens
 
 
 def get_token_count(output: RequestOutput) -> int:

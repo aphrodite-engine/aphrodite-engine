@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
+from aphrodite import envs
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.logger import init_logger
 from aphrodite.tasks import SupportedTask
 
 if TYPE_CHECKING:
@@ -14,6 +16,8 @@ if TYPE_CHECKING:
     from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 else:
     RequestLogger = object
+
+logger = init_logger(__name__)
 
 
 def init_render_state(
@@ -62,6 +66,21 @@ def register_scale_out_api_routers(
     app: FastAPI,
     supported_tasks: tuple["SupportedTask", ...],
 ):
+    dedicated_mode = None
+    if "render" in supported_tasks:
+        dedicated_mode = "`aphrodite launch render`"
+    elif getattr(app.state.args, "tokens_only", False):
+        dedicated_mode = "`--tokens-only`"
+
+    enabled = envs.APHRODITE_ENABLE_SCALE_OUT_ENDPOINTS
+    if dedicated_mode is not None and enabled is False:
+        raise ValueError(
+            f"`APHRODITE_ENABLE_SCALE_OUT_ENDPOINTS=0` conflicts with {dedicated_mode}; unset it or set it to 1"
+        )
+    if dedicated_mode is None and not enabled:
+        logger.info("Scale-out endpoints are disabled. Set APHRODITE_ENABLE_SCALE_OUT_ENDPOINTS=1 to enable them.")
+        return
+
     from .render.api_router import router as render_render
 
     app.include_router(render_render)

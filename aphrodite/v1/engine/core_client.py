@@ -26,6 +26,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.envs import APHRODITE_ENGINE_READY_TIMEOUT_S
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
+from aphrodite.renderers import BaseRenderer
 from aphrodite.tasks import SupportedTask
 from aphrodite.tracing import instrument
 from aphrodite.utils.async_utils import in_loop
@@ -93,7 +94,15 @@ class EngineCoreClient(ABC):
         aphrodite_config: AphroditeConfig,
         executor_class: type[Executor],
         log_stats: bool,
+        renderer: BaseRenderer | None = None,
     ) -> "EngineCoreClient":
+        # renderer is passed through to the multiprocess clients, which start
+        # the frontend MM warmup (renderer.start_mm_warmup_in_background) once
+        # the engine-core processes have been forked, so warmup overlaps
+        # engine-core load without a live thread at fork() time. In-process
+        # clients do not take a renderer: the engine core is built in this
+        # process, so there is no other process to overlap with and the MM
+        # warmup runs synchronously inside renderer.warmup() instead.
         # TODO: support this for debugging purposes.
         if asyncio_mode and not multiprocess_mode:
             raise NotImplementedError(
@@ -101,10 +110,20 @@ class EngineCoreClient(ABC):
             )
 
         if multiprocess_mode and asyncio_mode:
-            return EngineCoreClient.make_async_mp_client(aphrodite_config, executor_class, log_stats)
+            return EngineCoreClient.make_async_mp_client(
+                aphrodite_config,
+                executor_class,
+                log_stats,
+                renderer=renderer,
+            )
 
         if multiprocess_mode and not asyncio_mode:
-            return SyncMPClient(aphrodite_config, executor_class, log_stats)
+            return SyncMPClient(
+                aphrodite_config,
+                executor_class,
+                log_stats,
+                renderer=renderer,
+            )
 
         return InprocClient(aphrodite_config, executor_class, log_stats)
 
@@ -117,6 +136,7 @@ class EngineCoreClient(ABC):
         client_addresses: dict[str, Any] | None = None,
         client_count: int = 1,
         client_index: int = 0,
+        renderer: BaseRenderer | None = None,
     ) -> "AsyncMPClient":
         parallel_config = aphrodite_config.parallel_config
         client_args = (
@@ -130,10 +150,19 @@ class EngineCoreClient(ABC):
         if parallel_config.data_parallel_size > 1:
             if parallel_config.data_parallel_external_lb:
                 # External load balancer - client per DP rank.
-                return DPAsyncMPClient(*client_args)
+                return DPAsyncMPClient(
+                    *client_args,
+                    renderer=renderer,
+                )
             # Internal load balancer - client balances to all DP ranks.
-            return DPLBAsyncMPClient(*client_args)
-        return AsyncMPClient(*client_args)
+            return DPLBAsyncMPClient(
+                *client_args,
+                renderer=renderer,
+            )
+        return AsyncMPClient(
+            *client_args,
+            renderer=renderer,
+        )
 
     @abstractmethod
     def shutdown(self, timeout: float | None = None) -> None: ...
@@ -302,8 +331,23 @@ class InprocClient(EngineCoreClient):
         * pulls EngineCoreOutputs by stepping the EngineCore
     """
 
-    def __init__(self, *args, **kwargs):
-        self.engine_core = EngineCore(*args, **kwargs)
+    # Takes no renderer: this class has no _start_mm_warmup (only MPClient
+    # does), so a renderer would never be used here. EngineCore is built in
+    # this process and MM warmup runs synchronously inside renderer.warmup().
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        executor_class: type[Executor],
+        log_stats: bool,
+        *,
+        executor_fail_callback: Callable | None = None,
+    ):
+        self.engine_core = EngineCore(
+            aphrodite_config,
+            executor_class,
+            log_stats,
+            executor_fail_callback=executor_fail_callback,
+        )
 
     def get_output(self) -> EngineCoreOutputs:
         outputs, model_executed = self.engine_core.step_fn()
@@ -501,8 +545,10 @@ class MPClient(EngineCoreClient):
         executor_class: type[Executor],
         log_stats: bool,
         client_addresses: dict[str, Any] | None = None,
+        renderer: BaseRenderer | None = None,
     ):
         self.aphrodite_config = aphrodite_config
+        self._renderer: BaseRenderer | None = renderer
 
         # ZMQ setup.
         sync_ctx = zmq.Context(io_threads=2)
@@ -556,6 +602,9 @@ class MPClient(EngineCoreClient):
                         )
                     finally:
                         actual_address_pipe.close()
+                # Engines are managed externally: this process does not fork
+                # them, so there is no fork race; start the MM warmup now.
+                self._start_mm_warmup()
             else:
                 # Engines are managed by this client.
                 addresses = get_engine_zmq_addresses(aphrodite_config)
@@ -573,14 +622,20 @@ class MPClient(EngineCoreClient):
                 addresses.inputs[0] = self.input_socket.getsockopt(zmq.LAST_ENDPOINT).decode()
                 addresses.outputs[0] = self.resources.output_socket.getsockopt(zmq.LAST_ENDPOINT).decode()
 
-                with launch_core_engines(aphrodite_config, executor_class, log_stats, addresses) as (
-                    engine_manager,
-                    coordinator,
-                    addresses,
-                    tensor_queue,
-                ):
-                    self.resources.coordinator = coordinator
-                    self.resources.engine_manager = engine_manager
+                with launch_core_engines(aphrodite_config, executor_class, log_stats, addresses) as engine_launch:
+                    self.resources.coordinator = engine_launch.coordinator
+                    self.resources.engine_manager = engine_launch.engine_manager
+                    coordinator = engine_launch.coordinator
+                    addresses = engine_launch.addresses
+                    tensor_queue = engine_launch.tensor_queue
+                    # Engine-core processes have now all been forked/started
+                    # (CoreEngineProcManager.proc.start()). It is now safe to
+                    # launch the frontend background MM warmup: it must not
+                    # run while fork() is in flight (a live thread holding a
+                    # lock would deadlock the forked child), but the
+                    # engine-core model load (minutes) that follows is exactly
+                    # what the warmup should overlap with.
+                    self._start_mm_warmup()
 
                 self.stats_update_address = addresses.frontend_stats_publish_address
                 if coordinator is not None:
@@ -665,6 +720,14 @@ class MPClient(EngineCoreClient):
     def dp_engines_running(self) -> bool:
         return self.engines_running
 
+    def _start_mm_warmup(self) -> None:
+        # Called once the engine-core process(es) have been created (forked or
+        # externally managed). Overlap the frontend MM warmup with the
+        # engine-core model load. This is a no-op when no renderer was passed
+        # (e.g. text-only serving or tests).
+        if self._renderer is not None:
+            self._renderer.start_mm_warmup_in_background()
+
     def start_engine_core_monitor(self):
         """Start a monitor thread for engine core processes."""
         engine_manager = self.resources.engine_manager
@@ -711,6 +774,7 @@ class MPClient(EngineCoreClient):
         # worker for hybrid Mamba models.
         cache_config = aphrodite_config.cache_config
         cache_config.block_size = response.block_size
+        cache_config.mamba_block_size = response.mamba_block_size
         # Keep these as per-engine cache_config_info values; do not sum across DP.
         cache_config.kv_cache_size_tokens = (
             getattr(cache_config, "kv_cache_size_tokens", None)
@@ -757,12 +821,19 @@ class SyncMPClient(MPClient):
     """Synchronous client for multi-proc EngineCore."""
 
     @instrument(span_name="SyncMPClient init")
-    def __init__(self, aphrodite_config: AphroditeConfig, executor_class: type[Executor], log_stats: bool):
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        executor_class: type[Executor],
+        log_stats: bool,
+        renderer: BaseRenderer | None = None,
+    ):
         super().__init__(
             asyncio_mode=False,
             aphrodite_config=aphrodite_config,
             executor_class=executor_class,
             log_stats=log_stats,
+            renderer=renderer,
         )
 
         self.is_dp = self.aphrodite_config.parallel_config.data_parallel_size > 1
@@ -929,6 +1000,7 @@ class AsyncMPClient(MPClient):
         client_addresses: dict[str, Any] | None = None,
         client_count: int = 1,
         client_index: int = 0,
+        renderer: BaseRenderer | None = None,
     ):
         super().__init__(
             asyncio_mode=True,
@@ -936,6 +1008,7 @@ class AsyncMPClient(MPClient):
             executor_class=executor_class,
             log_stats=log_stats,
             client_addresses=client_addresses,
+            renderer=renderer,
         )
 
         self.client_count = client_count
@@ -1179,6 +1252,7 @@ class DPAsyncMPClient(AsyncMPClient):
         client_addresses: dict[str, Any] | None = None,
         client_count: int = 1,
         client_index: int = 0,
+        renderer: BaseRenderer | None = None,
     ):
         self.current_wave = 0
 
@@ -1189,6 +1263,7 @@ class DPAsyncMPClient(AsyncMPClient):
             client_addresses,
             client_count,
             client_index,
+            renderer,
         )
 
         # List of [waiting, running, kv_cache_usage] per engine.
@@ -1341,6 +1416,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         client_addresses: dict[str, Any] | None = None,
         client_count: int = 1,
         client_index: int = 0,
+        renderer: BaseRenderer | None = None,
     ):
         self.client_count = client_count
 
@@ -1357,6 +1433,7 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
             client_addresses,
             client_count,
             client_index,
+            renderer,
         )
 
         assert len(self.core_engines) > 1
@@ -1510,9 +1587,16 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         )
         parallel_config = self.aphrodite_config.parallel_config
         num_experts = self.aphrodite_config.model_config.get_num_experts()
-        num_redundant_experts = (
-            num_experts + parallel_config.eplb_config.num_redundant_experts
-        ) * new_data_parallel_size // cur_data_parallel_size - num_experts
+        num_physical_experts = num_experts + parallel_config.eplb_config.num_redundant_experts
+        num_redundant_experts = num_physical_experts * new_data_parallel_size // cur_data_parallel_size - num_experts
+        if num_redundant_experts < 0:
+            # Scaling keeps physical experts per engine fixed, so below this
+            # size the logical experts no longer fit.
+            raise ValueError(
+                f"Cannot scale to data_parallel_size {new_data_parallel_size}, "
+                f"minimum is "
+                f"{-(-num_experts * cur_data_parallel_size // num_physical_experts)}"
+            )
         if new_data_parallel_size < cur_data_parallel_size:
             await self._prepare_scale_down_elastic_ep(new_data_parallel_size)
         else:

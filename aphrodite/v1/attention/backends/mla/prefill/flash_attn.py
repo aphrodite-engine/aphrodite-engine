@@ -13,7 +13,7 @@ import aphrodite.envs as envs
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     kFp8StaticTensorSym,
 )
-from aphrodite.model_executor.warmup.jit_warmup import AphroditeJitKernel
+from aphrodite.model_executor.warmup.jit_warmup import AphroditeJitKernel, zip_inputs
 from aphrodite.platforms import current_platform
 from aphrodite.v1.attention.backends.fa_utils import (
     compile_flash_attn_varlen_func_from_specs,
@@ -27,7 +27,10 @@ from aphrodite.v1.attention.backends.mla.prefill.base import (
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
-    from aphrodite.model_executor.layers.attention.mla_attention import MLADims
+    from aphrodite.model_executor.layers.attention.mla_attention import (
+        MLACommonPrefillMetadata,
+        MLADims,
+    )
     from aphrodite.model_executor.layers.quantization.utils.quant_utils import QuantKey
 
 if is_flash_attn_varlen_func_available():
@@ -44,12 +47,6 @@ FA4_MLA_PREFILL_LONG_K_BLOCKS = 32
 FA4_MLA_PREFILL_VERY_LONG_K_BLOCKS = 64
 FA4_MLA_PREFILL_CAUSAL_OPTIONS = (False, True)
 FA4_MLA_PREFILL_LSE_OPTIONS = (False, True)
-
-
-@dataclass(frozen=True)
-class _FA4MLAPrefillShapeProbe:
-    max_seqlen_q: int
-    max_seqlen_k: int
 
 
 class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
@@ -73,6 +70,16 @@ class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
         return_softmax_lse: bool = False
         num_splits: int = 0
 
+    @staticmethod
+    def kernel(
+        *args: Any,
+        runtime_kernel: Callable[..., Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        kernel = flash_attn_varlen_func if runtime_kernel is None else runtime_kernel
+        assert kernel is not None
+        return kernel(*args, **kwargs)
+
     def dispatch(  # type: ignore[override]
         self,
         *,
@@ -80,7 +87,8 @@ class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
         dtype: torch.dtype,
         num_heads: int,
         mla_dims: "MLADims",
-        shape_probe: _FA4MLAPrefillShapeProbe,
+        max_seqlen_q: int,
+        max_seqlen_k: int,
         requires_v_padding: bool,
         causal: bool,
         fa_version: int,
@@ -90,17 +98,25 @@ class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
     ) -> CompileKey:
         qk_head_dim = mla_dims.qk_nope_head_dim + mla_dims.qk_rope_head_dim
         return self.CompileKey(
-            q_shape=(batch_size * shape_probe.max_seqlen_q, num_heads, qk_head_dim),
-            k_shape=(batch_size * shape_probe.max_seqlen_k, num_heads, qk_head_dim),
+            q_shape=(
+                batch_size * max_seqlen_q,
+                num_heads,
+                mla_dims.qk_nope_head_dim + mla_dims.qk_rope_head_dim,
+            ),
+            k_shape=(
+                batch_size * max_seqlen_k,
+                num_heads,
+                mla_dims.qk_nope_head_dim + mla_dims.qk_rope_head_dim,
+            ),
             v_shape=(
-                batch_size * shape_probe.max_seqlen_k,
+                batch_size * max_seqlen_k,
                 num_heads,
                 qk_head_dim if requires_v_padding else mla_dims.v_head_dim,
             ),
             q_dtype=dtype,
-            max_seqlen_q=shape_probe.max_seqlen_q,
-            max_seqlen_k=shape_probe.max_seqlen_k,
-            softmax_scale=qk_head_dim**-0.5,
+            max_seqlen_q=max_seqlen_q,
+            max_seqlen_k=max_seqlen_k,
+            softmax_scale=(mla_dims.qk_nope_head_dim + mla_dims.qk_rope_head_dim) ** -0.5,
             causal=causal,
             fa_version=fa_version,
             v_stride=(
@@ -117,6 +133,23 @@ class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
             window_size=window_size,
             return_softmax_lse=return_lse,
             num_splits=num_splits,
+        )
+
+    def _is_valid_warmup_shape_probe(
+        self,
+        *,
+        max_seqlen_k: int,
+        num_splits: int,
+        is_sm90: bool,
+        qk_head_dim: int,
+        effective_v_head_dim: int,
+    ) -> bool:
+        long_k = FA4_MLA_PREFILL_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE
+        very_long_k = FA4_MLA_PREFILL_VERY_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE
+        return (
+            max_seqlen_k < long_k
+            or (num_splits != 1 and max_seqlen_k == long_k)
+            or (num_splits != 1 and max_seqlen_k == very_long_k and not is_sm90 and qk_head_dim != effective_v_head_dim)
         )
 
     def get_warmup_keys(self, aphrodite_config: "AphroditeConfig") -> list[CompileKey]:
@@ -150,57 +183,46 @@ class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
 
         requires_v_padding = False
         effective_v_head_dim = qk_head_dim if requires_v_padding else mla_dims.v_head_dim
-        shape_probes = [
-            _FA4MLAPrefillShapeProbe(1, FA4_MLA_PREFILL_K_TILE),
-            _FA4MLAPrefillShapeProbe(
-                FA4_MLA_PREFILL_Q_TILE + 1,
-                4 * FA4_MLA_PREFILL_K_TILE,
+        shape_probes = (
+            dict(max_seqlen_q=1, max_seqlen_k=FA4_MLA_PREFILL_K_TILE),
+            dict(
+                max_seqlen_q=FA4_MLA_PREFILL_Q_TILE + 1,
+                max_seqlen_k=4 * FA4_MLA_PREFILL_K_TILE,
             ),
-        ]
-        if num_splits != 1:
-            shape_probes.extend(
-                (
-                    _FA4MLAPrefillShapeProbe(
-                        1,
-                        FA4_MLA_PREFILL_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
-                    ),
-                    _FA4MLAPrefillShapeProbe(
-                        FA4_MLA_PREFILL_Q_TILE + 1,
-                        FA4_MLA_PREFILL_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
-                    ),
-                )
-            )
-            if not is_sm90 and qk_head_dim != effective_v_head_dim:
-                shape_probes.extend(
-                    (
-                        _FA4MLAPrefillShapeProbe(
-                            1,
-                            FA4_MLA_PREFILL_VERY_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
-                        ),
-                        _FA4MLAPrefillShapeProbe(
-                            FA4_MLA_PREFILL_Q_TILE + 1,
-                            FA4_MLA_PREFILL_VERY_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
-                        ),
-                    )
-                )
+            dict(
+                max_seqlen_q=1,
+                max_seqlen_k=FA4_MLA_PREFILL_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
+            ),
+            dict(
+                max_seqlen_q=FA4_MLA_PREFILL_Q_TILE + 1,
+                max_seqlen_k=FA4_MLA_PREFILL_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
+            ),
+            dict(
+                max_seqlen_q=1,
+                max_seqlen_k=FA4_MLA_PREFILL_VERY_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
+            ),
+            dict(
+                max_seqlen_q=FA4_MLA_PREFILL_Q_TILE + 1,
+                max_seqlen_k=FA4_MLA_PREFILL_VERY_LONG_K_BLOCKS * FA4_MLA_PREFILL_K_TILE,
+            ),
+        )
 
         return self._trace_dispatch(self.dispatch)(
+            zip_inputs(*shape_probes),
             batch_size=FA4_MLA_PREFILL_COMPILE_BATCH_SIZE,
             dtype=dtype,
             num_heads=num_heads,
             mla_dims=mla_dims,
-            shape_probe=shape_probes,
             requires_v_padding=requires_v_padding,
+            is_sm90=is_sm90,
+            qk_head_dim=qk_head_dim,
+            effective_v_head_dim=effective_v_head_dim,
             causal=FA4_MLA_PREFILL_CAUSAL_OPTIONS,
             return_lse=FA4_MLA_PREFILL_LSE_OPTIONS,
             num_splits=num_splits,
             fa_version=fa_version,
+            _when=self._is_valid_warmup_shape_probe,
         )
-
-    @staticmethod
-    def kernel(*args: Any, **kwargs: Any) -> Any:
-        assert flash_attn_varlen_func is not None
-        return flash_attn_varlen_func(*args, **kwargs)
 
     def compile(self, compile_key: CompileKey) -> None:
         assert compile_flash_attn_varlen_func_from_specs is not None
@@ -232,11 +254,13 @@ class FA4MLAPrefillKernel(AphroditeJitKernel["FA4MLAPrefillKernel.CompileKey"]):
         runtime_kernel: Callable[..., Any] | None = None,
         **kwargs: Any,
     ) -> Any:
-        kernel = self.kernel if runtime_kernel is None else runtime_kernel
-        return kernel(q=q, k=k, v=v, **kwargs)
-
-
-FA4_MLA_PREFILL_KERNEL = FA4MLAPrefillKernel()
+        return self.kernel(
+            q=q,
+            k=k,
+            v=v,
+            runtime_kernel=runtime_kernel,
+            **kwargs,
+        )
 
 
 class FlashAttnPrefillBackend(MLAPrefillBackend):
@@ -298,11 +322,9 @@ class FlashAttnPrefillBackend(MLAPrefillBackend):
         )
         qk_head_dim = qk_nope_head_dim + qk_rope_head_dim
         self.flash_attn_varlen_func = flash_attn_varlen_func
-        self.vllm_flash_attn_version = get_flash_attn_version(head_size=qk_head_dim, head_size_v=v_head_dim)
-        if self.vllm_flash_attn_version is not None:
-            self.flash_attn_varlen_func = functools.partial(
-                flash_attn_varlen_func, fa_version=self.vllm_flash_attn_version
-            )
+        self.flash_attn_version = get_flash_attn_version(head_size=qk_head_dim, head_size_v=v_head_dim)
+        if self.flash_attn_version is not None:
+            self.flash_attn_varlen_func = functools.partial(flash_attn_varlen_func, fa_version=self.flash_attn_version)
 
         # Determine if we need to pad V
         # For MLA the v head dim is smaller than qk head dim so we pad out
@@ -310,9 +332,9 @@ class FlashAttnPrefillBackend(MLAPrefillBackend):
         # not support different headdims.
         # FA3 on Hopper (SM90) and FA4 natively handle diff headdims.
         device_capability = current_platform.get_device_capability()
-        self.requires_v_padding = self.vllm_flash_attn_version is None or not (
-            (self.vllm_flash_attn_version == 3 and device_capability is not None and device_capability[0] == 9)
-            or self.vllm_flash_attn_version == 4
+        self.requires_v_padding = self.flash_attn_version is None or not (
+            (self.flash_attn_version == 3 and device_capability is not None and device_capability[0] == 9)
+            or self.flash_attn_version == 4
         )
 
         # Track whether we're using aphrodite's FA or upstream (for ROCm)
@@ -321,7 +343,7 @@ class FlashAttnPrefillBackend(MLAPrefillBackend):
     def supports_quant_output(self, quant_key: "QuantKey") -> bool:
         device_capability = current_platform.get_device_capability()
         return (
-            self.vllm_flash_attn_version == 4
+            self.flash_attn_version == 4
             and self._is_aphrodite_fa
             and device_capability is not None
             and device_capability[0] in (10, 11)
@@ -406,21 +428,25 @@ class FlashAttnPrefillBackend(MLAPrefillBackend):
 
     def run_prefill_context_chunk(
         self,
-        chunk_idx: int,
+        chunk: "MLACommonPrefillMetadata.ContextChunk",
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
+        out: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        assert self._prefill_metadata.chunked_context is not None
         return self._flash_attn_varlen_diff_headdims(
             q=q,
             k=k,
             v=v,
-            cu_seqlens_q=self._prefill_metadata.query_start_loc,
-            cu_seqlens_k=self._prefill_metadata.chunked_context.cu_seq_lens[chunk_idx],
-            max_seqlen_q=self._prefill_metadata.max_query_len,
-            max_seqlen_k=self._prefill_metadata.chunked_context.max_seq_lens[chunk_idx],
+            cu_seqlens_q=chunk.query_start_loc,
+            cu_seqlens_k=chunk.cu_seq_lens,
+            max_seqlen_q=chunk.max_query_len,
+            max_seqlen_k=chunk.max_seq_len,
             softmax_scale=self.scale,
             causal=False,  # Context is unmasked
             return_softmax_lse=True,
+            out=out,
         )
+
+
+FA4_MLA_PREFILL_KERNEL = FA4MLAPrefillKernel()

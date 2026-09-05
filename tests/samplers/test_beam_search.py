@@ -50,7 +50,6 @@ MODELS = ["TinyLlama/TinyLlama-1.1B-Chat-v1.0"]
 @pytest.mark.parametrize("max_tokens", MAX_TOKENS)
 @pytest.mark.parametrize("beam_width", BEAM_WIDTHS)
 def test_beam_search_single_input(
-    monkeypatch,
     hf_runner,
     aphrodite_runner,
     example_prompts,
@@ -59,9 +58,6 @@ def test_beam_search_single_input(
     max_tokens: int,
     beam_width: int,
 ) -> None:
-    if current_platform.is_rocm():
-        monkeypatch.setenv("APHRODITE_ROCM_USE_SKINNY_GEMM", "0")
-
     example_prompts = example_prompts[:1]
     with hf_runner(model, dtype=dtype) as hf_model:
         hf_outputs = hf_model.generate_beam_search(example_prompts, beam_width, max_tokens)
@@ -89,7 +85,6 @@ def test_beam_search_single_input(
 @pytest.mark.parametrize("max_tokens", MAX_TOKENS)
 @pytest.mark.parametrize("beam_width", BEAM_WIDTHS)
 def test_beam_search_with_concurrency_limit(
-    monkeypatch,
     hf_runner,
     aphrodite_runner,
     example_prompts,
@@ -98,9 +93,6 @@ def test_beam_search_with_concurrency_limit(
     max_tokens: int,
     beam_width: int,
 ) -> None:
-    if current_platform.is_rocm():
-        monkeypatch.setenv("APHRODITE_ROCM_USE_SKINNY_GEMM", "0")
-
     # example_prompts[1]&[3]&[7] fails due to unknown reason even without
     # concurrency limit. skip them for now.
     example_prompts = example_prompts[:8]
@@ -147,7 +139,6 @@ def test_beam_search_with_concurrency_limit(
 @pytest.mark.parametrize("max_tokens", MAX_TOKENS)
 @pytest.mark.parametrize("beam_width", MM_BEAM_WIDTHS)
 def test_beam_search_passes_multimodal_data(
-    monkeypatch,
     hf_runner,
     aphrodite_runner,
     dtype: str,
@@ -155,9 +146,6 @@ def test_beam_search_passes_multimodal_data(
     beam_width: int,
 ) -> None:
     """Ensure that beam search passes multimodal data through correctly."""
-    if current_platform.is_rocm():
-        monkeypatch.setenv("APHRODITE_ROCM_USE_SKINNY_GEMM", "0")
-
     # NOTE - this test is primarily to check that mm data is passed to beams
     # correctly. As such, we just need to check one extra modality to make
     # sure things pass through properly.

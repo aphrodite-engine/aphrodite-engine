@@ -53,7 +53,9 @@ class BertWithRopeEmbedding(nn.Module):
 
         self.word_embeddings = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         if config.type_vocab_size > 0:
-            self.token_type_embeddings = VocabParallelEmbedding(config.type_vocab_size, config.hidden_size)
+            self.token_type_embeddings: VocabParallelEmbedding | None = VocabParallelEmbedding(
+                config.type_vocab_size, config.hidden_size
+            )
         else:
             self.token_type_embeddings = None
 
@@ -119,6 +121,7 @@ class BertWithRopeAttention(nn.Module):
             prefix=f"{prefix}.qkv_proj",
         )
 
+        assert rotary_kwargs is not None
         self.rotary_emb = get_rope(**rotary_kwargs)
 
         self.attn = EncoderOnlyAttention(
@@ -454,7 +457,7 @@ class BertWithRope(nn.Module, SupportsQuant):
         )
 
         if add_pooling_layer:
-            self.pooler = BertPooler(aphrodite_config.model_config)
+            self.pooler: BertPooler | None = BertPooler(aphrodite_config.model_config)
         else:
             self.pooler = None
 
@@ -618,7 +621,7 @@ class JinaRobertaModel(BertWithRope):
         scaling = self.config.lora_alpha / self.config.lora_rank
         device = self.aphrodite_config.device_config.device
 
-        weights = {name: weight for name, weight in weights}
+        weights_dict = {name: weight for name, weight in weights}
 
         o = ".original"
         a = ".0.lora_A"
@@ -627,31 +630,31 @@ class JinaRobertaModel(BertWithRope):
         # text-matching
         i = -1
 
-        for name in list(weights.keys()):
+        for name in list(weights_dict.keys()):
             if o in name:
-                dtype = weights[name].dtype
-                shape = weights[name].shape
+                dtype = weights_dict[name].dtype
+                shape = weights_dict[name].shape
                 weight_name = name[: -len(o)]
 
                 if "embeddings" in weight_name:
-                    B = weights[weight_name + a][i].to(device).float()
-                    A = weights[weight_name + b][i].to(device).float()
+                    B = weights_dict[weight_name + a][i].to(device).float()
+                    A = weights_dict[weight_name + b][i].to(device).float()
                 else:
-                    B = weights[weight_name + b][i].to(device).float()
-                    A = weights[weight_name + a][i].to(device).float()
+                    B = weights_dict[weight_name + b][i].to(device).float()
+                    A = weights_dict[weight_name + a][i].to(device).float()
 
-                weight = weights[weight_name + o].to(device) + torch.matmul(B, A).view(shape) * scaling
+                weight = weights_dict[weight_name + o].to(device) + torch.matmul(B, A).view(shape) * scaling
                 weight = weight.cpu().to(dtype)
 
-                weights[weight_name.replace(".parametrizations", "")] = weight
+                weights_dict[weight_name.replace(".parametrizations", "")] = weight
 
                 del (
-                    weights[weight_name + o],
-                    weights[weight_name + a],
-                    weights[weight_name + b],
+                    weights_dict[weight_name + o],
+                    weights_dict[weight_name + a],
+                    weights_dict[weight_name + b],
                 )
 
-        return [(name, weight) for name, weight in weights.items()]
+        return [(name, weight) for name, weight in weights_dict.items()]
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         weights = self.jina_merge_lora_weights(weights)

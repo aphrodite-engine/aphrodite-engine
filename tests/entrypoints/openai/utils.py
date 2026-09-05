@@ -10,7 +10,7 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionStreamResponse,
     ChatMessage,
 )
-from aphrodite.entrypoints.openai.engine.protocol import UsageInfo
+from aphrodite.entrypoints.serve.engine.protocol import UsageInfo
 
 
 async def accumulate_streaming_response(

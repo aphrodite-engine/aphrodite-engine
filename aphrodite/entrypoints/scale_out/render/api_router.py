@@ -5,9 +5,10 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from aphrodite.entrypoints.anthropic.protocol import AnthropicMessagesRequest
 from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
 from aphrodite.entrypoints.openai.completion.protocol import CompletionRequest
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.api_utils import validate_json_request
 from aphrodite.logger import init_logger
 
@@ -40,6 +41,30 @@ async def render_chat_completion(request: ChatCompletionRequest, raw_request: Re
         raise NotImplementedError("The model does not support Chat Completions Render API")
 
     result = await handler.render_chat_request(request)
+
+    if isinstance(result, ErrorResponse):
+        return JSONResponse(content=result.model_dump(), status_code=result.error.code)
+
+    return JSONResponse(content=result.model_dump())
+
+
+@router.post(
+    "/v1/messages/render",
+    dependencies=[Depends(validate_json_request)],
+    response_model=GenerateRequest,
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_IMPLEMENTED.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+async def render_messages(request: AnthropicMessagesRequest, raw_request: Request):
+    handler = render(raw_request)
+    if handler is None:
+        raise NotImplementedError("The model does not support Messages Render API")
+
+    result = await handler.render_messages_request(request)
 
     if isinstance(result, ErrorResponse):
         return JSONResponse(content=result.model_dump(), status_code=result.error.code)

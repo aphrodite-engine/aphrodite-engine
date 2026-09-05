@@ -16,14 +16,13 @@ from transformers import PreTrainedTokenizerBase
 
 import aphrodite.envs as envs
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.generate.base.serving import GenerateBaseServing
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaMessage,
-    ErrorResponse,
     RequestResponseMetadata,
-    UsageInfo,
 )
+from aphrodite.entrypoints.generate.base.serving import GenerateBaseServing
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse, UsageInfo
 from aphrodite.entrypoints.serve.engine.typing import SpeechToTextRequest
 from aphrodite.entrypoints.serve.utils.api_utils import get_max_tokens
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
@@ -114,8 +113,8 @@ class SpeechToTextBaseServing(GenerateBaseServing):
 
         self.enable_force_include_usage = enable_force_include_usage
 
-        self.max_audio_filesize_mb = envs.APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB
         self.max_audio_decode_duration_s: int = envs.APHRODITE_MAX_AUDIO_DECODE_DURATION_S
+        self.max_audio_decode_bytes: int = envs.APHRODITE_MAX_AUDIO_DECODE_BYTES
         if self.model_cls.supports_segment_timestamp:
             self.tokenizer = cast(
                 PreTrainedTokenizerBase,
@@ -170,6 +169,7 @@ class SpeechToTextBaseServing(GenerateBaseServing):
                     sr=self.asr_config.sample_rate,
                     mono=True,
                     max_duration_s=self.max_audio_decode_duration_s,
+                    max_decode_bytes=self.max_audio_decode_bytes,
                 )
         except ValueError:
             raise
@@ -256,13 +256,6 @@ class SpeechToTextBaseServing(GenerateBaseServing):
         # Validate request
         request.language = self.model_cls.validate_language(request.language)
         request.to_language = self.model_cls.validate_language(request.to_language) if request.to_language else None
-
-        if len(audio_data) / 1024**2 > self.max_audio_filesize_mb:
-            raise APHRODITEValidationError(
-                "Maximum file size exceeded",
-                parameter="audio_filesize_mb",
-                value=len(audio_data) / 1024**2,
-            )
 
         # Run cpu intensive preprocess step in a separate thread pool executor.
         chunks, duration = await self._decode_and_chunk_speech_async(audio_data)
@@ -420,11 +413,7 @@ class SpeechToTextBaseServing(GenerateBaseServing):
         if not request.model:
             request.model = self.models.model_name()
 
-        # If the engine is dead, raise the engine's DEAD_ERROR.
-        # This is required for the streaming case, where we return a
-        # success status before we actually start generating text :).
-        if self.engine_client.errored:
-            raise self.engine_client.dead_error
+        self._preflight()
 
         if request.response_format not in [
             "text",

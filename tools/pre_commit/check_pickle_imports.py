@@ -16,6 +16,9 @@ import regex as re
 #  alternatives like msgpack or pydantic that are already in use in Aphrodite. Only
 #  add to this list if absolutely necessary and after careful security review.
 ALLOWED_FILES = {
+    # CUDA IPC tensor handles between same-UID local processes only. Both
+    # peers check socket ownership and the private directory's permissions.
+    "aphrodite/model_executor/model_loader/weight_cache/protocol.py",
     # pickle
     "aphrodite/multimodal/hasher.py",
     "aphrodite/transformers_utils/config.py",

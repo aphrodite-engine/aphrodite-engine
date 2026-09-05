@@ -11,7 +11,7 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
 from aphrodite.entrypoints.chat_utils import make_tool_call_id
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,

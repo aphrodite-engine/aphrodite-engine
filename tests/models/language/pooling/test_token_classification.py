@@ -46,17 +46,10 @@ def test_bert_model_runner_v2(
         assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
         aphrodite_output_batches = [aphrodite_model.token_classify(prompts) for prompts in prompt_batches]
 
-    # Use eager attention on ROCm to avoid HF Transformers flash attention
-    # accuracy issues: https://github.com/vllm-project/vllm/issues/30167
-    hf_model_kwargs = {}
-    if current_platform.is_rocm():
-        hf_model_kwargs["attn_implementation"] = "eager"
-
     with hf_runner(
         model,
         dtype=dtype,
         auto_cls=AutoModelForTokenClassification,
-        model_kwargs=hf_model_kwargs,
     ) as hf_model:
         tokenizer = hf_model.tokenizer
         hf_outputs = []
@@ -98,17 +91,10 @@ def test_modernbert_models(
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.token_classify(example_prompts)
 
-    # Use eager attention on ROCm to avoid HF Transformers flash attention
-    # accuracy issues: https://github.com/vllm-project/vllm/issues/30167
-    hf_model_kwargs = {}
-    if current_platform.is_rocm():
-        hf_model_kwargs["attn_implementation"] = "eager"
-
     with hf_runner(
         model,
         dtype=dtype,
         auto_cls=AutoModelForTokenClassification,
-        model_kwargs=hf_model_kwargs,
     ) as hf_model:
         tokenizer = hf_model.tokenizer
         hf_outputs = []
@@ -138,17 +124,10 @@ def test_xlm_roberta_models(
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.token_classify(example_prompts)
 
-    # Use eager attention on ROCm to avoid HF Transformers flash attention
-    # accuracy issues: https://github.com/vllm-project/vllm/issues/30167
-    hf_model_kwargs = {}
-    if current_platform.is_rocm():
-        hf_model_kwargs["attn_implementation"] = "eager"
-
     with hf_runner(
         model,
         dtype=dtype,
         auto_cls=AutoModelForTokenClassification,
-        model_kwargs=hf_model_kwargs,
     ) as hf_model:
         tokenizer = hf_model.tokenizer
         hf_outputs = []
@@ -195,15 +174,10 @@ def test_openai_privacy_filter(
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.token_classify(PRIVACY_FILTER_PROMPTS)
 
-    hf_model_kwargs = {}
-    if current_platform.is_rocm():
-        hf_model_kwargs["attn_implementation"] = "eager"
-
     with hf_runner(
         model,
         dtype=dtype,
         auto_cls=AutoModelForTokenClassification,
-        model_kwargs=hf_model_kwargs,
     ) as hf_model:
         tokenizer = hf_model.tokenizer
         hf_outputs = []
@@ -272,12 +246,6 @@ def test_bert_for_masked_lm(
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.token_classify(example_prompts)
 
-    # Use eager attention on ROCm to avoid HF Transformers flash attention
-    # accuracy issues: https://github.com/vllm-project/vllm/issues/30167
-    hf_model_kwargs = {}
-    if current_platform.is_rocm():
-        hf_model_kwargs["attn_implementation"] = "eager"
-
     # Run hf_runner reference with "highest" fp32 precision to match
     # default behavior of Aphrodite. This is needed on ROCm since the
     # pooling tests set matmul precision to "high" in conftest.py.
@@ -288,7 +256,6 @@ def test_bert_for_masked_lm(
             model,
             dtype=dtype,
             auto_cls=AutoModelForMaskedLM,
-            model_kwargs=hf_model_kwargs,
         ) as hf_model:
             tokenizer = hf_model.tokenizer
             hf_outputs = []

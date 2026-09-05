@@ -381,8 +381,6 @@ def test_attention_config():
             "FLASH_ATTN",
             "--attention-config.flash_attn_version",
             "3",
-            "--attention-config.use_prefill_decode_attention",
-            "true",
             "--attention-config.flash_attn_max_num_splits_for_cuda_graph",
             "16",
             "--attention-config.use_trtllm_attention",
@@ -396,7 +394,6 @@ def test_attention_config():
     assert engine_args.attention_config.backend is not None
     assert engine_args.attention_config.backend.name == "FLASH_ATTN"
     assert engine_args.attention_config.flash_attn_version == 3
-    assert engine_args.attention_config.use_prefill_decode_attention is True
     assert engine_args.attention_config.flash_attn_max_num_splits_for_cuda_graph == 16
     assert engine_args.attention_config.use_trtllm_attention is True
     assert engine_args.attention_config.disable_flashinfer_q_quantization is True
@@ -406,7 +403,6 @@ def test_attention_config():
         [
             "--attention-config="
             '{"backend": "FLASHINFER", "flash_attn_version": 2, '
-            '"use_prefill_decode_attention": false, '
             '"flash_attn_max_num_splits_for_cuda_graph": 8, '
             '"use_trtllm_attention": false, '
             '"disable_flashinfer_q_quantization": false}',
@@ -417,7 +413,6 @@ def test_attention_config():
     assert engine_args.attention_config.backend is not None
     assert engine_args.attention_config.backend.name == "FLASHINFER"
     assert engine_args.attention_config.flash_attn_version == 2
-    assert engine_args.attention_config.use_prefill_decode_attention is False
     assert engine_args.attention_config.flash_attn_max_num_splits_for_cuda_graph == 8
     assert engine_args.attention_config.use_trtllm_attention is False
     assert engine_args.attention_config.disable_flashinfer_q_quantization is False
@@ -467,6 +462,25 @@ def test_attention_config():
         engine_args.create_engine_config()
 
 
+def test_multi_node_world_size_includes_pcp(monkeypatch):
+    """PCP expands the process world size, so the --nnodes divisibility check
+    must include it. Without this, TP=1/PCP=2 over 2 nodes computes a world
+    size of 1 and the launch is rejected before the engine starts."""
+    import aphrodite.config.aphrodite
+
+    # PCP requires the V2 model runner, which is gated on Triton.
+    monkeypatch.setattr(aphrodite.config.aphrodite, "HAS_TRITON", True)
+
+    engine_args = EngineArgs(
+        model="facebook/opt-125m",
+        tensor_parallel_size=1,
+        prefill_context_parallel_size=2,
+        nnodes=2,
+    )
+    aphrodite_config = engine_args.create_engine_config()
+    assert aphrodite_config.parallel_config.world_size == 2
+
+
 def test_prefix_cache_default():
     parser = EngineArgs.add_cli_args(FlexibleArgumentParser())
     args = parser.parse_args([])
@@ -474,6 +488,7 @@ def test_prefix_cache_default():
     # should be None by default (depends on model).
     engine_args = EngineArgs.from_cli_args(args=args)
     assert engine_args.enable_prefix_caching is None
+    assert engine_args.prefix_cache_retention_interval == 0
 
     # with flag to turn it on.
     args = parser.parse_args(["--enable-prefix-caching"])
@@ -484,6 +499,26 @@ def test_prefix_cache_default():
     args = parser.parse_args(["--no-enable-prefix-caching"])
     engine_args = EngineArgs.from_cli_args(args=args)
     assert not engine_args.enable_prefix_caching
+
+    args = parser.parse_args(["--prefix-cache-retention-interval", "64"])
+    engine_args = EngineArgs.from_cli_args(args=args)
+    assert engine_args.prefix_cache_retention_interval == 64
+
+
+def test_prefix_cache_retention_interval_from_deprecated_env(monkeypatch, caplog, disable_log_dedup):
+    monkeypatch.setenv("APHRODITE_PREFIX_CACHE_RETENTION_INTERVAL", "64")
+
+    engine_args = EngineArgs()
+
+    assert engine_args.prefix_cache_retention_interval == 64
+    assert "APHRODITE_PREFIX_CACHE_RETENTION_INTERVAL" in caplog.text
+    assert "deprecated" in caplog.text
+    assert "prefix_cache_retention_interval" in caplog.text
+
+    parser = EngineArgs.add_cli_args(FlexibleArgumentParser())
+    args = parser.parse_args(["--prefix-cache-retention-interval", "32"])
+    engine_args = EngineArgs.from_cli_args(args)
+    assert engine_args.prefix_cache_retention_interval == 32
 
 
 @pytest.mark.parametrize(
@@ -836,7 +871,7 @@ class TestDpDeviceIdSharding:
         against its inherited device-control env var."""
         import argparse
 
-        from aphrodite.entrypoints.openai.dp_supervisor import _build_device_ids
+        from aphrodite.entrypoints.launchers.dp_supervisor import _build_device_ids
 
         args = argparse.Namespace(tensor_parallel_size=2, pipeline_parallel_size=1, device_ids=None)
         assert _build_device_ids(args, local_rank=0) == [0, 1]
@@ -846,7 +881,7 @@ class TestDpDeviceIdSharding:
         """User-provided --device-ids are sharded across DP children."""
         import argparse
 
-        from aphrodite.entrypoints.openai.dp_supervisor import _build_device_ids
+        from aphrodite.entrypoints.launchers.dp_supervisor import _build_device_ids
 
         args = argparse.Namespace(tensor_parallel_size=2, pipeline_parallel_size=1, device_ids=[4, 5, 6, 7])
         assert _build_device_ids(args, local_rank=0) == [4, 5]

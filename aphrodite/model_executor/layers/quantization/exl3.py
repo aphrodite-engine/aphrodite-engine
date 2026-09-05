@@ -22,6 +22,7 @@ from aphrodite.transformers_utils.repo_utils import hf_api
 
 if TYPE_CHECKING:
     from aphrodite.model_executor.layers.fused_moe.runner.shared_experts import SharedExperts
+    from aphrodite.model_executor.models.utils import WeightsMapper
 from aphrodite.model_executor.layers.fused_moe.activation import MoEActivation
 from aphrodite.model_executor.layers.fused_moe.config import FusedMoEQuantConfig
 from aphrodite.model_executor.layers.linear import (
@@ -423,6 +424,9 @@ class Exl3Config(QuantizationConfig):
         with open(quant_config_path) as f:
             config = json.load(f)
         self.tensor_storage = config.get("tensor_storage", {})
+
+    def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper") -> None:
+        self.tensor_storage = hf_to_aphrodite_mapper.apply_dict(self.tensor_storage)
 
     def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
         is_lm_head = layer.__class__.__name__ == "ParallelLMHead"

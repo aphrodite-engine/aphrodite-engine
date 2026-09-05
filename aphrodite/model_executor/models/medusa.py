@@ -54,7 +54,9 @@ class Medusa(nn.Module):
        needs to have truncated_vocab_size (=k) as an attribute."""
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
-        config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        config = speculative_config.draft_model_config.hf_config
         super().__init__()
         self.config = config
         self.blocks = nn.ModuleList(

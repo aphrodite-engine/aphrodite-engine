@@ -25,7 +25,7 @@ class RunBatchSubcommand(CLISubcommand):
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
-        from aphrodite.entrypoints.openai.run_batch import main as run_batch_main
+        from aphrodite.entrypoints.launchers.run_batch import main as run_batch_main
 
         logger.info(
             "Aphrodite batch processing API version %s",
@@ -47,7 +47,7 @@ class RunBatchSubcommand(CLISubcommand):
         asyncio.run(run_batch_main(args))
 
     def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
-        from aphrodite.entrypoints.openai.run_batch import make_arg_parser
+        from aphrodite.entrypoints.launchers.run_batch import make_arg_parser
 
         run_batch_parser = subparsers.add_parser(
             self.name,

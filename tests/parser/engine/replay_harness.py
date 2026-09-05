@@ -13,10 +13,10 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 
 
 @dataclass

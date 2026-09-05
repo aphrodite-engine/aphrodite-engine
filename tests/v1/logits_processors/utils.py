@@ -12,6 +12,7 @@ import torch
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import SamplingParams
+from aphrodite.utils.torch_utils import async_tensor_h2d
 from aphrodite.v1.sample.logits_processor import (
     LOGITSPROCS_GROUP,
     AdapterLogitsProcessor,
@@ -83,13 +84,20 @@ class DummyLogitsProcessor(LogitsProcessor):
         if not self.req_info:
             return logits
 
-        # Save target values before modification
-        cols = torch.tensor(list(self.req_info.values()), dtype=torch.long, device=logits.device)
-        rows = torch.tensor(list(self.req_info.keys()), dtype=torch.long, device=logits.device)
+        # Save target values before modification.
+        cols = async_tensor_h2d(list(self.req_info.values()), dtype=torch.long, device=logits.device)
+        rows = async_tensor_h2d(list(self.req_info.keys()), dtype=torch.long, device=logits.device)
         values_to_keep = logits[rows, cols].clone()
 
-        # Mask all but target tokens
-        logits[rows] = float("-inf")
+        # Mask all but target tokens. Use an on-device fill tensor so the
+        # scatter doesn't force a synchronizing scalar H2D.
+        fill = torch.full(
+            (rows.numel(), logits.size(-1)),
+            float("-inf"),
+            dtype=logits.dtype,
+            device=logits.device,
+        )
+        logits[rows] = fill
         logits[rows, cols] = values_to_keep
 
         return logits
@@ -130,7 +138,7 @@ class DummyPerReqLogitsProcessor:
         output_ids: list[int],
         logits: torch.Tensor,
     ) -> torch.Tensor:
-        val_to_keep = logits[self.target_token].item()
+        val_to_keep = logits[self.target_token].clone()
         logits[:] = float("-inf")
         logits[self.target_token] = val_to_keep
         return logits
@@ -209,11 +217,6 @@ def register_fake_entrypoint(monkeypatch) -> str:
     return str(tmpdir)
 
 
-def fake_entry_points(group: str) -> EntryPoints:
-    """Fake version of importlib.metadata.entry_points."""
-    return EntryPoints(group)
-
-
 def setup_fake_entrypoint(monkeypatch) -> None:
     """Expose the dummy logitproc entrypoint for the current platform."""
     if requires_spawn_multiprocessing():
@@ -222,6 +225,14 @@ def setup_fake_entrypoint(monkeypatch) -> None:
         return
 
     import importlib.metadata
+
+    original_entry_points = importlib.metadata.entry_points
+
+    def fake_entry_points(**kwargs):
+        group = kwargs.get("group")
+        if group == LOGITSPROCS_GROUP:
+            return EntryPoints(group)
+        return original_entry_points(**kwargs)
 
     monkeypatch.setattr(importlib.metadata, "entry_points", fake_entry_points)
     monkeypatch.setenv("APHRODITE_WORKER_MULTIPROC_METHOD", "fork")

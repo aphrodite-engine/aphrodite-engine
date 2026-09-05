@@ -174,6 +174,22 @@ class ChatCompletionContentPartAudioEmbedsParam(TypedDict, total=False):
     """
 
 
+class ChatCompletionContentPartVideoEmbedsParam(TypedDict, total=False):
+    video_embeds: str | dict[str, str] | None
+    """
+    The video embeddings. It can be either:
+    - A single base64 string representing a serialized torch tensor.
+    - A dictionary where each value is a base64 string.
+    """
+    type: Required[Literal["video_embeds"]]
+    """The type of the content part."""
+    uuid: str | None
+    """
+    User-provided UUID of a media. User must guarantee that it is properly
+    generated and unique for different medias.
+    """
+
+
 class ChatCompletionContentPartPromptEmbedsParam(TypedDict, total=False):
     data: Required[str]
     """
@@ -320,6 +336,7 @@ ChatCompletionContentPartParam: TypeAlias = (
     | CustomChatCompletionContentSimpleImageParam
     | ChatCompletionContentPartImageEmbedsParam
     | ChatCompletionContentPartAudioEmbedsParam
+    | ChatCompletionContentPartVideoEmbedsParam
     | ChatCompletionContentPartPromptEmbedsParam
     | CustomChatCompletionContentSimpleAudioParam
     | CustomChatCompletionContentSimpleVideoParam
@@ -409,6 +426,7 @@ ModalityStr = Literal[
     "video",
     "image_embeds",
     "audio_embeds",
+    "video_embeds",
     "vision_chunk",
     "prompt_embeds",
 ]
@@ -717,6 +735,11 @@ def _resolve_items(
             "Mixing raw audio and embedding inputs is not allowed",
             parameter="audio_embeds",
         )
+    if "video" in items_by_modality and "video_embeds" in items_by_modality:
+        raise APHRODITEValidationError(
+            "Mixing raw video and embedding inputs is not allowed",
+            parameter="video_embeds",
+        )
     # `prompt_embeds` bypasses HF MM processors. Every other modality requires one.
     processor_modalities = items_by_modality.keys() - {"prompt_embeds"}
     if processor_modalities and mm_processor is None:
@@ -749,6 +772,14 @@ def _resolve_items(
     if "video" in items_by_modality:
         mm_data["video"] = [data for data, uuid in items_by_modality["video"]]
         mm_uuids["video"] = [uuid for data, uuid in items_by_modality["video"]]
+    if "video_embeds" in items_by_modality:
+        assert mm_processor is not None
+        mm_data["video"] = _get_embeds_data(
+            "video",
+            [data for data, uuid in items_by_modality["video_embeds"]],
+            mm_processor,
+        )
+        mm_uuids["video"] = [uuid for data, uuid in items_by_modality["video_embeds"]]
     if "vision_chunk" in items_by_modality:
         assert mm_processor is not None
         # Process vision_chunk items - extract from (data, modality) tuples
@@ -794,17 +825,28 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
         if not self._items_by_modality:
             return None, None
 
+        # Fetch all modalities together. Each tracked item is already an
+        # independent awaitable, and the async connector offloads blocking
+        # decode work, so waiting for one modality before starting the next
+        # needlessly adds their latency.
+        # Keep the original group and item order when rebuilding the result.
+        item_groups = list(self._items_by_modality.items())
+        items = [item for _, group in item_groups for item in group]
+        results = await asyncio.gather(*(item() for item in items), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                # Gathering with return_exceptions=True lets every task finish
+                # (or itself fail) before we raise, instead of abandoning
+                # still-in-flight fetches (real network/thread-pool work) the
+                # moment the first one fails.
+                raise result
+
         resolved_items_by_modality: dict[str, list[Any]] = {}
-        for modality, items in self._items_by_modality.items():
-            results = await asyncio.gather(*(item() for item in items), return_exceptions=True)
-            for result in results:
-                if isinstance(result, BaseException):
-                    # Gathering with return_exceptions=True lets every task in
-                    # this modality finish (or itself fail) before we raise,
-                    # instead of abandoning still-in-flight fetches (real
-                    # network/thread-pool work) the moment the first one fails.
-                    raise result
-            resolved_items_by_modality[modality] = results
+        result_idx = 0
+        for modality, group in item_groups:
+            next_result_idx = result_idx + len(group)
+            resolved_items_by_modality[modality] = results[result_idx:next_result_idx]
+            result_idx = next_result_idx
 
         mm_processor = self.mm_processor if self._model_config.is_multimodal_model else None
         return _resolve_items(
@@ -881,6 +923,14 @@ class BaseMultiModalContentParser(ABC):
 
     @abstractmethod
     def parse_video(self, video_url: str | None, uuid: str | None = None) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def parse_video_embeds(
+        self,
+        video_embeds: str | dict[str, str] | None,
+        uuid: str | None = None,
+    ) -> None:
         raise NotImplementedError
 
 
@@ -1022,6 +1072,29 @@ class MultiModalContentParser(BaseMultiModalContentParser):
             audio = self._connector.fetch_audio(video_url) if video_url else None
             audio_placeholder = self._tracker.add("audio", (audio, uuid))
             self._add_placeholder("audio", audio_placeholder)
+
+    def parse_video_embeds(
+        self,
+        video_embeds: str | dict[str, str] | None,
+        uuid: str | None = None,
+    ) -> None:
+        mm_config = self.model_config.get_multimodal_config()
+        if not mm_config.enable_mm_embeds:
+            raise APHRODITEValidationError(
+                "You must set `--enable-mm-embeds` to input `video_embeds`",
+                parameter="video_embeds",
+            )
+
+        if isinstance(video_embeds, dict):
+            embeds = {k: self._connector.fetch_video_embedding(v) for k, v in video_embeds.items()}
+            placeholder = self._tracker.add("video_embeds", (embeds, uuid))
+        elif isinstance(video_embeds, str):
+            embedding = self._connector.fetch_video_embedding(video_embeds)
+            placeholder = self._tracker.add("video_embeds", (embedding, uuid))
+        else:
+            placeholder = self._tracker.add("video_embeds", (None, uuid))
+
+        self._add_placeholder("video", placeholder)
 
 
 class AsyncMultiModalContentParser(BaseMultiModalContentParser):
@@ -1200,6 +1273,40 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
             audio_placeholder = self._tracker.add("audio", partial(self._audio_with_uuid_async, video_url, uuid))
             self._add_placeholder("audio", audio_placeholder)
 
+    def parse_video_embeds(
+        self,
+        video_embeds: str | dict[str, str] | None,
+        uuid: str | None = None,
+    ) -> None:
+        mm_config = self.model_config.get_multimodal_config()
+        if not mm_config.enable_mm_embeds:
+            raise APHRODITEValidationError(
+                "You must set `--enable-mm-embeds` to input `video_embeds`",
+                parameter="video_embeds",
+            )
+
+        placeholder = self._tracker.add(
+            "video_embeds",
+            partial(self._video_embeds_with_uuid_async, video_embeds, uuid),
+        )
+        self._add_placeholder("video", placeholder)
+
+    async def _video_embeds_with_uuid_async(
+        self,
+        video_embeds: str | dict[str, str] | None,
+        uuid: str | None,
+    ):
+        if isinstance(video_embeds, dict):
+            tensors = await asyncio.gather(
+                *(self._connector.fetch_video_embedding_async(v) for v in video_embeds.values())
+            )
+            embeds = dict(zip(video_embeds, tensors))
+        elif isinstance(video_embeds, str):
+            embeds = await self._connector.fetch_video_embedding_async(video_embeds)
+        else:
+            embeds = None
+        return embeds, uuid
+
 
 @dataclass
 class ChatTemplateConfig:
@@ -1296,7 +1403,12 @@ def load_chat_template(
 def _get_interleaved_text_prompt(placeholder_storage: dict[str, list], texts: list[str]) -> str:
     for idx, elem in enumerate(texts):
         if elem in placeholder_storage:
-            texts[idx] = placeholder_storage[elem].pop(0)
+            slots = placeholder_storage[elem]
+            if not slots:
+                raise APHRODITEValidationError(
+                    f"Found more '{elem}' placeholders in input prompt than actual multimodal data items."
+                )
+            texts[idx] = slots.pop(0)
 
     return "\n".join(texts)
 
@@ -1359,6 +1471,7 @@ def _get_full_multimodal_text_prompt(
 _TextParser = partial(cast, ChatCompletionContentPartTextParam)
 _ImageEmbedsParser = partial(cast, ChatCompletionContentPartImageEmbedsParam)
 _AudioEmbedsParser = partial(cast, ChatCompletionContentPartAudioEmbedsParam)
+_VideoEmbedsParser = partial(cast, ChatCompletionContentPartVideoEmbedsParam)
 _PromptEmbedsParser = partial(cast, ChatCompletionContentPartPromptEmbedsParam)
 _InputAudioParser = partial(cast, ChatCompletionContentPartInputAudioParam)
 _RefusalParser = partial(cast, ChatCompletionContentPartRefusalParam)
@@ -1385,6 +1498,7 @@ MM_PARSER_MAP: dict[
     "image_url": lambda part: _ImageParser(part).get("image_url", {}).get("url", None),
     "image_embeds": lambda part: _ImageEmbedsParser(part).get("image_embeds", None),
     "audio_embeds": lambda part: _AudioEmbedsParser(part).get("audio_embeds", None),
+    "video_embeds": lambda part: _VideoEmbedsParser(part).get("video_embeds", None),
     "prompt_embeds": lambda part: _PromptEmbedsParser(part).get("data", None),
     "image_pil": lambda part: _PILImageParser(part).get("image_pil", None),
     "audio_url": lambda part: _AudioParser(part).get("audio_url", {}).get("url", None),
@@ -1477,6 +1591,13 @@ def _parse_chat_message_content_mm_part(
             )
             audio_embeds = audio_params.get("audio_embeds", None)
             return "audio_embeds", audio_embeds
+        if "video_embeds" in part:
+            # "video_embeds" could be None if UUID is provided.
+            video_embeds_params = cast(  # type: ignore[assignment]
+                ChatCompletionContentPartVideoEmbedsParam, part
+            )
+            video_embeds = video_embeds_params.get("video_embeds", None)
+            return "video_embeds", video_embeds
         if "prompt_embeds" in part:
             prompt_embeds_params = cast(  # type: ignore[assignment]
                 ChatCompletionContentPartPromptEmbedsParam, part
@@ -1643,6 +1764,10 @@ def _parse_chat_message_content_part(
         content = cast(str | dict[str, str], content) if content is not None else None
         mm_parser.parse_audio_embeds(content, uuid)
         modality = "audio"
+    elif part_type == "video_embeds":
+        content = cast(str | dict[str, str], content) if content is not None else None
+        mm_parser.parse_video_embeds(content, uuid)
+        modality = "video"
     elif part_type == "prompt_embeds":
         if not content:
             raise APHRODITEValidationError(_PROMPT_EMBEDS_MISSING_DATA_ERROR, parameter="prompt_embeds")
@@ -1802,9 +1927,43 @@ def _postprocess_messages(messages: list[ConversationMessage]) -> None:
 
                 # if arguments is None or empty string, set to {}
                 if content := function.get("arguments"):
-                    if not isinstance(content, (dict, list)):
-                        parsed = json.loads(content)
-                        function["arguments"] = parsed if parsed is not None else {}
+                    if isinstance(content, dict):
+                        parsed = content
+                    else:
+                        if isinstance(content, str):
+                            try:
+                                parsed = json.loads(content)
+                            except json.JSONDecodeError:
+                                # A malformed `arguments` string lives in
+                                # conversation history, so failing the request
+                                # here would fail every subsequent turn too and
+                                # leave the conversation unrecoverable. Coerce
+                                # to an empty object so the turn can proceed.
+                                logger.warning(
+                                    "Tool call %r has arguments that are not valid "
+                                    "JSON (%d chars); coercing to an empty object "
+                                    "so the conversation can continue.",
+                                    function.get("name"),
+                                    len(content),
+                                )
+                                parsed = None
+                        else:
+                            parsed = content
+
+                        if not isinstance(parsed, dict):
+                            if parsed is not None:
+                                # Valid JSON, but not an object (e.g. "[]",
+                                # "42", "true").
+                                # Chat templates require a mapping.
+                                logger.warning(
+                                    "Tool call %r arguments decoded to %s, not a "
+                                    "JSON object; coercing to an empty object.",
+                                    function.get("name"),
+                                    type(parsed).__name__,
+                                )
+                            parsed = {}
+
+                    function["arguments"] = parsed
                 else:
                     function["arguments"] = {}
 
@@ -1885,15 +2044,6 @@ async def parse_chat_messages_async(
     mm_data, mm_uuids = await mm_tracker.resolve_items()
 
     return conversation, mm_data, mm_uuids
-
-
-def get_history_tool_calls_cnt(conversation: list[ConversationMessage]):
-    idx = 0
-    for msg in conversation:
-        if msg["role"] == "assistant":
-            tool_calls = msg.get("tool_calls")
-            idx += len(list(tool_calls)) if tool_calls is not None else 0  # noqa
-    return idx
 
 
 _KIMI_MODEL_TYPES = ("kimi_k2", "kimi_k25", "kimi_k3")

@@ -61,8 +61,8 @@ from openai.types.responses.response_reasoning_item import (
 from openai.types.responses.tool import Tool
 from openai_harmony import Message as HarmonyMessage
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage, DeltaToolCall
 from aphrodite.entrypoints.mcp.tool_server import ToolServer
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage, DeltaToolCall
 from aphrodite.entrypoints.openai.parser.harmony_utils import (
     extract_function_from_recipient,
     is_function_recipient,

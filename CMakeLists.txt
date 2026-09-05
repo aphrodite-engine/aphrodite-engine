@@ -224,7 +224,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   # `+PTX` in TORCH_CUDA_ARCH_LIST is not preserved here. If a kernel really
   # needs PTX, add `+PTX` to that kernel's component-specific arch list below.
   #
-  clear_cuda_arches(CUDA_ARCH_FLAGS)
+  clear_cuda_gencode_flags(CUDA_ARCH_FLAGS)
+  warn_if_ptx_arch_requested("${CUDA_ARCH_FLAGS}")
   extract_unique_cuda_archs_ascending(CUDA_ARCHS "${CUDA_ARCH_FLAGS}")
   message(STATUS "CUDA target architectures: ${CUDA_ARCHS}")
   # Filter the target architectures by the supported supported archs
@@ -397,6 +398,44 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   #
   # _C_stable_libtorch extension (ops registered via STABLE_TORCH_LIBRARY)
   #
+  if(Torch_VERSION VERSION_GREATER_EQUAL "2.13" AND
+     Torch_VERSION VERSION_LESS "2.14")
+    # hotfix for https://github.com/pytorch/pytorch/pull/190493
+    # delete after we bump to 2.14
+    list(GET TORCH_INCLUDE_DIRS 0 TORCH_INCLUDE_DIR)
+    set(_stable_hdr_rel "torch/csrc/stable/stableivalue_conversions.h")
+    file(READ "${TORCH_INCLUDE_DIR}/${_stable_hdr_rel}"
+      TORCH_STABLE_STRING_CONTENTS)
+
+    if(TORCH_STABLE_STRING_CONTENTS MATCHES "auto strptr = new std::string")
+      set(TORCH_SHADOW_INCLUDE_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/torch_patched_headers")
+      set(TORCH_PATCH_STAGING_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/torch_patch_staging")
+
+      file(MAKE_DIRECTORY "${TORCH_PATCH_STAGING_DIR}/torch/csrc/stable")
+      file(COPY_FILE
+        "${TORCH_INCLUDE_DIR}/${_stable_hdr_rel}"
+        "${TORCH_PATCH_STAGING_DIR}/${_stable_hdr_rel}")
+
+      execute_process(
+        COMMAND patch --batch --forward -p1
+          "--input=${CMAKE_CURRENT_LIST_DIR}/cmake/patches/pytorch_stable_string.patch"
+        WORKING_DIRECTORY "${TORCH_PATCH_STAGING_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY)
+
+      # Preserve the include's timestamp on unchanged reconfigurations so
+      # every stable-ABI translation unit does not rebuild on each commit.
+      file(MAKE_DIRECTORY "${TORCH_SHADOW_INCLUDE_DIR}/torch/csrc/stable")
+      file(COPY_FILE
+        "${TORCH_PATCH_STAGING_DIR}/${_stable_hdr_rel}"
+        "${TORCH_SHADOW_INCLUDE_DIR}/${_stable_hdr_rel}"
+        ONLY_IF_DIFFERENT)
+
+      include_directories(BEFORE "${TORCH_SHADOW_INCLUDE_DIR}")
+    endif()
+  endif()
+
   set(APHRODITE_STABLE_EXT_SRC
     "csrc/libtorch_stable/torch_bindings.cpp"
     "csrc/cpu/dry.cpp"
@@ -404,6 +443,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
     "csrc/libtorch_stable/cuda_utils_kernels.cu"
     "csrc/libtorch_stable/activation_kernels.cu"
     "csrc/libtorch_stable/ngram_embedding_kernels.cu"
+    "csrc/libtorch_stable/vocab_parallel_embedding_kernels.cu"
     "csrc/libtorch_stable/quantization/activation_kernels.cu"
     "csrc/libtorch_stable/quantization/w8a8/int8/scaled_quant.cu"
     "csrc/libtorch_stable/quantization/w8a8/fp8/common.cu"
@@ -449,10 +489,15 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   endif()
 
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")
+    list(APPEND APHRODITE_STABLE_EXT_SRC
+      "csrc/libtorch_stable/attention/dcp_utils/dcp_direct_a2a_lse_reduce.cu"
+      "csrc/libtorch_stable/attention/dcp_utils/dcp_direct_kv_gather.cu"
+      "csrc/libtorch_stable/attention/dcp_utils/dcp_direct_q_gather.cu")
+
     SET(CUTLASS_ENABLE_HEADERS_ONLY ON CACHE BOOL "Enable only the header library")
 
     # Set CUTLASS_REVISION. Used for FetchContent. Also fixes some bogus messages when building.
-    set(CUTLASS_REVISION "v4.4.2")
+    set(CUTLASS_REVISION "v4.7.1")
 
     # Use the specified CUTLASS source directory for compilation if APHRODITE_CUTLASS_SRC_DIR is provided
     if (DEFINED ENV{APHRODITE_CUTLASS_SRC_DIR})
@@ -1067,7 +1112,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
       "csrc/libtorch_stable/quantization/fp4/nvfp4_blockwise_moe_kernel.cu"
       "csrc/libtorch_stable/quantization/fp4/mxfp4_experts_quant.cu"
       "csrc/libtorch_stable/quantization/fp4/mxfp4_blockwise_moe_kernel.cu"
-      "csrc/libtorch_stable/nvfp4_kv_cache_kernels.cu")
+      "csrc/libtorch_stable/nvfp4_kv_cache_kernels.cu"
+      "csrc/libtorch_stable/nvfp4_ds_mla_cache_kernels.cu")
     if(NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.9)
       message(STATUS
         "Building mxfp4_experts_quant unsupported stubs because CUDA compiler version is not >= 12.9 (found ${CMAKE_CUDA_COMPILER_VERSION}).")
@@ -1145,6 +1191,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 13.0)
     cuda_archs_loose_intersection(FUSED_KDA_DECODE_ARCHS
       "9.0a;10.0f;12.0f" "${CUDA_ARCHS}")
+    cuda_archs_loose_intersection(FUSED_GDN_DECODE_ARCHS
+      "8.0;8.6;8.9;9.0a;10.0f;12.0f" "${CUDA_ARCHS}")
   endif()
   if(FUSED_KDA_DECODE_ARCHS)
     set(FUSED_KDA_DECODE_SRC
@@ -1157,6 +1205,18 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
     list(APPEND APHRODITE_STABLE_EXT_SRC "${FUSED_KDA_DECODE_SRC}")
     message(STATUS
       "Building fused KDA decode for archs: ${FUSED_KDA_DECODE_ARCHS}")
+  endif()
+  if(FUSED_GDN_DECODE_ARCHS)
+    set(FUSED_GDN_DECODE_SRC
+      "csrc/libtorch_stable/gdn/fused_gdn_decode_kernel.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${FUSED_GDN_DECODE_SRC}"
+      CUDA_ARCHS "${FUSED_GDN_DECODE_ARCHS}")
+    set_property(SOURCE ${FUSED_GDN_DECODE_SRC} APPEND PROPERTY
+      COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>")
+    list(APPEND APHRODITE_STABLE_EXT_SRC "${FUSED_GDN_DECODE_SRC}")
+    message(STATUS
+      "Building fused GDN decode for archs: ${FUSED_GDN_DECODE_ARCHS}")
   endif()
 
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 13.0)
@@ -1232,6 +1292,24 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
     list(APPEND APHRODITE_STABLE_EXT_SRC "${APHRODITE_EXL3_SRC}")
   endif()
 
+  # HIP counterpart of the FUSED_KDA_DECODE block above: same `fused_kda_decode`
+  # op, same APHRODITE_ENABLE_FUSED_KDA_DECODE guard in torch_bindings.cpp. Built for
+  # the CDNA archs the kernel supports (gfx942 / gfx950), so it is only emitted
+  # when one of those is in the arch list. A multi-arch build that includes them
+  # still emits this source for every arch in that list. The runtime gate in
+  # kda_decode.py keeps the kernel off unsupported devices.
+  if(APHRODITE_GPU_LANG STREQUAL "HIP")
+    set(FUSED_KDA_DECODE_HIP_ARCHS ${APHRODITE_GPU_ARCHES})
+    list(FILTER FUSED_KDA_DECODE_HIP_ARCHS INCLUDE REGEX "gfx942|gfx950")
+    if(FUSED_KDA_DECODE_HIP_ARCHS)
+      set(FUSED_KDA_DECODE_HIP_SRC
+        "csrc/libtorch_stable/kimi_k3/fused_kda_decode_kernel_rocm.cu")
+      list(APPEND APHRODITE_STABLE_EXT_SRC "${FUSED_KDA_DECODE_HIP_SRC}")
+      message(STATUS
+        "Building fused KDA decode for HIP archs: ${FUSED_KDA_DECODE_HIP_ARCHS}")
+    endif()
+  endif()
+
   message(STATUS "Enabling C_stable extension.")
   list(REMOVE_DUPLICATES APHRODITE_STABLE_EXT_SRC)
   define_extension_target(
@@ -1267,6 +1345,10 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
       target_compile_definitions(_C_stable_libtorch PRIVATE
         APHRODITE_ENABLE_FUSED_KDA_DECODE=1)
     endif()
+    if(FUSED_GDN_DECODE_ARCHS)
+      target_compile_definitions(_C_stable_libtorch PRIVATE
+        APHRODITE_ENABLE_FUSED_GDN_DECODE=1)
+    endif()
     if(KIMI_K3_ATTN_RES_ARCHS)
       target_compile_definitions(_C_stable_libtorch PRIVATE
         APHRODITE_ENABLE_KIMI_K3_ATTN_RES=1)
@@ -1276,6 +1358,10 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
       CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL=1)
   elseif(APHRODITE_GPU_LANG STREQUAL "HIP")
     target_compile_definitions(_C_stable_libtorch PRIVATE USE_ROCM)
+    if(FUSED_KDA_DECODE_HIP_SRC)
+      target_compile_definitions(_C_stable_libtorch PRIVATE
+        APHRODITE_ENABLE_FUSED_KDA_DECODE=1)
+    endif()
   endif()
 
   # On ROCm, _C_stable_libtorch calls raw HIP APIs (e.g. hipGetDevice in
@@ -1450,25 +1536,6 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     message(STATUS "Not building Marlin MOE kernels as no compatible archs found"
                    " in CUDA target architectures")
   endif()
-
-  # DeepSeek V3 router GEMM kernel requires SM90+ and CUDA >= 12.0.
-  # (fp32_router_gemm has been migrated to _C_stable_libtorch above.)
-  cuda_archs_sm90plus(SM90PLUS_ROUTER_GEMM_ARCHS "${CUDA_ARCHS}")
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.0 AND SM90PLUS_ROUTER_GEMM_ARCHS)
-    set(DSV3_ROUTER_GEMM_SRC
-      "csrc/libtorch_stable/moe/dsv3_router_gemm_entry.cu"
-      "csrc/libtorch_stable/moe/dsv3_router_gemm_float_out.cu"
-      "csrc/libtorch_stable/moe/dsv3_router_gemm_bf16_out.cu")
-    set_gencode_flags_for_srcs(
-      SRCS "${DSV3_ROUTER_GEMM_SRC}"
-      CUDA_ARCHS "${SM90PLUS_ROUTER_GEMM_ARCHS}")
-    list(APPEND APHRODITE_MOE_EXT_SRC "${DSV3_ROUTER_GEMM_SRC}")
-
-    message(STATUS "Building DSV3 router GEMM kernels for archs: ${SM90PLUS_ROUTER_GEMM_ARCHS}")
-  else()
-    message(STATUS "Not building DSV3 router GEMM kernels as no compatible archs found"
-                   " (requires SM90+ and CUDA >= 12.0)")
-  endif()
 endif()
 
 message(STATUS "Enabling MoE C_stable extension.")
@@ -1534,7 +1601,7 @@ if(APHRODITE_GPU_LANG STREQUAL "HIP")
   # skinny_gemms*.cu are built on gfx9/gfx11 ISA (MFMA, dot2/dot4, legacy
   # s_waitcnt asm) that gfx1250 (gfx12) does not provide. Exclude them from the
   # gfx1250 build and disable their op registrations (APHRODITE_SKIP_SKINNY_GEMMS);
-  # vLLM falls back to default/Triton GEMM for those ops on gfx1250.
+  # Aphrodite falls back to default/Triton GEMM for those ops on gfx1250.
   list(REMOVE_ITEM APHRODITE_ROCM_EXT_SRC "csrc/rocm/skinny_gemms.cu")
   list(REMOVE_ITEM APHRODITE_ROCM_EXT_SRC "csrc/rocm/skinny_gemms_int4.cu")
   set(APHRODITE_SKINNY_ARCHES ${APHRODITE_GPU_ARCHES})

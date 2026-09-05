@@ -7,12 +7,14 @@ import pytest
 import torch
 
 from aphrodite.platforms import current_platform
+from aphrodite.utils.mem_constants import GiB_bytes
 
 MAX_MODEL_LEN = 1024
 MODEL_NAME = os.environ.get("MODEL_NAME", "robertgshaw2/zephyr-7b-beta-channelwise-gptq")
 REVISION = os.environ.get("REVISION", "main")
 QUANTIZATION = os.environ.get("QUANTIZATION", "gptq_marlin")
 MIN_CAPABILITY = os.environ.get("MIN_CAPABILITY", "80")
+SAFETENSORS_LOAD_STRATEGY = os.environ.get("WEIGHT_LOADING_TEST_SAFETENSORS_LOAD_STRATEGY")
 
 
 @pytest.mark.skipif(MODEL_NAME == "casperhansen/deepseek-coder-v2-instruct-awq", reason="OOM in the CI")
@@ -34,6 +36,10 @@ def test_weight_loading(aphrodite_runner):
         quantization=None if QUANTIZATION == "None" else QUANTIZATION,
         max_model_len=MAX_MODEL_LEN,
         tensor_parallel_size=2,
+        safetensors_load_strategy=SAFETENSORS_LOAD_STRATEGY,
+        # Generating 20 tokens needs a tiny KV cache, while sizing and
+        # allocating a full-size one dominates this test on large devices.
+        kv_cache_memory_bytes=2 * GiB_bytes,
     ) as model:
         output = model.generate_greedy("Hello world!", max_tokens=20)
         print(output)

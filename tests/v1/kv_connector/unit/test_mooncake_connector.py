@@ -32,13 +32,14 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.mooncake.mooncake_utils i
     MooncakeBootstrapServer,
 )
 from aphrodite.utils.network_utils import get_open_port
-from aphrodite.v1.attention.backends.flash_attn import FlashAttentionBackend
 from aphrodite.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheConfig,
     KVCacheGroupSpec,
+    KVCacheLayout,
 )
 from aphrodite.v1.request import RequestStatus
+from tests.v1.attention.utils import dense_kv_cache_views
 
 from .utils import create_aphrodite_config, create_request, create_scheduler
 
@@ -1054,7 +1055,19 @@ async def test_worker_get_finished_timeout(monkeypatch):
         assert "tx-active" in prefill_worker.reqs_need_send
 
 
-def test_register_kv_caches():
+@pytest.mark.parametrize(
+    ("layout", "separate_kv_head_groups"),
+    [
+        (KVCacheLayout.LBHNC, False),
+        (KVCacheLayout.BLHNC, False),
+        (KVCacheLayout.BHLNC, False),
+        # LHBNC gives each head group its own region; the K/V split doubles the
+        # head count but the registration shape is driven by the layout.
+        (KVCacheLayout.LHBNC, False),
+        (KVCacheLayout.LHBNC, True),
+    ],
+)
+def test_register_kv_caches(layout: KVCacheLayout, separate_kv_head_groups: bool):
     """Tests the memory registration logic with the underlying Mooncake engine."""
 
     aphrodite_config = create_aphrodite_config(kv_connector="MooncakeConnector", kv_role="kv_consumer")
@@ -1075,31 +1088,50 @@ def test_register_kv_caches():
         worker = connector.connector_worker
         mock_thread.return_value.is_alive.return_value = False
 
-        kv_cache_shape = FlashAttentionBackend.get_kv_cache_shape(
-            num_blocks=2, block_size=16, num_kv_heads=4, head_size=64
+        spec = FullAttentionSpec(
+            block_size=16,
+            num_kv_heads=4,
+            head_size=64,
+            dtype=torch.float16,
+            num_head_slots=2 if separate_kv_head_groups else None,
+            state_content_bytes=4 * 64 * 2 if separate_kv_head_groups else None,
         )
-        tensor1 = torch.zeros(*kv_cache_shape, dtype=torch.float16)
-        tensor2 = torch.zeros(*kv_cache_shape, dtype=torch.float16)
-        kv_caches = {
-            "model.layers.0.self_attn": tensor1,
-            "model.layers.1.self_attn": tensor2,
-        }
+        layer_names = [
+            "model.layers.0.self_attn",
+            "model.layers.1.self_attn",
+        ]
+        for layer_name in layer_names:
+            worker._layer_specs[layer_name] = spec
+        raw = torch.zeros(2 * 2 * spec.page_size_bytes, dtype=torch.int8)
+        tensor1, tensor2 = dense_kv_cache_views(raw, spec, 2, 2, layout)
+        kv_caches = dict(zip(layer_names, (tensor1, tensor2)))
 
         with patch.object(worker.engine, "batch_register_memory", return_value=0) as mock_batch_register:
             connector.register_kv_caches(kv_caches)
 
             mock_batch_register.assert_called_once()
             registered_ptrs, registered_lens = mock_batch_register.call_args[0]
-            expected_ptrs = {tensor.data_ptr() for tensor in kv_caches.values()}
-            assert set(registered_ptrs) == expected_ptrs
-            assert set(registered_lens) == {tensor1.nbytes}
+            assert registered_ptrs == [raw.data_ptr()]
+            assert registered_lens == [raw.nbytes]
 
-            # Verify block_len_per_layer is set correctly.
-            assert len(worker.block_len_per_layer) == len(registered_ptrs)
-            for bl in worker.block_len_per_layer:
-                assert bl == tensor1.nbytes // tensor1.shape[0]
-            assert worker.registered_layer_names == list(kv_caches)
-            assert worker.registered_layer_indices == [0, 1]
+            if not layout.is_block_compact:
+                expected_addrs = [
+                    cache[:, head_idx].data_ptr() for cache in (tensor1, tensor2) for head_idx in range(cache.shape[1])
+                ]
+                head_block_bytes = tensor1.stride(0) * tensor1.element_size()
+                assert worker.kv_caches_base_addr == expected_addrs
+                assert worker.block_len_per_layer == [head_block_bytes] * len(expected_addrs)
+                assert worker.kv_block_len_per_layer == [head_block_bytes] * len(expected_addrs)
+                assert worker.registered_layer_names == [
+                    layer_name for layer_name in layer_names for _ in range(tensor1.shape[1])
+                ]
+            else:
+                assert len(worker.block_len_per_layer) == len(kv_caches)
+                for bl in worker.block_len_per_layer:
+                    assert bl == tensor1.stride(0) * tensor1.element_size()
+                assert worker.kv_block_len_per_layer == [spec.page_size_bytes] * 2
+                assert worker.registered_layer_names == list(kv_caches)
+                assert worker.registered_layer_indices == [0, 1]
 
 
 def test_register_kv_caches_supports_mixed_mla_and_eagle_shapes():
@@ -1126,8 +1158,9 @@ def test_register_kv_caches_supports_mixed_mla_and_eagle_shapes():
         worker.use_mla = True
         worker.transfer_topo.is_mla = True
 
-        # MLA cache tensor: shape[-2] is the block size.
-        mla_cache = torch.zeros((2, 16, 96), dtype=torch.float16)
+        # MLA cache tensor: shape[-2] is the block size and each block's
+        # byte stride matches the cache spec page size.
+        mla_cache = torch.zeros((2, 16, 512), dtype=torch.float16)
         # Eagle3/GQA-like cache tensor: shape[-2] is num_kv_heads, not block size.
         eagle_cache = torch.zeros((2, 16, 8, 64), dtype=torch.float16)
         kv_caches = {

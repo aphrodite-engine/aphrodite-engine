@@ -3,7 +3,7 @@
 
 from collections.abc import Sequence
 
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 
 

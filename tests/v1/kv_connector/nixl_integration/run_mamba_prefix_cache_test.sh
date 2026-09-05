@@ -52,10 +52,10 @@ CUDA_VISIBLE_DEVICES=$PREFILL_GPU_ID \
 APHRODITE_SSM_CONV_STATE_LAYOUT=DS \
 APHRODITE_KV_CACHE_LAYOUT=HND \
 APHRODITE_NIXL_SIDE_CHANNEL_PORT=5559 \
-aphrodite serve $MODEL \
+aphrodite serve "$MODEL" \
   --port $PREFILL_PORT \
   --enforce-eager \
-  --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
+  --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
   --max-model-len 16384 \
   --block-size 128 \
   --trust-remote-code \
@@ -70,10 +70,10 @@ CUDA_VISIBLE_DEVICES=$DECODE_GPU_ID \
 APHRODITE_SSM_CONV_STATE_LAYOUT=DS \
 APHRODITE_KV_CACHE_LAYOUT=HND \
 APHRODITE_NIXL_SIDE_CHANNEL_PORT=6000 \
-aphrodite serve $MODEL \
+aphrodite serve "$MODEL" \
   --port $DECODE_PORT \
   --enforce-eager \
-  --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
+  --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
   --max-model-len 16384 \
   --block-size 128 \
   --trust-remote-code \

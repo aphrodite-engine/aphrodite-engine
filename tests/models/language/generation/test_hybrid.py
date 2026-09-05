@@ -7,6 +7,7 @@ from contextlib import contextmanager, nullcontext
 import pytest
 
 from aphrodite import LLM
+from aphrodite.config import CUDAGraphMode
 from aphrodite.engine.arg_utils import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.sampling_params import SamplingParams
@@ -41,11 +42,6 @@ HYBRID_MODELS = [
     "LiquidAI/LFM2-1.2B",
     "tiny-random/qwen3-next-moe",
 ]
-
-HYBRID_MODELS_REQUIRING_CHUNKED_PREFILL = {
-    "LiquidAI/LFM2-1.2B",
-    "tiny-random/qwen3-next-moe",
-}
 
 FULL_CUDA_GRAPH_MODELS = [
     "ai21labs/Jamba-tiny-dev",
@@ -93,15 +89,11 @@ def test_models(
     with hf_runner(model) as hf_model:
         hf_outputs = hf_model.generate_greedy_logprobs_limit(example_prompts, max_tokens, num_logprobs)
 
-    extra_kwargs = {}
-    if model in HYBRID_MODELS_REQUIRING_CHUNKED_PREFILL:
-        extra_kwargs["enable_chunked_prefill"] = True
-
     with aphrodite_runner(
         model,
         max_num_seqs=MAX_NUM_SEQS,
         attention_backend=ATTN_BACKEND,
-        **extra_kwargs,
+        enable_chunked_prefill=True,
     ) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
@@ -136,7 +128,7 @@ def test_batching(
     _set_conv_state_layout(monkeypatch, conv_state_layout)
 
     for_loop_outputs = []
-    with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
+    with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS, enable_chunked_prefill=True) as aphrodite_model:
         for prompt in example_prompts:
             (single_output,) = aphrodite_model.generate_greedy_logprobs([prompt], max_tokens, num_logprobs)
             for_loop_outputs.append(single_output)
@@ -207,11 +199,13 @@ def test_mamba_cache_cg_padding(
     aphrodite_config = EngineArgs(model=model, trust_remote_code=True).create_engine_config()
     cudagraph_dispatcher = CudagraphDispatcher(aphrodite_config)
     cudagraph_dispatcher.initialize_cudagraph_keys(aphrodite_config.compilation_config.cudagraph_mode)
+    if cudagraph_dispatcher.cudagraph_mode == CUDAGraphMode.NONE:
+        pytest.skip("CUDA/XPU graph is disabled.Please enable it to run this test. ")
     while len(example_prompts) == cudagraph_dispatcher.dispatch(len(example_prompts))[1].num_tokens:
         example_prompts.append(example_prompts[0])
 
     try:
-        with aphrodite_runner(model) as aphrodite_model:
+        with aphrodite_runner(model, enable_chunked_prefill=True) as aphrodite_model:
             aphrodite_model.generate_greedy(example_prompts, max_tokens)
     except RuntimeError:
         pytest.fail(
@@ -237,7 +231,7 @@ def test_fail_upon_inc_requests_and_finished_requests_lt_available_blocks(
     a single step.
     """
     try:
-        with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
+        with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS, enable_chunked_prefill=True) as aphrodite_model:
             aphrodite_model.generate_greedy([example_prompts[0]] * 100, 10)
     except ValueError:
         pytest.fail(
@@ -258,7 +252,7 @@ def test_state_cleanup(
     If it's not cleaned, an error would be expected.
     """
     try:
-        with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
+        with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS, enable_chunked_prefill=True) as aphrodite_model:
             for _ in range(10):
                 aphrodite_model.generate_greedy([example_prompts[0]] * 100, 1)
     except ValueError:
@@ -276,10 +270,20 @@ def test_distributed_correctness(
     max_tokens: int,
     num_logprobs: int,
 ) -> None:
-    with aphrodite_runner(model, tensor_parallel_size=1, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
+    with aphrodite_runner(
+        model,
+        tensor_parallel_size=1,
+        max_num_seqs=MAX_NUM_SEQS,
+        enable_chunked_prefill=True,
+    ) as aphrodite_model:
         aphrodite_outputs_tp_1 = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
-    with aphrodite_runner(model, tensor_parallel_size=2, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
+    with aphrodite_runner(
+        model,
+        tensor_parallel_size=2,
+        max_num_seqs=MAX_NUM_SEQS,
+        enable_chunked_prefill=True,
+    ) as aphrodite_model:
         aphrodite_outputs_tp_2 = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
     check_logprobs_close(
@@ -312,7 +316,12 @@ def test_full_cuda_graph(
     with hf_runner(model) as hf_model:
         hf_outputs = hf_model.generate_greedy_logprobs_limit(example_prompts, max_tokens, num_logprobs)
 
-    with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS, attention_backend=ATTN_BACKEND) as aphrodite_model:
+    with aphrodite_runner(
+        model,
+        max_num_seqs=MAX_NUM_SEQS,
+        attention_backend=ATTN_BACKEND,
+        enable_chunked_prefill=True,
+    ) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
     check_logprobs_close(
@@ -353,6 +362,7 @@ def test_fp32_cache_state(
         model,
         max_num_seqs=MAX_NUM_SEQS,
         gpu_memory_utilization=0.9,
+        enable_chunked_prefill=True,
         **{cache_dtype_param: "float32"},
     ) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)

@@ -246,8 +246,7 @@ class ApertusDecoderLayer(nn.Module):
 
         # Apertus defaults to causal attention as it is a decoder-only model.
         # You can override the HF config with `is_causal=False` to enable
-        # bidirectional attention, which is used in some embedding models
-        # (e.g. parasail-ai/GritLM-7B-aphrodite)
+        # bidirectional attention, which is used in some embedding models.
         if getattr(config, "is_causal", True):
             attn_type = AttentionType.DECODER
         else:
@@ -460,8 +459,5 @@ class ApertusForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle, Sup
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)

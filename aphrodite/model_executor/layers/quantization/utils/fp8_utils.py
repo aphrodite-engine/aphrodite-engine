@@ -14,6 +14,7 @@ import aphrodite.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+    amax_for_moe_activation_quant,
     get_fp8_min_max,
 )
 from aphrodite.model_executor.layers.quantization.utils.w8a8_utils import (
@@ -37,11 +38,31 @@ from aphrodite.utils.platform_utils import get_device_name_as_file_name
 
 logger = init_logger(__name__)
 
+# Pre-fill value for scale parameters whose shards load independently. The
+# shards are combined with .max(), so an unloaded shard must never win; the
+# smallest representable float32 guarantees that.
+FP8_SCALE_SENTINEL = torch.finfo(torch.float32).min
+
 
 def is_fp8(x: torch.dtype | torch.Tensor) -> bool:
     if isinstance(x, torch.Tensor):
         x = x.dtype
     return x == torch.float8_e4m3fn or x == torch.float8_e4m3fnuz
+
+
+def get_fp8_block_weight_scale(layer: torch.nn.Module) -> torch.Tensor | None:
+    """Return the block-FP8 weight scale for supported quant methods."""
+    # Local import avoids a circular import: quark_w8a8_fp8 imports this module.
+    from aphrodite.model_executor.layers.quantization.quark.schemes.quark_w8a8_fp8 import (
+        QuarkW8A8Fp8PerBlock,
+    )
+
+    if isinstance(
+        getattr(layer, "scheme", None),
+        QuarkW8A8Fp8PerBlock,
+    ):
+        return getattr(layer, "weight_scale", None)
+    return getattr(layer, "weight_scale_inv", None)
 
 
 def input_to_float8(x: torch.Tensor, dtype: torch.dtype | None = None) -> tuple[torch.Tensor, torch.Tensor]:
@@ -839,9 +860,13 @@ def w8a8_triton_block_scaled_mm(
         torch.Tensor: The result of matmul.
     """
 
-    from aphrodite.platforms.rocm import on_gfx1250
+    _on_gfx1250 = False
+    if current_platform.is_rocm():
+        from aphrodite.platforms.rocm import on_gfx1250
 
-    if on_gfx1250():
+        _on_gfx1250 = on_gfx1250()
+
+    if _on_gfx1250:
         # Torch upcast reference: dequantize A,B to fp32 and matmul in fp32.
         # Avoids the gfx1250 native-fp8 block GEMM NaN bug. Correct but slow.
         _bn, _bk = block_size[0], block_size[1]
@@ -1360,6 +1385,7 @@ def process_fp8_weight_tensor_strategy_moe(
 def process_fp8_input_tensor_strategy_moe(
     w13_input_scale: torch.Tensor,
     w2_input_scale: torch.Tensor,
+    enable_eplb: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Process moe input scales for tensor-wise quantization strategy."""
 
@@ -1368,4 +1394,7 @@ def process_fp8_input_tensor_strategy_moe(
             "Found input_scales that are not equal for fp8 MoE layer. Using the maximum across experts for each layer."
         )
 
-    return w13_input_scale.max(), w2_input_scale.max()
+    return (
+        amax_for_moe_activation_quant(w13_input_scale, enable_eplb),
+        amax_for_moe_activation_quant(w2_input_scale, enable_eplb),
+    )

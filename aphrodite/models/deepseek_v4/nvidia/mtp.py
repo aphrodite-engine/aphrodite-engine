@@ -18,11 +18,13 @@ import regex as re
 import torch
 import torch.nn as nn
 
+import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
+from aphrodite.forward_context import get_forward_context, is_forward_context_available
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.kernels.mhc.tilelang import (
     hc_head_fused_kernel_tilelang,
@@ -44,6 +46,11 @@ from aphrodite.model_executor.model_loader.weight_utils import default_weight_lo
 from aphrodite.model_executor.models.deepseek_mtp import SharedHead
 from aphrodite.model_executor.models.deepseek_v2 import get_spec_layer_idx_from_weight_name
 from aphrodite.model_executor.models.utils import maybe_prefix
+from aphrodite.models.common.ops.sequence_parallel import (
+    sp_all_gather,
+    sp_padding_mask,
+    sp_shard,
+)
 from aphrodite.models.deepseek_v4.common.ops import (
     fused_mtp_input_rmsnorm,
     mtp_shared_head_rmsnorm,
@@ -54,6 +61,7 @@ from .model import (
     DeepseekV4DecoderLayer,
     DeepseekV4Model,
     _select_dsv4_attn_cls,
+    _use_sequence_parallel,
     make_deepseek_v4_expert_params_mapping,
 )
 
@@ -157,11 +165,19 @@ class DeepSeekV4MultiTokenPredictorLayer(nn.Module):
             self.enorm.variance_epsilon,
             self.hc_mult,
         )
+        if self.mtp_block.use_sequence_parallel:
+            if envs.APHRODITE_MOE_SKIP_PADDING and is_forward_context_available():
+                forward_context = get_forward_context()
+                forward_context.is_padding = sp_padding_mask(forward_context.is_padding, inputs_embeds)
+            inputs_embeds = sp_shard(inputs_embeds)
+            previous_hidden_states = sp_shard(previous_hidden_states)
         hidden_states = self.h_proj(previous_hidden_states) + self.e_proj(inputs_embeds).unsqueeze(-2)
         hidden_states, residual, post_mix, res_mix = self.mtp_block(
-            positions=positions, x=hidden_states, input_ids=None
+            positions=positions, x=hidden_states, input_ids=input_ids
         )
         hidden_states = mhc_post_tilelang(hidden_states, residual, post_mix, res_mix)
+        if self.mtp_block.use_sequence_parallel:
+            hidden_states = sp_all_gather(hidden_states)[: positions.shape[0]]
         # Return the flat pre-hc_head residual so it can be re-fed as the
         # next spec step's `previous_hidden_states` when
         # num_speculative_tokens > 1. hc_head is deferred to compute_logits.
@@ -270,10 +286,9 @@ class DeepSeekV4MTP(nn.Module):
         super().__init__()
         self.config = aphrodite_config.model_config.hf_config
         self.quant_config = aphrodite_config.quant_config
-        self.pad_shared_expert = (
-            getattr(self.quant_config, "weight_block_size", None) is not None
-            and not aphrodite_config.parallel_config.use_sequence_parallel_moe
-        )
+        self.pad_shared_expert = getattr(
+            self.quant_config, "weight_block_size", None
+        ) is not None and not _use_sequence_parallel(aphrodite_config)
         self.model = DeepSeekV4MultiTokenPredictor(
             aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
         )
@@ -470,13 +485,16 @@ class DeepSeekV4MTP(nn.Module):
                     f"Use a checkpoint that includes MTP layer weights, "
                     f"or disable speculative decoding."
                 )
-        self.finalize_mega_moe_weights()
+        self.process_weights_after_loading()
         logger.info_once("MTP draft model loaded: %d params", len(loaded_params))
         return loaded_params
 
     def finalize_mega_moe_weights(self) -> None:
         for layer in self.model.layers.values():
             layer.mtp_block.ffn.finalize_mega_moe_weights()
+
+    def process_weights_after_loading(self) -> None:
+        self.finalize_mega_moe_weights()
 
     def _rewrite_spec_layer_name(self, spec_layer: int, name: str) -> str:
         """

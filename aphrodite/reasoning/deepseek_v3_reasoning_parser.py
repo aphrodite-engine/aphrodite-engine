@@ -12,8 +12,8 @@ from aphrodite.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1Reasoning
 from .identity_reasoning_parser import IdentityReasoningParser
 
 if TYPE_CHECKING:
+    from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
     from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-    from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
     from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 
 

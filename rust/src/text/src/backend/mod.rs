@@ -3,11 +3,55 @@
 
 pub mod hf;
 
+use std::fmt;
+use std::str::FromStr;
 use std::sync::Arc;
 
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use aphrodite_tokenizer::DynTokenizer;
 
 use crate::error::Result;
+
+/// Select which sampling defaults to inherit from generation config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, DeserializeFromStr, SerializeDisplay)]
+pub enum GenerationConfigMode {
+    /// Inherit sampling defaults from the model's generation config.
+    #[default]
+    Auto,
+    /// Use Aphrodite's neutral sampling defaults.
+    Aphrodite,
+}
+
+impl GenerationConfigMode {
+    pub const AUTO_LITERAL: &str = "auto";
+    pub const APHRODITE_LITERAL: &str = "aphrodite";
+}
+
+impl FromStr for GenerationConfigMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        if value.eq_ignore_ascii_case(Self::AUTO_LITERAL) {
+            Ok(Self::Auto)
+        } else if value.eq_ignore_ascii_case(Self::APHRODITE_LITERAL) {
+            Ok(Self::Aphrodite)
+        } else {
+            Err(format!(
+                "generation config source `{value}` is not implemented yet \
+                 (expected one of: auto, aphrodite)"
+            ))
+        }
+    }
+}
+
+impl fmt::Display for GenerationConfigMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Auto => f.write_str(Self::AUTO_LITERAL),
+            Self::Aphrodite => f.write_str(Self::APHRODITE_LITERAL),
+        }
+    }
+}
 
 /// Tokenizer/model-derived defaults used to enrich text-generation requests
 /// before they are lowered into engine-core.

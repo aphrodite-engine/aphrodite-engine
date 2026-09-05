@@ -22,6 +22,10 @@ from aphrodite.utils.network_utils import get_open_port
 from aphrodite.utils.torch_utils import set_random_seed
 from tests.utils import ensure_current_aphrodite_config, multi_gpu_test
 
+# The tensor-parallel cases build their distributed environment inside processes
+# spawned by torch.multiprocessing.spawn, so this process never has one to tear down.
+pytestmark = pytest.mark.skip_global_cleanup
+
 
 @pytest.fixture(autouse=True)
 def reset_device(reset_default_device):

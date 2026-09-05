@@ -4,7 +4,6 @@ import os
 
 import pytest
 
-from aphrodite.platforms import current_platform
 from tests.models.language.pooling_mteb_test.mteb_score_utils import (
     MTEB_RERANK_LANGS,
     MTEB_RERANK_TASKS,
@@ -24,10 +23,6 @@ st_main_score = 0.33457
 @pytest.fixture(scope="module")
 def server():
     args = ["--runner", "pooling", "--enforce-eager", "--disable-uvicorn-access-log"]
-
-    # ROCm: Use Flex Attention to support encoder-only self-attention.
-    if current_platform.is_rocm():
-        args.extend(["--attention-backend", "FLEX_ATTENTION"])
 
     with RemoteOpenAIServer(MODEL_NAME, args) as remote_server:
         yield remote_server

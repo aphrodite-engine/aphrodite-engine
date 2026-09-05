@@ -22,6 +22,9 @@ from aphrodite.utils.network_utils import (
 from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
 from aphrodite.v1.engine import ReconfigureDistributedRequest, ReconfigureRankType
 from aphrodite.v1.executor.abstract import Executor
+from aphrodite.v1.executor.ray_env_utils import (
+    update_runtime_env_for_worker_import,
+)
 from aphrodite.v1.executor.ray_utils import (
     WORKER_SPECIFIC_ENV_VARS,
     FutureWrapper,
@@ -89,6 +92,16 @@ class RayDistributedExecutor(Executor):
         # KV connector setup
         self.has_connector = self.aphrodite_config.kv_transfer_config is not None
 
+        if self.aphrodite_config.ec_transfer_config is not None and self.parallel_config.world_size > 1:
+            raise NotImplementedError(
+                "EC connector worker metadata is not supported with the "
+                "legacy Ray executor when world_size > 1: only the output "
+                "of a single worker is fetched, silently dropping the "
+                "other workers' EC connector state. Set "
+                "APHRODITE_USE_RAY_V2_EXECUTOR_BACKEND=1 to use RayExecutorV2, "
+                "or use the multiprocessing executor instead."
+            )
+
         self.uses_sampler = self.aphrodite_config.model_config.runner_type != "pooling" and (
             self.aphrodite_config.ec_transfer_config is None or self.aphrodite_config.ec_transfer_config.is_ec_consumer
         )
@@ -131,6 +144,7 @@ class RayDistributedExecutor(Executor):
         runtime_env = ray_remote_kwargs.setdefault("runtime_env", {})
         env_vars = runtime_env.setdefault("env_vars", {})
         env_vars.update({env_var: "1" for env_var in current_platform.ray_noset_device_env_vars})
+        update_runtime_env_for_worker_import(runtime_env)
         return ray_remote_kwargs
 
     # child class could overwrite this to return actual env vars.

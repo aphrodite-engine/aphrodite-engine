@@ -3,9 +3,11 @@
 """Pydantic models for Anthropic API protocol"""
 
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+import aphrodite.envs as envs
 
 
 class AnthropicError(BaseModel):
@@ -93,6 +95,7 @@ class AnthropicToolChoice(BaseModel):
 
     type: Literal["auto", "any", "tool", "none"]
     name: str | None = None
+    disable_parallel_tool_use: bool | None = None
 
     @model_validator(mode="after")
     def validate_name_required_for_tool(self) -> "AnthropicToolChoice":
@@ -123,7 +126,7 @@ class AnthropicMessagesRequest(BaseModel):
     max_tokens: int
     metadata: dict[str, Any] | None = None
     output_config: AnthropicOutputConfig | None = None
-    stop_sequences: list[str] | None = None
+    stop_sequences: Annotated[list[str], Field(max_length=envs.APHRODITE_MAX_STOP_STRINGS)] | None = None
     stream: bool | None = False
     system: str | list[AnthropicContentBlock] | None = None
     temperature: float | None = None
@@ -133,6 +136,19 @@ class AnthropicMessagesRequest(BaseModel):
     top_p: float | None = None
 
     # Aphrodite-specific fields that are not in Anthropic spec
+    cache_salt: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1024,
+        description=(
+            "If specified, the prefix cache will be salted with the provided "
+            "string to prevent an attacker to guess prompts in multi-user "
+            "environments. The salt should be random, protected from "
+            "access by 3rd parties, and long enough to be "
+            "unpredictable (e.g., 43 characters base64-encoded, corresponding "
+            "to 256 bit)."
+        ),
+    )
     kv_transfer_params: dict[str, Any] | None = Field(
         default=None,
         description="KVTransfer parameters used for disaggregated serving.",
@@ -140,6 +156,12 @@ class AnthropicMessagesRequest(BaseModel):
     ec_transfer_params: dict[str, Any] | None = Field(
         default=None,
         description="ECTransfer parameters used for encoder-cache disaggregated serving.",
+    )
+    aphrodite_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
+        default=None,
+        description=(
+            "Additional request parameters with (list of) string or numeric values, used by custom extensions."
+        ),
     )
     chat_template_kwargs: dict[str, Any] | None = Field(
         default=None,

@@ -9,7 +9,6 @@ from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.model_loader.base_loader import BaseModelLoader
-from aphrodite.model_executor.model_loader.bitsandbytes_loader import BitsAndBytesModelLoader
 from aphrodite.model_executor.model_loader.default_loader import DefaultModelLoader
 from aphrodite.model_executor.model_loader.dummy_loader import DummyModelLoader
 from aphrodite.model_executor.model_loader.modelexpress_loader import (
@@ -25,6 +24,7 @@ from aphrodite.model_executor.model_loader.utils import (
     get_model_architecture,
     get_model_cls,
 )
+from aphrodite.model_executor.model_loader.weight_cache.ipc_loader import IpcModelLoader
 
 logger = init_logger(__name__)
 
@@ -32,11 +32,12 @@ logger = init_logger(__name__)
 # if a new load format is added here
 LoadFormats = Literal[
     "auto",
-    "hf",
     "bitsandbytes",
+    "hf",
     "dummy",
     "fastsafetensors",
     "instanttensor",
+    "ipc_cache",
     "mistral",
     "modelexpress",
     "npcache",
@@ -50,10 +51,10 @@ LoadFormats = Literal[
 _LOAD_FORMAT_TO_MODEL_LOADER: dict[str, type[BaseModelLoader]] = {
     "auto": DefaultModelLoader,
     "hf": DefaultModelLoader,
-    "bitsandbytes": BitsAndBytesModelLoader,
     "dummy": DummyModelLoader,
     "fastsafetensors": DefaultModelLoader,
     "instanttensor": DefaultModelLoader,
+    "ipc_cache": IpcModelLoader,
     "mistral": DefaultModelLoader,
     "modelexpress": ModelExpressModelLoader,
     "npcache": DefaultModelLoader,
@@ -119,6 +120,10 @@ def register_model_loader(load_format: str):
 def get_model_loader(load_config: LoadConfig) -> BaseModelLoader:
     """Get a model loader based on the load format."""
     load_format = load_config.load_format
+    if load_format == "bitsandbytes" and load_format not in _LOAD_FORMAT_TO_MODEL_LOADER:
+        from aphrodite.model_executor.model_loader.bitsandbytes_loader import BitsAndBytesModelLoader
+
+        return BitsAndBytesModelLoader(load_config)
     if load_format not in _LOAD_FORMAT_TO_MODEL_LOADER:
         raise ValueError(f"Load format `{load_format}` is not supported")
     return _LOAD_FORMAT_TO_MODEL_LOADER[load_format](load_config)
@@ -145,10 +150,10 @@ __all__ = [
     "get_model_cls",
     "register_model_loader",
     "BaseModelLoader",
-    "BitsAndBytesModelLoader",
     "ModelExpressModelLoader",
     "DefaultModelLoader",
     "DummyModelLoader",
+    "IpcModelLoader",
     "RunaiModelStreamerLoader",
     "ShardedStateLoader",
     "TensorizerLoader",

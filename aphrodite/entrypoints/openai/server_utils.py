@@ -20,14 +20,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from aphrodite import envs
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.launcher import terminate_if_errored
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorInfo,
-    ErrorResponse,
-    GenerationError,
-)
+from aphrodite.entrypoints.launchers.launcher import terminate_if_errored
+from aphrodite.entrypoints.serve.engine.protocol import ErrorInfo, ErrorResponse
 from aphrodite.entrypoints.utils import create_error_response, sanitize_message
-from aphrodite.exceptions import APHRODITEValidationError
+from aphrodite.exceptions import APHRODITEValidationError, GenerationError
 from aphrodite.logger import init_logger
 from aphrodite.utils.gc_utils import freeze_gc_heap
 from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError

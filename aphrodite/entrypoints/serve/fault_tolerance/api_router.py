@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException,
 from fastapi.responses import JSONResponse
 
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.api_utils import validate_json_request
 from aphrodite.logger import init_logger
 from aphrodite.v1.fault_tolerance.utils import FaultToleranceRequest

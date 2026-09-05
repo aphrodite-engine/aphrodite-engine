@@ -11,6 +11,7 @@ import pytest_asyncio
 import requests
 from fastapi import Request
 
+from aphrodite import envs
 from aphrodite.v1.engine.exceptions import EngineDeadError
 from aphrodite.version import __version__ as APHRODITE_VERSION
 from tests.utils import RemoteOpenAIServer
@@ -83,8 +84,10 @@ async def test_show_version(server: RemoteOpenAIServer):
     response = requests.get(server.url_for("version"))
     response.raise_for_status()
 
-    # Tolerate additive fields (e.g. the Rust frontend reports its own version).
-    assert response.json()["version"] == APHRODITE_VERSION
+    payload = response.json()
+    assert payload["version"] == APHRODITE_VERSION
+    if envs.APHRODITE_USE_RUST_FRONTEND:
+        assert payload["rust_frontend_version"] == APHRODITE_VERSION
 
 
 @pytest.mark.asyncio

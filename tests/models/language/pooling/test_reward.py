@@ -96,6 +96,7 @@ def test_prm_models(
     hf_runner,
     aphrodite_runner,
     math_step_prompts,
+    monkeypatch,
     model: str,
     dtype: str,
 ) -> None:
@@ -105,12 +106,14 @@ def test_prm_models(
     if current_platform.is_cpu():
         pytest.skip("CPU only supports V1")
 
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
     with aphrodite_runner(
         model,
         max_model_len=1024,
         dtype=dtype,
         kv_cache_memory_bytes=64 * MiB_bytes,
     ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner
         aphrodite_outputs = aphrodite_model.token_classify(math_step_prompts)
 
     with hf_runner(model, dtype=dtype, auto_cls=AutoModel) as hf_model:
@@ -143,18 +146,22 @@ def test_prm_models(
 def test_prm_models_with_golden_outputs(
     aphrodite_runner,
     math_step_prompts,
+    monkeypatch,
     model: str,
     dtype: str,
 ) -> None:
     if not FIXTURE_REWARD_RESULT.get(model):
         pytest.skip(f"No available golden outputs for {model}.")
 
+    use_v2_model_runner = not current_platform.is_cpu()
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1" if use_v2_model_runner else "0")
     with aphrodite_runner(
         model,
         max_model_len=1024,
         dtype=dtype,
         kv_cache_memory_bytes=64 * MiB_bytes,
     ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner is use_v2_model_runner
         aphrodite_outputs = aphrodite_model.token_classify(math_step_prompts)
 
     golden_outputs = load_reward_outputs(FIXTURE_REWARD_RESULT[model])

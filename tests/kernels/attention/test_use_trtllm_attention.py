@@ -104,6 +104,18 @@ def test_supports_sm90_decode_only(_art, _family, _cap):
 
 
 @patch("aphrodite.envs.APHRODITE_BATCH_INVARIANT", False)
+@patch("aphrodite.utils.flashinfer.current_platform.is_device_capability", return_value=False)
+@patch(
+    "aphrodite.utils.flashinfer.current_platform.is_device_capability_family",
+    side_effect=lambda capability: capability == 120,
+)
+@patch("aphrodite.utils.flashinfer.has_nvidia_artifactory", return_value=True)
+def test_supports_sm12x_decode_only(_art, _family, _cap):
+    assert supports_trtllm_attention(is_prefill=False) is True
+    assert supports_trtllm_attention(is_prefill=True) is False
+
+
+@patch("aphrodite.envs.APHRODITE_BATCH_INVARIANT", False)
 @patch(
     "aphrodite.utils.flashinfer.current_platform.is_device_capability_family",
     return_value=True,

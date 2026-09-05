@@ -10,7 +10,7 @@ import torch.nn as nn
 from transformers import BatchFeature, LlavaNextVideoConfig, LlavaNextVideoProcessor
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.multimodal import BaseDummyOptions, VideoDummyOptions
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.model_executor.layers.activation import get_act_fn
 from aphrodite.model_executor.models.clip import CLIPVisionModel
@@ -177,6 +177,7 @@ class LlavaNextVideoDummyInputsBuilder(BaseDummyInputsBuilder[LlavaNextVideoProc
         target_num_frames = self.info.get_num_frames_with_most_features(seq_len, mm_counts)
 
         video_overrides = mm_options.get("video")
+        assert video_overrides is None or isinstance(video_overrides, VideoDummyOptions)
 
         return {
             "video": self._get_dummy_videos(
@@ -212,6 +213,7 @@ class LlavaNextVideoMultiModalProcessor(BaseMultiModalProcessor[LlavaNextVideoPr
             if isinstance(videos, VideoEmbeddingItems):
                 num_video_tokens = videos.get_feature_size(item_idx)
             else:
+                assert isinstance(videos, VideoProcessorItems)
                 image_size = videos.get_frame_size(item_idx)
                 num_video_tokens = self.info.get_num_video_tokens(
                     image_width=image_size.width,
@@ -307,6 +309,8 @@ class LlavaNextVideoForConditionalGeneration(
             "lm_head.": "language_model.lm_head.",
         }
     )
+
+    supports_tower_connector_lora = True
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:

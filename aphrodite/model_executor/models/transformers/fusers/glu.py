@@ -12,10 +12,7 @@ from torch import fx, nn
 from transformers.activations import ACT2CLS
 
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.activation import (
-    _ACTIVATION_AND_MUL_REGISTRY,
-    get_act_and_mul_fn,
-)
+from aphrodite.model_executor.layers.activation import _ACTIVATION_AND_MUL_REGISTRY
 from aphrodite.model_executor.layers.linear import MergedColumnParallelLinear
 from aphrodite.model_executor.models.transformers.fusers.base import StackedFuser
 from aphrodite.model_executor.models.transformers.fx_utils import (
@@ -27,6 +24,7 @@ from aphrodite.model_executor.models.transformers.fx_utils import (
     replace_expr,
     single_self_call,
 )
+from aphrodite.model_executor.models.transformers.layers import get_act_and_mul_fn
 from aphrodite.model_executor.models.transformers.utils import (
     log_replacement,
     replace_linear_class,

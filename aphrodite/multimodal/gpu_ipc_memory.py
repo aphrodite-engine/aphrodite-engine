@@ -188,11 +188,13 @@ def reserve_mm_ipc_gpu_memory(
         return available_kv_cache_memory_bytes
 
     from aphrodite import envs
-    from aphrodite.multimodal.video import (
-        PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES,
-        PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES,
+    from aphrodite.multimodal.video_decoders import (
         PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
         PYNVVIDEOCODEC_VIDEO_BACKEND,
+    )
+    from aphrodite.multimodal.video_decoders.pynvvideocodec import (
+        PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES,
+        PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES,
         validate_pynvvideocodec_hw_decoders,
     )
 

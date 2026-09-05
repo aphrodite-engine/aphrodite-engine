@@ -20,7 +20,7 @@ from aphrodite.lora.layers.row_parallel_linear import (
     RowParallelLinearWithShardedLoRA,
 )
 from aphrodite.lora.layers.utils import LoRAMapping, LoRAMappingType
-from aphrodite.lora.layers.vocal_parallel_embedding import VocabParallelEmbeddingWithLoRA
+from aphrodite.lora.layers.vocab_parallel_embedding import VocabParallelEmbeddingWithLoRA
 
 __all__ = [
     "BaseLayerWithLoRA",

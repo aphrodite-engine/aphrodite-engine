@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from aphrodite.entrypoints.openai.engine.protocol import FunctionCall, ToolCall
+from aphrodite.entrypoints.generate.base.protocol import FunctionCall, ToolCall
 from aphrodite.tool_parsers import ToolParser, ToolParserManager
 from tests.tool_parsers.utils import (
     run_tool_extraction,

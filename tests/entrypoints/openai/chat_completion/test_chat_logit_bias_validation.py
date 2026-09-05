@@ -27,6 +27,12 @@ def server():
         "bfloat16",
         "--max-model-len",
         "1024",
+        "--kv-cache-memory-bytes",
+        "1073741824",
+        "--max-num-seqs",
+        "2",
+        "--max-num-batched-tokens",
+        "512",
         "--enforce-eager",
     ]
 

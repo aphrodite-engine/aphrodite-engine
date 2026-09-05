@@ -17,6 +17,7 @@
 # limitations under the License.
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -35,7 +36,7 @@ from aphrodite.model_executor.layers.vocab_parallel_embedding import (
 from aphrodite.model_executor.models.llama4 import Llama4DecoderLayer, Llama4ForCausalLM
 from aphrodite.model_executor.models.utils import extract_layer_index
 
-from .interfaces import SupportsMultiModal
+from .interfaces import SupportsMultiModal, SupportsMultiModalEmbeddings
 from .utils import (
     AutoWeightsLoader,
     WeightsMapper,
@@ -44,6 +45,17 @@ from .utils import (
 )
 
 logger = init_logger(__name__)
+
+
+if TYPE_CHECKING:
+
+    class _EagleLlama4ForCausalLMBase(nn.Module):
+        def set_moe_parameters(self) -> None: ...
+
+        def permute_qk_weight_for_rotary(self, name: str, loaded_weight: torch.Tensor) -> tuple[str, torch.Tensor]: ...
+
+else:
+    _EagleLlama4ForCausalLMBase = Llama4ForCausalLM
 
 
 @support_torch_compile
@@ -68,7 +80,9 @@ class LlamaModel(nn.Module):
         quant_config: QuantizationConfig | None = None,
     ) -> None:
         super().__init__()
-        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        self.config = speculative_config.draft_model_config.hf_config
         self.validate_and_update_config(start_layer_id, quant_config)
         self.vocab_size = self.config.vocab_size
         self.embed_tokens = VocabParallelEmbedding(
@@ -146,14 +160,16 @@ class LlamaModel(nn.Module):
             }
 
 
-class EagleLlama4ForCausalLM(Llama4ForCausalLM):
+class EagleLlama4ForCausalLM(_EagleLlama4ForCausalLMBase, SupportsMultiModalEmbeddings):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         nn.Module.__init__(self)
-        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        self.config = speculative_config.draft_model_config.hf_config
         target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
         # draft model quantization config may differ from target model
         quant_config = AphroditeConfig.get_quantization_config(
-            aphrodite_config.speculative_config.draft_model_config, aphrodite_config.load_config
+            speculative_config.draft_model_config, aphrodite_config.load_config
         )
         self.model = LlamaModel(
             aphrodite_config=aphrodite_config,
@@ -196,9 +212,5 @@ class EagleLlama4ForCausalLM(Llama4ForCausalLM):
             process_eagle_weight(self, name)
             return name, weight
 
-        loader = AutoWeightsLoader(
-            self,
-            # lm_head is tied with target model (Llama4ForCausalLM)
-            skip_prefixes=([]),
-        )
+        loader = AutoWeightsLoader(self)
         loader.load_weights(map(transform, weights))

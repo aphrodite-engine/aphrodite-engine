@@ -5,6 +5,13 @@ import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 
+from aphrodite.entrypoints.generate.base.protocol import (
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    FunctionCall,
+    ToolCall,
+)
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -13,15 +20,8 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionStreamResponse,
     ChatMessage,
 )
-from aphrodite.entrypoints.openai.engine.protocol import (
-    DeltaFunctionCall,
-    DeltaMessage,
-    DeltaToolCall,
-    FunctionCall,
-    ToolCall,
-    UsageInfo,
-)
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
+from aphrodite.entrypoints.serve.engine.protocol import UsageInfo
 from aphrodite.parser.abstract_parser import DelegatingParser
 
 pytestmark = pytest.mark.skip_global_cleanup

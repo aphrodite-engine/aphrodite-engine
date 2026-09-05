@@ -6,12 +6,12 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.kobold.protocol import (
     KAIGenerationInputSchema,
     KAITokenizeRequest,
 )
 from aphrodite.entrypoints.openai.kobold.serving import OpenAIServingKobold
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.api_utils import validate_json_request
 from aphrodite.entrypoints.utils import create_error_response
 

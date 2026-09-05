@@ -7,8 +7,6 @@ import torch
 import torch.nn.functional as F
 
 from aphrodite import LLM, EmbeddingRequestOutput, PoolingParams
-from aphrodite.distributed import cleanup_dist_env_and_memory
-from aphrodite.platforms import current_platform
 from aphrodite.tasks import PoolingTask
 
 MODEL_NAME = "intfloat/multilingual-e5-small"
@@ -19,30 +17,21 @@ embedding_size = 384
 
 
 @pytest.fixture(scope="module")
-def llm():
-    # ROCm: Use FLEX_ATTENTION backend as it's the only attention backend
-    # that supports encoder-only models on ROCm.
-    attention_config = None
-    if current_platform.is_rocm():
-        attention_config = {"backend": "FLEX_ATTENTION"}
-
-    # pytest caches the fixture so we use weakref.proxy to
-    # enable garbage collection
-    llm = LLM(
-        model=MODEL_NAME,
+def llm(aphrodite_runner):
+    with aphrodite_runner(
+        MODEL_NAME,
+        max_model_len=None,
         max_num_batched_tokens=32768,
         tensor_parallel_size=1,
         gpu_memory_utilization=0.75,
         enforce_eager=True,
         seed=0,
-        attention_config=attention_config,
-    )
-    assert embedding_size == llm.model_config.embedding_size
-
-    yield weakref.proxy(llm)
-
-    del llm
-    cleanup_dist_env_and_memory()
+        enable_chunked_prefill=None,
+    ) as runner:
+        assert embedding_size == runner.llm.model_config.embedding_size
+        # pytest caches yielded fixtures until after teardown, so use a proxy to
+        # avoid retaining the LLM while AphroditeRunner.__exit__ releases ROCm memory.
+        yield weakref.proxy(runner.llm)
 
 
 @pytest.mark.skip_global_cleanup

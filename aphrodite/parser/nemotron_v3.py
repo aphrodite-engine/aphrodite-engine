@@ -16,13 +16,13 @@ import dataclasses
 import functools
 from typing import TYPE_CHECKING
 
-from aphrodite.parser.qwen3 import Qwen3Parser, qwen3_config
+from aphrodite.parser.qwen3 import CHATML_TURN_BOUNDARIES, Qwen3Parser, qwen3_config
 
 if TYPE_CHECKING:
+    from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
     from aphrodite.entrypoints.openai.chat_completion.protocol import (
         ChatCompletionRequest,
     )
-    from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
     from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
     from aphrodite.parser.engine.parser_engine import SemanticEvent
     from aphrodite.parser.engine.parser_engine_config import ParserEngineConfig
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 @functools.cache
 def nemotron_v3_config(thinking: bool = True) -> ParserEngineConfig:
     return dataclasses.replace(
-        qwen3_config(thinking=thinking),
+        qwen3_config(thinking=thinking, turn_boundary_tokens=CHATML_TURN_BOUNDARIES),
         name="nemotron_v3",
         strip_trailing_reasoning_whitespace=True,
     )

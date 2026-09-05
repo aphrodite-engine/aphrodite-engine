@@ -34,9 +34,7 @@ from aphrodite.model_executor.models.utils import (
     make_empty_intermediate_tensors_factory,
     make_layers,
 )
-from aphrodite.models.common.ops.fused_allreduce_rms_norm import (
-    fused_allreduce_rms_norm,
-)
+from aphrodite.models.common.ops.fused_allreduce_rms_norm import fused_allreduce_rms_norm
 from aphrodite.sequence import IntermediateTensors
 
 from .rocm import DeepseekV32MLAAttention

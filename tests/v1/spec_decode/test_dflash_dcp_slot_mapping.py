@@ -40,11 +40,12 @@ def _ref_slots(
     block_offsets = positions % virtual_block
     block_ids = block_row[block_indices].long()
     if cp_size == 1:
-        return block_ids * BLOCK_SIZE + block_offsets
+        slots = block_ids * BLOCK_SIZE + block_offsets
+        return torch.where(block_ids != 0, slots, torch.full_like(slots, PAD_SLOT_ID))
     is_local = (block_offsets // cp_interleave) % cp_size == cp_rank
     local_offsets = block_offsets // (cp_interleave * cp_size) * cp_interleave + block_offsets % cp_interleave
     slots = block_ids * BLOCK_SIZE + local_offsets
-    return torch.where(is_local, slots, torch.full_like(slots, PAD_SLOT_ID))
+    return torch.where(is_local & (block_ids != 0), slots, torch.full_like(slots, PAD_SLOT_ID))
 
 
 def _run_prepare(cp_size: int, cp_rank: int, cp_interleave: int):
@@ -153,6 +154,10 @@ def test_dflash_slot_mapping_matches_dcp_layout(cp_size: int, cp_interleave: int
                 cp_rank,
                 cp_interleave,
             )
+            num_valid = len(context_positions) - int(result.num_rejected[req])
+            expected_context_slots[num_valid:] = PAD_SLOT_ID
+            expected_context_positions = context_positions.clone()
+            expected_context_positions[num_valid:] = 0
             torch.testing.assert_close(
                 result.context_slot_mapping[start:end],
                 expected_context_slots,
@@ -161,7 +166,7 @@ def test_dflash_slot_mapping_matches_dcp_layout(cp_size: int, cp_interleave: int
             )
             torch.testing.assert_close(
                 result.output_context_positions[start:end],
-                context_positions,
+                expected_context_positions,
                 rtol=0,
                 atol=0,
             )
@@ -190,6 +195,13 @@ def test_dflash_slot_mapping_matches_dcp_layout(cp_size: int, cp_interleave: int
 @pytest.mark.parametrize("cp_size,cp_interleave", [(2, 1), (4, 1), (4, 8)])
 def test_dflash_context_slots_partition_across_dcp(cp_size: int, cp_interleave: int):
     per_rank = [_run_prepare(cp_size, rank, cp_interleave) for rank in range(cp_size)]
-    for token_idx in range(per_rank[0].num_tokens):
-        owners = sum(int(result.context_slot_mapping[token_idx] != PAD_SLOT_ID) for result in per_rank)
-        assert owners == 1
+    first = per_rank[0]
+    for req, positions in enumerate(first.context_positions):
+        start = int(first.query_start_loc[req])
+        num_valid = len(positions) - int(first.num_rejected[req])
+        for offset, position in enumerate(positions):
+            token_idx = start + offset
+            block_idx = int(position) // (BLOCK_SIZE * cp_size)
+            resident = int(first.block_table[req, block_idx]) != 0
+            owners = sum(int(result.context_slot_mapping[token_idx] != PAD_SLOT_ID) for result in per_rank)
+            assert owners == int(offset < num_valid and resident)

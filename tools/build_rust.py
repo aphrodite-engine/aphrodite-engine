@@ -11,8 +11,23 @@ from pathlib import Path
 
 from setuptools import setup
 from setuptools_rust import Binding, RustExtension
+from setuptools_scm import get_version
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+APHRODITE_RS_BUILD_VERSION = "APHRODITE_RS_BUILD_VERSION"
+
+
+def prepare_build_environment() -> str | None:
+    """Set the device-independent Aphrodite source version for Rust artifacts."""
+    version = os.getenv(APHRODITE_RS_BUILD_VERSION) or None
+    if version is None:
+        try:
+            version = get_version(root=ROOT_DIR)
+        except LookupError:
+            return None
+
+    os.environ[APHRODITE_RS_BUILD_VERSION] = version
+    return version
 
 
 def rust_extensions(*, optional: bool = False) -> list[RustExtension]:
@@ -61,6 +76,7 @@ def build_binary(build_rust_args: list[str]) -> None:
 
 
 def main() -> None:
+    prepare_build_environment()
     build_binary(sys.argv[1:])
 
 

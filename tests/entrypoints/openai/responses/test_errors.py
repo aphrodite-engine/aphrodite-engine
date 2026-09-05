@@ -7,11 +7,9 @@ from unittest.mock import MagicMock
 import pytest
 
 import aphrodite.envs as envs
-from aphrodite.entrypoints.generate.base.serving import (
-    GenerateBaseServing,
-    GenerationError,
-)
+from aphrodite.entrypoints.generate.base.serving import GenerateBaseServing
 from aphrodite.envs import disable_envs_cache
+from aphrodite.exceptions import GenerationError
 
 
 @pytest.mark.asyncio

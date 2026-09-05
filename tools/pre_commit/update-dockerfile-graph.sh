@@ -33,6 +33,7 @@ if printf '%s\n' "${FILES[@]}" | grep -q "^docker/Dockerfile$"; then
     --dpi 200 \
     --max-label-length 50 \
     --filename docker/Dockerfile \
+    --concentrate \
     --legend
 
   if [ -f "./Dockerfile.png" ]; then

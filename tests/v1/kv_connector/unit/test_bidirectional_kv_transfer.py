@@ -83,8 +83,8 @@ def _make_p_node_turn2_request(request_id, block_size, num_tokens, num_remote_bl
 
 def _make_connector_with_fake_worker(hand_shake_latency=0, cycles_before_done=0, do_handshake=True):
     """Create a NixlConnector with FakeNixlConnectorWorker."""
-    aphrodite_config = create_aphrodite_config(kv_connector_extra_config=BIDIR_KV_EXTRA_CONFIG)
-    kv_cache_config = make_kv_cache_config(block_size=16, num_blocks=2)
+    aphrodite_config = create_aphrodite_config(kv_connector_extra_config=BIDIR_KV_EXTRA_CONFIG, block_size=32)
+    kv_cache_config = make_kv_cache_config(block_size=32, num_blocks=2)
     connector = NixlConnector(aphrodite_config, KVConnectorRole.WORKER, kv_cache_config)
     connector.connector_worker = FakeNixlConnectorWorker(
         aphrodite_config,
@@ -94,7 +94,7 @@ def _make_connector_with_fake_worker(hand_shake_latency=0, cycles_before_done=0,
     )
     worker = connector.connector_worker
     assert isinstance(worker.nixl_wrapper, FakeNixlWrapper)
-    worker.kv_cache_layout = "HND"
+    worker.kv_cache_layout = "LBHNC"
     if do_handshake:
         remote_agents, _ = worker._nixl_handshake(
             host="localhost",

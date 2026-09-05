@@ -30,9 +30,6 @@ from aphrodite.model_executor.layers.fused_moe.router.gate_linear import GateLin
 from aphrodite.model_executor.layers.fused_moe.router.grouped_topk_router import (
     fused_grouped_topk,
 )
-from aphrodite.model_executor.layers.fused_moe.runner.latent_moe_runner import (
-    LatentMoERunner,
-)
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
     MergedColumnParallelLinear,
@@ -65,12 +62,14 @@ from aphrodite.model_executor.models.interfaces import (
     EagleModelMixin,
     HasInnerState,
     IsHybrid,
+    MambaStateShapes,
     MixtureOfExperts,
     SupportsEagle3,
     SupportsEncoderCudaGraph,
     SupportsMultiModal,
     SupportsPP,
     SupportsQuant,
+    SupportsReplaySSM,
 )
 from aphrodite.model_executor.models.kimi_k25 import KimiK25MediaPixelInputs
 from aphrodite.model_executor.models.kimi_k25_vit import (
@@ -86,22 +85,29 @@ from aphrodite.model_executor.models.utils import (
     is_pp_missing_parameter,
     make_layers,
     maybe_prefix,
+    spec_decode_needs_target_embed,
 )
 from aphrodite.model_executor.models.vision import is_vit_use_data_parallel
-from aphrodite.models.deepseek_v4.nvidia.model import DeepseekV4MegaMoEExperts
-from aphrodite.models.deepseek_v4.nvidia.ops.prepare_megamoe import prepare_megamoe_inputs
-from aphrodite.models.kimi_k3.nvidia.kda import KimiK3DeltaAttention
-from aphrodite.models.kimi_k3.nvidia.low_latency_gemm import (
-    enable_kimi_k3_low_latency_gemm,
-)
-from aphrodite.models.kimi_k3.nvidia.mla import MultiHeadLatentAttention
-from aphrodite.models.kimi_k3.nvidia.ops import attn_res
-from aphrodite.models.kimi_k3.nvidia.ops.sequence_parallel import (
+from aphrodite.models.common.ops.sequence_parallel import (
     sp_all_gather,
     sp_padding_mask,
     sp_reduce_scatter,
     sp_shard,
 )
+from aphrodite.models.deepseek_v4.nvidia.model import (
+    DeepseekV4MegaMoEExperts,
+    DeepseekV4MLP,
+)
+from aphrodite.models.deepseek_v4.nvidia.ops.prepare_megamoe import prepare_megamoe_inputs
+from aphrodite.models.kimi_k3.nvidia.kda import KimiK3DeltaAttention
+from aphrodite.models.kimi_k3.nvidia.latent_moe_runner import (
+    LatentMoERunner,
+)
+from aphrodite.models.kimi_k3.nvidia.low_latency_gemm import (
+    enable_kimi_k3_low_latency_gemm,
+)
+from aphrodite.models.kimi_k3.nvidia.mla import MultiHeadLatentAttention
+from aphrodite.models.kimi_k3.nvidia.ops.attn_res import attn_res
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import NestedTensors
 from aphrodite.platforms import current_platform
@@ -129,7 +135,94 @@ logger = init_logger(__name__)
 _ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD = 256
 
 
+def shard_sequence_parallel_mlp(
+    hidden_size: int,
+    intermediate_size: int,
+    use_sequence_parallel: bool,
+    eligible: bool,
+) -> bool:
+    """Whether to TP-shard a sequence-parallel MLP instead of replicating it.
+
+    Opt-in via ``APHRODITE_KIMI_K3_SHARD_SP_SHARED_EXPERT``; see :class:`KimiMLP` for
+    the trade-off and :mod:`aphrodite.envs` for when it is worth enabling.
+    """
+    enabled = envs.APHRODITE_KIMI_K3_SHARD_SP_SHARED_EXPERT
+    if not (use_sequence_parallel and eligible and enabled):
+        return False
+    tp_size = get_tensor_model_parallel_world_size()
+    return tp_size > 1 and intermediate_size % tp_size == 0 and hidden_size % tp_size == 0
+
+
+def maybe_init_gemm_rs_ar(aphrodite_config: AphroditeConfig, use_sequence_parallel: bool) -> bool:
+    # Both feature flags may be enabled; the worker's static SP topology binds
+    # its singleton to exactly one mode.
+    all_reduce = not use_sequence_parallel
+    mode = "GEMM-AR" if all_reduce else "GEMM-RS"
+    enabled = envs.APHRODITE_KIMI_K3_GEMM_AR if all_reduce else envs.APHRODITE_KIMI_K3_GEMM_RS
+    if not enabled:
+        return False
+
+    parallel_config = aphrodite_config.parallel_config
+    tp_size = parallel_config.tensor_parallel_size
+    if parallel_config.use_ubatching:
+        reason = "ubatching is enabled"
+    elif aphrodite_config.model_config.dtype != torch.bfloat16:
+        reason = "the model dtype is not BF16"
+    elif not current_platform.is_cuda():
+        reason = "the device is not CUDA"
+    elif not current_platform.is_device_capability_family(100):
+        reason = "the device is not SM100-family"
+    elif not 1 < tp_size <= 16:
+        reason = "TP size is not in the supported range 2-16"
+    elif 128 % tp_size != 0:
+        reason = "TP size does not divide 128"
+    else:
+        reason = None
+
+    if reason is not None:
+        logger.warning_once("%s is disabled because %s.", mode, reason)
+        return False
+
+    from aphrodite.models.kimi_k3.nvidia.ops.cute_dsl.gemm_rs_ar import init_gemm_rs_ar
+
+    config = aphrodite_config.model_config.hf_text_config
+    try:
+        init_gemm_rs_ar(
+            max_M=aphrodite_config.scheduler_config.max_num_batched_tokens,
+            N=config.hidden_size,
+            all_reduce=all_reduce,
+        )
+    except RuntimeError as e:
+        logger.warning_once(
+            "%s is disabled because initialization failed: %s. This may mean "
+            "the TP ranks do not share one NVLink domain.",
+            mode,
+            e,
+        )
+        return False
+    if all_reduce:
+        logger.info_once("GEMM-AR is enabled. To disable it, set APHRODITE_KIMI_K3_GEMM_AR=0.")
+    else:
+        logger.info_once("GEMM-RS is enabled.")
+    return True
+
+
 class KimiMLP(nn.Module):
+    """Dense / shared-expert MLP, optionally TP-sharded under sequence parallel.
+
+    Under sequence parallelism each rank owns a distinct slice of the tokens, so
+    by default both projections are replicated (``disable_tp``) and the block
+    needs no collective. That makes every rank stream the entire weight to serve
+    its own token shard.
+
+    With ``APHRODITE_KIMI_K3_SHARD_SP_SHARED_EXPERT`` the weights are TP-sharded
+    instead. A rank then holds only a slice of the intermediate dim, so it
+    cannot finish its own tokens alone: ``forward`` all-gathers the full token
+    set, computes this rank's partial, and reduce-scatters. The reduce-scatter
+    sums across TP and restores the sequence sharding in one collective, so the
+    block still ends with one collective per direction.
+    """
+
     def __init__(
         self,
         hidden_size: int,
@@ -138,18 +231,28 @@ class KimiMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
         reduce_results: bool = True,
         use_sequence_parallel: bool = False,
+        can_shard_sequence_parallel: bool = False,
+        run_gemm_rs_ar: bool = False,
         prefix: str = "",
         activation_situ_beta: float | None = None,
         activation_situ_linear_beta: float | None = None,
     ) -> None:
         super().__init__()
 
+        self.shard_sequence_parallel = shard_sequence_parallel_mlp(
+            hidden_size,
+            intermediate_size,
+            use_sequence_parallel,
+            can_shard_sequence_parallel,
+        )
+        replicate = use_sequence_parallel and not self.shard_sequence_parallel
+
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
             bias=False,
             quant_config=quant_config,
-            disable_tp=use_sequence_parallel,
+            disable_tp=replicate,
             prefix=f"{prefix}.gate_up_proj",
         )
         self.down_proj = RowParallelLinear(
@@ -157,10 +260,25 @@ class KimiMLP(nn.Module):
             hidden_size,
             bias=False,
             quant_config=quant_config,
-            reduce_results=reduce_results,
-            disable_tp=use_sequence_parallel,
+            # Sharded sequence parallel reduces via the reduce-scatter in
+            # forward(), which also restores the sequence sharding.
+            reduce_results=False if self.shard_sequence_parallel else reduce_results,
+            disable_tp=replicate,
             prefix=f"{prefix}.down_proj",
         )
+        self.gemm_rs_ar = None
+        # RS requires sequence sharding; AR operates on replicated tokens.
+        use_gemm_rs_ar = self.shard_sequence_parallel or (not use_sequence_parallel and reduce_results)
+        if use_gemm_rs_ar and run_gemm_rs_ar:
+            from aphrodite.models.kimi_k3.nvidia.ops.cute_dsl.gemm_rs_ar import (
+                get_gemm_rs_ar,
+            )
+
+            gemm_rs_ar = get_gemm_rs_ar()
+            if gemm_rs_ar.can_run(self.down_proj):
+                self.gemm_rs_ar = gemm_rs_ar
+            else:
+                gemm_rs_ar.warn_incompatible_projection()
         if hidden_act == "silu":
             self.act_fn = SiluAndMul()
         elif hidden_act == "situ":
@@ -172,9 +290,21 @@ class KimiMLP(nn.Module):
             raise ValueError(f"Unsupported activation: {hidden_act}. Only silu and situ are supported.")
 
     def forward(self, x):
+        if self.shard_sequence_parallel:
+            # Each rank holds a weight shard but only its own tokens, so it
+            # cannot finish those tokens alone: gather the full token set,
+            # compute this rank's partial for all of them, then reduce-scatter,
+            # which sums across TP and restores the sequence sharding.
+            x = sp_all_gather(x)
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
+
+        if self.gemm_rs_ar is not None and self.gemm_rs_ar.should_run(x):
+            return self.gemm_rs_ar(x, self.down_proj.weight)
+
         x, _ = self.down_proj(x)
+        if self.shard_sequence_parallel:
+            x = sp_reduce_scatter(x)
         return x
 
 
@@ -188,9 +318,23 @@ class KimiRoutedOutputTransform(nn.Module):
         self.norm = norm
         self.up_proj = up_proj
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        residual: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Project the routed latent back to the hidden dim.
+
+        Args:
+            hidden_states: Routed expert output in latent space.
+            residual: Optional tensor of the up-projection's output shape to
+                accumulate into. It is consumed in the GEMM's beta-add
+                epilogue, so adding it costs no extra kernel.
+        """
         if self.norm is not None:
             hidden_states = self.norm(hidden_states)
+        if residual is not None:
+            return residual.addmm_(hidden_states, self.up_proj.weight.t())
         hidden_states, _ = self.up_proj(hidden_states)
         return hidden_states
 
@@ -230,7 +374,7 @@ class KimiK3MegaMoEExperts(DeepseekV4MegaMoEExperts):
         torch.distributed.barrier(group=ep_group.cpu_group)
         self._synchronized_ep_groups.add(key)
 
-    def finalize_weights(self) -> None:
+    def finalize_weights(self, shared_experts: DeepseekV4MLP | None = None) -> None:
         if self._transformed_l1_weights is not None:
             return
 
@@ -323,6 +467,9 @@ class KimiK3MegaMoEExperts(DeepseekV4MegaMoEExperts):
             if is_padding is not None:
                 is_padding = is_padding[:num_tokens]
 
+        if self.capture_fn is not None:
+            self.capture_fn(topk_ids)
+
         eplb_state = self.eplb_state
         if eplb_state.logical_to_physical_map is not None:
             assert eplb_state.expert_load_view is not None
@@ -361,8 +508,8 @@ class KimiK3MegaMoEExperts(DeepseekV4MegaMoEExperts):
             symm_buffer,
             activation_clamp=activation_clamp,
             activation=self.activation,
-            activation_beta=self.activation_beta,
-            activation_linear_beta=self.activation_linear_beta,
+            situ_beta=self.activation_beta,
+            situ_linear_beta=self.activation_linear_beta,
             fast_math=fast_math,
         )
         return y
@@ -397,6 +544,7 @@ class KimiMoE(nn.Module):
         prefix: str = "",
         layer_idx: int = 0,
         use_sequence_parallel: bool = False,
+        run_gemm_rs_ar: bool = False,
     ):
         super().__init__()
         hidden_size = config.hidden_size
@@ -435,7 +583,7 @@ class KimiMoE(nn.Module):
             raise NotImplementedError("Kimi K3 MegaMoE currently requires one expert group.")
         self.padded_moe_intermediate_size = moe_intermediate_size
         min_moe_intermediate_per_partition = getattr(config, "min_moe_intermediate_per_partition", 256)
-        if self.tp_size > 1:
+        if self.tp_size > 1 and not aphrodite_config.parallel_config.enable_expert_parallel:
             moe_intermediate_per_partition = moe_intermediate_size // self.tp_size
             if moe_intermediate_per_partition < min_moe_intermediate_per_partition:
                 self.padded_moe_intermediate_size = min_moe_intermediate_per_partition * self.tp_size
@@ -463,6 +611,11 @@ class KimiMoE(nn.Module):
                 quant_config=quant_config,
                 reduce_results=False,
                 use_sequence_parallel=use_sequence_parallel,
+                # Only the MegaMoE path calls the shared experts directly; the
+                # FusedMoE path below hands them to the runner, which fuses
+                # their reduction and assumes the replicated layout.
+                can_shard_sequence_parallel=self.use_mega_moe,
+                run_gemm_rs_ar=run_gemm_rs_ar,
                 prefix=f"{prefix}.shared_experts",
                 activation_situ_beta=activation_situ_beta,
                 activation_situ_linear_beta=activation_situ_linear_beta,
@@ -533,10 +686,6 @@ class KimiMoE(nn.Module):
                 activation_linear_beta=activation_situ_linear_beta,
             )
         else:
-            # The tail-fusion kernels are tcgen05-based, so they require an
-            # SM100 NVIDIA device; the runner falls back to the default latent
-            # MoE path everywhere else.
-            enable_tail_fusion = current_platform.is_cuda() and current_platform.is_device_capability_family(100)
             self.experts = FusedMoEFactory(
                 shared_experts=self.shared_experts,
                 num_experts=num_experts,
@@ -563,7 +712,6 @@ class KimiMoE(nn.Module):
                 routed_output_transform=self.routed_output_transform,
                 is_sequence_parallel=use_sequence_parallel,
                 runner_cls=LatentMoERunner if self.use_latent_moe else None,
-                runner_args=({"enable_k3_latent_moe_tail_fusion": enable_tail_fusion} if self.use_latent_moe else None),
             )
         if self.padded_moe_intermediate_size != moe_intermediate_size:
             w13_weight = getattr(self.experts, "w13_weight", None)
@@ -647,9 +795,10 @@ class KimiMoE(nn.Module):
                 topk_ids,
                 activation_clamp=None,
             )
-            final_hidden_states = self.routed_output_transform(final_hidden_states)
-            if self.shared_experts is not None:
-                final_hidden_states = final_hidden_states + self.shared_experts(hidden_states)
+            # The shared output is folded into the up-projection GEMM's beta-add
+            # epilogue, so combining the two branches costs no extra kernel.
+            shared_output = self.shared_experts(hidden_states) if self.shared_experts is not None else None
+            final_hidden_states = self.routed_output_transform(final_hidden_states, residual=shared_output)
         else:
             # Routed experts consume the down-projected latent; shared experts
             # (inside FusedMoEFactory) get the original hidden states via
@@ -669,6 +818,7 @@ class KimiDecoderLayer(nn.Module):
         aphrodite_config: AphroditeConfig,
         prefix: str = "",
         aux_stream: torch.cuda.Stream | None = None,
+        run_gemm_rs_ar: bool = False,
     ) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -703,6 +853,8 @@ class KimiDecoderLayer(nn.Module):
                     config,
                     aphrodite_config,
                     prefix=f"{prefix}.self_attn",
+                    aux_stream=aux_stream,
+                    run_gemm_rs_ar=run_gemm_rs_ar,
                 )
                 self._self_attn_writes_output = False
             else:
@@ -739,6 +891,7 @@ class KimiDecoderLayer(nn.Module):
                 quant_config=quant_config,
                 prefix=f"{prefix}.self_attn",
                 aux_stream=aux_stream,
+                run_gemm_rs_ar=run_gemm_rs_ar,
             )
             self._self_attn_writes_output = False
 
@@ -753,6 +906,7 @@ class KimiDecoderLayer(nn.Module):
                 prefix=f"{prefix}.block_sparse_moe",
                 layer_idx=layer_idx,
                 use_sequence_parallel=self.use_sequence_parallel,
+                run_gemm_rs_ar=run_gemm_rs_ar,
             )
             self.mlp = self.block_sparse_moe
         else:
@@ -763,6 +917,8 @@ class KimiDecoderLayer(nn.Module):
                 quant_config=quant_config,
                 prefix=f"{prefix}.mlp",
                 use_sequence_parallel=self.use_sequence_parallel,
+                can_shard_sequence_parallel=True,
+                run_gemm_rs_ar=run_gemm_rs_ar,
                 activation_situ_beta=config.activation_situ_beta,
                 activation_situ_linear_beta=config.activation_situ_linear_beta,
             )
@@ -885,15 +1041,18 @@ class KimiDecoderLayer(nn.Module):
         hidden_states, prefix_sum, residual = self._pre_attn_norm(hidden_states, residual, prefix_sum)
         assert hidden_states is not None
 
+        M = None
         if self.use_sequence_parallel:
             hidden_states = sp_all_gather(hidden_states)
             # Remove SP padding before attention.
             hidden_states = hidden_states[: positions.shape[0]]
+            M = hidden_states.shape[0]
 
         # Attention.
         hidden_states = self._run_self_attn(positions, hidden_states)
 
-        if self.use_sequence_parallel:
+        # GEMM-RS returns the local sequence shard; standard O-proj preserves M.
+        if self.use_sequence_parallel and hidden_states.shape[0] == M:
             # Add SP padding if needed, and then perform reduce scatter.
             hidden_states = sp_reduce_scatter(hidden_states)
 
@@ -904,7 +1063,17 @@ class KimiDecoderLayer(nn.Module):
         return hidden_states, prefix_sum, residual
 
 
-class KimiLinearModel(nn.Module, EagleModelMixin):
+class KimiLinearModel(nn.Module, EagleModelMixin, SupportsQuant):
+    packed_modules_mapping = {
+        "gate_up_proj": ["gate_proj", "up_proj"],
+        "in_proj_qkvgfab": ["q_proj", "k_proj", "v_proj", "b_proj", "f_a_proj"],
+        "conv1d": ["q_conv1d", "k_conv1d", "v_conv1d"],
+        "fused_qkv_a_proj": ["q_a_proj", "kv_a_proj_with_mqa"],
+        "fused_qkv_a_g_proj": ["q_a_proj", "kv_a_proj_with_mqa", "g_proj"],
+    }
+
+    supports_aux_hidden_states_over_pp = True
+
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
@@ -923,7 +1092,11 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
 
         self.vocab_size = config.vocab_size
 
-        if get_pp_group().is_first_rank:
+        # GEMM-RS/AR uses NCCL symmetric-memory multicast, which requires all
+        # TP ranks to belong to one NVLink domain.
+        self.run_gemm_rs_ar = maybe_init_gemm_rs_ar(aphrodite_config, self.use_sequence_parallel)
+
+        if get_pp_group().is_first_rank or spec_decode_needs_target_embed(aphrodite_config):
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -943,6 +1116,7 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
                 aphrodite_config,
                 prefix,
                 aux_stream=aux_stream,
+                run_gemm_rs_ar=self.run_gemm_rs_ar,
             )
 
         self.start_layer, self.end_layer, self.layers = make_layers(
@@ -995,6 +1169,64 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
             }
         )
 
+    def _set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        super()._set_aux_hidden_state_layers(layers)
+        if self.use_attn_res and self._aux_attn_res_stream:
+            pp = get_pp_group()
+            if not pp.is_last_rank and self.end_layer in self.aux_hidden_state_layers:
+                raise ValueError(
+                    f"Auxiliary layer {self.end_layer} cannot end a non-final PP "
+                    "stage when APHRODITE_KIMI_K3_AUX_ATTN_RES_STREAM=1"
+                )
+        if self.use_attn_res:
+            logger.info_once(
+                "Kimi-K3 aux hidden capture: layers=%s mode=%s (APHRODITE_KIMI_K3_AUX_ATTN_RES_STREAM=%d)",
+                self.aux_hidden_state_layers,
+                "attn_res_stream" if self._aux_attn_res_stream else "prefix_only",
+                int(self._aux_attn_res_stream),
+            )
+
+    @property
+    def _aux_attn_res_stream(self) -> bool:
+        return envs.APHRODITE_KIMI_K3_AUX_ATTN_RES_STREAM
+
+    def _capture_aux_hidden_stream(
+        self,
+        layer_idx: int,
+        prefix_sum: torch.Tensor,
+        pending_mlp_out: torch.Tensor | None,
+        block_residual: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return the AttnRes stream after ``layer_idx``."""
+        prefix = prefix_sum if pending_mlp_out is None else prefix_sum + pending_mlp_out
+        if not (self._aux_attn_res_stream and self.use_attn_res):
+            return prefix
+
+        if layer_idx + 1 < self.end_layer:
+            consumer = self.layers[layer_idx + 1]
+            score_norm = consumer.self_attention_res_norm
+            score_proj = consumer.self_attention_res_proj
+            num_blocks = consumer.prev_valid_blocks
+        elif get_pp_group().is_last_rank:
+            score_norm = self.output_attn_res_norm
+            score_proj = self.output_attn_res_proj
+            num_blocks = self.num_attn_res_blocks
+        else:
+            raise RuntimeError("Auxiliary AttnRes capture crossed a PP boundary")
+
+        return attn_res(
+            prefix,
+            None,
+            block_residual,
+            score_norm.weight,
+            score_proj.weight.squeeze(0),
+            None,
+            num_blocks=num_blocks,
+            block_write_idx=-1,
+            eps=score_norm.variance_epsilon,
+            output_norm_eps=0.0,
+        )
+
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
@@ -1018,13 +1250,6 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
             residual = intermediate_tensors["residual"]
         assert hidden_states is not None
 
-        aux_hidden_states: list[torch.Tensor] = []
-        if self.start_layer in self.aux_hidden_state_layers:
-            if self.use_attn_res or residual is None:
-                aux_hidden_states.append(hidden_states)
-            else:
-                aux_hidden_states.append(hidden_states + residual)
-
         full_num_tokens = positions.shape[0]
         if self.use_sequence_parallel:
             if envs.APHRODITE_MOE_SKIP_PADDING and is_forward_context_available():
@@ -1032,6 +1257,16 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
                 forward_context.is_padding = sp_padding_mask(forward_context.is_padding, hidden_states)
             hidden_states = sp_shard(hidden_states)
             assert residual is None, "Currently, SP is not supported with PP"
+
+        remote_aux = self.collect_remote_aux_hidden_states(intermediate_tensors)
+
+        # sharded aux hidden states when sp is enabled
+        aux_hidden_states: list[torch.Tensor] = []
+        if get_pp_group().is_first_rank and self.start_layer in self.aux_hidden_state_layers:
+            if self.use_attn_res or residual is None:
+                aux_hidden_states.append(hidden_states)
+            else:
+                aux_hidden_states.append(hidden_states + residual)
 
         prefix_sum = None
         if self.use_attn_res:
@@ -1059,16 +1294,12 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
             if (layer_idx + 1) in self.aux_hidden_state_layers:
                 if self.use_attn_res:
                     assert prefix_sum is not None
-                    aux_hidden_state = prefix_sum + hidden_states
+                    assert residual is not None
+                    aux_hidden_state = self._capture_aux_hidden_stream(layer_idx, prefix_sum, hidden_states, residual)
                 else:
                     assert residual is not None
                     aux_hidden_state = hidden_states + residual
 
-                if self.use_sequence_parallel:
-                    # Gather SP-sharded aux hidden states.
-                    # TODO: Optimize this.
-                    aux_hidden_state = sp_all_gather(aux_hidden_state)
-                    aux_hidden_state = aux_hidden_state[:full_num_tokens]
                 aux_hidden_states.append(aux_hidden_state)
 
         assert hidden_states is not None
@@ -1077,7 +1308,13 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
             assert not self.use_sequence_parallel, "Currently, SP is not supported with PP"
             if prefix_sum is not None:
                 hidden_states = hidden_states + prefix_sum
-            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
+            return IntermediateTensors(
+                {
+                    "hidden_states": hidden_states,
+                    "residual": residual,
+                    **self.pack_local_aux_hidden_states(aux_hidden_states),
+                }
+            )
 
         if self.use_attn_res:
             assert prefix_sum is not None
@@ -1097,12 +1334,19 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
             hidden_states = hidden_states + residual
 
         if self.use_sequence_parallel:
-            # Gather SP-sharded hidden states.
-            hidden_states = sp_all_gather(hidden_states)
-            hidden_states = hidden_states[:full_num_tokens]
+            if aux_hidden_states:
+                hidden_size = hidden_states.shape[-1]
+                packed_hidden_states = torch.cat([hidden_states, *aux_hidden_states], dim=-1)
+                packed_hidden_states = sp_all_gather(packed_hidden_states)
+                packed_hidden_states = packed_hidden_states[:full_num_tokens]
+                hidden_states, *aux_hidden_states = packed_hidden_states.split(hidden_size, dim=-1)
+            else:
+                hidden_states = sp_all_gather(hidden_states)
+                hidden_states = hidden_states[:full_num_tokens]
 
         # NOTE: the final norm is applied in compute_logits instead of here, so
         # the MTP draft model receives the pre-norm hidden states.
+        aux_hidden_states = remote_aux + aux_hidden_states
         if aux_hidden_states:
             return hidden_states, aux_hidden_states
         return hidden_states
@@ -1130,10 +1374,17 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
         if use_full_rank_gate:
             stacked_params_mapping.append((".in_proj_qkvgfab", ".g_proj", 3))
         if getattr(self.config, "q_lora_rank", None) is not None:
-            stacked_params_mapping += [
-                (".fused_qkv_a_proj", ".q_a_proj", 0),
-                (".fused_qkv_a_proj", ".kv_a_proj_with_mqa", 1),
-            ]
+            if self.config.mla_use_output_gate:
+                stacked_params_mapping += [
+                    (".fused_qkv_a_g_proj", ".q_a_proj", 0),
+                    (".fused_qkv_a_g_proj", ".kv_a_proj_with_mqa", 1),
+                    (".fused_qkv_a_g_proj", ".g_proj", 2),
+                ]
+            else:
+                stacked_params_mapping += [
+                    (".fused_qkv_a_proj", ".q_a_proj", 0),
+                    (".fused_qkv_a_proj", ".kv_a_proj_with_mqa", 1),
+                ]
         use_mega_moe = any(module.use_mega_moe for module in self.modules() if isinstance(module, KimiMoE))
         if self.config.is_moe and use_mega_moe:
             expert_params_mapping = make_kimi_k3_mega_moe_expert_params_mapping(self.config.num_experts)
@@ -1150,6 +1401,7 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
         else:
             expert_params_mapping = []
         params_dict = dict(self.named_parameters())
+
         # Under the MXFP4 quant interface the routed experts register unpacked
         # params (``w13_weight``), while the compressed-tensors checkpoint names
         # them ``.weight_packed``. Rebind so the expert mapping resolves; scales
@@ -1242,7 +1494,15 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
                 module.experts.finalize_weights()
 
 
-class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExperts, IsHybrid):
+class KimiLinearForCausalLM(
+    nn.Module,
+    HasInnerState,
+    SupportsPP,
+    MixtureOfExperts,
+    IsHybrid,
+    SupportsEagle3,
+    SupportsReplaySSM,
+):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         self.model_config = aphrodite_config.model_config
@@ -1289,28 +1549,38 @@ class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExper
     def get_mamba_state_dtype_from_config(
         cls,
         aphrodite_config: "AphroditeConfig",
-    ) -> tuple[torch.dtype, torch.dtype]:
-        return MambaStateDtypeCalculator.kda_state_dtype(
+    ) -> tuple[torch.dtype, ...]:
+        dtypes = MambaStateDtypeCalculator.kda_state_dtype(
             aphrodite_config.model_config.dtype, aphrodite_config.cache_config.mamba_cache_dtype
         )
+        if aphrodite_config.cache_config.use_kda_recoverssm:
+            dtypes = MambaStateDtypeCalculator.append_kda_recoverssm_record(dtypes, aphrodite_config.model_config.dtype)
+        return dtypes
 
     @classmethod
-    def get_mamba_state_shape_from_config(
-        cls, aphrodite_config: "AphroditeConfig"
-    ) -> tuple[tuple[int, int], tuple[int, int, int]]:
+    def get_mamba_state_shape_from_config(cls, aphrodite_config: "AphroditeConfig") -> MambaStateShapes:
         parallel_config = aphrodite_config.parallel_config
         hf_config = aphrodite_config.model_config.hf_config
         tp_size = parallel_config.tensor_parallel_size
         num_spec = (
             aphrodite_config.speculative_config.num_speculative_tokens if aphrodite_config.speculative_config else 0
         )
-        return MambaStateShapeCalculator.kda_state_shape(
+        shapes = MambaStateShapeCalculator.kda_state_shape(
             tp_size,
             hf_config.linear_attn_config["num_heads"],
             hf_config.linear_attn_config["head_dim"],
             conv_kernel_size=hf_config.linear_attn_config["short_conv_kernel_size"],
             num_spec=num_spec,
         )
+        if aphrodite_config.cache_config.use_kda_recoverssm:
+            return MambaStateShapeCalculator.append_kda_recoverssm_record(
+                shapes,
+                hf_config.linear_attn_config["num_heads"],
+                hf_config.linear_attn_config["head_dim"],
+                tp_world_size=tp_size,
+                spec_query_len=1 + num_spec,
+            )
+        return shapes
 
     @classmethod
     def get_mamba_state_copy_func(
@@ -1328,10 +1598,7 @@ class KimiLinearForCausalLM(nn.Module, HasInnerState, SupportsPP, MixtureOfExper
         return self.logits_processor(self.lm_head, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
-        )
+        loader = AutoWeightsLoader(self)
         loaded = loader.load_weights(weights)
         self.model.finalize_mega_moe_weights()
         # The fused MultiHeadLatentAttention's process_weights_after_loading
@@ -1367,6 +1634,7 @@ class KimiK3ForConditionalGeneration(
     SupportsEagle3,
     HasInnerState,
     IsHybrid,
+    SupportsReplaySSM,
 ):
     """Kimi-K3 model with Kimi-K2.5 vision and KimiLinear text."""
 

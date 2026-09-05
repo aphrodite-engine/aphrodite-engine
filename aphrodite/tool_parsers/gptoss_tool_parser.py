@@ -4,7 +4,7 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaMessage,
     ExtractedToolCallInformation,
 )
@@ -21,6 +21,8 @@ class GptOssToolParser(ToolParser):
     All output parsing is handled by HarmonyParser. This stub exists as a
     capability declaration via HarmonyParser.tool_parser_cls.
     """
+
+    structural_tag_model = "harmony"
 
     def __init__(self, tokenizer: "TokenizerLike", tools: list[Tool] | None = None):
         super().__init__(tokenizer, tools)

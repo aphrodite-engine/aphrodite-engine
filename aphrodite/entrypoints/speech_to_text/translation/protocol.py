@@ -12,11 +12,8 @@ from pydantic import (
 )
 
 from aphrodite.config.speech_to_text import SpeechToTextParams
-from aphrodite.entrypoints.openai.engine.protocol import (
-    DeltaMessage,
-    OpenAIBaseModel,
-    UsageInfo,
-)
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
+from aphrodite.entrypoints.serve.engine.protocol import OpenAIBaseModel, UsageInfo
 from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import (
@@ -260,6 +257,8 @@ class TranslationRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_stream_options(cls, data):
+        if not isinstance(data, dict):
+            return data
         stream_opts = ["stream_include_usage", "stream_continuous_usage_stats"]
         stream = data.get("stream", False)
         if any(bool(data.get(so, False)) for so in stream_opts) and not stream:

@@ -60,6 +60,11 @@ def aphrodite_to_hf_output(aphrodite_output: tuple[list[int], str, SampleLogprob
 
 
 target_dtype = "half"
+IMAGE_SIZE_FACTOR_GROUPS = (
+    (1.0,),
+    (1.0, 1.0, 1.0),
+    (0.25, 0.5, 1.0),
+)
 
 
 def run_test(
@@ -157,17 +162,6 @@ def run_test(
 
 
 @pytest.mark.parametrize("model", models)
-@pytest.mark.parametrize(
-    "size_factors",
-    [
-        # Single-scale
-        [1.0],
-        # Single-scale, batched
-        [1.0, 1.0, 1.0],
-        # Multi-scale
-        [0.25, 0.5, 1.0],
-    ],
-)
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_model_len", [12800])
 @pytest.mark.parametrize("max_tokens", [128])
@@ -177,7 +171,6 @@ def test_models(
     aphrodite_runner,
     image_assets,
     model,
-    size_factors,
     dtype: str,
     max_model_len: int,
     max_tokens: int,
@@ -191,6 +184,7 @@ def test_models(
             [rescale_image_size(image, factor) for factor in size_factors],
             None,
         )
+        for size_factors in IMAGE_SIZE_FACTOR_GROUPS
         for image, prompt in zip(images, HF_IMAGE_PROMPTS)
     ]
 
@@ -210,19 +204,6 @@ def test_models(
 
 @large_gpu_test(min_gb=48)
 @pytest.mark.parametrize("model", models)
-@pytest.mark.parametrize(
-    "size_factors",
-    [
-        # No image
-        # [],
-        # Single-scale
-        [1.0],
-        # Single-scale, batched
-        [1.0, 1.0, 1.0],
-        # Multi-scale
-        [0.25, 0.5, 1.0],
-    ],
-)
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_model_len", [25600])
 @pytest.mark.parametrize("max_tokens", [128])
@@ -232,7 +213,6 @@ def test_multi_images_models(
     aphrodite_runner,
     image_assets,
     model,
-    size_factors,
     dtype: str,
     max_model_len: int,
     max_tokens: int,
@@ -245,7 +225,8 @@ def test_multi_images_models(
             [HF_MULTIIMAGE_IMAGE_PROMPT for _ in size_factors],
             [[rescale_image_size(image, factor) for image in images] for factor in size_factors],
             None,
-        ),
+        )
+        for size_factors in IMAGE_SIZE_FACTOR_GROUPS
     ]
 
     run_test(

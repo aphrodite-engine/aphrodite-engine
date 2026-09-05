@@ -3,7 +3,6 @@
 
 import importlib
 import json
-import os
 from collections.abc import Callable, Sequence
 from functools import cached_property
 from typing import Any
@@ -15,13 +14,13 @@ from openai.types.responses import (
 from openai.types.responses.function_tool import FunctionTool
 
 import aphrodite.envs as envs
+from aphrodite.entrypoints.generate.base.protocol import (
+    DeltaMessage,
+    ExtractedToolCallInformation,
+)
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
     ChatCompletionToolsParam,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
-    DeltaMessage,
-    ExtractedToolCallInformation,
 )
 from aphrodite.entrypoints.openai.responses.protocol import (
     ResponsesRequest,
@@ -33,7 +32,7 @@ from aphrodite.sampling_params import (
 from aphrodite.tokenizers import TokenizerLike
 from aphrodite.tool_parsers.utils import Tool, get_json_schema_from_tools
 from aphrodite.utils.collection_utils import is_list_of
-from aphrodite.utils.import_utils import import_from_path
+from aphrodite.utils.import_utils import import_plugin
 
 __all__ = ["Tool"]
 
@@ -343,10 +342,5 @@ class ToolParserManager:
 
     @classmethod
     def import_tool_parser(cls, plugin_path: str) -> None:
-        """Import a user-defined parser file from arbitrary path."""
-
-        module_name = os.path.splitext(os.path.basename(plugin_path))[0]
-        try:
-            import_from_path(module_name, plugin_path)
-        except Exception:
-            logger.exception("Failed to load module '%s' from %s.", module_name, plugin_path)
+        """Import a user-defined tool parser."""
+        import_plugin(plugin_path)

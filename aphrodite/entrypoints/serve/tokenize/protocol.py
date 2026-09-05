@@ -11,12 +11,8 @@ from aphrodite.entrypoints.chat_utils import (
     ChatCompletionMessageParam,
     ChatTemplateContentFormatOption,
 )
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionToolsParam,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
-    OpenAIBaseModel,
-)
+from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionToolsParam
+from aphrodite.entrypoints.serve.engine.protocol import OpenAIBaseModel
 from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.renderers import ChatParams, TokenizeParams, merge_kwargs
 
@@ -112,6 +108,8 @@ class TokenizeChatRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_generation_prompt(cls, data):
+        if not isinstance(data, dict):
+            return data
         if data.get("continue_final_message") and data.get("add_generation_prompt"):
             raise APHRODITEValidationError(
                 "Cannot set both `continue_final_message` and `add_generation_prompt` to True.",

@@ -7,6 +7,7 @@ import openai
 import pytest
 import pytest_asyncio
 
+from aphrodite.assets.base import APHRODITE_S3_BUCKET_URL
 from aphrodite.multimodal.utils import encode_video_url, fetch_video
 from aphrodite.platforms import current_platform
 from tests.utils import RemoteOpenAIServer
@@ -15,9 +16,9 @@ MODEL_NAME = "llava-hf/llava-onevision-qwen2-0.5b-ov-hf"
 MAXIMUM_VIDEOS = 3
 
 TEST_VIDEO_URLS = [
-    "https://www.bogotobogo.com/python/OpenCV_Python/images/mean_shift_tracking/slow_traffic_small.mp4",
-    "https://github.com/opencv/opencv/raw/refs/tags/4.12.0/samples/data/vtest.avi",
-    "https://github.com/opencv/opencv/raw/refs/tags/4.12.0/samples/data/Megamind.avi",
+    f"{APHRODITE_S3_BUCKET_URL}/multimodal_asset/slow_traffic_small.mp4",
+    f"{APHRODITE_S3_BUCKET_URL}/multimodal_asset/vtest.avi",
+    f"{APHRODITE_S3_BUCKET_URL}/multimodal_asset/Megamind.avi",
 ]
 
 
@@ -60,6 +61,73 @@ async def client(server):
 @pytest.fixture(scope="session")
 def url_encoded_video() -> dict[str, str]:
     return {video_url: encode_video_url(fetch_video(video_url)[0]) for video_url in TEST_VIDEO_URLS}
+
+
+def assert_non_empty_content(chat_completion, *, context: str = "") -> str:
+    """Assert the first choice has non-empty string content; return it."""
+    prefix = f"[{context}] " if context else ""
+    choice = chat_completion.choices[0]
+    content = choice.message.content
+
+    assert content is not None, (
+        f"{prefix}Expected non-None content but got None. "
+        f"finish_reason={choice.finish_reason!r}, "
+        f"full message={choice.message!r}, "
+        f"usage={chat_completion.usage!r}"
+    )
+    assert isinstance(content, str), f"{prefix}Expected str content, got {type(content).__name__}: {content!r}"
+    assert len(content) > 0, (
+        f"{prefix}Expected non-empty content but got empty string. "
+        f"finish_reason={choice.finish_reason!r}, "
+        f"full message={choice.message!r}, "
+        f"usage={chat_completion.usage!r}"
+    )
+    return content
+
+
+def describe_video_messages(video_url: str | None, *, extra_video_fields: dict | None = None) -> list[dict]:
+    """Build the system + user messages used by the completions-with-video
+    family of tests. *extra_video_fields* is merged into the top-level
+    video content block (for uuid / bad-key tests).
+
+    Pass ``None`` for *video_url* to omit media (uuid-backed cache hits).
+    """
+    video_block: dict = {
+        "type": "video_url",
+        "video_url": {} if video_url is None else {"url": video_url},
+    }
+    if extra_video_fields:
+        video_block.update(extra_video_fields)
+
+    return [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this video."},
+                video_block,
+            ],
+        },
+    ]
+
+
+async def complete_and_check(
+    client: openai.AsyncOpenAI,
+    model_name: str,
+    messages: list[dict],
+    *,
+    context: str,
+    max_completion_tokens: int = 50,
+    temperature: float = 0.0,
+) -> str:
+    """Run a chat completion and assert the output is non-empty."""
+    chat_completion = await client.chat.completions.create(
+        model=model_name,
+        messages=messages,
+        max_completion_tokens=max_completion_tokens,
+        temperature=temperature,
+    )
+    return assert_non_empty_content(chat_completion, context=context)
 
 
 def dummy_messages_from_video_url(
@@ -375,3 +443,44 @@ async def test_multi_video_input(client: openai.AsyncOpenAI, model_name: str, vi
         )
         message = chat_completion.choices[0].message
         assert message.content is not None and len(message.content) >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_name", [MODEL_NAME])
+async def test_omitted_video_url_requires_cached_uuid(
+    client: openai.AsyncOpenAI,
+    model_name: str,
+):
+    video_uuid = "test-video-uuid"
+    video_url = TEST_VIDEO_URLS[0]
+
+    omitted_video_messages = describe_video_messages(
+        None,
+        extra_video_fields={"uuid": video_uuid},
+    )
+
+    with pytest.raises(
+        openai.BadRequestError,
+        match="Cache miss for video at index 0 but data is not provided",
+    ):
+        await client.chat.completions.create(
+            model=model_name,
+            messages=omitted_video_messages,
+        )
+
+    await complete_and_check(
+        client,
+        model_name,
+        describe_video_messages(
+            video_url,
+            extra_video_fields={"uuid": video_uuid},
+        ),
+        context="populate UUID cache",
+    )
+
+    await complete_and_check(
+        client,
+        model_name,
+        omitted_video_messages,
+        context="reuse cached video without URL",
+    )

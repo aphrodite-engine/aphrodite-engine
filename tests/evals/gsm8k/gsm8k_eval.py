@@ -20,6 +20,8 @@ import regex as re
 import requests
 from tqdm.asyncio import tqdm
 
+from aphrodite.assets.base import APHRODITE_S3_BUCKET_URL
+
 INVALID = -9999999
 
 
@@ -44,8 +46,8 @@ def download_and_cache_file(url: str, filename: str | None = None) -> str:
 
 def load_gsm8k_data() -> tuple[list[dict], list[dict]]:
     """Load GSM8K train and test data"""
-    train_url = "https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/train.jsonl"
-    test_url = "https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/test.jsonl"
+    train_url = f"{APHRODITE_S3_BUCKET_URL}/ci-datasets/gsm8k/train.jsonl"
+    test_url = f"{APHRODITE_S3_BUCKET_URL}/ci-datasets/gsm8k/test.jsonl"
 
     train_file = download_and_cache_file(train_url)
     test_file = download_and_cache_file(test_url)
@@ -280,6 +282,7 @@ def evaluate_gsm8k_offline(
     temperature: float = 0.0,
     gen_prefix: str = "",
     use_chat_completions: bool = False,
+    chat_template_kwargs: dict[str, object] | None = None,
 ) -> dict[str, float | int]:
     """Evaluate GSM8K accuracy using an offline aphrodite.LLM object.
 
@@ -288,6 +291,7 @@ def evaluate_gsm8k_offline(
 
     When ``use_chat_completions=True``, prompts go through the chat template via
     ``llm.chat()`` instead of raw completion (for instruction-tuned models).
+    ``chat_template_kwargs`` are forwarded to ``llm.chat()`` when provided.
     """
     from aphrodite import SamplingParams
 
@@ -303,7 +307,11 @@ def evaluate_gsm8k_offline(
     tic = time.perf_counter()
     if use_chat_completions:
         conversations = [[{"role": "user", "content": p}] for p in prompts]
-        outputs = llm.chat(conversations, sampling_params)
+        outputs = llm.chat(
+            conversations,
+            sampling_params,
+            chat_template_kwargs=chat_template_kwargs,
+        )
     else:
         outputs = llm.generate(prompts, sampling_params)
     latency = time.perf_counter() - tic

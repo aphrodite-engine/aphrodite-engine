@@ -13,8 +13,8 @@ from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from aphrodite import envs
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse, UsageInfo
-from aphrodite.entrypoints.serve.utils.api_utils import sanitize_message
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse, UsageInfo
+from aphrodite.entrypoints.serve.exception_handling.utils import sanitize_message
 from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 

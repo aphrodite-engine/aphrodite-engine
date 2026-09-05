@@ -26,6 +26,7 @@
 
 import math
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -54,6 +55,14 @@ from .utils import (
     maybe_prefix,
     process_eagle_weight,
 )
+
+if TYPE_CHECKING:
+
+    class _EagleMiniCPMSupportsPP:
+        pass
+
+else:
+    _EagleMiniCPMSupportsPP = SupportsPP
 
 
 class EagleMiniCPMDecoderLayer(nn.Module):
@@ -137,7 +146,9 @@ class EagleMiniCPMModel(nn.Module):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", start_layer: int = 0):
         super().__init__()
 
-        config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        config = speculative_config.draft_model_config.hf_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
 
@@ -273,7 +284,7 @@ class EagleMiniCPMModel(nn.Module):
         return loaded_params
 
 
-class EagleMiniCPMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle):
+class EagleMiniCPMForCausalLM(nn.Module, SupportsLoRA, _EagleMiniCPMSupportsPP, SupportsEagle):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -294,7 +305,9 @@ class EagleMiniCPMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-        config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        config = speculative_config.draft_model_config.hf_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
 
@@ -359,8 +372,5 @@ class EagleMiniCPMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle
             process_eagle_weight(self, name)
             return name, loaded_weight
 
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(map(transform, weights))

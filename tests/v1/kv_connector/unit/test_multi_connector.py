@@ -22,6 +22,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
 from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 from aphrodite.distributed.kv_transfer.kv_connector.v1.multi_connector import (
     MultiConnector,
+    MultiKVConnectorPromMetrics,
     MultiKVConnectorStats,
     MultiKVConnectorWorkerMetadata,
 )
@@ -53,9 +54,12 @@ class MockConnectorStats(KVConnectorStats):
 class MockConnector(KVConnectorBase_V1):
     """Mock connector for testing."""
 
+    _supports_divergent_local_hybrid_hits = False
+
     def __new__(cls, *args, **kwargs):
         # mock all KVConnectorBase_V1 functions
         mock = MagicMock(spec_set=KVConnectorBase_V1)
+        mock.supports_divergent_local_hybrid_hits = cls._supports_divergent_local_hybrid_hits
         # Override just build_kv_connector_stats
         mock.build_kv_connector_stats = cls.build_kv_connector_stats
         mock.get_kv_connector_stats.return_value = None
@@ -90,8 +94,11 @@ class MockConnector(KVConnectorBase_V1):
 class MockHMAConnector(KVConnectorBase_V1, SupportsHMA):
     """Mock connector that supports HMA for testing."""
 
+    _supports_divergent_local_hybrid_hits = False
+
     def __new__(cls, *args, **kwargs):
         mock = MagicMock(spec_set=cls)
+        mock.supports_divergent_local_hybrid_hits = cls._supports_divergent_local_hybrid_hits
         mock.get_kv_connector_stats.return_value = None
         return mock
 
@@ -120,9 +127,34 @@ class MockHMAConnector(KVConnectorBase_V1, SupportsHMA):
         return (False, None)
 
 
+class MockDivergentHMAConnector(MockHMAConnector):
+    _supports_divergent_local_hybrid_hits = True
+
+
 # Register mock connectors
 KVConnectorFactory.register_connector("MockConnector", __name__, MockConnector.__name__)
 KVConnectorFactory.register_connector("MockHMAConnector", __name__, MockHMAConnector.__name__)
+KVConnectorFactory.register_connector(
+    "MockDivergentHMAConnector",
+    __name__,
+    MockDivergentHMAConnector.__name__,
+)
+
+
+def test_register_finished_partial_tail_notifies_every_connector():
+    connector = object.__new__(MultiConnector)
+    first = MagicMock(spec_set=KVConnectorBase_V1)
+    second = MagicMock(spec_set=KVConnectorBase_V1)
+    first.register_finished_partial_tail.return_value = True
+    second.register_finished_partial_tail.return_value = False
+    connector._connectors = [first, second]
+    request = MagicMock()
+    block_ids = ([1], [2])
+    offloads = [(1, 2, 12)]
+
+    assert connector.register_finished_partial_tail(request, block_ids, offloads)
+    first.register_finished_partial_tail.assert_called_once_with(request, block_ids, offloads)
+    second.register_finished_partial_tail.assert_called_once_with(request, block_ids, offloads)
 
 
 @pytest.fixture
@@ -208,6 +240,7 @@ def test_multi_example_connector_consistency():
     llm = LLM(
         model=MODEL_NAME,
         enforce_eager=True,
+        block_size=16,
         gpu_memory_utilization=0.5,
         kv_transfer_config=kv_transfer_config,
         async_scheduling=False,
@@ -246,49 +279,41 @@ def test_multi_example_connector_consistency():
     events = get_connector_events()
     storage1_scheduler_events = _ignore_event_collection(events["storage1-SCHEDULER"])
     storage2_scheduler_events = _ignore_event_collection(events["storage2-SCHEDULER"])
-    # First event is bind_gpu_block_pool from initialization, then
-    # set_xfer_handshake_metadata_pp_aware, then on_new_request when the request is
-    # enqueued, then get_num_new_matched_tokens and update_state_after_alloc from
-    # generate().
-    assert storage1_scheduler_events[:6] == [
+    # Initial events bind the block pool, query completion counts, and exchange
+    # handshake metadata before the request is enqueued.
+    assert storage1_scheduler_events[:7] == [
         "bind_gpu_block_pool",
+        "get_finished_count",
         "set_xfer_handshake_metadata_pp_aware",
         "on_new_request",
         "get_num_new_matched_tokens 0",
         "update_state_after_alloc num_blocks=[7] 0",
         "build_connector_meta",
     ]
-    # First three events are from initialization (register_kv_caches,
-    # set_host_xfer_buffer_ops, get_handshake_metadata), then generate() events.
-    assert events["storage1-WORKER"][:8] == [
+    # First three events are from initialization. During generate(), layer hooks
+    # run before the deferred load is started after the forward pass.
+    expected_worker_prefix = [
         "register_kv_caches",
         "set_host_xfer_buffer_ops",
         "get_handshake_metadata",
         "handle_preemptions",
         "bind_connector_metadata",
-        "start_load_kv",
         "wait_for_layer_load",
         "save_kv_layer",
     ]
-    assert storage2_scheduler_events[:6] == [
+    for connector_name in ("storage1-WORKER", "storage2-WORKER"):
+        worker_events = events[connector_name]
+        assert worker_events[:7] == expected_worker_prefix
+        assert worker_events.index("start_load_kv") > worker_events.index("save_kv_layer")
+    assert storage2_scheduler_events[:7] == [
         "bind_gpu_block_pool",
+        "get_finished_count",
         "set_xfer_handshake_metadata_pp_aware",
         "on_new_request",
         "get_num_new_matched_tokens 0",
         "update_state_after_alloc num_blocks=[7] 0",
         "build_connector_meta",
     ]
-    assert events["storage2-WORKER"][:8] == [
-        "register_kv_caches",
-        "set_host_xfer_buffer_ops",
-        "get_handshake_metadata",
-        "handle_preemptions",
-        "bind_connector_metadata",
-        "start_load_kv",
-        "wait_for_layer_load",
-        "save_kv_layer",
-    ]
-
     # Reset prefix cache or else we'll just get the tokens back from there.
     llm.reset_prefix_cache()
 
@@ -496,14 +521,12 @@ class TestMultiConnectorStats:
         correct data."""
         serialized_data = {
             "NixlConnector": {
-                "data": {
-                    "transfer_duration": [1.5, 2.3],
-                    "post_duration": [0.1, 0.2],
-                    "bytes_transferred": [1024, 2048],
-                    "num_descriptors": [10, 20],
-                    "num_failed_transfers": [],
-                    "num_failed_notifications": [],
-                }
+                "transfer_duration": [1.5, 2.3],
+                "post_duration": [0.1, 0.2],
+                "bytes_transferred": [1024, 2048],
+                "num_descriptors": [10, 20],
+                "num_failed_transfers": [],
+                "num_failed_notifications": [],
             }
         }
 
@@ -521,16 +544,14 @@ class TestMultiConnectorStats:
         """Test reconstruction with multiple connector types that have custom stats."""
         serialized_data = {
             "NixlConnector": {
-                "data": {
-                    "transfer_duration": [1.5],
-                    "post_duration": [0.1],
-                    "bytes_transferred": [1024],
-                    "num_descriptors": [10],
-                    "num_failed_transfers": [],
-                    "num_failed_notifications": [],
-                }
+                "transfer_duration": [1.5],
+                "post_duration": [0.1],
+                "bytes_transferred": [1024],
+                "num_descriptors": [10],
+                "num_failed_transfers": [],
+                "num_failed_notifications": [],
             },
-            "MockConnector": {"data": {"mock_field": [1, 2, 3]}},
+            "MockConnector": {"mock_field": [1, 2, 3]},
         }
 
         stats = MultiConnector.build_kv_connector_stats(data=serialized_data)
@@ -545,20 +566,19 @@ class TestMultiConnectorStats:
         assert isinstance(stats.data["MockConnector"], MockConnectorStats)
         # Verify data is preserved
         assert stats.data["MockConnector"].data == {"mock_field": [1, 2, 3]}
+        assert stats.to_dict() == serialized_data
 
     def test_build_kv_connector_stats_raises_error_for_unknown_connector(self):
         """Test that unknown connectors raise an error."""
         serialized_data = {
-            "UnknownConnector": {"data": {"some_field": [1, 2, 3]}},
+            "UnknownConnector": {"some_field": [1, 2, 3]},
             "NixlConnector": {
-                "data": {
-                    "transfer_duration": [1.5],
-                    "post_duration": [0.1],
-                    "bytes_transferred": [1024],
-                    "num_descriptors": [10],
-                    "num_failed_transfers": [],
-                    "num_failed_notifications": [],
-                }
+                "transfer_duration": [1.5],
+                "post_duration": [0.1],
+                "bytes_transferred": [1024],
+                "num_descriptors": [10],
+                "num_failed_transfers": [],
+                "num_failed_notifications": [],
             },
         }
 
@@ -610,7 +630,7 @@ class TestMultiConnectorStats:
 
         mixed_data = {
             "NixlConnector": nixl_stats,  # Already instantiated
-            "MockConnector": {"data": {"mock_field": [1, 2, 3]}},  # Serialized
+            "MockConnector": {"mock_field": [1, 2, 3]},  # Serialized
         }
 
         stats = MultiConnector.build_kv_connector_stats(data=mixed_data)
@@ -630,16 +650,14 @@ class TestMultiConnectorStats:
         # so it returns None and should be skipped
         serialized_data = {
             "NixlConnector": {
-                "data": {
-                    "transfer_duration": [1.5],
-                    "post_duration": [0.1],
-                    "bytes_transferred": [1024],
-                    "num_descriptors": [10],
-                    "num_failed_transfers": [],
-                    "num_failed_notifications": [],
-                }
+                "transfer_duration": [1.5],
+                "post_duration": [0.1],
+                "bytes_transferred": [1024],
+                "num_descriptors": [10],
+                "num_failed_transfers": [],
+                "num_failed_notifications": [],
             },
-            "ExampleConnector": {"data": {"some_field": [1, 2, 3]}},
+            "ExampleConnector": {"some_field": [1, 2, 3]},
         }
 
         stats = MultiConnector.build_kv_connector_stats(data=serialized_data)
@@ -653,12 +671,15 @@ class TestMultiConnectorStats:
         # ExampleConnector should be skipped (returns None)
         assert "ExampleConnector" not in stats.data
 
-    def test_build_kv_connector_stats_handles_malformed_data(self):
-        """Test that malformed data raises appropriate errors."""
-        serialized_data = {"NixlConnector": {"wrong_field": {"transfer_duration": [1.5]}}}
+    def test_prom_metrics_passes_flat_data_to_children(self):
+        child_metrics = MagicMock()
+        metrics = object.__new__(MultiKVConnectorPromMetrics)
+        metrics._prom_metrics = {"NixlConnector": child_metrics}
+        payload = {"NixlConnector": {"transfer_duration": [1.5]}}
 
-        with pytest.raises(AssertionError, match="Expected a dict with a 'data' field"):
-            MultiConnector.build_kv_connector_stats(data=serialized_data)
+        metrics.observe(payload, engine_idx=2)
+
+        child_metrics.observe.assert_called_once_with({"transfer_duration": [1.5]}, 2)
 
     def test_aggregate_same_connector(self):
         """Test aggregating stats from the same connector type."""
@@ -832,16 +853,6 @@ Options:
 """)
 
 
-def test_multi_connector_prefer_cross_layer_blocks(mc):
-    mc._connectors[0].prefer_cross_layer_blocks = False
-    mc._connectors[1].prefer_cross_layer_blocks = True
-    assert mc.prefer_cross_layer_blocks is False
-
-    mc._connectors[0].prefer_cross_layer_blocks = True
-    mc._connectors[1].prefer_cross_layer_blocks = True
-    assert mc.prefer_cross_layer_blocks is True
-
-
 def test_multi_connector_worker_metadata(mc):
     class MockConnectorWorkerMetadata(KVConnectorWorkerMetadata):
         def __init__(self, data: set[str]):
@@ -1012,6 +1023,14 @@ def test_multi_connector_hma_support_detection():
     assert not supports_hma(mc_mixed2._connectors[0])
     assert supports_hma(mc_mixed2._connectors[1])
     assert mc_mixed2._all_support_hma is False
+
+
+def test_divergent_local_hybrid_hit_capability_is_conservative():
+    all_supported = _make_multi_connector(["MockDivergentHMAConnector", "MockDivergentHMAConnector"])
+    assert all_supported.supports_divergent_local_hybrid_hits is True
+
+    mixed = _make_multi_connector(["MockDivergentHMAConnector", "MockHMAConnector"])
+    assert mixed.supports_divergent_local_hybrid_hits is False
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to instantiate LLM")

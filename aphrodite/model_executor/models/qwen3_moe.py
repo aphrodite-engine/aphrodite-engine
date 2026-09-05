@@ -131,6 +131,7 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
         self,
         aphrodite_config: AphroditeConfig,
         prefix: str = "",
+        is_fused_checkpoint_transposed: bool = False,
     ):
         super().__init__()
 
@@ -141,7 +142,6 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
         self.tp_size = get_tensor_model_parallel_world_size()
 
         self.ep_group = get_ep_group().device_group
-        self.ep_rank = get_ep_group().rank_in_group
         self.ep_size = self.ep_group.size()
         self.n_routed_experts = config.num_experts
 
@@ -161,9 +161,6 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
         self.n_redundant_experts = eplb_config.num_redundant_experts
         self.n_physical_experts = self.n_logical_experts + self.n_redundant_experts
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
-
-        self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
 
         self.gate = ReplicatedLinear(
             config.hidden_size,
@@ -208,6 +205,7 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
             enable_eplb=self.enable_eplb,
             num_redundant_experts=self.n_redundant_experts,
             is_sequence_parallel=self.is_sequence_parallel,
+            is_fused_checkpoint_transposed=is_fused_checkpoint_transposed,
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -219,15 +217,7 @@ class Qwen3MoeSparseMoeBlock(nn.Module):
         if self.is_sequence_parallel:
             hidden_states = sequence_parallel_chunk(hidden_states)
 
-        if self.experts.is_internal_router:
-            # In this case, the gate/router runs inside the FusedMoEFactory class
-            final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=hidden_states)
-        else:
-            # Actually this will be dead code, since we always pass gate into
-            # FusedMoEFactory in the current implementation. But we keep this code
-            # here for clarity and future flexibility.
-            router_logits, _ = self.gate(hidden_states)
-            final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=hidden_states)
 
         if self.is_sequence_parallel:
             final_hidden_states = tensor_model_parallel_all_gather(final_hidden_states, 0)
@@ -341,7 +331,12 @@ class Qwen3MoeAttention(nn.Module):
 
 
 class Qwen3MoeDecoderLayer(nn.Module):
-    def __init__(self, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        prefix: str = "",
+        is_fused_checkpoint_transposed: bool = False,
+    ) -> None:
         super().__init__()
 
         config = aphrodite_config.model_config.hf_text_config
@@ -372,7 +367,11 @@ class Qwen3MoeDecoderLayer(nn.Module):
         if (layer_idx not in mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
-            self.mlp = Qwen3MoeSparseMoeBlock(aphrodite_config=aphrodite_config, prefix=f"{prefix}.mlp")
+            self.mlp = Qwen3MoeSparseMoeBlock(
+                aphrodite_config=aphrodite_config,
+                prefix=f"{prefix}.mlp",
+                is_fused_checkpoint_transposed=is_fused_checkpoint_transposed,
+            )
         else:
             self.mlp = Qwen3MoeMLP(
                 hidden_size=config.hidden_size,
@@ -553,7 +552,7 @@ class Qwen3MoeForCausalLM(
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         if self.use_tied_lm_head:
-            self.lm_head.weight = self.model.embed_tokens.weight
+            self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
@@ -622,6 +621,5 @@ class Qwen3MoeForCausalLM(
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
         )
         return loader.load_weights(weights)

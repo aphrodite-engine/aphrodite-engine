@@ -38,12 +38,7 @@ from aphrodite.model_executor.layers.fused_moe.experts.lora_experts_mixin import
 from aphrodite.model_executor.layers.fused_moe.topk_weight_and_reduce import (
     TopKWeightAndReduceNoOP,
 )
-from aphrodite.model_executor.layers.fused_moe.utils import (
-    trtllm_moe_pack_topk_ids_weights,
-)
-from aphrodite.model_executor.layers.quantization.utils.flashinfer_utils import (
-    activation_to_flashinfer_int,
-)
+from aphrodite.model_executor.layers.quantization.utils.flashinfer_utils import activation_to_flashinfer_int
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import QuantKey
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
@@ -205,7 +200,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         hidden_states: torch.Tensor,
         w1: torch.Tensor,
         w2: torch.Tensor,
-        packed_topk_ids: torch.Tensor,
+        topk_ids_and_weights: tuple[torch.Tensor, torch.Tensor],
         gemm1_lora_delta: torch.Tensor | None,
         global_num_experts: int,
         a1q_scale: torch.Tensor | None,
@@ -251,15 +246,17 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         intermediate_size = self.intermediate_size_per_partition
         K = output.size(1)
 
-        packed_topk_ids = trtllm_moe_pack_topk_ids_weights(topk_ids, topk_weights)
-
+        # ---- Base-model fast path ----
+        # When no token in the batch selects a LoRA adapter, skip the LoRA machinery
+        # and run the plain base MoE with do_finalize=True, which writes the finalized
+        # result straight into `output`.
         if self._batch_has_no_lora(lora_context):
             self.invoke_routed_moe(
                 hidden_states=hidden_states,
                 w1=w1,
                 w2=w2,
-                packed_topk_ids=packed_topk_ids,
-                gemm1_lora_delta=None,
+                topk_ids_and_weights=(topk_ids, topk_weights),
+                gemm1_lora_delta=None,  # without LoRA, no delta
                 global_num_experts=global_num_experts,
                 a1q_scale=a1q_scale,
                 output=output,
@@ -321,7 +318,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
             hidden_states=hidden_states,
             w1=w1,
             w2=w2,
-            packed_topk_ids=packed_topk_ids,
+            topk_ids_and_weights=(topk_ids, topk_weights),
             gemm1_lora_delta=gemm1_lora_delta,
             global_num_experts=global_num_experts,
             a1q_scale=a1q_scale,
@@ -482,7 +479,7 @@ class TrtLlmBf16LoRAExperts(_TrtLlmLoRAExpertsBase):
         hidden_states: torch.Tensor,
         w1: torch.Tensor,
         w2: torch.Tensor,
-        packed_topk_ids: torch.Tensor,
+        topk_ids_and_weights: tuple[torch.Tensor, torch.Tensor],
         gemm1_lora_delta: torch.Tensor | None,
         global_num_experts: int,
         a1q_scale: torch.Tensor | None,
@@ -494,7 +491,7 @@ class TrtLlmBf16LoRAExperts(_TrtLlmLoRAExpertsBase):
 
         do_finalize = gemm1_lora_delta is None
         ret = flashinfer.fused_moe.trtllm_bf16_routed_moe(
-            topk_ids=packed_topk_ids,
+            topk_ids=topk_ids_and_weights,
             hidden_states=hidden_states,
             gemm1_weights=w1,
             gemm2_weights=w2,

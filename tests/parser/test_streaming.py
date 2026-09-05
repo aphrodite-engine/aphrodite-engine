@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.parser.abstract_parser import DelegatingParser
 from aphrodite.parser.engine.registered_adapters import Qwen3ParserReasoningAdapter
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
@@ -258,7 +258,7 @@ def test_parse_delta_reasoning_only_no_think_leak(tokenizer, request_obj):
 
 
 def test_parse_delta_reasoning_only_thinking_disabled(tokenizer, request_obj):
-    """Regression test for vllm-project/aphrodite#40466.
+    """Regression test for https://github.com/vllm-project/vllm/issues/40466.
 
     When enable_thinking=False, the chat template places <think>\\n\\n</think>
     in the prompt. The model then generates pure content (no think tokens).

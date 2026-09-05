@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import regex as re
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.reasoning import ReasoningParser
 
 if TYPE_CHECKING:

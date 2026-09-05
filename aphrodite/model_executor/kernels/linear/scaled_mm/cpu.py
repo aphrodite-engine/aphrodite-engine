@@ -5,7 +5,6 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite import envs
 from aphrodite.model_executor.layers.quantization.utils import replace_parameter
 from aphrodite.model_executor.layers.quantization.utils.w8a8_utils import (
     convert_to_channelwise,
@@ -42,7 +41,6 @@ class CPUInt8ScaledMMLinearKernel(Int8ScaledMMLinearKernel):
         N, K = weight.size()
         if (
             current_platform.get_cpu_architecture() == CpuArchEnum.X86
-            and envs.APHRODITE_CPU_SGL_KERNEL
             and self.config.input_symmetric
             and check_cpu_sgl_kernel(N, K, dtype)
         ):
