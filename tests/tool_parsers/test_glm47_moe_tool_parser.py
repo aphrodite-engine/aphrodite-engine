@@ -9,12 +9,12 @@ from unittest.mock import Mock
 import pytest
 from openai.types.responses import ResponseFunctionToolCall
 
+from aphrodite.entrypoints.generate.base.protocol import FunctionCall
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
     ChatCompletionToolsParam,
     FunctionDefinition,
 )
-from aphrodite.entrypoints.openai.engine.protocol import FunctionCall
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.entrypoints.openai.responses.utils import build_response_output_items
 from aphrodite.tokenizers import get_tokenizer

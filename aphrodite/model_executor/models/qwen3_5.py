@@ -29,13 +29,15 @@ from collections.abc import Iterable
 import torch
 from torch import nn
 
-from aphrodite._aiter_ops import rocm_aiter_ops
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (
     get_pp_group,
 )
 from aphrodite.logger import init_logger
+from aphrodite.model_executor.layers.fused_moe.utils import (
+    is_model_fused_shared_expert_compatible,
+)
 from aphrodite.model_executor.layers.layernorm import GemmaRMSNorm as Qwen3_5RMSNorm
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.mamba.gdn.qwen_gdn_linear_attn import (
@@ -67,6 +69,7 @@ from .interfaces import (
     MultiModalEmbeddings,
     SupportsEagle3,
     SupportsLoRA,
+    SupportsMRoPE,
     SupportsPP,
     _require_is_multimodal,
 )
@@ -77,7 +80,6 @@ from .qwen3_next import (
     Qwen3NextModel,
     Qwen3NextSparseMoeBlock,
     QwenNextMixtureOfExperts,
-    _is_shared_expert_fse_compatible,
 )
 from .qwen3_vl import (
     Qwen3_VisionTransformer,
@@ -109,7 +111,11 @@ class Qwen3_5ProcessingInfo(Qwen3VLProcessingInfo):
 
 class Qwen3_5MoeProcessingInfo(Qwen3VLProcessingInfo):
     def get_hf_config(self):
-        return self.ctx.get_hf_config(Qwen3_5MoeConfig)
+        # transformers 5.x renames the top-level Qwen3.5-MoE config class to
+        # Qwen3_5MoeTextConfig for text-only models, while transformers ≤4.x
+        # returns Qwen3_5MoeConfig (the multimodal wrapper).  Accept both so
+        # that Aphrodite works regardless of which transformers version is installed.
+        return self.ctx.get_hf_config((Qwen3_5MoeConfig, Qwen3_5MoeTextConfig))
 
 
 class Qwen3_5DecoderLayer(Qwen3NextDecoderLayer):
@@ -244,6 +250,11 @@ class Qwen3_5Model(Qwen3NextModel):
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers, get_layer, prefix=f"{prefix}.layers"
         )
+        self.is_fused_shared_expert_enabled = is_model_fused_shared_expert_compatible(
+            self.layers,
+            Qwen3NextSparseMoeBlock,
+            "mlp",
+        )
         self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
             ["hidden_states", "residual"], config.hidden_size
         )
@@ -262,8 +273,7 @@ class Qwen3_5Model(Qwen3NextModel):
         if "moe" in self.config.model_type:
             weights = maybe_fuse_shared_experts(
                 weights,
-                enabled=rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
-                and _is_shared_expert_fse_compatible(self.quant_config),
+                enabled=self.is_fused_shared_expert_enabled,
                 n_routed_experts=self.config.num_experts,
                 n_shared_experts=1,
                 ckpt_prefix="mlp.shared_expert",
@@ -278,6 +288,7 @@ class Qwen3_5ForCausalLMBase(
     IsHybrid,
     SupportsEagle3,
     SupportsLoRA,
+    SupportsMRoPE,
     SupportsPP,
 ):
     packed_modules_mapping = {
@@ -291,6 +302,18 @@ class Qwen3_5ForCausalLMBase(
         "in_proj_qkvz": ["in_proj_qkv", "in_proj_z"],
         "in_proj_ba": ["in_proj_b", "in_proj_a"],
     }
+    # Maps PEFT embed/lm_head LoRA targets onto Aphrodite embedding wrappers.
+    embedding_modules = {
+        "embed_tokens": "input_embeddings",
+        "lm_head": "output_embeddings",
+    }
+
+    # Some community text-only checkpoints keep the extraneous
+    # `model.language_model.` prefix inherited from the VL training stack.
+    # Strip it so both prefixed and clean checkpoints load correctly.
+    hf_to_aphrodite_mapper = WeightsMapper(
+        orig_to_new_prefix={"model.language_model.": "model.", "mtp.": None},
+    )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         config = aphrodite_config.model_config.hf_text_config
@@ -312,15 +335,14 @@ class Qwen3_5ForCausalLMBase(
         self.model = Qwen3_5Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
+            self.lm_head = ParallelLMHead(
+                config.vocab_size,
+                config.hidden_size,
+                quant_config=self.quant_config,
+                prefix=maybe_prefix(prefix, "lm_head"),
+            )
             if self.use_tied_lm_head:
-                self.lm_head = self.model.embed_tokens
-            else:
-                self.lm_head = ParallelLMHead(
-                    config.vocab_size,
-                    config.hidden_size,
-                    quant_config=self.quant_config,
-                    prefix=maybe_prefix(prefix, "lm_head"),
-                )
+                self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
         else:
             self.lm_head = PPMissingLayer()
 
@@ -392,15 +414,23 @@ class Qwen3_5ForCausalLMBase(
     ) -> torch.Tensor | None:
         return self.logits_processor(self.lm_head, hidden_states)
 
+    def compute_logits_local(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.logits_processor(self.lm_head, hidden_states, skip_gather=True)
+
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        skip_prefixes = ["mtp."]
-        if self.use_tied_lm_head:
-            skip_prefixes.append("lm_head.")
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=skip_prefixes,
-        )
-        return loader.load_weights(weights)
+        loader = AutoWeightsLoader(self)
+        return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
+
+    def get_mrope_input_positions(
+        self,
+        input_tokens: list[int],
+        mm_features: list[object],
+    ) -> tuple[torch.Tensor, int]:
+        positions = torch.arange(len(input_tokens), dtype=torch.long)
+        return positions.unsqueeze(0).expand(3, -1), 0
 
 
 class Qwen3_5ForCausalLM(Qwen3_5ForCausalLMBase):
@@ -427,6 +457,10 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
 )
 class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid):
     supports_multimodal_pruning = True
+
+    hf_to_aphrodite_mapper = Qwen3VLForConditionalGeneration.hf_to_aphrodite_mapper | WeightsMapper(
+        orig_to_new_prefix={"mtp.": None}
+    )
 
     packed_modules_mapping = Qwen3VLForConditionalGeneration.packed_modules_mapping | {
         "in_proj_qkvz": ["in_proj_qkv", "in_proj_z"],
@@ -539,14 +573,11 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
 
         return hidden_states
 
+    def compute_logits_local(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        return self.language_model.compute_logits_local(hidden_states)
+
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        skip_prefixes = ["mtp."]
-        if self.language_model.use_tied_lm_head:
-            skip_prefixes.append("language_model.lm_head.")
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=skip_prefixes,
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
     @classmethod

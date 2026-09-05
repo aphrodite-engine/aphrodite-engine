@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from
-# https://github.com/vllm-project/vllm/blob/main/aphrodite/entrypoints/openai/chat_completion/serving.py
+# https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/chat_completion/serving.py
 
 """Anthropic Messages API serving handler"""
 
@@ -30,6 +30,11 @@ from aphrodite.entrypoints.anthropic.protocol import (
     AnthropicUsage,
 )
 from aphrodite.entrypoints.chat_utils import ChatTemplateContentFormatOption
+from aphrodite.entrypoints.generate.base.protocol import (
+    JsonSchemaResponseFormat,
+    ResponseFormat,
+    StreamOptions,
+)
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionNamedToolChoiceParam,
     ChatCompletionRequest,
@@ -38,15 +43,9 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionToolsParam,
 )
 from aphrodite.entrypoints.openai.chat_completion.serving import OpenAIServingChat
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorResponse,
-    JsonSchemaResponseFormat,
-    ResponseFormat,
-    StreamOptions,
-    UsageInfo,
-)
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
-from aphrodite.entrypoints.serve.utils.api_utils import sanitize_message
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse, UsageInfo
+from aphrodite.entrypoints.serve.exception_handling.utils import sanitize_message
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.renderers.online_renderer import OnlineRenderer
 
@@ -191,7 +190,7 @@ class AnthropicServingMessages(OpenAIServingChat):
         return f"data:{media_type};base64,{data}"
 
     @classmethod
-    def _convert_anthropic_to_openai_request(
+    def to_chat_completion_request(
         cls,
         anthropic_request: AnthropicMessagesRequest | AnthropicCountTokensRequest,
         *,
@@ -479,8 +478,10 @@ class AnthropicServingMessages(OpenAIServingChat):
             temperature=anthropic_request.temperature,
             top_p=anthropic_request.top_p,
             top_k=anthropic_request.top_k,
+            cache_salt=anthropic_request.cache_salt,
             kv_transfer_params=anthropic_request.kv_transfer_params,
             ec_transfer_params=anthropic_request.ec_transfer_params,
+            aphrodite_xargs=anthropic_request.aphrodite_xargs,
             chat_template_kwargs=anthropic_request.chat_template_kwargs,
         )
 
@@ -529,6 +530,7 @@ class AnthropicServingMessages(OpenAIServingChat):
             req.tool_choice = None
             return
 
+        req.parallel_tool_calls = not anthropic_request.tool_choice.disable_parallel_tool_use
         tool_choice_type = anthropic_request.tool_choice.type
         if tool_choice_type == "auto":
             req.tool_choice = "auto"
@@ -588,7 +590,7 @@ class AnthropicServingMessages(OpenAIServingChat):
         """
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Received messages request %s", request.model_dump_json())
-        chat_req = self._convert_anthropic_to_openai_request(
+        chat_req = self.to_chat_completion_request(
             request,
             merge_inline_system=self._merge_inline_system,
         )
@@ -618,7 +620,13 @@ class AnthropicServingMessages(OpenAIServingChat):
         )
         choice = generator.choices[0]
         if choice.finish_reason == "stop":
-            result.stop_reason = "end_turn"
+            # Aphrodite reports the matched stop string in stop_reason (a str);
+            # an int stop-token-id or None (natural EOS) maps to end_turn.
+            if isinstance(choice.stop_reason, str):
+                result.stop_reason = "stop_sequence"
+                result.stop_sequence = choice.stop_reason
+            else:
+                result.stop_reason = "end_turn"
         elif choice.finish_reason == "length":
             result.stop_reason = "max_tokens"
         elif choice.finish_reason == "tool_calls":
@@ -702,6 +710,9 @@ class AnthropicServingMessages(OpenAIServingChat):
 
             first_item = True
             finish_reason = None
+            # Matched stop string, when generation stopped on one (a str);
+            # int stop-token-id / None are not stop sequences.
+            stop_sequence: int | str | None = None
             state = _ActiveBlockState()
             # Map from tool call index to tool_use_id
             tool_index_to_id: dict[int, str] = {}
@@ -803,10 +814,18 @@ class AnthropicServingMessages(OpenAIServingChat):
                         if len(origin_chunk.choices) == 0:
                             for event in stop_and_flush():
                                 yield event
-                            stop_reason = self.stop_reason_map.get(finish_reason or "stop")
+                            if isinstance(stop_sequence, str):
+                                stop_delta = AnthropicDelta(
+                                    stop_reason="stop_sequence",
+                                    stop_sequence=stop_sequence,
+                                )
+                            else:
+                                stop_delta = AnthropicDelta(
+                                    stop_reason=self.stop_reason_map.get(finish_reason or "stop")
+                                )
                             chunk = AnthropicStreamEvent(
                                 type="message_delta",
-                                delta=AnthropicDelta(stop_reason=stop_reason),
+                                delta=stop_delta,
                                 usage=_build_anthropic_usage(origin_chunk.usage),
                             )
                             data = chunk.model_dump_json(exclude_unset=True)
@@ -815,6 +834,7 @@ class AnthropicServingMessages(OpenAIServingChat):
 
                         if origin_chunk.choices[0].finish_reason is not None:
                             finish_reason = origin_chunk.choices[0].finish_reason
+                            stop_sequence = origin_chunk.choices[0].stop_reason
                             # continue
 
                         # thinking / text content
@@ -960,7 +980,7 @@ class AnthropicServingMessages(OpenAIServingChat):
         raw_request: Request | None = None,
     ) -> AnthropicCountTokensResponse | ErrorResponse:
         """Implements Anthropic's messages.count_tokens endpoint."""
-        chat_req = self._convert_anthropic_to_openai_request(
+        chat_req = self.to_chat_completion_request(
             request,
             merge_inline_system=self._merge_inline_system,
         )

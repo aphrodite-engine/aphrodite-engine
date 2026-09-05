@@ -5,6 +5,7 @@ from typing import cast
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from typing_extensions import assert_never
 
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.outputs import PoolingRequestOutput
 from aphrodite.tasks import SupportedTask
@@ -60,7 +61,7 @@ class ServingPooling(PoolingBaseServing):
 
     def _verify_pooling_task(self, request: PoolingRequest) -> str:
         if getattr(request, "dimensions", None) is not None:
-            raise ValueError("dimensions is currently not supported")
+            raise APHRODITEValidationError("dimensions is currently not supported", parameter="dimensions")
 
         if request.task is None:
             request.task = self.pooling_task
@@ -71,19 +72,26 @@ class ServingPooling(PoolingBaseServing):
         assert request.task is not None
         pooling_task = request.task
 
-        # plugin task uses io_processor.parse_request to verify inputs
+        # plugin task uses io_processor.parse_data to verify inputs
         if pooling_task != "plugin" and pooling_task != self.pooling_task:
             if pooling_task not in self.supported_tasks:
-                raise ValueError(f"Unsupported task: {pooling_task!r} Supported tasks: {self.supported_tasks}")
+                raise APHRODITEValidationError(
+                    f"Unsupported task: {pooling_task!r} Supported tasks: {self.supported_tasks}",
+                    parameter="task",
+                )
             else:
-                raise ValueError(f"Try switching the model's pooling_task via --pooler-config.task {request.task}.")
+                raise APHRODITEValidationError(
+                    f"Try switching the model's pooling_task via --pooler-config.task {request.task}.",
+                    parameter="task",
+                )
 
         if pooling_task == "plugin" and "plugin" not in self.io_processors:
-            raise ValueError(
+            raise APHRODITEValidationError(
                 "No IOProcessor plugin installed. Please refer "
                 "to the documentation and to the "
                 "'prithvi_geospatial_mae_io_processor' "
-                "offline inference example for more details."
+                "offline inference example for more details.",
+                parameter="task",
             )
 
         return pooling_task

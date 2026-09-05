@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-use aphrodite_tokenizer::DynTokenizer;
+use aphrodite_tokenizer::{DecodedText, DynTokenizer};
 
 use super::{DelimitedReasoningParser, ReasoningDelta, ReasoningParser, Result};
 
@@ -32,7 +32,7 @@ impl ReasoningParser for KimiReasoningParser {
         Ok(())
     }
 
-    fn push(&mut self, delta: &str) -> Result<ReasoningDelta> {
+    fn push(&mut self, delta: DecodedText) -> Result<ReasoningDelta> {
         Ok(self.inner.push(delta))
     }
 

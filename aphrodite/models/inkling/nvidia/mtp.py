@@ -17,7 +17,7 @@ The draft shares the target's token embedding table and LM head
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 import regex as re
 import torch
@@ -30,7 +30,7 @@ from aphrodite.model_executor.model_loader.mtp_validation import (
     is_mtp_completeness_check_enabled,
 )
 from aphrodite.model_executor.model_loader.weight_utils import default_weight_loader
-from aphrodite.model_executor.models.interfaces import MultiModalEmbeddings
+from aphrodite.model_executor.models.interfaces import SupportsMultiModalEmbeddings
 from aphrodite.model_executor.models.utils import maybe_prefix
 from aphrodite.models.inkling.configs import InklingModelConfig
 from aphrodite.sequence import IntermediateTensors
@@ -134,7 +134,7 @@ class InklingMultiTokenPredictor(nn.Module):
     def embed_input_ids(
         self,
         input_ids: torch.Tensor,
-        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        multimodal_embeddings: torch.Tensor | Sequence[torch.Tensor] | None = None,
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
@@ -201,7 +201,7 @@ class InklingMultiTokenPredictor(nn.Module):
         return hidden
 
 
-class InklingMTP(nn.Module):
+class InklingMTP(nn.Module, SupportsMultiModalEmbeddings):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__()
         assert aphrodite_config.speculative_config is not None
@@ -220,7 +220,7 @@ class InklingMTP(nn.Module):
     def embed_input_ids(
         self,
         input_ids: torch.Tensor,
-        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        multimodal_embeddings: object | None = None,
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:

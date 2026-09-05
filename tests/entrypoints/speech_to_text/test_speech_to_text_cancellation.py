@@ -36,6 +36,7 @@ async def _records_start_then_never_finishes(started_request_ids, request_id):
 async def test_non_streaming_cancel_aborts_engine_requests(engine_inputs, expected_request_ids):
     engine_client = SimpleNamespace(
         errored=False,
+        check_admission=Mock(),
         generate=Mock(side_effect=lambda *_args, **_kwargs: _never_finishes()),
         abort=AsyncMock(),
         is_tracing_enabled=AsyncMock(return_value=False),
@@ -100,6 +101,7 @@ async def test_non_streaming_cancel_advances_all_chunk_generators():
     started_request_ids: list[str] = []
     engine_client = SimpleNamespace(
         errored=False,
+        check_admission=Mock(),
         generate=Mock(
             side_effect=lambda *_args, **_kwargs: _records_start_then_never_finishes(started_request_ids, _args[2])
         ),

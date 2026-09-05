@@ -47,12 +47,20 @@ from aphrodite.distributed import (
 )
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.layers.activation import SiluAndMul
-from aphrodite.model_executor.layers.attention import Attention, RSWAAttention
+from aphrodite.model_executor.layers.attention import (
+    Attention,
+    EncoderOnlyAttention,
+    RSWAAttention,
+)
 from aphrodite.model_executor.layers.attention_layer_base import AttentionLayerBase
 from aphrodite.model_executor.layers.fused_moe import (
     FusedMoEFactory,
     GateLinear,
     fused_moe_make_expert_params_mapping,
+)
+from aphrodite.model_executor.layers.fused_moe.utils import (
+    is_model_fused_shared_expert_compatible,
+    resolve_layer_fused_shared_expert,
 )
 from aphrodite.model_executor.layers.layernorm import LayerNorm, RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -94,7 +102,7 @@ from aphrodite.model_executor.models.utils import (
 from aphrodite.platforms import current_platform
 from aphrodite.sequence import IntermediateTensors
 from aphrodite.utils.torch_utils import direct_register_custom_op
-from aphrodite.v1.attention.backend import AttentionBackend
+from aphrodite.v1.attention.backend import AttentionBackend, AttentionType
 from aphrodite.v1.attention.backends.mla.indexer import (
     DeepseekV32IndexerBackend,
 )
@@ -291,7 +299,6 @@ class DeepseekV2MoE(nn.Module):
         self.routed_scaling_factor = getattr(config, "routed_scaling_factor", 1.0)
 
         self.ep_group = get_ep_group().device_group
-        self.ep_rank = get_ep_group().rank_in_group
         self.ep_size = self.ep_group.size()
         self.n_routed_experts: int = config.n_routed_experts
         self.n_shared_experts: int = config.n_shared_experts
@@ -322,11 +329,12 @@ class DeepseekV2MoE(nn.Module):
         self.n_physical_experts = self.n_logical_experts + self.n_redundant_experts
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
 
-        self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
-
         self.is_rocm_aiter_moe_enabled = rocm_aiter_ops.is_fused_moe_enabled()
-        self.is_fusion_moe_shared_experts_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
+
+        self.is_fused_shared_expert_enabled = False
+        if config.n_shared_experts is not None:
+            self.is_fused_shared_expert_enabled = resolve_layer_fused_shared_expert(quant_config, prefix)
+
         if (
             self.is_rocm_aiter_moe_enabled
             and self.gate.e_score_correction_bias is not None
@@ -335,7 +343,7 @@ class DeepseekV2MoE(nn.Module):
             # Accumulates in fp32; avoids bf16->fp32 cast.
             self.gate.set_out_dtype(self.gate.weight.dtype)
 
-        if config.n_shared_experts is None or self.is_fusion_moe_shared_experts_enabled:
+        if config.n_shared_experts is None or self.is_fused_shared_expert_enabled:
             self.shared_experts = None
         else:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
@@ -371,7 +379,8 @@ class DeepseekV2MoE(nn.Module):
             num_redundant_experts=self.n_redundant_experts,
             is_sequence_parallel=self.is_sequence_parallel,
             reduce_results=reduce_results,
-            n_shared_experts=config.n_shared_experts if self.is_fusion_moe_shared_experts_enabled else None,
+            n_shared_experts=config.n_shared_experts if self.is_fused_shared_expert_enabled else None,
+            fuse_shared_experts=self.is_fused_shared_expert_enabled,
             router_logits_dtype=self.gate.out_dtype,
         )
 
@@ -391,11 +400,7 @@ class DeepseekV2MoE(nn.Module):
         if self.is_sequence_parallel and not already_sequence_parallel:
             hidden_states = sequence_parallel_chunk(hidden_states)
 
-        if self.experts.is_internal_router:
-            final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=hidden_states)
-        else:
-            router_logits, _ = self.gate(hidden_states)
-            final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=router_logits)
+        final_hidden_states = self.experts(hidden_states=hidden_states, router_logits=hidden_states)
 
         if self.is_sequence_parallel and not already_sequence_parallel:
             final_hidden_states = tensor_model_parallel_all_gather(final_hidden_states, 0)
@@ -430,7 +435,7 @@ class DeepseekV2Attention(nn.Module):
         qk_nope_head_dim: int,
         qk_rope_head_dim: int,
         v_head_dim: int,
-        q_lora_rank: int,
+        q_lora_rank: int | None,
         kv_lora_rank: int,
         max_position_embeddings: int = 8192,
         cache_config: CacheConfig | None = None,
@@ -468,7 +473,7 @@ class DeepseekV2Attention(nn.Module):
             )
             self.q_a_layernorm = RMSNorm(self.q_lora_rank, eps=config.rms_norm_eps)
             self.q_b_proj = ColumnParallelLinear(
-                q_lora_rank,
+                self.q_lora_rank,
                 self.num_heads * self.qk_head_dim,
                 bias=False,
                 quant_config=quant_config,
@@ -525,7 +530,18 @@ class DeepseekV2Attention(nn.Module):
             mscale = yarn_get_mscale(scaling_factor, float(mscale_all_dim))
             self.scaling = self.scaling * mscale * mscale
 
-        self.attn = Attention(
+        # DeepSeek is causal by default (decoder-only). Bidirectional
+        # (encoder-only) attention is used by embedding models derived from
+        # this architecture, which set `is_causal=False` on the HF config.
+        # This only applies on the non-MLA path, since the MLA kernels are
+        # causal-only; `ModelConfig.use_mla` already disables MLA for these
+        # models.
+        if getattr(config, "is_causal", True):
+            attn_type = AttentionType.DECODER
+        else:
+            attn_type = AttentionType.ENCODER_ONLY
+        attn_cls = EncoderOnlyAttention if attn_type == AttentionType.ENCODER_ONLY else Attention
+        self.attn = attn_cls(
             self.num_local_heads,
             self.qk_head_dim,
             self.scaling,
@@ -533,6 +549,7 @@ class DeepseekV2Attention(nn.Module):
             cache_config=cache_config,
             quant_config=quant_config,
             prefix=f"{prefix}.attn",
+            attn_type=attn_type,
         )
 
     def forward(
@@ -593,6 +610,11 @@ class DeepseekV32IndexerCache(torch.nn.Module, AttentionLayerBase):
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
 
+    def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
+        # [B, H=1, N, C] -> [B, N, C]: the indexer kernels and
+        # kv_cache_as_quant_view index a 3-D block-major cache.
+        self.kv_cache = kv_cache.squeeze(1)
+
     def get_kv_cache_spec(self, aphrodite_config: AphroditeConfig) -> KVCacheSpec:
         return MLAAttentionSpec(
             block_size=self.cache_config.block_size,
@@ -603,7 +625,7 @@ class DeepseekV32IndexerCache(torch.nn.Module, AttentionLayerBase):
 
     def forward(self): ...
 
-    def get_attn_backend(self) -> AttentionBackend:
+    def get_attn_backend(self) -> type[AttentionBackend]:
         return DeepseekV32IndexerBackend
 
 
@@ -658,6 +680,7 @@ class Indexer(nn.Module):
         # NOTE: (zyongye) we use fp8 naive cache,
         #       where we store value in fp8 and scale in fp32
         #       per self.quant_block_size element
+        assert cache_config is not None
         self.k_cache = DeepseekV32IndexerCache(
             head_dim=self.head_dim + self.head_dim // self.quant_block_size * 4,
             dtype=torch.uint8,
@@ -801,12 +824,20 @@ def _try_load_fp8_indexer_wk(name, tensor, buf, params_dict, loaded_params, pp_m
     # We have both weight and scale: dequantize FP8 to BF16.
     weight_fp8, scale_inv = entry["weight"], entry["scale"]
     del buf[layer_prefix]
+    if scale_inv.dtype in (torch.uint8, torch.float8_e8m0fnu):
+        # MXFP8 checkpoints store power-of-two E8M0 scales, decode them to float.
+        scale_inv = scale_inv.view(torch.float8_e8m0fnu).to(torch.float32)
     if scale_inv.ndim == 1:
         # Per-channel scale: one scale per row of [out, in]
         group_shape = GroupShape(1, weight_fp8.shape[1])
     else:
-        block_size = weight_fp8.shape[1] // scale_inv.shape[1]
-        group_shape = GroupShape(block_size, block_size)
+        # Derive the block size independently per dim so that per-channel
+        # ([out, 1]), MX ([out, in / 32]) and 2D block ([out / 128, in / 128])
+        # scale layouts are all handled.
+        group_shape = GroupShape(
+            weight_fp8.shape[0] // scale_inv.shape[0],
+            weight_fp8.shape[1] // scale_inv.shape[1],
+        )
     weight_bf16 = scaled_dequantize(
         weight_fp8,
         scale_inv,
@@ -993,6 +1024,18 @@ class DeepseekV2MLAAttention(nn.Module):
                 prefix=f"{prefix}.kv_a_proj_with_mqa",
             )
 
+        # The env var predates the config field and still wins if set explicitly.
+        qrep_requested = (
+            envs.APHRODITE_DCP_Q_REPLICATE
+            if envs.is_set("APHRODITE_DCP_Q_REPLICATE")
+            else bool(aphrodite_config.parallel_config.dcp_q_replicate)
+        )
+        qrep_enabled = (
+            qrep_requested
+            and aphrodite_config.parallel_config.decode_context_parallel_size > 1
+            and aphrodite_config.parallel_config.prefill_context_parallel_size <= 1
+        )
+        q_proj_cls = DCPGroupColumnParallelLinear if qrep_enabled else ColumnParallelLinear
         if self.q_lora_rank is not None:
             self.q_a_layernorm = RMSNorm(self.q_lora_rank, eps=config.rms_norm_eps)
             self.q_b_proj = q_proj_cls(
@@ -1064,6 +1107,10 @@ class DeepseekV2MLAAttention(nn.Module):
             is_mtp_layer = _num_hidden_layers is not None and layer_id >= _num_hidden_layers
 
         if self.is_v32 and (not _skip_topk or is_mtp_layer):
+            assert q_lora_rank is not None
+            assert cache_config is not None
+            self.indexer_rope_emb: nn.Module | None
+            self.indexer: Indexer | None
             self.indexer_rope_emb = get_rope(
                 qk_rope_head_dim,
                 max_position=max_position_embeddings,
@@ -1169,6 +1216,7 @@ class DeepseekV2DecoderLayer(nn.Module):
 
         self.use_mha = use_mha
 
+        attn_cls: typing.Any
         if use_mha:
             attn_cls = DeepseekAttention
         elif model_config.use_mla:
@@ -1350,6 +1398,12 @@ class DeepseekV2Model(nn.Module):
                 "index_topk_pattern)."
             )
 
+        self.is_fused_shared_expert_enabled = is_model_fused_shared_expert_compatible(
+            self.layers,
+            DeepseekV2MoE,
+            "mlp",
+        )
+
         if get_pp_group().is_last_rank:
             self.norm = RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         else:
@@ -1438,8 +1492,7 @@ class DeepseekV2Model(nn.Module):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        rocm_aiter_moe_shared_expert_enabled = rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
-        stacked_params_mapping = [
+        stacked_params_mapping: list[tuple[str, str, int | str]] = [
             # (param_name, shard_name, shard_id)
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
@@ -1477,7 +1530,7 @@ class DeepseekV2Model(nn.Module):
             ckpt_down_proj_name="down_proj",
             ckpt_up_proj_name="up_proj",
             num_experts=self.config.n_routed_experts
-            + (self.config.n_shared_experts if rocm_aiter_moe_shared_expert_enabled else 0),
+            + (self.config.n_shared_experts if self.is_fused_shared_expert_enabled else 0),
             num_redundant_experts=self.num_redundant_experts,
         )
 
@@ -1498,7 +1551,7 @@ class DeepseekV2Model(nn.Module):
             if ".indexer." in name and (name.rsplit(".indexer.", 1)[0] not in indexer_present_prefixes):
                 continue  # this layer has no indexer; drop its checkpoint weights
 
-            is_fusion_moe_shared_experts_layer = rocm_aiter_moe_shared_expert_enabled and ("mlp.shared_experts" in name)
+            is_fusion_moe_shared_experts_layer = self.is_fused_shared_expert_enabled and ("mlp.shared_experts" in name)
 
             if _try_load_fp8_indexer_wk(
                 name,
@@ -1591,7 +1644,7 @@ class DeepseekV2Model(nn.Module):
                     # param and delegate to its expert-aware weight_loader
                     # with expert_id.
                     for mapping in expert_params_mapping:
-                        param_name, weight_name, expert_id, shard_id = mapping
+                        param_name, weight_name, expert_id, expert_shard_id = mapping
                         if weight_name not in chunk_name:
                             continue
 
@@ -1615,7 +1668,7 @@ class DeepseekV2Model(nn.Module):
                             param,
                             weight_to_load,
                             name_mapped,
-                            shard_id=shard_id,
+                            shard_id=expert_shard_id,
                             expert_id=expert_id,
                             return_success=True,
                         )
@@ -1637,9 +1690,10 @@ class DeepseekV2Model(nn.Module):
                             continue
 
                         # Remapping the name of FP8 kv-scale.
-                        name = maybe_remap_kv_scale_name(name, params_dict)
-                        if name is None:
+                        remapped_name = maybe_remap_kv_scale_name(name, params_dict)
+                        if remapped_name is None:
                             continue
+                        name = remapped_name
 
                         if is_pp_missing_parameter(name, self):
                             continue

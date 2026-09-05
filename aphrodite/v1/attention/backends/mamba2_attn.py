@@ -131,6 +131,7 @@ class Mamba2AttentionMetadataBuilder(BaseMambaAttentionMetadataBuilder[Mamba2Att
             common_attn_metadata,
             num_accepted_tokens=kwargs.get("num_accepted_tokens"),
             prev_last_scheduled_idx=kwargs.get("prev_last_scheduled_idx"),
+            num_decode_draft_tokens_cpu=kwargs.get("num_decode_draft_tokens_cpu"),
         )
 
         seq_idx_p = None
@@ -140,9 +141,13 @@ class Mamba2AttentionMetadataBuilder(BaseMambaAttentionMetadataBuilder[Mamba2Att
 
         # Compute seq_idx for prefill only
         if common.num_prefills > 0:
-            prep_initial_states = (
-                torch.any(common.has_initial_states_p).item() if common.has_initial_states_p is not None else False
-            )
+            prep_initial_states = False
+            if common.has_initial_states_p is not None:
+                # Same condition as `has_initial_states_p`, but derived from CPU
+                # data so it needs no D2H. `seq_lens_cpu_upper_bound` is precise
+                # for prefill rows, which is all this slice covers.
+                num_computed_tokens_p_cpu, _ = self._prefill_cpu_metadata(common, common_attn_metadata)
+                prep_initial_states = bool((num_computed_tokens_p_cpu > 0).any())
 
             cu_chunk_seqlen_p, seq_idx_p, last_chunk_indices_p = self._build_chunk_metadata_tensors(
                 self.chunk_size,

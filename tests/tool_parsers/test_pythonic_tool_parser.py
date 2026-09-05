@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from aphrodite.entrypoints.openai.engine.protocol import FunctionCall
+from aphrodite.entrypoints.generate.base.protocol import FunctionCall
 from aphrodite.tokenizers import TokenizerLike
 from aphrodite.tool_parsers import ToolParser, ToolParserManager
 from tests.tool_parsers.utils import (

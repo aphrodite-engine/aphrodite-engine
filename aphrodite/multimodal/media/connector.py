@@ -22,8 +22,12 @@ from PIL import Image, UnidentifiedImageError
 from urllib3.util import Url, parse_url
 
 import aphrodite.envs as envs
-from aphrodite.connections import HTTPConnection, global_http_connection
-from aphrodite.exceptions import APHRODITEUnprocessableEntityError
+from aphrodite.connections import (
+    HTTPConnection,
+    MediaDownloadSizeExceededError,
+    global_http_connection,
+)
+from aphrodite.exceptions import APHRODITEUnprocessableEntityError, APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.multimodal.video import get_video_loader_backend_for_processor
 from aphrodite.utils.registry import ExtensionManager
@@ -31,7 +35,7 @@ from aphrodite.utils.registry import ExtensionManager
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
 from .image import ImageEmbeddingMediaIO, ImageMediaIO
-from .video import VideoMediaIO
+from .video import VideoEmbeddingMediaIO, VideoMediaIO
 
 logger = init_logger(__name__)
 
@@ -49,11 +53,26 @@ MODALITY_IO_MAP: dict[str, type[MediaIO]] = {
 }
 
 
-def _wrap_media_fetch_error(
-    url: str,
-    exc: Exception,
-) -> APHRODITEUnprocessableEntityError | Exception:
-    """Convert permanent media fetch failures into 422 request errors."""
+def _wrap_media_fetch_error(url: str, exc: Exception) -> APHRODITEUnprocessableEntityError | Exception:
+    """Convert media fetch exceptions to APHRODITEUnprocessableEntityError.
+
+    This handles HTTP errors that indicate the media resource is invalid
+    (4xx responses except 408/429, malformed URLs) and converts them to a
+    422 Unprocessable Entity error instead of 500.
+
+    Transient errors (5xx, 408, 429, DNS failures, connection errors,
+    timeouts) are returned as-is to allow retry logic to handle them
+    appropriately.
+
+    Returns:
+        APHRODITEUnprocessableEntityError for permanent client errors (4xx except
+            408/429, invalid URL)
+        Original exception for transient errors (5xx, 408, 429, network blips)
+            or other exceptions
+    """
+    if isinstance(exc, APHRODITEValidationError):
+        return exc
+
     if isinstance(exc, aiohttp.ClientResponseError):
         if exc.status in (408, 429):
             return exc
@@ -81,6 +100,13 @@ def _wrap_media_fetch_error(
     if isinstance(exc, requests.exceptions.InvalidURL):
         return APHRODITEUnprocessableEntityError(
             "Failed to fetch media from URL: Invalid URL format",
+            parameter="image_url",
+            value=url,
+        )
+
+    if isinstance(exc, MediaDownloadSizeExceededError):
+        return APHRODITEUnprocessableEntityError(
+            f"Failed to fetch media from URL: {exc}",
             parameter="image_url",
             value=url,
         )
@@ -334,6 +360,7 @@ class MediaConnector:
 
         if url_spec.scheme and url_spec.scheme.startswith("http"):
             self._assert_url_in_allowed_media_domains(url_spec)
+            max_bytes = media_io.get_max_bytes()
 
             cached = self._get_cached_bytes(url)
             if cached is not None:
@@ -345,6 +372,7 @@ class MediaConnector:
                     url_spec.url,
                     timeout=fetch_timeout,
                     allow_redirects=envs.APHRODITE_MEDIA_URL_ALLOW_REDIRECTS,
+                    max_bytes=max_bytes,
                 )
             except Exception as e:
                 wrapped = _wrap_media_fetch_error(url, e)
@@ -378,6 +406,7 @@ class MediaConnector:
 
         if url_spec.scheme and url_spec.scheme.startswith("http"):
             self._assert_url_in_allowed_media_domains(url_spec)
+            max_bytes = media_io.get_max_bytes()
 
             cached = await loop.run_in_executor(global_thread_pool, self._get_cached_bytes, url)
             if cached is not None:
@@ -390,6 +419,7 @@ class MediaConnector:
                     url_spec.url,
                     timeout=fetch_timeout,
                     allow_redirects=envs.APHRODITE_MEDIA_URL_ALLOW_REDIRECTS,
+                    max_bytes=max_bytes,
                 )
             except Exception as e:
                 wrapped = _wrap_media_fetch_error(url, e)
@@ -584,3 +614,26 @@ class MediaConnector:
         loop = asyncio.get_running_loop()
 
         return await loop.run_in_executor(global_thread_pool, audio_embedding_io.load_base64, "", data)
+
+    def fetch_video_embedding(
+        self,
+        data: str,
+    ) -> torch.Tensor:
+        """
+        Load video embedding from a URL.
+        """
+        video_embedding_io = VideoEmbeddingMediaIO()
+
+        return video_embedding_io.load_base64("", data)
+
+    async def fetch_video_embedding_async(
+        self,
+        data: str,
+    ) -> torch.Tensor:
+        """
+        Asynchronously load video embedding from a URL.
+        """
+        video_embedding_io = VideoEmbeddingMediaIO()
+        loop = asyncio.get_running_loop()
+
+        return await loop.run_in_executor(global_thread_pool, video_embedding_io.load_base64, "", data)

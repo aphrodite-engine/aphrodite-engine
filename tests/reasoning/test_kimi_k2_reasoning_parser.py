@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.reasoning.kimi_k2_reasoning_parser import KimiK2ReasoningParser
 from aphrodite.tokenizers import get_tokenizer
 

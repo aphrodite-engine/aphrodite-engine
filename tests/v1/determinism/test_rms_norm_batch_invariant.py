@@ -6,7 +6,7 @@ import pytest
 import torch
 from utils import skip_if_not_cuda, skip_unsupported
 
-from aphrodite.model_executor.layers.batch_invariant import (
+from aphrodite.model_executor.determinism.batch_invariant import (
     rms_norm_batch_invariant,
 )
 from aphrodite.platforms import current_platform

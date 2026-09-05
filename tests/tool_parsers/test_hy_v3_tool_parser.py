@@ -8,12 +8,12 @@ from unittest.mock import Mock
 
 import pytest
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
     ChatCompletionToolsParam,
     FunctionDefinition,
 )
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.tokenizers import get_tokenizer
 from aphrodite.tool_parsers.hy_v3_tool_parser import HYV3ToolParser
 

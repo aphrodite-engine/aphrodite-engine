@@ -7,7 +7,7 @@ import tempfile
 import pytest
 import torch
 
-from aphrodite import LLM, ModelRegistry, SamplingParams
+from aphrodite import LLM, SamplingParams
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
     example_hidden_states_connector,
 )
@@ -67,14 +67,11 @@ def predictable_llama_config_path(tmp_path_factory):
     return str(config_dir)
 
 
-@pytest.fixture(scope="module", autouse=True)
-def register_predictable_model():
-    """Register the PredictableLlamaForCausalLM model."""
-    from .predictable_llama import PredictableLlamaForCausalLM
-
-    if "PredictableLlamaForCausalLM" not in ModelRegistry.get_supported_archs():
-        ModelRegistry.register_model("PredictableLlamaForCausalLM", PredictableLlamaForCausalLM)
-    yield
+# Need for Python 3.14 compatibility, Aphrodite with force spawn due to CUDA
+# reinitialization, and register will not persist.
+PREDICTABLE_LLAMA_MODEL_CLS = (
+    "tests.v1.kv_connector.extract_hidden_states_integration.predictable_llama:PredictableLlamaForCausalLM"
+)
 
 
 def test_extract_hidden_states_with_predictable_dummy_model(predictable_llama_config_path, tmp_path, monkeypatch):
@@ -100,6 +97,9 @@ def test_extract_hidden_states_with_predictable_dummy_model(predictable_llama_co
 
     llm = LLM(
         model=predictable_llama_config_path,
+        model_class_overrides={
+            "PredictableLlamaForCausalLM": PREDICTABLE_LLAMA_MODEL_CLS,
+        },
         speculative_config={
             "method": "extract_hidden_states",
             "num_speculative_tokens": 1,
@@ -289,7 +289,7 @@ def test_extract_hidden_states_qwen35_hybrid_smoke(tmp_path):
         )
 
 
-@pytest.mark.timeout(240 if current_platform.is_rocm() else 120)
+@pytest.mark.timeout(240 if current_platform.is_rocm() or current_platform.is_xpu() else 120)
 @multi_gpu_test(num_gpus=2)
 @create_new_process_for_each_test()
 def test_extract_hidden_states_tp2():

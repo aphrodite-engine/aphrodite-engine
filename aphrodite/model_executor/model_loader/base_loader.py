@@ -54,6 +54,7 @@ class BaseModelLoader(ABC):
                     prefix=prefix,
                 )
 
+            log_online_quantization(aphrodite_config)
             log_model_inspection(model)
 
             logger.debug("Loading weights on %s ...", load_device)
@@ -86,6 +87,26 @@ def log_model_inspection(model: nn.Module) -> None:
     from aphrodite.model_inspection import format_model_inspection
 
     logger.info("Aphrodite model structure:\n%s", format_model_inspection(model))
+
+
+def log_online_quantization(aphrodite_config: AphroditeConfig) -> None:
+    """Log the online-quantized layer count and types, when applicable."""
+    from aphrodite.model_executor.layers.quantization.online.base import (
+        OnlineQuantizationConfig,
+    )
+
+    quant_config = aphrodite_config.quant_config
+    online_quantization_config = getattr(quant_config, "online_quantization_config", None)
+    if isinstance(online_quantization_config, OnlineQuantizationConfig):
+        quant_config = online_quantization_config
+    if not isinstance(quant_config, OnlineQuantizationConfig):
+        return
+
+    logger.info(
+        "Quantized %d layers of types: %s",
+        len(quant_config.quantized_layers),
+        "; ".join(quant_config.quantized_layer_summaries),
+    )
 
 
 def _has_online_quant(model: nn.Module):

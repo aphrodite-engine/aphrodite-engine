@@ -38,17 +38,17 @@ from collections.abc import Sequence
 import regex as re
 from openai.types.responses import ToolChoiceFunction
 
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionNamedToolChoiceParam,
-    ChatCompletionRequest,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,
     ExtractedToolCallInformation,
     FunctionCall,
     ToolCall,
+)
+from aphrodite.entrypoints.openai.chat_completion.protocol import (
+    ChatCompletionNamedToolChoiceParam,
+    ChatCompletionRequest,
 )
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.exceptions import AphroditeValidationError

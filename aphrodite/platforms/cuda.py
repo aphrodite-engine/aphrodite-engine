@@ -109,6 +109,7 @@ def _get_backend_priorities(
     num_heads: int | None = None,
     kv_cache_dtype: CacheDType | None = None,
     use_non_causal: bool = False,
+    head_size: int | None = None,
 ) -> list[AttentionBackendEnum]:
     """Get backend priorities with lazy import to avoid circular dependency."""
     from aphrodite.utils.torch_utils import is_quantized_kv_cache
@@ -156,16 +157,21 @@ def _get_backend_priorities(
                 AttentionBackendEnum.FLASHINFER_MLA_SPARSE_SM120,
             ]
         else:
+            sparse_tail = [
+                AttentionBackendEnum.FLASH_ATTN_MLA_SPARSE,
+                AttentionBackendEnum.FLASHMLA_SPARSE,
+            ]
+            flashinfer_sparse = AttentionBackendEnum.FLASHINFER_MLA_SPARSE_SM90
+            if head_size == 512:
+                sparse_tail.insert(0, flashinfer_sparse)
+            else:
+                sparse_tail.append(flashinfer_sparse)
             return [
                 AttentionBackendEnum.FLASH_ATTN_MLA,
                 AttentionBackendEnum.FLASHMLA,
                 AttentionBackendEnum.FLASHINFER_MLA,
                 AttentionBackendEnum.TRITON_MLA,
-                AttentionBackendEnum.FLASH_ATTN_MLA_SPARSE,
-                AttentionBackendEnum.FLASHMLA_SPARSE,
-                # sm89-only (rejected elsewhere via supports_compute_capability
-                # and supports_combination, which also honor the
-                # APHRODITE_DISABLE_SM89_DSA kill switch).
+                *sparse_tail,
                 AttentionBackendEnum.SM89_MLA_SPARSE,
             ]
     else:
@@ -269,6 +275,10 @@ class CudaPlatformBase(Platform):
             # QuTLASS is only built for SM100 and SM120; expected to be absent
             # on every other arch (SM110/Thor, Ampere, Ada, ...).
             logger.debug("Failed to import from aphrodite._qutlass_C: %r", e)
+
+    @classmethod
+    def check_runner_kv_caches_multi_layer(cls) -> None:
+        pass
 
     @property
     def supported_dtypes(self) -> list[torch.dtype]:
@@ -417,11 +427,12 @@ class CudaPlatformBase(Platform):
         invalid_reasons: dict[AttentionBackendEnum, tuple[int, list[str]]] = {}
 
         backend_priorities = _get_backend_priorities(
-            attn_selector_config.use_mla,
-            device_capability,
-            num_heads,
-            attn_selector_config.kv_cache_dtype,
-            attn_selector_config.use_non_causal,
+            use_mla=attn_selector_config.use_mla,
+            device_capability=device_capability,
+            num_heads=num_heads,
+            kv_cache_dtype=attn_selector_config.kv_cache_dtype,
+            use_non_causal=attn_selector_config.use_non_causal,
+            head_size=attn_selector_config.head_size,
         )
         for priority, backend in enumerate(backend_priorities):
             try:
@@ -430,14 +441,33 @@ class CudaPlatformBase(Platform):
                     device_capability=device_capability,
                     **attn_selector_config._asdict(),
                 )
-            except ImportError:
-                invalid_reasons_i = ["ImportError"]
+            except (ImportError, OSError) as e:
+                logger.debug("Attention backend %s is unavailable", backend.name, exc_info=True)
+                invalid_reasons_i = [f"{type(e).__name__}: {e}"]
             if invalid_reasons_i:
                 invalid_reasons[backend] = (priority, invalid_reasons_i)
             else:
                 valid_backends_priorities.append(_BackendCandidate(backend_class, backend, priority))
 
         return valid_backends_priorities, invalid_reasons
+
+    @classmethod
+    def _get_indexer_block_alignment(cls, aphrodite_config: AphroditeConfig) -> int | None:
+        index_kpool = getattr(aphrodite_config.model_config.hf_text_config, "index_kpool", None)
+        if not index_kpool or index_kpool <= 1:
+            return None
+        from aphrodite.utils.deep_gemm import PAGED_MQA_PAGE_SIZES
+
+        # kpool paged-MQA indexer: the storage block (block_size /
+        # index_kpool) is virtually split into pool pages, so block_size
+        # must be a multiple of index_kpool times a legal pool page.
+        page = min(PAGED_MQA_PAGE_SIZES)
+        if cls.is_device_capability_family(120):
+            # On sm120 the DeepGEMM paged-MQA kernel only accepts block_kv
+            # 64 for the fp8 indexer cache, so align to the largest pool
+            # page here to make the page split land on 64 not the min 32.
+            page = max(PAGED_MQA_PAGE_SIZES)
+        return index_kpool * page
 
     @classmethod
     def get_attn_backend_cls(
@@ -457,8 +487,11 @@ class CudaPlatformBase(Platform):
                     device_capability=device_capability,
                     **attn_selector_config._asdict(),
                 )
-            except ImportError:
-                invalid_reasons = ["ImportError"]
+            except (ImportError, OSError) as e:
+                raise ValueError(
+                    f"Selected backend {selected_backend} is not valid for "
+                    f"this configuration. Reason: [{type(e).__name__}: {e}]"
+                ) from e
             if invalid_reasons:
                 raise ValueError(
                     f"Selected backend {selected_backend} is not valid for "
@@ -770,12 +803,16 @@ class NvmlCudaPlatform(CudaPlatformBase):
             return None
 
     @classmethod
-    @with_nvml_context
     def has_device_capability(
         cls,
         capability: tuple[int, int] | int,
         device_id: int = 0,
     ) -> bool:
+        # No @with_nvml_context here: the base implementation only reads
+        # get_device_capability(), which is cached and brings its own NVML
+        # context. Wrapping this method as well cost an nvmlInit()/
+        # nvmlShutdown() pair on every call, including calls made per attention
+        # layer per step from the Triton reshape-and-cache path.
         try:
             return super().has_device_capability(capability, device_id)
         except RuntimeError:

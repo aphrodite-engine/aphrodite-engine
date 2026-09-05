@@ -2,22 +2,15 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
-import signal
 
 import uvloop
 
-from aphrodite import envs
-from aphrodite.config import AphroditeConfig
-from aphrodite.engine.arg_utils import AsyncEngineArgs
 from aphrodite.entrypoints.cli.types import CLISubcommand
-from aphrodite.entrypoints.openai.api_server import (
-    build_and_serve_renderer,
-    setup_server,
-)
-from aphrodite.entrypoints.openai.cli_args import (
+from aphrodite.entrypoints.launchers.cli_args import (
     make_arg_parser,
     validate_parsed_serve_args,
 )
+from aphrodite.entrypoints.launchers.render.entry import run_launch_fastapi
 from aphrodite.entrypoints.serve.utils.api_utils import APHRODITE_SUBCMD_PARSER_EPILOG
 from aphrodite.logger import init_logger
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
@@ -101,36 +94,3 @@ class LaunchSubcommand(CLISubcommand):
 
 def cmd_init() -> list[CLISubcommand]:
     return [LaunchSubcommand()]
-
-
-async def run_launch_fastapi(args: argparse.Namespace) -> None:
-    """Run the online serving layer with FastAPI (no GPU inference)."""
-
-    # Interrupt initialization if SIGTERM arrives before uvicorn installs
-    # its own signal handlers. Once uvicorn is running it replaces this.
-    def _interrupt_init(*_) -> None:
-        raise KeyboardInterrupt("terminated")
-
-    signal.signal(signal.SIGTERM, _interrupt_init)
-
-    # 1. Socket binding
-    listen_address, sock = setup_server(args, reuse_port=False)
-
-    # 2. Build and serve the API server
-    engine_args = AsyncEngineArgs.from_cli_args(args)
-    model_config = engine_args.create_model_config()
-
-    # Render servers preprocess data only — no inference, no quantized kernels.
-    # Clear quantization so AphroditeConfig skips quant dtype/capability validation.
-    model_config.quantization = None
-
-    # Render servers never allocate KV cache; suppress the spurious CPU KV
-    # cache space warning from CpuPlatform.check_and_update_config.
-    envs.APHRODITE_CPU_KVCACHE_SPACE = 0
-
-    aphrodite_config = AphroditeConfig(model_config=model_config)
-    shutdown_task = await build_and_serve_renderer(aphrodite_config, listen_address, sock, args)
-    try:
-        await shutdown_task
-    finally:
-        sock.close()

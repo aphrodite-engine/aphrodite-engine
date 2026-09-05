@@ -9,6 +9,7 @@ import pytest
 
 from aphrodite import LLM
 from aphrodite.utils.mem_constants import GiB_bytes
+from aphrodite.v1.attention.backends.utils import resolve_kv_cache_layout
 from aphrodite.v1.core.kv_cache_utils import (
     generate_scheduler_kv_cache_config,
     get_kv_cache_configs,
@@ -39,7 +40,7 @@ MINIMAL_MODEL_ARCH_LIST = [
     "InternVLChatModel",
     "InternLM2ForRewardModel",
     "TransformersMultiModalForCausalLM",
-    "PrithviGeoSpatialMAE",
+    "Terratorch",
     "UltravoxModel",
     "DeepSeekMTPModel",
     "XLMRobertaModel",
@@ -79,6 +80,12 @@ def can_initialize(model_arch: str, monkeypatch: pytest.MonkeyPatch, EXAMPLE_MOD
     # Avoid calling model.forward()
     def _initialize_kv_caches_v1(self, aphrodite_config):
         kv_cache_specs = self.model_executor.get_kv_cache_specs()
+        layout = resolve_kv_cache_layout(
+            aphrodite_config,
+            self.model_executor.get_supported_kv_cache_layouts(),
+            [spec for worker_specs in kv_cache_specs for spec in worker_specs.values()],
+        )
+        self.model_executor.set_kv_cache_layout(layout.name)
         kv_cache_configs = get_kv_cache_configs(
             aphrodite_config,
             kv_cache_specs,
@@ -96,7 +103,7 @@ def can_initialize(model_arch: str, monkeypatch: pytest.MonkeyPatch, EXAMPLE_MOD
     if model_arch == "MoonshotKimiaForCausalLM":
         pytest.skip("Kimi-Audio requires SpeechToTextConfig which is not configured in test environment")
 
-    if model_arch in ("PrithviGeoSpatialMAE", "Terratorch"):
+    if model_arch == "Terratorch":
         import importlib.util
 
         if importlib.util.find_spec("terratorch") is None:
@@ -123,11 +130,17 @@ def can_initialize(model_arch: str, monkeypatch: pytest.MonkeyPatch, EXAMPLE_MOD
                     f"{capability.major}.{capability.minor}"
                 )
 
+    if model_arch == "DeepseekV4ForConditionalGeneration":
+        from aphrodite.platforms import current_platform
+
+        if not current_platform.is_cuda():
+            pytest.skip("Deepseek V4 is only supported on CUDA")
+
     with (
         patch.object(V1EngineCore, "_initialize_kv_caches", _initialize_kv_caches_v1),
         monkeypatch.context() as m,
     ):
-        if requires_spawn_multiprocessing():
+        if requires_spawn_multiprocessing() or model_arch == "Glm5NextForCausalLM":
             # The EngineCore subprocess re-imports the class and does not
             # inherit the KV-cache patch above, so it OOMs. Run in-process
             # so the patch applies.

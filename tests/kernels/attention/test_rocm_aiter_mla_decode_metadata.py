@@ -77,6 +77,7 @@ def _build_decode_metadata():
     be recomputed from the identical inputs.
     """
     from aphrodite.config.aphrodite import set_current_aphrodite_config
+    from aphrodite.model_executor.layers.attention.mla_attention import get_mla_dims
     from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
     from aphrodite.v1.kv_cache_interface import MLAAttentionSpec
     from aphrodite.v1.worker.workspace import init_workspace_manager
@@ -110,11 +111,18 @@ def _build_decode_metadata():
 
     builder_cls = AttentionBackendEnum.ROCM_AITER_MLA.get_class().get_builder_cls()
 
-    # The builder reads layer.prefill_backend from static_forward_context; a
-    # stub with the attribute is enough for metadata construction.
+    # The builder reads prefill_backend and the MLA latent dims off the layer,
+    # so the stub carries both; the dims come from the model config to stay in
+    # step with the checkpoint.
+    mla_dims = get_mla_dims(aphrodite_config.model_config)
     layer_name = "placeholder"
     aphrodite_config.compilation_config.static_forward_context[layer_name] = types.SimpleNamespace(
-        prefill_backend=torch.empty((1,))
+        prefill_backend=torch.empty((1,)),
+        q_lora_rank=mla_dims.q_lora_rank,
+        kv_lora_rank=mla_dims.kv_lora_rank,
+        qk_nope_head_dim=mla_dims.qk_nope_head_dim,
+        qk_rope_head_dim=mla_dims.qk_rope_head_dim,
+        v_head_dim=mla_dims.v_head_dim,
     )
 
     init_workspace_manager(device)

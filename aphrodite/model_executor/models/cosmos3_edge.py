@@ -21,6 +21,7 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalFeatureSpec
 from aphrodite.sequence import IntermediateTensors
 from aphrodite.transformers_utils.configs.nemotron_h import NemotronHConfig
+from aphrodite.utils.torch_utils import async_tensor_h2d
 
 from .interfaces import (
     MultiModalEmbeddings,
@@ -66,7 +67,7 @@ class Cosmos3EdgeVisionEncoder(Siglip2VisionTransformer):
     def dtype(self) -> torch.dtype:
         return self.embeddings.patch_embedding.weight.dtype
 
-    def forward(
+    def encode(
         self,
         pixel_values: torch.Tensor,
         grid_thw: torch.Tensor,
@@ -80,10 +81,7 @@ class Cosmos3EdgeVisionEncoder(Siglip2VisionTransformer):
             dim=0,
         )
         lengths_cpu = spatial_shapes.prod(dim=-1).to(torch.int32)
-        lengths = lengths_cpu.to(
-            device=pixel_values.device,
-            non_blocking=True,
-        )
+        lengths = async_tensor_h2d(lengths_cpu, pixel_values.device)
 
         cu_seqlens = torch.zeros(
             lengths.numel() + 1,
@@ -247,7 +245,7 @@ class Cosmos3EdgeVisionModel(nn.Module):
         grid_thw: torch.Tensor | list[list[int]],
     ) -> torch.Tensor:
         grid_thw = torch.as_tensor(grid_thw, dtype=torch.int64, device="cpu")
-        image_embeds = self.encoder(pixel_values.type(self.dtype), grid_thw=grid_thw)
+        image_embeds = self.encoder.encode(pixel_values.type(self.dtype), grid_thw)
         image_embeds = patch_merging_by_param(
             image_embeds,
             grid_thw,
@@ -309,11 +307,10 @@ class Cosmos3EdgeAttention(NemotronHAttention):
             rope_parameters=config.rope_parameters,
         )
 
-    def forward(
+    def forward_with_positions(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        **kwargs,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
@@ -361,7 +358,7 @@ class Cosmos3EdgeAttentionDecoderLayer(nn.Module):
             hidden_states = self.norm(hidden_states)
         else:
             hidden_states, residual = self.norm(hidden_states, residual)
-        hidden_states = self.mixer(positions=positions, hidden_states=hidden_states)
+        hidden_states = self.mixer.forward_with_positions(positions, hidden_states)
         return hidden_states, residual
 
 
@@ -549,6 +546,7 @@ class Cosmos3EdgeForConditionalGeneration(
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
         multimodal_config = aphrodite_config.model_config.multimodal_config
+        assert multimodal_config is not None
 
         self.config = config
         self.multimodal_config = multimodal_config
@@ -602,6 +600,8 @@ class Cosmos3EdgeForConditionalGeneration(
                 image_grid_thw=image_grid_thw,
             )
 
+        raise AssertionError
+
     def _parse_and_validate_video_input(self, **kwargs: object) -> Qwen2_5_VLVideoInputs | None:
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_embeds = kwargs.pop("video_embeds", None)
@@ -625,6 +625,8 @@ class Cosmos3EdgeForConditionalGeneration(
                 video_embeds=video_embeds,
                 video_grid_thw=video_grid_thw,
             )
+
+        raise AssertionError
 
     def _process_image_input(self, image_input: Qwen2_5_VLImageInputs) -> tuple[torch.Tensor, ...]:
         grid_thw = image_input["image_grid_thw"]
@@ -659,7 +661,7 @@ class Cosmos3EdgeForConditionalGeneration(
         return self._get_image_features(pixel_values_videos, grid_thw)
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
-        modalities = {}
+        modalities: dict = {}
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is not None:
             modalities["image"] = image_input

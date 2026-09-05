@@ -18,7 +18,7 @@ from .aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatc
 from .ir.clone_elimination import UnsafeCloneEliminationPass
 from .ir.lowering_pass import AphroditeIRLoweringPass
 
-if rocm_aiter_ops.is_enabled():
+if rocm_aiter_ops.is_enabled() or rocm_aiter_ops.is_rdna_aiter_enabled():
     from .fusion.allreduce_rms_fusion import (
         RocmAiterAllReduceFusionPass,
     )
@@ -163,7 +163,9 @@ class PostGradPassManager(CustomGraphPass):  # type: ignore[misc]
             if enable_transformers_norm_canonicalization:
                 self.passes += [AddRMSNormFusionPass(config)]
 
-            if self.pass_config.fuse_act_padding and rocm_aiter_ops.is_enabled():
+            if self.pass_config.fuse_act_padding and (
+                rocm_aiter_ops.is_enabled() or rocm_aiter_ops.is_rdna_aiter_enabled()
+            ):
                 # Run the more specific RMSNorm+router-pad fusion before
                 # AR+RMS, since both consume fused_add_rms_norm.
                 self.passes += [RocmAiterTritonAddRMSNormPadFusionPass(config)]
@@ -178,7 +180,7 @@ class PostGradPassManager(CustomGraphPass):  # type: ignore[misc]
                 self.passes += [RMSNormReshapeFusionPass(config)]
 
             if self.pass_config.fuse_norm_quant:
-                if rocm_aiter_ops.is_enabled():
+                if rocm_aiter_ops.is_enabled() or rocm_aiter_ops.is_rdna_aiter_enabled():
                     self.passes += [
                         RocmAiterRMSNormQuantFusionPass(config),
                     ]
@@ -186,7 +188,7 @@ class PostGradPassManager(CustomGraphPass):  # type: ignore[misc]
 
             if self.pass_config.fuse_act_quant:
                 self.passes += [ActivationQuantFusionPass(config)]
-                if rocm_aiter_ops.is_enabled():
+                if rocm_aiter_ops.is_enabled() or rocm_aiter_ops.is_rdna_aiter_enabled():
                     self.passes += [RocmAiterSiluMulFp8GroupQuantFusionPass(config)]
 
             if self.pass_config.fuse_mla_dual_rms_norm and rocm_aiter_ops.is_enabled():

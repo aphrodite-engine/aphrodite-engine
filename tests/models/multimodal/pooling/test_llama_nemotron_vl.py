@@ -9,12 +9,14 @@ Tests for the LlamaNemotronVL model family:
 Both variants share a SigLIP vision encoder with a bidirectional LLaMA backbone.
 """
 
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
 
 import pybase64 as base64
 import pytest
 import torch
+from PIL import Image
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoProcessor
 
 from aphrodite.entrypoints.chat_utils import (
@@ -54,17 +56,15 @@ MODELS = ["nvidia/llama-nemotron-embed-vl-1b-v2"]
 def _run_test(
     hf_runner: type[HfRunner],
     aphrodite_runner: type[AphroditeRunner],
-    input_texts: list[str],
-    input_images: PromptImageInput,
+    input_cases: list[tuple[list[str], PromptImageInput]],
     model: str,
     *,
     dtype: str,
 ) -> None:
-    """Run embedding comparison test between HF and Aphrodite.
+    """Compare HF and Aphrodite embeddings for all input cases.
 
     NOTE: Run Aphrodite first to avoid CUDA initialization issues with multiprocessing.
     """
-    # Run Aphrodite inference first
     with aphrodite_runner(
         model,
         runner="pooling",
@@ -74,85 +74,64 @@ def _run_test(
         trust_remote_code=True,
         **ROCM_ENGINE_KWARGS,
     ) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.embed(input_texts, images=input_images)
+        aphrodite_outputs_per_case = [
+            aphrodite_model.embed(input_texts, images=input_images) for input_texts, input_images in input_cases
+        ]
 
-    # Run HF inference using the model's encode_queries/encode_documents API
     with hf_runner(model, dtype=dtype, auto_cls=AutoModel) as hf_model:
-        hf_outputs = []
-        for text, image in zip(input_texts, input_images):
-            with torch.inference_mode():
-                if text.startswith(QUERY_PREFIX):
-                    # Strip prefix and use encode_queries for query texts
-                    query_text = text[len(QUERY_PREFIX) :]
-                    embedding = hf_model.model.encode_queries([query_text])
-                elif text.startswith(PASSAGE_PREFIX):
-                    # Strip prefix and use encode_documents for passages/images
-                    passage_text = text[len(PASSAGE_PREFIX) :]
-                    if image is not None:
-                        # Image document - pass image to encode_documents
-                        embedding = hf_model.model.encode_documents(
-                            images=[image],
-                            texts=[passage_text],
-                        )
+        hf_outputs_per_case = []
+        for input_texts, input_images in input_cases:
+            hf_outputs = []
+            for text, image in zip(input_texts, input_images):
+                with torch.inference_mode():
+                    if text.startswith(QUERY_PREFIX):
+                        query_text = text[len(QUERY_PREFIX) :]
+                        embedding = hf_model.model.encode_queries([query_text])
+                    elif text.startswith(PASSAGE_PREFIX):
+                        passage_text = text[len(PASSAGE_PREFIX) :]
+                        if image is not None:
+                            embedding = hf_model.model.encode_documents(
+                                images=[image],
+                                texts=[passage_text],
+                            )
+                        else:
+                            embedding = hf_model.model.encode_documents(texts=[passage_text])
                     else:
-                        # Text-only document
-                        embedding = hf_model.model.encode_documents(texts=[passage_text])
-                else:
-                    raise ValueError(f"Text must start with '{QUERY_PREFIX}' or '{PASSAGE_PREFIX}'")
+                        raise ValueError(f"Text must start with {QUERY_PREFIX!r} or {PASSAGE_PREFIX!r}")
 
-                hf_outputs.append(embedding[0].tolist())
+                    hf_outputs.append(embedding[0].tolist())
+            hf_outputs_per_case.append(hf_outputs)
 
-    check_embeddings_close(
-        embeddings_0_lst=hf_outputs,
-        embeddings_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-    )
+    for hf_outputs, aphrodite_outputs in zip(hf_outputs_per_case, aphrodite_outputs_per_case):
+        check_embeddings_close(
+            embeddings_0_lst=hf_outputs,
+            embeddings_1_lst=aphrodite_outputs,
+            name_0="hf",
+            name_1="aphrodite",
+        )
 
 
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("dtype", ["half"])
-def test_models_text(
+def test_models(
     hf_runner,
     aphrodite_runner,
     image_assets,
     model: str,
     dtype: str,
 ) -> None:
-    """Test text-only embedding."""
-    input_texts_images = [(text, None) for text in HF_TEXT_PROMPTS]
-    input_texts = [text for text, _ in input_texts_images]
-    input_images = [image for _, image in input_texts_images]
+    """Test text and image embedding."""
+    text_images = [None] * len(HF_TEXT_PROMPTS)
+    images = [asset.pil_image for asset in image_assets]
+    input_cases = [
+        (HF_TEXT_PROMPTS, text_images),
+        (HF_IMAGE_PROMPTS, images),
+    ]
 
     _run_test(
         hf_runner,
         aphrodite_runner,
-        input_texts,
-        input_images,  # type: ignore
-        model,
-        dtype=dtype,
-    )
-
-
-@pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("dtype", ["half"])
-def test_models_image(
-    hf_runner,
-    aphrodite_runner,
-    image_assets,
-    model: str,
-    dtype: str,
-) -> None:
-    """Test image embedding."""
-    input_texts_images = [(text, asset.pil_image) for text, asset in zip(HF_IMAGE_PROMPTS, image_assets)]
-    input_texts = [text for text, _ in input_texts_images]
-    input_images = [image for _, image in input_texts_images]
-
-    _run_test(
-        hf_runner,
-        aphrodite_runner,
-        input_texts,
-        input_images,
+        input_cases,  # type: ignore[arg-type]
         model,
         dtype=dtype,
     )
@@ -178,8 +157,11 @@ RERANKER_TEXT_DOCS = [
 
 RERANKER_IMAGE_QUERY = "photo of a red stop sign on a street"
 
+RerankerDocument = tuple[str | None, Image.Image | None]
+RerankerCase = tuple[str, Sequence[RerankerDocument]]
 
-def _pil_to_data_uri(image) -> str:
+
+def _pil_to_data_uri(image: Image.Image) -> str:
     buf = BytesIO()
     image.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode()
@@ -190,10 +172,9 @@ def _run_hf_reranker(
     hf_runner: type[HfRunner],
     model: str,
     dtype: str,
-    query: str,
-    docs: list,
-) -> list[float]:
-    """Run HF reranker inference; docs is a list of (doc_text, doc_image|None)."""
+    input_cases: Sequence[RerankerCase],
+) -> list[list[float]]:
+    """Run all HF reranker cases in one model lifecycle."""
     with hf_runner(
         model,
         dtype=dtype,
@@ -207,34 +188,36 @@ def _run_hf_reranker(
             use_thumbnail=True,
             rerank_max_length=2048,
         )
-        examples = [
-            {
-                "question": query,
-                "doc_text": doc_text if doc_text is not None else "",
-                "doc_image": doc_image if doc_image is not None else "",
+        scores_per_case = []
+        for query, docs in input_cases:
+            examples = [
+                {
+                    "question": query,
+                    "doc_text": doc_text if doc_text is not None else "",
+                    "doc_image": doc_image if doc_image is not None else "",
+                }
+                for doc_text, doc_image in docs
+            ]
+            batch_dict = processor.process_queries_documents_crossencoder(examples)
+            batch_dict = {
+                k: v.to(hf_model.model.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()
             }
-            for doc_text, doc_image in docs
-        ]
-        batch_dict = processor.process_queries_documents_crossencoder(examples)
-        batch_dict = {
-            k: v.to(hf_model.model.device) if isinstance(v, torch.Tensor) else v for k, v in batch_dict.items()
-        }
-        with torch.inference_mode():
-            logits = hf_model.model(**batch_dict, return_dict=True).logits
-        # Aphrodite applies sigmoid activation to the raw logits before returning
-        # scores; apply the same here so both sides are comparable.
-        scores = torch.sigmoid(logits.squeeze(-1).float())
-        return scores.detach().cpu().tolist()
+            with torch.inference_mode():
+                logits = hf_model.model(**batch_dict, return_dict=True).logits
+            # Aphrodite applies sigmoid activation to raw logits before returning scores.
+            scores = torch.sigmoid(logits.squeeze(-1).float())
+            scores_per_case.append(scores.detach().cpu().tolist())
+
+    return scores_per_case
 
 
 def _run_aphrodite_reranker(
     aphrodite_runner: type[AphroditeRunner],
     model: str,
     dtype: str,
-    query: str,
-    docs: list,
-) -> list[float]:
-    """Run Aphrodite reranker inference; docs is a list of (doc_text, doc_image|None)."""
+    input_cases: Sequence[RerankerCase],
+) -> list[list[float]]:
+    """Run all Aphrodite reranker cases in one model lifecycle."""
     with aphrodite_runner(
         model,
         runner="pooling",
@@ -244,57 +227,59 @@ def _run_aphrodite_reranker(
         trust_remote_code=True,
         **ROCM_ENGINE_KWARGS,
     ) as aphrodite_model:
-        has_images = any(img is not None for _, img in docs)
+        scores_per_case = []
+        for query, docs in input_cases:
+            has_images = any(img is not None for _, img in docs)
 
-        if not has_images:
-            # Text-only path: use the simple string score API.
-            queries = [query] * len(docs)
-            doc_texts = [doc_text for doc_text, _ in docs]
-            outputs = aphrodite_model.score(
-                queries,
-                doc_texts,
-                chat_template=_RERANKER_SCORE_TEMPLATE,
-            )
-        else:
-            # Multimodal path: build ScoreMultiModalParam for each pair.
-            query_params = [
-                ScoreMultiModalParam(
-                    content=[
-                        ChatCompletionContentPartTextParam(
-                            type="text",
-                            text=query,
-                        )
-                    ]
+            if not has_images:
+                queries = [query] * len(docs)
+                doc_texts = [doc_text for doc_text, _ in docs]
+                outputs = aphrodite_model.score(
+                    queries,
+                    doc_texts,
+                    chat_template=_RERANKER_SCORE_TEMPLATE,
                 )
-            ] * len(docs)
-
-            doc_params = []
-            for doc_text, doc_image in docs:
-                content: list = []
-                if doc_image is not None:
-                    content.append(
-                        ChatCompletionContentPartImageParam(
-                            type="image_url",
-                            image_url={"url": _pil_to_data_uri(doc_image)},
-                        )
+            else:
+                query_params = [
+                    ScoreMultiModalParam(
+                        content=[
+                            ChatCompletionContentPartTextParam(
+                                type="text",
+                                text=query,
+                            )
+                        ]
                     )
-                if doc_text:
-                    content.append(
-                        ChatCompletionContentPartTextParam(
-                            type="text",
-                            text=doc_text,
+                ] * len(docs)
+
+                doc_params = []
+                for doc_text, doc_image in docs:
+                    content: list = []
+                    if doc_image is not None:
+                        content.append(
+                            ChatCompletionContentPartImageParam(
+                                type="image_url",
+                                image_url={"url": _pil_to_data_uri(doc_image)},
+                            )
                         )
-                    )
-                doc_params.append(ScoreMultiModalParam(content=content))
+                    if doc_text:
+                        content.append(
+                            ChatCompletionContentPartTextParam(
+                                type="text",
+                                text=doc_text,
+                            )
+                        )
+                    doc_params.append(ScoreMultiModalParam(content=content))
 
-            raw_outputs = aphrodite_model.llm.score(
-                query_params,
-                doc_params,
-                chat_template=_RERANKER_SCORE_TEMPLATE,
-            )
-            outputs = [o.outputs.score for o in raw_outputs]
+                raw_outputs = aphrodite_model.llm.score(
+                    query_params,
+                    doc_params,
+                    chat_template=_RERANKER_SCORE_TEMPLATE,
+                )
+                outputs = [output.outputs.score for output in raw_outputs]
 
-    return outputs
+            scores_per_case.append(outputs)
+
+    return scores_per_case
 
 
 def _run_reranker_test(
@@ -302,50 +287,42 @@ def _run_reranker_test(
     aphrodite_runner: type[AphroditeRunner],
     model: str,
     dtype: str,
-    query: str,
-    docs: list,
+    input_cases: Sequence[RerankerCase],
 ) -> None:
-    """Compare HF and Aphrodite reranker scores.
+    """Compare HF and Aphrodite reranker scores for all input cases.
 
     NOTE: Run Aphrodite first to avoid CUDA initialization issues with multiprocessing.
     """
-    aphrodite_scores = _run_aphrodite_reranker(aphrodite_runner, model, dtype, query, docs)
-    hf_scores = _run_hf_reranker(hf_runner, model, dtype, query, docs)
+    aphrodite_scores_per_case = _run_aphrodite_reranker(aphrodite_runner, model, dtype, input_cases)
+    hf_scores_per_case = _run_hf_reranker(hf_runner, model, dtype, input_cases)
 
-    assert len(hf_scores) == len(aphrodite_scores), (
-        f"Output length mismatch: HF={len(hf_scores)}, Aphrodite={len(aphrodite_scores)}"
-    )
-    # NOTE: ROCm shows slightly higher numerical variance dues to different attention
-    # backend between Aphrodite and HF; use a marginally looser tolerance
+    # ROCm has slightly higher variance because Aphrodite and HF use different
+    # attention backends.
     rel_tol = 0.022 if current_platform.is_rocm() else 0.02
-    for i, (hf_score, aphrodite_score) in enumerate(zip(hf_scores, aphrodite_scores)):
-        assert hf_score == pytest.approx(aphrodite_score, rel=rel_tol), (
-            f"Score mismatch at index {i}: HF={hf_score:.4f}, Aphrodite={aphrodite_score:.4f}"
+    for hf_scores, aphrodite_scores in zip(hf_scores_per_case, aphrodite_scores_per_case):
+        assert len(hf_scores) == len(aphrodite_scores), (
+            f"Output length mismatch: HF={len(hf_scores)}, Aphrodite={len(aphrodite_scores)}"
         )
+        for i, (hf_score, aphrodite_score) in enumerate(zip(hf_scores, aphrodite_scores)):
+            assert hf_score == pytest.approx(aphrodite_score, rel=rel_tol), (
+                f"Score mismatch at index {i}: HF={hf_score:.4f}, Aphrodite={aphrodite_score:.4f}"
+            )
 
 
 @pytest.mark.parametrize("model", RERANKER_MODELS)
 @pytest.mark.parametrize("dtype", ["half"])
-def test_reranker_text(
-    hf_runner,
-    aphrodite_runner,
-    model: str,
-    dtype: str,
-) -> None:
-    """Test reranking with text-only query and text documents."""
-    docs = [(text, None) for text in RERANKER_TEXT_DOCS]
-    _run_reranker_test(hf_runner, aphrodite_runner, model, dtype, RERANKER_TEXT_QUERY, docs)
-
-
-@pytest.mark.parametrize("model", RERANKER_MODELS)
-@pytest.mark.parametrize("dtype", ["half"])
-def test_reranker_image_doc(
+def test_reranker(
     hf_runner,
     aphrodite_runner,
     image_assets,
     model: str,
     dtype: str,
 ) -> None:
-    """Test reranking with text query against image documents."""
-    docs = [(None, asset.pil_image) for asset in image_assets]
-    _run_reranker_test(hf_runner, aphrodite_runner, model, dtype, RERANKER_IMAGE_QUERY, docs)
+    """Test reranking with text and image documents."""
+    text_docs: list[RerankerDocument] = [(text, None) for text in RERANKER_TEXT_DOCS]
+    image_docs: list[RerankerDocument] = [(None, asset.pil_image) for asset in image_assets]
+    input_cases: list[RerankerCase] = [
+        (RERANKER_TEXT_QUERY, text_docs),
+        (RERANKER_IMAGE_QUERY, image_docs),
+    ]
+    _run_reranker_test(hf_runner, aphrodite_runner, model, dtype, input_cases)

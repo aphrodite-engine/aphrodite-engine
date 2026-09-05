@@ -8,7 +8,7 @@ import pytest
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
-from aphrodite.entrypoints.serve.utils.error_response import create_error_response
+from aphrodite.entrypoints.serve import create_error_response
 from aphrodite.multimodal.parse import parse_mm_uuids
 from aphrodite.renderers.hf import HfRenderer
 from aphrodite.tokenizers.registry import cached_tokenizer_from_config
@@ -52,11 +52,10 @@ def test_text_only_model_mm_data_maps_to_bad_request():
 
     with pytest.raises(ValueError, match="text-only") as exc_info:
         renderer._process_multimodal(
-            prompt="What is in this image?",
+            prompt=[1],
             mm_data={"image": [cherry_pil_image]},
             mm_uuids=None,
             mm_processor_kwargs=None,
-            tokenization_kwargs=None,
         )
 
     error_response = create_error_response(exc_info.value)

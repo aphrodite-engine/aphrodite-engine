@@ -43,7 +43,11 @@ from aphrodite.v1.attention.backend import (
     CommonAttentionMetadata,
     MultipleOf,
 )
-from aphrodite.v1.kv_cache_interface import AttentionSpec, EncoderOnlyAttentionSpec
+from aphrodite.v1.kv_cache_interface import (
+    AttentionSpec,
+    EncoderOnlyAttentionSpec,
+    KVCacheLayout,
+)
 
 logger = init_logger(__name__)
 
@@ -113,6 +117,12 @@ class FlexAttentionBackend(AttentionBackend):
         return True
 
     @classmethod
+    def supported_kv_cache_layouts(cls) -> tuple[KVCacheLayout, ...]:
+        # Flex flattens the (B, N) block/token axes into a single token dim, which
+        # only LBNHC's strides allow as a zero-copy view of the layer cache.
+        return (KVCacheLayout.LBNHC,)
+
+    @classmethod
     def supports_mm_prefix(cls) -> bool:
         """FlexAttention supports full attention for image tokens."""
         return True
@@ -120,25 +130,6 @@ class FlexAttentionBackend(AttentionBackend):
     @staticmethod
     def get_impl_cls() -> type["FlexAttentionImpl"]:
         return FlexAttentionImpl
-
-    @staticmethod
-    def get_kv_cache_shape(
-        num_blocks: int,
-        block_size: int,
-        num_kv_heads: int,
-        head_size: int,
-        cache_dtype_str: str = "auto",
-    ) -> tuple[int, ...]:
-        # K and V are packed into the content dim: logical (B, H, N, 2*hs).
-        return (num_blocks, num_kv_heads, block_size, 2 * head_size)
-
-    @staticmethod
-    def get_kv_cache_stride_order(
-        include_num_layers_dimension: bool = False,
-    ) -> tuple[int, ...]:
-        if include_num_layers_dimension:
-            return (1, 0, 3, 2, 4)
-        return (0, 2, 1, 3)
 
     @staticmethod
     def get_builder_cls() -> type["FlexAttentionMetadataBuilder"]:

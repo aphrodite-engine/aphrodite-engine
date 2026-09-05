@@ -11,9 +11,9 @@ import pytest
 from aphrodite.config.multimodal import MultiModalConfig
 from aphrodite.entrypoints.openai.completion.protocol import CompletionRequest
 from aphrodite.entrypoints.openai.completion.serving import OpenAIServingCompletion
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.resolver import LoRAResolver, LoRAResolverRegistry
 from aphrodite.renderers.hf import HfRenderer

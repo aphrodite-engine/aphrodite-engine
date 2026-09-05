@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -14,7 +15,10 @@ from aphrodite.model_executor.layers.linear import RowParallelLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization.base_config import QuantizationConfig
 from aphrodite.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
-from aphrodite.model_executor.models.interfaces import MultiModalEmbeddings
+from aphrodite.model_executor.models.interfaces import (
+    MultiModalEmbeddings,
+    SupportsMultiModalEmbeddings,
+)
 from aphrodite.model_executor.models.llama import LlamaConfig
 from aphrodite.model_executor.models.mistral import (
     MistralDecoderLayer,
@@ -28,6 +32,20 @@ from aphrodite.model_executor.models.utils import (
 )
 
 logger = init_logger(__name__)
+
+
+if TYPE_CHECKING:
+
+    class _EagleMistralModelBase(nn.Module):
+        pass
+
+    class _EagleMistralForCausalLMBase(nn.Module):
+        def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+            raise NotImplementedError
+
+else:
+    _EagleMistralModelBase = MistralModel
+    _EagleMistralForCausalLMBase = MistralForCausalLM
 
 
 class EagleMistralDecoderLayer(MistralDecoderLayer):
@@ -44,7 +62,7 @@ class EagleMistralDecoderLayer(MistralDecoderLayer):
 
 
 @support_torch_compile
-class EagleMistralModel(MistralModel):
+class EagleMistralModel(_EagleMistralModelBase):
     def __init__(
         self,
         *,
@@ -55,7 +73,9 @@ class EagleMistralModel(MistralModel):
         # Bypass MistralModel.__init__ to avoid creating duplicate attention
         # layer entries in the global context.
         nn.Module.__init__(self)
-        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        self.config = speculative_config.draft_model_config.hf_config
         self.vocab_size = self.config.vocab_size
         # Get drafter's quantization config
         self.quant_config = get_draft_quant_config(aphrodite_config)
@@ -109,7 +129,7 @@ class EagleMistralModel(MistralModel):
         return hidden_states, hidden_states
 
 
-class EagleMistralForCausalLM(MistralForCausalLM):
+class EagleMistralForCausalLM(_EagleMistralForCausalLMBase, SupportsMultiModalEmbeddings):
     mistral_mapping = MistralForCausalLM.mistral_mapping | {
         "eagle_linear": "model.fc",
     }
@@ -118,7 +138,9 @@ class EagleMistralForCausalLM(MistralForCausalLM):
         # Bypass MistralForCausalLM.__init__ to use the draft model config
         # and to avoid creating an lm_head.
         nn.Module.__init__(self)
-        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        self.config = speculative_config.draft_model_config.hf_config
         target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
         self.model = EagleMistralModel(
             aphrodite_config=aphrodite_config,

@@ -12,7 +12,6 @@ import torch
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.model_executor.model_loader import ShardedStateLoader
-from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.repo_utils import hf_api
 
 prompts = [
@@ -90,9 +89,10 @@ def test_sharded_state_loader(enable_lora, tp_size, num_gpus_available, llama_3p
     input_dir = llama_3p2_1b_files
     ctx = mp.get_context("spawn")
 
-    platform_args = {}
-    if current_platform.is_rocm() or current_platform.is_xpu():
-        platform_args["max_num_seqs"] = 1
+    # Keep batching deterministic: this test compares exact greedy outputs
+    # across separate engine processes, whose schedulers may otherwise form
+    # different batches depending on prompt-processing timing.
+    platform_args = {"max_num_seqs": 1}
 
     # Run in separate processes for memory & CUDA isolation
     with TemporaryDirectory() as output_dir:

@@ -79,7 +79,7 @@ from aphrodite.models.minimax_m3.common.mm_preprocess import (
 from aphrodite.models.minimax_m3.common.sparse_attention import (
     MiniMaxM3SparseBackend,
     MiniMaxM3SparseImpl,
-    select_main_impl_cls,
+    select_main_backend_and_impl_cls,
 )
 from aphrodite.models.minimax_m3.common.vision_tower import MiniMaxVLVisionModel
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -477,25 +477,24 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
         # MiniMax-M3 sparse attention owns its KV-cache insert/read path instead
         # of wrapping the generic Attention module. Keep the same runtime scale
         # attributes so FP8 KV reads can honor Aphrodite's per-layer descale contract.
-        self.calculate_kv_scales = False
         set_default_quant_scales(self, register_buffer=True)
         # Indexer side-cache dtype, mirroring --kv-cache-dtype for the main
         # cache (--attention-config '{"indexer_kv_dtype": ...}').
-        self.indexer_kv_dtype = aphrodite_config.attention_config.indexer_kv_dtype
+        self.indexer_kv_dtype = aphrodite_config.attention_config.resolve_indexer_kv_dtype("bf16")
 
         # Shared top-k buffer: the indexer writes the selected blocks into it and
         # the attend impl reads them back (so nothing crosses the eager break as a
         # Python value, which would freeze at capture).
         self.topk_indices_buffer = topk_indices_buffer
-        self.attn_backend = MiniMaxM3SparseBackend
         # Indexer (top-k selection) and main attention are separate impls, each
         # picking Triton vs MSA off its cache dtype. impl is AttentionImplBase
         # (broader than the AttentionImpl that AttentionLayerBase annotates).
-        self.impl: MiniMaxM3SparseImpl = select_main_impl_cls(  # type: ignore[assignment]
+        self.attn_backend, impl_cls = select_main_backend_and_impl_cls(
             topk_blocks=sparse_cfg["sparse_topk_blocks"],
             kv_cache_dtype=self.kv_cache_dtype,
             num_kv_heads=self.num_kv_heads,
-        )(
+        )
+        self.impl: MiniMaxM3SparseImpl = impl_cls(  # type: ignore[assignment]
             self.num_heads,
             self.head_dim,
             self.scaling,
@@ -503,6 +502,7 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
             kv_cache_dtype=self.kv_cache_dtype,
             topk_blocks=sparse_cfg["sparse_topk_blocks"],
             sparse_block_size=sparse_cfg["sparse_block_size"],
+            msa_decode_backend=(aphrodite_config.attention_config.minimax_m3_msa_decode_backend),
         )
         # Self-contained nn.Module: owns its side cache, selects its impl in init.
         self.indexer = MiniMaxM3Indexer(
@@ -542,6 +542,15 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
             kv_quant_mode=get_kv_quant_mode(self.kv_cache_dtype),
         )
 
+    def _allocate_query_fp8(self, qkv: torch.Tensor) -> torch.Tensor | None:
+        if not getattr(self.impl, "use_cutlass_decode", False):
+            return None
+        return torch.empty(
+            (qkv.shape[0], self.q_size),
+            dtype=torch.float8_e4m3fn,
+            device=qkv.device,
+        )
+
     def forward(
         self,
         positions: torch.Tensor,
@@ -573,6 +582,7 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
         main_slot_mapping = fwd_slot_mapping[self.layer_name]
         index_slot_mapping = fwd_slot_mapping[self.indexer.index_cache.prefix]
         q = qkv.new_empty((num_tokens, self.q_size))
+        query_fp8 = self._allocate_query_fp8(qkv)
         # index_q matches the index-K cache dtype (e4m3 for the fp8 score path);
         # the fused kernel emits fp8 directly when this buffer is e4m3.
         index_q = qkv.new_empty(
@@ -600,10 +610,12 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
             q,
             index_q,
             self.kv_cache_dtype,
+            q_fp8_out=query_fp8,
+            q_fp8_scale=self._q_scale_float,
         )
 
         output = torch.empty_like(q)
-        attn_output = self._run_attention(q, index_q, output)
+        attn_output = self._run_attention(q, query_fp8, index_q, output)
         output, _ = self.o_proj(attn_output)
         return output
 
@@ -611,6 +623,7 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
     def _run_attention(
         self,
         query: torch.Tensor,
+        query_fp8: torch.Tensor | None,
         index_query: torch.Tensor,
         output: torch.Tensor,
     ) -> torch.Tensor:
@@ -618,7 +631,13 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
         # metadata and can't be captured into a cudagraph. The indexer writes its
         # top-k into the shared ``topk_indices_buffer``; the attend reads it back.
         self.indexer(index_query)
-        return self.impl.forward(self, query, self.kv_cache, output)
+        return self.impl.forward(
+            self,
+            query,
+            self.kv_cache,
+            output,
+            query_fp8=query_fp8,
+        )
 
 
 class MiniMaxM3DecoderLayer(nn.Module):
@@ -993,6 +1012,9 @@ class MiniMaxM3SparseForCausalLM(nn.Module, SupportsPP, SupportsEagle3):
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
         return self.logits_processor(self.lm_head, hidden_states)
 
+    def compute_logits_local(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        return self.logits_processor(self.lm_head, hidden_states, skip_gather=True)
+
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         return self.model.get_expert_mapping()
 
@@ -1192,6 +1214,9 @@ class MiniMaxM3SparseForConditionalGeneration(nn.Module, SupportsMultiModal, Sup
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
         return self.language_model.compute_logits(hidden_states)
+
+    def compute_logits_local(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        return self.language_model.compute_logits_local(hidden_states)
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
         return self.language_model.get_expert_mapping()

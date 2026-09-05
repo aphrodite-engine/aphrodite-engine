@@ -8,16 +8,16 @@ import partial_json_parser
 from partial_json_parser.core.options import Allow
 
 from aphrodite.entrypoints.chat_utils import make_tool_call_id
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionRequest,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,
     ExtractedToolCallInformation,
     FunctionCall,
     ToolCall,
+)
+from aphrodite.entrypoints.openai.chat_completion.protocol import (
+    ChatCompletionRequest,
 )
 from aphrodite.logger import init_logger
 from aphrodite.tokenizers import TokenizerLike

@@ -13,7 +13,7 @@ import torch
 
 from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.entrypoints.pooling.scoring.utils import compute_maxsim_score
-from tests.utils import wait_for_rocm_memory_to_settle
+from tests.utils import wait_for_memory_to_settle
 
 # -----------------------------------------------------------------------
 # Model definitions: (model_name, colbert_dim, extra aphrodite_runner kwargs)
@@ -165,7 +165,7 @@ def _hf_colbert_model(model_name: str, hf_spec: dict, device: torch.device):
     finally:
         del hf_model, linear_weight
         cleanup_dist_env_and_memory()
-        wait_for_rocm_memory_to_settle()
+        wait_for_memory_to_settle()
 
 
 def _assert_embeddings_close(aphrodite_outputs, hf_embeddings):
@@ -186,40 +186,39 @@ def _assert_embeddings_close(aphrodite_outputs, hf_embeddings):
         )
 
 
-@pytest.fixture(params=list(COLBERT_MODELS.keys()), scope="module")
+@pytest.fixture(params=list(COLBERT_MODELS.keys()), scope="class")
 def colbert_spec(request):
     """Return the model spec dict for the current parametrization."""
     return COLBERT_MODELS[request.param]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def colbert_model_name(colbert_spec):
     return colbert_spec["model"]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def colbert_dim(colbert_spec):
     return colbert_spec["colbert_dim"]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def colbert_max_model_len(colbert_spec):
     return colbert_spec["max_model_len"]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def colbert_extra_kwargs(colbert_spec):
     return colbert_spec["extra_kwargs"]
 
 
-def test_colbert_token_embed(
+@pytest.fixture(scope="class")
+def colbert_model(
     aphrodite_runner,
     colbert_model_name,
-    colbert_dim,
     colbert_max_model_len,
     colbert_extra_kwargs,
 ):
-    """Test that ColBERT model produces token embeddings."""
     with aphrodite_runner(
         colbert_model_name,
         runner="pooling",
@@ -228,7 +227,19 @@ def test_colbert_token_embed(
         enforce_eager=True,
         **colbert_extra_kwargs,
     ) as aphrodite_model:
-        outputs = aphrodite_model.token_embed([TEXTS_1[0]])
+        yield aphrodite_model
+
+
+class TestColbertSharedEngine:
+    """Tests sharing one engine per model.
+
+    Class-scoped so the engine is released before `test_colbert_hf_comparison`,
+    which needs a runner of its own and cannot start while this one holds VRAM.
+    """
+
+    def test_colbert_token_embed(self, colbert_model, colbert_dim):
+        """Test that ColBERT model produces token embeddings."""
+        outputs = colbert_model.token_embed([TEXTS_1[0]])
 
         assert len(outputs) == 1
         emb = torch.as_tensor(outputs[0])
@@ -236,53 +247,25 @@ def test_colbert_token_embed(
         assert emb.shape[1] == colbert_dim
         assert emb.shape[0] > 1
 
-
-def test_colbert_late_interaction_1_to_1(
-    aphrodite_runner,
-    colbert_model_name,
-    colbert_max_model_len,
-    colbert_extra_kwargs,
-):
-    """Test ColBERT late interaction scoring with 1:1 query-document pair."""
-    with aphrodite_runner(
-        colbert_model_name,
-        runner="pooling",
-        dtype=DTYPE,
-        max_model_len=colbert_max_model_len,
-        enforce_eager=True,
-        **colbert_extra_kwargs,
-    ) as aphrodite_model:
-        q_outputs = aphrodite_model.token_embed([TEXTS_1[0]])
-        d_outputs = aphrodite_model.token_embed([TEXTS_2[0]])
+    def test_colbert_late_interaction_1_to_1(self, colbert_model):
+        """Test ColBERT late interaction scoring with 1:1 query-document pair."""
+        q_outputs = colbert_model.token_embed([TEXTS_1[0]])
+        d_outputs = colbert_model.token_embed([TEXTS_2[0]])
 
         q_emb = torch.as_tensor(q_outputs[0])
         d_emb = torch.as_tensor(d_outputs[0])
 
         manual_score = compute_maxsim_score(q_emb, d_emb).item()
 
-        aphrodite_scores = aphrodite_model.score(TEXTS_1[0], TEXTS_2[0])
+        aphrodite_scores = colbert_model.score(TEXTS_1[0], TEXTS_2[0])
 
         assert len(aphrodite_scores) == 1
         assert aphrodite_scores[0] == pytest.approx(manual_score, rel=0.01)
 
-
-def test_colbert_late_interaction_1_to_N(
-    aphrodite_runner,
-    colbert_model_name,
-    colbert_max_model_len,
-    colbert_extra_kwargs,
-):
-    """Test ColBERT late interaction scoring with 1:N query-documents."""
-    with aphrodite_runner(
-        colbert_model_name,
-        runner="pooling",
-        dtype=DTYPE,
-        max_model_len=colbert_max_model_len,
-        enforce_eager=True,
-        **colbert_extra_kwargs,
-    ) as aphrodite_model:
-        q_outputs = aphrodite_model.token_embed([TEXTS_1[0]])
-        d_outputs = aphrodite_model.token_embed(TEXTS_2)
+    def test_colbert_late_interaction_1_to_N(self, colbert_model):
+        """Test ColBERT late interaction scoring with 1:N query-documents."""
+        q_outputs = colbert_model.token_embed([TEXTS_1[0]])
+        d_outputs = colbert_model.token_embed(TEXTS_2)
 
         q_emb = torch.as_tensor(q_outputs[0])
 
@@ -291,30 +274,16 @@ def test_colbert_late_interaction_1_to_N(
             d_emb = torch.as_tensor(d_out)
             manual_scores.append(compute_maxsim_score(q_emb, d_emb).item())
 
-        aphrodite_scores = aphrodite_model.score(TEXTS_1[0], TEXTS_2)
+        aphrodite_scores = colbert_model.score(TEXTS_1[0], TEXTS_2)
 
         assert len(aphrodite_scores) == 2
         for i in range(2):
             assert aphrodite_scores[i] == pytest.approx(manual_scores[i], rel=0.01)
 
-
-def test_colbert_late_interaction_N_to_N(
-    aphrodite_runner,
-    colbert_model_name,
-    colbert_max_model_len,
-    colbert_extra_kwargs,
-):
-    """Test ColBERT late interaction scoring with N:N query-documents."""
-    with aphrodite_runner(
-        colbert_model_name,
-        runner="pooling",
-        dtype=DTYPE,
-        max_model_len=colbert_max_model_len,
-        enforce_eager=True,
-        **colbert_extra_kwargs,
-    ) as aphrodite_model:
-        q_outputs = aphrodite_model.token_embed(TEXTS_1)
-        d_outputs = aphrodite_model.token_embed(TEXTS_2)
+    def test_colbert_late_interaction_N_to_N(self, colbert_model):
+        """Test ColBERT late interaction scoring with N:N query-documents."""
+        q_outputs = colbert_model.token_embed(TEXTS_1)
+        d_outputs = colbert_model.token_embed(TEXTS_2)
 
         manual_scores = []
         for q_out, d_out in zip(q_outputs, d_outputs):
@@ -322,65 +291,43 @@ def test_colbert_late_interaction_N_to_N(
             d_emb = torch.as_tensor(d_out)
             manual_scores.append(compute_maxsim_score(q_emb, d_emb).item())
 
-        aphrodite_scores = aphrodite_model.score(TEXTS_1, TEXTS_2)
+        aphrodite_scores = colbert_model.score(TEXTS_1, TEXTS_2)
 
         assert len(aphrodite_scores) == 2
         for i in range(2):
             assert aphrodite_scores[i] == pytest.approx(manual_scores[i], rel=0.01)
 
+    def test_colbert_relevance_ordering(self, colbert_model):
+        """Test that ColBERT scores relevant documents higher than irrelevant."""
+        query = "What is machine learning?"
+        documents = [
+            "Machine learning is a subset of artificial intelligence.",
+            "Python is a programming language.",
+            "Deep learning uses neural networks.",
+        ]
 
-def test_colbert_relevance_ordering(
-    aphrodite_runner,
-    colbert_model_name,
-    colbert_max_model_len,
-    colbert_extra_kwargs,
-):
-    """Test that ColBERT scores relevant documents higher than irrelevant."""
-    query = "What is machine learning?"
-    documents = [
-        "Machine learning is a subset of artificial intelligence.",
-        "Python is a programming language.",
-        "Deep learning uses neural networks.",
-    ]
-
-    with aphrodite_runner(
-        colbert_model_name,
-        runner="pooling",
-        dtype=DTYPE,
-        max_model_len=colbert_max_model_len,
-        enforce_eager=True,
-        **colbert_extra_kwargs,
-    ) as aphrodite_model:
-        scores = aphrodite_model.score(query, documents)
+        scores = colbert_model.score(query, documents)
 
         assert len(scores) == 3
         assert scores[0] > scores[1], "ML doc should score higher than Python doc"
         assert scores[2] > scores[1], "DL doc should score higher than Python doc"
 
-
-def test_colbert_embed_not_supported(
-    aphrodite_runner,
-    colbert_model_name,
-    colbert_max_model_len,
-    colbert_extra_kwargs,
-):
-    """Test that ColBERT model does not support 'embed' task."""
-    with (
-        aphrodite_runner(
-            colbert_model_name,
-            runner="pooling",
-            dtype=DTYPE,
-            max_model_len=colbert_max_model_len,
-            enforce_eager=True,
-            **colbert_extra_kwargs,
-        ) as aphrodite_model,
-        pytest.raises(ValueError, match="Embedding API is not supported"),
-    ):
-        aphrodite_model.embed([TEXTS_1[0]])
+    def test_colbert_embed_not_supported(self, colbert_model):
+        """Test that ColBERT model does not support the embed task."""
+        with pytest.raises(ValueError, match="Embedding API is not supported"):
+            colbert_model.embed([TEXTS_1[0]])
 
 
-@pytest.mark.parametrize("backend", list(COLBERT_MODELS.keys()))
-def test_colbert_hf_comparison(aphrodite_runner, backend):
+@pytest.mark.parametrize(
+    ("backend", "use_v2"),
+    [
+        pytest.param("bert", True, id="bert-v2"),
+        pytest.param("modernbert", True, id="modernbert-v2"),
+        pytest.param("jina", True, id="jina-v2"),
+        pytest.param("lfm2", True, id="lfm2-v2"),
+    ],
+)
+def test_colbert_hf_comparison(aphrodite_runner, monkeypatch, backend, use_v2):
     """Test that Aphrodite ColBERT embeddings match HuggingFace for each backend."""
     from transformers import AutoTokenizer
 
@@ -393,6 +340,8 @@ def test_colbert_hf_comparison(aphrodite_runner, backend):
     assert isinstance(extra_kwargs, dict)
     test_texts = [TEXTS_1[0], TEXTS_2[0]]
 
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1" if use_v2 else "0")
+
     with aphrodite_runner(
         model_name,
         runner="pooling",
@@ -401,6 +350,7 @@ def test_colbert_hf_comparison(aphrodite_runner, backend):
         enforce_eager=True,
         **extra_kwargs,
     ) as aphrodite_model:
+        assert aphrodite_model.llm.llm_engine.aphrodite_config.use_v2_model_runner == use_v2
         aphrodite_outputs = aphrodite_model.token_embed(test_texts)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

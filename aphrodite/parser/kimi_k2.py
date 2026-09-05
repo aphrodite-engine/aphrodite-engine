@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 import regex as re
 
-from aphrodite.entrypoints.openai.engine.protocol import DeltaFunctionCall, DeltaToolCall
+from aphrodite.entrypoints.generate.base.protocol import DeltaFunctionCall, DeltaToolCall
 from aphrodite.parser.engine.events import EventType
 from aphrodite.parser.engine.parser_engine import ParserEngine
 from aphrodite.parser.engine.parser_engine_config import (

@@ -20,7 +20,7 @@ from aphrodite.v1.engine import (
     EngineCoreRequest,
     FinishReason,
 )
-from aphrodite.v1.metrics.stats import PrefillStats
+from aphrodite.v1.metrics.stats import PrefillStats, RequestSpecDecodeMetrics
 from aphrodite.v1.structured_output.request import StructuredOutputRequest
 from aphrodite.v1.utils import ConstantList
 
@@ -74,6 +74,7 @@ class Request:
         trace_headers: Mapping[str, str] | None = None,
         block_hasher: Callable[["Request"], list["BlockHash"]] | None = None,
         resumable: bool = False,
+        session_id: str | None = None,
         reasoning_ended: bool | None = None,
         reasoning_parser_kwargs: dict[str, Any] | None = None,
         abort_immediately: bool = False,
@@ -128,9 +129,18 @@ class Request:
         self._prompt_embeds_per_block_hashes: dict[tuple[int, int], bytes] = {}
         self.num_prompt_tokens = length_from_prompt_token_ids_or_embeds(prompt_token_ids, prompt_embeds)
         self._output_token_ids: list[int] = []
-        self._all_token_ids: list[int] = (
-            self.prompt_token_ids.copy() if self.prompt_token_ids is not None else [0] * self.num_prompt_tokens
-        )
+        if self.prompt_token_ids is None:
+            self._all_token_ids: list[int] = [0] * self.num_prompt_tokens
+        elif self.prompt_is_token_ids is None:
+            self._all_token_ids = self.prompt_token_ids.copy()
+        else:
+            # Mixed-mode prompt: positions covered by prompt_embeds hold a sentinel
+            # special token id that may lie outside the embedding. Zero them, matching
+            # the no-token-ids case above, so embedding gathers over these placeholder
+            # ids stay in bounds; the actual inputs come from prompt_embeds.
+            self._all_token_ids = [
+                t if is_tok else 0 for t, is_tok in zip(self.prompt_token_ids, self.prompt_is_token_ids)
+            ]
 
         # Used in async scheduling.
         self.num_output_placeholders = 0
@@ -168,6 +178,7 @@ class Request:
         self.all_token_ids = ConstantList(self._all_token_ids)
         # trace_headers
         self.trace_headers = trace_headers
+        self.session_id = session_id
 
         # True if this request is scheduled as a non-final prefill chunk.
         self.is_prefill_chunk = False
@@ -184,6 +195,11 @@ class Request:
         self.num_preemptions = 0
 
         self.prefill_stats: PrefillStats | None = PrefillStats()
+
+        # Per-request speculative-decoding acceptance accumulator. Populated by
+        # the scheduler when --per-request-spec-decode-metrics is set (eagerly on
+        # add_request, then observed each verify step); stays None otherwise.
+        self.spec_decode_metrics: RequestSpecDecodeMetrics | None = None
 
         self.block_hashes: list[BlockHash] = []
         # Store the block hasher without binding self to avoid creating a
@@ -225,6 +241,7 @@ class Request:
             trace_headers=request.trace_headers,
             block_hasher=block_hasher,
             resumable=request.resumable,
+            session_id=request.session_id,
             reasoning_ended=request.reasoning_ended,
             reasoning_parser_kwargs=request.reasoning_parser_kwargs,
             abort_immediately=request.abort_immediately,

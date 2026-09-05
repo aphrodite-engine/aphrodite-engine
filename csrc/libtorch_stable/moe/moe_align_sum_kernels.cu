@@ -533,7 +533,9 @@ __global__ void moe_lora_align_block_size_kernel(
 
   // Populate the token_mask based on the token-LoRA mapping
   int num_tokens = numel / topk_num;
-  if (threadIdx.x == 0) {
+  // Only the even counting block owns per-LoRA metadata. The odd block only
+  // initializes sorted_token_ids and must not race the final count write.
+  if (blockIdx.x % 2 == 0 && threadIdx.x == 0) {
     total_tokens_post_pad[lora_id] = 0;
 
     for (int i = 0; i < num_tokens; i++) {
@@ -1001,7 +1003,8 @@ void moe_lora_align_block_size(
           // when -1 is present at position 0 and leave output buffers
           // uninitialized, causing illegal memory accesses in downstream
           // MoE-LoRA kernels. This mirrors the fix made for the Triton
-          // _fused_moe_lora_kernel grid in vllm-project/aphrodite#32277.
+          // _fused_moe_lora_kernel grid in
+          // https://github.com/vllm-project/vllm/issues/32277.
           kernel<<<max_loras + 1, blockDim, shared_mem, stream>>>(
               reinterpret_cast<scalar_t*>(topk_ids.mutable_data_ptr()),
               reinterpret_cast<int32_t*>(token_lora_mapping.mutable_data_ptr()),
@@ -1039,9 +1042,10 @@ void moe_lora_align_block_size(
           // LoRA slots. Using max_loras would drop the real LoRA slot when -1
           // occupies position 0 and leave the output buffers uninitialized,
           // causing illegal memory accesses downstream. Mirrors the grid fix
-          // applied to _fused_moe_lora_kernel in vllm-project/aphrodite#32277.
-          // blockIdx.x % 2 == 0: counting experts and aligning
-          // blockIdx.x % 2 == 1: filling sorted_token_ids
+          // applied to _fused_moe_lora_kernel in
+          // https://github.com/vllm-project/vllm/issues/32277. blockIdx.x % 2
+          // == 0: counting experts and aligning blockIdx.x % 2 == 1: filling
+          // sorted_token_ids
           align_kernel<<<(max_loras + 1) * 2, blockDim, shared_mem_size,
                          stream>>>(
               reinterpret_cast<scalar_t*>(topk_ids.mutable_data_ptr()),

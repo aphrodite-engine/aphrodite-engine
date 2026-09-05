@@ -13,11 +13,8 @@ from pydantic import (
 )
 
 from aphrodite.config.speech_to_text import SpeechToTextParams
-from aphrodite.entrypoints.openai.engine.protocol import (
-    DeltaMessage,
-    OpenAIBaseModel,
-    UsageInfo,
-)
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
+from aphrodite.entrypoints.serve.engine.protocol import OpenAIBaseModel, UsageInfo
 from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import (
@@ -272,6 +269,8 @@ class TranscriptionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_transcription_request(cls, data):
+        if not isinstance(data, dict):
+            return data
         if isinstance(data.get("file"), str):
             raise HTTPException(
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,

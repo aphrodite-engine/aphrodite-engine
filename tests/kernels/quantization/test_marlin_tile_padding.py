@@ -635,7 +635,7 @@ def test_check_moe_marlin_supports_layer_padding():
         layer = SimpleNamespace()
         layer.hidden_size = hidden
         layer.apply_router_weight_on_input = False
-        layer.moe_config = SimpleNamespace(intermediate_size_per_partition_unpadded=intermediate)
+        layer.moe_config = SimpleNamespace(hidden_dim=hidden, intermediate_size_per_partition_unpadded=intermediate)
         return layer
 
     # group=32 with intermediate % 64 != 0: rejected strictly, accepted w/ padding

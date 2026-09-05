@@ -8,7 +8,7 @@ import torch.nn as nn
 from transformers.activations import GELUActivation
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.multimodal import BaseDummyOptions, ImageDummyOptions
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
@@ -91,6 +91,7 @@ class BeeDummyInputsBuilder(LlavaDummyInputsBuilder[BeeProcessingInfo]):
         target_width, target_height = self.info.get_image_size_with_most_features()
 
         image_overrides = mm_options.get("image")
+        assert image_overrides is None or isinstance(image_overrides, ImageDummyOptions)
 
         return {
             "image": self._get_dummy_images(

@@ -5,7 +5,10 @@
 import torch
 
 import aphrodite.model_executor.layers.fused_moe.modular_kernel as mk
-from aphrodite.model_executor.layers.fused_moe.activation import MoEActivation
+from aphrodite.model_executor.layers.fused_moe.activation import (
+    MoEActivation,
+    apply_moe_activation_masked_supported,
+)
 from aphrodite.model_executor.layers.fused_moe.config import (
     FusedMoEConfig,
     FusedMoEParallelConfig,
@@ -19,7 +22,6 @@ from aphrodite.model_executor.layers.fused_moe.utils import (
     _resize_cache,
     moe_kernel_quantize_input,
     normalize_batched_scales_shape,
-    swiglu_limit_func,
 )
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     QuantKey,
@@ -37,10 +39,8 @@ from aphrodite.triton_utils.allocation import set_triton_allocator
 
 
 def _is_capturing_or_compiling() -> bool:
-    # torch.cuda.is_current_stream_capturing() is unavailable on non-CUDA (XPU) torch.
-    return torch.compiler.is_compiling() or (
-        current_platform.is_cuda_alike() and torch.cuda.is_current_stream_capturing()
-    )
+    # The accelerator API dispatches to the active backend.
+    return torch.compiler.is_compiling() or torch.accelerator.current_stream().is_capturing()
 
 
 @triton.jit
@@ -639,6 +639,7 @@ class NaiveBatchedExperts(mk.FusedMoEExpertsModular):
         assert hidden_states.dim() == 3
         assert expert_tokens_meta is not None
         expert_num_tokens = expert_tokens_meta.expert_num_tokens
+        assert expert_num_tokens is not None
 
         num_local_experts = w1.size(0)
         assert num_local_experts == w1.size(0), f"{num_local_experts} == {w1.size(0)}"
@@ -784,13 +785,13 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
     ) -> bool:
         p = current_platform
         if p.is_rocm():
-            from aphrodite.platforms.rocm import get_cdna_version
+            from aphrodite.platforms.rocm import get_cdna_version, on_rdna4
 
-            _rocm_support_fp8 = get_cdna_version() > 2
+            is_rocm_fp8_supported = get_cdna_version() > 2 or on_rdna4()
         else:
-            _rocm_support_fp8 = False
+            is_rocm_fp8_supported = False
 
-        device_supports_fp8 = _rocm_support_fp8 or (p.is_cuda() and p.has_device_capability((8, 9)))
+        device_supports_fp8 = is_rocm_fp8_supported or (p.is_cuda() and p.has_device_capability((8, 9)))
 
         supported: list[tuple[QuantKey | None, QuantKey | None]] = [(None, None)]
         if device_supports_fp8:
@@ -805,16 +806,18 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
-        return activation in [
-            MoEActivation.SILU,
-            MoEActivation.GELU,
-            MoEActivation.GELU_TANH,
-            MoEActivation.SWIGLUOAI,
-            MoEActivation.SILU_NO_MUL,
-            MoEActivation.GELU_NO_MUL,
-            MoEActivation.GELU_TANH_NO_MUL,
-            MoEActivation.RELU2_NO_MUL,
-        ]
+        if current_platform.is_xpu():
+            return activation in [
+                MoEActivation.SILU,
+                MoEActivation.GELU,
+                MoEActivation.GELU_TANH,
+                MoEActivation.SWIGLUOAI,
+                MoEActivation.SILU_NO_MUL,
+                MoEActivation.GELU_NO_MUL,
+                MoEActivation.GELU_TANH_NO_MUL,
+                MoEActivation.RELU2_NO_MUL,
+            ]
+        return apply_moe_activation_masked_supported(activation)
 
     @staticmethod
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
@@ -823,20 +826,6 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
         # Let PrepareAndFinalize::finalize() decide the impl.
         return TopKWeightAndReduceDelegate()
-
-    def activation(
-        self,
-        activation: MoEActivation,
-        output: torch.Tensor,
-        input: torch.Tensor,
-        **kwargs,
-    ) -> None:
-        gemm1_clamp_limit = self.quant_config.gemm1_clamp_limit
-        if activation == MoEActivation.SILU and gemm1_clamp_limit is not None:
-            swiglu_limit_func(output, input, float(gemm1_clamp_limit))
-            return
-
-        super().activation(activation, output, input)
 
     def workspace_shapes(
         self,
@@ -960,11 +949,19 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
         intermediate_cache2.fill_(0)
 
         # TODO (bnell): use triton utility from batched deep gemm.
-        self.activation(
-            activation,
-            intermediate_cache2.view(-1, activation_out_dim),
-            intermediate_cache1.view(-1, N),
-        )
+        if current_platform.is_xpu():
+            self.activation(
+                activation,
+                intermediate_cache2.view(-1, activation_out_dim),
+                intermediate_cache1.view(-1, N),
+            )
+        else:
+            self.activation(
+                activation,
+                intermediate_cache2,
+                intermediate_cache1,
+                valid_token_counts=expert_num_tokens,
+            )
 
         qintermediate_cache2, a2q_scale = batched_moe_kernel_quantize_input(
             intermediate_cache2,

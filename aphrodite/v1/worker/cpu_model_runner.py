@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import sys
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from typing import Any
 
 import torch
 import torch.nn as nn
 
 import aphrodite.utils.cpu_triton_utils as cpu_tl
-from aphrodite.config import AphroditeConfig
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationMode,
+)
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.model_loader import get_model
 from aphrodite.tracing import instrument
@@ -66,7 +69,7 @@ class CPUModelRunner(GPUModelRunner):
 
         import aphrodite.v1.worker.block_table
 
-        aphrodite.v1.worker.block_table._compute_slot_mapping_kernel = cpu_tl.compute_slot_mapping_kernel
+        aphrodite.v1.worker.block_table._COMPUTE_SLOT_MAPPING_KERNEL.kernel = cpu_tl.compute_slot_mapping_kernel
 
         # Speculative decoding fallbacks
         import aphrodite.v1.sample.rejection_sampler
@@ -124,6 +127,8 @@ class CPUModelRunner(GPUModelRunner):
 
     @instrument(span_name="Warmup (CPU)")
     def warming_up_model(self) -> None:
+        if self.aphrodite_config.compilation_config.mode == CompilationMode.NONE:
+            return
         logger.info("Warming up model for the compilation...")
         # Only generate graph for the generic shape
         with _set_global_compilation_settings(self.aphrodite_config):
@@ -134,8 +139,13 @@ class CPUModelRunner(GPUModelRunner):
         self,
         kv_cache_config: KVCacheConfig,
         is_profiling: bool = False,
+        kv_cache_allocation_context: AbstractContextManager | None = None,
     ) -> None:
-        super().initialize_kv_cache(kv_cache_config, is_profiling)
+        super().initialize_kv_cache(
+            kv_cache_config,
+            is_profiling,
+            kv_cache_allocation_context=kv_cache_allocation_context,
+        )
 
         if self.speculative_config:
             if self.speculative_config.use_eagle():
@@ -217,5 +227,10 @@ def _set_torch_accelerator_to_noop() -> None:
     def noop(*args: Any, **kwargs: Any) -> None:
         pass
 
+    # Distinct no-op so empty_cache does not alias synchronize: Dynamo's
+    # handle_synchronize is keyed on that object and asserts on CPU-only hosts.
+    def empty_cache_noop(*args: Any, **kwargs: Any) -> None:
+        pass
+
     torch.accelerator.synchronize = noop
-    torch.accelerator.empty_cache = noop
+    torch.accelerator.empty_cache = empty_cache_noop

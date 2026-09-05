@@ -83,6 +83,7 @@ def _get_expected_values(num_requests: int, prompt_ids: list[int], max_tokens: i
         "aphrodite:request_inference_time_seconds": [("_count", num_requests)],
         "aphrodite:request_prefill_time_seconds": [("_count", num_requests)],
         "aphrodite:request_decode_time_seconds": [("_count", num_requests)],
+        "aphrodite:request_num_preemptions": [("_count", num_requests)],
         "aphrodite:request_prompt_tokens": [
             ("_sum", num_requests * num_prompt_tokens),
             ("_count", num_requests),
@@ -220,6 +221,9 @@ EXPECTED_METRICS_V1 = [
     "aphrodite:request_decode_time_seconds_sum",
     "aphrodite:request_decode_time_seconds_bucket",
     "aphrodite:request_decode_time_seconds_count",
+    "aphrodite:request_num_preemptions_sum",
+    "aphrodite:request_num_preemptions_bucket",
+    "aphrodite:request_num_preemptions_count",
 ]
 
 EXPECTED_METRICS_MM = [
@@ -435,7 +439,7 @@ def test_metrics_exist_run_batch():
             [
                 sys.executable,
                 "-m",
-                "aphrodite.entrypoints.openai.run_batch",
+                "aphrodite.entrypoints.launchers.run_batch",
                 "-i",
                 input_file.name,
                 "-o",

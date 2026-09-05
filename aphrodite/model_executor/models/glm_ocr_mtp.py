@@ -58,7 +58,9 @@ class GlmOcrMultiTokenPredictorLayer(nn.Module):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         nn.Module.__init__(self)
 
-        config = aphrodite_config.speculative_config.draft_model_config.hf_config.text_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        config = speculative_config.draft_model_config.hf_config.text_config
         self.config = config
         quant_config = aphrodite_config.quant_config
 
@@ -134,7 +136,7 @@ class GlmOcrMTP(nn.Module, SupportsPP):
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
 
-    def forward(
+    def forward(  # type: ignore[override]
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
@@ -181,9 +183,10 @@ class GlmOcrMTP(nn.Module, SupportsPP):
 
             if "scale" in name or "zero_point" in name:
                 # Remapping the name of FP8 kv-scale or zero point.
-                name = maybe_remap_kv_scale_name(name, params_dict)
-                if name is None:
+                remapped_name = maybe_remap_kv_scale_name(name, params_dict)
+                if remapped_name is None:
                     continue
+                name = remapped_name
 
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:

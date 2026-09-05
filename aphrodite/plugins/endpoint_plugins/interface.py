@@ -2,15 +2,30 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Contract for `aphrodite.endpoint_plugins` entry points.
 
-An endpoint plugin adds HTTP routes to the OpenAI-compatible API server. Its
-scope is the HTTP surface only: registering routes and optional per-app state
-used by those routes. It reaches the engine the same way an in-tree serving
-handler does, through the `EngineClient` it is handed at startup.
+An endpoint plugin adds HTTP routes to the OpenAI compatible API server.
+Its scope is HTTP surface only. It registers routes and optionally
+per app state used by those routes. It must not open new paths into the
+engine by reaching the engine the same way an in-tree serving handler does
+via `EngineClient` (e.g. `engine_client.collective_rpc(...)`).
 
-If a plugin also needs engine-side behavior, pair this entry point with one
-registered under `aphrodite.general_plugins`. The general plugin installs the
-engine-side method and the endpoint plugin exposes it over HTTP. The two are
-registered and loaded independently.
+If a plugin also needs engine side behavior (a new worker side RPC method,
+a custom stat, etc.) pair this entry point with one registered under
+`aphrodite.general_plugins` (see `aphrodite/plugins/__init__.py`). The
+`general_plugins` entry installs the engine side method and the
+`endpoint_plugins` entry exposes it over HTTP. The two are registered and
+loaded independently where neither implies the other.
+
+Plugins are opt-in. See `load_endpoint_plugins` in `aphrodite/plugins/__init__.py`
+for the loading/gating rules and `docs/usage/security.md` for the security
+posture of exposing plugin defined routes.
+
+The CPU only render server (see `build_and_serve_renderer` in
+`aphrodite/entrypoints/launchers/render`) has no `EngineClient`. A plugin
+eligible for the `render` task (`required_tasks` is `None` or includes
+`"render"`) still gets `attach_router` called but `init_state` receives
+`engine_client=None`. Plugins that cannot function without an engine should
+either exclude `"render"` from `required_tasks` or check for `None` in
+`init_state`/their route handlers and degrade gracefully.
 """
 
 from argparse import Namespace
@@ -19,8 +34,9 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from fastapi import FastAPI
 from starlette.datastructures import State
 
+from aphrodite.engine.protocol import EngineClient
+
 if TYPE_CHECKING:
-    from aphrodite.engine.protocol import EngineClient
     from aphrodite.tasks import SupportedTask
 
 
@@ -64,3 +80,34 @@ class EndpointPlugin(Protocol):
         cannot function without an engine.
         """
         ...
+
+
+def attach_endpoint_plugins(app: FastAPI, supported_tasks: tuple["SupportedTask", ...]) -> None:
+    """Phase A of endpoint plugin wiring: discover, gate and attach routes.
+
+    Attached last after all core routers. This is so endpoint plugin routes can
+    shadow core routes with the same path (see `EndpointPlugin.attach_router`
+    docstring). No-ops when no plugins are discovered/allowlisted.
+    """
+    from aphrodite.plugins import load_endpoint_plugins
+
+    endpoint_plugins = load_endpoint_plugins(supported_tasks)
+    for plugin in endpoint_plugins:
+        plugin.attach_router(app)
+    app.state.endpoint_plugins = endpoint_plugins
+
+
+async def init_endpoint_plugins_state(engine_client: EngineClient | None, state: State, args: Namespace) -> None:
+    """Phase B of endpoint plugin wiring: initialize per app plugin state.
+
+    `state.endpoint_plugins` is set by `_attach_endpoint_plugins` (Phase A)
+    in `build_app`. Some `init_app_state` callers (e.g. `run_batch.py`)
+    build their own bare `State` without going through `build_app`. As a result
+    `endpoint_plugins` may be absent and are treated that the same as "none attached".
+
+    `engine_client` is `None` for the CPU only render server which has no
+    engine (see `init_render_app_state`). Plugins must handle a `None`
+    `engine_client` themselves (see `EndpointPlugin.init_state`).
+    """
+    for plugin in getattr(state, "endpoint_plugins", []):
+        await plugin.init_state(engine_client, state, args)

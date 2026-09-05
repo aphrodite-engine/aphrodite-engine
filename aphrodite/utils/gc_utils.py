@@ -4,7 +4,7 @@ import gc
 import json
 import time
 from collections import Counter
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from typing import Any
 
 import aphrodite.envs as envs
@@ -84,6 +84,34 @@ class GCDebugger:
                 generation,
                 (f" Top collected objects: \n{self.gc_top_collected_objects}" if self.gc_top_collected_objects else ""),
             )
+
+
+@contextmanager
+def freeze_gc_for_cudagraph_capture():
+    """Freeze and disable gc for the duration of bulk CUDA graph capture.
+
+    A gc cycle during stream capture can invalidate the captured graph, e.g.
+    a finalized Triton kernel unloads its module. Opt out with
+    APHRODITE_ENABLE_CUDAGRAPH_GC=1.
+    """
+    gc_was_enabled = gc.isenabled()
+    gc.collect()
+    should_freeze = not envs.APHRODITE_ENABLE_CUDAGRAPH_GC
+    if should_freeze:
+        gc.freeze()
+        gc.disable()
+    try:
+        yield
+    finally:
+        if should_freeze:
+            try:
+                gc.unfreeze()
+                gc.collect()
+            finally:
+                if gc_was_enabled:
+                    gc.enable()
+                else:
+                    gc.disable()
 
 
 def freeze_gc_heap() -> None:

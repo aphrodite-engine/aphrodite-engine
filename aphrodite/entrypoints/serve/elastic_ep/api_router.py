@@ -9,10 +9,8 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorResponse,
-)
 from aphrodite.entrypoints.serve.elastic_ep.middleware import get_scaling_elastic_ep
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.api_utils import validate_json_request
 from aphrodite.logger import init_logger
 
@@ -70,6 +68,8 @@ async def scale_elastic_ep(raw_request: Request):
             status_code=408,
             detail=f"Scale failed due to request drain timeout after {drain_timeout} seconds",
         ) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error("Scale failed: %s", e)
         raise HTTPException(status_code=500, detail="Scale failed") from e

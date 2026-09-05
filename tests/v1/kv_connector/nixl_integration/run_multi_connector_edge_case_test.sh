@@ -95,7 +95,7 @@ run_tests_for_model() {
   # ── Start prefill instance ──
   echo "Starting prefill instance on GPU $PREFILL_GPU, port $PREFILL_PORT"
   BASE_CMD="CUDA_VISIBLE_DEVICES=$PREFILL_GPU \
-    APHRODITE_KV_CACHE_LAYOUT='HND' \
+    APHRODITE_KV_CACHE_LAYOUT='LBHNC' \
     UCX_NET_DEVICES=all \
     APHRODITE_NIXL_SIDE_CHANNEL_PORT=$PREFILL_SIDE_CHANNEL_PORT \
     aphrodite serve \"$model_name\" \
@@ -121,7 +121,7 @@ run_tests_for_model() {
   # ── Start decode instance ──
   echo "Starting decode instance on GPU $DECODE_GPU, port $DECODE_PORT"
   BASE_CMD="CUDA_VISIBLE_DEVICES=$DECODE_GPU \
-    APHRODITE_KV_CACHE_LAYOUT='HND' \
+    APHRODITE_KV_CACHE_LAYOUT='LBHNC' \
     UCX_NET_DEVICES=all \
     APHRODITE_NIXL_SIDE_CHANNEL_PORT=$DECODE_SIDE_CHANNEL_PORT \
     aphrodite serve \"$model_name\" \

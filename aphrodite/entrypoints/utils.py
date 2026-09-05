@@ -16,13 +16,10 @@ from starlette.background import BackgroundTask, BackgroundTasks
 
 from aphrodite import envs
 from aphrodite.engine.arg_utils import EngineArgs
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorInfo,
-    ErrorResponse,
-    GenerationError,
-    StreamOptions,
-)
+from aphrodite.entrypoints.generate.base.protocol import StreamOptions
 from aphrodite.entrypoints.openai.models.protocol import LoRAModulePath
+from aphrodite.entrypoints.serve.engine.protocol import ErrorInfo, ErrorResponse
+from aphrodite.exceptions import GenerationError
 from aphrodite.logger import current_formatter_type, init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
@@ -192,7 +189,7 @@ def get_max_tokens(
 
 
 def log_non_default_args(args: Namespace | EngineArgs):
-    from aphrodite.entrypoints.openai.cli_args import make_arg_parser
+    from aphrodite.entrypoints.launchers.cli_args import make_arg_parser
 
     non_default_args = {}
 

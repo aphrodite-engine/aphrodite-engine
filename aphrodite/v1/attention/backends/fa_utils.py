@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from dataclasses import dataclass
 from typing import Any
-
-import torch
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
+from aphrodite.utils.torch_utils import is_quantized_kv_cache
 
 logger = init_logger(__name__)
+
+# The dedicated hd256 kernel requires one 128-token page per tile.
+FA4_HD256_PAGE_SIZE = 128
 
 # Track whether upstream flash-attn is available on ROCm.
 # Set during module initialization and never modified afterwards.
@@ -63,79 +64,14 @@ elif current_platform.is_rocm():
     reshape_and_cache_flash = ops.reshape_and_cache_flash
 
 
-@dataclass(frozen=True)
-class FlashAttentionCuTeDSLCompileSpec:
-    """High-level FA4 compile-only request used by Aphrodite warmup.
-
-    This is not the CuTeDSL cache key. FA4 owns the selector that maps these
-    serving inputs to the actual compile-static fields: tile sizes, q_stage,
-    Split-KV, scheduler choice, layout-presence booleans, dtype/head dims,
-    arch, and related fields.
-    """
-
-    q_shape: tuple[int, ...]
-    k_shape: tuple[int, ...]
-    v_shape: tuple[int, ...]
-    q_dtype: torch.dtype
-    max_seqlen_q: int
-    max_seqlen_k: int
-    softmax_scale: float
-    causal: bool
-    fa_version: int
-    v_stride: tuple[int, ...] | None = None
-    cu_seqlens_q_shape: tuple[int, ...] | None = None
-    cu_seqlens_k_shape: tuple[int, ...] | None = None
-    window_size: tuple[int, int] | None = None
-    return_softmax_lse: bool = False
-    num_splits: int = 0
-
-    def compile(self) -> None:
-        assert compile_flash_attn_varlen_func_from_specs is not None
-        window_size = list(self.window_size) if self.window_size is not None else None
-        compile_flash_attn_varlen_func_from_specs(
-            q_shape=self.q_shape,
-            k_shape=self.k_shape,
-            v_shape=self.v_shape,
-            q_dtype=self.q_dtype,
-            v_stride=self.v_stride,
-            cu_seqlens_q_shape=self.cu_seqlens_q_shape,
-            cu_seqlens_k_shape=self.cu_seqlens_k_shape,
-            max_seqlen_q=self.max_seqlen_q,
-            max_seqlen_k=self.max_seqlen_k,
-            softmax_scale=self.softmax_scale,
-            causal=self.causal,
-            window_size=window_size,
-            return_softmax_lse=self.return_softmax_lse,
-            fa_version=self.fa_version,
-            num_splits=self.num_splits,
-        )
-
-    def request_key(self) -> tuple[object, ...]:
-        return (
-            self.q_shape,
-            self.k_shape,
-            self.v_shape,
-            self.q_dtype,
-            self.max_seqlen_q,
-            self.max_seqlen_k,
-            self.softmax_scale,
-            self.causal,
-            self.fa_version,
-            self.v_stride,
-            self.cu_seqlens_q_shape,
-            self.cu_seqlens_k_shape,
-            self.window_size,
-            self.return_softmax_lse,
-            self.num_splits,
-        )
-
-
 def get_flash_attn_version(
     requires_alibi: bool = False,
     head_size: int | None = None,
     head_size_v: int | None = None,
     has_sinks: bool = False,
-    requires_local_attention: bool = False,
+    requires_softcap: bool = False,
+    kv_cache_block_size: int | None = None,
+    supports_fa4_hd256: bool = False,
 ) -> int | None:
     if current_platform.is_xpu():
         return 2
@@ -214,22 +150,25 @@ def get_flash_attn_version(
             )
             fa_version = 2
 
-        if fa_version == 4 and device_capability.major >= 10 and head_size == 256 and requires_local_attention:
-            logger.warning_once(
-                "FA4 on Blackwell does not support local attention with head_size=256, defaulting to FA version 2."
-            )
-            fa_version = 2
+        if fa_version == 4 and uses_fa4_hd256_kernel(head_size, head_size_v):
+            if not supports_fa4_hd256:
+                fa_version = 2
+            elif (
+                reason := _fa4_hd256_fallback_reason(has_sinks, requires_softcap, kv_cache_block_size, aphrodite_config)
+            ) is not None:
+                logger.warning_once(
+                    "FA4's Blackwell head_size=256 kernel does not support %s, defaulting to FA version 2.",
+                    reason,
+                )
+                fa_version = 2
 
-        # FA4 on SM100 (Blackwell) has TMEM capacity limits that restrict
-        # supported head dimensions to ≤128, with exceptions for 256 and 192/128
-        # (MLA prefill). Development of symmetric 192, 384, and 512 support is
-        # tracked in https://github.com/Dao-AILab/flash-attention/issues/2456
+        # FA4 head dimensions on Blackwell are limited by TMEM capacity.
         if (
             fa_version == 4
             and device_capability.major >= 10
             and head_size is not None
             and head_size > 128
-            and not (head_size == 256 or (head_size == 192 and head_size_v == 128))
+            and not ((head_size == 256 and head_size_v in (None, 256)) or (head_size == 192 and head_size_v == 128))
         ):
             logger.warning_once(
                 "FA4 on Blackwell does not support head_size=%d due to TMEM "
@@ -251,6 +190,47 @@ def get_flash_attn_version(
         return None
 
 
+def uses_fa4_hd256_kernel(head_size: int | None, head_size_v: int | None = None) -> bool:
+    """Return whether FA4 uses its dedicated hd256 kernel."""
+    if head_size != 256:
+        return False
+    if head_size_v is not None and head_size_v != 256:
+        return False
+    capability = current_platform.get_device_capability()
+    return capability is not None and capability.major in (10, 11)
+
+
+def _fa4_hd256_fallback_reason(
+    has_sinks: bool,
+    requires_softcap: bool,
+    kv_cache_block_size: int | None,
+    aphrodite_config: Any,
+) -> str | None:
+    model_config = aphrodite_config.model_config if aphrodite_config is not None else None
+    cache_config = aphrodite_config.cache_config if aphrodite_config is not None else None
+    if has_sinks:
+        return "attention sinks"
+    if requires_softcap or (
+        # Keep model-level and per-layer version selection consistent.
+        model_config is not None and getattr(model_config.hf_text_config, "attn_logit_softcapping", None)
+    ):
+        return "logits soft capping"
+    if cache_config is not None and is_quantized_kv_cache(cache_config.cache_dtype):
+        return f"quantized KV cache dtype {cache_config.cache_dtype}"
+    if kv_cache_block_size is not None and kv_cache_block_size % FA4_HD256_PAGE_SIZE:
+        # Larger blocks are split into 128-token kernel pages.
+        return f"a KV cache block size of {kv_cache_block_size}"
+    if model_config is not None:
+        if model_config.is_mm_prefix_lm:
+            return "mm_prefix bidirectional attention"
+        if model_config.rswa_window is not None:
+            return "R-SWA"
+    if aphrodite_config is not None and aphrodite_config.parallel_config.decode_context_parallel_size > 1:
+        # DCP reuses an unsliced block table with a non-page-aligned length.
+        return "decode context parallelism"
+    return None
+
+
 def is_fa_version_supported(fa_version: int) -> bool:
     try:
         from aphrodite.vllm_flash_attn.flash_attn_interface import (
@@ -262,21 +242,37 @@ def is_fa_version_supported(fa_version: int) -> bool:
         return False
 
 
+def flash_attn_supports_kv_cache_dtype(
+    kv_cache_dtype: str = "fp8_e4m3",
+    *,
+    requires_alibi: bool = False,
+    head_size: int | None = None,
+    head_size_v: int | None = None,
+    has_sinks: bool = False,
+    requires_softcap: bool = False,
+    kv_cache_block_size: int | None = None,
+    supports_fa4_hd256: bool = False,
+) -> bool:
+    if kv_cache_dtype == "fp8_e5m2":
+        return False
+    if current_platform.is_xpu():
+        return True
+    fa_version = get_flash_attn_version(
+        requires_alibi=requires_alibi,
+        head_size=head_size,
+        head_size_v=head_size_v,
+        has_sinks=has_sinks,
+        requires_softcap=requires_softcap,
+        kv_cache_block_size=kv_cache_block_size,
+        supports_fa4_hd256=supports_fa4_hd256,
+    )
+    return (fa_version == 3 and current_platform.is_device_capability_family(90)) or (
+        fa_version == 4 and current_platform.is_device_capability_family(100)
+    )
+
+
 def flash_attn_supports_quant_query_input() -> bool:
     return not current_platform.is_xpu()
-
-
-def flash_attn_supports_kv_cache_dtype(kv_cache_dtype: str) -> bool:
-    if kv_cache_dtype in ("auto", "float16", "bfloat16"):
-        return True
-    if kv_cache_dtype in ("fp8", "fp8_e4m3"):
-        if current_platform.is_xpu():
-            return True
-        fa_version = get_flash_attn_version()
-        return fa_version in (3, 4) and (
-            current_platform.is_device_capability_family(90) or current_platform.is_device_capability_family(100)
-        )
-    return False
 
 
 def flash_attn_supports_sinks() -> bool:

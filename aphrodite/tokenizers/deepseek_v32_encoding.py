@@ -116,7 +116,12 @@ def find_last_user_index(messages: list[dict[str, Any]]) -> int:
     return last_user_index
 
 
-def render_message(index: int, messages: list[dict[str, Any]], thinking_mode: str) -> str:
+def render_message(
+    index: int,
+    messages: list[dict[str, Any]],
+    thinking_mode: str,
+    last_user_idx: int | None = None,
+) -> str:
     if not (0 <= index < len(messages)):
         raise ValueError(f"Index {index} out of range for messages list of length {len(messages)}")
     if thinking_mode not in ["chat", "thinking"]:
@@ -124,7 +129,7 @@ def render_message(index: int, messages: list[dict[str, Any]], thinking_mode: st
 
     prompt = ""
     msg = messages[index]
-    last_user_idx = find_last_user_index(messages)
+    last_user_idx = find_last_user_index(messages) if last_user_idx is None else last_user_idx
 
     role = msg.get("role")
     content = msg.get("content")
@@ -237,7 +242,7 @@ def render_message(index: int, messages: list[dict[str, Any]], thinking_mode: st
                 tool_calls=tool_calls_content,
             )
     else:
-        raise NotImplementedError(f"Unknown role: {role}")
+        raise ValueError(f"Invalid role: {role}")
 
     return prompt
 
@@ -274,7 +279,14 @@ def encode_messages(
     if thinking_mode == "thinking" and drop_thinking:
         full_messages = drop_thinking_messages(full_messages)
 
+    last_user_idx = find_last_user_index(full_messages)
+
     for idx in range(len(messages)):
-        prompt += render_message(idx + len(context), full_messages, thinking_mode=thinking_mode)
+        prompt += render_message(
+            idx + len(context),
+            full_messages,
+            thinking_mode=thinking_mode,
+            last_user_idx=last_user_idx,
+        )
 
     return prompt

@@ -22,6 +22,7 @@ from aphrodite.model_executor.models.commandr import (
 
 from .utils import (
     AutoWeightsLoader,
+    WeightsMapper,
     get_draft_quant_config,
     maybe_prefix,
     process_eagle_weight,
@@ -58,6 +59,7 @@ class CohereEagleModel(nn.Module):
         start_layer_id: int = 0,
     ) -> None:
         super().__init__()
+        assert aphrodite_config.speculative_config is not None
         self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
         self.quant_config = get_draft_quant_config(aphrodite_config)
 
@@ -133,12 +135,17 @@ class CohereEagleModel(nn.Module):
 class EagleCohereForCausalLM(CohereForCausalLM):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         nn.Module.__init__(self)
+        assert aphrodite_config.speculative_config is not None
         self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
         # Flags checked by the speculative proposer to decide whether to share
         # embed_tokens / lm_head with the target model. Cohere EAGLE checkpoints
         # use tied embeddings so these weights are absent from the draft file.
         self.has_own_embed_tokens = False
         self.has_own_lm_head = False
+        if self.config.tie_word_embeddings:
+            self.hf_to_aphrodite_mapper = self.hf_to_aphrodite_mapper | WeightsMapper(
+                orig_to_new_prefix={"model.embed_tokens.": None}
+            )
         target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
         self.model = CohereEagleModel(
             aphrodite_config=aphrodite_config,
@@ -152,7 +159,7 @@ class EagleCohereForCausalLM(CohereForCausalLM):
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
 
-    def forward(
+    def forward(  # type: ignore[override]
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
@@ -169,10 +176,7 @@ class EagleCohereForCausalLM(CohereForCausalLM):
             process_eagle_weight(self, name)
             return name, weight
 
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=(["lm_head.", "model.embed_tokens."] if self.config.tie_word_embeddings else None),
-        )
+        loader = AutoWeightsLoader(self)
 
         loaded_weight_names = loader.load_weights(map(_track_and_forward, weights), mapper=self.hf_to_aphrodite_mapper)
 

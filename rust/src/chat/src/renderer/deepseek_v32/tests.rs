@@ -13,6 +13,7 @@ use crate::event::{AssistantContentBlock, AssistantToolCall};
 use crate::renderer::test_utils::{FixtureRequestOptions, fixture_chat_request};
 use crate::request::{
     ChatContentPart, ChatMessage, ChatRequest, ChatTool, ChatToolChoice, GenerationPromptMode,
+    ResolvedToolContext,
 };
 use crate::{ChatRenderer, ChatRole};
 
@@ -81,7 +82,15 @@ fn assert_fixture(input_name: &str, expected: ExpectFile) {
 fn renders_aphrodite_parity_prompt_for_request_level_tools_fixture() {
     assert_fixture(
         "test_input.json",
-        expect_file!["fixtures/test_output_vllm_parity.txt"],
+        expect_file!["fixtures/test_output_aphrodite_parity.txt"],
+    );
+}
+
+#[test]
+fn renders_developer_tools_like_hf_python() {
+    assert_fixture(
+        "test_input_developer_tools.json",
+        expect_file!["fixtures/test_output_developer_tools.txt"],
     );
 }
 
@@ -103,27 +112,29 @@ fn renders_official_search_fixture_with_date() {
 
 #[test]
 fn request_level_tools_are_lowered_as_synthetic_leading_system_message() {
+    let messages = vec![
+        ChatMessage::system("System prompt."),
+        ChatMessage::text(ChatRole::User, "Hello"),
+    ];
+    let tools = vec![ChatTool {
+        name: "lookup".to_string(),
+        description: Some("Look things up".to_string()),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string"
+                }
+            },
+            "required": ["query"]
+        }),
+        strict: None,
+    }];
     let mut request = ChatRequest {
         request_id: "deepseek-v32-tools".to_string(),
-        messages: vec![
-            ChatMessage::system("System prompt."),
-            ChatMessage::text(ChatRole::User, "Hello"),
-        ],
-        tools: vec![ChatTool {
-            name: "lookup".to_string(),
-            description: Some("Look things up".to_string()),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string"
-                    }
-                },
-                "required": ["query"]
-            }),
-            strict: None,
-        }],
-        tool_choice: ChatToolChoice::Auto,
+        tool_context: ResolvedToolContext::new(&messages, tools, Some(ChatToolChoice::Auto), true)
+            .expect("tool context should resolve"),
+        messages,
         ..ChatRequest::for_test()
     };
     request

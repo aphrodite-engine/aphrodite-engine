@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaMessage,
     FunctionCall,
 )

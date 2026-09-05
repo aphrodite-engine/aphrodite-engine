@@ -28,9 +28,9 @@ if(DEEPGEMM_SRC_DIR)
   message(STATUS "DeepGEMM using local DEEPGEMM_SRC_DIR: ${deepgemm_SOURCE_DIR}")
 else()
   # Keep in sync with tools/install_deepgemm.sh
-  set(_DEEPGEMM_UPSTREAM_REPO "https://github.com/vllm-project/DeepGEMM.git")
-  # TODO: switch to nv_dev branch after it support situ
-  set(_DEEPGEMM_UPSTREAM_TAG "f5a76426fa084087169693fd0cd815223576d6e9")
+  set(_DEEPGEMM_UPSTREAM_REPO "https://github.com/deepseek-ai/DeepGEMM.git")
+  # Pinned to the tip of the nv_dev branch (SM120 support).
+  set(_DEEPGEMM_UPSTREAM_TAG "8b1392b978f5a03c828dd1711090d7fb50958b8a")
 
   set(_deepgemm_fc_root "${FETCHCONTENT_BASE_DIR}")
   if(NOT _deepgemm_fc_root)
@@ -100,7 +100,7 @@ if(DEEPGEMM_ARCHS)
   # private CPython symbols — a single `_C.abi3.so` is not viable today
   # (see #41476 / #41512 for the failed attempt).
   #
-  # TODOs (tracked in vllm-project/aphrodite#42431):
+  # TODOs (tracked in https://github.com/vllm-project/vllm/issues/42431):
   #   - Replace DeepGEMM's pybind11 binding with a TORCH_LIBRARY + shim
   #     binding (cf. aphrodite-flash-attention/csrc/common/pytorch_shim.h) to
   #     collapse to one `_C.abi3.so`. Needs either an upstream change or

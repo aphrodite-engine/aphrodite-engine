@@ -131,6 +131,8 @@ def main(args: argparse.Namespace):
             print(f"Profiling with torch profiler (results will be saved to {profiler_config.torch_profiler_dir})...")
         elif profiler_config.profiler == "cuda":
             print("Profiling with cuda profiler ...")
+        elif profiler_config.profiler == "proton":
+            print(f"Profiling with Proton (results will be saved under {profiler_config.proton_profiler_dir})...")
         run_to_completion(do_profile=True)
         return
 

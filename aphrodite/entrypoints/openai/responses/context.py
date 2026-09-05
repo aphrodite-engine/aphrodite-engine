@@ -24,11 +24,9 @@ from aphrodite import envs
 from aphrodite.entrypoints.chat_utils import (
     ChatTemplateContentFormatOption,
 )
+from aphrodite.entrypoints.generate.base.protocol import FunctionCall
 from aphrodite.entrypoints.mcp.tool import Tool
 from aphrodite.entrypoints.mcp.tool_server import ToolServer
-from aphrodite.entrypoints.openai.engine.protocol import (
-    FunctionCall,
-)
 from aphrodite.entrypoints.openai.parser.harmony_utils import render_for_completion
 from aphrodite.entrypoints.openai.responses.protocol import (
     ResponseInputOutputItem,
@@ -39,7 +37,6 @@ from aphrodite.entrypoints.openai.responses.utils import (
     build_response_output_items,
     construct_tool_dicts,
 )
-from aphrodite.entrypoints.serve.utils.constants import MCP_PREFIX
 from aphrodite.outputs import RequestOutput
 from aphrodite.parser.abstract_parser import Parser
 from aphrodite.tokenizers import TokenizerLike
@@ -58,6 +55,7 @@ _TOOL_NAME_TO_TYPE_MAP = {
     "python": "code_interpreter",
     "container": "container",
 }
+MCP_PREFIX = "mcp_"
 
 
 def _map_tool_name_to_tool_type(tool_name: str) -> str:

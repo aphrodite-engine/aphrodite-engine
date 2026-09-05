@@ -167,7 +167,7 @@ class AIMv2Transformer(nn.Module):
             [AIMv2Block(config, quant_config, prefix=f"{prefix}.blocks.{i}") for i in range(config.num_hidden_layers)]
         )
         if require_post_norm:
-            self.post_trunk_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_trunk_norm: RMSNorm | None = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:
             self.post_trunk_norm = None
 
@@ -204,6 +204,11 @@ class AIMv2Model(torch.nn.Module):
             require_post_norm=require_post_norm,
             prefix=f"{prefix}.trunk",
         )
+        # post_trunk_norm is optional (absent for clip-skip backbones).
+        if self.trunk.post_trunk_norm is None:
+            self.hf_to_aphrodite_mapper = self.hf_to_aphrodite_mapper | WeightsMapper(
+                orig_to_new_prefix={"trunk.post_trunk_norm.": None}
+            )
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         x = self.preprocessor(pixel_values)
@@ -212,9 +217,5 @@ class AIMv2Model(torch.nn.Module):
         return x
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            # post_trunk_norm is optional (absent for clip-skip backbones).
-            skip_prefixes=(["trunk.post_trunk_norm."] if self.trunk.post_trunk_norm is None else None),
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)

@@ -12,7 +12,7 @@ from aphrodite.multimodal.media import MediaWithBytes
 from aphrodite.multimodal.utils import encode_image_url, fetch_image
 from aphrodite.platforms import current_platform
 from tests.entrypoints.multimodal.conftest import TEST_IMAGE_ASSETS
-from tests.utils import ROCM_ENV_OVERRIDES, ROCM_EXTRA_ARGS, RemoteOpenAIServer
+from tests.utils import ROCM_EXTRA_ARGS, RemoteOpenAIServer
 
 MODEL_NAME = "microsoft/Phi-3.5-vision-instruct"
 MAXIMUM_IMAGES = 2
@@ -88,7 +88,6 @@ def server():
     # ROCm: Increase timeouts to handle potential network delays and slower
     # video processing when downloading multiple videos from external sources
     env_overrides = {
-        **ROCM_ENV_OVERRIDES,
         **(
             {
                 "APHRODITE_VIDEO_FETCH_TIMEOUT": "120",

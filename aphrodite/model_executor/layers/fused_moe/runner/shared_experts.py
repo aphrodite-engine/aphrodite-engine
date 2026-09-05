@@ -43,6 +43,7 @@ class SharedExperts(torch.nn.Module):
         moe_config: FusedMoEConfig,
         enable_dbo: bool,
         mk_can_overlap_shared_experts: Callable[[], bool],
+        is_multistream_safe: Callable[[], bool],
     ):
         super().__init__()
 
@@ -57,6 +58,10 @@ class SharedExperts(torch.nn.Module):
 
         self._mk_can_overlap_shared_experts = mk_can_overlap_shared_experts
 
+        # Might not be safe to run multi-stream mode if routed and shared experts
+        # alias the same inputs
+        self._is_multistream_safe = is_multistream_safe
+
         # Allow disabling of the separate shared experts stream for
         # debug purposes.
         # TODO: Remove this after more extensive testings with TP/DP
@@ -65,11 +70,12 @@ class SharedExperts(torch.nn.Module):
             logger.debug_once("Disabling MoE shared_experts cuda stream")
             self._stream = None
         else:
-            # TODO(rob): enable shared expert overlap with non-cuda-alike.
-            # aux_stream() returns None on non-cuda-alike platforms.
             self._stream = aux_stream()
             if self._stream is not None:
                 logger.debug_once("Enabled separate cuda stream for MoE shared_experts")
+                # One pair per DBO ubatch id to sync aux and main stream.
+                self._input_ready_event = [torch.cuda.Event(), torch.cuda.Event()]
+                self._output_ready_event = [torch.cuda.Event(), torch.cuda.Event()]
 
         if self._stream is not None:
             # One pair per DBO ubatch id.
@@ -83,11 +89,21 @@ class SharedExperts(torch.nn.Module):
     @property
     def _disable_shared_experts_overlap(self) -> bool:
         # Disable shared expert overlap if:
-        #   - we are using eplb with non-default backend, because of correctness issues
+        #   - we are using eplb with non-safe backend, because of correctness issues
         #   - we are using flashinfer with DP, since there nothing to gain
+
+        # Both these comm backends have been shown to be safe for shared expert overlap.
+        _EPLB_OVERLAP_SAFE_BACKENDS = (
+            "allgather_reducescatter",
+            "flashinfer_nvlink_one_sided",
+        )
+
         parallel_config = self._moe_config.moe_parallel_config
+        if getattr(self._layer, "shard_sequence_parallel", False):
+            # TODO: we may enable this to optimize further
+            return True
         return (
-            parallel_config.enable_eplb and parallel_config.all2all_backend != "allgather_reducescatter"
+            parallel_config.enable_eplb and parallel_config.all2all_backend not in _EPLB_OVERLAP_SAFE_BACKENDS
         ) or parallel_config.use_fi_nvl_two_sided_kernels
 
     def _determine_shared_experts_order(
@@ -100,10 +116,17 @@ class SharedExperts(torch.nn.Module):
         if self._mk_can_overlap_shared_experts():
             return SharedExpertsOrder.MK_INTERNAL_OVERLAPPED
 
+        # On ROCm, empirically only DP-only deployments benefit from the overlap.
+        overlap_is_beneficial = not current_platform.is_rocm() or (
+            self._moe_config.moe_parallel_config.dp_size > 1 and self._moe_config.moe_parallel_config.tp_size == 1
+        )
+
         should_run_shared_in_aux_stream = (
-            current_platform.is_cuda()
+            current_platform.is_cuda_alike()
             and self._stream is not None
             and hidden_states.shape[0] <= envs.APHRODITE_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD
+            and overlap_is_beneficial
+            and self._is_multistream_safe()
         )
 
         if should_run_shared_in_aux_stream:

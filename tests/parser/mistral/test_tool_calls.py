@@ -25,15 +25,15 @@ from mistral_common.protocol.instruct.tool_calls import (
 )
 from partial_json_parser.core.options import Allow
 
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionRequest,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,
     ExtractedToolCallInformation,
     StructuralTagResponseFormat,
+)
+from aphrodite.entrypoints.openai.chat_completion.protocol import (
+    ChatCompletionRequest,
 )
 from aphrodite.parser.engine.events import EventType
 from aphrodite.parser.engine.streaming_parser_engine import StreamingParserEngine

@@ -6,11 +6,9 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from aphrodite import envs
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorResponse,
-)
 from aphrodite.entrypoints.openai.models.api_router import models
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.lora.protocol import (
     LoadLoRAAdapterRequest,
     UnloadLoRAAdapterRequest,

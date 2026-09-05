@@ -15,10 +15,14 @@ from aphrodite.logger import init_logger
 from aphrodite.triton_utils import tl, triton
 from aphrodite.v1.attention.backend import AttentionCGSupport
 from aphrodite.v1.attention.backends.utils import PAD_SLOT_ID
-from aphrodite.v1.kv_cache_interface import KVCacheConfig
+from aphrodite.v1.kv_cache_interface import (
+    KVCacheConfig,
+    get_kv_cache_spec_sliding_window,
+)
 from aphrodite.v1.worker.gpu.attn_utils import build_slot_mappings_by_layer
 from aphrodite.v1.worker.gpu.block_table import BlockTables
-from aphrodite.v1.worker.gpu.dp_utils import dispatch_cg_and_sync_dp
+from aphrodite.v1.worker.gpu.cp_utils import cp_local_slot
+from aphrodite.v1.worker.gpu.dp_utils import DPSyncState, dispatch_cg_and_sync_dp
 from aphrodite.v1.worker.gpu.input_batch import InputBatch, InputBuffers
 from aphrodite.v1.worker.gpu.model_states.interface import ModelState
 from aphrodite.v1.worker.gpu.spec_decode.dflash.cudagraph import DFlashCudaGraphManager
@@ -72,7 +76,10 @@ class DFlashSpeculator(DraftModelSpeculator):
         max_num_sampled_tokens = self.max_num_reqs * self.num_speculative_steps
         self.sample_indices = torch.zeros(max_num_sampled_tokens, dtype=torch.int64, device=device)
         self.sample_pos = torch.zeros(max_num_sampled_tokens, dtype=torch.int64, device=device)
-        self.sample_idx_mapping = torch.zeros(max_num_sampled_tokens, dtype=torch.int32, device=device)
+        # -1 marks an inert sampling row. CUDA graph capture can execute the
+        # full buffer before a real batch has populated it, so zero would make
+        # every padding row scatter into request slot 0.
+        self.sample_idx_mapping = torch.full((max_num_sampled_tokens,), -1, dtype=torch.int32, device=device)
         # [0, 1, ..., N-1, 0, 1, ..., N-1, ...] -> the per-token column index into
         # draft_logits[req, step, :].
         self.sample_col = torch.arange(self.num_speculative_steps, dtype=torch.int32, device=device).repeat(
@@ -89,7 +96,7 @@ class DFlashSpeculator(DraftModelSpeculator):
             resolve_dflash_attention_backend,
         )
 
-        config = copy.copy(self.aphrodite_config)
+        config = copy.copy(super().attn_aphrodite_config)
         config.attention_config = replace(
             self.aphrodite_config.attention_config,
             use_non_causal=self.requires_non_causal,
@@ -133,11 +140,10 @@ class DFlashSpeculator(DraftModelSpeculator):
 
     def capture(self) -> None:
         logger.info("Capturing model for %s speculator...", self._speculator_name)
-        # Reset sampling indices to zero to prevent stale values from prior
-        # dummy runs from being baked into the captured graph.
+        # Padded sample rows must not scatter into a live request during capture.
         self.sample_indices.zero_()
         self.sample_pos.zero_()
-        self.sample_idx_mapping.zero_()
+        self.sample_idx_mapping.fill_(-1)
         assert self.query_cudagraph_manager is not None
         self.query_cudagraph_manager.capture(
             self._generate_draft,
@@ -177,22 +183,25 @@ class DFlashSpeculator(DraftModelSpeculator):
             target_attn_groups,
         )
 
-        # FlashAttention's AOT scheduler reads these values from the config,
-        # which otherwise still describes the target model. Match them to the
-        # actual draft tensors so target/draft GQA differences cannot select
-        # incompatible scheduler metadata.
-        parallel_config = self.aphrodite_config.parallel_config
-        draft_heads_q = self.draft_model_config.get_num_attention_heads(parallel_config)
-        draft_heads_kv = self.draft_model_config.get_num_kv_heads(parallel_config)
-        draft_head_dim = self.draft_model_config.get_head_size()
+        # FlashAttention's AOT split schedule is wrong for a windowed drafter,
+        # and `_get_sliding_window_configs` leaves it on or off depending on
+        # whether the target also runs FlashAttention. Decide it here instead.
         for groups in self.attn_groups:
             for group in groups:
-                builder = group.get_metadata_builder(0)
+                builder = group.get_metadata_builder()
                 if hasattr(builder, "num_heads_q"):
                     draft_builder = cast(Any, builder)
-                    draft_builder.num_heads_q = draft_heads_q
-                    draft_builder.num_heads_kv = draft_heads_kv
-                    draft_builder.headdim = draft_head_dim
+                    draft_builder.num_heads_q = self.draft_model_config.get_num_attention_heads(
+                        self.aphrodite_config.parallel_config
+                    )
+                    draft_builder.num_heads_kv = self.draft_model_config.get_num_kv_heads(
+                        self.aphrodite_config.parallel_config
+                    )
+                    draft_builder.headdim = self.draft_model_config.get_head_size()
+                if getattr(builder, "aot_schedule", False) and get_kv_cache_spec_sliding_window(builder.kv_cache_spec):
+                    # `aot_schedule` belongs to FlashAttention's builder, not
+                    # to the base class this loop is typed against.
+                    builder.aot_schedule = False  # type: ignore[attr-defined]
 
         self.draft_kv_cache_group_ids = [gid for gid, g in enumerate(self.attn_groups) if g]
         assert self.draft_kv_cache_group_ids, "No draft attention groups found."
@@ -267,14 +276,13 @@ class DFlashSpeculator(DraftModelSpeculator):
             num_tokens_across_dp,
             cudagraph_runtime_mode,
         )
-
         num_sample = num_reqs * self.num_speculative_steps
         sample_hidden_states = last_hidden_states[self.sample_indices[:num_sample]]
-        # sample_pos is the predicted token's position Q; verification keys
-        # Gumbel by the predecessor (Q-1). sample_draft adds +1, so pass Q-2.
+        # sample_pos is the predicted token's position P. Sampling keys a draw
+        # by the position before the sampled token, P-1.
         draft_tokens = self.sample_draft(
             sample_hidden_states,
-            self.sample_pos[:num_sample] - 2,
+            self.sample_pos[:num_sample] - 1,
             self.sample_idx_mapping[:num_sample],
             self.temperature,
             self.seeds,
@@ -293,6 +301,7 @@ class DFlashSpeculator(DraftModelSpeculator):
         num_query_per_req: int | None = None,
         causal: bool | Mapping[int, bool] = False,
         query_start_loc_np: np.ndarray | None = None,
+        dcp_local_seq_lens: torch.Tensor | None = None,
     ) -> dict[str, Any] | None:
         if not self.draft_attn_layer_names:
             return None
@@ -306,6 +315,7 @@ class DFlashSpeculator(DraftModelSpeculator):
             num_query_per_req=self.num_query_per_req,
             causal=causal,
             query_start_loc_np=query_start_loc_np,
+            dcp_local_seq_lens=dcp_local_seq_lens,
         )
 
     @torch.inference_mode()
@@ -330,7 +340,7 @@ class DFlashSpeculator(DraftModelSpeculator):
         temperature: torch.Tensor,
         # [max_num_reqs]
         seeds: torch.Tensor,
-        num_tokens_across_dp: torch.Tensor | None = None,
+        dp_sync: DPSyncState | None = None,
         dummy_run: bool = False,
         skip_attn_for_dummy_run: bool = False,
         mm_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
@@ -368,7 +378,7 @@ class DFlashSpeculator(DraftModelSpeculator):
                 num_query_tokens,
                 attn_metadata=None,
                 slot_mappings=None,
-                num_tokens_across_dp=num_tokens_across_dp,
+                num_tokens_across_dp=None,
                 cudagraph_runtime_mode=CUDAGraphMode.NONE,
             )
             return self.draft_tokens[:num_reqs]
@@ -398,15 +408,15 @@ class DFlashSpeculator(DraftModelSpeculator):
                 self.block_tables.input_block_tables[gid],
                 self.block_tables.kernel_block_sizes[gid],
                 self.num_cached_tokens,
+                self.block_tables.cp_rank,
+                self.block_tables.cp_size,
+                self.block_tables.cp_interleave,
                 self.parallel_drafting_token_id,
                 self.num_query_per_req,
                 self.num_speculative_steps,
                 self.max_num_reqs,
                 self.max_num_tokens,
                 self.max_model_len,
-                self.block_tables.cp_size,
-                self.block_tables.cp_rank,
-                self.block_tables.cp_interleave,
                 self.sample_from_anchor,
             )
 
@@ -440,19 +450,25 @@ class DFlashSpeculator(DraftModelSpeculator):
             context_slots,
         )
 
+        batch_sync, num_batch_tokens = (
+            self._build_uniform_batch_dp_sync(dp_sync, num_reqs, self.num_query_per_req)
+            if dp_sync is not None
+            else (None, num_query_tokens)
+        )
         # Every DFlash step has exactly num_query_per_req tokens, so we can use FULL CGs
-        batch_desc, num_tokens_across_dp = dispatch_cg_and_sync_dp(
+        batch_desc, batch_sync = dispatch_cg_and_sync_dp(
             self.query_cudagraph_manager,
             num_reqs,
-            num_query_tokens,
+            num_batch_tokens,
             uniform_token_count=self.num_query_per_req,
             dp_size=self.dp_size,
             dp_rank=self.dp_rank,
             need_eager=is_profile,
+            dp_sync=batch_sync,
         )
-
         num_reqs_padded = batch_desc.num_reqs or num_reqs
         num_tokens_padded = batch_desc.num_tokens
+        num_tokens_across_dp = batch_sync.num_tokens_across_dp if batch_sync is not None else None
 
         # Rebuild the draft attention metadata even when replaying the FULL
         # graph so that any attention metadata builder state is updated.
@@ -556,10 +572,10 @@ def _prepare_dflash_inputs_kernel(
     max_num_tokens,
     max_model_len,
     cp_rank,
-    CP_SIZE: tl.constexpr,
-    CP_INTERLEAVE: tl.constexpr,
     SAMPLE_FROM_ANCHOR: tl.constexpr,
     PAD_SLOT_ID: tl.constexpr,
+    CP_SIZE: tl.constexpr,
+    CP_INTERLEAVE: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
     req_idx = tl.program_id(0)
@@ -573,6 +589,7 @@ def _prepare_dflash_inputs_kernel(
 
     num_rejected = tl.load(num_rejected_ptr + req_idx)
     valid_ctx_end = ctx_end - num_rejected
+    num_valid_ctx = valid_ctx_end - ctx_start
 
     num_sampled = tl.load(num_sampled_ptr + req_idx)
     if num_sampled > 0:
@@ -586,23 +603,35 @@ def _prepare_dflash_inputs_kernel(
 
     j = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     is_ctx = j < num_ctx
-    is_query = (j >= num_ctx) & (j < num_ctx + num_query_per_req)
-    query_off = j - num_ctx
+    is_valid_ctx = j < num_valid_ctx
+    is_query = (j >= num_valid_ctx) & (j < num_valid_ctx + num_query_per_req)
+    query_off = j - num_valid_ctx
 
     # --- Context positions / slots ---
     ctx_pos_idx = ctx_start + tl.where(is_ctx, j, 0)
-    ctx_pos = tl.load(target_positions_ptr + ctx_pos_idx, mask=is_ctx, other=0)
-    ctx_slot = _pos_to_slot(
-        ctx_pos,
-        block_table_ptr + req_idx * block_table_stride,
-        block_table_stride,
-        is_ctx,
-        block_size,
-        cp_rank,
-        CP_SIZE,
-        CP_INTERLEAVE,
+    ctx_pos = tl.load(target_positions_ptr + ctx_pos_idx, mask=is_valid_ctx, other=0)
+    ctx_block_num = ctx_pos // (block_size * CP_SIZE)
+    ctx_block_num = tl.minimum(ctx_block_num, block_table_stride - 1)
+    ctx_block_id = tl.load(
+        block_table_ptr + req_idx * block_table_stride + ctx_block_num,
+        mask=is_valid_ctx,
+        other=0,
+    ).to(tl.int64)
+    # Block 0 is the null block. Old sliding-window context positions can map
+    # to it after eviction; rejected suffix rows are invalid context as well.
+    # Neither kind of row may write draft KV into physical block 0.
+    ctx_resident = is_valid_ctx & (ctx_block_id != 0)
+    local_ctx_slot = cp_local_slot(ctx_pos, ctx_block_id, block_size, cp_rank, CP_SIZE, CP_INTERLEAVE, PAD_SLOT_ID)
+    ctx_slot = tl.where(
+        ctx_resident,
+        local_ctx_slot,
         PAD_SLOT_ID,
     )
+    # Stored over the full [0, num_ctx) span while the loads above are masked to
+    # [0, num_valid_ctx): the rejected suffix rows in between get position 0 and
+    # PAD_SLOT_ID. That is intentional — those rows write no KV and their
+    # positions are never consumed, but the span must stay fully initialized so
+    # a replayed graph cannot observe a stale value from an earlier batch.
     tl.store(out_context_positions_ptr + ctx_start + j, ctx_pos, mask=is_ctx)
     tl.store(out_context_slot_mapping_ptr + ctx_start + j, ctx_slot, mask=is_ctx)
 
@@ -612,17 +641,29 @@ def _prepare_dflash_inputs_kernel(
     is_bonus = is_query & (query_off == 0)
     input_id = tl.where(is_bonus, bonus_token, parallel_drafting_token_id)
 
-    q_slot = _pos_to_slot(
+    q_block_num = query_pos // (block_size * CP_SIZE)
+    q_block_num = tl.minimum(q_block_num, block_table_stride - 1)
+    q_block_id = tl.load(
+        block_table_ptr + req_idx * block_table_stride + q_block_num,
+        mask=is_query,
+        other=0,
+    ).to(tl.int64)
+    # A null block is never a writable cache slot. This can occur when a
+    # sliding-window block table contains evicted/global padding entries.
+    q_resident = is_query & (q_block_id != 0)
+    local_q_slot = cp_local_slot(
         query_pos,
-        block_table_ptr + req_idx * block_table_stride,
-        block_table_stride,
-        is_query,
+        q_block_id,
         block_size,
         cp_rank,
         CP_SIZE,
         CP_INTERLEAVE,
         PAD_SLOT_ID,
-        FORCE_PAD_UNDER_CP=True,
+    )
+    q_slot = tl.where(
+        q_resident & (CP_SIZE == 1),
+        local_q_slot,
+        PAD_SLOT_ID,
     )
 
     tl.store(out_input_ids_ptr + query_idx, input_id, mask=is_query)
@@ -724,15 +765,15 @@ def prepare_dflash_inputs(
     block_table: torch.Tensor,
     block_size: int,
     num_cached_tokens: torch.Tensor,
+    cp_rank: int,
+    cp_size: int,
+    cp_interleave: int,
     parallel_drafting_token_id: int,
     num_query_per_req: int,
     num_speculative_steps: int,
     max_num_reqs: int,
     max_num_tokens: int,
     max_model_len: int,
-    cp_size: int = 1,
-    cp_rank: int = 0,
-    cp_interleave: int = 1,
     sample_from_anchor: bool = False,
 ) -> None:
     num_reqs = input_batch.num_reqs
@@ -776,10 +817,10 @@ def prepare_dflash_inputs(
         max_num_tokens,
         max_model_len,
         cp_rank,
-        CP_SIZE=cp_size,
-        CP_INTERLEAVE=cp_interleave,
         SAMPLE_FROM_ANCHOR=sample_from_anchor,
         PAD_SLOT_ID=PAD_SLOT_ID,
+        CP_SIZE=cp_size,
+        CP_INTERLEAVE=cp_interleave,
         BLOCK_SIZE=BLOCK_SIZE,
     )
 

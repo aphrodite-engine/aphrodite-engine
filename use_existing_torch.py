@@ -2,21 +2,54 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # https://github.com/vllm-project/vllm/blob/6d1479ca4b5a3904b6c5b4a1d741dda43efdc289/use_existing_torch.py
 
+import argparse
 import glob
+import sys
 
-requires_files = glob.glob("requirements/*.txt")
-requires_files += ["pyproject.toml"]
-for file in requires_files:
-    print(f">>> cleaning {file}")
-    with open(file) as f:
-        lines = f.readlines()
-    if "torch" in "".join(lines).lower():
-        print("removed:")
-        with open(file, "w") as f:
-            for line in lines:
-                if "torch" not in line.lower():
-                    f.write(line)
-                else:
-                    print(line.strip())
-    print(f"<<< done cleaning {file}")
-    print()
+# Only strip targeted libraries when checking prefix
+TORCH_LIB_PREFIXES = (
+    # requirements/*.txt/in
+    "torch=",
+    "torchvision=",
+    "torchaudio=",
+    "torchcodec=",
+    # pyproject.toml
+    '"torch =',
+    '"torchvision =',
+    '"torchaudio =',
+    '"torchcodec =',
+)
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description="Strip torch lib requirements to use installed version.")
+    parser.add_argument(
+        "--prefix",
+        action="store_true",
+        help="Strip prefix matches only (default: False)",
+    )
+    args = parser.parse_args(argv)
+
+    for file in (
+        *glob.glob("requirements/**/*.txt", recursive=True),
+        *glob.glob("requirements/**/*.in", recursive=True),
+        *glob.glob("pyproject.toml"),
+    ):
+        with open(file) as f:
+            lines = f.readlines()
+        if "torch" in "".join(lines).lower():
+            with open(file, "w") as f:
+                for line in lines:
+                    if (
+                        args.prefix
+                        and not line.lower().strip().startswith(TORCH_LIB_PREFIXES)
+                        or not args.prefix
+                        and "torch" not in line.lower()
+                    ):
+                        f.write(line)
+                    else:
+                        print(f">>> removed from {file}:", line.strip())
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -8,7 +8,6 @@ import torch.distributed as dist
 from torch.distributed import ProcessGroup
 
 from aphrodite.logger import init_logger
-from aphrodite.utils import is_moe_layer
 
 logger = init_logger(__name__)
 
@@ -222,6 +221,12 @@ class DeviceCommunicatorBase:
     def checkpoint_restore(self) -> None:
         """Restore communicator state after checkpoint (default: no-op)."""
 
+    def suspend(self) -> None:
+        """Release reclaimable communicator memory (default: no-op)."""
+
+    def resume(self) -> None:
+        """Restore memory released by ``suspend`` (default: no-op)."""
+
     def all_gather(self, input_: torch.Tensor, dim: int = -1) -> torch.Tensor:
         if dim < 0:
             # Convert negative dim to positive.
@@ -332,17 +337,6 @@ class DeviceCommunicatorBase:
 
     def destroy(self):
         pass
-
-    def prepare_communication_buffer_for_model(self, model: torch.nn.Module) -> None:
-        """
-        Prepare the communication buffer for the model.
-        """
-        if not self.is_ep_communicator:
-            return
-
-        moe_modules = [module for module in model.modules() if is_moe_layer(module)]
-        for module in moe_modules:
-            module.maybe_init_modular_kernel()
 
     def dispatch_router_logits(
         self,

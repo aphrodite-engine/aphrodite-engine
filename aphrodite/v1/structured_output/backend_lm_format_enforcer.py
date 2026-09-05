@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 from transformers import PreTrainedTokenizerBase
 
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.utils.torch_utils import PIN_MEMORY
@@ -91,7 +92,12 @@ class LMFormatEnforcerBackend(StructuredOutputBackend):
     def __post_init__(self):
         self.tokenizer_data = _cached_build_aphrodite_token_enforcer_tokenizer_data(self.tokenizer, self.vocab_size)
 
-    def compile_grammar(self, request_type: StructuredOutputOptions, grammar_spec: str) -> StructuredOutputGrammar:
+    def compile_grammar(
+        self,
+        request_type: StructuredOutputOptions,
+        grammar_spec: str,
+        stop_token_ids: set[int] | None = None,
+    ) -> StructuredOutputGrammar:
         character_level_parser: lmformatenforcer.CharacterLevelParser
         if request_type == StructuredOutputOptions.JSON:
             spec_dict = json.loads(grammar_spec)
@@ -150,7 +156,7 @@ def validate_structured_output_request_lm_format_enforcer(params: SamplingParams
                 so_params.regex,
             )
         except Exception as err:
-            raise ValueError(f"Failed to compile regex for lm-format-enforcer: {err}") from err
+            raise APHRODITEValidationError(f"Failed to compile regex for lm-format-enforcer: {err}") from err
         return
     elif so_params.json:
         if isinstance(so_params.json, str):
@@ -158,14 +164,16 @@ def validate_structured_output_request_lm_format_enforcer(params: SamplingParams
                 # make sure schema is valid json
                 json.loads(so_params.json)
             except json.JSONDecodeError as e:
-                raise ValueError("Invalid JSON grammar specification.") from e
+                raise APHRODITEValidationError("Invalid JSON grammar specification.") from e
         else:
             try:
                 json.dumps(so_params.json)
             except Exception as e:
-                raise ValueError(f"Error serializing structured outputs jsonschema: {e}") from e
+                raise APHRODITEValidationError(f"Error serializing structured outputs jsonschema: {e}") from e
         return
     elif so_params.choice:
         return
     elif so_params.grammar:
-        raise ValueError("LM Format Enforcer structured outputs backend does not support grammar specifications")
+        raise APHRODITEValidationError(
+            "LM Format Enforcer structured outputs backend does not support grammar specifications"
+        )

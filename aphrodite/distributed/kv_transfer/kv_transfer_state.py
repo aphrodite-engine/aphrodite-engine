@@ -76,6 +76,8 @@ def ensure_kv_transfer_initialized(aphrodite_config: "AphroditeConfig", kv_cache
         return
 
     if aphrodite_config.kv_transfer_config.is_kv_transfer_instance and _KV_CONNECTOR_AGENT is None:
+        # NIXL P/D requires an interleave_size equal to block_size.
+        aphrodite_config.adjust_dcp_kv_cache_interleave_size(kv_cache_config)
         _sync_engine_id_across_tp(aphrodite_config)
 
         _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(

@@ -4,7 +4,10 @@
 from typing import Literal, get_args
 
 from aphrodite.logger import init_logger
-from aphrodite.model_executor.layers.quantization.base_config import QuantizationConfig
+from aphrodite.model_executor.layers.quantization.base_config import (
+    QuantizationConfig,
+    resolve_quant_method,
+)
 from aphrodite.platforms import current_platform
 
 logger = init_logger(__name__)
@@ -139,6 +142,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     from .torchao import TorchAOConfig
 
     method_to_config: dict[str, type[QuantizationConfig]] = {
+        "bitsandbytes": BitsAndBytesConfig,
         "awq": AutoAWQConfig,
         "awq_marlin": AutoAWQConfig,
         "auto_awq": AutoAWQConfig,
@@ -153,7 +157,6 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         "gptq": AutoGPTQConfig,
         "gptq_marlin": AutoGPTQConfig,
         "compressed-tensors": CompressedTensorsConfig,
-        "bitsandbytes": BitsAndBytesConfig,
         "experts_int8": ExpertsInt8Config,
         "exl3": Exl3Config,
         "quark": QuarkConfig,
@@ -186,6 +189,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
 
 __all__ = [
     "QuantizationConfig",
+    "resolve_quant_method",
     "QuantizationMethods",
     "get_quantization_config",
     "register_quantization_config",

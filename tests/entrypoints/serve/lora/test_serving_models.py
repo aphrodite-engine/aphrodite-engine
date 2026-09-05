@@ -9,13 +9,11 @@ import pytest
 from aphrodite import PoolingParams
 from aphrodite.config import ModelConfig
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorResponse,
-)
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.pooling.base.serving import PoolingBaseServing
 from aphrodite.entrypoints.pooling.typing import PoolingServeContext
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.lora.protocol import (
     LoadLoRAAdapterRequest,
     UnloadLoRAAdapterRequest,

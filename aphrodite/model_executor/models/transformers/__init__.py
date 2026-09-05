@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import torch.nn.functional as F
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-from aphrodite.model_executor.models.transformers.base import Base
+from aphrodite.model_executor.models.transformers.base import APHRODITE_ATTN_ATTR, Base
 from aphrodite.model_executor.models.transformers.causal import CausalMixin
 from aphrodite.model_executor.models.transformers.legacy import LegacyMixin
 from aphrodite.model_executor.models.transformers.moe import MoEMixin
@@ -40,8 +40,6 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY
 if TYPE_CHECKING:
     import torch
 
-    from aphrodite.model_executor.layers.attention import Attention
-
 
 def aphrodite_attention_forward(
     # Transformers args
@@ -50,15 +48,9 @@ def aphrodite_attention_forward(
     key: "torch.Tensor",
     value: "torch.Tensor",
     attention_mask: "torch.Tensor",
-    # Transformers kwargs
-    scaling: float | None = None,
-    # Aphrodite kwargs
-    attention_instances: dict[int, "Attention"] | None = None,
     **kwargs,
 ):
-    self_attn = attention_instances[module.layer_idx]
-    if scaling is not None:
-        self_attn.impl.scale = float(scaling)
+    self_attn = getattr(module, APHRODITE_ATTN_ATTR)
     hidden = query.shape[-2]
     head_dim_qk = query.shape[-1]
     head_dim_v = value.shape[-1]
@@ -78,7 +70,34 @@ def aphrodite_attention_forward(
     return attn_output, None
 
 
-ALL_ATTENTION_FUNCTIONS["aphrodite"] = aphrodite_attention_forward
+def aphrodite_mla_attention_forward(
+    # Transformers args
+    module: "torch.nn.Module",
+    query: "torch.Tensor",
+    kv_c_normed: "torch.Tensor",
+    k_pe: "torch.Tensor",
+    attention_mask: "torch.Tensor",
+    **kwargs,
+):
+    self_attn = getattr(module, APHRODITE_ATTN_ATTR)
+    # [batch=1, heads, num_tokens, qk_head_dim] -> [num_tokens, heads, qk_head_dim]
+    query = query.transpose(1, 2).flatten(0, 1)
+    num_tokens, num_heads = query.shape[:2]
+    # [batch=1, num_tokens, kv_lora_rank] -> [num_tokens, kv_lora_rank]
+    kv_c_normed = kv_c_normed.reshape(-1, kv_c_normed.shape[-1])
+    # [batch=1, heads=1, num_tokens, qk_rope] -> [num_tokens, 1, qk_rope]
+    k_pe = k_pe.reshape(-1, 1, k_pe.shape[-1])
+    attn_output = self_attn.forward(
+        query,
+        kv_c_normed,
+        k_pe,
+        output_shape=(num_tokens, num_heads * self_attn.v_head_dim),
+    )
+    return attn_output, None
+
+
+ALL_ATTENTION_FUNCTIONS.register("aphrodite", aphrodite_attention_forward)
+ALL_ATTENTION_FUNCTIONS.register("aphrodite_mla", aphrodite_mla_attention_forward)
 
 
 # Text only models

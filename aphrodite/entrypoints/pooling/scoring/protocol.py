@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from aphrodite import PoolingParams
 from aphrodite.config import ModelConfig
-from aphrodite.entrypoints.openai.engine.protocol import OpenAIBaseModel, UsageInfo
+from aphrodite.entrypoints.serve.engine.protocol import OpenAIBaseModel, UsageInfo
 from aphrodite.renderers import TokenizeParams
 from aphrodite.tasks import PoolingTask
 from aphrodite.utils import random_uuid

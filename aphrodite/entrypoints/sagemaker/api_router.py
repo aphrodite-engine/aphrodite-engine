@@ -16,8 +16,8 @@ except ModuleNotFoundError:  # optional dependency
 
 from aphrodite.config import ModelConfig
 from aphrodite.entrypoints.generate.factories import get_generate_invocation_types
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.pooling.factories import get_pooling_invocation_types
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.engine.serving import BaseServing
 from aphrodite.entrypoints.serve.instrumentator.basic import base
 from aphrodite.entrypoints.serve.instrumentator.health import health

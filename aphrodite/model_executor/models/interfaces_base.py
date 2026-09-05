@@ -57,7 +57,7 @@ class AphroditeModel(Protocol[T_co]):
 
 
 def _check_aphrodite_model_init(model: type[object] | object) -> bool:
-    model_init = model.__init__
+    model_init = getattr(model, "__init__")  # noqa: B009
     return supports_kw(model_init, "aphrodite_config")
 
 
@@ -273,10 +273,11 @@ def get_attn_type(model: type[object] | object) -> AttnTypeStr:
 
 
 def get_score_type(model: type[object] | object) -> ScoreType:
-    score_types = set()
-    for m in model.__mro__:
-        score_type = getattr(m, "score_type", "bi-encoder")
+    score_types: set[ScoreType] = set()
+    model_cls = model if isinstance(model, type) else type(model)
+    for m in model_cls.__mro__:
+        score_type: ScoreType = getattr(m, "score_type", "bi-encoder")
         if score_type != "bi-encoder":
             score_types.add(score_type)
     assert len(score_types) < 2
-    return "bi-encoder" if not score_types else list(score_types)[0]
+    return "bi-encoder" if not score_types else next(iter(score_types))

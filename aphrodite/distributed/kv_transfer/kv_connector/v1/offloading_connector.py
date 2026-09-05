@@ -37,7 +37,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.worker import 
     OffloadingConnectorWorker,
 )
 from aphrodite.forward_context import ForwardContext
-from aphrodite.v1.attention.backend import AttentionBackend, AttentionMetadata
+from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.kv_cache_interface import KVCacheConfig
@@ -47,10 +47,6 @@ from aphrodite.v1.request import Request
 
 
 class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
-    @property
-    def prefer_cross_layer_blocks(self) -> bool:
-        return True
-
     @property
     def requires_kv_delivery(self) -> bool:
         # Runs as kv_both, but is a best-effort cache: a dropped save is just a
@@ -66,6 +62,7 @@ class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
         super().__init__(aphrodite_config, role, kv_cache_config)
 
         offloading_config = build_offloading_config(aphrodite_config, kv_cache_config)
+        self._canonical_layout = offloading_config.canonical_layout
         spec = OffloadingSpecFactory.create_spec(offloading_config)
 
         self.connector_scheduler: OffloadingConnectorScheduler | None = None
@@ -84,10 +81,6 @@ class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
         assert self.connector_worker is not None
         self.connector_worker.register_kv_caches(kv_caches)
-
-    def register_cross_layers_kv_cache(self, kv_cache: torch.Tensor, attn_backend: type[AttentionBackend]):
-        assert self.connector_worker is not None
-        self.connector_worker.register_cross_layers_kv_cache(kv_cache, attn_backend)
 
     def handle_preemptions(self, kv_connector_metadata: KVConnectorMetadata):
         assert self.connector_worker is not None
@@ -178,7 +171,7 @@ class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
 
     @classmethod
     def get_required_kvcache_layout(cls, aphrodite_config: AphroditeConfig) -> str | None:
-        return "HND"
+        return "LBHNC"
 
     def reset_cache(self) -> bool | None:
         assert self.connector_scheduler is not None

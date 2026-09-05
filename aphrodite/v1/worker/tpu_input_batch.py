@@ -11,6 +11,7 @@ from aphrodite.lora.request import LoRARequest
 from aphrodite.sampling_params import SamplingType
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
 from aphrodite.utils.collection_utils import swap_dict_values
+from aphrodite.utils.math_utils import cdiv
 from aphrodite.v1.outputs import LogprobsTensors
 from aphrodite.v1.worker.block_table import MultiGroupBlockTable
 from aphrodite.v1.worker.gpu_input_batch import CachedRequestState
@@ -64,7 +65,7 @@ class InputBatch:
         # Block table.
         self.block_table = MultiGroupBlockTable(
             max_num_reqs=max_num_reqs,
-            max_model_len=max_model_len,
+            max_num_blocks=[cdiv(max_model_len, block_size) for block_size in block_sizes],
             max_num_batched_tokens=max_num_batched_tokens,
             pin_memory=pin_memory,
             device=device,
@@ -358,10 +359,10 @@ class InputBatch:
         # self.token_ids_cpu[i1, ...], self.token_ids_cpu[i2, ...], =\
         #     self.token_ids_cpu[i2, ...], self.token_ids_cpu[i1, ...]
         # instead, we need to temporarily copy the data for one of the indices
-        # TODO(lucas): optimize this by only copying valid indices
-        tmp = self.token_ids_cpu[i1, ...].copy()
-        self.token_ids_cpu[i1, ...] = self.token_ids_cpu[i2, ...]
-        self.token_ids_cpu[i2, ...] = tmp
+        n = max(self.num_tokens_no_spec[i1], self.num_tokens_no_spec[i2])
+        tmp = self.token_ids_cpu[i1, :n].copy()
+        self.token_ids_cpu[i1, :n] = self.token_ids_cpu[i2, :n]
+        self.token_ids_cpu[i2, :n] = tmp
 
         swap_dict_values(self.generators, i1, i2)
         swap_dict_values(self.min_tokens, i1, i2)

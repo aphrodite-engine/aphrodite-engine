@@ -6,10 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from aphrodite.entrypoints.openai.engine.protocol import (
-    OpenAIBaseModel,
-    UsageInfo,
-)
+from aphrodite.entrypoints.serve.engine.protocol import OpenAIBaseModel, UsageInfo
 from aphrodite.utils import random_uuid
 
 # Client -> Server Events

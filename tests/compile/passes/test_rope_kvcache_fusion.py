@@ -36,8 +36,16 @@ from aphrodite.v1.attention.backend import (
     CommonAttentionMetadata,
 )
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
+from aphrodite.v1.kv_cache_interface import (
+    FullAttentionSpec,
+    KVCacheLayout,
+)
 from tests.compile.backend import TestBackend
-from tests.v1.attention.utils import BatchSpec, create_common_attn_metadata
+from tests.v1.attention.utils import (
+    BatchSpec,
+    create_common_attn_metadata,
+    dense_kv_cache_views,
+)
 
 INDEX_SELECT_OP = torch.ops.aten.index.Tensor
 APHRODITE_UNIFIED_KV_CACHE_UPDATE_OP = torch.ops.aphrodite.unified_kv_cache_update
@@ -145,9 +153,20 @@ class QKRoPEKVCacheTestModel(torch.nn.Module):
         kv_cache_dtype_str = aphrodite_config.cache_config.cache_dtype
         self.kv_cache_dtype = FP8_DTYPE if kv_cache_dtype_str.startswith("fp8") else self.dtype
 
+        # Mirror the worker spec-collection loop: the backend publishes its
+        # packing (e.g. ROCM_ATTN's separate K/V head groups).
+        self.kv_cache_spec = self.attn_backend.customize_spec(
+            FullAttentionSpec(
+                block_size=self.block_size,
+                num_kv_heads=self.num_kv_heads,
+                head_size=self.head_size,
+                dtype=self.kv_cache_dtype,
+            )
+        )
+
         # Initialize attn MetadataBuilder
         self.builder = self.attn_backend.get_builder_cls()(
-            kv_cache_spec=self.attn.get_kv_cache_spec(aphrodite_config),
+            kv_cache_spec=self.kv_cache_spec,
             layer_names=[self.attn.layer_name],
             aphrodite_config=aphrodite_config,
             device=device,
@@ -164,28 +183,25 @@ class QKRoPEKVCacheTestModel(torch.nn.Module):
         max_blocks = (max(batch_spec.seq_lens) + self.block_size - 1) // self.block_size
         num_blocks = batch_size * max_blocks
 
-        # Fetch the attention backend and kv cache shape and stride order
-        kv_cache_shape = self.attn_backend.get_kv_cache_shape(
-            num_blocks, self.block_size, self.num_kv_heads, self.head_size
-        )
-        try:
-            kv_cache_stride_order = self.attn_backend.get_kv_cache_stride_order()
-        except (AttributeError, NotImplementedError):
-            kv_cache_stride_order = tuple(range(len(kv_cache_shape)))
+        # A backend's preferred supported layout wins over the default, mirroring
+        # selector-time resolution (e.g. ROCM_ATTN's head groups force LHBNC).
+        layout = KVCacheLayout.LBNHC
+        supported = self.attn_backend.supported_kv_cache_layouts()
+        if supported:
+            layout = supported[0]
 
-        kv_cache_shape = tuple(kv_cache_shape[i] for i in kv_cache_stride_order)
-        inv_order = [kv_cache_stride_order.index(i) for i in range(len(kv_cache_stride_order))]
-
-        # Create dummy KV cache
         raw_tensor = torch.zeros(
-            2 * num_blocks * self.block_size * self.num_kv_heads * self.head_size,
-            dtype=self.kv_cache_dtype,
+            num_blocks * self.kv_cache_spec.page_size_bytes,
+            dtype=torch.int8,
             device=self.device,
         )
-        raw_tensor = raw_tensor.view(kv_cache_shape)
-        kv_cache = raw_tensor.permute(*inv_order)
-
-        self.attn.kv_cache = kv_cache
+        self.attn.kv_cache = dense_kv_cache_views(
+            raw_tensor,
+            self.kv_cache_spec,
+            num_blocks,
+            num_layers=1,
+            layout=layout,
+        )[0]
 
         # Build attn metadata
         attn_metadata = self.builder.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)

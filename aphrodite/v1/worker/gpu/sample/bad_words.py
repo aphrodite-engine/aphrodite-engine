@@ -3,13 +3,11 @@
 import numpy as np
 import torch
 
+import aphrodite.envs as envs
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.triton_utils import tl, triton
 from aphrodite.v1.worker.gpu.buffer_utils import StagedWriteTensor, UvaBackedTensor
 from aphrodite.v1.worker.gpu.states import RequestState
-
-MAX_BAD_WORDS_TOTAL_TOKENS = 1024  # Max total tokens for all bad words per request
-MAX_NUM_BAD_WORDS = 128  # Max number of bad words per request
 
 
 class BadWordsState:
@@ -18,15 +16,17 @@ class BadWordsState:
         self.max_num_reqs = req_states.max_num_reqs
         self.device = req_states.device
 
-        # flattened bad word tokens: [max_num_reqs, MAX_BAD_WORDS_TOTAL_TOKENS]
+        max_total_tokens = envs.APHRODITE_MAX_BAD_WORDS_TOTAL_TOKENS
+        max_num_bad_words = envs.APHRODITE_MAX_NUM_BAD_WORDS
+        # flattened bad word tokens: [max_num_reqs, APHRODITE_MAX_BAD_WORDS_TOTAL_TOKENS]
         self.bad_word_token_ids = StagedWriteTensor(
-            (self.max_num_reqs, MAX_BAD_WORDS_TOTAL_TOKENS),
+            (self.max_num_reqs, max_total_tokens),
             dtype=torch.int32,
             device=self.device,
         )
-        # cumulative offsets of bad words: [max_num_reqs, MAX_NUM_BAD_WORDS + 1]
+        # cumulative offsets of bad words: [max_num_reqs, APHRODITE_MAX_NUM_BAD_WORDS + 1]
         self.bad_word_offsets = StagedWriteTensor(
-            (self.max_num_reqs, MAX_NUM_BAD_WORDS + 1),
+            (self.max_num_reqs, max_num_bad_words + 1),
             dtype=torch.int32,
             device=self.device,
         )
@@ -40,8 +40,9 @@ class BadWordsState:
             return
 
         num_bad_words = len(bad_words_token_ids)
-        if num_bad_words > MAX_NUM_BAD_WORDS:
-            raise ValueError(f"Too many bad words: {num_bad_words}. The max number is {MAX_NUM_BAD_WORDS}.")
+        max_num_bad_words = envs.APHRODITE_MAX_NUM_BAD_WORDS
+        if num_bad_words > max_num_bad_words:
+            raise ValueError(f"Too many bad words: {num_bad_words}. The max number is {max_num_bad_words}.")
 
         # Flatten bad words and compute offsets
         flattened_tokens: list[int] = []
@@ -50,10 +51,9 @@ class BadWordsState:
             flattened_tokens.extend(bad_word)
             offsets.append(len(flattened_tokens))
 
-        if len(flattened_tokens) > MAX_BAD_WORDS_TOTAL_TOKENS:
-            raise ValueError(
-                f"Too many total bad word tokens: {len(flattened_tokens)}. The max is {MAX_BAD_WORDS_TOTAL_TOKENS}."
-            )
+        max_total_tokens = envs.APHRODITE_MAX_BAD_WORDS_TOTAL_TOKENS
+        if len(flattened_tokens) > max_total_tokens:
+            raise ValueError(f"Too many total bad word tokens: {len(flattened_tokens)}. The max is {max_total_tokens}.")
 
         # Stage writes
         self.bad_word_token_ids.stage_write(req_idx, 0, flattened_tokens)
@@ -147,8 +147,10 @@ def _bad_words_kernel(
 
         from_spec_input = actual_pos >= output_len
         if from_spec_input:
+            # input_ids at local position 0 is the last committed token;
+            # draft tokens start at local position 1.
             spec_offset = actual_pos - output_len
-            actual = tl.load(input_ids_ptr + cur_req_first_pos + spec_offset)
+            actual = tl.load(input_ids_ptr + cur_req_first_pos + spec_offset + 1)
         else:
             actual = tl.load(output_base + actual_pos)
 

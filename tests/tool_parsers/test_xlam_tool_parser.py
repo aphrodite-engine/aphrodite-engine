@@ -6,12 +6,12 @@ from collections.abc import Generator
 
 import pytest
 
-from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaMessage,
     FunctionCall,
     ToolCall,
 )
+from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
 from aphrodite.tokenizers import TokenizerLike, get_tokenizer
 from aphrodite.tokenizers.detokenizer_utils import detokenize_incrementally
 from aphrodite.tool_parsers.xlam_tool_parser import xLAMToolParser

@@ -15,7 +15,6 @@ import pytest
 import pytest_asyncio
 
 from aphrodite.entrypoints.pooling.embed.protocol import EmbeddingResponse
-from aphrodite.platforms import current_platform
 from tests.utils import RemoteOpenAIServer
 
 
@@ -221,10 +220,6 @@ def server_with_chunked_processing():
         "--gpu-memory-utilization",
         "0.8",
     ]
-
-    # ROCm: Use Flex Attention to support encoder-only self-attention.
-    if current_platform.is_rocm():
-        args.extend(["--attention-backend", "FLEX_ATTENTION"])
 
     with RemoteOpenAIServer(MODEL_NAME, args) as remote_server:
         yield remote_server

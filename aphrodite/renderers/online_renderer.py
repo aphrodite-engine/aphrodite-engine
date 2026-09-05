@@ -18,7 +18,6 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
 from aphrodite.entrypoints.openai.completion.protocol import (
     CompletionRequest,
 )
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.parser.harmony_utils import (
     build_harmony_preamble,
     extract_instructions_from_messages,
@@ -26,7 +25,8 @@ from aphrodite.entrypoints.openai.parser.harmony_utils import (
     render_for_completion,
 )
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
-from aphrodite.entrypoints.serve.utils.error_response import create_error_response
+from aphrodite.entrypoints.serve import create_error_response
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.inputs import (
     EngineInput,
@@ -189,6 +189,15 @@ class OnlineRenderer:
             )
         else:
             # For GPT-OSS.
+            if self.parser is not None:
+                # HarmonyParser doesn't need chat_template_kwargs
+                # TODO: Unify adjust_request() call with non-harmony branch
+                self.parser(
+                    self.renderer.get_tokenizer(),
+                    request.tools,
+                    model_config=self.model_config,
+                ).adjust_request(request=request)
+
             should_include_tools = tool_dicts is not None
             conversation, engine_inputs = self._make_request_with_harmony(request, should_include_tools)
 

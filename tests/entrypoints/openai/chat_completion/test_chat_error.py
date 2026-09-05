@@ -13,11 +13,10 @@ from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
 from aphrodite.entrypoints.openai.chat_completion.serving import OpenAIServingChat
-from aphrodite.entrypoints.openai.engine.protocol import GenerationError
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.scale_out.render.serving import ServingRender
-from aphrodite.exceptions import AphroditeValidationError
+from aphrodite.exceptions import AphroditeValidationError, GenerationError
 from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.renderers.hf import HfRenderer
 from aphrodite.renderers.online_renderer import OnlineRenderer

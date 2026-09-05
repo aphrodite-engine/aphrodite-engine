@@ -21,6 +21,8 @@ ALLOWED_FILES = {
     "tests/",
     "aphrodite/model_executor/layers/quantization/exl3.py",
     "aphrodite/distributed/weight_transfer/ipc_engine.py",
+    "aphrodite/distributed/weight_transfer/sharded_rdt_engine.py",
+    "tests/distributed/test_packed_tensor.py",
 }
 
 

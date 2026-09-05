@@ -9,7 +9,7 @@ from aphrodite.entrypoints.generate.generative_scoring.serving import (
     GenerativeScoringResponse,
     ServingGenerativeScoring,
 )
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.api_utils import (
     load_aware_call,
     validate_json_request,

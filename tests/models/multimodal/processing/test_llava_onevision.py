@@ -11,6 +11,7 @@ from pqdm.threads import pqdm
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.parse import ImageSize
 from aphrodite.multimodal.processing import BaseMultiModalProcessor
+from aphrodite.tokenizers.hf import maybe_make_thread_pool
 
 from ...utils import build_model_context
 
@@ -38,7 +39,15 @@ def test_processor_max_tokens(model_id):
         mm_processor_kwargs=None,
         limit_mm_per_prompt={"image": 1},
     )
-    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+
+    # Avoid tokenizer already borrowed error
+    maybe_make_thread_pool(ctx.tokenizer)
+
+    processor = MULTIMODAL_REGISTRY.create_processor(
+        ctx.model_config,
+        tokenizer=ctx.tokenizer,
+    )
+
     info = processor.info
 
     seen_aspect_ratios = set[float]()
@@ -131,7 +140,14 @@ def test_processor_prompt_replacements_regression(model_id, num_imgs):
         mm_processor_kwargs=None,
         limit_mm_per_prompt={"image": num_imgs},
     )
-    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+
+    # Avoid tokenizer already borrowed error
+    maybe_make_thread_pool(ctx.tokenizer)
+
+    processor = MULTIMODAL_REGISTRY.create_processor(
+        ctx.model_config,
+        tokenizer=ctx.tokenizer,
+    )
 
     image_ratios = [
         (171, 152),

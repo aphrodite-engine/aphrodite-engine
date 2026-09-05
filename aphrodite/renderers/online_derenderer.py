@@ -4,6 +4,7 @@ from typing import Any
 
 from aphrodite.config import ModelConfig
 from aphrodite.entrypoints.chat_utils import ChatTemplateContentFormatOption
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage, ToolCall
 from aphrodite.entrypoints.generate.base.serving import resolve_token_id_placeholder
 from aphrodite.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionLogProbs,
@@ -21,12 +22,12 @@ from aphrodite.entrypoints.openai.completion.protocol import (
     CompletionResponseStreamChoice,
     CompletionStreamResponse,
 )
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage, ToolCall, UsageInfo
 from aphrodite.entrypoints.scale_out.token_in_token_out.protocol import (
     DerenderStreamState,
     GenerateResponse,
     GenerateStreamResponse,
 )
+from aphrodite.entrypoints.serve.engine.protocol import UsageInfo
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.logger import init_logger
 from aphrodite.parser import Parser, ParserManager

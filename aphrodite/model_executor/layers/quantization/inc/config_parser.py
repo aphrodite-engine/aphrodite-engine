@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class INCLayerConfig:
     bits: int
-    group_size: int
+    group_size: int | tuple[int, int]
     sym: bool
     packing_format: str
     backend: str
@@ -44,6 +44,18 @@ class INCLayerConfig:
     def is_mxfp8(self) -> bool:
         return "mx_fp" in self.data_type and self.bits == 8
 
+    @property
+    def is_fp8_block(self) -> bool:
+        return (
+            self.data_type == "fp"
+            and self.bits == 8
+            and self.sym
+            and self.quantized
+            and self.packing_format == "auto_round:fp8"
+            and isinstance(self.group_size, tuple)
+            and len(self.group_size) == 2
+        )
+
 
 class INCConfigParser:
     def __init__(self, config: "INCConfig") -> None:
@@ -61,11 +73,11 @@ class INCConfigParser:
             quantized=bits < 16,
         )
 
-    def get_layer_config(self, layer: "torch.nn.Module", layer_name: str) -> tuple[int, int, bool]:
+    def get_layer_config(self, layer: "torch.nn.Module", layer_name: str) -> tuple[int, int | tuple[int, int], bool]:
         layer_config = self.resolve(layer, layer_name)
         return layer_config.bits, layer_config.group_size, layer_config.sym
 
-    def _resolve_raw(self, layer: "torch.nn.Module", layer_name: str) -> tuple[int, int, bool]:
+    def _resolve_raw(self, layer: "torch.nn.Module", layer_name: str) -> tuple[int, int | tuple[int, int], bool]:
         REGEX_SPECIAL_CHARS = set(r"*+?^$()[]{}|\\")
 
         def is_explicitly_configured(name: str) -> bool:
@@ -85,7 +97,7 @@ class INCConfigParser:
                     continue
             return False
 
-        def get_config(name: str, quantized: bool = True) -> tuple[int, int, bool]:
+        def get_config(name: str, quantized: bool = True) -> tuple[int, int | tuple[int, int], bool]:
             if not self._config.extra_config:
                 return (
                     self._config.weight_bits if quantized else 16,
@@ -97,9 +109,11 @@ class INCConfigParser:
                 cfg = self._config.extra_config[name]
                 return (
                     cfg.get("bits", self._config.weight_bits if quantized else 16),
-                    cfg.get(
-                        "group_size",
-                        self._config.group_size if quantized else -1,
+                    self._normalize_group_size(
+                        cfg.get(
+                            "group_size",
+                            self._config.group_size if quantized else -1,
+                        )
                     ),
                     cfg.get("sym", self._config.sym if quantized else True),
                 )
@@ -116,9 +130,11 @@ class INCConfigParser:
                                 "bits",
                                 self._config.weight_bits if quantized else 16,
                             ),
-                            cfg.get(
-                                "group_size",
-                                self._config.group_size if quantized else -1,
+                            self._normalize_group_size(
+                                cfg.get(
+                                    "group_size",
+                                    self._config.group_size if quantized else -1,
+                                )
                             ),
                             cfg.get("sym", self._config.sym if quantized else True),
                         )
@@ -173,3 +189,22 @@ class INCConfigParser:
                     raise ValueError(f"Fused module '{layer_name}' requires consistent quant config for {sub_names}")
 
         return get_config(layer_name, quantized)
+
+    @staticmethod
+    def _normalize_group_size(
+        group_size: int | list[int] | tuple[int, int],
+    ) -> int | tuple[int, int]:
+        """Normalize INC group_size into either an int or a 2-D int tuple."""
+        if isinstance(group_size, (list, tuple)):
+            if len(group_size) != 2 or not all(isinstance(value, int) for value in group_size):
+                raise ValueError(
+                    f"INC block-wise FP8 requires group_size to be a 2-D integer sequence, but found {group_size!r}."
+                )
+            return (group_size[0], group_size[1])
+
+        if not isinstance(group_size, int):
+            raise ValueError(
+                f"INC group_size must be an int or a 2-D integer sequence, but found {type(group_size).__name__}."
+            )
+
+        return group_size

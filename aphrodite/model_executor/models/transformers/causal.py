@@ -20,7 +20,10 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
-from aphrodite.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
+from aphrodite.model_executor.layers.vocab_parallel_embedding import (
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.model_executor.models.interfaces_base import AphroditeModelForTextGeneration
 from aphrodite.model_executor.models.utils import PPMissingLayer, maybe_prefix
 
@@ -35,11 +38,7 @@ class CausalMixin(AphroditeModelForTextGeneration):
         # Skip AphroditeModelForTextGeneration.__init__ and call the next class in MRO
         super(AphroditeModelForTextGeneration, self).__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
-        # Tell `Base.load_weights` to skip
-        # `lm_head` if the model has tied word embeddings
         tie_word_embeddings = self._get_tie_word_embeddings()
-        if tie_word_embeddings:
-            self.skip_prefixes.append("lm_head.")
 
         if self.pp_group.is_last_rank:
             self.lm_head = ParallelLMHead(
@@ -49,10 +48,16 @@ class CausalMixin(AphroditeModelForTextGeneration):
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
             if tie_word_embeddings:
-                self.lm_head = self.lm_head.tie_weights(self.model.get_input_embeddings())
+                for module in self.model.get_input_embeddings().modules():
+                    if isinstance(module, VocabParallelEmbedding):
+                        self.lm_head = self.lm_head.tie_weights(module)
+                        break
 
-            logit_scale = getattr(self.text_config, "logit_scale", 1.0)
-            self.logits_processor = LogitsProcessor(self.text_config.vocab_size, scale=logit_scale)
+            self.logits_processor = LogitsProcessor(
+                self.text_config.vocab_size,
+                scale=getattr(self.text_config, "logit_scale", 1.0),
+                soft_cap=getattr(self.text_config, "final_logit_softcapping", None),
+            )
         else:
             self.lm_head = PPMissingLayer()
 

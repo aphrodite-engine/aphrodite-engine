@@ -12,11 +12,11 @@ from aphrodite.model_executor.models.bert import (
     BertMLMHead,
     SPLADESparsePooler,
 )
-from aphrodite.platforms import current_platform
 from aphrodite.pooling_params import PoolingParams
-from aphrodite.utils.torch_utils import PIN_MEMORY
+from aphrodite.v1.pool.late_interaction_runner import LateInteractionRunner
 from aphrodite.v1.pool.metadata import PoolingMetadata, PoolingStates
 from aphrodite.v1.worker.gpu.input_batch import InputBatch
+from aphrodite.v1.worker.gpu.model_runner import GPUModelRunner
 from aphrodite.v1.worker.gpu.pool.pooling_runner import PoolingRunner
 from aphrodite.v1.worker.gpu.states import RequestState
 
@@ -116,15 +116,14 @@ def test_pooling_runner_gathers_required_token_ids() -> None:
     input_batch.num_reqs = 2
     req_states = MagicMock(spec=RequestState)
     req_states.prompt_len = MagicMock(np=np.array([0, 2, 0, 3], dtype=np.int32))
-    metadata = runner._get_pooling_metadata(input_batch, req_states, torch.device(current_platform.device_type))
+    metadata = runner._get_pooling_metadata(input_batch, req_states, torch.device("cpu"))
 
     expected = torch.tensor([[101, 11, 102], [101, 102, 0]])
     assert metadata.prompt_token_ids_cpu is not None
-    assert metadata.prompt_token_ids is not None
-    assert metadata.prompt_token_ids_cpu.is_pinned() == PIN_MEMORY
+    assert metadata.prompt_token_ids is None
+    assert metadata.prompt_token_ids_cpu.is_pinned() is False
     torch.testing.assert_close(metadata.prompt_lens, torch.tensor([3, 2], dtype=torch.int32))
     torch.testing.assert_close(metadata.prompt_token_ids_cpu, expected)
-    torch.testing.assert_close(metadata.prompt_token_ids.cpu(), expected)
 
 
 def test_pooling_runner_stores_only_required_token_ids() -> None:
@@ -134,9 +133,11 @@ def test_pooling_runner_stores_only_required_token_ids() -> None:
     runner.pooling_params = {}
     runner.pooling_states = {}
     runner.prompt_token_ids = {}
+    runner.late_interaction_runner = MagicMock()
 
-    runner.add_request(1, PoolingParams(task="embed"), [101, 102])
+    runner.add_request("req-1", 1, PoolingParams(task="embed"), [101, 102])
     runner.add_request(
+        "req-2",
         2,
         PoolingParams(task="embed", requires_token_ids=True),
         [101, 11, 102],
@@ -146,21 +147,53 @@ def test_pooling_runner_stores_only_required_token_ids() -> None:
     torch.testing.assert_close(runner.prompt_token_ids[2], torch.tensor([101, 11, 102]))
 
 
+def test_pooling_runner_releases_aborted_late_interaction_doc() -> None:
+    runner = PoolingRunner.__new__(PoolingRunner)
+    runner.late_interaction_runner = LateInteractionRunner()
+
+    query_key = "query-abort"
+    late_interaction_runner = runner.late_interaction_runner
+    late_interaction_runner._query_cache[query_key] = torch.ones(2, 4)
+    late_interaction_runner._query_uses[query_key] = 1
+    late_interaction_runner._doc_query_keys["doc-req"] = query_key
+
+    runner.on_requests_finished({"doc-req"})
+
+    assert not late_interaction_runner._query_cache
+    assert not late_interaction_runner._query_uses
+    assert not late_interaction_runner._doc_query_keys
+
+
+def test_encoder_cache_reset_clears_late_interaction_state() -> None:
+    # Cached query embeddings are only invalidated by weight reloads, which
+    # reach the runner via reset_encoder_cache. Resetting the multi-modal
+    # cache is unrelated and must leave them intact.
+    runner = GPUModelRunner.__new__(GPUModelRunner)
+    runner.encoder_cache = MagicMock()
+    runner.pooling_runner = MagicMock()
+
+    runner.reset_mm_cache()
+
+    runner.encoder_cache.reset_mm_cache.assert_called_once_with()
+    runner.pooling_runner.clear.assert_not_called()
+
+    runner.reset_encoder_cache()
+
+    runner.encoder_cache.reset_encoder_cache.assert_called_once_with()
+    runner.pooling_runner.clear.assert_called_once_with()
+
+
 def test_pooling_runner_rejects_unsupported_selected_task() -> None:
     model = MagicMock()
-    model.pooler.get_supported_tasks.return_value = {
-        "embed",
-        "embed&token_classify",
-        "token_classify",
-    }
+    model.pooler.get_supported_tasks.return_value = {"embed", "plugin"}
     aphrodite_config = MagicMock()
     aphrodite_config.scheduler_config.max_num_seqs = 2
     aphrodite_config.model_config.attn_type = "encoder_only"
-    aphrodite_config.model_config.get_pooling_task.return_value = "embed&token_classify"
+    aphrodite_config.model_config.get_pooling_task.return_value = "plugin"
 
     with (
         patch.object(PoolingRunner, "get_supported_tasks", return_value=["embed"]),
-        pytest.raises(ValueError, match="selects 'embed&token_classify'"),
+        pytest.raises(ValueError, match="selects 'plugin'"),
     ):
         PoolingRunner(model, aphrodite_config)
 
@@ -178,7 +211,20 @@ def test_pooling_runner_supports_encoder_token_classification() -> None:
     assert runner.supported_tasks == {"token_classify"}
 
 
-def test_pooling_runner_rejects_decoder_token_classification() -> None:
+def test_pooling_runner_supports_encoder_token_embedding() -> None:
+    model = MagicMock()
+    model.pooler.get_supported_tasks.return_value = {"token_embed"}
+    aphrodite_config = MagicMock()
+    aphrodite_config.scheduler_config.max_num_seqs = 2
+    aphrodite_config.model_config.attn_type = "encoder_only"
+    aphrodite_config.model_config.get_pooling_task.return_value = "token_embed"
+
+    runner = PoolingRunner(model, aphrodite_config)
+
+    assert runner.supported_tasks == {"token_embed"}
+
+
+def test_pooling_runner_supports_decoder_token_classification() -> None:
     model = MagicMock()
     model.pooler.get_supported_tasks.return_value = {"token_classify"}
     aphrodite_config = MagicMock()
@@ -186,13 +232,12 @@ def test_pooling_runner_rejects_decoder_token_classification() -> None:
     aphrodite_config.model_config.attn_type = "decoder"
     aphrodite_config.model_config.get_pooling_task.return_value = "token_classify"
 
-    with pytest.raises(ValueError, match="selects 'token_classify'") as exc_info:
-        PoolingRunner(model, aphrodite_config)
+    runner = PoolingRunner(model, aphrodite_config)
 
-    assert "Set an explicitly supported task" not in str(exc_info.value)
+    assert runner.supported_tasks == {"token_classify"}
 
 
-def test_pooling_runner_filters_decoder_token_classification() -> None:
+def test_pooling_runner_keeps_decoder_token_classification() -> None:
     model = MagicMock()
     model.pooler.get_supported_tasks.return_value = {"embed", "token_classify"}
     aphrodite_config = MagicMock()
@@ -202,4 +247,31 @@ def test_pooling_runner_filters_decoder_token_classification() -> None:
 
     runner = PoolingRunner(model, aphrodite_config)
 
-    assert runner.supported_tasks == {"embed"}
+    assert runner.supported_tasks == {"embed", "token_classify"}
+
+
+def test_pooling_runner_keeps_decoder_token_embedding() -> None:
+    model = MagicMock()
+    model.pooler.get_supported_tasks.return_value = {"embed", "token_embed"}
+    aphrodite_config = MagicMock()
+    aphrodite_config.scheduler_config.max_num_seqs = 2
+    aphrodite_config.model_config.attn_type = "decoder"
+    aphrodite_config.model_config.get_pooling_task.return_value = "embed"
+
+    runner = PoolingRunner(model, aphrodite_config)
+
+    assert runner.supported_tasks == {"embed", "token_embed"}
+
+
+def test_pooling_runner_supports_embed_token_classification() -> None:
+    model = MagicMock()
+    model.pooler.get_supported_tasks.return_value = {"embed", "embed&token_classify"}
+    aphrodite_config = MagicMock()
+    aphrodite_config.scheduler_config.max_num_seqs = 2
+
+    aphrodite_config.model_config.attn_type = "encoder_only"
+    aphrodite_config.model_config.get_pooling_task.return_value = "embed&token_classify"
+    assert PoolingRunner(model, aphrodite_config).supported_tasks == {
+        "embed",
+        "embed&token_classify",
+    }

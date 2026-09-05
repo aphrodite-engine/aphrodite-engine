@@ -5,7 +5,7 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.utils.api_utils import validate_json_request
 from aphrodite.logger import init_logger
 

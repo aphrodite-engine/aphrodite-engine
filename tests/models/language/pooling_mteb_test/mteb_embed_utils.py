@@ -157,6 +157,7 @@ def mteb_test_embed_models(
     hf_model_callback=None,
     atol=MTEB_EMBED_TOL,
     prompt_prefix: str | None = None,
+    aphrodite_model_callback=None,
 ):
     aphrodite_extra_kwargs = get_aphrodite_extra_kwargs(model_info, aphrodite_extra_kwargs)
 
@@ -171,6 +172,9 @@ def mteb_test_embed_models(
         **aphrodite_extra_kwargs,
     ) as aphrodite_model:
         model_config = aphrodite_model.llm.llm_engine.model_config
+
+        if aphrodite_model_callback is not None:
+            aphrodite_model_callback(aphrodite_model)
 
         # Confirm whether aphrodite is using the correct architecture
         if model_info.architecture:
@@ -195,9 +199,14 @@ def mteb_test_embed_models(
         aphrodite_dtype = aphrodite_model.llm.llm_engine.model_config.dtype
         head_dtype = model_config.head_dtype
 
-        # Test embedding_size, isnan and whether to use normalize
+        # Test embedding_size, isnan and whether to use normalize.
+        # Apply the same prompt_prefix used for scoring so this check compares
+        # identical effective inputs: HF's SentenceTransformer.encode() applies
+        # the model's default prompt (e.g. "Document: "), so Aphrodite must receive it
+        # too. This mirrors AphroditeMtebEncoder and changes no production behavior.
+        consistency_prompts = [prompt_prefix + p for p in example_prompts] if prompt_prefix else example_prompts
         aphrodite_outputs = aphrodite_model.embed(
-            example_prompts,
+            consistency_prompts,
             tokenization_kwargs=dict(truncate_prompt_tokens=-1),
         )
         outputs_tensor = torch.tensor(aphrodite_outputs)

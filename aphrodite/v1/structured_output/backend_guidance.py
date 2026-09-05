@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from transformers import MistralCommonBackend
 
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.logger import init_logger
 from aphrodite.sampling_params import SamplingParams
 from aphrodite.utils.import_utils import LazyLoader
@@ -99,7 +100,12 @@ class GuidanceBackend(StructuredOutputBackend):
         else:
             self.ll_tokenizer = llguidance_hf.from_tokenizer(self.tokenizer, max(self.vocab_size, len(self.tokenizer)))
 
-    def compile_grammar(self, request_type: StructuredOutputOptions, grammar_spec: str) -> StructuredOutputGrammar:
+    def compile_grammar(
+        self,
+        request_type: StructuredOutputOptions,
+        grammar_spec: str,
+        stop_token_ids: set[int] | None = None,
+    ) -> StructuredOutputGrammar:
         self.serialized_grammar = serialize_guidance_grammar(
             request_type,
             grammar_spec,
@@ -256,7 +262,7 @@ def serialize_guidance_grammar(
                 begin: str = s["begin"]
                 trig = next((t for t in triggers if begin.startswith(t)), None)
                 if trig is None:
-                    raise ValueError(f"Trigger {begin} not found in triggers {triggers}")
+                    raise APHRODITEValidationError(f"Trigger {begin} not found in triggers {triggers}")
                 tags.append(
                     llguidance.StructTag(
                         trigger=trig,
@@ -266,7 +272,7 @@ def serialize_guidance_grammar(
                     )
                 )
             if not tags:
-                raise ValueError("No structural tags found in the grammar spec.")
+                raise APHRODITEValidationError("No structural tags found in the grammar spec.")
             return llguidance.StructTag.to_grammar(tags)
         else:
             logger.error("Validation should have already occurred. Please file an issue.")
@@ -279,7 +285,10 @@ def validate_guidance_grammar(sampling_params: SamplingParams, tokenizer: llguid
     if sampling_params.structured_outputs is None:
         return
     tp, grm = get_structured_output_key(sampling_params.structured_outputs)
-    guidance_grm = serialize_guidance_grammar(tp, grm)
+    try:
+        guidance_grm = serialize_guidance_grammar(tp, grm)
+    except (ValueError, KeyError, TypeError) as e:
+        raise APHRODITEValidationError(f"Invalid grammar specification: {e}") from e
     err = llguidance.LLMatcher.validate_grammar(guidance_grm, tokenizer)
     if err:
-        raise ValueError(f"Grammar error: {err}")
+        raise APHRODITEValidationError(f"Grammar error: {err}")

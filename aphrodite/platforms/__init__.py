@@ -10,7 +10,7 @@ from aphrodite import envs
 from aphrodite.plugins import PLATFORM_PLUGINS_GROUP, load_plugins_by_group
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 
-from .interface import CpuArchEnum, Platform, PlatformEnum
+from .interface import CpuArchEnum, Platform, PlatformEnum, in_wsl
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,20 @@ def rocm_platform_plugin() -> str | None:
     except Exception as e:
         logger.debug("ROCm platform is not available because: %s", str(e))
 
+    if not is_rocm and in_wsl():
+        try:
+            import torch
+
+            if (
+                not aphrodite_version_matches_substr("cpu")
+                and getattr(torch.version, "hip", None)
+                and torch.accelerator.is_available()
+            ):
+                is_rocm = True
+                logger.debug("Confirmed ROCm platform is available in WSL via PyTorch.")
+        except Exception as e:
+            logger.debug("WSL ROCm fallback detection failed because: %s", str(e))
+
     return "aphrodite.platforms.rocm.RocmPlatform" if is_rocm else None
 
 
@@ -170,30 +184,31 @@ def _is_amd_zen_cpu() -> bool:
 
 
 def cpu_platform_plugin() -> str | None:
-    is_cpu = False
     logger.debug("Checking if CPU platform is available.")
-    try:
-        import sys
+    is_cpu = envs.APHRODITE_TARGET_DEVICE == "cpu"
+    if is_cpu:
+        logger.debug("Confirmed CPU platform is available because APHRODITE_TARGET_DEVICE is set to CPU.")
+    else:
+        try:
+            import sys
 
-        if sys.platform.startswith("darwin") and envs.APHRODITE_TARGET_DEVICE != "cpu":
-            try:
+            if sys.platform.startswith("darwin"):
                 from aphrodite.metal.platform import MetalPlatform
 
                 if MetalPlatform.is_available():
                     logger.debug("CPU platform is not activated because Metal is available.")
                     return None
-            except Exception:
-                pass
-
-        is_cpu = aphrodite_version_matches_substr("cpu")
-        if is_cpu:
-            logger.debug("Confirmed CPU platform is available because Aphrodite is built with CPU.")
-        if not is_cpu:
-            is_cpu = sys.platform.startswith("darwin")
+            is_cpu = aphrodite_version_matches_substr("cpu")
             if is_cpu:
-                logger.debug("Confirmed CPU platform is available because the machine is MacOS.")
-    except Exception as e:
-        logger.debug("CPU platform is not available because: %s", str(e))
+                logger.debug("Confirmed CPU platform is available because Aphrodite is built with CPU.")
+            if not is_cpu:
+                import sys
+
+                is_cpu = sys.platform.startswith("darwin")
+                if is_cpu:
+                    logger.debug("Confirmed CPU platform is available because the machine is MacOS.")
+        except Exception as e:
+            logger.debug("CPU platform is not available because: %s", str(e))
 
     if not is_cpu:
         return None
@@ -221,6 +236,15 @@ builtin_platform_plugins = {
 
 
 def resolve_current_platform_cls_qualname() -> str:
+    # An explicit CPU target is authoritative. Native CPU-only CI jobs reuse
+    # an accelerator wheel and can run on accelerator hosts, so probing every
+    # plugin would otherwise activate both CPU and the host accelerator.
+    if envs.APHRODITE_TARGET_DEVICE == "cpu":
+        cpu_platform_cls_qualname = cpu_platform_plugin()
+        assert cpu_platform_cls_qualname is not None
+        logger.debug("Explicitly selected CPU platform.")
+        return cpu_platform_cls_qualname
+
     platform_plugins = load_plugins_by_group(PLATFORM_PLUGINS_GROUP)
 
     activated_plugins = []
@@ -232,7 +256,11 @@ def resolve_current_platform_cls_qualname() -> str:
             if platform_cls_qualname is not None:
                 activated_plugins.append(name)
         except Exception:
-            pass
+            logger.debug(
+                "Platform plugin %s failed during detection.",
+                name,
+                exc_info=True,
+            )
 
     activated_builtin_plugins = list(set(activated_plugins) & set(builtin_platform_plugins.keys()))
     activated_oot_plugins = list(set(activated_plugins) & set(platform_plugins.keys()))

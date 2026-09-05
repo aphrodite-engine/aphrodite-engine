@@ -6,11 +6,11 @@ from typing import Any, Final
 from fastapi import Request
 
 from aphrodite.entrypoints.chat_utils import ChatTemplateContentFormatOption
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.models.serving import (
     OpenAIModelRegistry,
     OpenAIServingModels,
 )
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.engine.serving import BaseServing
 from aphrodite.entrypoints.serve.tokenize.protocol import (
     DetokenizeRequest,

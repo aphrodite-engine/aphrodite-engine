@@ -6,7 +6,6 @@ import requests
 
 from aphrodite.entrypoints.pooling.pooling.protocol import PoolingResponse
 from aphrodite.entrypoints.pooling.scoring.protocol import RerankResponse, ScoreResponse
-from aphrodite.platforms import current_platform
 from tests.entrypoints.pooling.scoring.util import EncoderScoringHfRunner
 from tests.utils import RemoteOpenAIServer
 
@@ -29,10 +28,6 @@ TEXTS_2 = [
 @pytest.fixture(scope="module")
 def server():
     args = ["--enforce-eager", "--max-model-len", "100", "--dtype", DTYPE]
-
-    # ROCm: Use Flex Attention to support encoder-only self-attention.
-    if current_platform.is_rocm():
-        args.extend(["--attention-backend", "FLEX_ATTENTION"])
 
     with RemoteOpenAIServer(MODEL_NAME, args) as remote_server:
         yield remote_server

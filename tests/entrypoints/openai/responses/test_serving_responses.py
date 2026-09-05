@@ -25,14 +25,13 @@ from openai.types.responses.tool import (
 )
 
 import aphrodite.envs as envs
-from aphrodite.entrypoints.mcp.tool_server import ToolServer
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,
-    ErrorResponse,
     RequestResponseMetadata,
 )
+from aphrodite.entrypoints.mcp.tool_server import ToolServer
 from aphrodite.entrypoints.openai.responses.context import ConversationContext, SimpleContext
 from aphrodite.entrypoints.openai.responses.protocol import (
     ResponseCreatedEvent,
@@ -49,6 +48,7 @@ from aphrodite.entrypoints.openai.responses.serving import (
 from aphrodite.entrypoints.openai.responses.streaming_events import (
     StreamingState,
 )
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.inputs import tokens_input
 from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.parser.harmony import Segment
@@ -349,6 +349,10 @@ async def test_reasoning_tokens_counted_for_text_reasoning_model(monkeypatch):
 
         def get_vocab(self):
             return self._vocab
+
+        def decode(self, token_ids):
+            id_to_token = {v: k for k, v in self._vocab.items()}
+            return "".join(id_to_token.get(token_id, "x") for token_id in token_ids)
 
     # Force non-harmony, SimpleContext path
     monkeypatch.setattr(envs, "APHRODITE_USE_EXPERIMENTAL_PARSER_CONTEXT", False)

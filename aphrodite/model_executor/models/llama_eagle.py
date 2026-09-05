@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -14,7 +15,10 @@ from aphrodite.model_executor.layers.linear import ReplicatedLinear
 from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization.base_config import QuantizationConfig
 from aphrodite.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
-from aphrodite.model_executor.models.llama import LlamaDecoderLayer, LlamaForCausalLM
+from aphrodite.model_executor.models.llama import (
+    LlamaDecoderLayer as BaseLlamaDecoderLayer,
+)
+from aphrodite.model_executor.models.llama import LlamaForCausalLM
 
 from .utils import (
     AutoWeightsLoader,
@@ -27,7 +31,16 @@ from .utils import (
 logger = init_logger(__name__)
 
 
-class LlamaDecoderLayer(LlamaDecoderLayer):
+if TYPE_CHECKING:
+
+    class _EagleLlamaForCausalLMBase(nn.Module):
+        pass
+
+else:
+    _EagleLlamaForCausalLMBase = LlamaForCausalLM
+
+
+class LlamaDecoderLayer(BaseLlamaDecoderLayer):
     def __init__(
         self,
         aphrodite_config: AphroditeConfig,
@@ -69,7 +82,9 @@ class LlamaModel(nn.Module):
         start_layer_id: int = 0,
     ) -> None:
         super().__init__()
-        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        self.config = speculative_config.draft_model_config.hf_config
         self.vocab_size = self.config.vocab_size
 
         # Get drafter's quantization config
@@ -128,10 +143,12 @@ class LlamaModel(nn.Module):
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
 
-class EagleLlamaForCausalLM(LlamaForCausalLM):
+class EagleLlamaForCausalLM(_EagleLlamaForCausalLMBase):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         nn.Module.__init__(self)
-        self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
+        speculative_config = aphrodite_config.speculative_config
+        assert speculative_config is not None
+        self.config = speculative_config.draft_model_config.hf_config
         # Ensure draft_vocab_size is set
         # default to the base vocab size when absent
         if getattr(self.config, "draft_vocab_size", None) is None:
@@ -169,8 +186,5 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
             process_eagle_weight(self, name)
             return name, loaded_weight
 
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=None,
-        )
+        loader = AutoWeightsLoader(self)
         loader.load_weights(map(transform, weights))

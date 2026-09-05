@@ -13,7 +13,7 @@ import pytest_asyncio
 import requests
 
 from aphrodite.platforms import current_platform
-from tests.utils import ROCM_ENV_OVERRIDES, RemoteOpenAIServer
+from tests.utils import RemoteOpenAIServer
 from tests.v1.utils import check_request_balancing
 
 MODEL_NAME = "ibm-research/PowerMoE-3b"
@@ -166,9 +166,9 @@ class MultinodeInternalLBServerManager:
                         self.model_name,
                         sargs,
                         auto_port=False,
+                        max_wait_seconds=int(os.getenv("APHRODITE_ENGINE_READY_TIMEOUT_S", "480")),
                         env_dict={
                             "APHRODITE_SERVER_DEV_MODE": "1",
-                            **ROCM_ENV_OVERRIDES,
                             current_platform.device_control_env_var: ",".join(
                                 str(current_platform.device_id_to_physical_device_id(i))
                                 for i in range(r, r + gpus_per_node)
@@ -285,7 +285,6 @@ class APIOnlyServerManager:
                     auto_port=False,
                     env_dict={
                         "APHRODITE_SERVER_DEV_MODE": "1",
-                        **ROCM_ENV_OVERRIDES,
                         # No GPUs needed for API-only server
                     },
                 )
@@ -303,7 +302,6 @@ class APIOnlyServerManager:
                     engines_server_args,
                     auto_port=False,
                     env_dict={
-                        **ROCM_ENV_OVERRIDES,
                         current_platform.device_control_env_var: ",".join(
                             str(current_platform.device_id_to_physical_device_id(i))
                             for i in range(self.dp_size * self.tp_size)

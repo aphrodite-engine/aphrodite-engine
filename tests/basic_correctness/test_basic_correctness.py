@@ -14,6 +14,7 @@ import torch
 from packaging.version import Version
 from transformers import __version__ as TRANSFORMERS_VERSION
 
+import aphrodite.envs as envs
 from aphrodite import LLM
 from aphrodite.platforms import current_platform
 from aphrodite.v1.engine.llm_engine import LLMEngine
@@ -274,6 +275,35 @@ def test_failed_model_execution(aphrodite_runner, monkeypatch) -> None:
     with aphrodite_runner("facebook/opt-125m", enforce_eager=True) as aphrodite_model:
         if isinstance(aphrodite_model.llm.llm_engine, LLMEngine):
             v1_test_failed_model_execution(aphrodite_model)
+
+
+@pytest.mark.parametrize("use_v2_model_runner", [False, True], ids=["v1", "v2"])
+def test_raise_on_logit_nans(aphrodite_runner, monkeypatch, use_v2_model_runner: bool) -> None:
+    monkeypatch.setenv("APHRODITE_ENABLE_V1_MULTIPROCESSING", "0")
+    monkeypatch.setenv("APHRODITE_RAISE_ON_LOGIT_NANS", "1")
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", str(int(use_v2_model_runner)))
+    envs.disable_envs_cache()
+
+    try:
+        with aphrodite_runner("facebook/opt-125m", enforce_eager=True) as aphrodite_model:
+            engine_core = aphrodite_model.llm.llm_engine.engine_core.engine_core
+            model_runner = engine_core.model_executor.driver_worker.worker.model_runner
+            assert model_runner.aphrodite_config.use_v2_model_runner is use_v2_model_runner
+            model_cls = type(model_runner.model)
+            original_compute_logits = model_cls.compute_logits
+
+            def compute_nan_logits(self, *args, **kwargs):
+                logits = original_compute_logits(self, *args, **kwargs)
+                # `logits[0, 0] = ...` copies the scalar H2D and blocks.
+                logits[0, 0].fill_(float("nan"))
+                return logits
+
+            monkeypatch.setattr(model_cls, "compute_logits", compute_nan_logits)
+
+            with pytest.raises(RuntimeError, match="NaNs detected in logits"):
+                aphrodite_model.generate_greedy(["Hello, my name is"], 1, use_tqdm=False)
+    finally:
+        envs.disable_envs_cache()
 
 
 def v1_test_failed_model_execution(aphrodite_model):

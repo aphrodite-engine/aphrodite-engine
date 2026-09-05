@@ -12,7 +12,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[command(
     name = "aphrodite-bench",
     about = "Benchmark online serving throughput",
-    version
+    version = aphrodite_build_info::VERSION
 )]
 struct Cli {
     #[command(flatten)]

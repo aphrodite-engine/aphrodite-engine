@@ -2,16 +2,17 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionRequest,
-)
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
-from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.logger import init_logger
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 from aphrodite.reasoning.identity_reasoning_parser import IdentityReasoningParser
 from aphrodite.tokenizers import TokenizerLike
+
+if TYPE_CHECKING:
+    from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 
 logger = init_logger(__name__)
 

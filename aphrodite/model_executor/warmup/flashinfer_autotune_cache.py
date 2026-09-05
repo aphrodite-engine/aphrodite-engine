@@ -10,15 +10,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aphrodite.envs as envs
-from aphrodite.compilation.caching import aot_compile_hash_factors
 
 if TYPE_CHECKING:
     from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
 
 
 def flashinfer_autotune_cache_hash(runner: "GPUModelRunner") -> str:
-    factors = aot_compile_hash_factors(runner.aphrodite_config)
-    return hashlib.sha256(str(factors).encode()).hexdigest()
+    config_hash = runner.aphrodite_config.compute_hash(include_version=False)
+    return hashlib.sha256(config_hash.encode()).hexdigest()
 
 
 def resolve_flashinfer_autotune_file(runner: "GPUModelRunner") -> Path:

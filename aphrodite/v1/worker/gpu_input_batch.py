@@ -29,7 +29,7 @@ from aphrodite.v1.sample.thinking_budget_state import (
     maybe_create_thinking_budget_state_holder,
 )
 from aphrodite.v1.utils import copy_slice
-from aphrodite.v1.worker.block_table import MultiGroupBlockTable
+from aphrodite.v1.worker.block_table import MultiGroupBlockTable, SlotMappingMode
 
 _SAMPLING_EPS = 1e-5
 
@@ -103,7 +103,7 @@ class InputBatch:
         vocab_size: int,
         block_sizes: list[int],  # The block_size of each kv cache group
         kernel_block_sizes: list[int],
-        max_num_blocks_per_req: list[int] | None = None,
+        max_num_blocks_per_req: list[int],
         logitsprocs: LogitsProcessors | None = None,
         logitsprocs_need_output_token_ids: bool = False,
         num_spec_tokens: int = 0,
@@ -111,6 +111,7 @@ class InputBatch:
         cp_kv_cache_interleave_size: int = 1,
         reasoning_config: ReasoningConfig | None = None,
         use_replayssm: bool = False,
+        slot_mapping_modes: list[SlotMappingMode] | None = None,
     ):
         self.thinking_budget_state_holder = maybe_create_thinking_budget_state_holder(
             reasoning_config,
@@ -188,7 +189,6 @@ class InputBatch:
         # Block table.
         self.block_table = MultiGroupBlockTable(
             max_num_reqs=max_num_reqs,
-            max_model_len=max_model_len,
             max_num_batched_tokens=max_num_batched_tokens,
             pin_memory=PIN_MEMORY,
             device=device,
@@ -196,6 +196,7 @@ class InputBatch:
             kernel_block_sizes=kernel_block_sizes,
             max_num_blocks=max_num_blocks_per_req,
             cp_kv_cache_interleave_size=cp_kv_cache_interleave_size,
+            slot_mapping_modes=slot_mapping_modes,
         )
 
         # Sampling-related.
@@ -675,7 +676,7 @@ class InputBatch:
 
             self.pooling_params[req_id] = pooling_params
             self.pooling_states[req_id] = pooling_states
-            self.logits_processing_needs_token_ids[req_index] = pooling_params.requires_token_ids
+            self.logits_processing_needs_token_ids[req_index] = False
         else:
             raise NotImplementedError("Unrecognized request type")
 
@@ -1390,7 +1391,7 @@ class InputBatch:
 
         return PoolingMetadata(
             prompt_lens=self.num_prompt_tokens_cpu_tensor[: self.num_reqs].clone(),
-            prompt_token_ids=self.sampling_metadata.prompt_token_ids,
+            prompt_token_ids=None,
             prompt_token_ids_cpu=prompt_token_ids_cpu,
             pooling_params=pooling_params,
             pooling_states=pooling_states,

@@ -24,9 +24,9 @@ from aphrodite.entrypoints.generate.generative_scoring.serving import (
     GenerativeScoringResponse,
     ServingGenerativeScoring,
 )
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.logprobs import Logprob
 from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.tokenizers import get_tokenizer

@@ -6,7 +6,7 @@ import time
 import pytest
 
 from aphrodite.engine.arg_utils import AsyncEngineArgs
-from aphrodite.entrypoints.openai.api_server import (
+from aphrodite.entrypoints.launchers.api_server.entry import (
     build_async_engine_client_from_engine_args,
 )
 from aphrodite.inputs import TextPrompt

@@ -163,6 +163,8 @@ class LLM(BeamSearchOfflineMixin, PoolingOfflineMixin, OfflineInferenceMixin):
             dictionary or an AttentionConfig instance. If a dictionary, it will
             be converted to an AttentionConfig. Allows specifying the attention
             backend and other attention-related settings.
+        return_sampling_mask: Return each sampled token's post-processing
+            support set. Requires Model Runner V2 and processed log probabilities.
         spec_method: Top-level alias for `speculative_config["method"]`.
         spec_model: Top-level alias for `speculative_config["model"]`.
         spec_tokens: Top-level alias for
@@ -201,6 +203,7 @@ class LLM(BeamSearchOfflineMixin, PoolingOfflineMixin, OfflineInferenceMixin):
         offload_params: set[str] | None = None,
         enforce_eager: bool = False,
         enable_return_routed_experts: bool = False,
+        return_sampling_mask: bool = False,
         disable_custom_all_reduce: bool = False,
         hf_token: bool | str | None = None,
         hf_overrides: HfOverrides | None = None,
@@ -302,6 +305,7 @@ class LLM(BeamSearchOfflineMixin, PoolingOfflineMixin, OfflineInferenceMixin):
             offload_params=offload_params or set(),
             enforce_eager=enforce_eager,
             enable_return_routed_experts=enable_return_routed_experts,
+            return_sampling_mask=return_sampling_mask,
             disable_custom_all_reduce=disable_custom_all_reduce,
             hf_token=hf_token,
             hf_overrides=hf_overrides,
@@ -341,7 +345,7 @@ class LLM(BeamSearchOfflineMixin, PoolingOfflineMixin, OfflineInferenceMixin):
         # The renderer thread pool is only consumed by the async renderer
         # path; the synchronous `LLM` entrypoint runs multimodal
         # preprocessing serially. Warn so the setting is not a silent
-        # no-op. See vllm-project/aphrodite#42901.
+        # no-op. See https://github.com/vllm-project/vllm/issues/42901.
         if self.model_config.renderer_num_workers > 1 and self.runner_type != "pooling":
             logger.warning_once(
                 "`renderer_num_workers=%d` was set, but the offline `LLM` "

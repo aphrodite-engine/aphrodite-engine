@@ -28,16 +28,16 @@ from mistral_common.protocol.instruct.tool_calls import (
 from mistral_common.tokens.tokenizers.base import SpecialTokens
 from pydantic import Field
 
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionNamedToolChoiceParam,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,
     ExtractedToolCallInformation,
     FunctionCall,
     ToolCall,
+)
+from aphrodite.entrypoints.openai.chat_completion.protocol import (
+    ChatCompletionNamedToolChoiceParam,
 )
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.logger import init_logger
@@ -516,14 +516,21 @@ class MistralParser(ParserEngine):
     def _legacy_extract_tool_calls(
         self,
         model_output: str,
-        request: ChatCompletionRequest,
+        request: ChatCompletionRequest | None,
     ) -> ExtractedToolCallInformation:
         """Pre-v11 non-streaming extraction.
 
         Handles ``[TOOL_CALLS][{...}]`` and guided bare-array formats.
         """
+        if request is None:
+            tool_choice = None
+            tools = None
+        else:
+            tool_choice = request.tool_choice
+            tools = request.tools
+
         # tool_choice="none" with tools: never produce tool calls.
-        if request.tool_choice == "none" and request.tools:
+        if tool_choice == "none" and tools:
             return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         content: str | None = None
@@ -535,7 +542,7 @@ class MistralParser(ParserEngine):
             if len(raw_tool_calls) != 1:
                 raise ValueError(f"Only one BOT token should have been outputted, but got {model_output}.")
             stringified_tool_calls = raw_tool_calls[0].strip()
-        elif request.tool_choice == "required" or isinstance(request.tool_choice, ChatCompletionNamedToolChoiceParam):
+        elif tool_choice == "required" or isinstance(tool_choice, ChatCompletionNamedToolChoiceParam):
             # Guided bare-array output (no [TOOL_CALLS] marker).
             stringified_tool_calls = model_output.strip()
         else:

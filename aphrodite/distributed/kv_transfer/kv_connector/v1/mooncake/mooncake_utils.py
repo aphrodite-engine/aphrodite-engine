@@ -8,22 +8,12 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from aphrodite.config import ParallelConfig
 from aphrodite.distributed.kv_transfer.kv_connector.utils import EngineId
 from aphrodite.logger import init_logger
 
 WorkerAddr = str
 
 logger = init_logger(__name__)
-
-
-def get_mooncake_dp_engine_index(parallel_config: ParallelConfig) -> int:
-    """Return the per-engine DP index used for Mooncake side channels."""
-    if parallel_config.local_engines_only:
-        assert parallel_config.data_parallel_rank_local is not None
-        return parallel_config.data_parallel_rank_local
-
-    return parallel_config.data_parallel_index
 
 
 class RegisterWorkerPayload(BaseModel):

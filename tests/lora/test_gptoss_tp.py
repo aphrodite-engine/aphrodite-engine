@@ -49,6 +49,20 @@ def reformat(text: str) -> str:
     return text
 
 
+def _enable_deterministic_lora_shrink(monkeypatch: pytest.MonkeyPatch) -> None:
+    if not current_platform.is_rocm():
+        return
+
+    # These tests assert exact greedy outputs. Force the Triton LoRA shrink
+    # kernel to use SPLIT_K=1 so it stores the complete reduction directly
+    # instead of accumulating split-K partial results with atomic_add.
+    monkeypatch.setenv("APHRODITE_BATCH_INVARIANT", "1")
+    # The kernel configuration reads APHRODITE_BATCH_INVARIANT at import time.
+    # Spawn the engine process so it observes this setting even if the LoRA
+    # Triton utilities were already imported during test collection.
+    monkeypatch.setenv("APHRODITE_WORKER_MULTIPROC_METHOD", "spawn")
+
+
 def generate_and_test(llm: aphrodite.LLM, lora_path: str, lora_id: int) -> None:
     prompts = [
         PROMPT_TEMPLATE.format(
@@ -99,7 +113,10 @@ def test_gpt_oss_lora(
     gptoss20b_lora_files,
     mxfp4_use_marlin,
     specialize_active_lora,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    _enable_deterministic_lora_shrink(monkeypatch)
+
     llm = aphrodite.LLM(
         MODEL_PATH,
         max_model_len=1024,
@@ -139,7 +156,10 @@ def test_gpt_oss_lora_tp2(
     gptoss20b_lora_files,
     fully_sharded_loras,
     mxfp4_use_marlin,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    _enable_deterministic_lora_shrink(monkeypatch)
+
     llm = aphrodite.LLM(
         MODEL_PATH,
         max_model_len=1024,

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import regex as re
 import torch
 from cachetools import LRUCache
+from transformers import MistralCommonBackend
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
@@ -296,6 +297,18 @@ def get_outlines_cache():
 
 re_llama_byte_token = re.compile(r"^<0x[0-9A-F]{2}>$")
 re_replacement_seq = re.compile(r"^.{0,6}�+.{0,6}$")
+
+
+def maybe_wrap_mistral_common_tokenizer(tokenizer: TokenizerLike) -> TokenizerLike:
+    """The grammar backends cannot consume a `MistralCommonBackend` directly."""
+    if not isinstance(tokenizer, MistralCommonBackend):
+        return tokenizer
+
+    # Deferred: `aphrodite.tokenizers.mistral` pulls in a large dependency tree, and
+    # this module is imported by `aphrodite.v1.worker.gpu_model_runner`.
+    from aphrodite.tokenizers.mistral import MistralTokenizer
+
+    return MistralTokenizer(tokenizer)
 
 
 def _reduced_vocabulary(tokenizer: TokenizerLike) -> dict[bytes, list[int]]:

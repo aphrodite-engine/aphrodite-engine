@@ -268,9 +268,6 @@ class TorchAOConfig(QuantizationConfig):
 
         return TorchAOLinearMethod(self)
 
-    def get_scaled_act_names(self) -> list[str]:
-        return []
-
 
 def torchao_quantize_param_data(param: torch.Tensor, torchao_config: Any) -> torch.nn.Parameter:
     """Quantize a Tensor with torchao quantization specified by torchao_config

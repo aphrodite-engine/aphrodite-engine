@@ -14,6 +14,9 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from aphrodite.config import set_current_aphrodite_config
+from aphrodite.forward_context import set_forward_context
+from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.linear import (
     LinearBase,  # noqa: E501
     UnquantizedLinearMethod,
@@ -26,6 +29,8 @@ from aphrodite.model_executor.layers.quantization import (
 from aphrodite.model_executor.layers.quantization.base_config import (
     QuantizationConfig,  # noqa: E501
 )
+from aphrodite.platforms import current_platform
+from tests.quantization.utils import load_model_without_aphrodite_runner
 
 
 class FakeQuantLinearMethod(UnquantizedLinearMethod):
@@ -121,21 +126,26 @@ def test_register_quantization_config(caplog_aphrodite):
         "meta-llama/Llama-3.2-1B-Instruct",
     ],
 )
-def test_custom_quant(aphrodite_runner, model, monkeypatch):
+def test_custom_quant(model, monkeypatch, dist_init, workspace_init):
     """Test infer with the custom quantization method."""
-    # `LLM.apply_model` requires pickling a function.
-    monkeypatch.setenv("APHRODITE_ALLOW_INSECURE_SERIALIZATION", "1")
+    aphrodite_model, aphrodite_config = load_model_without_aphrodite_runner(
+        model,
+        quantization="custom_quant",
+    )
+    layer = aphrodite_model.model.layers[0]
+    qkv_proj = layer.self_attn.qkv_proj
 
-    with aphrodite_runner(model_name=model, quantization="custom_quant", enforce_eager=True) as llm:
+    # Check the quantization method is FakeQuantLinearMethod.
+    assert isinstance(qkv_proj.quant_method, FakeQuantLinearMethod)
 
-        def check_model(model):
-            layer = model.model.layers[0]
-            qkv_proj = layer.self_attn.qkv_proj
-
-            # Check the quantization method is FakeQuantLinearMethod
-            assert isinstance(qkv_proj.quant_method, FakeQuantLinearMethod)
-
-        llm.apply_model(check_model)
-
-        output = llm.generate_greedy("Hello my name is", max_tokens=1)
-        assert output
+    monkeypatch.setattr(Attention, "forward", lambda _, q, k, v: q.contiguous())
+    device_type = current_platform.device_type
+    input_ids = torch.tensor([1, 2, 3, 4], device=device_type)
+    positions = torch.arange(input_ids.numel(), device=device_type)
+    with (
+        set_current_aphrodite_config(aphrodite_config),
+        set_forward_context(None, aphrodite_config, num_tokens=input_ids.numel()),
+    ):
+        hidden_states = aphrodite_model(input_ids, positions, None)
+        logits = aphrodite_model.compute_logits(hidden_states)
+    assert torch.isfinite(logits).all()

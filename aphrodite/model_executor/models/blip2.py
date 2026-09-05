@@ -14,7 +14,7 @@ from transformers import (
 )
 
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.multimodal import BaseDummyOptions, ImageDummyOptions
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.model_executor.layers.activation import get_act_fn
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
@@ -446,6 +446,7 @@ class Blip2DummyInputsBuilder(BaseDummyInputsBuilder[Blip2ProcessingInfo]):
         num_images = mm_counts.get("image", 0)
 
         image_overrides = mm_options.get("image")
+        assert image_overrides is None or isinstance(image_overrides, ImageDummyOptions)
 
         return {
             "image": self._get_dummy_images(
@@ -458,26 +459,6 @@ class Blip2DummyInputsBuilder(BaseDummyInputsBuilder[Blip2ProcessingInfo]):
 
 
 class Blip2MultiModalProcessor(BaseMultiModalProcessor[Blip2ProcessingInfo]):
-    def _call_hf_processor(
-        self,
-        prompt: str,
-        mm_data: Mapping[str, object],
-        mm_kwargs: Mapping[str, object],
-        tok_kwargs: Mapping[str, object],
-    ) -> BatchFeature:
-        if not mm_data:
-            # HF processor always adds placeholders even when there's no image
-            tokenizer = self.info.get_tokenizer()
-            prompt_ids = tokenizer.encode(prompt)
-            return BatchFeature(dict(input_ids=[prompt_ids]), tensor_type="pt")
-
-        return super()._call_hf_processor(
-            prompt=prompt,
-            mm_data=mm_data,
-            mm_kwargs=mm_kwargs,
-            tok_kwargs=tok_kwargs,
-        )
-
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -516,6 +497,8 @@ class Blip2MultiModalProcessor(BaseMultiModalProcessor[Blip2ProcessingInfo]):
     dummy_inputs=Blip2DummyInputsBuilder,
 )
 class Blip2ForConditionalGeneration(nn.Module, SupportsLoRA, SupportsMultiModal, SupportsPP, SupportsQuant):
+    supports_tower_connector_lora = True
+
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
         if modality.startswith("image"):
@@ -600,8 +583,8 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsLoRA, SupportsMultiModal,
         return self._image_pixels_to_features(self.vision_model, pixel_values)
 
     def _process_image_input(self, image_input: Blip2ImageInputs) -> torch.Tensor:
-        if image_input["type"] == "image_embeds":
-            return image_input["data"]
+        if image_input.type == "image_embeds":
+            return image_input.data
 
         image_features = self._process_image_pixels(image_input)
 

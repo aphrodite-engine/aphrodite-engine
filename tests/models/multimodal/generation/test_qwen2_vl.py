@@ -29,6 +29,16 @@ def enable_pickle(monkeypatch):
 
 models = ["Qwen/Qwen2-VL-2B-Instruct"]
 target_dtype = "half"
+IMAGE_SIZE_FACTOR_GROUPS = (
+    (0.5,),
+    (0.5, 0.5),
+    (0.25, 0.5, 0.5),
+)
+VIDEO_SIZE_FACTOR_GROUPS = (
+    (0.5,),
+    (0.5, 0.5),
+    (0.25, 0.25, 0.5),
+)
 
 IMAGE_PLACEHOLDER = "<|vision_start|><|image_pad|><|vision_end|>"
 VIDEO_PLACEHOLDER = "<|vision_start|><|video_pad|><|vision_end|>"
@@ -303,17 +313,6 @@ def run_embedding_input_test(
 
 @pytest.mark.core_model
 @pytest.mark.parametrize("model", models)
-@pytest.mark.parametrize(
-    "size_factors",
-    [
-        # Single-scale
-        [0.5],
-        # Single-scale, batched
-        [0.5, 0.5],
-        # Multi-scale
-        [0.25, 0.5, 0.5],
-    ],
-)
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [10])
@@ -321,7 +320,6 @@ def test_qwen2_vl_image_embeddings_input(
     aphrodite_runner,
     image_assets,
     model,
-    size_factors,
     dtype,
     max_tokens,
     num_logprobs,
@@ -335,6 +333,7 @@ def test_qwen2_vl_image_embeddings_input(
             [rescale_image_size(image, factor) for factor in size_factors],
             [],
         )
+        for size_factors in IMAGE_SIZE_FACTOR_GROUPS
         for image, prompt in zip(images, IMAGE_PROMPTS)
     ]
 
@@ -352,17 +351,6 @@ def test_qwen2_vl_image_embeddings_input(
 
 @pytest.mark.core_model
 @pytest.mark.parametrize("model", models)
-@pytest.mark.parametrize(
-    "size_factors",
-    [
-        # Single-scale
-        [0.5],
-        # Single-scale, batched
-        [0.5, 0.5],
-        # Multi-scale
-        [0.25, 0.5, 0.5],
-    ],
-)
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [10])
@@ -370,7 +358,6 @@ def test_qwen2_vl_multiple_image_embeddings_input(
     aphrodite_runner,
     image_assets,
     model,
-    size_factors,
     dtype: str,
     max_tokens: int,
     num_logprobs: int,
@@ -383,6 +370,7 @@ def test_qwen2_vl_multiple_image_embeddings_input(
             [[rescale_image_size(image, factor) for image in images] for factor in size_factors],
             [],
         )
+        for size_factors in IMAGE_SIZE_FACTOR_GROUPS
     ]
 
     run_embedding_input_test(
@@ -399,17 +387,6 @@ def test_qwen2_vl_multiple_image_embeddings_input(
 
 @pytest.mark.core_model
 @pytest.mark.parametrize("model", models)
-@pytest.mark.parametrize(
-    "size_factors",
-    [
-        # Single-scale
-        [0.5],
-        # Single-scale, batched
-        [0.5, 0.5],
-        # Multi-scale
-        [0.25, 0.25, 0.5],
-    ],
-)
 @pytest.mark.parametrize("dtype", [target_dtype])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [10])
@@ -417,7 +394,6 @@ def test_qwen2_vl_video_embeddings_input(
     aphrodite_runner,
     video_assets,
     model,
-    size_factors,
     dtype: str,
     max_tokens: int,
     num_logprobs: int,
@@ -431,6 +407,7 @@ def test_qwen2_vl_video_embeddings_input(
             [],
             [rescale_video_size(video, factor) for factor in size_factors],
         )
+        for size_factors in VIDEO_SIZE_FACTOR_GROUPS
         for video, prompt in zip(sampled_vids, VIDEO_PROMPTS)
     ]
 

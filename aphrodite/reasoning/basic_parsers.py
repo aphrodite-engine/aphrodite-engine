@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 from itertools import islice
 from typing import TYPE_CHECKING
 
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParser
 from aphrodite.tokenizers import TokenizerLike
 

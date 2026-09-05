@@ -4,7 +4,7 @@
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
 
 if TYPE_CHECKING:

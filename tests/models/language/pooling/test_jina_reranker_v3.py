@@ -45,8 +45,10 @@ INSTRUCTION = (
 )
 
 
-def test_offline(aphrodite_runner):
+def test_offline(aphrodite_runner, monkeypatch):
+    monkeypatch.setenv("APHRODITE_USE_V2_MODEL_RUNNER", "1")
     with aphrodite_runner(model_name, runner="pooling") as llm_runner:
+        assert llm_runner.llm.llm_engine.aphrodite_config.use_v2_model_runner
         llm = llm_runner.get_llm()
         _test_offline_1_v_1(llm)
         _test_offline_1_v_n(llm)

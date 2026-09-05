@@ -14,8 +14,6 @@ import requests
 from aphrodite.entrypoints.pooling.scoring.protocol import RerankResponse
 from tests.utils import APHRODITE_PATH, RemoteOpenAIServer
 
-os.environ["APHRODITE_LOGGING_LEVEL"] = "WARNING"
-
 TEMPLATE_DIR = str(APHRODITE_PATH / "examples/pooling/score/template")
 ExpectedPromptTokens = int | tuple[int, ...]
 
@@ -128,7 +126,8 @@ def assert_prompt_tokens(actual: int, expected: ExpectedPromptTokens) -> None:
 @pytest.fixture(scope="module", params=RERANK_CONFIGS, ids=lambda c: c.model)
 def server(request):
     config: TestConfig = request.param
-    with RemoteOpenAIServer(config.model, config.args) as remote_server:
+    env_dict = {"APHRODITE_LOGGING_LEVEL": "WARNING"}
+    with RemoteOpenAIServer(config.model, config.args, env_dict=env_dict) as remote_server:
         yield config, remote_server
 
 

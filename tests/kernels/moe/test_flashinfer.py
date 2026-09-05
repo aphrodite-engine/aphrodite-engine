@@ -22,6 +22,7 @@ from aphrodite.model_executor.layers.fused_moe.experts.flashinfer_cutlass_moe im
     FlashInferExperts,
 )
 from aphrodite.model_executor.layers.fused_moe.experts.trtllm_fp8_moe import (
+    TrtLlmFp8ExpertsModular,
     TrtLlmFp8ExpertsMonolithic,
 )
 from aphrodite.model_executor.layers.fused_moe.fused_moe import fused_experts
@@ -30,10 +31,20 @@ from aphrodite.model_executor.layers.quantization.utils.flashinfer_utils import 
     swap_w13_to_w31,
 )
 from aphrodite.model_executor.layers.quantization.utils.fp8_utils import input_to_float8
+from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+    QuantKey,
+    kFp8Dynamic128Sym,
+    kFp8DynamicTensorSym,
+    kFp8Static128BlockSym,
+    kFp8StaticTensorSym,
+    kMxfp8Dynamic,
+    kMxfp8Static,
+)
 from aphrodite.model_executor.models.llama4 import Llama4MoE
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import next_power_of_2
 from aphrodite.utils.torch_utils import set_random_seed
+from tests.kernels.moe.utils import make_dummy_moe_config
 
 try:
     from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
@@ -394,3 +405,60 @@ def test_convert_moe_weights_to_flashinfer_trtllm_block_layout(num_experts, inte
 
     assert w13_converted.shape[0] == num_experts
     assert w2_converted.shape[0] == num_experts
+
+
+@pytest.mark.parametrize(
+    ("weight_key", "activation_key", "activation", "expected"),
+    [
+        (kMxfp8Static, kMxfp8Dynamic, MoEActivation.SILU, True),
+        (kFp8Static128BlockSym, kFp8Dynamic128Sym, MoEActivation.SILU, True),
+        (
+            kFp8Static128BlockSym,
+            kFp8Dynamic128Sym,
+            MoEActivation.SWIGLUOAI_UNINTERLEAVE,
+            True,
+        ),
+        (kFp8StaticTensorSym, kFp8DynamicTensorSym, MoEActivation.SILU, False),
+        # FlashInfer takes the clamp only with a SwiGLU activation.
+        (
+            kFp8Static128BlockSym,
+            kFp8Dynamic128Sym,
+            MoEActivation.RELU2_NO_MUL,
+            False,
+        ),
+    ],
+)
+def test_trtllm_fp8_swiglu_clamp_support(
+    weight_key: QuantKey,
+    activation_key: QuantKey,
+    activation: MoEActivation,
+    expected: bool,
+):
+    """FlashInfer >= 0.6.18 applies the SwiGLU clamp for both block-scaled
+    kernels with a SwiGLU activation (DeepSeek-V4 sets swiglu_limit); the
+    per-tensor kernel has no clamp, and Relu2 rejects the parameters."""
+
+    class _Experts(TrtLlmFp8ExpertsModular):
+        @staticmethod
+        def _supports_current_device() -> bool:
+            return True
+
+        @staticmethod
+        def _supports_quant_scheme(weight_key: QuantKey | None, activation_key: QuantKey | None) -> bool:
+            return True
+
+    moe_config = make_dummy_moe_config()
+    moe_config.swiglu_limit = 7.0
+    moe_config.activation = activation
+
+    supported, reason = _Experts.is_supported_config(
+        _Experts,
+        moe_config,
+        weight_key,
+        activation_key,
+        mk.FusedMoEActivationFormat.Standard,
+    )
+
+    assert supported == expected, reason
+    if not expected:
+        assert "SwiGLU" in reason

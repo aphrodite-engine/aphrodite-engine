@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from aphrodite.entrypoints.generate.base.protocol import DeltaMessage
 from aphrodite.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-from aphrodite.entrypoints.openai.engine.protocol import DeltaMessage
 from aphrodite.reasoning import ReasoningParser
 from aphrodite.utils.mistral import is_mistral_tokenizer
 

@@ -12,14 +12,13 @@ import importlib
 
 __all__ = [
     "BagelProcessor",
-    "CheersProcessor",
     "CohereASRProcessor",
     "Cosmos3EdgeProcessor",
     "DeepseekVLV2Processor",
     "FireRedASR2Processor",
-    "FireRedLIDProcessor",
     "FunASRProcessor",
     "GLM4VProcessor",
+    "Glm5NextProcessor",
     "Granite4VisionProcessor",
     "H2OVLProcessor",
     "Moondream3Processor",
@@ -52,14 +51,13 @@ __all__ = [
 
 _CLASS_TO_MODULE: dict[str, str] = {
     "BagelProcessor": "aphrodite.transformers_utils.processors.bagel",
-    "CheersProcessor": "aphrodite.transformers_utils.processors.cheers",
     "CohereASRProcessor": "aphrodite.transformers_utils.processors.cohere_asr",
     "Cosmos3EdgeProcessor": "aphrodite.transformers_utils.processors.cosmos3_edge",
     "DeepseekVLV2Processor": "aphrodite.transformers_utils.processors.deepseek_vl2",
     "FireRedASR2Processor": "aphrodite.transformers_utils.processors.fireredasr2",
-    "FireRedLIDProcessor": "aphrodite.transformers_utils.processors.fireredlid",
     "FunASRProcessor": "aphrodite.transformers_utils.processors.funasr",
     "GLM4VProcessor": "aphrodite.transformers_utils.processors.glm4v",
+    "Glm5NextProcessor": "aphrodite.transformers_utils.processors.glm5next",
     "Granite4VisionProcessor": "aphrodite.transformers_utils.processors.granite4_vision",
     "H2OVLProcessor": "aphrodite.transformers_utils.processors.h2ovl",
     "InternVLProcessor": "aphrodite.transformers_utils.processors.internvl",

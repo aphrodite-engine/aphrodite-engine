@@ -942,6 +942,16 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             histogram_decode_time_request, per_engine_labelvalues
         )
 
+        histogram_request_num_preemptions = self._histogram_cls(
+            name="aphrodite:request_num_preemptions",
+            documentation="Histogram of the number of times a request was preempted.",
+            buckets=[1, 2, 3, 4, 5, 10, 20],
+            labelnames=labelnames,
+        )
+        self.histogram_request_num_preemptions = create_metric_per_engine(
+            histogram_request_num_preemptions, per_engine_labelvalues
+        )
+
         histogram_prefill_kv_computed_request = self._histogram_cls(
             name="aphrodite:request_prefill_kv_computed_tokens",
             documentation=("Histogram of new KV tokens computed during prefill (excluding cached tokens)."),
@@ -1172,6 +1182,7 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             self.histogram_prefill_time_request[engine_idx].observe(finished_request.prefill_time)
             self.histogram_inference_time_request[engine_idx].observe(finished_request.inference_time)
             self.histogram_decode_time_request[engine_idx].observe(finished_request.decode_time)
+            self.histogram_request_num_preemptions[engine_idx].observe(finished_request.num_preemptions)
             # Calculate prefill KV compute (excludes cached tokens)
             prefill_kv_computed = finished_request.num_prompt_tokens - max(finished_request.num_cached_tokens, 0)
             self.histogram_prefill_kv_computed_request[engine_idx].observe(prefill_kv_computed)

@@ -19,11 +19,9 @@ import pytest
 
 from aphrodite.config import ModelConfig
 from aphrodite.config.speech_to_text import SpeechToTextConfig
-from aphrodite.entrypoints.openai.engine.protocol import (
-    ErrorResponse,
-    RequestResponseMetadata,
-)
+from aphrodite.entrypoints.generate.base.protocol import RequestResponseMetadata
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
+from aphrodite.entrypoints.serve.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.speech_to_text.base.serving import (
     SpeechToTextBaseServing,
     asr_inter_chunk_separator,

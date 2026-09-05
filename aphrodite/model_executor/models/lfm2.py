@@ -256,7 +256,7 @@ class Lfm2ShortConvDecoderLayer(nn.Module):
             model_config=model_config,
             cache_config=cache_config,
             quant_config=quant_config,
-            prefix=f"{prefix}.conv",
+            prefix=f"{prefix}.short_conv",
         )
 
         self.feed_forward = Lfm2MLP(
@@ -493,8 +493,5 @@ class Lfm2ForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, IsHybr
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

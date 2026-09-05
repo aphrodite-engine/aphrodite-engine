@@ -4,7 +4,7 @@
 from collections.abc import Sequence
 
 from aphrodite.config import AphroditeConfig, PoolerConfig
-from aphrodite.entrypoints.openai.engine.protocol import UsageInfo
+from aphrodite.entrypoints.serve.engine.protocol import UsageInfo
 from aphrodite.inputs import PromptType
 from aphrodite.outputs import PoolingRequestOutput
 from aphrodite.plugins.io_processors.interface import IOProcessor
@@ -56,11 +56,11 @@ class BgeM3SparseEmbeddingsProcessor(IOProcessor[SparseEmbeddingCompletionReques
         params.dimensions = self.embed_dimensions
         return params
 
-    def parse_request(self, request_data: object) -> SparseEmbeddingCompletionRequestMixin:
+    def parse_data(self, data: object) -> SparseEmbeddingCompletionRequestMixin:
         # for aphrodite.entrypoints.llm.LLM, offline mode, calls `encode` directly.
-        if isinstance(request_data, dict):
-            return SparseEmbeddingCompletionRequestMixin(**request_data)
-        raise TypeError("request_data should be a dictionary")
+        if isinstance(data, dict):
+            return SparseEmbeddingCompletionRequestMixin(**data)
+        raise TypeError("data should be a dictionary")
 
     def pre_process(
         self,

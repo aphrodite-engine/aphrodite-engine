@@ -15,15 +15,15 @@ from aphrodite.entrypoints.chat_utils import (
     get_tool_call_id_type,
     make_tool_call_id,
 )
-from aphrodite.entrypoints.openai.chat_completion.protocol import (
-    ChatCompletionNamedToolChoiceParam,
-    ChatCompletionRequest,
-)
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaMessage,
     ExtractedToolCallInformation,
     FunctionCall,
     FunctionDefinition,
+)
+from aphrodite.entrypoints.openai.chat_completion.protocol import (
+    ChatCompletionNamedToolChoiceParam,
+    ChatCompletionRequest,
 )
 from aphrodite.entrypoints.openai.responses.protocol import ResponsesRequest
 from aphrodite.logger import init_logger
@@ -121,13 +121,26 @@ class Parser:
         self._reasoning_parser: ReasoningParser | None = None
         self._tool_parser: ToolParser | None = None
         if self.__class__.reasoning_parser_cls is not None:
-            self._reasoning_parser = self.__class__.reasoning_parser_cls(tokenizer, *args, **kwargs)
+            self._reasoning_parser = self.__class__.reasoning_parser_cls(
+                tokenizer, *args, model_config=model_config, **kwargs
+            )
         if self.__class__.tool_parser_cls is not None:
             self._tool_parser = self.__class__.tool_parser_cls(tokenizer, tools)
 
         self._engine_based = (self._reasoning_parser is None or self._reasoning_parser.engine_based_streaming) and (
             self._tool_parser is None or self._tool_parser.engine_based_streaming
         )
+        if (
+            self._reasoning_parser is None
+            and self._tool_parser is not None
+            and hasattr(self._tool_parser, "skip_reasoning_parsing")
+        ):
+            # With no reasoning parser configured, reasoning markup is
+            # plain content: an engine-based tool parser should pass it
+            # through verbatim where its grammar allows, not consume or
+            # reclassify it. The engine ignores the flag for markers
+            # shared with non-reasoning structure.
+            self._tool_parser.skip_reasoning_parsing = True
         self._stream_state = StreamState(
             tool_call_id_type=(get_tool_call_id_type(model_config) if model_config is not None else "random"),
             engine_based=self._engine_based,
@@ -358,6 +371,10 @@ class Parser:
         tool call extraction via internal stream state.
         """
 
+    def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
+        """Return the number of reasoning tokens in generated token IDs."""
+        return 0
+
 
 class DelegatingParser(Parser):
     """
@@ -485,6 +502,14 @@ class DelegatingParser(Parser):
                     content is None or (isinstance(content, str) and not content.strip())
                 ):
                     return [], None
+                # No complete tool calls: for engine-based parsers, return
+                # the tool parser's content, which drops incomplete
+                # tool-call markup (e.g. a <tool_call> opener truncated by
+                # max_tokens or a stop string), so the non-streaming path
+                # matches streaming. Legacy parsers keep their existing
+                # behavior of returning the raw content.
+                if self._engine_based and tool_call_info is not None:
+                    return None, tool_call_info.content or None
                 return None, content
 
         return tool_calls, content
@@ -890,6 +915,12 @@ class DelegatingParser(Parser):
                 delta_message = None
 
         return delta_message
+
+    def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
+        """Count reasoning tokens through the configured reasoning parser."""
+        if self._reasoning_parser is None:
+            return 0
+        return self._reasoning_parser.count_reasoning_tokens(token_ids)
 
     def _flush_engine_parsers(self, delta_message: DeltaMessage | None) -> DeltaMessage | None:
         """Flush buffered state from engine-based parsers at stream end."""

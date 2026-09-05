@@ -74,10 +74,6 @@ class SwordfishExperts(mk.FusedMoEExpertsModular):
             "Swordfish MoE v1 supports only symmetric quantization (no zero points)"
         )
         assert quant_config.w1_bias is None and quant_config.w2_bias is None, "Swordfish MoE v1 does not support bias"
-        self.gemm1_clamp_limit = quant_config.gemm1_clamp_limit
-        self.gemm1_alpha = quant_config.gemm1_alpha if quant_config.gemm1_alpha is not None else 1.0
-        self.gemm1_beta = quant_config.gemm1_beta if quant_config.gemm1_beta is not None else 0.0
-
         super().__init__(
             moe_config=moe_config,
             quant_config=quant_config,
@@ -304,9 +300,6 @@ class SwordfishExperts(mk.FusedMoEExpertsModular):
             activation,
             intermediate_cache2,
             intermediate_cache1.view(-1, 2 * N),
-            clamp_limit=self.gemm1_clamp_limit,
-            alpha=self.gemm1_alpha,
-            beta=self.gemm1_beta,
         )
 
         intermediate_cache3 = ops.swordfish_moe_mm(
@@ -402,9 +395,6 @@ class SwordfishExperts(mk.FusedMoEExpertsModular):
             activation,
             cache2,
             cache1,
-            clamp_limit=self.gemm1_clamp_limit,
-            alpha=self.gemm1_alpha,
-            beta=self.gemm1_beta,
         )
         out_sorted = torch.empty((M * topk, K), dtype=hidden_states.dtype, device=hidden_states.device)
         beg = 0

@@ -14,7 +14,7 @@ import torch
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from aphrodite.config import ModelConfig
-from aphrodite.entrypoints.openai.engine.protocol import UsageInfo
+from aphrodite.entrypoints.serve.engine.protocol import UsageInfo
 from aphrodite.logger import init_logger
 from aphrodite.outputs import PoolingRequestOutput
 from aphrodite.tasks import SupportedTask

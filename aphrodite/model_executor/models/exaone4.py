@@ -31,7 +31,7 @@ from transformers import Exaone4Config
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
-from aphrodite.model_executor.layers.activation import SiluAndMul
+from aphrodite.model_executor.layers.activation import SiluAndMul, SiluAndMulWithClamp
 from aphrodite.model_executor.layers.attention import Attention
 from aphrodite.model_executor.layers.layernorm import RMSNorm
 from aphrodite.model_executor.layers.linear import (
@@ -70,6 +70,7 @@ class Exaone4GatedMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
         reduce_results: bool = True,
         bias: bool = False,
+        swiglu_limit: float | None = None,
         prefix: str = "",
         use_data_parallel: bool = False,
     ) -> None:
@@ -93,7 +94,7 @@ class Exaone4GatedMLP(nn.Module):
         )
         if hidden_act != "silu":
             raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
-        self.act_fn = SiluAndMul()
+        self.act_fn = SiluAndMul() if swiglu_limit is None else SiluAndMulWithClamp(swiglu_limit)
 
     def forward(self, x):
         gate_up, _ = self.gate_up_proj(x)
@@ -393,7 +394,7 @@ class Exaone4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
             if config.tie_word_embeddings:
-                self.lm_head.weight = self.model.embed_tokens.weight
+                self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 
             logit_scale = getattr(config, "logit_scale", 1.0)
             self.logits_processor = LogitsProcessor(config.vocab_size, scale=logit_scale)
@@ -423,11 +424,5 @@ class Exaone4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            # With tie_word_embeddings, we can skip lm_head.weight
-            # The weight might appear unnecessarily in the files if the model is
-            # processed with quantization, LoRA, fine-tuning, etc.
-            skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
-        )
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)

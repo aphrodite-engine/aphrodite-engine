@@ -22,7 +22,25 @@ if HAS_TRITON:
         # It's generally expected that x.driver exists and has
         # an is_active method.
         # The `x.driver and` check adds a small layer of safety.
-        active_drivers = [x.driver for x in backends.values() if x.driver and x.driver.is_active()]
+        # The "cpu" backend's driver reports itself active unconditionally, so
+        # it must be excluded here or every GPU host looks like it has 2 active
+        # drivers. Triton's own driver selection skips it for the same reason
+        # (see triton.runtime.driver._create_driver): CPU is only ever used
+        # when explicitly selected.
+        active_drivers = [
+            x.driver for name, x in backends.items() if name != "cpu" and x.driver and x.driver.is_active()
+        ]
+
+        # Check Triton CPU
+        if "cpu" in version("aphrodite-engine"):
+            if "cpu" in backends:
+                HAS_TRITON = True
+                # Suppress following warnings on CPU-only platforms
+                if len(active_drivers) == 0:
+                    active_drivers.append(backends["cpu"].driver)
+            else:
+                logger.warning("Triton is installed, but doesn't include CPU backend. Disabling Triton.")
+                HAS_TRITON = False
 
         # Check if we're in a distributed environment where CUDA_VISIBLE_DEVICES
         # or HIP_VISIBLE_DEVICES might be temporarily empty (e.g., Ray sets it to ""
@@ -47,13 +65,6 @@ if HAS_TRITON:
             )
             HAS_TRITON = False
 
-        # Check Triton CPU
-        if "cpu" in version("aphrodite-engine"):
-            if "cpu" in backends:
-                HAS_TRITON = True
-            else:
-                logger.warning("Triton is installed, but doesn't include CPU backend. Disabling Triton.")
-                HAS_TRITON = False
     except ImportError:
         # This can occur if Triton is partially installed or triton.backends
         # is missing.

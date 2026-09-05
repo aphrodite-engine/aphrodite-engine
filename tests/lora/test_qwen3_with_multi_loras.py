@@ -11,6 +11,7 @@ import os
 import pytest
 
 from aphrodite import LLM, SamplingParams
+from aphrodite.exceptions import APHRODITEValidationError
 from aphrodite.lora.request import LoRARequest
 from tests.utils import multi_gpu_test
 
@@ -183,7 +184,7 @@ def test_multiple_lora_requests():
     assert len(PROMPTS) == len(outputs)
 
     # Exception raised, if the size of params does not match the size of prompts
-    with pytest.raises(ValueError):
+    with pytest.raises(APHRODITEValidationError):
         outputs = llm.generate(PROMPTS, lora_request=lora_request[:1])
 
     # Single LoRARequest should be applied to every prompt

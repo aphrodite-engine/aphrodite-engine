@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from aphrodite.entrypoints.openai.engine.protocol import (
+from aphrodite.entrypoints.generate.base.protocol import (
     DeltaMessage,
     ExtractedToolCallInformation,
     FunctionCall,

@@ -10,6 +10,8 @@ from aphrodite.config import (
     ECTransferConfig,
     KVTransferConfig,
     ModelConfig,
+    MultiModalConfig,
+    ObservabilityConfig,
     ParallelConfig,
     SchedulerConfig,
     SpeculativeConfig,
@@ -61,6 +63,7 @@ def create_scheduler(
     max_model_len: int | None = None,
     num_speculative_tokens: int | None = None,
     speculative_method: str | None = None,
+    parallel_drafting: bool = False,
     skip_tokenizer_init: bool = False,
     async_scheduling: bool = False,
     pipeline_parallel_size: int = 1,
@@ -70,6 +73,7 @@ def create_scheduler(
     ec_role: str | None = None,
     use_v2_model_runner: bool | None = None,
     kv_cache_spec: KVCacheSpec | None = None,
+    per_request_spec_decode_metrics: str = "none",
 ) -> Scheduler | AsyncScheduler:
     """Create scheduler under test.
 
@@ -90,7 +94,12 @@ def create_scheduler(
         dtype="float16",
         seed=42,
         skip_tokenizer_init=skip_tokenizer_init,
+        # The scheduler reads model_config.max_model_len, not the
+        # SchedulerConfig one, so both must agree.
+        max_model_len=max_model_len,
     )
+    if use_ec_connector and ec_role == "ec_producer":
+        model_config.multimodal_config = MultiModalConfig()
     if max_model_len is None:
         max_model_len = max_num_batched_tokens
     scheduler_config = SchedulerConfig(
@@ -145,6 +154,7 @@ def create_scheduler(
             spec_kwargs["prompt_lookup_max"] = num_speculative_tokens
             spec_kwargs["prompt_lookup_min"] = 1
         speculative_config = SpeculativeConfig(**spec_kwargs)
+        speculative_config.parallel_drafting = parallel_drafting
 
     ec_transfer_config = (
         ECTransferConfig(
@@ -163,10 +173,16 @@ def create_scheduler(
         parallel_config=ParallelConfig(
             pipeline_parallel_size=pipeline_parallel_size,
             data_parallel_size=data_parallel_size,
+            # Scheduler unit tests do not launch workers or require the
+            # simulated parallel ranks to fit on the test host.
+            distributed_executor_backend="mp" if pipeline_parallel_size > 1 or data_parallel_size > 1 else None,
         ),
         kv_transfer_config=kv_transfer_config,
         speculative_config=speculative_config,
         ec_transfer_config=ec_transfer_config,
+        observability_config=ObservabilityConfig(
+            per_request_spec_decode_metrics=per_request_spec_decode_metrics,
+        ),
     )
     if kv_cache_spec is None:
         kv_cache_spec = FullAttentionSpec(

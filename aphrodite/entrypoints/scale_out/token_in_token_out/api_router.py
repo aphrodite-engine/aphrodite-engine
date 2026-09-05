@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Respons
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.entrypoints.openai.engine.protocol import ErrorResponse
 from aphrodite.entrypoints.serve.tokenize.serving import ServingTokenization
 from aphrodite.entrypoints.serve.utils.api_utils import (
     load_aware_call,
@@ -19,6 +18,7 @@ from aphrodite.entrypoints.serve.utils.api_utils import (
 )
 from aphrodite.logger import init_logger
 
+from ...serve.engine.protocol import ErrorResponse
 from .protocol import (
     GenerateRequest,
     GenerateResponse,

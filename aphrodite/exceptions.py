@@ -3,6 +3,7 @@
 
 """Custom exceptions for Aphrodite."""
 
+from http import HTTPStatus
 from typing import Any
 
 
@@ -115,3 +116,56 @@ APHRODITEServerError = AphroditeServerError
 APHRODITEValidationError = AphroditeValidationError
 APHRODITENotFoundError = AphroditeNotFoundError
 APHRODITEUnprocessableEntityError = AphroditeUnprocessableEntityError
+
+
+class GenerationError(APHRODITEServerError):
+    """raised when finish_reason indicates internal server error (500)"""
+
+    def __init__(self, message: str = "Internal server error"):
+        super().__init__(message)
+        self.status_code = HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+class GracefulHTTPError(APHRODITEError):
+    """Exception that should be translated into an HTTP error response.
+
+    These are expected to occur during normal operation (e.g. admission
+    control rejections) and should be surfaced to the client with the
+    explicit HTTP status code they carry, rather than being mapped to a
+    generic 4xx/5xx by the client/server split.
+    """
+
+    def __init__(self, message: str, http_status: HTTPStatus):
+        super().__init__(message)
+        self.message = message
+        self.http_status = http_status
+
+
+class QueueOverflowError(GracefulHTTPError):
+    """Raised when admitting a request would exceed the request queue limit.
+
+    Returns HTTP 503 (Service Unavailable) so that load balancers and
+    client SDKs retry the request on a different instance.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "The engine is currently busy and cannot accept new requests. "
+            "Please try again later or on a different instance.",
+            HTTPStatus.SERVICE_UNAVAILABLE,
+        )
+
+
+class MaxQueuedTokensError(GracefulHTTPError):
+    """Raised when the pending prefill tokens exceed the configured limit.
+
+    Returns HTTP 503 (Service Unavailable) so that load balancers and
+    client SDKs retry the request on a different instance.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "The engine has reached its prefill token backlog limit. "
+            "Please try again later or on a different instance.",
+            HTTPStatus.SERVICE_UNAVAILABLE,
+        )

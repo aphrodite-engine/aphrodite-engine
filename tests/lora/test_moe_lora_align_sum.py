@@ -39,6 +39,14 @@ def sample_data(num_experts, max_loras, num_tokens, topk_num):
 @pytest.mark.parametrize("max_loras", [2, 32])
 @pytest.mark.parametrize("block_size", [16])
 def test_moe_lora_align_block_size(num_tokens, topk_num, num_experts, max_loras, block_size):
+    _run_moe_lora_align_block_size_case(num_tokens, topk_num, num_experts, max_loras, block_size)
+
+
+def test_moe_lora_align_block_size_large_path_counts():
+    _run_moe_lora_align_block_size_case(100, 12, 64, 4, 16)
+
+
+def _run_moe_lora_align_block_size_case(num_tokens, topk_num, num_experts, max_loras, block_size):
     # sample data
     random.seed(1)
     topk_ids, token_lora_mapping = sample_data(num_experts, max_loras, num_tokens, topk_num)
@@ -86,8 +94,17 @@ def test_moe_lora_align_block_size(num_tokens, topk_num, num_experts, max_loras,
     # verify values
     expert_ids = expert_ids.view(max_loras, -1)
     sorted_token_ids = sorted_token_ids.view(max_loras, -1, block_size)
+    topk_ids_cpu = topk_ids.cpu()
+    token_lora_mapping_cpu = token_lora_mapping.cpu()
 
     for lora_idx in range(max_loras):
+        expert_counts = torch.bincount(
+            topk_ids_cpu[token_lora_mapping_cpu == lora_idx].flatten(),
+            minlength=num_experts,
+        )
+        expected_post_pad = round_up(expert_counts, block_size).sum().item()
+        assert num_tokens_post_pad[lora_idx].item() == expected_post_pad
+
         for token_idx in range(sorted_token_ids.size(1)):
             block = sorted_token_ids[lora_idx][token_idx]
             indices = block[block != topk_ids.numel()]
@@ -125,7 +142,7 @@ def _build_and_run_align(
 
     Tokens are assigned to LoRA slot 0 (first ``num_lora_tokens``) then -1
     (remaining ``num_base_tokens``), matching the "mixed base + 1 LoRA"
-    shape used to repro vllm-project/aphrodite#32235.
+    shape used to repro https://github.com/vllm-project/vllm/issues/32235.
 
     ``lora_ids_override``: optional 1-D int tensor of length ``max_loras+1``
     used verbatim. Default mirrors ``prepare_tensors`` (sorted-unique into

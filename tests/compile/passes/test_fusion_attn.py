@@ -36,10 +36,21 @@ from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer
 from aphrodite.v1.attention.backend import AttentionMetadata
 from aphrodite.v1.attention.backends.registry import AttentionBackendEnum
-from aphrodite.v1.kv_cache_interface import AttentionSpec, get_kv_quant_mode
+from aphrodite.v1.attention.backends.utils import (
+    get_supported_kv_cache_layouts,
+    resolve_kv_cache_layout,
+)
+from aphrodite.v1.kv_cache_interface import (
+    AttentionSpec,
+    get_kv_quant_mode,
+)
 from tests.compile.backend import LazyInitPass, TestBackend
 from tests.utils import TestFP8Layer, flat_product
-from tests.v1.attention.utils import BatchSpec, create_common_attn_metadata
+from tests.v1.attention.utils import (
+    BatchSpec,
+    create_common_attn_metadata,
+    dense_kv_cache_views,
+)
 
 DEVICE_TYPE = current_platform.device_type
 FP8_DTYPE = current_platform.fp8_dtype()
@@ -108,30 +119,27 @@ class AttentionQuantPatternModel(torch.nn.Module):
         max_blocks = (max(batch_spec.seq_lens) + self.block_size - 1) // self.block_size
         num_blocks = batch_size * max_blocks
 
-        # Fetch the attention backend and kv cache shape and stride order
-        attn_backend = self.attn.attn_backend
-        kv_cache_shape = attn_backend.get_kv_cache_shape(
-            num_blocks,
-            self.block_size,
-            self.num_kv_heads,
-            self.head_size,
-            cache_dtype_str=self.attn.kv_cache_dtype,
-        )
-        try:
-            kv_cache_stride_order = attn_backend.get_kv_cache_stride_order()
-        except (AttributeError, NotImplementedError):
-            kv_cache_stride_order = tuple(range(len(kv_cache_shape)))
-
-        kv_cache_shape = tuple(kv_cache_shape[i] for i in kv_cache_stride_order)
-        inv_order = [kv_cache_stride_order.index(i) for i in range(len(kv_cache_stride_order))]
-
-        # Create dummy KV cache
-        raw_tensor = torch.zeros(
-            kv_cache_shape,
+        spec = AttentionSpec(
+            block_size=self.block_size,
+            num_kv_heads=self.num_kv_heads,
+            head_size=self.head_size,
             dtype=self.attn.kv_cache_torch_dtype,
+            kv_quant_mode=get_kv_quant_mode(self.attn.kv_cache_dtype),
+        )
+        supported = get_supported_kv_cache_layouts([self.attn.attn_backend])
+        layout = resolve_kv_cache_layout(self.aphrodite_config, [[m.name for m in supported]])
+        raw_tensor = torch.zeros(
+            num_blocks * spec.page_size_bytes,
+            dtype=torch.int8,
             device=self.device,
         )
-        kv_cache = raw_tensor.permute(*inv_order)
+        kv_cache = dense_kv_cache_views(
+            raw_tensor,
+            spec,
+            num_blocks,
+            num_layers=1,
+            layout=layout,
+        )[0]
 
         self.attn.kv_cache = kv_cache
 

@@ -10,7 +10,7 @@ from transformers.models.aria.modeling_aria import AriaCrossAttention
 from transformers.models.aria.processing_aria import AriaProcessor
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.config.multimodal import BaseDummyOptions
+from aphrodite.config.multimodal import BaseDummyOptions, ImageDummyOptions
 from aphrodite.inputs import MultiModalDataDict
 from aphrodite.model_executor.layers.activation import get_act_fn
 from aphrodite.model_executor.layers.fused_moe import FusedMoEFactory
@@ -19,10 +19,7 @@ from aphrodite.model_executor.layers.logits_processor import LogitsProcessor
 from aphrodite.model_executor.layers.quantization import QuantizationConfig
 from aphrodite.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (
-    MultiModalFieldConfig,
-    MultiModalKwargsItems,
-)
+from aphrodite.multimodal.inputs import MultiModalFieldConfig, MultiModalKwargsItems
 from aphrodite.multimodal.parse import MultiModalDataItems
 from aphrodite.multimodal.processing import (
     BaseDummyInputsBuilder,
@@ -40,11 +37,7 @@ from .idefics2_vision_model import (
 )
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsQuant
 from .llama import LlamaDecoderLayer, LlamaMLP, LlamaModel
-from .utils import (
-    AutoWeightsLoader,
-    WeightsMapper,
-    maybe_prefix,
-)
+from .utils import AutoWeightsLoader, WeightsMapper, maybe_prefix
 
 
 class AriaImagePixelInputs(TensorSchema):
@@ -86,16 +79,17 @@ class AriaVisionTransformer(Idefics3VisionTransformer, SupportsQuant):
         self.post_layernorm = nn.Identity()
 
     hf_to_aphrodite_mapper = WeightsMapper(
+        # NOTE: post_layernorm is not used in Aria.
+        orig_to_new_substr={"post_layernorm": None},
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
             ".k_proj": (".qkv_proj", "k"),
             ".v_proj": (".qkv_proj", "v"),
-        }
+        },
     )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        # NOTE: post_layernorm is not used in Aria.
-        loader = AutoWeightsLoader(self, skip_substrs=["post_layernorm"])
+        loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
 
@@ -302,7 +296,8 @@ class AriaDummyInputsBuilder(BaseDummyInputsBuilder[AriaProcessingInfo]):
         num_images = mm_counts.get("image", 0)
 
         processor = self.info.get_hf_processor()
-        image_token: str = processor.tokenizer.image_token  # type: ignore
+        image_token = getattr(processor.tokenizer, "image_token", None)
+        assert isinstance(image_token, str)
 
         return image_token * num_images
 
@@ -318,6 +313,7 @@ class AriaDummyInputsBuilder(BaseDummyInputsBuilder[AriaProcessingInfo]):
         num_images = mm_counts.get("image", 0)
 
         image_overrides = mm_options.get("image")
+        assert image_overrides is None or isinstance(image_overrides, ImageDummyOptions)
 
         return {
             "image": self._get_dummy_images(

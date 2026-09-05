@@ -4,12 +4,12 @@ import torch.nn as nn
 
 from aphrodite.config import AphroditeConfig, replace
 from aphrodite.config.speculative import resolve_draft_kv_cache_dtype
-from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.logger import init_logger
 from aphrodite.model_executor.model_loader import get_model
 from aphrodite.v1.worker.gpu.spec_decode.eagle.utils import (
     _should_share,
     get_target_lm_head,
+    maybe_share_target_embed,
 )
 
 logger = init_logger(__name__)
@@ -93,7 +93,9 @@ def resolve_dflash_cache_dtype(aphrodite_config: AphroditeConfig):
 
 def load_dflash_model(target_model: nn.Module, aphrodite_config: AphroditeConfig) -> nn.Module:
     from aphrodite.compilation.backends import set_model_tag
-    from aphrodite.model_executor.models.qwen3_dflash import dflash_has_any_non_causal
+    from aphrodite.model_executor.models.qwen3_dflash import (
+        dflash_has_any_non_causal,
+    )
 
     speculative_config = aphrodite_config.speculative_config
     assert speculative_config is not None
@@ -118,17 +120,13 @@ def load_dflash_model(target_model: nn.Module, aphrodite_config: AphroditeConfig
     target_language_model = (
         target_model.get_language_model() if hasattr(target_model, "get_language_model") else target_model
     )
-    target_inner = target_language_model.model
+    # MuseGlimmerForCausalLM marks its inner MuseGlimmerModel as the language
+    # model, so get_language_model() already returns the inner module and has
+    # no .model of its own.
+    target_inner = getattr(target_language_model, "model", target_language_model)
     draft_inner = dflash_model.model
 
-    # Skip embedding sharing under PP — each rank owns its own embedding.
-    if get_pp_group().world_size == 1:
-        target_embed = getattr(target_inner, "embed_tokens", None) or getattr(target_inner, "embedding", None)
-        draft_embed = getattr(draft_inner, "embed_tokens", None)
-        if target_embed is not None and _should_share(dflash_model, "has_own_embed_tokens", draft_embed, target_embed):
-            if draft_embed is not None:
-                del draft_inner.embed_tokens
-            draft_inner.embed_tokens = target_embed
+    maybe_share_target_embed(dflash_model, draft_inner, target_inner)
 
     target_lm_head = get_target_lm_head(target_model, target_language_model)
     draft_lm_head = getattr(dflash_model, "lm_head", None)

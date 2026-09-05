@@ -13,7 +13,6 @@ from aphrodite.distributed.eplb.eplb_state import EplbState
 from aphrodite.forward_context import set_forward_context
 from aphrodite.model_executor.layers.attention_layer_base import AttentionLayerBase
 from aphrodite.model_executor.model_loader import get_model
-from aphrodite.utils.torch_utils import PIN_MEMORY
 from aphrodite.v1.attention.backend import AttentionMetadataBuilder, CommonAttentionMetadata
 from aphrodite.v1.cudagraph_dispatcher import CudagraphDispatcher
 from aphrodite.v1.utils import CpuGpuBuffer
@@ -51,13 +50,7 @@ class ExtractHiddenStatesProposer:
         max_batch_size = aphrodite_config.scheduler_config.max_num_seqs
         self.max_num_tokens = aphrodite_config.scheduler_config.max_num_batched_tokens + max_batch_size
 
-        self.backup_next_token_ids = CpuGpuBuffer(
-            max_batch_size,
-            dtype=torch.int32,
-            pin_memory=PIN_MEMORY,
-            device=device,
-            with_numpy=True,
-        )
+        self.backup_next_token_ids = CpuGpuBuffer(max_batch_size, dtype=torch.int32, device=device)
 
         self.hf_config = aphrodite_config.speculative_config.draft_model_config.hf_config
         layer_ids = getattr(self.hf_config, "eagle_aux_hidden_state_layer_ids", None)

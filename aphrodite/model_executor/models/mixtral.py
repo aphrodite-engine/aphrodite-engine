@@ -95,7 +95,6 @@ class MixtralMoE(nn.Module):
         self.hidden_size = hidden_size
 
         self.ep_group = get_ep_group().device_group
-        self.ep_rank = get_ep_group().rank_in_group
         self.ep_size = self.ep_group.size()
 
         # Expert Parallelism Load balancing settings.
@@ -108,9 +107,6 @@ class MixtralMoE(nn.Module):
         self.n_redundant_experts = parallel_config.eplb_config.num_redundant_experts
         self.n_physical_experts = self.n_logical_experts + self.n_redundant_experts
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
-        self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
-
         # Gate always runs at half / full precision for now.
 
         self.gate = ReplicatedLinear(
@@ -293,7 +289,14 @@ class MixtralModel(nn.Module):
             ".q_proj": (".qkv_proj", "q"),
             ".k_proj": (".qkv_proj", "k"),
             ".v_proj": (".qkv_proj", "v"),
-        }
+        },
+        orig_to_new_substr={
+            # W8A8 compressed-tensors checkpoints name experts gate/up/down;
+            # map to the w1/w3/w2 the FusedMoE loader expects (no-op if native).
+            ".gate_proj.": ".w1.",
+            ".up_proj.": ".w3.",
+            ".down_proj.": ".w2.",
+        },
     )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
@@ -405,7 +408,7 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         if self.use_tied_lm_head:
-            self.lm_head.weight = self.model.embed_tokens.weight
+            self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
@@ -473,6 +476,5 @@ class MixtralForCausalLM(nn.Module, SupportsLoRA, SupportsPP, MixtureOfExperts):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."] if self.use_tied_lm_head else None),
         )
         return loader.load_weights(weights)

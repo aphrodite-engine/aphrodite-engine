@@ -11,6 +11,8 @@ from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import triton
 from aphrodite.utils.platform_utils import num_compute_units
 
+pytestmark = pytest.mark.skip_global_cleanup
+
 
 def cal_diff(
     x: torch.Tensor,
@@ -40,7 +42,7 @@ CUTLASS_MLA_UNSUPPORTED_REASON = (
 
 
 @pytest.mark.skipif(
-    not current_platform.has_device_capability(100),
+    not current_platform.is_device_capability_family(100),
     reason=CUTLASS_MLA_UNSUPPORTED_REASON,
 )
 @pytest.mark.parametrize("b", [128])
@@ -196,7 +198,7 @@ def test_cutlass_mla_decode(b, s_q, mean_sk, h_q, h_kv, d, dv, block_size, causa
 
 
 @pytest.mark.skipif(
-    not current_platform.has_device_capability(100),
+    not current_platform.is_device_capability_family(100),
     reason=CUTLASS_MLA_UNSUPPORTED_REASON,
 )
 @torch.inference_mode()
