@@ -69,6 +69,10 @@ def build_binary(build_rust_args: list[str]) -> None:
     (ROOT_DIR / "aphrodite").mkdir(exist_ok=True)
     setup(
         name="aphrodite-rust-frontend-build",
+        # Docker's cached Rust stage has pyproject.toml but no Git metadata.
+        # Give this build-only distribution a version so setuptools-scm does
+        # not try to infer one again during setup().
+        version=os.getenv(APHRODITE_RS_BUILD_VERSION) or "0.0.0",
         packages=[],
         rust_extensions=rust_extensions(optional=False),
         script_args=["build_rust", "--quiet", "--inplace", *build_rust_args],
