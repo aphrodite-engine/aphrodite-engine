@@ -35,7 +35,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: platform-wheels-${{ github.event.issue.number || inputs.pr_number || github.ref }}
+  group: platform-wheels-${{ github.event.issue.number || github.event.pull_request.number || inputs.pr_number || github.ref }}
   cancel-in-progress: false
 
 jobs:
