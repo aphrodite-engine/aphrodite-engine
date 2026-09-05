@@ -25,6 +25,15 @@ encode_path() {
   printf '%s' "${1//+/%2B}"
 }
 
+build_with_current_rust_helper() (
+  local commit="$1"
+  local version="$2"
+  # Packaging fixes must also apply to commits awaiting their first wheel.
+  trap 'git restore --source="$commit" -- tools/build_rust.py' EXIT
+  git show "${target_commit}:tools/build_rust.py" > tools/build_rust.py
+  APHRODITE_VERSION_OVERRIDE="$version" ./docker/export_wheels.sh
+)
+
 upload_wheel() {
   local wheel="$1"
   local remote="$2"
@@ -153,7 +162,7 @@ for commit in "${commits[@]}"; do
     version="${major}.${minor}.$((patch + 1)).dev${timestamp}+cu130.g${short_commit}"
     echo "Building ${version} from ${commit}"
 
-    APHRODITE_VERSION_OVERRIDE="$version" ./docker/export_wheels.sh
+    build_with_current_rust_helper "$commit" "$version"
     wheel="$(find wheels/main -maxdepth 1 -type f -name '*.whl' -print -quit)"
     if [[ -z "$wheel" ]]; then
       echo "::error::The build did not export a wheel for ${commit}"
