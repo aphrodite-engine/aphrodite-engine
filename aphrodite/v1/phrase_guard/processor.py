@@ -40,6 +40,26 @@ class PhraseRetryProcessor(LogitsProcessor):
     def is_argmax_invariant(self) -> bool:
         return False
 
+    @classmethod
+    def validate_runtime(cls, config, tokenizer):
+        from transformers import TokenizersBackend
+
+        from aphrodite.v1.engine import detokenizer
+
+        if not detokenizer.USE_FAST_DETOKENIZER or not isinstance(tokenizer, TokenizersBackend):
+            raise ValueError("Experimental banned_strings requires a fast Hugging Face tokenizer")
+        if config.model_config.return_sampling_mask or config.model_config.enable_return_routed_experts:
+            raise ValueError("Experimental banned_strings does not support sampling masks or routed experts")
+        if not config.use_v2_model_runner and not any(
+            p is cls or p == f"{cls.__module__}:{cls.__name__}" for p in config.model_config.logits_processors or []
+        ):
+            raise ValueError("banned_strings requires the PhraseRetryProcessor logits processor")
+
+    @staticmethod
+    def validate_input(resumable, has_encoder_inputs, prompt_embeds):
+        if resumable or has_encoder_inputs or prompt_embeds is not None:
+            raise ValueError("Experimental banned_strings requires non-resumable plain text generation")
+
     def update_state(self, batch_update: BatchUpdate | None):
         def add(params, prompt, output):
             retry = (params.extra_args or {}).get(RETRY_KEY)

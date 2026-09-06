@@ -152,6 +152,60 @@ def test_compiled_cache_has_weighted_budget(monkeypatch):
         matcher._pattern_cache.clear()
 
 
+@pytest.mark.parametrize(
+    "case", ["missing", "slow", "disabled_fast", "v1_missing_processor", "sampling_mask", "routed", "ok"]
+)
+def test_runtime_requirements_are_validated_before_core_dispatch(monkeypatch, case):
+    from unittest.mock import patch
+
+    from tokenizers import Tokenizer, models
+    from transformers import TokenizersBackend
+
+    from aphrodite.v1.engine import detokenizer
+    from aphrodite.v1.engine.input_processor import InputProcessor
+    from aphrodite.v1.phrase_guard.scheduler import PhraseScheduler
+
+    tokenizer = TokenizersBackend(tokenizer_object=Tokenizer(models.WordLevel({"hello": 0}, unk_token="hello")))
+    if case == "missing":
+        tokenizer = None
+    elif case == "slow":
+        tokenizer = object()
+    monkeypatch.setattr(detokenizer, "USE_FAST_DETOKENIZER", case != "disabled_fast")
+    model_config = SimpleNamespace(
+        return_sampling_mask=case == "sampling_mask",
+        enable_return_routed_experts=case == "routed",
+        logits_processors=[],
+    )
+    processor = SimpleNamespace(
+        tokenizer=tokenizer,
+        aphrodite_config=SimpleNamespace(
+            model_config=model_config,
+            use_v2_model_runner=case != "v1_missing_processor",
+            scheduler_config=SimpleNamespace(get_scheduler_cls=lambda: PhraseScheduler),
+        ),
+        model_config=model_config,
+        speculative_config=None,
+        structured_outputs_config=None,
+    )
+    params = SamplingParams(extra_args={"banned_strings": ["hello"]})
+    with patch.object(SamplingParams, "verify") as verify:
+        if case == "ok":
+            InputProcessor._validate_params(processor, params, ("generate",))
+            verify.assert_called_once()
+        else:
+            with pytest.raises(ValueError, match="banned_strings"):
+                InputProcessor._validate_params(processor, params, ("generate",))
+            verify.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "resumable,encoder,embeds", [(True, False, None), (False, True, None), (False, False, object())]
+)
+def test_non_text_inputs_rejected_before_core_dispatch(resumable, encoder, embeds):
+    with pytest.raises(ValueError, match="non-resumable plain text"):
+        PhraseRetryProcessor.validate_input(resumable, encoder, embeds)
+
+
 def test_retry_mask_moves_with_request_and_only_applies_at_checkpoint():
     processor = PhraseRetryProcessor(None, torch.device("cpu"), False)
     output = [7, 8]
