@@ -153,6 +153,28 @@ def test_exhausted_retry_finishes_only_affected_request(scheduler, v2):
     assert list(b.output_token_ids) == [20, 20]
 
 
+@pytest.mark.parametrize("include_stop", [False, True])
+@pytest.mark.parametrize("eos", [False, True])
+def test_stop_token_completing_phrase_terminates_without_retry(scheduler, include_stop, eos):
+    a, b = add_requests(scheduler)
+    a.sampling_params.include_stop_str_in_output = include_stop
+    if eos:
+        a.sampling_params._eos_token_id = 12
+    else:
+        a.sampling_params.stop_token_ids = [12]
+    for token in [10, 11, 12]:
+        batches = accept(scheduler, scheduler.schedule(), {a.request_id: token, b.request_id: 20})
+    output = next(o for batch in batches.values() for o in batch.outputs if o.request_id == a.request_id)
+    assert a.request_id not in scheduler.rewinds
+    if include_stop:
+        assert a.status == RequestStatus.FINISHED_ERROR
+        assert output.new_token_ids == []
+    else:
+        assert a.status == RequestStatus.FINISHED_STOPPED
+        assert output.new_token_ids == [10, 11, 12]
+    assert b.status == RequestStatus.RUNNING
+
+
 def test_complete_ban_checked_before_length_limit(scheduler):
     a, b = add_requests(scheduler)
     a.max_tokens = 3

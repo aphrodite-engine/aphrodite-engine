@@ -166,6 +166,18 @@ class PhraseScheduler(AsyncScheduler):
             if guard.logprobs is not None:
                 assert guard.step_logprobs is not None
                 guard.logprobs.append(guard.step_logprobs, index)
+            params = request.sampling_params
+            stop_token = token == params.eos_token_id or token in (params.stop_token_ids or ())
+            if stop_token and not params.include_stop_str_in_output:
+                # The output detokenizer omits this token's text. Flush the
+                # pending prefix and let it consume the stop token normally.
+                final = guard.pending.finish() + [token]
+                ready.extend(final)
+                if guard.logprobs is not None:
+                    ready_logprobs.extend(guard.logprobs.take(len(final)))
+                check_stop(request, self.max_model_len)
+                stopped = True
+                break
             try:
                 decision = guard.pending.feed(token, guard.decode(token))
             except ValueError:
@@ -179,6 +191,13 @@ class PhraseScheduler(AsyncScheduler):
             if decision.rewind_to is not None:
                 if guard.logprobs is not None:
                     guard.logprobs.clear()
+                if stop_token:
+                    logger.error(
+                        "Banned phrase conflicts with an included stop token for request %s", request.request_id
+                    )
+                    request.status = RequestStatus.FINISHED_ERROR
+                    stopped = True
+                    break
                 guard.retries += 1
                 if guard.retries > MAX_RETRIES:
                     request.status = RequestStatus.FINISHED_ERROR
