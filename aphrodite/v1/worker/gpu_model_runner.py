@@ -3463,6 +3463,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         # Update output token ids with tokens sampled in last step
         # if async scheduling and required by current sampling params.
         self.input_batch.update_async_output_token_ids()
+        self.input_batch.refresh_dry_token_history()
         if spec_decode_metadata is None:
             return self.sampler(
                 logits=logits,

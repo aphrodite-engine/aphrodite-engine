@@ -1440,10 +1440,27 @@ class InputBatch:
         return output_token_ids_cpu_tensor.to(device=self.device, non_blocking=True)
 
     def _get_token_history_cpu_views(self, num_reqs: int) -> tuple[torch.Tensor, torch.Tensor]:
-        max_history_len = int(self.num_tokens_no_spec[:num_reqs].max()) if num_reqs else 0
+        # Async speculative decoding can reserve more output slots than were
+        # accepted. Use resolved output lengths, not optimistic scheduler counts.
+        output_token_ids = cast(list[list[int]], self.req_output_token_ids[:num_reqs])
+        history_lens = self.num_prompt_tokens[:num_reqs] + np.fromiter(
+            (len(tokens) for tokens in output_token_ids),
+            dtype=np.int32,
+            count=num_reqs,
+        )
+        max_history_len = int(history_lens.max()) if num_reqs else 0
         return (
             self.token_ids_cpu_tensor[:num_reqs, :max_history_len],
-            self.num_tokens_no_spec_cpu_tensor[:num_reqs],
+            torch.from_numpy(history_lens),
+        )
+
+    def refresh_dry_token_history(self) -> None:
+        """Refresh the native DRY scanner's views after resolving sampled IDs."""
+        if self.no_dry:
+            return
+        metadata = self.sampling_metadata
+        metadata.token_history_ids_cpu, metadata.token_history_lens_cpu = self._get_token_history_cpu_views(
+            self.num_reqs
         )
 
     def _make_token_history_tensors(self, num_reqs: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1580,6 +1597,11 @@ class InputBatch:
             del new_ids[num_to_replace:]
             req_output_token_ids[first_placeholder:] = new_ids
             # ^ Implicitly resizes to (first_placeholder + num_to_replace)
+            if req_id in self.dry_reqs:
+                # The native DRY scanner reads this buffer, not the Python list.
+                # Copy only the resolved suffix, leaving scheduler counts intact.
+                start = self.num_prompt_tokens[index] + first_placeholder
+                self.token_ids_cpu[index, start : start + num_to_replace] = new_ids
 
     def update_async_spec_token_ids(self, draft_token_ids: list[list[int]]) -> None:
         """
