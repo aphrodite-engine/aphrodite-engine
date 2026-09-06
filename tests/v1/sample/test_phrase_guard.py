@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from aphrodite.sampling_params import SamplingParams
-from aphrodite.v1.phrase_guard.matcher import MAX_PENDING_TOKENS, PendingText, validate_phrases
+from aphrodite.v1.phrase_guard.matcher import MAX_ZERO_WIDTH_TOKENS, PendingText, validate_phrases
 from aphrodite.v1.phrase_guard.processor import RETRY_KEY, PhraseRetryProcessor
 from aphrodite.v1.phrase_guard.worker import restore_requests
 from aphrodite.v1.sample.logits_processor.interface import BatchUpdate, MoveDirectionality
@@ -88,10 +88,32 @@ def test_incomplete_prefix_can_finish():
 
 def test_zero_width_buffer_is_bounded():
     guard = PendingText(("hello",))
-    for _ in range(MAX_PENDING_TOKENS):
+    for _ in range(MAX_ZERO_WIDTH_TOKENS):
         assert guard.feed(1, "").ready == []
     with pytest.raises(ValueError, match="pending-token"):
         guard.feed(1, "")
+
+
+@pytest.mark.parametrize("character", ["😀", "İ"])
+def test_max_length_unicode_phrase_with_byte_fallback(character):
+    phrase = character * 256
+    guard = PendingText(validate_phrases([phrase]))
+    for index, char in enumerate(phrase):
+        for _ in range(len(char.encode("utf-8")) - 1):
+            assert guard.feed(1, "").ready == []
+        decision = guard.feed(2, char)
+        assert decision.ready == []
+        assert decision.rewind_to == (0 if index == 255 else None)
+    assert decision.blocked_token == 1
+
+
+def test_text_stops_cannot_be_hidden_by_phrase_buffer():
+    params = SamplingParams(stop=["a"], extra_args={"banned_strings": ["abc"]})
+    with pytest.raises(ValueError, match="text stop strings"):
+        PhraseRetryProcessor.validate_params(params)
+    params.stop = []
+    params.stop_token_ids = [123]
+    PhraseRetryProcessor.validate_params(params)
 
 
 @pytest.mark.parametrize("value", [None, [], "hello", [""], [3], ["x" * 257]])

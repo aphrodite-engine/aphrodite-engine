@@ -8,7 +8,7 @@ import aphrodite._phrase_matcher as _phrase_matcher
 
 MAX_PHRASES = 2048
 MAX_PHRASE_CHARS = 256
-MAX_PENDING_TOKENS = 256
+MAX_ZERO_WIDTH_TOKENS = 256
 MAX_RETRIES = 128
 
 
@@ -43,6 +43,10 @@ class PendingText:
     def __init__(self, phrases: tuple[str, ...], case_sensitive: bool = False):
         self.pattern = compile_phrases(phrases, case_sensitive)
         self.case_sensitive = case_sensitive
+        self.max_pending_tokens = MAX_ZERO_WIDTH_TOKENS + max(
+            max(len(phrase.encode("utf-8")), len(phrase.casefold().encode("utf-8"))) for phrase in phrases
+        )
+        self.zero_width_tokens = 0
         self.state = 0
         self.tokens: list[int] = []
         self.ends: list[int] = []
@@ -81,7 +85,8 @@ class PendingText:
         offset = self.num_bytes
         self.num_bytes += len(data)
         self.ends.append(self.num_bytes)
-        if len(self.tokens) > MAX_PENDING_TOKENS:
+        self.zero_width_tokens = 0 if data else self.zero_width_tokens + 1
+        if len(self.tokens) > self.max_pending_tokens or self.zero_width_tokens > MAX_ZERO_WIDTH_TOKENS:
             raise ValueError("banned_strings pending-token limit exceeded")
         self.state, match, suffix = _phrase_matcher.scan(self.pattern, self.state, data)
         self.states.append(self.state)
@@ -95,6 +100,7 @@ class PendingText:
             self.ends.clear()
             self.states.clear()
             self.num_bytes = 0
+            self.zero_width_tokens = 0
             # Whole-token rollback can reactivate a previously released prefix.
             self.state = self.published_state
             return Decision(ready, self.published, blocked)

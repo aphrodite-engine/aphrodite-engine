@@ -26,6 +26,8 @@ class PhraseRetryProcessor(LogitsProcessor):
             case_sensitive = args.get("banned_strings_case_sensitive", False)
             if not isinstance(case_sensitive, (bool, int)) or case_sensitive not in (0, 1):
                 raise ValueError("banned_strings_case_sensitive must be a boolean or 0/1")
+            if sampling_params.stop:
+                raise ValueError("Experimental banned_strings does not support text stop strings; use stop_token_ids")
             if (
                 sampling_params.structured_outputs is not None
                 or sampling_params.trace_decode_token_ids is not None
