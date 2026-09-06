@@ -52,4 +52,8 @@ class PhraseRetryProcessor(LogitsProcessor):
         for row, (output, position, tokens) in self.states.items():
             if len(output) == position:
                 logits[row].index_fill_(0, tokens, float("-inf"))
+                # Return a blocked token as an error sentinel if constraints
+                # exhaust the row. The scheduler discards it before decoding.
+                first = tokens[:1]
+                logits[row].scatter_(0, first, torch.where(logits[row].amax() == -torch.inf, 0.0, logits[row][first]))
         return logits

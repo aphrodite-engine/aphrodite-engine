@@ -115,6 +115,19 @@ def test_retry_mask_moves_with_request_and_only_applies_at_checkpoint():
     assert not processor.states
 
 
+def test_exhausted_retry_returns_blocked_sentinel_only_for_affected_row():
+    processor = PhraseRetryProcessor(None, torch.device("cpu"), False)
+    params = SamplingParams(extra_args={RETRY_KEY: (0, [3, 5])})
+    processor.update_state(BatchUpdate(2, [], [(0, params, [1], [])], []))
+    logits = torch.zeros(2, 10)
+    logits[0] = -torch.inf
+    logits[0, 5] = 2.0
+    processor.apply(logits)
+    assert logits[0].argmax().item() == 3
+    assert torch.isfinite(logits[0]).sum().item() == 1
+    assert not logits[1].count_nonzero().item()
+
+
 def test_restore_does_not_change_other_request_or_rng():
     from unittest.mock import Mock
 

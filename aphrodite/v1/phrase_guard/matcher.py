@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 
-from aphrodite import _phrase_matcher
+import aphrodite._phrase_matcher as _phrase_matcher
 
 MAX_PHRASES = 2048
 MAX_PHRASE_CHARS = 256

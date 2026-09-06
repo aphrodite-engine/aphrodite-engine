@@ -40,15 +40,42 @@ class RetryMask:
             self.counts.gpu,
             self.tokens.gpu,
             WIDTH=MAX_RETRIES,
+            VOCAB_SIZE=logits.shape[1],
+            BLOCK_SIZE=min(4096, triton.next_power_of_2(logits.shape[1])),
         )
 
 
 @triton.jit
-def _mask(logits, stride, mapping, positions, checkpoints, counts, tokens, WIDTH: tl.constexpr):
+def _mask(
+    logits,
+    stride,
+    mapping,
+    positions,
+    checkpoints,
+    counts,
+    tokens,
+    WIDTH: tl.constexpr,
+    VOCAB_SIZE: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+):
     row = tl.program_id(0)
     request = tl.load(mapping + row)
-    if tl.load(positions + row) == tl.load(checkpoints + request):
+    count = tl.load(counts + request)
+    if count > 0 and tl.load(positions + row) == tl.load(checkpoints + request):
         offsets = tl.arange(0, WIDTH)
-        valid = offsets < tl.load(counts + request)
+        valid = offsets < count
         ids = tl.load(tokens + request * WIDTH + offsets, valid, other=0)
         tl.store(logits + row * stride + ids, float("-inf"), valid)
+        tl.debug_barrier()
+        vocab = tl.arange(0, BLOCK_SIZE)
+        maximum = float("-inf")
+        start = 0
+        while start < VOCAB_SIZE and maximum == float("-inf"):
+            columns = start + vocab
+            values = tl.load(logits + row * stride + columns, columns < VOCAB_SIZE, other=float("-inf"))
+            maximum = tl.max(values, 0)
+            start += BLOCK_SIZE
+        if maximum == float("-inf"):
+            # Match V1's blocked-token sentinel without a GPU-to-CPU sync.
+            first = tl.load(tokens + request * WIDTH)
+            tl.store(logits + row * stride + first, 0.0)

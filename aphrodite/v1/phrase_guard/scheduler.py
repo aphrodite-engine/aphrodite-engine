@@ -157,6 +157,11 @@ class PhraseScheduler(AsyncScheduler):
         stopped = False
         rewound = False
         for index, token in enumerate(new_token_ids):
+            if request.num_output_tokens == guard.retry_position and token in guard.blocked:
+                logger.error("Phrase retry exhausted sampling constraints for request %s", request.request_id)
+                request.status = RequestStatus.FINISHED_ERROR
+                stopped = True
+                break
             request.append_output_token_ids(token)
             if guard.logprobs is not None:
                 assert guard.step_logprobs is not None

@@ -134,6 +134,25 @@ def test_rewind_preserves_other_request_and_resumes_prefix(scheduler, v2):
     assert next(o for o in outputs if o.request_id == a.request_id).new_token_ids == [13]
 
 
+@pytest.mark.parametrize("v2", [False, True])
+def test_exhausted_retry_finishes_only_affected_request(scheduler, v2):
+    scheduler.use_v2_model_runner = v2
+    a, b = add_requests(scheduler)
+    scheduler.guards[a.request_id].pending = PendingText(("Once",))
+    a.sampling_params.allowed_token_ids = [10]
+    accept(scheduler, scheduler.schedule(), {a.request_id: 10, b.request_id: 20})
+    assert a.status == RequestStatus.PREEMPTED
+    batches = accept(scheduler, scheduler.schedule(), {a.request_id: 10, b.request_id: 20})
+    output = next(o for batch in batches.values() for o in batch.outputs if o.request_id == a.request_id)
+    assert a.status == RequestStatus.FINISHED_ERROR
+    assert output.finish_reason is not None
+    assert not output.new_token_ids
+    assert not a.output_token_ids
+    assert a.request_id not in scheduler.rewinds
+    assert b.status == RequestStatus.RUNNING
+    assert list(b.output_token_ids) == [20, 20]
+
+
 def test_complete_ban_checked_before_length_limit(scheduler):
     a, b = add_requests(scheduler)
     a.max_tokens = 3
