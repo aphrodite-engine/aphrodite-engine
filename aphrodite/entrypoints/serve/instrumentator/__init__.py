@@ -9,6 +9,10 @@ def register_instrumentator_api_routers(app: FastAPI):
 
     app.include_router(basic_router)
 
+    from .capacity import router as capacity_router
+
+    app.include_router(capacity_router)
+
     from .health import router as health_router
 
     app.include_router(health_router)

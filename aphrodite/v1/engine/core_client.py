@@ -760,6 +760,9 @@ class MPClient(EngineCoreClient):
             return
         aphrodite_config = self.aphrodite_config
         response = msgspec.msgpack.decode(payload, type=EngineCoreReadyResponse)
+        if not hasattr(self, "capacity_reports"):
+            self.capacity_reports: dict[int, EngineCoreReadyResponse] = {}
+        self.capacity_reports[response.data_parallel_rank] = response
         aphrodite_config.model_config.max_model_len = min(
             aphrodite_config.model_config.max_model_len, response.max_model_len
         )

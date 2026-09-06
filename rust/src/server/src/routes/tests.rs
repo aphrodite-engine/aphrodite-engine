@@ -1235,6 +1235,40 @@ async fn server_load(app: &axum::Router) -> u64 {
     value["server_load"].as_u64().expect("server_load")
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn capacity_requires_auth_and_preserves_unknown_cache() {
+    let (mut app, _engine_task) = test_app_with_api_keys(vec!["secret".to_string()]).await;
+    let response = app
+        .call(Request::builder().uri("/v1/capacity").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = app
+        .call(
+            Request::builder()
+                .uri("/v1/capacity")
+                .header("Authorization", "Bearer secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let ready = default_ready_response();
+    assert_eq!(value, json!({
+        "schema_version": 1, "scope": "connected_engines", "engines": [{
+            "dp_rank": ready.data_parallel_rank,
+            "max_model_len": ready.max_model_len,
+            "max_num_seqs": ready.max_num_seqs,
+            "kv_cache_capacity_tokens": null,
+            "estimated_concurrency_at_max_model_len": null,
+        }]
+    }));
+}
+
 async fn health_status(app: &axum::Router) -> (StatusCode, Bytes) {
     let response = app
         .clone()

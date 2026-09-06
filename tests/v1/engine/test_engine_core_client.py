@@ -327,6 +327,15 @@ def test_apply_ready_response_syncs_block_size():
     )
     client._apply_ready_response(payload)
     assert client.aphrodite_config.cache_config.block_size == 1056
+    import dataclasses
+
+    first = client.capacity_reports[0]
+    second = dataclasses.replace(first, data_parallel_rank=1, kv_cache_size_tokens=1234)
+    client._apply_ready_response(msgspec.msgpack.encode(second))
+    assert client.capacity_reports == {0: first, 1: second}
+    updated = dataclasses.replace(second, kv_cache_size_tokens=5678)
+    client._apply_ready_response(msgspec.msgpack.encode(updated))
+    assert client.capacity_reports == {0: first, 1: updated}
 
 
 def test_apply_ready_response_syncs_mamba_block_size():

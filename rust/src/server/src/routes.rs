@@ -14,6 +14,7 @@ mod pause;
 mod profile;
 pub(super) mod render;
 mod server_info;
+mod capacity;
 mod sleep;
 mod tokenize;
 mod version;
@@ -109,6 +110,7 @@ fn build_router_with_options(
         .route("/metrics", get(metrics::scrape))
         .route("/load", get(load::load))
         .route("/version", get(version::version))
+        .route("/v1/capacity", get(capacity::capacity))
         // OpenAI-compatible endpoints
         .route("/v1/models", get(openai::list_models))
         .route("/v1/completions", post(openai::completions))
