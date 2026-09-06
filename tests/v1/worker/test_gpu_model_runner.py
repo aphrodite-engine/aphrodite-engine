@@ -853,6 +853,7 @@ def test_sample_passes_reordered_draft_probs_to_rejection_sampler():
     runner.input_batch = SimpleNamespace(
         sampling_metadata=Mock(spec=SamplingMetadata),
         update_async_output_token_ids=Mock(),
+        refresh_dry_token_history=Mock(),
         req_ids=["req_a", "req_b", "req_c"],
     )
     runner.rejection_sampler = Mock(return_value="sampler_output")
