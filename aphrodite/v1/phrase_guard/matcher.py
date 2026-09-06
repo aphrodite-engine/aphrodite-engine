@@ -18,7 +18,7 @@ def validate_phrases(value: object) -> tuple[str, ...]:
     for phrase in value:
         if not isinstance(phrase, str) or not 0 < len(phrase) <= MAX_PHRASE_CHARS:
             raise ValueError(f"Each banned string must contain 1..{MAX_PHRASE_CHARS} characters")
-    if sum(len(phrase.casefold().encode("utf-8")) for phrase in value) > 262144:
+    if sum(max(len(phrase.encode("utf-8")), len(phrase.casefold().encode("utf-8"))) for phrase in value) > 262144:
         raise ValueError("banned_strings exceeds the 256 KiB phrase budget")
     return tuple(dict.fromkeys(value))
 

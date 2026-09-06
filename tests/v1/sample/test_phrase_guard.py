@@ -122,6 +122,14 @@ def test_invalid_phrase_lists(value):
         validate_phrases(value)
 
 
+def test_case_sensitive_byte_budget_is_checked_before_native_compilation():
+    phrases = ["K" * 246 + "".join("ſ" if i & (1 << bit) else "K" for bit in range(10)) for i in range(1024)]
+    assert sum(len(phrase.casefold().encode("utf-8")) for phrase in phrases) == 262144
+    params = SamplingParams(extra_args={"banned_strings": phrases, "banned_strings_case_sensitive": True})
+    with pytest.raises(ValueError, match="256 KiB"):
+        PhraseRetryProcessor.validate_params(params)
+
+
 def test_retry_mask_moves_with_request_and_only_applies_at_checkpoint():
     processor = PhraseRetryProcessor(None, torch.device("cpu"), False)
     output = [7, 8]
