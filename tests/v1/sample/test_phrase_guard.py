@@ -130,6 +130,28 @@ def test_case_sensitive_byte_budget_is_checked_before_native_compilation():
         PhraseRetryProcessor.validate_params(params)
 
 
+def test_compiled_cache_has_weighted_budget(monkeypatch):
+    from aphrodite.v1.phrase_guard import matcher
+
+    matcher._pattern_cache.clear()
+    monkeypatch.setattr(matcher._phrase_matcher, "compile", lambda _: object())
+    try:
+        small = matcher.compile_phrases(("hello",), False)
+        assert matcher.compile_phrases(("hello",), False) is small
+        for i in range(4):
+            phrases = tuple(f"{i}:{j:03d}" + "x" * 251 for j in range(256))
+            matcher.compile_phrases(phrases, False)
+            assert matcher._pattern_cache.currsize == 69
+        assert matcher.compile_phrases(("hello",), False) is small
+        for i in range(4):
+            phrases = tuple(f"{i}:{j:03d}" + "x" * 251 for j in range(128))
+            matcher.compile_phrases(phrases, False)
+            assert matcher._pattern_cache.currsize <= matcher._pattern_cache.maxsize
+        assert matcher.compile_phrases(("hello",), False) is not small
+    finally:
+        matcher._pattern_cache.clear()
+
+
 def test_retry_mask_moves_with_request_and_only_applies_at_checkpoint():
     processor = PhraseRetryProcessor(None, torch.device("cpu"), False)
     output = [7, 8]

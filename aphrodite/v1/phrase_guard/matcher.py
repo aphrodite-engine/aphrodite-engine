@@ -2,7 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from dataclasses import dataclass
-from functools import lru_cache
+from threading import RLock
+
+from cachetools import LRUCache, cached
 
 import aphrodite._phrase_matcher as _phrase_matcher
 
@@ -10,6 +12,7 @@ MAX_PHRASES = 2048
 MAX_PHRASE_CHARS = 256
 MAX_ZERO_WIDTH_TOKENS = 256
 MAX_RETRIES = 128
+_pattern_cache: LRUCache[tuple, tuple[object, int]] = LRUCache(maxsize=65536, getsizeof=lambda entry: entry[1])
 
 
 def validate_phrases(value: object) -> tuple[str, ...]:
@@ -23,11 +26,16 @@ def validate_phrases(value: object) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value))
 
 
-@lru_cache(maxsize=32)
+@cached(_pattern_cache, lock=RLock())
+def _compile_phrases(phrases: tuple[str, ...], case_sensitive: bool) -> tuple[object, int]:
+    encoded = tuple((phrase if case_sensitive else phrase.casefold()).encode("utf-8") for phrase in phrases)
+    # Each encoded byte adds at most one trie node. Include cache-entry overhead;
+    # entries larger than the cache budget are compiled without being retained.
+    return _phrase_matcher.compile(encoded), sum(map(len, encoded)) + 64
+
+
 def compile_phrases(phrases: tuple[str, ...], case_sensitive: bool):
-    return _phrase_matcher.compile(
-        tuple((phrase if case_sensitive else phrase.casefold()).encode("utf-8") for phrase in phrases)
-    )
+    return _compile_phrases(phrases, case_sensitive)[0]
 
 
 @dataclass(frozen=True)
