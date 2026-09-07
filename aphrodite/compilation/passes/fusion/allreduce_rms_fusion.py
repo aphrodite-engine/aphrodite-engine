@@ -287,24 +287,6 @@ if flashinfer_comm is not None:
             trigger_completion_at_end=(use_oneshot is True) or num_tokens > PDL_ADVANCE_LAUNCH_TOKENS,
         )
 
-    def call_trtllm_fused_allreduce_norm_fake(
-        allreduce_in: torch.Tensor,
-        residual: torch.Tensor,
-        rms_gamma: torch.Tensor,
-        rms_eps: float,
-        world_size: int,
-        launch_with_pdl: bool,
-        fp32_acc: bool,
-        max_token_num: int,
-        pattern_code: int,
-        norm_out: torch.Tensor | None = None,
-        quant_out: torch.Tensor | None = None,
-        scale_out: torch.Tensor | None = None,
-        scale_factor: torch.Tensor | None = None,
-        weight_bias: float = 0.0,
-    ) -> None:
-        pass
-
     direct_register_custom_op(
         op_name="flashinfer_trtllm_fused_allreduce_norm",
         op_func=call_trtllm_fused_allreduce_norm,
@@ -315,7 +297,6 @@ if flashinfer_comm is not None:
             "quant_out",
             "scale_out",
         ],
-        fake_impl=call_trtllm_fused_allreduce_norm_fake,
     )
     flashinfer_trtllm_fused_allreduce_norm = torch.ops.aphrodite.flashinfer_trtllm_fused_allreduce_norm.default
 
