@@ -425,4 +425,4 @@ class InklingFA4RelAttentionKernel(AphroditeJitKernel["InklingFA4RelAttentionKer
         )
 
 
-INKLING_FA4_REL_ATTENTION_KERNEL = InklingFA4RelAttentionKernel()
+_INKLING_FA4_REL_ATTENTION_KERNEL = InklingFA4RelAttentionKernel()
