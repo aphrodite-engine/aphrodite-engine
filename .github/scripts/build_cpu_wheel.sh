@@ -9,12 +9,13 @@ target_platform="${TARGET_PLATFORM:-linux/$(uname -m)}"
 version="${APHRODITE_VERSION_OVERRIDE:-}"
 cache_scope="${CACHE_SCOPE:-}"
 max_jobs="${MAX_JOBS:-4}"
+dockerfile="${CPU_BUILD_DOCKERFILE:-docker/Dockerfile.cpu}"
 
 mkdir -p "$output_dir"
 rm -f "$output_dir"/*.whl
 
 args=(
-  --file docker/Dockerfile.cpu
+  --file "$dockerfile"
   --target aphrodite-wheel-export
   --output "type=local,dest=${output_dir}"
   --build-arg "PYTHON_VERSION=${python_version}"
