@@ -28,6 +28,8 @@ from aphrodite.distributed import (
 from aphrodite.distributed.ec_transfer import (
     ensure_ec_transfer_initialized,
     ensure_ec_transfer_shutdown,
+    get_ec_transfer,
+    has_ec_transfer,
 )
 from aphrodite.distributed.eplb.eplb_utils import override_envs_for_eplb
 from aphrodite.distributed.kv_transfer import (
@@ -472,6 +474,9 @@ class Worker(WorkerBase):
             self._scoped_allocator_max_split(max_split_size_mb=20),
         ):
             self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+
+        if has_ec_transfer():
+            get_ec_transfer().start_worker_services()
 
         if self.aphrodite_config.weight_transfer_config is not None:
             self.weight_transfer_engine = WeightTransferEngineFactory.create_engine(

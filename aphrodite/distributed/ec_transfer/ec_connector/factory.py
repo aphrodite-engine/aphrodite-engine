@@ -87,3 +87,9 @@ ECConnectorFactory.register_connector(
     "aphrodite.distributed.ec_transfer.ec_connector.cpu.connector",
     "ECCPUConnector",
 )
+
+ECConnectorFactory.register_connector(
+    "ECMooncakeConnector",
+    "aphrodite.distributed.ec_transfer.ec_connector.mooncake_ec_connector",
+    "ECMooncakeConnector",
+)
