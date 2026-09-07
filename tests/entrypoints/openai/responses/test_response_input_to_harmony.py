@@ -15,6 +15,7 @@ from openai.types.responses.response_reasoning_item import (
 from openai_harmony import DeveloperContent, Role
 
 from aphrodite.entrypoints.openai.responses.harmony import response_input_to_harmony
+from aphrodite.exceptions import AphroditeValidationError
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -250,7 +251,7 @@ class TestResponseInputToHarmonyMessage:
         assert msg.author.name == "functions.get_weather"
 
     def test_function_call_output_raises_if_no_matching_call(self):
-        with pytest.raises(ValueError, match="No call message found for"):
+        with pytest.raises(AphroditeValidationError, match="No call message found for") as exc_info:
             response_input_to_harmony(
                 {
                     "type": "function_call_output",
@@ -259,21 +260,24 @@ class TestResponseInputToHarmonyMessage:
                 },
                 prev_responses=[_PREV_CALL],
             )
+        assert exc_info.value.parameter == "input"
 
     def test_function_call_output_raises_on_empty_prev_responses(self):
-        with pytest.raises(ValueError, match="No call message found for"):
+        with pytest.raises(AphroditeValidationError, match="No call message found for") as exc_info:
             response_input_to_harmony(
                 {"type": "function_call_output", "call_id": "call_test", "output": "x"},
                 prev_responses=[],
             )
+        assert exc_info.value.parameter == "input"
 
     # -----------------------------------------------------------------------
     # Error cases
     # -----------------------------------------------------------------------
 
-    def test_unknown_type_raises_value_error(self):
-        with pytest.raises(ValueError, match="Unknown input type"):
+    def test_unknown_type_raises_validation_error(self):
+        with pytest.raises(AphroditeValidationError, match="Unknown input type") as exc_info:
             response_input_to_harmony(
                 {"type": "image_url", "url": "https://example.com/img.png"},
                 prev_responses=[],
             )
+        assert exc_info.value.parameter == "input"

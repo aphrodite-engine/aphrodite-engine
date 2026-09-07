@@ -16,6 +16,7 @@ from aphrodite.entrypoints.openai.responses.harmony import (
     harmony_to_response_output,
     response_previous_input_to_harmony,
 )
+from aphrodite.exceptions import AphroditeValidationError
 
 
 class TestResponsePreviousInputToHarmony:
@@ -89,6 +90,14 @@ class TestResponsePreviousInputToHarmony:
         assert messages[0].author.role == Role.TOOL
         assert messages[0].author.name == "functions.empty_tool"
         assert messages[0].content[0].text == ""
+
+    def test_chat_message_without_role_raises_validation_error(self):
+        """A chat-format message missing the 'role' key is invalid input."""
+        chat_msg = {"content": "hello, no role here"}
+
+        with pytest.raises(AphroditeValidationError, match="Message has no 'role' key") as exc_info:
+            response_previous_input_to_harmony(chat_msg)
+        assert exc_info.value.parameter == "input"
 
 
 class TestHarmonyToResponseOutput:
