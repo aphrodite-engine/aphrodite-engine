@@ -758,6 +758,48 @@ def test_causal_backend_correctness(
     AttentionBackendEnum.FLASHINFER not in BACKENDS_TO_TEST,
     reason="FlashInfer is not available.",
 )
+def test_flashinfer_forward_uses_metadata_layout():
+    from unittest.mock import Mock
+
+    from aphrodite.config import CacheConfig
+    from aphrodite.config.utils import replace
+    from aphrodite.v1.attention.backends.flashinfer import FlashInferImpl, FlashInferMetadata
+
+    target_cache = CacheConfig()
+    draft_cache = replace(target_cache, cache_dtype="fp8")
+    target_cache.kv_cache_layout = "LBHNC"
+    assert draft_cache.kv_cache_layout is None
+
+    impl = object.__new__(FlashInferImpl)
+    impl.cache_config = draft_cache
+    impl.bmm1_scale = impl.bmm2_scale = 1.0
+    impl.is_kvcache_nvfp4 = False
+    impl.head_size = 4
+    query = torch.ones(1, 1, 4)
+    wrapper = Mock()
+    wrapper.run.return_value = query
+    metadata = FlashInferMetadata(
+        num_actual_tokens=1,
+        slot_mapping=torch.zeros(1, dtype=torch.int64),
+        q_data_type_prefill=query.dtype,
+        q_data_type_decode=query.dtype,
+        num_decodes=1,
+        num_decode_tokens=1,
+        num_prefills=0,
+        num_prefill_tokens=0,
+        causal=True,
+        kv_cache_layout=target_cache.get_resolved_kv_cache_layout(),
+        prefill=None,
+        decode=None,
+        use_cascade=True,
+        cascade_wrapper=wrapper,
+    )
+    output = torch.empty_like(query)
+    impl.forward(None, query, query, query, torch.zeros(1, 1, 16, 8), metadata, output)
+    torch.testing.assert_close(output, query)
+    wrapper.run.assert_called_once()
+
+
 def test_flashinfer_xqa_bmm1_scale_matches_decode_q_dtype():
     """XQA decode should only apply q_scale when decode Q is FP8."""
     from aphrodite.v1.attention.backends import flashinfer as flashinfer_backend
