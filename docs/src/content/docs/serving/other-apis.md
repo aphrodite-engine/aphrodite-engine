@@ -36,14 +36,39 @@ The render API performs request preprocessing without model execution. The
 derender API converts generated token IDs into a response. These endpoints help
 separate CPU preprocessing from GPU inference.
 
-OpenAI-compatible render routes include `/v1/chat/completions/render` and
-`/v1/completions/render`. Sonar also provides
+OpenAI-compatible render routes include `/v1/chat/completions/render`,
+`/v1/completions/render`, and `/v1/responses/render`. Sonar also provides
 `/inference/v1/generate` for token-input and token-output workflows. These APIs
 are useful when a gateway performs tokenization or when CPU preprocessing runs
 separately from GPU workers.
 
 Do not assume token IDs are portable between models. The tokenizer, added
 tokens, chat template, and model revision must match.
+
+### Responses rendering
+
+Enable render endpoints with `APHRODITE_ENABLE_SCALE_OUT_ENDPOINTS=1` on
+`aphrodite serve`, or use `aphrodite launch render`.
+
+`/v1/responses/render` uses the same prompt construction as `/v1/responses`
+and returns one token-input `GenerateRequest`. It is stateless: inline history
+is supported, but `previous_response_id` is not. Resolve stored response state
+and include the resulting history in the request before rendering.
+
+For multimodal requests, the result includes the model-processed payload,
+which can be substantially larger than the source image or video. Forward it
+unchanged to the generation service and provision transport limits and memory
+accordingly.
+
+```bash
+curl http://localhost:2242/v1/responses/render \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "meta-llama/Llama-3.1-8B-Instruct",
+        "input": "Explain prefix caching in one sentence.",
+        "max_output_tokens": 32
+    }'
+```
 
 ### Multimodal Render Features
 

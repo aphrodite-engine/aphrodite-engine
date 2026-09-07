@@ -8,6 +8,8 @@ from starlette.datastructures import State
 
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.chat_utils import load_chat_template
+from aphrodite.entrypoints.launchers.cli_args import resolve_default_chat_template_kwargs
+from aphrodite.entrypoints.mcp.tool_server import init_tool_server
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
 from aphrodite.entrypoints.serve.tokenize.serving import ServingTokenization
@@ -59,6 +61,8 @@ async def init_app_state(
     state.aphrodite_config = aphrodite_config
     state.args = args
     resolved_chat_template = load_chat_template(args.chat_template)
+    default_chat_template_kwargs = resolve_default_chat_template_kwargs(args)
+    state.tool_server = await init_tool_server(args) if "generate" in supported_tasks else None
 
     # Merge default_mm_loras into the static lora_modules
     default_mm_loras = aphrodite_config.lora_config.default_mm_loras if aphrodite_config.lora_config is not None else {}
@@ -82,7 +86,7 @@ async def init_app_state(
         exclude_tools_when_tool_choice_none=args.exclude_tools_when_tool_choice_none,
         tool_parser=args.tool_call_parser,
         reasoning_parser=args.structured_outputs_config.reasoning_parser,
-        default_chat_template_kwargs=args.default_chat_template_kwargs,
+        default_chat_template_kwargs=default_chat_template_kwargs,
         log_error_stack=args.log_error_stack,
     )
     state.online_renderer.warmup()
@@ -98,7 +102,7 @@ async def init_app_state(
         exclude_tools_when_tool_choice_none=args.exclude_tools_when_tool_choice_none,
         tool_parser=args.tool_call_parser,
         reasoning_parser=args.structured_outputs_config.reasoning_parser,
-        default_chat_template_kwargs=args.default_chat_template_kwargs,
+        default_chat_template_kwargs=default_chat_template_kwargs,
         log_error_stack=args.log_error_stack,
     )
 
@@ -108,14 +112,21 @@ async def init_app_state(
         request_logger=request_logger,
         chat_template=resolved_chat_template,
         chat_template_content_format=args.chat_template_content_format,
-        default_chat_template_kwargs=args.default_chat_template_kwargs,
+        default_chat_template_kwargs=default_chat_template_kwargs,
         trust_request_chat_template=args.trust_request_chat_template,
     )
 
     if "generate" in supported_tasks:
         from aphrodite.entrypoints.generate.api_router import init_generate_state
 
-        await init_generate_state(engine_client, state, args, request_logger, supported_tasks)
+        await init_generate_state(
+            engine_client,
+            state,
+            args,
+            request_logger,
+            supported_tasks,
+            default_chat_template_kwargs,
+        )
 
         from aphrodite.entrypoints.scale_out.factories import init_scale_out_state
 
