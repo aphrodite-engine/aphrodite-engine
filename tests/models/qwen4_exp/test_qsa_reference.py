@@ -48,6 +48,7 @@ def test_qsa_mtp_index_share_updates_cache_but_skips_selection(
         index_n_heads=1,
         index_kv_heads=1,
         index_head_dim=1,
+        indexer_dtype=torch.bfloat16,
         raw_key_cache=SimpleNamespace(
             kv_cache=torch.empty(0),
             rope_position_cache=None,
@@ -468,6 +469,7 @@ def test_qsa_unfused_cache_update_ignores_padded_qk() -> None:
         use_fused_pre_indexer=False,
         index_n_heads=1,
         index_head_dim=64,
+        indexer_dtype=torch.bfloat16,
         q_layernorm=norm,
         k_layernorm=norm,
         rotary_emb=rope,
@@ -624,11 +626,12 @@ def test_qsa_fused_metadata_matches_pytorch_for_large_padded_prefill() -> None:
         (4, 33),
     ],
 )
-def test_qsa_decode_selection_correctness(decode_query_len: int, num_requests: int) -> None:
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float8_e4m3fn])
+def test_qsa_decode_selection_correctness(decode_query_len: int, num_requests: int, dtype: torch.dtype) -> None:
     torch.manual_seed(1)
     heads, head_dim = 4, 128
     rows = num_requests * decode_query_len
-    q = torch.randn(rows, heads, head_dim, device="cuda", dtype=torch.bfloat16)
+    q = torch.randn(rows, heads, head_dim, device="cuda", dtype=torch.bfloat16).to(dtype)
     page_size, pages_per_request, max_sequence_length = (16, 40, 2560) if num_requests > 32 else (4, 20, 320)
     num_pages = num_requests * pages_per_request
     cache = torch.randn(
@@ -638,7 +641,7 @@ def test_qsa_decode_selection_correctness(decode_query_len: int, num_requests: i
         head_dim,
         device="cuda",
         dtype=torch.bfloat16,
-    )
+    ).to(dtype)
     page_table = torch.randperm(num_pages, device="cuda", dtype=torch.int32).reshape(num_requests, pages_per_request)
     token_to_req = torch.repeat_interleave(
         torch.arange(num_requests, device="cuda", dtype=torch.int32),
@@ -684,14 +687,37 @@ def test_qsa_decode_selection_correctness(decode_query_len: int, num_requests: i
         compress_ratio,
     )
 
+    if dtype == torch.float8_e4m3fn:
+        # fp8 logits tie at the top-k boundary more often than bf16, so index
+        # identity is not stable; compare the selected value multisets.
+        # SM90 wgmma accumulates fp8 in reduced precision (~3e-4 abs
+        # observed); SM100 tcgen05 is exact fp32.
+        rtol = atol = 1e-3 if current_platform.is_device_capability(90) else None
+        logits = _qsa_mqa_paged_reference(q, cache, page_table, token_to_req, visible_blocks)
+        for row in range(rows):
+            selected = actual[row][actual[row] >= 0]
+            wanted = expected[row][expected[row] >= 0]
+            assert selected.numel() == wanted.numel()
+            torch.testing.assert_close(
+                logits[row, selected.long()].sort().values,
+                logits[row, wanted.long()].sort().values,
+                rtol=rtol,
+                atol=atol,
+            )
+        return
+
     torch.testing.assert_close(actual.sort().values, expected.sort().values)
 
 
 @requires_qsa_kernels
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float8_e4m3fn])
 @pytest.mark.parametrize("seq_len_slack", [0, 1792])
 @pytest.mark.parametrize("force_chunk", [False, True])
 def test_qsa_prefill_selection_correctness(
-    monkeypatch: pytest.MonkeyPatch, seq_len_slack: int, force_chunk: bool
+    monkeypatch: pytest.MonkeyPatch,
+    seq_len_slack: int,
+    force_chunk: bool,
+    dtype: torch.dtype,
 ) -> None:
     # page_size=24 (does not divide the 64-aligned clipped width) and an
     # oversized page table, so the clipped logits width comes from
@@ -703,8 +729,8 @@ def test_qsa_prefill_selection_correctness(
     torch.manual_seed(2)
     query_lens = [3, 33]
     rows, heads, head_dim = sum(query_lens), 4, 128
-    q = torch.randn(rows, heads, head_dim, device="cuda", dtype=torch.bfloat16)
-    cache = torch.randn(128, 24, 1, head_dim, device="cuda", dtype=torch.bfloat16)
+    q = torch.randn(rows, heads, head_dim, device="cuda", dtype=torch.bfloat16).to(dtype)
+    cache = torch.randn(128, 24, 1, head_dim, device="cuda", dtype=torch.bfloat16).to(dtype)
     page_table = torch.randperm(128, device="cuda", dtype=torch.int32).reshape(2, 64)
     token_to_req = torch.repeat_interleave(
         torch.arange(2, device="cuda", dtype=torch.int32),
@@ -747,6 +773,25 @@ def test_qsa_prefill_selection_correctness(
         token_topk,
         compress_ratio,
     )
+
+    if dtype == torch.float8_e4m3fn:
+        # fp8 logits tie at the top-k boundary more often than bf16, so index
+        # identity is not stable; compare the selected value multisets.
+        # SM90 wgmma accumulates fp8 in reduced precision (~3e-4 abs
+        # observed); SM100 tcgen05 is exact fp32.
+        rtol = atol = 1e-3 if current_platform.is_device_capability(90) else None
+        logits = _qsa_mqa_paged_reference(q, cache, page_table, token_to_req, visible_blocks)
+        for row in range(rows):
+            selected = actual[row][actual[row] >= 0]
+            wanted = expected[row][expected[row] >= 0]
+            assert selected.numel() == wanted.numel()
+            torch.testing.assert_close(
+                logits[row, selected.long()].sort().values,
+                logits[row, wanted.long()].sort().values,
+                rtol=rtol,
+                atol=atol,
+            )
+        return
 
     torch.testing.assert_close(actual.sort().values, expected.sort().values)
 
