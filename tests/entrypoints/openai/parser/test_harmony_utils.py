@@ -19,6 +19,7 @@ from aphrodite.entrypoints.openai.responses.harmony import (
     response_input_to_harmony,
     response_previous_input_to_harmony,
 )
+from aphrodite.exceptions import AphroditeValidationError
 from tests.entrypoints.openai.utils import verify_harmony_messages
 
 _TOOL_PARAMETERS = {
@@ -929,10 +930,11 @@ class TestGetSystemMessage:
 
     def test_unsupported_reasoning_effort_raises_clear_error(self) -> None:
         with pytest.raises(
-            ValueError,
+            AphroditeValidationError,
             match="reasoning_effort='max' is not supported by Harmony",
-        ):
+        ) as exc_info:
             get_system_message(reasoning_effort="max")
+        assert exc_info.value.parameter == "reasoning_effort"
 
 
 class TestResponseInputToHarmonyReasoningItem:

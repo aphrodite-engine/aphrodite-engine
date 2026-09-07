@@ -22,10 +22,6 @@ from aphrodite.entrypoints.pooling.scoring.typing import ScoreMultiModalParam
 
 from ....conftest import AphroditeRunner
 
-pytestmark = pytest.mark.skip(
-    reason="ColQwen3 model's weight tying is incompatible with transformers v5 (missing all_tied_weights_keys)"
-)
-
 MODELS = [
     "TomoroAI/tomoro-colqwen3-embed-4b",
     "OpenSearch-AI/Ops-Colqwen3-4B",

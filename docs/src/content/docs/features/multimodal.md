@@ -124,6 +124,38 @@ Aphrodite divides the configured budget evenly among them.
 
 For streaming video sources, use the `deepstream` backend instead.
 
+## Configure audio decoding
+
+Aphrodite decodes audio bytes into waveforms using a selectable decoding backend.
+
+| Backend | Description |
+| --- | --- |
+| `auto` (default) | soundfile, falling back to torchcodec, then PyAV |
+| `soundfile` | libsndfile only, no fallback |
+| `pyav` | PyAV (FFmpeg) only, no fallback |
+| `torchcodec` | TorchCodec (PyTorch-native) only, no fallback |
+
+Select the decoder with `--media-io-kwargs`:
+
+```bash
+aphrodite serve mistralai/Voxtral-Mini-3B-2507 \
+  --media-io-kwargs '{"audio": {"audio_backend": "torchcodec"}}'
+```
+
+PyAV drives FFmpeg through a per-frame Python generator, so concurrent decoding
+can contend on the GIL. TorchCodec decodes each stream in a single call that
+releases the GIL for its duration. Select it explicitly for concurrent decoding
+workloads.
+
+`auto` prefers soundfile for supported formats to preserve their existing
+decoding behavior, including encoder padding. Audio extracted from formats
+that soundfile cannot read, such as video containers, can use torchcodec
+through the fallback chain.
+
+TorchCodec requires both the package and a system FFmpeg installation. Install
+it manually if it is not included on your platform. If the package or FFmpeg
+is unavailable, `auto` uses the soundfile → PyAV chain.
+
 ## Benchmark media
 
 Text-only tests do not measure encoder or download cost. Use

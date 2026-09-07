@@ -612,6 +612,34 @@ class AphroditeJitKernel(Generic[CompileKeyT], ABC):
             self.compile(compile_key)
 
 
+def _same_value(left: Any, right: Any) -> bool:
+    """True if two registration values are the same object or compare equal.
+
+    Identity is checked first so shared singletons (e.g. ``aphrodite_config``, torch
+    dtypes) short-circuit before any potentially deep or non-boolean ``__eq__``.
+    """
+    if left is right:
+        return True
+    try:
+        return bool(left == right)
+    except (TypeError, ValueError, RuntimeError):
+        return False
+
+
+def _same_registration(
+    left: tuple[tuple[Any, ...], dict[str, Any]],
+    right: tuple[tuple[Any, ...], dict[str, Any]],
+) -> bool:
+    """True if two ``(args, kwargs)`` registrations are equivalent."""
+    left_args, left_kwargs = left
+    right_args, right_kwargs = right
+    if len(left_args) != len(right_args) or left_kwargs.keys() != right_kwargs.keys():
+        return False
+    return all(_same_value(x, y) for x, y in zip(left_args, right_args, strict=True)) and all(
+        _same_value(left_kwargs[k], right_kwargs[k]) for k in left_kwargs
+    )
+
+
 class JitWarmupRegistry:
     """Collect and compile JIT kernels selected during runner setup."""
 
@@ -655,13 +683,9 @@ class JitWarmupRegistry:
         kwargs: dict[str, Any],
     ) -> None:
         registrations = self._registrations.setdefault(kernel, [])
-        if (
-            not args
-            and not kwargs
-            and any(
-                not registered_args and not registered_kwargs for registered_args, registered_kwargs in registrations
-            )
-        ):
+        # Layers can share the same configuration object. Deduplicate before
+        # tracing warmup keys, checking identity before potentially deep equality.
+        if any(_same_registration(registered, (args, kwargs)) for registered in registrations):
             return
         registrations.append((args, kwargs))
 

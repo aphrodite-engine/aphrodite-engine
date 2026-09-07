@@ -85,6 +85,16 @@ aphrodite serve MODEL --data-parallel-size 4
 Use data parallelism when one replica fits and request volume is high. A data
 parallel size of four needs enough memory for four copies of the model.
 
+When sizing deployments, `--max-num-seqs` applies per data-parallel rank.
+The admission control limits `--max-num-queued-reqs` and
+`--max-num-queued-tokens` apply across all DP ranks that each API server
+process routes to: each process counts in-flight requests and prefill backlog
+across those ranks. For example, with `--data-parallel-size=4
+--max-num-seqs=256 --max-num-queued-reqs=256`, an API server process rejects new
+requests once 256 are in-flight in total, even though the ranks could jointly
+run 1024. To keep ranks saturated, size the request cap as roughly
+`data-parallel-size * max-num-seqs` plus the desired queue depth.
+
 Data parallelism can give better throughput isolation than one large replica.
 The router must distribute requests across the replicas. Use session affinity
 only when an application requires it. Prefix cache entries are local to a

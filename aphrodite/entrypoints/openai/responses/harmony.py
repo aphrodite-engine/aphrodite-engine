@@ -40,6 +40,7 @@ from aphrodite.entrypoints.openai.responses.protocol import (
     ResponseInputOutputItem,
     ResponsesRequest,
 )
+from aphrodite.exceptions import AphroditeValidationError
 from aphrodite.logger import init_logger
 from aphrodite.utils import random_uuid
 
@@ -88,7 +89,7 @@ def _parse_chat_format_message(chat_msg: dict) -> list[Message]:
     """Parse an OpenAI chat-format dict into Harmony messages."""
     role = chat_msg.get("role")
     if role is None:
-        raise ValueError(f"Message has no 'role' key: {chat_msg}")
+        raise AphroditeValidationError(f"Message has no 'role' key: {chat_msg}", parameter="input")
 
     # Assistant message with tool calls
     tool_calls = chat_msg.get("tool_calls")
@@ -181,7 +182,7 @@ def response_input_to_harmony(
                 call_response = prev_response
                 break
         if call_response is None:
-            raise ValueError(f"No call message found for {call_id}")
+            raise AphroditeValidationError(f"No call message found for {call_id}", parameter="input")
         msg = Message.from_author_and_content(
             Author.new(Role.TOOL, f"functions.{call_response.name}"),
             response_msg["output"],
@@ -202,7 +203,7 @@ def response_input_to_harmony(
         msg = msg.with_recipient(f"functions.{response_msg['name']}")
         msg = msg.with_content_type("json")
     else:
-        raise ValueError(f"Unknown input type: {response_msg['type']}")
+        raise AphroditeValidationError(f"Unknown input type: {response_msg['type']}", parameter="input")
     return msg
 
 

@@ -15,6 +15,11 @@ Do not expose diagnostic or administrative routes to the public network.
 Restrict `/metrics`, profiling routes, adapter management, cache reset, sleep,
 weight update, and collective RPC routes.
 
+`/v1/responses/render` requires bearer authentication when `--api-key` is
+configured. It is available on `aphrodite serve` with
+`APHRODITE_ENABLE_SCALE_OUT_ENDPOINTS=1`, or on `aphrodite launch render`
+unless explicitly disabled.
+
 ## Pin model revisions
 
 Use `--revision` and `--tokenizer-revision` with immutable commit identifiers.

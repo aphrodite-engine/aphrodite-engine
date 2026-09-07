@@ -6,6 +6,8 @@ from starlette.datastructures import State
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.entrypoints.chat_utils import load_chat_template
+from aphrodite.entrypoints.launchers.cli_args import resolve_default_chat_template_kwargs
+from aphrodite.entrypoints.mcp.tool_server import init_tool_server
 from aphrodite.entrypoints.openai.models.protocol import BaseModelPath
 from aphrodite.entrypoints.openai.models.serving import OpenAIModelRegistry
 from aphrodite.entrypoints.scale_out.factories import init_render_state
@@ -43,6 +45,8 @@ async def init_render_app_state(
 
     renderer = renderer_from_config(aphrodite_config)
     resolved_chat_template = load_chat_template(args.chat_template)
+    default_chat_template_kwargs = resolve_default_chat_template_kwargs(args)
+    state.tool_server = await init_tool_server(args)
 
     state.online_renderer = OnlineRenderer(
         model_config=aphrodite_config.model_config,
@@ -55,7 +59,7 @@ async def init_render_app_state(
         exclude_tools_when_tool_choice_none=args.exclude_tools_when_tool_choice_none,
         tool_parser=args.tool_call_parser,
         reasoning_parser=args.reasoning_parser,
-        default_chat_template_kwargs=args.default_chat_template_kwargs,
+        default_chat_template_kwargs=default_chat_template_kwargs,
         log_error_stack=args.log_error_stack,
     )
     state.online_renderer.warmup()
@@ -71,7 +75,7 @@ async def init_render_app_state(
         exclude_tools_when_tool_choice_none=args.exclude_tools_when_tool_choice_none,
         tool_parser=args.tool_call_parser,
         reasoning_parser=args.reasoning_parser,
-        default_chat_template_kwargs=args.default_chat_template_kwargs,
+        default_chat_template_kwargs=default_chat_template_kwargs,
         log_error_stack=args.log_error_stack,
     )
 
@@ -82,7 +86,7 @@ async def init_render_app_state(
         request_logger=request_logger,
         chat_template=resolved_chat_template,
         chat_template_content_format=args.chat_template_content_format,
-        default_chat_template_kwargs=args.default_chat_template_kwargs,
+        default_chat_template_kwargs=default_chat_template_kwargs,
         trust_request_chat_template=args.trust_request_chat_template,
     )
 

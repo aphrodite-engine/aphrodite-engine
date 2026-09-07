@@ -750,7 +750,7 @@ class CompilationConfig:
         "aphrodite::mamba_mixer2",
         "aphrodite::mamba_mixer",
         "aphrodite::short_conv",
-        "aphrodite::qwen4_exp_compute_ple_ngram_ids",
+        # Qwen4Exp's AMD backend still uses these splitting ops.
         "aphrodite::qwen4_exp_ple_short_conv",
         "aphrodite::qwen4_exp_qsa_with_output",
         "aphrodite::linear_attention",
