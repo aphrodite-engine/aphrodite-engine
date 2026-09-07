@@ -44,7 +44,7 @@ def serve_parser():
 ### Test config parsing
 def test_config_arg_parsing(serve_parser, cli_config_file):
     args = serve_parser.parse_args([])
-    assert args.port == 8000
+    assert args.port == 2242
     args = serve_parser.parse_args(["--config", cli_config_file])
     assert args.port == 12312
     args = serve_parser.parse_args(

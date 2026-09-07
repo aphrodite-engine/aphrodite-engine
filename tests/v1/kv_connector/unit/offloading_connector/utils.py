@@ -10,7 +10,6 @@ import torch
 
 from aphrodite import SamplingParams
 from aphrodite.config import (
-    AphroditeConfig,
     KVEventsConfig,
     KVTransferConfig,
     set_current_aphrodite_config,
@@ -19,9 +18,6 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorRole
 from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.common import (
     OffloadingConnectorMetadata,
     OffloadingWorkerMetadata,
-)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.config import (
-    build_offloading_config,
 )
 from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading_connector import (
     OffloadingConnector,
@@ -55,6 +51,7 @@ from aphrodite.v1.kv_offload.base import (
     TransferResult,
     make_offload_key,
 )
+from aphrodite.v1.kv_offload.config import OffloadingConfig
 from aphrodite.v1.request import Request
 from aphrodite.v1.structured_output import StructuredOutputManager
 from tests.v1.kv_connector.unit.utils import (
@@ -122,8 +119,8 @@ class MockOffloadingWorker(OffloadingWorker):
 
 
 class MockOffloadingSpec(OffloadingSpec):
-    def __init__(self, aphrodite_config: AphroditeConfig, kv_cache_config: KVCacheConfig):
-        super().__init__(build_offloading_config(aphrodite_config, kv_cache_config))
+    def __init__(self, config: OffloadingConfig):
+        super().__init__(config)
 
         self.manager = MagicMock(spec=OffloadingManager)
         self.manager.prepare_load = lambda keys, req_context: MockLoadStoreSpec(keys)
@@ -266,7 +263,7 @@ class RequestRunner:
             log_stats=True,
             structured_output_manager=StructuredOutputManager(aphrodite_config),
             block_size=scheduler_block_size,
-            tokens_per_hash=tokens_per_hash,
+            hash_block_size=tokens_per_hash,
         )
 
         self.worker_connector = OffloadingConnector(aphrodite_config, KVConnectorRole.WORKER, kv_cache_config)
@@ -538,6 +535,11 @@ class RequestRunner:
                     # Flush the previous step's output.
                     engine_outputs = self.scheduler.update_from_output(prev_scheduler_output, prev_model_runner_output)
                     self._record_kv_connector_stats(engine_outputs)
+                    prev_model_runner_output = None
+                    if self.scheduler.finished_req_ids:
+                        continue
+                if complete_transfers and not self.scheduler.requests and self.connector_scheduler._jobs:
+                    continue
                 break
 
         self._parse_transfers()
