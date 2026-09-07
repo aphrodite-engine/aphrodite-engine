@@ -873,7 +873,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
             index_topk = getattr(self.aphrodite_config.model_config.hf_config, "index_topk", None)
             if has_cutedsl() and index_topk in (512, 1024, 2048):
                 from aphrodite.model_executor.kernels.attention.dsa.dcp_indexer_cutedsl import (
-                    StableTopKFromGatheredCandidatesKernel,
+                    _STABLE_TOPK_FROM_GATHERED_CANDIDATES_KERNEL,
                     pack_dcp_topk_candidates_cutedsl,
                 )
 
@@ -896,7 +896,8 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                 # Keyed on (topk, num_candidates) with a symbolic row count,
                 # so one compile covers every batch. This is the seconds-scale
                 # CuteDSL compile.
-                StableTopKFromGatheredCandidatesKernel.compile(index_topk, self.dcp_world_size * index_topk)
+                kernel = _STABLE_TOPK_FROM_GATHERED_CANDIDATES_KERNEL
+                kernel.compile(kernel.dispatch(topk=index_topk, num_candidates=self.dcp_world_size * index_topk))
         except Exception:
             logger.warning(
                 "DCP indexer kernel warmup failed; kernels will be JIT-compiled on first use instead.",

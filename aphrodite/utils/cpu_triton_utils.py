@@ -29,6 +29,8 @@ def _compute_slot_mapping_kernel_impl(
     block_table_stride: int,  # max_num_blocks_per_req
     block_size: int,
     slot_mapping: torch.Tensor,  # [max_num_tokens], int64
+    KV_CACHE_BLOCK_SIZE: int,
+    BLOCKS_PER_KV_BLOCK: int,
     TOTAL_CP_WORLD_SIZE: int,
     TOTAL_CP_RANK: int,
     CP_KV_CACHE_INTERLEAVE_SIZE: int,
