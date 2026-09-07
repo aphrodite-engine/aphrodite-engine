@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import pytest
+from huggingface_hub.errors import GatedRepoError
 
 from aphrodite.config import ModelConfig
 from aphrodite.entrypoints.chat_utils import load_chat_template
@@ -19,11 +20,20 @@ from aphrodite.renderers.hf import (
     safe_apply_chat_template,
 )
 from aphrodite.tokenizers import get_tokenizer
+from aphrodite.transformers_utils.repo_utils import hf_api
 
 from ..models.registry import HF_EXAMPLE_MODELS
 from ..utils import APHRODITE_PATH
 
 EXAMPLES_DIR = APHRODITE_PATH / "examples"
+
+
+def _check_config_access(model, revision):
+    try:
+        hf_api().hf_hub_download(model, "config.json", revision=revision)
+    except GatedRepoError:
+        pytest.skip(f"Access to gated model {model} is not available")
+
 
 chatml_jinja_path = APHRODITE_PATH / "examples/template_chatml.jinja"
 assert chatml_jinja_path.exists()
@@ -372,6 +382,7 @@ def test_resolve_chat_template_kwargs_with_template_name():
 def test_resolve_content_format_hf_defined(model, expected_format):
     model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
     model_info.check_available_online(on_fail="skip")
+    _check_config_access(model, model_info.revision)
 
     model_config = ModelConfig(
         model,
@@ -428,6 +439,7 @@ def test_resolve_content_format_hf_defined(model, expected_format):
 def test_resolve_content_format_fallbacks(model, expected_format):
     model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
     model_info.check_available_online(on_fail="skip")
+    _check_config_access(model, model_info.revision)
 
     model_config = ModelConfig(
         model,
@@ -484,9 +496,8 @@ def test_resolve_content_format_fallbacks(model, expected_format):
         ("template_falcon.jinja", "string"),
         ("template_inkbot.jinja", "string"),
         ("template_teleflm.jinja", "string"),
-        ("pooling/embed/template/dse_qwen2_vl.jinja", "openai"),
-        ("pooling/embed/template/vlm2vec_phi3v.jinja", "openai"),
-        ("pooling/embed/template/vlm2vec_qwen2vl.jinja", "openai"),
+        ("template_dse_qwen2_vl.jinja", "openai"),
+        ("template_vlm2vec.jinja", "openai"),
         ("tool_chat_template_granite_20b_fc.jinja", "string"),
         ("tool_chat_template_hermes.jinja", "string"),
         ("tool_chat_template_internlm2_tool.jinja", "string"),

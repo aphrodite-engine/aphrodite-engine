@@ -586,7 +586,6 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
             f"hash_block_size. block_sizes={group_block_sizes}, "
             f"hash_block_size={hash_block_size}"
         )
-        assert dcp_world_size == 1, "DCP not support hybrid attn now."
         assert pcp_world_size == 1, "PCP not support hybrid attn now."
         if dcp_world_size > 1:
             # DCP shards full-attention KV across ranks and replicates Mamba

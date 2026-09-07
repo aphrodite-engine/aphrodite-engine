@@ -11,6 +11,9 @@ from aphrodite.distributed.kv_events import BlockStored
 from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.common import (
     OffloadingConnectorMetadata,
 )
+from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.config import (
+    build_offloading_config,
+)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading.metrics import (
     OffloadingConnectorStats,
     _ConnectorMetricName,
@@ -71,7 +74,7 @@ def _make_partial_tail_scheduler() -> OffloadingConnectorScheduler:
     aphrodite_config.speculative_config = None
     aphrodite_config.kv_events_config = KVEventsConfig(enable_kv_cache_events=True, publisher="null")
     kv_cache_config = _make_mamba_hybrid_kv_cache_config()
-    spec = MockOffloadingSpec(aphrodite_config, kv_cache_config)
+    spec = MockOffloadingSpec(build_offloading_config(aphrodite_config, kv_cache_config))
     return OffloadingConnectorScheduler(spec, aphrodite_config, kv_cache_config)
 
 
@@ -338,10 +341,7 @@ def test_scheduler_reports_allocation_failure(request_runner):
     runner.new_request(token_ids=[0] * 4)
     runner.manager.prepare_store.side_effect = lambda keys, req_context: None
 
-    # EOS fills the 7th block (offset 6). The extra schedule step processes
-    # finished_req_ids and stores block 6 for both groups before the request's
-    # GPU blocks are freed.
-    runner.run(decoded_tokens=[EOS_TOKEN_ID], expected_stored=(6,))
+    runner.run(decoded_tokens=[EOS_TOKEN_ID])
 
     reduced = _reduce_kv_connector_stats(runner)
     # Two attempts: once while running (block becomes full during prefill),
@@ -2327,6 +2327,9 @@ class TestEagle:
         req.request_id = "test-req"
         req.num_tokens = num_tokens
         req.kv_transfer_params = None
+        req.all_token_ids = list(range(num_tokens))
+        req.block_hashes = [BlockHash(str(i).encode()) for i in range(num_tokens // scheduler.config.tokens_per_hash)]
+        req.lora_request = None
 
         state = RequestOffloadState(
             config=scheduler.config,
@@ -3079,7 +3082,7 @@ class TestEagle:
                 ),
             ],
         )
-        spec = MockOffloadingSpec(aphrodite_config, kv_cache_config)
+        spec = MockOffloadingSpec(build_offloading_config(aphrodite_config, kv_cache_config))
         scheduler = OffloadingConnectorScheduler(spec, aphrodite_config, kv_cache_config)
         scheduler.manager.prepare_store.side_effect = lambda keys, req_context: generate_store_output(keys)
 

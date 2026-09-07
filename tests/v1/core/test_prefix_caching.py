@@ -232,6 +232,25 @@ def make_kv_cache_config_three_types(block_size: int, num_blocks: int, third_spe
     )
 
 
+@pytest.mark.parametrize(
+    "parallelism,message",
+    [
+        ({"dcp_world_size": 2}, "only supports full-attention and Mamba"),
+        ({"pcp_world_size": 2}, "PCP not support hybrid"),
+    ],
+)
+def test_hybrid_cache_rejects_unsupported_context_parallelism(parallelism, message):
+    with pytest.raises(AssertionError, match=message):
+        KVCacheManager(
+            make_kv_cache_config_three_types(block_size=16, num_blocks=64),
+            max_model_len=8192,
+            enable_caching=True,
+            hash_block_size=16,
+            scheduler_block_size=32,
+            **parallelism,
+        )
+
+
 def test_prefix_cache_hit_uses_per_group_dcp_geometry():
     """Prefix lookup must use each group's DCP size, not the process-wide one.
 
