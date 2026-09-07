@@ -471,8 +471,9 @@ _TEXT_GENERATION_EXAMPLE_MODELS = {
         is_available_online=True,
         max_transformers_version="5.3",
         transformers_version_reason={
-            "aphrodite": (
-                "aphrodite upgraded transformers above v5.4 where validate_rope() no longer accepts ignore_keys param"
+            "hf": (
+                "Transformers v5.4 removed the ignore_keys param from "
+                "validate_rope(); Aphrodite patches validate_rope() and is unaffected"
             )
         },
     ),
