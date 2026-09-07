@@ -193,6 +193,49 @@ def test_load_audio_backend_matches_default(backend, dummy_audio_bytes):
     np.testing.assert_allclose(ref_audio[:n], audio[:n], atol=1e-4)
 
 
+def test_load_audio_default_preserves_vorbis_length(dummy_audio_bytes):
+    """Default decoding must not append Vorbis padding to the speech waveform."""
+    expected, expected_sr = load_audio_soundfile(BytesIO(dummy_audio_bytes), sr=None)
+    audio, sr = load_audio(BytesIO(dummy_audio_bytes), sr=None)
+    assert sr == expected_sr
+    assert audio.shape == expected.shape
+
+
+@pytest.mark.parametrize("torchcodec_available", [True, False])
+@pytest.mark.parametrize("soundfile_error", [ImportError(), sf.LibsndfileError(1)])
+def test_load_audio_auto_fallback_order(monkeypatch, torchcodec_available, soundfile_error):
+    """Fallbacks rewind the input and preserve all decoding limits."""
+    calls = []
+    source = BytesIO(b"audio")
+    source.seek(2)
+    expected = (np.zeros(4, dtype=np.float32), 16000)
+    options = dict(sr=16000, mono=False, max_duration_s=3, max_decode_bytes=64)
+
+    def decoder(name, error=None):
+        def decode(path, **kwargs):
+            calls.append(name)
+            assert path is source
+            assert path.tell() == 0
+            assert kwargs == options
+            path.read()
+            if error is not None:
+                raise error
+            return expected
+
+        return decode
+
+    monkeypatch.setattr(audio_module, "load_audio_soundfile", decoder("soundfile", soundfile_error))
+    monkeypatch.setattr(
+        audio_module,
+        "load_audio_torchcodec",
+        decoder("torchcodec", None if torchcodec_available else ImportError()),
+    )
+    monkeypatch.setattr(audio_module, "load_audio_pyav", decoder("pyav"))
+
+    assert load_audio(source, **options) is expected
+    assert calls == (["soundfile", "torchcodec"] if torchcodec_available else ["soundfile", "torchcodec", "pyav"])
+
+
 def test_load_audio_unknown_backend_rejected(dummy_audio_bytes):
     """An unknown backend must fail loudly instead of silently degrading."""
     with pytest.raises(ValueError, match="Unknown audio backend"):
