@@ -14,11 +14,13 @@ import numpy as np
 import pytest
 import torch
 import torch.distributed as dist
+import zmq
 
 from aphrodite.distributed.device_communicators import shm_broadcast
 from aphrodite.distributed.device_communicators.shm_broadcast import (
     MessageQueue,
     ShmRingBuffer,
+    SpinCondition,
     _rebuild_tensor,
     _reduce_tensor,
     check_shm_free_space,
@@ -499,7 +501,43 @@ def test_reader_timeout_caps_indefinite_waits(should_warn):
         assert timeout.timeout_ms() == 7
 
 
-def test_reader_rechecks_shm_after_idle_wait_timeout_without_notify():
+@pytest.mark.parametrize("event", ["notify", "stale_notify", "cancel", "timeout", "error"])
+@pytest.mark.parametrize("timeout_ms", [None, 0, 7])
+def test_spin_condition_idle_wait(event, timeout_ms):
+    condition = SpinCondition.__new__(SpinCondition)
+    condition.is_reader = True
+    condition.last_read = 0
+    condition.busy_loop_s = 0
+    condition.local_notify_socket = mock.Mock()
+    condition.read_cancel_socket = mock.Mock()
+    condition.poller = mock.Mock()
+    events = [(condition.local_notify_socket, zmq.POLLIN)]
+    if event == "stale_notify":
+        condition.local_notify_socket.recv.side_effect = zmq.Again()
+    elif event == "cancel":
+        events.append((condition.read_cancel_socket, zmq.POLLIN))
+    elif event == "timeout":
+        events = []
+    elif event == "error":
+        condition.local_notify_socket.recv.side_effect = zmq.ZMQError(zmq.ETERM)
+    condition.poller.poll.return_value = events
+
+    if event == "error":
+        with pytest.raises(zmq.ZMQError) as exc_info:
+            condition.wait(timeout_ms=timeout_ms)
+        assert exc_info.value.errno == zmq.ETERM
+    else:
+        condition.wait(timeout_ms=timeout_ms)
+
+    condition.poller.poll.assert_called_once_with(timeout=timeout_ms)
+    if event in ("cancel", "timeout"):
+        condition.local_notify_socket.recv.assert_not_called()
+    else:
+        condition.local_notify_socket.recv.assert_called_once_with(flags=zmq.NOBLOCK, copy=False)
+
+
+@pytest.mark.parametrize("stale_notify", [False, True])
+def test_reader_rechecks_shm_after_idle_wait_timeout_without_notify(stale_notify):
     writer = MessageQueue(
         n_reader=1,
         n_local_reader=1,
@@ -522,6 +560,8 @@ def test_reader_rechecks_shm_after_idle_wait_timeout_without_notify():
     def poll_timeout(*, timeout: int | None = None):
         poll_started.set()
         assert allow_timeout.wait(timeout=5)
+        if stale_notify:
+            return [(reader._spin_condition.local_notify_socket, zmq.POLLIN)]
         return []
 
     try:
@@ -544,6 +584,11 @@ def test_reader_rechecks_shm_after_idle_wait_timeout_without_notify():
                 "poll",
                 side_effect=poll_timeout,
             ) as poll,
+            mock.patch.object(
+                reader._spin_condition.local_notify_socket,
+                "recv",
+                side_effect=zmq.Again(),
+            ) as recv,
         ):
             read_thread = threading.Thread(target=acquire_read_in_thread, daemon=True)
             read_thread.start()
@@ -555,6 +600,7 @@ def test_reader_rechecks_shm_after_idle_wait_timeout_without_notify():
 
             assert not read_thread.is_alive()
             poll.assert_called_once_with(timeout=50)
+            assert recv.call_count == int(stale_notify)
 
         if "exc" in result:
             raise result["exc"]

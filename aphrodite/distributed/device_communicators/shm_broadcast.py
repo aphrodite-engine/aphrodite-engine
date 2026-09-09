@@ -9,7 +9,7 @@ import shutil
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from multiprocessing import shared_memory
 from pickle import PickleBuffer
@@ -208,7 +208,10 @@ class SpinCondition:
                 logger.debug("Poller received notify event")
                 # Since zmq.CONFLATE is set, there will only be one notification
                 # to read from the socket
-                self.local_notify_socket.recv(flags=zmq.NOBLOCK, copy=False)
+                # Readiness can be stale. Notifications are advisory; return
+                # so the caller rechecks shared memory and its deadline.
+                with suppress(zmq.Again):
+                    self.local_notify_socket.recv(flags=zmq.NOBLOCK, copy=False)
             else:
                 logger.debug("Poller timed out")
 
