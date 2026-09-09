@@ -259,3 +259,24 @@ def test_diffusion_custom_op_namespace():
         rope = torch.empty(2, 96, device="cuda", dtype=q.dtype)
         outputs = fused_qk_norm_rope(q, q, weight, weight, rope, 1e-5)
         assert all(output.shape == q.shape for output in outputs)
+
+
+@isolated
+def test_async_omni_output_preserves_tp_collective_order():
+    from aphrodite.omni.worker.gpu_ar_model_runner import GPUARModelRunner
+
+    runner = object.__new__(GPUARModelRunner)
+    runner.use_async_scheduling = True
+    runner.parallel_config = SimpleNamespace(tensor_parallel_size=1)
+    runner.omni_prefix_cache = None
+    runner.speculative_config = None
+    runner.model_config = SimpleNamespace(async_chunk=True)
+    runner.model = SimpleNamespace(use_async_omni_output=True)
+
+    assert runner._should_use_async_omni_output()
+    runner.parallel_config.tensor_parallel_size = 2
+    assert not runner._should_use_async_omni_output()
+    assert runner.use_async_scheduling
+    runner.parallel_config.tensor_parallel_size = 1
+    runner.use_async_scheduling = False
+    assert not runner._should_use_async_omni_output()

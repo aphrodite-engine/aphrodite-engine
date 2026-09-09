@@ -1680,6 +1680,10 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
     def _should_use_async_omni_output(self) -> bool:
         if not self.use_async_scheduling:
             return False
+        # Output collection broadcasts TP packets. Keep it on the model
+        # thread so its collectives cannot race the next step's broadcasts.
+        if self.parallel_config.tensor_parallel_size > 1:
+            return False
         if self.omni_prefix_cache is not None:
             return False
         if self.speculative_config is not None:
