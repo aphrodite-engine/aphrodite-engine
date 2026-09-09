@@ -787,6 +787,11 @@ setup(
     rust_extensions=rust_extensions,
     install_requires=get_requirements(),
     extras_require={
+        "omni": [
+            line.strip()
+            for line in (ROOT_DIR / "requirements/omni.txt").read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ],
         # AMD Zen CPU optimizations via zentorch
         "zen": ["zentorch==2.13.0.0"],
         "bench": ["pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly"],

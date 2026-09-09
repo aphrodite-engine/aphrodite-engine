@@ -13,7 +13,7 @@ enabling prefix caching via hash-based deduplication.
 
 from collections import Counter
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, TypeVar
 
 import torch
 
@@ -52,6 +52,7 @@ from .scheduler import MooncakeStoreScheduler
 from .worker import MooncakeStoreWorker
 
 logger = init_logger(__name__)
+_KVEventT = TypeVar("_KVEventT", bound=KVCacheEvent)
 
 
 class MooncakeStoreKVEvents(KVConnectorKVEvents):
@@ -70,7 +71,7 @@ class MooncakeStoreKVEvents(KVConnectorKVEvents):
         self._num_workers = num_workers
         self._group_tp_replication_factors = tuple(group_tp_replication_factors)
 
-    def add_events(self, events: list[KVCacheEvent]) -> None:
+    def add_events(self, events: list[_KVEventT]) -> None:
         if not isinstance(events, list):
             raise TypeError("events must be a list of KVCacheEvent.")
         self._event_counter.update(events)

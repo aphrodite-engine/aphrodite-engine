@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    APHRODITE_OMNI_ENABLED: bool = False
     APHRODITE_HOST_IP: str = ""
     APHRODITE_PORT: int | None = None
     APHRODITE_RPC_BASE_PATH: str = tempfile.gettempdir()
@@ -599,6 +600,7 @@ def _resolve_rust_cli_path() -> str | None:
 
 
 environment_variables: dict[str, Callable[[], Any]] = {
+    "APHRODITE_OMNI_ENABLED": lambda: os.getenv("APHRODITE_OMNI_ENABLED", "0") == "1",
     # ================== Installation Time Env Vars ==================
     # Target device of Aphrodite, supporting [cuda (by default),
     # rocm, cpu]

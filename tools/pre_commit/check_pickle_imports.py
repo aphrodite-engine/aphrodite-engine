@@ -27,6 +27,8 @@ ALLOWED_FILES = {
     "aphrodite/compilation/piecewise_backend.py",
     "aphrodite/distributed/utils.py",
     "aphrodite/distributed/parallel_state.py",
+    # Tensor metadata between trusted torch.distributed ranks, matching core.
+    "aphrodite/omni/diffusion/distributed/group_coordinator.py",
     "aphrodite/distributed/device_communicators/all_reduce_utils.py",
     "aphrodite/distributed/device_communicators/shm_broadcast.py",
     "aphrodite/distributed/device_communicators/shm_object_storage.py",

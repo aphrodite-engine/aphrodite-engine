@@ -11,7 +11,7 @@ from enum import Enum, auto
 from multiprocessing import connection
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 import msgspec
 import zmq
@@ -1000,7 +1000,7 @@ def get_engine_zmq_addresses(
     )
 
 
-FrontendProcess = BaseProcess | _SubprocessWrapper
+FrontendProcess: TypeAlias = BaseProcess | _SubprocessWrapper
 
 
 @dataclass

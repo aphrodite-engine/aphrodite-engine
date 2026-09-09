@@ -18,7 +18,10 @@ from aphrodite.third_party.flash_linear_attention.ops.cumsum import chunk_local_
 from aphrodite.third_party.flash_linear_attention.ops.index import prepare_chunk_indices
 from aphrodite.third_party.flash_linear_attention.ops.l2norm import l2norm_fwd
 from aphrodite.third_party.flash_linear_attention.ops.op import exp2, log
-from aphrodite.third_party.flash_linear_attention.ops.utils import FLA_CHUNK_SIZE, is_amd
+from aphrodite.third_party.flash_linear_attention.ops.utils import (
+    FLA_CHUNK_SIZE,
+    is_amd,
+)
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.math_utils import RCP_LN2, cdiv, next_power_of_2
 
@@ -203,15 +206,20 @@ def recompute_w_u_fwd(
     gk: torch.Tensor | None = None,
     cu_seqlens: torch.Tensor | None = None,
     chunk_indices: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    B, T, H, K, V = *k.shape, v.shape[-1]
+) -> tuple[torch.Tensor, torch.Tensor, None, torch.Tensor | None]:
+    B, T, H, K = k.shape
+    V = v.shape[-1]
     BT = A.shape[-1]
     BK = 64
     BV = 64
 
     if chunk_indices is None and cu_seqlens is not None:
         chunk_indices = prepare_chunk_indices(cu_seqlens, BT)
-    NT = cdiv(T, BT) if cu_seqlens is None else len(chunk_indices)
+    if cu_seqlens is None:
+        NT = cdiv(T, BT)
+    else:
+        assert chunk_indices is not None
+        NT = len(chunk_indices)
 
     w = torch.empty_like(k)
     u = torch.empty_like(v)
@@ -372,12 +380,17 @@ def chunk_gla_fwd_o_gk(
     chunk_indices: torch.Tensor | None = None,
     chunk_size: int = FLA_CHUNK_SIZE,
 ):
-    B, T, H, K, V = *q.shape, v.shape[-1]
+    B, T, H, K = q.shape
+    V = v.shape[-1]
     BT = chunk_size
 
     if chunk_indices is None and cu_seqlens is not None:
         chunk_indices = prepare_chunk_indices(cu_seqlens, chunk_size)
-    NT = cdiv(T, BT) if cu_seqlens is None else len(chunk_indices)
+    if cu_seqlens is None:
+        NT = cdiv(T, BT)
+    else:
+        assert chunk_indices is not None
+        NT = len(chunk_indices)
 
     def grid(meta):
         return (cdiv(V, meta["BV"]), NT, B * H)
@@ -549,7 +562,11 @@ def fused_kda_gate_chunk_cumsum(
         raise ValueError(f"Expected raw_beta shape {(B, T, H)}, got {raw_beta.shape}")
     if chunk_indices is None and cu_seqlens is not None:
         chunk_indices = prepare_chunk_indices(cu_seqlens, chunk_size)
-    NT = cdiv(T, chunk_size) if cu_seqlens is None else len(chunk_indices)
+    if cu_seqlens is None:
+        NT = cdiv(T, chunk_size)
+    else:
+        assert chunk_indices is not None
+        NT = len(chunk_indices)
 
     A_log = A_log.reshape(-1)
     if g_bias is not None:
@@ -755,8 +772,8 @@ def chunk_kda(
     v: torch.Tensor,
     g: torch.Tensor,
     beta: torch.Tensor,
-    scale: float = None,
-    initial_state: torch.Tensor = None,
+    scale: float | None = None,
+    initial_state: torch.Tensor | None = None,
     output_final_state: bool = False,
     use_qk_l2norm_in_kernel: bool = False,
     cu_seqlens: torch.Tensor | None = None,
@@ -776,7 +793,7 @@ def chunk_kda(
         g=g.contiguous(),
         beta=beta.contiguous(),
         scale=scale,
-        initial_state=initial_state.contiguous(),
+        initial_state=initial_state.contiguous() if initial_state is not None else None,
         output_final_state=output_final_state,
         cu_seqlens=cu_seqlens,
     )

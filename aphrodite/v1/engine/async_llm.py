@@ -362,9 +362,11 @@ class AsyncLLM(EngineClient):
         if self.errored:
             raise EngineDeadError()
 
-        is_pooling = isinstance(params, PoolingParams)
-
-        if self.aphrodite_config.cache_config.kv_sharing_fast_prefill and not is_pooling and params.prompt_logprobs:
+        if (
+            self.aphrodite_config.cache_config.kv_sharing_fast_prefill
+            and isinstance(params, SamplingParams)
+            and params.prompt_logprobs
+        ):
             raise APHRODITEValidationError(
                 "--kv-sharing-fast-prefill produces incorrect logprobs for "
                 "prompt tokens, please disable it when the requests need "
@@ -461,7 +463,7 @@ class AsyncLLM(EngineClient):
         # Use cloned params that may have been updated in process_inputs()
         params = request.params
 
-        if is_pooling or params.n == 1:
+        if isinstance(params, PoolingParams) or params.n == 1:
             await self._add_request(request, prompt_text, None, 0, queue)
             return queue
 
@@ -512,6 +514,7 @@ class AsyncLLM(EngineClient):
         session_id: str | None = None,
     ) -> RequestOutputCollector:
         self._validate_streaming_input_sampling_params(sampling_params)
+        assert isinstance(sampling_params, SamplingParams)
 
         inputs = dict(
             supported_tasks=await self.get_supported_tasks(),

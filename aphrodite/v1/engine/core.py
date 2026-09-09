@@ -1803,7 +1803,7 @@ class EngineCoreProc(EngineCore):
         self, req_ids: list[str], client_index: int, finish_reason: FinishReason
     ) -> None:
         outputs = [EngineCoreOutput(req_id, [], finish_reason=finish_reason) for req_id in req_ids]
-        eco = EngineCoreOutputs(finished_requests=req_ids, outputs=outputs)
+        eco = EngineCoreOutputs(finished_requests=set(req_ids), outputs=outputs)
         self.output_queue.put_nowait((client_index, eco))
 
     def _send_abort_outputs_to_client(self, req_ids: list[str], client_index: int) -> None:

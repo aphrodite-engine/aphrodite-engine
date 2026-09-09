@@ -468,6 +468,7 @@ class SpeechToTextBaseServing(GenerateBaseServing):
             self.default_sampling_params,
         )
 
+        sampling_params: SamplingParams | BeamSearchParams
         if request.use_beam_search:
             sampling_params = request.to_beam_search_params(max_tokens, self.default_sampling_params)
         else:
@@ -476,7 +477,7 @@ class SpeechToTextBaseServing(GenerateBaseServing):
                 self.default_sampling_params,
             )
 
-        if request.response_format == "verbose_json":
+        if request.response_format == "verbose_json" and isinstance(sampling_params, SamplingParams):
             sampling_params.logprobs = 1
 
         engine_request_ids = [

@@ -5,11 +5,12 @@ import enum
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Generic, Literal
 
 import msgspec
 import numpy as np
 import torch
+from typing_extensions import TypeVar
 
 from aphrodite.config.kv_events import KVEventsConfig
 from aphrodite.lora.request import LoRARequest
@@ -248,8 +249,12 @@ class UtilityOutput(
     result: UtilityResult | None = None
 
 
+_EngineCoreOutputT = TypeVar("_EngineCoreOutputT", bound=EngineCoreOutput, default=EngineCoreOutput)
+
+
 class EngineCoreOutputs(
     msgspec.Struct,
+    Generic[_EngineCoreOutputT],
     array_like=True,  # type: ignore[call-arg]
     omit_defaults=True,  # type: ignore[call-arg]
     gc=False,
@@ -260,7 +265,7 @@ class EngineCoreOutputs(
     engine_index: int = 0
 
     # [num_reqs]
-    outputs: list[EngineCoreOutput] = []
+    outputs: list[_EngineCoreOutputT] = []
     scheduler_stats: SchedulerStats | None = None
     timestamp: float = 0.0
 

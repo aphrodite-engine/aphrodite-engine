@@ -3663,7 +3663,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnec
         positions: torch.Tensor | None = None,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        **model_kwargs: dict[str, Any],
+        **model_kwargs: Any,
     ) -> Any:
         """Helper method to call the model forward pass.
 

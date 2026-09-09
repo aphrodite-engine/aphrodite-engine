@@ -1418,6 +1418,7 @@ def assert_rocm_custom_allreduce_backend_state(
     from aphrodite.distributed.parallel_state import get_tp_group
 
     device_communicator = get_tp_group().device_communicator
+    assert device_communicator is not None
     aiter_ar_comm = device_communicator.aiter_ar_comm
     if use_aiter_custom_ar:
         assert aiter_ar_comm is not None, "AITER CustomAllreduce was not initialized."

@@ -14,6 +14,15 @@ logger = init_logger(__name__)
 
 
 def main():
+    if "--omni" in sys.argv:
+        import os
+
+        os.environ["APHRODITE_OMNI_ENABLED"] = "1"
+        from aphrodite.omni.entrypoints.cli.main import main as omni_main
+
+        omni_main()
+        return
+
     import aphrodite.entrypoints.cli.benchmark.main
     import aphrodite.entrypoints.cli.collect_env
     import aphrodite.entrypoints.cli.launch

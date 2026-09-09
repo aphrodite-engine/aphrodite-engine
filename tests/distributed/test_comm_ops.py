@@ -25,7 +25,11 @@ from aphrodite.distributed.device_communicators import flashinfer_all_reduce
 from aphrodite.distributed.device_communicators.cuda_communicator import (
     CudaCommunicator,
 )
-from aphrodite.distributed.parallel_state import GroupCoordinator, TensorMetadata
+from aphrodite.distributed.parallel_state import (
+    GroupCoordinator,
+    TensorMetadata,
+    _RetainedHandle,
+)
 from aphrodite.v1.worker.gpu_worker import AsyncIntermediateTensors
 
 from ..utils import (
@@ -190,6 +194,7 @@ def send_recv_tensor_dict_test_worker(
         get_pp_group().send_tensor_dict(test_dict)
 
     if not get_pp_group().is_first_rank:
+        assert recv_dict is not None
         assert len(recv_dict) == len(test_dict)
         torch.testing.assert_close(recv_dict["a"], test_dict["a"])
         torch.testing.assert_close(recv_dict["b"], test_dict["b"])
@@ -252,9 +257,11 @@ def test_irecv_tensor_dict_send_allgather_postprocess_binds_keys(
         ("a", TensorMetadata("cpu", torch.int32, torch.Size([4]))),
         ("b", TensorMetadata("cpu", torch.int32, torch.Size([4]))),
     ]
-    g.recv_object = lambda src=None: metadata_list  # type: ignore[method-assign]
+    monkeypatch.setattr(g, "recv_object", Mock(return_value=metadata_list))
 
-    ag = _DummyAllGatherGroup(world_size=2, rank_in_group=0)
+    dummy_ag = _DummyAllGatherGroup(world_size=2, rank_in_group=0)
+    ag = Mock(spec=GroupCoordinator, world_size=2, rank_in_group=0)
+    ag.all_gather.side_effect = dummy_ag.all_gather
     td, handles, postprocess = g.irecv_tensor_dict(all_gather_group=ag)
 
     assert td is not None
@@ -399,6 +406,7 @@ def test_isend_object_posts_size_then_object_and_releases_on_wait(
 
     g = _make_group_for_unit_test(rank_in_group=0, world_size=2)
     handle = g.isend_object({"k": [1, 2, 3]}, dst=1)
+    assert isinstance(handle, _RetainedHandle)
 
     # two sends, in size-then-object order (preserves gloo FIFO).
     assert len(posted) == 2
@@ -451,6 +459,7 @@ def test_isend_tensor_dict_includes_metadata_handle(
 
     for handle in handles:
         handle.wait()
+    assert isinstance(handles[0], _RetainedHandle)
     assert handles[0]._retained == ()
 
 
@@ -493,6 +502,7 @@ def test_isend_tensor_dict_self_retains_for_fire_and_forget(
     g.isend_tensor_dict(td, dst=1)
     assert len(g._pending_isends) == 1
     # reaped entries had their metadata handles waited as a backstop.
+    assert isinstance(handles0[0], _RetainedHandle)
     assert handles0[0]._retained == ()
 
 

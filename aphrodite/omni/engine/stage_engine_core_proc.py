@@ -1,0 +1,251 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+"""
+Stage Core Process for Sonar Omni V1 architecture.
+
+StageEngineCoreProc inherits from Sonar's EngineCoreProc and runs the engine core
+busy loop in a subprocess, communicating with StageEngineCoreClient via ZMQ.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import signal
+from typing import Any
+
+import aphrodite.v1.engine.core as _aphrodite_engine_core_module
+from aphrodite.logger import init_logger
+from aphrodite.omni.distributed.omni_coordinator import create_stage_coord_client
+from aphrodite.omni.engine import OmniEngineCoreRequest
+from aphrodite.omni.engine.stage_init_utils import (
+    maybe_apply_cfg_scheduler_patches,
+    set_death_signal,
+)
+from aphrodite.omni.request import OmniRequest
+from aphrodite.transformers_utils.config import (
+    maybe_register_config_serialize_by_value,
+)
+from aphrodite.utils.system_utils import (
+    decorate_logs,
+    set_process_title,
+)
+from aphrodite.v1.engine import EngineCoreRequest, EngineCoreRequestType
+from aphrodite.v1.engine.core import EngineCoreProc, EngineShutdownState
+from aphrodite.v1.engine.utils import (
+    EngineZmqAddresses,
+    SignalCallback,
+)
+from aphrodite.v1.request import Request
+
+logger = init_logger(__name__)
+
+
+_SIGNAL_EXIT_BASE = 128
+
+
+def _install_phase_locks(kwargs: dict[str, Any], local_dp_rank: int) -> None:
+    """Wrap ``kwargs["executor_class"]`` with the SH/EX phase-lock guard.
+
+    Fail-closed: ``parallel_stage_init`` promises that every memory-mutating
+    init phase in this child runs under the per-device locks, so a missing
+    ``aphrodite_config`` or ``executor_class`` must abort the launch rather than
+    silently proceed with an unguarded parallel initialization.
+    """
+    from aphrodite.omni.engine.stage_phase_lock import (
+        DevicePhaseLock,
+        wrap_executor_with_phase_locks,
+    )
+
+    missing = [key for key in ("aphrodite_config", "executor_class") if kwargs.get(key) is None]
+    if missing:
+        raise RuntimeError(
+            f"parallel_stage_init is enabled but EngineCore kwargs are missing {missing}, "
+            "so the SH/EX phase-lock guard cannot be installed. Refusing to run an "
+            "unguarded parallel initialization; fix the launch plumbing or disable "
+            "parallel_stage_init."
+        )
+    locker = DevicePhaseLock.from_child(kwargs["aphrodite_config"], local_dp_rank)
+    kwargs["executor_class"] = wrap_executor_with_phase_locks(kwargs["executor_class"], locker)
+    logger.info(
+        "[StageEngineCoreProc] parallel_stage_init: SH/EX phase locks on devices %s",
+        locker.device_ids,
+    )
+
+
+def _signal_exit_code(signum: int) -> int:
+    """Return the conventional process exit code for signal-driven exits."""
+    return _SIGNAL_EXIT_BASE + signum
+
+
+class StageEngineCoreProc(EngineCoreProc):
+    """Stage-specific engine core process for Sonar Omni.
+
+    Inherits from EngineCoreProc and provides its own ``run_stage_core``
+    entry point for launching in a subprocess.  Does **not** delegate to
+    ``EngineCoreProc.run_engine_core()``.
+    """
+
+    def preprocess_add_request(self, request: EngineCoreRequest) -> tuple[Request, int]:
+        """Preserve omni payloads when Sonar builds its scheduler request."""
+        scheduler_request, current_wave = super().preprocess_add_request(request)
+        if isinstance(request, OmniEngineCoreRequest):
+            if not isinstance(scheduler_request, OmniRequest):
+                raise TypeError("Omni requests require the Omni scheduler request adapter")
+            scheduler_request.additional_information = request.additional_information
+            scheduler_request.external_req_id = getattr(request, "external_req_id", request.request_id)
+        return scheduler_request, current_wave
+
+    @staticmethod
+    def run_stage_core(
+        *args: Any,
+        dp_rank: int = 0,
+        local_dp_rank: int = 0,
+        omni_coordinator_address: str | None = None,
+        omni_stage_id: int | None = None,
+        omni_replica_id: int = 0,
+        omni_parallel_stage_init: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Launch StageEngineCoreProc busy loop in background process.
+
+        Omni-specific kwargs:
+          - ``omni_coordinator_address``: ROUTER address of the head-side
+            :class:`OmniCoordinator`. When provided, this subprocess
+            instantiates an :class:`OmniCoordClientForStage` after the
+            HELLO/INIT/READY handshake completes and reports its status +
+            queue length via heartbeats. The hook is wired so each
+            heartbeat refreshes ``queue_length`` from the live scheduler.
+          - ``omni_stage_id``: logical stage id this replica belongs to.
+            Required when ``omni_coordinator_address`` is provided.
+          - ``omni_replica_id``: cluster-unique replica id within the
+            stage (assigned by :class:`OmniMasterServer`). Used for
+            logging / metrics only.
+        """
+        signal_callback: SignalCallback | None = None
+        maybe_register_config_serialize_by_value()
+
+        # Register sonar-omni reasoning parsers (e.g. step_audio) in this
+        # subprocess so they are available when the engine core resolves
+        # ``--reasoning-parser``.  The main process already registered them
+        # at import time, but the forked subprocess starts with a fresh
+        # ReasoningParserManager.
+        try:
+            import aphrodite.omni.reasoning  # noqa: F401
+        except ImportError:
+            logger.warning(
+                "Failed to import aphrodite.omni.reasoning in subprocess; "
+                "custom reasoning parsers (e.g. step_audio) will not be "
+                "available."
+            )
+
+        engine_core: StageEngineCoreProc | None = None
+        coord_client = None
+        try:
+            # NOTE: previous revisions hardcoded data_parallel_size=1 here
+            # (TODO referencing issue #984). The hardcoding has been removed
+            # so the DP fields propagate through from the caller exactly
+            # like upstream Sonar.
+
+            stage_label = f"stage{omni_stage_id}" if omni_stage_id is not None else "noid"
+            set_death_signal(signal.SIGTERM)
+            set_process_title(f"StageEngineCoreProc_{stage_label}_replica{omni_replica_id}_DP{dp_rank}")
+            decorate_logs()
+            # Workaround for flashinfer/jit-cache version mismatch in CI.
+            # The parent process handles this gracefully via ring_globals.py,
+            # but the subprocess hits an unprotected import in TopKTopPSampler.
+            # Setting this env var allows the same graceful fallback to work.
+            os.environ.setdefault("FLASHINFER_DISABLE_VERSION_CHECK", "1")
+            os.environ["APHRODITE_OMNI_REPLICA_ID"] = str(max(int(omni_replica_id), 0))
+
+            # Patch the decoder type so process_input_sockets (started
+            # during __init__) decodes OmniEngineCoreRequest (which
+            # carries additional_information) instead of the base
+            # EngineCoreRequest.  Must happen BEFORE __init__ because
+            # the IO thread creates MsgpackDecoder(EngineCoreRequest)
+            # during __init__.
+            setattr(_aphrodite_engine_core_module, "EngineCoreRequest", OmniEngineCoreRequest)
+            logger.debug(
+                "[StageEngineCoreProc] Patched EngineCoreRequest -> OmniEngineCoreRequest: %s",
+                _aphrodite_engine_core_module.EngineCoreRequest,
+            )
+
+            # CFG pairing scheduler patches must land before EngineCore builds
+            # its Scheduler; gated on the stage's logits_processors and its
+            # default sampling extra_args.
+            maybe_apply_cfg_scheduler_patches(kwargs.get("aphrodite_config"))
+
+            # When parallel stage init is enabled, wrap this driver's executor
+            # so its memory-mutating phases (load / KV alloc / capture) hold a
+            # per-device LOCK_SH and its profiling measurement holds LOCK_EX.
+            # The wrapper must be installed here (in the engine-core child):
+            # phase boundaries live inside EngineCore.__init__, invisible to the
+            # orchestrator. See aphrodite.omni.engine.stage_phase_lock.
+            if omni_parallel_stage_init:
+                _install_phase_locks(kwargs, local_dp_rank)
+
+            engine_core = StageEngineCoreProc(
+                *args,
+                engine_index=dp_rank,
+                **kwargs,
+            )
+
+            # Each subprocess corresponds to exactly one omni replica with
+            # its own OmniMasterServer allocation, so the heartbeat client
+            # runs unconditionally — there is no dp_rank-based gating.
+            if omni_coordinator_address is not None:
+                if omni_stage_id is None:
+                    raise ValueError("omni_stage_id must be provided when omni_coordinator_address is set")
+                addresses: EngineZmqAddresses = engine_core.addresses
+                if not addresses.inputs or not addresses.outputs:
+                    raise RuntimeError(
+                        "EngineCore handshake did not populate input/output addresses; "
+                        "cannot start OmniCoordClientForStage"
+                    )
+                scheduler = getattr(engine_core, "scheduler", None)
+                if scheduler is None:
+                    raise RuntimeError("EngineCore scheduler is not initialized")
+                coord_client = create_stage_coord_client(
+                    coord_zmq_addr=omni_coordinator_address,
+                    input_addr=addresses.inputs[0],
+                    output_addr=addresses.outputs[0],
+                    stage_id=int(omni_stage_id),
+                    queue_length_getter=scheduler.get_num_unfinished_requests,
+                )
+
+            def wakeup_engine() -> None:
+                engine_core.input_queue.put_nowait((EngineCoreRequestType.WAKEUP, None))
+
+            signal_callback = SignalCallback(wakeup_engine)
+
+            def signal_handler(signum: int, frame: Any) -> None:
+                engine_core.shutdown_state = EngineShutdownState.REQUESTED
+                signal_callback.trigger()
+                raise SystemExit(_signal_exit_code(signum))
+
+            signal.signal(signal.SIGTERM, signal_handler)
+            signal.signal(signal.SIGINT, signal_handler)
+
+            engine_core.run_busy_loop()
+
+        except SystemExit:
+            logger.debug("StageEngineCoreProc exiting.")
+            raise
+        except Exception:
+            if engine_core is None:
+                logger.exception("StageEngineCoreProc failed to start.")
+            else:
+                logger.exception("StageEngineCoreProc encountered a fatal error.")
+                engine_core._send_engine_dead()
+            raise
+        finally:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            if signal_callback is not None:
+                signal_callback.stop()
+            if coord_client is not None:
+                with contextlib.suppress(RuntimeError):
+                    coord_client.close()
+            if engine_core is not None:
+                engine_core.shutdown()

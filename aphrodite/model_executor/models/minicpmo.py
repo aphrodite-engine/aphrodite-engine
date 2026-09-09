@@ -66,7 +66,6 @@ from .minicpmv import (
     _MAX_FRAMES_PER_VIDEO,
     MiniCPMV2_6,
     MiniCPMV4_5,
-    MiniCPMVBaseModel,
     MiniCPMVDummyInputsBuilder,
     MiniCPMVImageEmbeddingInputs,
     MiniCPMVImagePixelInputs,
@@ -655,7 +654,7 @@ class MiniCPMWhisperEncoder(WhisperEncoder):
 
 
 if TYPE_CHECKING:
-    _MiniCPMOBaseModelBase = MiniCPMVBaseModel
+    from .minicpmv import MiniCPMVBaseModel as _MiniCPMOBaseModelBase
 else:
     _MiniCPMOBaseModelBase = object
 

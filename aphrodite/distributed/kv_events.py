@@ -130,8 +130,11 @@ class AllBlocksCleared(KVCacheEvent):
     pass
 
 
+KVEvent = BlockStored | BlockRemoved | AllBlocksCleared
+
+
 class KVEventBatch(EventBatch):
-    events: list[BlockStored | BlockRemoved | AllBlocksCleared]
+    events: list[KVEvent]
 
 
 class KVEventAggregator:

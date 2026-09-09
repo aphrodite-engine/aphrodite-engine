@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Generic, overload
+from typing import TYPE_CHECKING, Any, Generic, cast, overload
 
 from typing_extensions import TypeVar
 
@@ -647,8 +647,8 @@ class BaseRenderer(ABC, Generic[_T]):
                 )
             prompt_char_offset = params._get_text_truncation_offset(self.tokenizer, prompt["prompt"])
             prompt = params.apply_pre_tokenization(self.tokenizer, prompt)  # type: ignore[arg-type]
-            prompt = await self._tokenize_prompt_async(prompt, params)
-            prompt = self._apply_prompt_char_offset(prompt, prompt_char_offset)
+            tokenized_prompt = cast(TokensPrompt, await self._tokenize_prompt_async(prompt, params))
+            prompt = self._apply_prompt_char_offset(tokenized_prompt, prompt_char_offset)
 
         if params.needs_detokenization and "prompt" not in prompt:
             if "prompt_token_ids" not in prompt:

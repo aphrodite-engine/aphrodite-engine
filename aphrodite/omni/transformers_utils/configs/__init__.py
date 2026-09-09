@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""
+Custom model configs that cannot be expressed via HuggingFace Transformers alone,
+following the same pattern as aphrodite.transformers_utils.configs.
+"""
+
+from __future__ import annotations
+
+import importlib
+
+_CLASS_TO_MODULE: dict[str, str] = {
+    "HiggsAudioV3Config": "aphrodite.omni.transformers_utils.configs.higgs_audio_v3",
+    "Mammothmoda2Config": "aphrodite.omni.transformers_utils.configs.mammoth_moda2",
+    "Mammothmoda2Qwen2_5_VLConfig": "aphrodite.omni.transformers_utils.configs.mammoth_moda2",
+    "Mammothmoda2Qwen2_5_VLTextConfig": "aphrodite.omni.transformers_utils.configs.mammoth_moda2",
+    "Mammothmoda2Qwen2_5_VLVisionConfig": "aphrodite.omni.transformers_utils.configs.mammoth_moda2",
+    "FishSpeechConfig": "aphrodite.omni.transformers_utils.configs.fish_speech",
+    "FishSpeechSlowARConfig": "aphrodite.omni.transformers_utils.configs.fish_speech",
+    "FishSpeechFastARConfig": "aphrodite.omni.transformers_utils.configs.fish_speech",
+    "GLMTTSConfig": "aphrodite.omni.transformers_utils.configs.glm_tts",
+    "VoxCPM2Config": "aphrodite.omni.transformers_utils.configs.voxcpm2",
+    "DotsTTSConfig": "aphrodite.omni.transformers_utils.configs.dots_tts",
+    "VoxtralTTSConfig": "aphrodite.omni.transformers_utils.configs.voxtral_tts",
+    "CosyVoice3Config": "aphrodite.omni.transformers_utils.configs.cosyvoice3",
+    "MiniMaxMusic3Config": "aphrodite.omni.transformers_utils.configs.minimax_music3",
+    "OmniVoiceConfig": "aphrodite.omni.transformers_utils.configs.omnivoice",
+    "BailingMoeV2Config": "aphrodite.omni.transformers_utils.configs.ming_flash_omni",
+    "BailingMM2Config": "aphrodite.omni.transformers_utils.configs.ming_flash_omni",
+    "MingImageGenConfig": "aphrodite.omni.transformers_utils.configs.ming_flash_omni",
+    "MingFlashOmniConfig": "aphrodite.omni.transformers_utils.configs.ming_flash_omni",
+    "Qwen3VLMoeVisionConfig": "aphrodite.omni.transformers_utils.configs.ming_flash_omni",
+    "WhisperEncoderConfig": "aphrodite.omni.transformers_utils.configs.ming_flash_omni",
+    "SenseNovaU1Config": "aphrodite.omni.transformers_utils.configs.sensenova_u1",
+}
+
+__all__ = [
+    "HiggsAudioV3Config",
+    "Mammothmoda2Config",
+    "Mammothmoda2Qwen2_5_VLConfig",
+    "Mammothmoda2Qwen2_5_VLTextConfig",
+    "Mammothmoda2Qwen2_5_VLVisionConfig",
+    "FishSpeechConfig",
+    "FishSpeechSlowARConfig",
+    "FishSpeechFastARConfig",
+    "GLMTTSConfig",
+    "VoxCPM2Config",
+    "DotsTTSConfig",
+    "VoxtralTTSConfig",
+    "CosyVoice3Config",
+    "MiniMaxMusic3Config",
+    "OmniVoiceConfig",
+    "BailingMoeV2Config",
+    "BailingMM2Config",
+    "MingImageGenConfig",
+    "MingFlashOmniConfig",
+    "Qwen3VLMoeVisionConfig",
+    "WhisperEncoderConfig",
+    "SenseNovaU1Config",
+]
+
+
+def __getattr__(name: str):
+    if name in _CLASS_TO_MODULE:
+        module_name = _CLASS_TO_MODULE[name]
+        module = importlib.import_module(module_name)
+        return getattr(module, name)
+
+    raise AttributeError(f"module 'aphrodite.omni.transformers_utils.configs' has no attribute '{name}'")
+
+
+def __dir__():
+    return sorted(list(__all__))
+
+
+# Eagerly import all config modules so their AutoConfig.register() side-effects
+# run as soon as `aphrodite.omni.transformers_utils.configs` is imported.
+from aphrodite.omni.transformers_utils.configs import cosyvoice3 as _cosyvoice3  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import dots_tts as _dots_tts  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import fish_speech as _fish_speech  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import glm_tts as _glm_tts  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import higgs_audio_v3 as _higgs_audio_v3  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import mammoth_moda2 as _mammoth_moda2  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import ming_flash_omni as _ming_flash_omni  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import minimax_music3 as _minimax_music3  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import omnivoice as _omnivoice  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import sensenova_u1 as _sensenova_u1  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import voxcpm2 as _voxcpm2  # noqa: F401, E402
+from aphrodite.omni.transformers_utils.configs import voxtral_tts as _voxtral_tts  # noqa: F401, E402

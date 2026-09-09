@@ -44,6 +44,7 @@ Documentation="https://aphrodite.pygmalion.chat"
 aphrodite = "aphrodite.entrypoints.cli.main:main"
 
 [project.entry-points."aphrodite.general_plugins"]
+omni = "aphrodite.plugins.omni:register"
 lora_filesystem_resolver = "aphrodite.plugins.lora_resolvers.filesystem_resolver:register_filesystem_resolver"
 lora_hf_hub_resolver = "aphrodite.plugins.lora_resolvers.hf_hub_resolver:register_hf_hub_resolver"
 
@@ -151,6 +152,29 @@ ignore-hidden = false
 extend-ignore-identifiers-re = [".*[Uu][Ee][0-9][Mm][0-9].*"]
 
 [tool.typos.default.extend-identifiers]
+# Upstream Omni checkpoint fields, accelerator APIs, and domain-specific names.
+temperal_downsample = "temperal_downsample"
+CANN = "CANN"
+eplb_updator = "eplb_updator"
+pre_tockens = "pre_tockens"
+next_tockens = "next_tockens"
+TALKER_CODEC_NOTHINK_ID = "TALKER_CODEC_NOTHINK_ID"
+codec_nothink_id = "codec_nothink_id"
+embed_codec_nothink_token = "embed_codec_nothink_token"
+SYSTEM_PROMPT_NOTHINK = "SYSTEM_PROMPT_NOTHINK"
+byt5 = "byt5"
+byt5_config = "byt5_config"
+byt5_mapper_config = "byt5_mapper_config"
+byt5_max_length = "byt5_max_length"
+byt5_ckpt_path = "byt5_ckpt_path"
+byt5_model = "byt5_model"
+byt5_mapper = "byt5_mapper"
+convnet_type = "convnet_type"
+ein = "ein"  # engine inputs
+hed = "hed"  # einsum head, expert, and dimension axes
+ue = "ue"  # tokenizer phonetic symbol
+Leary = "Leary"  # copyright holder
+Vai = "Vai"  # Unicode script
 a63ede7 = "a63ede7"
 bbc5b7ede = "bbc5b7ede"
 cudaDevAttrMaxSharedMemoryPerBlockOptin = "cudaDevAttrMaxSharedMemoryPerBlockOptin"

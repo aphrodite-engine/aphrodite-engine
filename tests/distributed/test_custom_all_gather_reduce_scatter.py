@@ -292,7 +292,9 @@ def _run_stage_cleanup_test(
         init_test_distributed_environment(tp_size, pp_size, rank, distributed_init_port)
         ensure_model_parallel_initialized(tp_size, pp_size)
 
-        fa = get_tp_group().device_communicator.ca_comm
+        device_communicator = get_tp_group().device_communicator
+        assert device_communicator is not None
+        fa = device_communicator.ca_comm
         assert fa is not None and not fa.disabled
         assert fa.mnnvl_multicast_ptr
 

@@ -10,6 +10,7 @@ from aphrodite.model_executor.layers.fused_moe.config import (
     FusedMoEConfig,
     FusedMoEQuantConfig,
 )
+from aphrodite.model_executor.layers.fused_moe.modular_kernel import FusedMoEKernel
 from aphrodite.model_executor.layers.fused_moe.oracle.nvfp4 import (
     convert_to_nvfp4_moe_kernel_format,
     make_nvfp4_moe_kernel,
@@ -86,6 +87,8 @@ class Nvfp4OnlineMoEMethod(OnlineMoEMethodBase):
     TRTLLM kernel computes per-token activation scales at runtime. Blackwell
     (SM100) only.
     """
+
+    moe_kernel: FusedMoEKernel | None
 
     def __init__(
         self,

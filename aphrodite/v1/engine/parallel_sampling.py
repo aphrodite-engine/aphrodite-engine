@@ -36,6 +36,7 @@ class ParentRequest:
     def __init__(self, request: EngineCoreRequest) -> None:
         assert request.external_req_id is not None
         sampling_params = request.params
+        assert isinstance(sampling_params, SamplingParams)
         self.request_id = request.request_id
         self.external_req_id = request.external_req_id
         self.sampling_params = sampling_params

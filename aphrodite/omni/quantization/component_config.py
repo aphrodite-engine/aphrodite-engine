@@ -1,0 +1,173 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+"""Per-component quantization routing for multi-stage models.
+
+Routes get_quant_method() to different configs based on longest-prefix match:
+    {"transformer": fp8_config, "vae": None}
+    "transformer.blocks.0.attn.to_q" -> fp8_config
+    "vae.encoder.conv_in"            -> None
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import torch
+
+from aphrodite.model_executor.layers.quantization.base_config import (
+    QuantizationConfig,
+)
+from aphrodite.platforms import current_platform
+
+if TYPE_CHECKING:
+    from aphrodite.model_executor.layers.quantization.base_config import (
+        QuantizeMethodBase,
+    )
+    from aphrodite.model_executor.models.utils import (
+        WeightsMapper,
+    )
+
+
+# These pre-quantized formats require serialized scale or correction tensors
+# that the vision and audio encoder checkpoints do not provide.
+PRE_QUANTIZED_METHODS: frozenset[str] = frozenset(
+    {"modelopt", "modelopt_fp4", "modelopt_mxfp8", "modelopt_mixed", "svdquant"}
+)
+
+
+def resolve_component_quant_config(
+    quant_config: QuantizationConfig | None,
+    component: str,
+) -> QuantizationConfig | None:
+    """Resolve one pipeline component from a global or component config.
+
+    A plain config is global and therefore applies unchanged to every
+    quantization-aware component. Only ``ComponentQuantizationConfig`` narrows
+    the scope through its explicit prefix map.
+    """
+    if isinstance(quant_config, ComponentQuantizationConfig):
+        return quant_config.resolve(component)
+    return quant_config
+
+
+def resolve_encoder_quant_config(
+    quant_config: QuantizationConfig | None,
+) -> QuantizationConfig | None:
+    """Resolve quantization config for vision / audio encoders.
+
+    Returns *None* for pre-quantized methods so that FP8 kernels are never
+    applied to BF16 encoder weights (which lack scale tensors).  All other
+    configs — including ``ComponentQuantizationConfig`` and ``None`` — are
+    returned as-is so the caller can handle them.
+    """
+    if (
+        quant_config is not None
+        and not isinstance(quant_config, ComponentQuantizationConfig)
+        and quant_config.get_name() in PRE_QUANTIZED_METHODS
+    ):
+        return None
+    return quant_config
+
+
+def safe_quant_config(
+    quant_config: QuantizationConfig | None,
+) -> QuantizationConfig | None:
+    """Return *quant_config* only if it is safe for norm/modulation layers.
+
+    Norm and modulation layers (LayerNorm, RMSNorm, AdaLayerNorm, img_mod,
+    txt_mod, etc.) produce precision-sensitive shift/scale/gate values and
+    should not receive FP8 quant configs (see #2728).  Pre-quantized methods
+    like INC/AutoRound W4A16 need the config propagated so packed weights
+    load correctly.
+
+    This is the inverse of :func:`resolve_encoder_quant_config`: that function
+    strips pre-quantized configs from encoders, while this one strips
+    *every config except* pre-quantized configs from norm/mod layers.
+    """
+    if quant_config is None:
+        return None
+    from aphrodite.model_executor.layers.quantization.inc import INCConfig
+
+    if isinstance(quant_config, INCConfig):
+        return quant_config
+    return None
+
+
+class ComponentQuantizationConfig(QuantizationConfig):
+    """Routes quantization to different configs by layer prefix."""
+
+    def __init__(
+        self,
+        component_configs: dict[str, QuantizationConfig | None],
+        default_config: QuantizationConfig | None = None,
+    ) -> None:
+        super().__init__()
+        self._components = component_configs
+        self._default = default_config
+        self._sorted_prefixes = sorted(self._components.keys(), key=len, reverse=True)
+        if current_platform.is_cuda():
+            configs = [config for config in self._components.values() if config is not None]
+            if self._default is not None:
+                configs.append(self._default)
+            required = max((config.get_min_capability() for config in configs), default=0)
+            capability = current_platform.get_device_capability()
+            if capability is not None and capability.to_int() < required:
+                raise ValueError(
+                    f"Component quantization requires CUDA capability {required}, "
+                    f"but the current GPU has capability {capability.to_int()}."
+                )
+
+    def resolve(self, prefix: str) -> QuantizationConfig | None:
+        """Find the config for a given layer prefix (longest-prefix match).
+
+        Note: Sonar may remap quantization prefixes vs model definition
+        prefixes (e.g. via WeightsMapper). If prefixes don't match after
+        remapping, layers may fall through to the default config.
+        """
+        for comp_prefix in self._sorted_prefixes:
+            if prefix.startswith(comp_prefix):
+                return self._components[comp_prefix]
+        return self._default
+
+    def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: WeightsMapper) -> None:
+        """Apply a weight mapper to every routed quantization config."""
+        for quant_config in self._components.values():
+            if quant_config is not None:
+                quant_config.apply_aphrodite_mapper(hf_to_aphrodite_mapper)
+        if self._default is not None:
+            self._default.apply_aphrodite_mapper(hf_to_aphrodite_mapper)
+
+    def get_name(self) -> str:
+        return "component"
+
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
+        config = self.resolve(prefix)
+        if config is None:
+            return None
+        return config.get_quant_method(layer, prefix)
+
+    @classmethod
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        return [torch.bfloat16, torch.float16]
+
+    @classmethod
+    def get_min_capability(cls) -> int:
+        # The router has no kernels; instances validate their component configs.
+        return 0
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> ComponentQuantizationConfig:
+        raise NotImplementedError("Use build_quant_config() instead")
+
+    @staticmethod
+    def get_config_filenames() -> list[str]:
+        return []
+
+    @property
+    def component_configs(self) -> dict[str, QuantizationConfig | None]:
+        return self._components
+
+    @property
+    def default_config(self) -> QuantizationConfig | None:
+        return self._default

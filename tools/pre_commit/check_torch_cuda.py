@@ -14,6 +14,8 @@ _TORCH_CUDA_PATTERNS = [
 
 ALLOWED_FILES = {
     "aphrodite/platforms/",
+    # XPU compatibility shim intentionally replaces CUDA APIs with XPU APIs.
+    "aphrodite/omni/platforms/xpu/utils.py",
     "aphrodite/device_allocator/",
     "aphrodite/vllm_flash_attn/",
     "benchmarks/",

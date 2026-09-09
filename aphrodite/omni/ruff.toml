@@ -1,0 +1,11 @@
+# Keep the separately synced runtime on upstream's lint families.
+extend = "../../pyproject.toml"
+
+[lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "E731", "F403", "F405"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["E402"]
+"model_executor/models/nemotron_voicechat/nemo_vendored/**" = ["F841", "E741", "UP008"]
+"model_executor/models/minicpmo_4_5/minicpmo_4_5_omni_llm.py" = ["E402"]

@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+from collections.abc import Callable
+from typing import Any
+
+from .connectors.base import OmniConnectorBase
+from .utils.config import ConnectorSpec
+from .utils.logging import get_connector_logger
+
+logger = get_connector_logger(__name__)
+
+
+class OmniConnectorFactory:
+    """Factory for creating OmniConnectors."""
+
+    _registry: dict[str, Callable[[dict[str, Any]], OmniConnectorBase]] = {}
+
+    @classmethod
+    def register_connector(cls, name: str, constructor: Callable[[dict[str, Any]], OmniConnectorBase]) -> None:
+        """Register a connector constructor."""
+        if name in cls._registry:
+            raise ValueError(f"Connector '{name}' is already registered.")
+        cls._registry[name] = constructor
+        logger.debug(f"Registered connector: {name}")
+
+    @classmethod
+    def create_connector(cls, spec: ConnectorSpec) -> OmniConnectorBase:
+        """Create a connector from specification."""
+        if spec.name not in cls._registry:
+            raise ValueError(f"Unknown connector: {spec.name}. Available: {list(cls._registry.keys())}")
+
+        constructor = cls._registry[spec.name]
+        try:
+            connector = constructor(spec.extra)
+            logger.info(f"Created connector: {spec.name}")
+            return connector
+        except Exception as e:
+            logger.error(f"Failed to create connector {spec.name}: {e}")
+            raise ValueError(f"Failed to create connector {spec.name}: {e}")
+
+    @classmethod
+    def list_registered_connectors(cls) -> list[str]:
+        """List all registered connector names."""
+        return list(cls._registry.keys())
+
+
+# Register built-in connectors with lazy imports
+def _create_mooncake_store_connector(config: dict[str, Any]) -> OmniConnectorBase:
+    from .connectors.mooncake_store_connector import MooncakeStoreConnector
+
+    return MooncakeStoreConnector(config)
+
+
+def _create_shm_connector(config: dict[str, Any]) -> OmniConnectorBase:
+    from .connectors.shm_connector import SharedMemoryConnector
+
+    return SharedMemoryConnector(config)
+
+
+def _create_yuanrong_connector(config: dict[str, Any]) -> OmniConnectorBase:
+    from .connectors.yuanrong_connector import YuanrongConnector
+
+    return YuanrongConnector(config)
+
+
+def _create_yuanrong_transfer_engine_connector(config: dict[str, Any]) -> OmniConnectorBase:
+    try:
+        from aphrodite.omni.platforms.npu.omni_connectors.yuanrong_transfer_engine_connector import (
+            YuanrongTransferEngineConnector,
+        )
+    except ImportError as exc:
+        raise ImportError(
+            "YuanrongTransferEngineConnector is only available in the NPU platform "
+            "environment. Install the Ascend/Yuanrong runtime dependencies before "
+            "using this connector."
+        ) from exc
+    return YuanrongTransferEngineConnector(config)
+
+
+def _create_mooncake_transfer_engine_connector(config: dict[str, Any]) -> OmniConnectorBase:
+    from .connectors.mooncake_transfer_engine_connector import MooncakeTransferEngineConnector
+
+    return MooncakeTransferEngineConnector(config)
+
+
+def _create_mori_transfer_engine_connector(config: dict[str, Any]) -> OmniConnectorBase:
+    from .connectors.mori_transfer_engine_connector import MoriTransferEngineConnector
+
+    return MoriTransferEngineConnector(config)
+
+
+# Register connectors
+OmniConnectorFactory.register_connector("MooncakeStoreConnector", _create_mooncake_store_connector)
+OmniConnectorFactory.register_connector("MooncakeTransferEngineConnector", _create_mooncake_transfer_engine_connector)
+OmniConnectorFactory.register_connector("SharedMemoryConnector", _create_shm_connector)
+OmniConnectorFactory.register_connector("YuanrongConnector", _create_yuanrong_connector)
+OmniConnectorFactory.register_connector("YuanrongTransferEngineConnector", _create_yuanrong_transfer_engine_connector)
+OmniConnectorFactory.register_connector("MoriTransferEngineConnector", _create_mori_transfer_engine_connector)
+# Backward-compatible aliases – will be removed in the future
+OmniConnectorFactory.register_connector("MooncakeConnector", _create_mooncake_store_connector)

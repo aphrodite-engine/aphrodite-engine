@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from collections.abc import Sequence
 from http import HTTPStatus
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from openai_harmony import Message as OpenAIMessage
 
@@ -42,6 +42,9 @@ from aphrodite.renderers.inputs.preprocess import (
     prompt_to_seq,
 )
 from aphrodite.utils.mistral import is_mistral_tokenizer, is_mistral_tool_parser
+
+if TYPE_CHECKING:
+    from aphrodite.tokenizers.mistral import MistralTokenizer
 from aphrodite.utils.mistral import mt as _mt
 
 logger = init_logger(__name__)
@@ -415,7 +418,7 @@ class OnlineRenderer:
                 tool_parser is not None
                 and is_mistral_tool_parser(tool_parser)
                 and is_mistral_tokenizer(tokenizer)
-                and tokenizer.supports_grammar
+                and cast("MistralTokenizer", tokenizer).supports_grammar
             )
             should_adjust_request = (
                 parser.reasoning_parser_cls is not None or tool_choice != "none" or is_mistral_grammar_eligible

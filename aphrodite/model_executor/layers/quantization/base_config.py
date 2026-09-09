@@ -114,7 +114,7 @@ class QuantizationConfig(ABC):
         self.packed_modules_mapping: dict[str, list[str]] = dict()
 
     @abstractmethod
-    def get_name(self) -> QuantizationMethods:
+    def get_name(self) -> str:
         """Name of the quantization method."""
         raise NotImplementedError
 

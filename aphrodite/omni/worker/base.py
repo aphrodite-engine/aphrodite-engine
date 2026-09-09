@@ -1,0 +1,311 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+"""Base worker class for Sonar Omni with device-level GPU memory profiling."""
+
+from __future__ import annotations
+
+import gc
+import os
+import time
+from contextlib import AbstractContextManager, nullcontext
+
+import torch
+
+from aphrodite.logger import init_logger
+from aphrodite.omni.diffusion.data import (
+    OmniACK,
+    OmniSleepTask,
+    OmniWakeTask,
+)
+from aphrodite.omni.platforms import current_omni_platform
+from aphrodite.utils.mem_utils import format_gib, memory_profiling
+from aphrodite.v1.worker.gpu_worker import Worker as GPUWorker
+
+logger = init_logger(__name__)
+
+
+class OmniGPUWorkerBase(GPUWorker):
+    """Base GPU worker for Sonar Omni.
+
+    This class overrides determine_available_memory() to compute the KV cache
+    budget from device-level profiling data. Concurrent same-device stage
+    initialization is coordinated externally by the parallel-stage-init
+    admission control + SH/EX device locks (see
+    ``AphroditeOmniOrchestratorConfig.parallel_stage_init``), which keep each
+    measurement quiescent instead of relying on per-process NVML accounting.
+
+    It also replaces Sonar's TorchProfilerWrapper with OmniTorchProfilerWrapper
+    for custom trace naming, background gzip, and trace path collection.
+    """
+
+    def load_model(self, *args, **kwargs):
+        with self._maybe_get_memory_pool_context("weights"):
+            res = super().load_model(*args, **kwargs)
+            current_omni_platform.synchronize()
+            gc.collect()
+            return res
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Replace Sonar's profiler with platform-specific profiler
+        profiler_config = self.aphrodite_config.profiler_config
+        if profiler_config and profiler_config.profiler == "torch":
+            from aphrodite.omni.profiler import create_omni_profiler
+
+            stage_id = getattr(self.aphrodite_config.model_config, "stage_id", 0)
+            worker_name = f"stage{stage_id}_rank{self.rank}"
+            self.profiler = create_omni_profiler(
+                profiler_config=profiler_config,
+                worker_name=worker_name,
+                local_rank=self.local_rank,
+            )
+
+    def profile(self, is_start: bool = True, profile_prefix: str | None = None):
+        """Override to set trace filename before starting the profiler.
+
+        Args:
+            is_start: True to start profiling, False to stop.
+            profile_prefix: Optional prefix for trace filename (Sonar compat).
+
+        Sonar's profile() only passes is_start, so we generate a descriptive
+        trace filename here before delegating to the profiler.
+        """
+        if self.profiler is None:
+            raise RuntimeError(
+                "Profiling is not enabled. For diffusion models, set --profiler-config via CLI. "
+                "For omni models, add profiler_config to the relevant deploy config stage."
+            )
+        if is_start:
+            from aphrodite.omni.profiler import OmniTorchProfilerWrapper
+
+            if isinstance(self.profiler, OmniTorchProfilerWrapper):
+                # Include stage_id and rank in default filename to distinguish
+                # traces from different stages profiling on the same local_rank
+                stage_id = getattr(self.aphrodite_config.model_config, "stage_id", 0)
+                filename = profile_prefix or f"stage{stage_id}_rank{self.rank}_{int(time.time())}"
+                self.profiler.set_trace_filename(filename)
+            self.profiler.start()
+        else:
+            self.profiler.stop()
+
+    @torch.inference_mode()
+    def determine_available_memory(self) -> int:
+        """Device-level GPU memory profiling for the KV cache budget.
+
+        Algorithm:
+            1. requested_memory = total_gpu_memory * gpu_memory_utilization
+               (computed in init_device from cache_config)
+
+            2. profiled_usage = weights + peak_activation + non_torch_increase
+               (measured by ``memory_profiling`` around ``profile_run()``;
+               ``non_torch_increase`` is device-level, so it reflects whatever
+               else is resident on the GPU at profiling time)
+
+            3. available_kv_cache = requested_memory - profiled_usage
+
+        Note:
+            Process-scoped NVML estimation was removed in favour of the
+            device-level profiling fallback plus the parallel-stage-init
+            admission + SH/EX device locks (see
+            ``AphroditeOmniOrchestratorConfig.parallel_stage_init``): the EX lock
+            makes each measurement quiescent, so the device-level number is the
+            correct, conservative budget. The NVML helpers in
+            ``gpu_memory_utils`` are retained for diffusion memory reporting.
+        """
+        if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
+            self.model_runner.profile_run()
+            if current_omni_platform.is_rocm():
+                torch.accelerator.synchronize()
+            return kv_cache_memory_bytes
+
+        with memory_profiling(
+            self.init_snapshot,
+            weights_memory=int(self.model_runner.model_memory_usage),
+        ) as profile_result:
+            self.model_runner.profile_run()
+
+        self.non_torch_memory = profile_result.non_torch_increase
+        self.peak_activation_memory = profile_result.torch_peak_increase
+        # Upstream 58b2012aa2 added `total_consumed` to the profiling result
+        # and reads it in GPUWorker.compile_or_warm_up_model() (when
+        # kv_cache_memory_bytes is None and peak_activation_memory is set, both
+        # true here). Mirror upstream so the omni override keeps it populated.
+        self.total_consumed = profile_result.total_consumed
+
+        profiled_usage = (
+            int(self.model_runner.model_memory_usage)
+            + profile_result.torch_peak_increase
+            + profile_result.non_torch_increase
+        )
+        self.available_kv_cache_memory_bytes = max(0, self.requested_memory - profiled_usage)
+        logger.debug(
+            "Profiling KV budget (PID %d, GPU %d): requested=%s, profiled=%s, available=%s",
+            os.getpid(),
+            self.local_rank,
+            format_gib(self.requested_memory),
+            format_gib(profiled_usage),
+            format_gib(self.available_kv_cache_memory_bytes),
+        )
+        logger.info_once(
+            "Available KV cache memory: %s GiB (device-level profiling)",
+            format_gib(self.available_kv_cache_memory_bytes),
+            scope="local",
+        )
+
+        return int(self.available_kv_cache_memory_bytes)
+
+    # Provide memory pool context
+    def _maybe_get_memory_pool_context(self, tag: str) -> AbstractContextManager:
+        v1_config_enabled = False
+        if hasattr(self, "aphrodite_config"):
+            model_cfg = getattr(self.aphrodite_config, "model_config", None)
+            v1_config_enabled = getattr(model_cfg, "enable_sleep_mode", False)
+
+        is_sleep_enabled = v1_config_enabled or getattr(self.cache_config, "enable_sleep_mode", False)
+        if is_sleep_enabled:
+            current_omni_platform.synchronize()
+            gc.collect()
+            from aphrodite.device_allocator.cumem import CuMemAllocator
+
+            allocator = CuMemAllocator.get_instance()
+            logger.info(f"[LLM Worker {self.rank}] Sleep Mode ENABLED. Activating CuMem pool for tag: {tag}")
+            return allocator.use_memory_pool(tag=tag)
+        else:
+            logger.warning(f"[LLM Worker {self.rank}] Sleep Mode DISABLED.")
+            return nullcontext()
+
+    def sleep(self, level: int = 1) -> None:
+        """
+        Put the worker to sleep.
+        Args:
+            level: 1 (Offload weights to CPU), level: 2 (Total Discard).
+        """
+        from aphrodite.device_allocator.cumem import CuMemAllocator
+
+        # Drain in-flight kernels before CuMem unmap. Abort/decode can still
+        # have GPU work after the scheduler reports idle; unmapping then
+        # returns CUDA_ERROR_INVALID_VALUE (cudaErrorInvalidValue).
+        current_omni_platform.synchronize()
+        gc.collect()
+
+        mem_before = current_omni_platform.get_current_memory_usage(self.device)
+        offload_tags = ("weights",) if level == 1 else tuple()
+        allocator = CuMemAllocator.get_instance()
+        allocator.sleep(offload_tags=offload_tags)
+        # allocator.sleep already gc.collects and empty_cache()s. A second
+        # empty_cache on the pluggable allocator is a known CUDA invalid
+        # argument (pytorch/pytorch#145168). Only sync for the readout.
+        current_omni_platform.synchronize()
+        mem_after = current_omni_platform.get_current_memory_usage(self.device)
+        freed = max(0, mem_before - mem_after)
+        remaining_gb = mem_after / 1024**3
+        logger.info(
+            f"[LLM Worker {self.rank}] Level {level} Sleep: Freed "
+            f"{freed / 1024**3:.2f} GiB. {remaining_gb:.2f}GiB memory "
+            "is still in use."
+        )
+
+    def wake_up(self, tags: list[str] | None = None) -> None:
+        "Physical video memory reloading logic"
+        from aphrodite.device_allocator.cumem import CuMemAllocator
+
+        allocator = CuMemAllocator.get_instance()
+        allocator.wake_up(tags)
+        current_omni_platform.synchronize()
+        logger.info(f"[LLM Worker {self.rank}] Wake-up complete.")
+
+    def handle_sleep_task(self, task: OmniSleepTask) -> OmniACK | None:
+        "Handle deterministic Sleep command from the main process"
+        try:
+            if isinstance(task, dict):
+                task = OmniSleepTask(**task)
+            logger.info(f"[LLM Worker {self.rank}] Handshake Received: Task {task.task_id}, Level {task.level}")
+            if task.level == 2:
+                if hasattr(self.model_runner, "graph_runners"):
+                    self.model_runner.graph_runners.clear()
+                    logger.info(f"[LLM Worker {self.rank}] LLM CUDA Graphs cleared.")
+            mem_before = current_omni_platform.get_free_memory(self.device)
+            self.sleep(level=task.level)
+            mem_after = current_omni_platform.get_free_memory(self.device)
+            rank_freed = max(0, mem_after - mem_before)
+            if torch.distributed.is_initialized():
+                t_freed = torch.tensor([float(rank_freed)], device=self.device)
+                torch.distributed.all_reduce(t_freed)
+                total_freed = int(t_freed.item())
+                torch.distributed.barrier()
+            else:
+                total_freed = rank_freed
+            if self.rank != 0:
+                return None
+            current_stage_id = getattr(self.aphrodite_config.model_config, "stage_id", 0)
+            try:
+                total_mem = current_omni_platform.get_device_total_memory()
+            except (NotImplementedError, AttributeError):
+                total_mem = torch.cuda.get_device_properties(self.device).total_memory
+            residual_gib = (total_mem - mem_after) / 1024**3
+            ack = OmniACK(
+                task_id=task.task_id,
+                status="SUCCESS",
+                stage_id=current_stage_id,
+                rank=self.rank,
+                freed_bytes=total_freed,
+                metadata={
+                    "source": "omni_platform_audit",
+                    "total_freed_gib": f"{total_freed / 1024**3:.2f}",
+                    "rank_residual_gib": f"{residual_gib:.2f}",
+                },
+            )
+            if hasattr(self, "result_mq") and self.result_mq:
+                self.result_mq.put(ack)
+            logger.info(f"[LLM Worker {self.rank}] ACK emitted for Task {task.task_id}")
+            return ack
+        except Exception as e:
+            logger.error(f"[LLM Worker {self.rank}] Sleep Task Failed: {e}", exc_info=True)
+            if torch.distributed.is_initialized():
+                try:
+                    torch.distributed.barrier()
+                except Exception:
+                    pass
+            return OmniACK(task_id=task.task_id, status="ERROR", error_msg=str(e))
+
+    def handle_wake_task(self, task: OmniWakeTask) -> OmniACK | None:
+        "Handle deterministic Wakeup command from the main process"
+        try:
+            if isinstance(task, dict):
+                task = OmniWakeTask(**task)
+            self.wake_up(tags=task.tags)
+            if torch.distributed.is_initialized():
+                torch.distributed.barrier()
+            gc.collect()
+            current_omni_platform.synchronize()
+            free_now = current_omni_platform.get_free_memory(self.device)
+            try:
+                total_mem = current_omni_platform.get_device_total_memory()
+            except (NotImplementedError, AttributeError):
+                total_mem = torch.cuda.get_device_properties(self.device).total_memory
+            current_used_gib = (total_mem - free_now) / 1024**3
+            if self.rank != 0:
+                return None
+            current_stage_id = getattr(self.aphrodite_config.model_config, "stage_id", 0)
+            ack = OmniACK(
+                task_id=task.task_id,
+                status="SUCCESS",
+                stage_id=current_stage_id,
+                rank=self.rank,
+                metadata={"state": "WARM", "current_vram_gib": f"{current_used_gib:.2f}"},
+            )
+            if hasattr(self, "result_mq") and self.result_mq:
+                self.result_mq.put(ack)
+            logger.info(f"[LLM Worker {self.rank}] Wake-up ACK emitted.")
+            return ack
+        except Exception as e:
+            logger.error(f"[LLM Worker {self.rank}] Wake-up Failed: {e}", exc_info=True)
+            if torch.distributed.is_initialized():
+                try:
+                    torch.distributed.barrier()
+                except Exception:
+                    pass
+            tid = task.task_id if hasattr(task, "task_id") else "unknown"
+            return OmniACK(task_id=tid, status="ERROR", error_msg=str(e))

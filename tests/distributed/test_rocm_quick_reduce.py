@@ -333,7 +333,9 @@ def _check_tp_allreduce_uses_quick_reduce(
     from aphrodite.distributed.parallel_state import get_tp_group
 
     assert self.device is not None
-    qr_comm = get_tp_group().device_communicator.qr_comm
+    device_communicator = get_tp_group().device_communicator
+    assert device_communicator is not None
+    qr_comm = device_communicator.qr_comm
     assert qr_comm is not None
     assert not qr_comm.disabled
 
@@ -370,7 +372,9 @@ def _check_tp_allreduce_uses_quick_reduce(
 def _check_quick_reduce_disabled(self) -> int:
     from aphrodite.distributed.parallel_state import get_tp_group
 
-    qr_comm = get_tp_group().device_communicator.qr_comm
+    device_communicator = get_tp_group().device_communicator
+    assert device_communicator is not None
+    qr_comm = device_communicator.qr_comm
     assert qr_comm is not None
     assert qr_comm.disabled
     _log(f"worker confirmed quick reduce is disabled: rank={self.rank}")

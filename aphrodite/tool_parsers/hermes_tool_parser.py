@@ -3,6 +3,7 @@
 
 import json
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
 
 import regex as re
 
@@ -28,6 +29,9 @@ from aphrodite.tool_parsers.abstract_tool_parser import (
 from aphrodite.tool_parsers.utils import is_complete_json, partial_tag_overlap
 from aphrodite.utils.mistral import is_mistral_tokenizer
 
+if TYPE_CHECKING:
+    from aphrodite.tokenizers.mistral import MistralTokenizer
+
 logger = init_logger(__name__)
 
 
@@ -43,7 +47,7 @@ class Hermes2ProToolParser(ToolParser):
 
         if is_mistral_tokenizer(tokenizer):
             logger.error("Detected Mistral tokenizer when using a Hermes model")
-            self.model_tokenizer = tokenizer.tokenizer
+            self.model_tokenizer = cast("MistralTokenizer", tokenizer).tokenizer
 
         if not self.model_tokenizer:
             raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")

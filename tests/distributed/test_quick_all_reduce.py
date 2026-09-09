@@ -248,7 +248,9 @@ def graph_quickreduce(
         init_test_distributed_environment(tp_size, pp_size, rank, distributed_init_port)
         ensure_model_parallel_initialized(tp_size, pp_size)
         group = get_tp_group().device_group
-        fa = get_tp_group().device_communicator.qr_comm
+        device_communicator = get_tp_group().device_communicator
+        assert device_communicator is not None
+        fa = device_communicator.qr_comm
 
         # A small all_reduce for warmup.
         # this is needed because device communicators might be created lazily
@@ -310,7 +312,9 @@ def eager_quickreduce(
 
         # Size over 8MB is sufficient for custom quick allreduce.
         sz = 16 * 1024 * 1024
-        fa = get_tp_group().device_communicator.qr_comm
+        device_communicator = get_tp_group().device_communicator
+        assert device_communicator is not None
+        fa = device_communicator.qr_comm
         inp = torch.tensor([1.0 * ((i) % 23) for i in range(sz)], dtype=torch.float16, device=device)
         _assert_quickreduce(fa, inp)
         out = fa.quick_all_reduce(inp)
@@ -341,7 +345,9 @@ def bf16_cast_quickreduce(
         init_test_distributed_environment(tp_size, pp_size, rank, distributed_init_port)
 
         sz = 16 * 1024 * 1024
-        fa = get_tp_group().device_communicator.qr_comm
+        device_communicator = get_tp_group().device_communicator
+        assert device_communicator is not None
+        fa = device_communicator.qr_comm
         inp = torch.tensor([1.0 * (i % 23) for i in range(sz)], dtype=torch.bfloat16, device=device)
         _assert_quickreduce(fa, inp)
         assert fa.use_fp16_kernels

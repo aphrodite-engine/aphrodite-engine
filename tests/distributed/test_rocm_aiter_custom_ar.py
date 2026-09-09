@@ -44,7 +44,9 @@ def _configure_aiter_custom_ar_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _assert_aiter_handles_input(inp: torch.Tensor) -> None:
-    aiter_ar_comm = get_tp_group().device_communicator.aiter_ar_comm
+    device_communicator = get_tp_group().device_communicator
+    assert device_communicator is not None
+    aiter_ar_comm = device_communicator.aiter_ar_comm
     assert aiter_ar_comm is not None
     assert aiter_ar_comm.should_custom_ar(inp), f"AITER CustomAllreduce does not support input shape {inp.shape}."
 

@@ -5,7 +5,7 @@ import time
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from aphrodite.compilation.cuda_graph import CUDAGraphStat
 from aphrodite.config import AphroditeConfig, KVEventsConfig
@@ -15,7 +15,7 @@ from aphrodite.distributed.ec_transfer.ec_connector.base import (
     ECConnectorRole,
 )
 from aphrodite.distributed.ec_transfer.ec_connector.factory import ECConnectorFactory
-from aphrodite.distributed.kv_events import EventPublisherFactory, KVEventBatch
+from aphrodite.distributed.kv_events import EventPublisherFactory, KVEvent, KVEventBatch
 from aphrodite.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
     KVConnectorBase_V1,
@@ -1988,7 +1988,8 @@ class Scheduler(SchedulerInterface):
 
         # publish collected KV cache events
         if events:
-            batch = KVEventBatch(ts=time.time(), events=events)
+            # Connector APIs use the base event type; msgspec requires the wire union.
+            batch = KVEventBatch(ts=time.time(), events=cast(list[KVEvent], events))
             self.kv_event_publisher.publish(batch)
 
         # Create EngineCoreOutputs for all clients that have requests with

@@ -242,7 +242,7 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
         if not events:
             return None
 
-        blocks: list[BlockStored] = [
+        blocks: list[KVCacheEvent] = [
             BlockStored(
                 block_hashes=e.block_hashes,
                 parent_block_hash=e.parent_block_hash,

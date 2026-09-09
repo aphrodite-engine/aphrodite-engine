@@ -221,7 +221,7 @@ def make_online_process_loader(layer: torch.nn.Module, param_name: str) -> Calla
     return online_process_loader
 
 
-def finalize_layerwise_processing(model: torch.nn.Module, model_config: ModelConfig):
+def finalize_layerwise_processing(model: torch.nn.Module, model_config: ModelConfig | None):
     """
     Apply processing to any layers which were not layerwise processed during loading.
     This includes attention layers and layers which have weight elements which are not
@@ -247,6 +247,8 @@ def finalize_layerwise_processing(model: torch.nn.Module, model_config: ModelCon
 
         # Deferred attention-like layers are processed after all other layers
         if is_deferred_attention_layer(layer):
+            if model_config is None:
+                raise ValueError("model_config is required to finalize attention layers")
             deferred_attn.append((layer, info))
             continue
 
@@ -276,6 +278,7 @@ def finalize_layerwise_processing(model: torch.nn.Module, model_config: ModelCon
 
     # Process attention layers after all other layers are done
     for layer, info in deferred_attn:
+        assert model_config is not None
         _finalize_attention_layer(layer, info, model_config)
         info.reset()
 

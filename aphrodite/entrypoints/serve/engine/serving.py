@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from http import HTTPStatus
+from typing import Protocol
 
 from fastapi import Request
 
@@ -18,12 +19,18 @@ from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.exceptions import APHRODITENotFoundError
 from aphrodite.inputs import EngineInput
 from aphrodite.lora.request import LoRARequest
+from aphrodite.pooling_params import PoolingParams
 from aphrodite.renderers.inputs.preprocess import (
     extract_prompt_components,
     extract_prompt_len,
 )
 from aphrodite.sampling_params import BeamSearchParams
 from aphrodite.utils import random_uuid
+
+
+class ModelRequest(Protocol):
+    @property
+    def model(self) -> str | None: ...
 
 
 class BaseServing:
@@ -39,7 +46,7 @@ class BaseServing:
 
     async def _check_model(
         self,
-        request: AnyRequest | AnyPoolingRequest,
+        request: ModelRequest,
     ) -> ErrorResponse | None:
         error_response = None
 
@@ -93,7 +100,7 @@ class BaseServing:
         self,
         request_id: str,
         inputs: PromptType | EngineInput,
-        params: SamplingParams | BeamSearchParams | None,
+        params: SamplingParams | PoolingParams | BeamSearchParams | None,
         lora_request: LoRARequest | None,
     ) -> None:
         if self.request_logger is None:

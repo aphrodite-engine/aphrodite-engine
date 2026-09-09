@@ -218,10 +218,11 @@ class MsgpackEncoder:
 
         return msgpack.Ext(CUSTOM_TYPE_PICKLE, pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL))
 
-    def _encode_ndarray(self, obj: np.ndarray) -> tuple[str, tuple[int, ...], int | memoryview]:
+    def _encode_ndarray(self, obj: np.ndarray) -> tuple[str, tuple[int, ...], int | msgpack.Ext]:
         assert self.aux_buffers is not None
         # If the array is non-contiguous, we need to copy it first
         arr_data = obj.data if obj.flags.c_contiguous else obj.tobytes()
+        data: int | msgpack.Ext
         if not obj.shape or obj.nbytes < self.size_threshold:
             # Encode small arrays and scalars inline. Using this extension type
             # ensures we can avoid copying when decoding.
@@ -236,8 +237,9 @@ class MsgpackEncoder:
         # backing buffers that we've stashed in `aux_buffers`.
         return obj.dtype.str, obj.shape, data
 
-    def _encode_tensor(self, obj: torch.Tensor) -> tuple[str, tuple[int, ...], int | dict | memoryview]:
+    def _encode_tensor(self, obj: torch.Tensor) -> tuple[str, tuple[int, ...], int | dict | msgpack.Ext]:
         oob_consumer = self.oob_tensor_consumer
+        data: int | dict | msgpack.Ext | None
         # view the tensor as a contiguous 1D array of bytes
         if obj.nbytes < self.size_threshold and obj.is_cpu:
             # Smaller tensors are encoded inline, just like ndarrays.
@@ -314,9 +316,9 @@ class MsgpackDecoder:
         if isinstance(bufs, bytestr):  # type: ignore
             return self.decoder.decode(bufs)
 
-        self.aux_buffers = bufs
+        self.aux_buffers = cast(Sequence[bytestr], bufs)
         try:
-            return self.decoder.decode(bufs[0])
+            return self.decoder.decode(self.aux_buffers[0])
         finally:
             self.aux_buffers = ()
 

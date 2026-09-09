@@ -3,7 +3,7 @@
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, TypeAlias
 
 import regex as re
 from openai.types.responses import ToolChoiceFunction
@@ -34,7 +34,7 @@ from aphrodite.tool_parsers.utils import (
 
 logger = init_logger(__name__)
 
-ToolParserRequest = ChatCompletionRequest | ResponsesRequest
+ToolParserRequest: TypeAlias = ChatCompletionRequest | ResponsesRequest
 
 
 class K2HorizonToolParser(ToolParser):

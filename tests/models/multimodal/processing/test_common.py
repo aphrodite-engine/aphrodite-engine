@@ -48,6 +48,7 @@ def add_video_metadata(mm_data: MultiModalDataDict) -> MultiModalDataDict:
             "do_sample_frames": True,
         }
 
+    mm_data = dict(mm_data)
     # Ensure video metadata is included
     if "video" in mm_data:
         video = mm_data["video"]
@@ -65,6 +66,7 @@ def glmasr_patch_mm_data(mm_data: MultiModalDataDict) -> MultiModalDataDict:
     Patch the multimodal data for GLM-ASR model.
     GLM-ASR requires text and audio to match 1:1, so we limit audio to 1.
     """
+    mm_data = dict(mm_data)
     if "audio" in mm_data:
         audio = mm_data["audio"]
         if isinstance(audio, list) and len(audio) > 1:
@@ -238,7 +240,7 @@ def _test_processing_correctness(
     )
     # Ensure that the cache can fit all of the data
     # (set after because ModelConfig would set it to 0 for encoder-decoder models)
-    model_config.multimodal_config.mm_processor_cache_gb = 2048
+    model_config.get_multimodal_config().mm_processor_cache_gb = 2048
 
     model_cls = MULTIMODAL_REGISTRY._get_model_cls(model_config)
     factories = model_cls._processor_factory
@@ -257,11 +259,11 @@ def _test_processing_correctness(
 
     def _to_dummy_options(modality: str, count: int) -> BaseDummyOptions:
         if modality == "video":
-            return VideoDummyOptions(count=count)
+            return VideoDummyOptions(count=count, num_frames=None, width=None, height=None)
         if modality == "image":
-            return ImageDummyOptions(count=count)
+            return ImageDummyOptions(count=count, width=None, height=None)
         if modality == "audio":
-            return AudioDummyOptions(count=count)
+            return AudioDummyOptions(count=count, length=None)
         return BaseDummyOptions(count=count)
 
     # Assign normalized DummyOptions to the model config

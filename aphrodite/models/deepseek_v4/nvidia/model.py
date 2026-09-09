@@ -1017,7 +1017,7 @@ def _select_dsv4_attn_cls(aphrodite_config: AphroditeConfig) -> type[DeepseekV4A
     """
     backend = aphrodite_config.attention_config.backend
     device_capability = current_platform.get_device_capability()
-    if backend in (
+    if backend is not None and backend in (
         AttentionBackendEnum.FLASHINFER_MLA_SPARSE,
         AttentionBackendEnum.FLASHINFER_MLA_SPARSE_SM120,
     ):

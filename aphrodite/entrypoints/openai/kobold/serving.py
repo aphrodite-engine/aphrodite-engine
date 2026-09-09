@@ -146,7 +146,7 @@ class OpenAIServingKobold(GenerateBaseServing):
         if not kai_payload.genkey:
             kai_payload.genkey = f"kai-{random_uuid()}"
 
-        top_k = kai_payload.top_k if (kai_payload.top_k or 0) != 0 else -1
+        top_k = kai_payload.top_k or -1
         tfs = max(_SAMPLING_EPS, kai_payload.tfs or 0.0)
         top_p = kai_payload.top_p or 1.0
         n = kai_payload.n or 1

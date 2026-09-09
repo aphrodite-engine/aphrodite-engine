@@ -281,6 +281,7 @@ class BlockPool:
                 new_hashes.append(maybe_convert_block_hash(block_hash))
 
         if self.enable_kv_cache_events:
+            assert new_hashes is not None
             if num_cached_blocks == 0:
                 parent_block_hash: ExternalBlockHash | None = None
             else:
@@ -322,7 +323,7 @@ class BlockPool:
     def _build_block_stored_event(
         self,
         request: Request,
-        block_hashes: list[ExternalBlockHash] | None,
+        block_hashes: list[ExternalBlockHash],
         parent_block_hash: ExternalBlockHash | None,
         start_token_idx: int,
         end_token_idx: int,

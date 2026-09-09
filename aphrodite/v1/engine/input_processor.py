@@ -3,7 +3,7 @@
 
 import time
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
@@ -285,7 +285,7 @@ class InputProcessor:
 
         if isinstance(prompt, dict) and "type" in prompt:
             if arrival_time is None:
-                arrival_time = prompt.get("arrival_time", time.time())  # type: ignore[assignment]
+                arrival_time = cast(float, prompt.get("arrival_time", time.time()))
 
             engine_input: EngineInput = prompt  # type: ignore[assignment]
         else:

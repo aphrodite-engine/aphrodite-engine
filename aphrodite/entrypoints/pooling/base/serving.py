@@ -17,8 +17,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.entrypoints.chat_utils import ChatTemplateConfig
 from aphrodite.entrypoints.openai.models.serving import OpenAIServingModels
-from aphrodite.entrypoints.serve.engine.serving import BaseServing
-from aphrodite.entrypoints.serve.engine.typing import AnyRequest
+from aphrodite.entrypoints.serve.engine.serving import BaseServing, ModelRequest
 from aphrodite.entrypoints.serve.utils.request_logger import RequestLogger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.renderers.base import BaseRenderer
@@ -196,7 +195,7 @@ class PoolingBaseServing(ABC, BaseServing):
 
     async def _check_model(
         self,
-        request: AnyRequest | AnyPoolingRequest,
+        request: ModelRequest,
     ) -> ErrorResponse | None:
         if self._is_model_supported(request.model):
             return None

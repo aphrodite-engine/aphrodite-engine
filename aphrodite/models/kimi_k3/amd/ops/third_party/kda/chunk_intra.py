@@ -581,12 +581,18 @@ def chunk_kda_fwd_intra(
     chunk_indices: torch.LongTensor | None = None,
     safe_gate: bool = False,
 ):
-    B, T, H, K, HV = *k.shape, gk.shape[2]
+    B, T, H, K = k.shape
+    assert gk is not None
+    HV = gk.shape[2]
     BT = chunk_size
     BC = 16
     if chunk_indices is None and cu_seqlens is not None:
         chunk_indices = prepare_chunk_indices(cu_seqlens, BT)
-    NT = triton.cdiv(T, BT) if cu_seqlens is None else len(chunk_indices)
+    if cu_seqlens is None:
+        NT = triton.cdiv(T, BT)
+    else:
+        assert chunk_indices is not None
+        NT = len(chunk_indices)
     NC = triton.cdiv(BT, BC)
 
     Aqk = torch.empty(B, T, HV, BT, device=k.device, dtype=k.dtype)
@@ -597,7 +603,7 @@ def chunk_kda_fwd_intra(
 
     # Compute diagonal blocks into Akkd in fp32.
     if safe_gate:
-        grid = (NT, NC, B * HV)
+        grid: tuple[int, ...] = (NT, NC, B * HV)
         BK = triton.next_power_of_2(K)
         chunk_kda_fwd_kernel_intra_sub_chunk[grid](
             q=q,

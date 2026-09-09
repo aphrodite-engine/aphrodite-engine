@@ -31,6 +31,9 @@ SEPARATE_GROUPS = [
 ]
 
 EXCLUDE = [
+    # Match Omni's upstream model-port exclusions.
+    r"aphrodite/omni/model_executor/models/",
+    r"aphrodite/omni/diffusion/models/",
     "aphrodite/third_party",
     "aphrodite/vllm_flash_attn",
     "aphrodite/benchmarks",

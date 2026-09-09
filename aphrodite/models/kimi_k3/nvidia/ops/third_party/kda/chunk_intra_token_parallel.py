@@ -129,11 +129,11 @@ def chunk_kda_fwd_intra_token_parallel(
     beta: torch.Tensor,
     Aqk: torch.Tensor,
     Akk: torch.Tensor,
-    scale: float,
+    scale: float | None,
     cu_seqlens: torch.LongTensor | None = None,
     chunk_size: int = 64,
     sub_chunk_size: int = 16,
-) -> None:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Token-parallel implementation: each token gets its own thread block.
     Supports both fixed-length and variable-length sequences.
@@ -152,7 +152,8 @@ def chunk_kda_fwd_intra_token_parallel(
         chunk_size: BT (default 64)
         sub_chunk_size: BC (default 16)
     """
-    B, T, H, K, HV = *q.shape, gk.shape[2]
+    B, T, H, K = q.shape
+    HV = gk.shape[2]
     N = len(cu_seqlens) - 1 if cu_seqlens is not None else B
     BT = chunk_size
     BC = sub_chunk_size

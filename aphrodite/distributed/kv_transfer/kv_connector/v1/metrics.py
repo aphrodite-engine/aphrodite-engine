@@ -78,7 +78,7 @@ class KVConnectorLogging:
                 "does not implement the "
                 "`build_kv_connector_stats` method. "
                 "Stats will not be logged.",
-                self.connector_cls,
+                str(self.connector_cls),
             )
             return
 
